@@ -51,29 +51,6 @@ services:
     extra_hosts:
       - "host.docker.internal:172.17.0.1"
 
-  urgs-rag:
-    build: ./urgs-rag
-    image: urgs-rag:latest
-    environment:
-      NEO4J_URI: bolt://${NEO4J_HOST}:${NEO4J_PORT_BOLT}
-      NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
-      CHROMA_PERSIST_DIRECTORY: /app/data/chroma
-      APP_ENV: ${APP_ENV}
-      LLM_API_BASE: ${LLM_API_BASE}
-      LLM_MODEL: ${LLM_MODEL}
-      LLM_API_KEY: ${LLM_API_KEY}
-      URGS_API_BASE_URL: http://urgs-api:8080
-
-    ports:
-      - "${HOST_PORT_RAG}:8001"
-    depends_on:
-      neo4j:
-        condition: service_started
-    networks:
-      - urgs-net
-    volumes:
-      - ./urgs-rag/data:/app/data
-
   urgs-web:
     build: ./urgs-web
     image: urgs-web:latest
@@ -81,7 +58,6 @@ services:
       - "${HOST_PORT_WEB}:80"
     depends_on:
       - urgs-api
-      - urgs-rag
     networks:
       - urgs-net
 

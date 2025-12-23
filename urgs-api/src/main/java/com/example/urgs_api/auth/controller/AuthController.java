@@ -57,7 +57,7 @@ public class AuthController {
 
         return ResponseEntity
                 .ok(new AuthResponse(token, String.valueOf(user.getId()), user.getEmpId(), user.getName(),
-                        user.getRoleName(), roleId, user.getSsoSystem()));
+                        user.getRoleName(), roleId, user.getSystem()));
     }
 
     @GetMapping("/profile")
@@ -92,7 +92,7 @@ public class AuthController {
 
         return ResponseEntity
                 .ok(new AuthResponse(token, String.valueOf(user.getId()), user.getEmpId(), user.getName(),
-                        user.getRoleName(), roleId, user.getSsoSystem()));
+                        user.getRoleName(), roleId, user.getSystem()));
     }
 
     private String extractToken(String authorization, String tokenParam) {

@@ -64,7 +64,7 @@ INSERT IGNORE INTO sys_role_permission (role_id, perm_code) VALUES
 (1, 'sys:menu:sync');
 
 -- 用户
-INSERT INTO sys_user (id, emp_id, name, org_name, role_name, phone, last_login, status, password, sso_system) VALUES
+INSERT INTO sys_user (id, emp_id, name, org_name, role_name, phone, last_login, status, password, system) VALUES
 (1, '001001', '张三', '信息科技部', '系统管理员', '13800000001', '2024-05-20 10:00', 'active', '$2a$10$UiBazf3SxjK683GV5vuEIO93Aoqo9jxYxKcF0ULGfyYR3BL.IxCcy', '反洗钱监测系统,征信报送平台,风险预警驾驶舱,监管报表报送,跨境资金流动,数据质量核查,统一用户认证,安全审计日志,实时风险阻断,外联合规上报'),
 (2, '001002', '李四', '长春分行', '数据报送员', '13800000002', '2024-05-19 09:15', 'active', '$2a$10$UiBazf3SxjK683GV5vuEIO93Aoqo9jxYxKcF0ULGfyYR3BL.IxCcy', NULL),
 (3, '001003', '王五', '吉林市分行', '合规审核员', '13800000003', '2024-05-18 16:30', 'inactive', '$2a$10$UiBazf3SxjK683GV5vuEIO93Aoqo9jxYxKcF0ULGfyYR3BL.IxCcy', NULL)

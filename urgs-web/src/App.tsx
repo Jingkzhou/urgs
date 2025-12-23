@@ -48,7 +48,7 @@ const App: React.FC = () => {
         roleName?: string;
         roleId?: number; // Added roleId
         avatarUrl?: string;
-        ssoSystem?: string;
+        system?: string;
     } | null>(initialUser);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [layoutMode, setLayoutMode] = useState<'sidebar' | 'topbar'>('topbar');

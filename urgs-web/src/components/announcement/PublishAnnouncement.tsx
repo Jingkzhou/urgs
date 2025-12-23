@@ -19,7 +19,7 @@ const PublishAnnouncement: React.FC = () => {
         if (userStr) {
             try {
                 const user = JSON.parse(userStr);
-                const systems = user.ssoSystem ? user.ssoSystem.split(',') : [];
+                const systems = user.system ? user.system.split(',') : [];
                 setUserSystems(systems);
             } catch (e) {
                 console.error("Failed to parse user systems", e);

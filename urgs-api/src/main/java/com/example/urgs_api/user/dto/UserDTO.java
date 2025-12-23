@@ -9,7 +9,7 @@ public class UserDTO {
     private String orgName;
     private String roleName;
     private Long roleId; // New
-    private String ssoSystem;
+    private String system;
     private String phone;
     private String lastLogin;
     private String status;
@@ -18,7 +18,7 @@ public class UserDTO {
     public UserDTO() {
     }
 
-    public UserDTO(String id, String empId, String name, String orgName, String roleName, Long roleId, String ssoSystem,
+    public UserDTO(String id, String empId, String name, String orgName, String roleName, Long roleId, String system,
             String phone, String lastLogin, String status, String avatarUrl) {
         this.id = id;
         this.empId = empId;
@@ -26,7 +26,7 @@ public class UserDTO {
         this.orgName = orgName;
         this.roleName = roleName;
         this.roleId = roleId;
-        this.ssoSystem = ssoSystem;
+        this.system = system;
         this.phone = phone;
         this.lastLogin = lastLogin;
         this.status = status;
@@ -41,7 +41,7 @@ public class UserDTO {
                 u.getOrgName(),
                 u.getRoleName(),
                 u.getRoleId(),
-                u.getSsoSystem(),
+                u.getSystem(),
                 u.getPhone(),
                 u.getLastLogin(),
                 u.getStatus(),
@@ -61,7 +61,7 @@ public class UserDTO {
         u.setName(this.name);
         u.setOrgName(this.orgName);
         u.setRoleName(this.roleName);
-        u.setSsoSystem(this.ssoSystem);
+        u.setSystem(this.system);
         u.setPhone(this.phone);
         u.setLastLogin(this.lastLogin);
         u.setStatus(this.status);
@@ -117,12 +117,12 @@ public class UserDTO {
         this.roleName = roleName;
     }
 
-    public String getSsoSystem() {
-        return ssoSystem;
+    public String getSystem() {
+        return system;
     }
 
-    public void setSsoSystem(String ssoSystem) {
-        this.ssoSystem = ssoSystem;
+    public void setSystem(String system) {
+        this.system = system;
     }
 
     public String getPhone() {

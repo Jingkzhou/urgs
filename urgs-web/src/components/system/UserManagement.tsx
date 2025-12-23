@@ -237,14 +237,14 @@ const UserForm: React.FC<{
         orgName: initialData?.orgName || (safeOrgOptions[0] || ''),
         roleId: initialData?.roleId || (safeRoleOptions[0]?.id || ''), // Use roleId
         roleName: initialData?.roleName || (safeRoleOptions[0]?.name || ''),
-        ssoSystems: initialData?.ssoSystem ? initialData.ssoSystem.split(',').filter(Boolean) : [],
+        ssoSystems: initialData?.system ? initialData.system.split(',').filter(Boolean) : [],
         phone: initialData?.phone || '',
         status: initialData?.status || 'active',
     });
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSave({ ...formData, id: initialData?.id, ssoSystem: formData.ssoSystems.join(',') });
+        onSave({ ...formData, id: initialData?.id, system: formData.ssoSystems.join(',') });
     };
 
     return (
@@ -749,7 +749,7 @@ const UserManagement: React.FC = () => {
                                         </td>
                                         <td className="px-4 py-4 text-slate-500 font-mono text-xs">{user.phone}</td>
                                         <td className="px-4 py-4 text-slate-500 text-xs">
-                                            {user.ssoSystem ? user.ssoSystem.split(',').filter(Boolean).map((sso, idx) => (
+                                            {user.system ? user.system.split(',').filter(Boolean).map((sso, idx) => (
                                                 <span key={sso + idx} className="inline-flex items-center px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-100 mr-1 mb-1">
                                                     {sso}
                                                 </span>

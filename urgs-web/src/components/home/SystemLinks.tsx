@@ -12,7 +12,7 @@ interface SsoSystem {
 }
 
 interface AuthUser {
-  ssoSystem?: string;
+  system?: string;
   roleName?: string;
   // other properties
 }
@@ -34,7 +34,7 @@ const SystemLinks: React.FC = () => {
         if (user && user.roleName === 'admin') {
           setIsAdmin(true);
         }
-        allowedSystems = user?.ssoSystem ? user.ssoSystem.split(',') : [];
+        allowedSystems = user?.system ? user.system.split(',') : [];
       } catch (e) {
         console.error("Failed to parse user info in SystemLinks", e);
         // If parsing fails, treat as no user or no allowed systems

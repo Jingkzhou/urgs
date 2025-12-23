@@ -6,7 +6,7 @@ public class UserRequest {
     private String orgName;
     private String roleName;
     private Long roleId; // New
-    private String ssoSystem;
+    private String system;
     private String phone;
     private String lastLogin;
     private String status;
@@ -43,12 +43,12 @@ public class UserRequest {
         this.roleName = roleName;
     }
 
-    public String getSsoSystem() {
-        return ssoSystem;
+    public String getSystem() {
+        return system;
     }
 
-    public void setSsoSystem(String ssoSystem) {
-        this.ssoSystem = ssoSystem;
+    public void setSystem(String system) {
+        this.system = system;
     }
 
     public String getPhone() {

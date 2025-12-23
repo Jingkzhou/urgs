@@ -183,9 +183,44 @@ cp .env.example .env
 
 # 启动服务 (不需要 --build)
 docker-compose up -d
+# 启动服务 (不需要 --build)
+docker-compose up -d
+```
+
+### 增量更新 / 单独更新服务 (例如 urgs-api)
+
+如果只修复了某个服务的代码 (例如 `urgs-api`)，不需要重新部署所有服务。
+
+#### 1. 开发机：重新构建并导出该服务的镜像
+```bash
+# 只构建 urgs-api
+docker-compose build urgs-api
+
+# 导出 urgs-api 镜像
+docker save -o urgs-api-update.tar urgs-api:latest
+```
+
+#### 2. 传输文件
+将 `urgs-api-update.tar` 传输到生产服务器。
+
+#### 3. 生产服务器：更新服务
+```bash
+# 导入新镜像
+docker load -i urgs-api-update.tar
+
+# 重建并重启该服务 (Docker Compose 会自动检测到镜像变化)
+docker-compose up -d --no-deps urgs-api
 ```
 
 
+# 1. 停掉并删除所有容器
+docker rm -f $(docker ps -aq)
+
+# 2. 删除所有镜像
+docker rmi -f $(docker images -aq)
+
+# 3. 顺手清理缓存/网络/构建残留
+docker system prune -af
 
 ## 🤝 参与贡献
 

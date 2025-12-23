@@ -82,7 +82,7 @@ public class RoleController {
         role.setCode(req.getCode());
         role.setPermission(req.getPermission());
         role.setStatus(req.getStatus());
-        role.setRemark(req.getDesc());
+        role.setRemark(req.getDescription());
         role.setUserCount(req.getCount() == null ? 0 : req.getCount());
         return role;
     }

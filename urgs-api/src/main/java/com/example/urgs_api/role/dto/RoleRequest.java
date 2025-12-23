@@ -6,7 +6,7 @@ public class RoleRequest {
     private String code;
     private String permission;
     private String status;
-    private String desc;
+    private String description;
     private Integer count;
 
     public String getId() {
@@ -49,12 +49,12 @@ public class RoleRequest {
         this.status = status;
     }
 
-    public String getDesc() {
-        return desc;
+    public String getDescription() {
+        return description;
     }
 
-    public void setDesc(String desc) {
-        this.desc = desc;
+    public void setDescription(String description) {
+        this.description = description;
     }
 
     public Integer getCount() {

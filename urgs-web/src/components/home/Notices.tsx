@@ -22,7 +22,7 @@ const Notices: React.FC = () => {
       if (userStr) {
         const user = JSON.parse(userStr);
         userId = user.empId || 'admin';
-        systems = user.ssoSystem || '';
+        systems = user.system || '';
       }
 
       const queryParams = new URLSearchParams({

@@ -116,7 +116,7 @@ public class UserController {
         u.setOrgName(req.getOrgName());
         u.setRoleName(req.getRoleName());
         u.setRoleId(req.getRoleId()); // New: Map roleId
-        u.setSsoSystem(req.getSsoSystem());
+        u.setSystem(req.getSystem());
         u.setPhone(req.getPhone());
         u.setLastLogin(req.getLastLogin());
         u.setStatus(req.getStatus());

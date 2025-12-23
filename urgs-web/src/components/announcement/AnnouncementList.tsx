@@ -25,7 +25,7 @@ const AnnouncementList: React.FC = () => {
             let userId = 'admin';
             if (userStr) {
                 const user = JSON.parse(userStr);
-                systems = user.ssoSystem || '';
+                systems = user.system || '';
                 userId = user.empId || 'admin';
             }
 

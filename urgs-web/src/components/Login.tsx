@@ -72,7 +72,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 name: data.name,
                 roleName: data.roleName,
                 roleId: data.roleId,
-                ssoSystem: data.ssoSystem
+                system: data.system
             }));
 
             // Check for OAuth params
@@ -117,7 +117,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 name: data.name,
                 roleName: data.roleName,
                 roleId: data.roleId, // Added roleId
-                ssoSystem: data.ssoSystem
+                system: data.system
             });
         } catch (err: any) {
             console.error('Login error:', err);
