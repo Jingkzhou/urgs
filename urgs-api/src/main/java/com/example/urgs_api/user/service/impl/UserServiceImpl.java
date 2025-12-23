@@ -80,14 +80,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     @Override
     public java.util.List<User> searchUsers(String keyword) {
-        if (keyword == null || keyword.trim().isEmpty()) {
-            return list();
-        }
-        return list(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<User>()
-                .like("name", keyword)
-                .or()
-                .like("emp_id", keyword)
-                .or()
-                .like("role_name", keyword)); // Also search by role? Maybe useful.
+        return baseMapper.searchUsers(keyword);
     }
 }
