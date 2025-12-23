@@ -20,6 +20,7 @@ const ArkPage: React.FC = () => {
     const [agents, setAgents] = useState<any[]>([]);
     const [activeAgent, setActiveAgent] = useState<any | null>(null);
     const [sessions, setSessions] = useState<Session[]>([]);
+    const [loading, setLoading] = useState(true);
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -27,6 +28,7 @@ const ArkPage: React.FC = () => {
 
     // ... fetchAgents and useEffect remain same ...
     const fetchAgents = async () => {
+        // ... (omitted for brevity, assume same content) ...
         try {
             const allAgents = await getAgents();
             const userStr = localStorage.getItem('auth_user');
@@ -37,10 +39,6 @@ const ArkPage: React.FC = () => {
                 filtered = allAgents.filter(a => authorizedIds.includes(a.id));
             } else {
                 console.error('ArkPage: roleId is missing from userInfo! Current user state:', userInfo);
-                // Security: If roleId is missing, show NO specific agents to prevent privilege escalation.
-                // We keep 'filtered' empty unless there's a default "Universal Assistant" agent.
-                // Let's assume agents with no role requirement OR the one named '通用助手' are safe?
-                // For now, only show '通用助手' as a fallback.
                 filtered = allAgents.filter(a => a.name === '通用助手');
             }
             setAgents(filtered);
@@ -78,6 +76,7 @@ const ArkPage: React.FC = () => {
                     handleNewChat();
                 }
             }
+            setLoading(false);
         };
         init();
     }, []);
@@ -204,6 +203,14 @@ const ArkPage: React.FC = () => {
             setIsGenerating(false);
         }
     };
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-full bg-[#f8fbff]">
+                <div className="w-8 h-8 rounded-full border-4 border-slate-200 border-t-blue-600 animate-spin"></div>
+            </div>
+        );
+    }
 
     return (
         <div className="flex h-full bg-[#f8fbff] font-sans text-slate-800 overflow-hidden">

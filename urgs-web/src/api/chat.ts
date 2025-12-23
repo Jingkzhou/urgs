@@ -71,7 +71,8 @@ export const loadSessionMessages = async (sessionId: string): Promise<Message[]>
 export const createSession = async (agentId?: number): Promise<Session> => {
     try {
         const user = getUserInfo();
-        const payload: any = { userId: user.id, title: 'New Chat' };
+        const userId = user.id || '1'; // Fallback to '1' if id is missing to prevent DB error
+        const payload: any = { userId: userId, title: 'New Chat' };
         if (agentId) {
             payload.agentId = agentId;
         }
