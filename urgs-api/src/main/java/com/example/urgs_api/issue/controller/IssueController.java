@@ -25,10 +25,15 @@ public class IssueController {
             @RequestParam(defaultValue = "10") long size,
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "all") String status,
-            @RequestParam(defaultValue = "all") String issueType) {
+            @RequestParam(defaultValue = "all") String issueType,
+            @RequestParam(required = false) String system,
+            @RequestParam(required = false) String reporter,
+            @RequestParam(required = false) String startTime,
+            @RequestParam(required = false) String endTime) {
 
         Page<Issue> page = new Page<>(current, size);
-        Page<Issue> result = issueService.getIssueList(page, keyword, status, issueType);
+        Page<Issue> result = issueService.getIssueList(page, keyword, status, issueType, system, reporter, startTime,
+                endTime);
 
         return ResponseEntity.ok(PageResult.of(result));
     }

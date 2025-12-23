@@ -28,7 +28,8 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Override
-    public Page<Issue> getIssueList(Page<Issue> page, String keyword, String status, String issueType) {
+    public Page<Issue> getIssueList(Page<Issue> page, String keyword, String status, String issueType, String system,
+            String reporter, String startTime, String endTime) {
         LambdaQueryWrapper<Issue> wrapper = new LambdaQueryWrapper<>();
 
         if (StringUtils.hasText(keyword)) {
@@ -46,6 +47,30 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
 
         if (StringUtils.hasText(issueType) && !"all".equals(issueType)) {
             wrapper.eq(Issue::getIssueType, issueType);
+        }
+
+        if (StringUtils.hasText(system)) {
+            wrapper.eq(Issue::getSystem, system);
+        }
+
+        if (StringUtils.hasText(reporter)) {
+            wrapper.like(Issue::getReporter, reporter);
+        }
+
+        if (StringUtils.hasText(startTime)) {
+            try {
+                wrapper.ge(Issue::getOccurTime, LocalDateTime.parse(startTime + " 00:00:00", DATE_TIME_FORMATTER));
+            } catch (Exception e) {
+                // Ignore invalid date format
+            }
+        }
+
+        if (StringUtils.hasText(endTime)) {
+            try {
+                wrapper.le(Issue::getOccurTime, LocalDateTime.parse(endTime + " 23:59:59", DATE_TIME_FORMATTER));
+            } catch (Exception e) {
+                // Ignore invalid date format
+            }
         }
 
         wrapper.orderByDesc(Issue::getCreateTime);

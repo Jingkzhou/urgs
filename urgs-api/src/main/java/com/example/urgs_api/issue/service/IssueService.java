@@ -8,7 +8,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.multipart.MultipartFile;
 
 public interface IssueService extends IService<Issue> {
-    Page<Issue> getIssueList(Page<Issue> page, String keyword, String status, String issueType);
+    Page<Issue> getIssueList(Page<Issue> page, String keyword, String status, String issueType, String system,
+            String reporter, String startTime, String endTime);
 
     void importData(MultipartFile file);
 

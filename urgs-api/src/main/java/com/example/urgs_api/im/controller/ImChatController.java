@@ -1,6 +1,7 @@
 package com.example.urgs_api.im.controller;
 
 import com.example.urgs_api.im.entity.ImMessage;
+import com.example.urgs_api.im.vo.ImMessageVO;
 import com.example.urgs_api.im.service.ImChatService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -25,7 +26,7 @@ public class ImChatController {
     }
 
     @GetMapping("/history")
-    public List<ImMessage> getHistory(@RequestAttribute("userId") Long userId,
+    public List<ImMessageVO> getHistory(@RequestAttribute("userId") Long userId,
             @RequestParam String conversationId,
             @RequestParam(required = false) Long lastMsgId,
             @RequestParam(defaultValue = "20") int limit) {

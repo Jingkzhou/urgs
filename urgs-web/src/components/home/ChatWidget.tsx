@@ -142,33 +142,8 @@ const ChatWidget: React.FC = () => {
                     time: m.sendTime ? new Date(m.sendTime).toLocaleTimeString() : '',
                     isSelf: m.senderId === currentUser.userId,
                     type: m.msgType === 2 ? 'image' : 'text',
-                    senderName: (() => {
-                        if (m.senderId === currentUser.userId) return currentUser.wxId || 'Me';
-                        if (isGroup) {
-                            // Use local variable currentMembers for immediate access
-                            const member = currentMembers.find(gm => gm.userId === m.senderId);
-                            // Fallback to state or refs if needed, but currentMembers is freshest
-                            const user = availableUsers.find(u => u.userId === m.senderId);
-                            return member?.wxId || user?.wxId || ('User ' + m.senderId);
-                        } else {
-                            // Private chat: use session name
-                            const s = sessions.find(s => s.id === sid);
-                            return s?.name || ('User ' + m.senderId);
-                        }
-                    })(),
-                    senderAvatar: (() => {
-                        // Logic for avatar key to generate consistent colors/shapes if not real URL
-                        const key = m.senderId;
-                        // Real avatar if available
-                        if (m.senderId === currentUser.userId) return currentUser.avatarUrl;
-                        if (isGroup) {
-                            const member = currentMembers.find(gm => gm.userId === m.senderId);
-                            return member?.avatarUrl;
-                        } else {
-                            const s = sessions.find(s => s.id === sid);
-                            return s?.avatar;
-                        }
-                    })()
+                    senderName: m.senderName || (m.senderId === currentUser.userId ? (currentUser.wxId || 'Me') : ('User ' + m.senderId)),
+                    senderAvatar: m.senderAvatar || (m.senderId === currentUser.userId ? currentUser.avatarUrl : null)
                 }));
                 setMessages(prev => ({
                     ...prev,
@@ -186,12 +161,10 @@ const ChatWidget: React.FC = () => {
         try {
             const data = await imService.getSessions();
 
-            // Helper to enrich data
+            // Helper to enrich data (Only for Avatar fallback or Group name if needed)
             const getMeta = (id: number, type: number) => {
-                if (type === 2) return { name: '群聊', avatar: null }; // Fallback
-                if (id === 102) return { name: '李经理', avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop' };
-                if (id === 103) return { name: '智能助手', avatar: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=100&h=100&fit=crop' };
-                return { name: '用户 ' + id, avatar: null };
+                if (type === 2) return { name: '群聊', avatar: null };
+                return { name: '', avatar: null }; // No hardcoding
             };
 
             const uiSessions = data.map(s => {
@@ -236,28 +209,8 @@ const ChatWidget: React.FC = () => {
                     time: msg.sendTime ? new Date(msg.sendTime).toLocaleTimeString() : new Date().toLocaleTimeString(),
                     isSelf: msg.senderId === currentUser.userId,
                     type: msg.msgType === 2 ? 'image' : 'text',
-                    senderName: (() => {
-                        if (msg.senderId === currentUser.userId) return currentUser.wxId || 'Me';
-                        if (isGroup) {
-                            const member = groupMembersRef.current.find(gm => gm.userId === msg.senderId);
-                            const user = availableUsersRef.current.find(u => u.userId === msg.senderId);
-                            return member?.wxId || user?.wxId || ('User ' + msg.senderId);
-                        } else {
-                            const s = sessionsRef.current.find(s => s.id === (isGroup ? msg.groupId : msg.senderId));
-                            return s?.name || ('User ' + msg.senderId);
-                        }
-                    })(),
-                    senderAvatar: (() => {
-                        // Real avatar logic
-                        if (msg.senderId === currentUser.userId) return currentUser.avatarUrl;
-                        if (isGroup) {
-                            const member = groupMembersRef.current.find(gm => gm.userId === msg.senderId);
-                            return member?.avatarUrl;
-                        } else {
-                            const s = sessionsRef.current.find(s => s.id === (isGroup ? msg.groupId : msg.senderId));
-                            return s?.avatar;
-                        }
-                    })()
+                    senderName: msg.senderName || (msg.senderId === currentUser.userId ? (currentUser.wxId || 'Me') : ('User ' + msg.senderId)),
+                    senderAvatar: msg.senderAvatar || (msg.senderId === currentUser.userId ? currentUser.avatarUrl : null)
                 };
 
                 const conversationId = msg.conversationId || getConversationId(currentUser.userId, msg.senderId === currentUser.userId ? msg.receiverId : msg.senderId);
@@ -357,9 +310,17 @@ const ChatWidget: React.FC = () => {
             return s;
         }));
 
-        // Send to Backend
+        // Send to Backend (Sanitized Payload)
+        const payload = {
+            receiverId: session.id,
+            groupId: session.type === 'group' ? session.id : undefined,
+            content,
+            msgType: type === 'image' ? 2 : 1,
+            conversationId: getConversationId(currentUser.userId, session.id)
+        };
+
         try {
-            await imService.sendMessage(newMessage);
+            await imService.sendMessage(payload as any);
         } catch (e) {
             console.error('Send failed', e);
         }

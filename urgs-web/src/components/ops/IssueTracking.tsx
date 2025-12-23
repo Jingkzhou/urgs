@@ -29,6 +29,10 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
     const [frequency, setFrequency] = useState('month');
     const [filterStatus, setFilterStatus] = useState('all');
     const [filterType, setFilterType] = useState('all');
+    const [filterSystem, setFilterSystem] = useState('');
+    const [filterReporter, setFilterReporter] = useState('');
+    const [filterStartTime, setFilterStartTime] = useState('');
+    const [filterEndTime, setFilterEndTime] = useState('');
     const [keyword, setKeyword] = useState('');
     const [showModal, setShowModal] = useState(false);
     const [showDetailModal, setShowDetailModal] = useState(false);
@@ -71,6 +75,10 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                 status: filterStatus,
                 issueType: filterType,
             });
+            if (filterSystem) params.append('system', filterSystem);
+            if (filterReporter) params.append('reporter', filterReporter);
+            if (filterStartTime) params.append('startTime', filterStartTime);
+            if (filterEndTime) params.append('endTime', filterEndTime);
             if (keyword) {
                 params.append('keyword', keyword);
             }
@@ -93,7 +101,7 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
         } finally {
             setLoading(false);
         }
-    }, [currentPage, filterStatus, filterType, keyword]);
+    }, [currentPage, filterStatus, filterType, filterSystem, filterReporter, filterStartTime, filterEndTime, keyword]);
 
     useEffect(() => {
         fetchIssues();
@@ -456,23 +464,77 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
             {viewMode === 'list' && (
                 <>
                     {/* Header & Actions */}
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
-                        <div className="flex items-center gap-4 w-full sm:w-auto">
-                            <div className="flex items-center gap-2">
-                                <Filter size={16} className="text-slate-400" />
-                                <select
-                                    className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none"
-                                    value={filterStatus}
-                                    onChange={(e) => setFilterStatus(e.target.value)}
-                                >
-                                    <option value="all">所有状态</option>
-                                    <option value="新建">新建</option>
-                                    <option value="处理中">处理中</option>
-                                    <option value="完成">完成</option>
-                                    <option value="遗留">遗留</option>
-                                </select>
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            {/* System Filter */}
+                            <select
+                                className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none text-slate-600"
+                                value={filterSystem}
+                                onChange={(e) => setFilterSystem(e.target.value)}
+                            >
+                                <option value="">所有系统</option>
+                                {systems.map((sys: any) => (
+                                    <option key={sys.id} value={sys.name}>{sys.name}</option>
+                                ))}
+                            </select>
+
+                            {/* Issue Type Filter */}
+                            <select
+                                className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none text-slate-600"
+                                value={filterType}
+                                onChange={(e) => setFilterType(e.target.value)}
+                            >
+                                <option value="all">所有类型</option>
+                                <option value="批量任务处理">批量任务处理</option>
+                                <option value="报送支持">报送支持</option>
+                                <option value="数据查询">数据查询</option>
+                            </select>
+
+                            {/* Status Filter */}
+                            <select
+                                className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none text-slate-600"
+                                value={filterStatus}
+                                onChange={(e) => setFilterStatus(e.target.value)}
+                            >
+                                <option value="all">所有状态</option>
+                                <option value="新建">新建</option>
+                                <option value="处理中">处理中</option>
+                                <option value="完成">完成</option>
+                                <option value="遗留">遗留</option>
+                            </select>
+
+                            {/* Reporter Filter */}
+                            <input
+                                type="text"
+                                placeholder="提出人姓名..."
+                                className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none"
+                                value={filterReporter}
+                                onChange={(e) => setFilterReporter(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-4 items-center">
+                            {/* Time Range */}
+                            <div className="flex items-center gap-2 text-sm text-slate-600 whitespace-nowrap">
+                                <Clock size={16} className="text-slate-400" />
+                                <span>发生时间:</span>
+                                <input
+                                    type="date"
+                                    className="border border-slate-200 rounded-md py-1.5 px-2 text-sm focus:ring-2 focus:ring-red-500 outline-none"
+                                    value={filterStartTime}
+                                    onChange={(e) => setFilterStartTime(e.target.value)}
+                                />
+                                <span>至</span>
+                                <input
+                                    type="date"
+                                    className="border border-slate-200 rounded-md py-1.5 px-2 text-sm focus:ring-2 focus:ring-red-500 outline-none"
+                                    value={filterEndTime}
+                                    onChange={(e) => setFilterEndTime(e.target.value)}
+                                />
                             </div>
-                            <div className="relative flex-1 sm:w-64">
+
+                            {/* Keyword Search (Expanded) */}
+                            <div className="relative flex-1 w-full">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                 <input
                                     type="text"
