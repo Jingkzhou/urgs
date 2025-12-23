@@ -34,7 +34,7 @@ services:
     volumes:
       - ./urgs-api/uploads:/app/uploads
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:172.17.0.1"
 
   urgs-executor:
     build: ./urgs-executor
@@ -49,7 +49,7 @@ services:
     networks:
       - urgs-net
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:172.17.0.1"
 
   urgs-rag:
     build: ./urgs-rag
