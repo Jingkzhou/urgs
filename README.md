@@ -112,6 +112,45 @@ uvicorn app.main:app --reload --port 8001
     docker-compose up -d --build
     ```
 
+### 生产环境部署 (离线导入镜像)
+
+如果生产服务器无法直接构建镜像，可先在开发机导出镜像，再导入生产环境。
+
+#### 1. 开发机：构建并导出镜像
+```bash
+# 构建所有镜像
+docker-compose build
+
+# 导出镜像为 tar 文件
+docker save -o urgs-images.tar \
+  urgs-api:latest \
+  urgs-executor:latest \
+  urgs-web:latest \
+  urgs-rag:latest \
+  sql-lineage-engine:latest \
+  neo4j:5.15.0
+```
+
+#### 2. 传输文件到生产服务器
+将以下文件传输到生产服务器：
+- `urgs-images.tar` (镜像包)
+- `docker-compose.yml`
+- `.env.example` (复制为 `.env` 后修改)
+
+#### 3. 生产服务器：导入镜像并启动
+```bash
+# 导入镜像
+docker load -i urgs-images.tar
+
+# 配置环境变量
+cp .env.example .env
+# 编辑 .env 文件，设置生产数据库地址等
+
+# 启动服务 (不需要 --build)
+docker-compose up -d
+```
+
+
 
 ## 🤝 参与贡献
 
@@ -119,6 +158,7 @@ uvicorn app.main:app --reload --port 8001
 2.  新建 Feat_xxx 分支
 3.  提交代码
 4.  新建 Pull Request
+
 
 ## 📄 许可证
 

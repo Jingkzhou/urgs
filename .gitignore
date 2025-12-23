@@ -61,3 +61,4 @@ logs/
 # 大型数据备份文件 (大型 SQL 文件建议手动管理，不一定全部忽略)
 # migrated_urgs_data.sql
 # t_quartz_task.sql
+urgs-images.tar
