@@ -56,6 +56,27 @@ const App: React.FC = () => {
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [changePasswordVisible, setChangePasswordVisible] = useState(false);
 
+    // Click outside handler for user menu
+    const userMenuRef = React.useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (showUserMenu && userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+                setShowUserMenu(false);
+            }
+        };
+        // Use mousedown to capture the event before click (optional, but robust)
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showUserMenu]);
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            setShowUserMenu(false);
+        }
+    }, [isAuthenticated]);
+
     useEffect(() => {
         if (initialToken) {
             fetchPermissions(initialToken);
@@ -123,6 +144,7 @@ const App: React.FC = () => {
         localStorage.removeItem('auth_user');
         setIsAuthenticated(false);
         setUserInfo(null);
+        setShowUserMenu(false);
     };
 
     const handleMenuSettings = () => {
@@ -248,7 +270,7 @@ const App: React.FC = () => {
                                 <p className="text-xs text-slate-500">{userInfo?.roleName || '吉林银行总行'}</p>
                             </div>
                             {layoutMode === 'topbar' ? (
-                                <div className="relative">
+                                <div className="relative" ref={userMenuRef}>
                                     <button
                                         onClick={() => setShowUserMenu(!showUserMenu)}
                                         className="group relative focus:outline-none"

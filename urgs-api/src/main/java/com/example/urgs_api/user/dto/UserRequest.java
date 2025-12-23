@@ -1,7 +1,17 @@
 package com.example.urgs_api.user.dto;
 
 public class UserRequest {
+    private Long id;
     private String empId;
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
     private String name;
     private String orgName;
     private String roleName;

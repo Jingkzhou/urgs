@@ -22,11 +22,12 @@ const API_BASE = '/api/ai';
 // Helper to get current user from token or fall back
 const getUserInfo = () => {
     try {
-        const userStr = localStorage.getItem('user_info');
+        const userStr = localStorage.getItem('auth_user');
         if (userStr) {
             return JSON.parse(userStr);
         }
     } catch (e) { }
+    // Fallback or return null if strict
     return { id: '1' };
 };
 
