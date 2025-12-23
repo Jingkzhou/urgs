@@ -19,13 +19,14 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL_NAME: str = "shibing624/text2vec-base-chinese"
     EMBEDDING_DEVICE: str = "cpu"
     
-    # LLM 配置（如果直接从 RAG 调用，用于 SQL 转文本解释等）
+    # LLM 配置（通过环境变量覆盖）
     LLM_API_BASE: str = "http://25.64.32.35:18085/v1"
     LLM_MODEL: str = "qwen3"
     LLM_API_KEY: str = "sk-xxx"
 
     # Java 后端 API 配置
     URGS_API_BASE_URL: str = "http://localhost:8080"
+
 
     class Config:
         env_file = ".env"

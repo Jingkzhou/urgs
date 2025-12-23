@@ -59,6 +59,11 @@ services:
       NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
       CHROMA_PERSIST_DIRECTORY: /app/data/chroma
       APP_ENV: ${APP_ENV}
+      LLM_API_BASE: ${LLM_API_BASE}
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_API_KEY: ${LLM_API_KEY}
+      URGS_API_BASE_URL: http://urgs-api:8080
+
     ports:
       - "${HOST_PORT_RAG}:8001"
     depends_on:
