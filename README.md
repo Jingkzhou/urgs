@@ -44,10 +44,45 @@ docker-compose up -d
 | **MySQL** | `localhost:3306` | root / a8548879 (库: urgs_dev) |
 
 > 💡 **提示**: 
-> - 生产环境部署请参考下方 [生产环境配置](#生产环境配置) 章节。
+> - 生产环境部署请参考下方 [环境配置](#️-环境配置) 章节。
 > - 构建 Python 镜像时已配置清华源镜像加速。
 
+### 4. 服务调用说明
+
+#### urgs-api / urgs-executor / urgs-web / urgs-rag
+这些服务在 `docker-compose up -d` 后自动启动，无需手动干预。
+
+```bash
+# 查看服务日志
+docker-compose logs -f urgs-api
+docker-compose logs -f urgs-executor
+docker-compose logs -f urgs-rag
+
+# 重启单个服务
+docker-compose restart urgs-api
+```
+
+#### sql-lineage-engine (SQL 血缘分析)
+该服务是命令行工具，需通过 `docker exec` 调用：
+
+```bash
+# 解析单条 SQL 并导出到 Neo4j
+docker exec -it urgs-sql-lineage-engine-1 ./run.sh parse-sql \
+  --sql "INSERT INTO B SELECT * FROM A" \
+  --dialect mysql \
+  --output neo4j
+
+# 批量解析目录中的 SQL 文件
+docker exec -it urgs-sql-lineage-engine-1 ./run.sh parse-sql \
+  --file ./tests/sql/ \
+  --output json
+
+# 或使用 docker-compose run (一次性执行)
+docker-compose run --rm sql-lineage-engine parse-sql --help
+```
+
 ---
+
 
 ## 💻 本地开发指南
 
