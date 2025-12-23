@@ -93,20 +93,25 @@ uvicorn app.main:app --reload --port 8001
 
 ---
 
-## ⚙️ 生产环境配置
+## ⚙️ 环境配置
 
-如需部署生产环境（Prod）：
+所有环境相关的配置均通过根目录下的 `.env` 文件进行统一管理。Docker Compose 会自动读取该文件并将变量注入到各服务容器中。
 
-1.  **修改环境变量**: 
-    在 `docker-compose.yml` 中，将 `urgs-api` 和 `urgs-executor` 的 `SPRING_PROFILES_ACTIVE` 从 `dev` 改为 `prod`。
-    
-2.  **配置生产参数**:
-    确保 `urgs-api/src/main/resources/config/prod/application.properties` 中配置了正确的生产数据库地址。
+### 配置步骤
 
-3.  **重新部署**:
+1.  **复制模板文件**:
+    ```bash
+    cp .env.example .env
+    ```
+
+2.  **修改 `.env` 文件**:
+    根据您的部署环境（开发、测试、生产），修改 `.env` 文件中的数据库地址、端口、密码等配置项。
+
+3.  **启动服务**:
     ```bash
     docker-compose up -d --build
     ```
+
 
 ## 🤝 参与贡献
 
