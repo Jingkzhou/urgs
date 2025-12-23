@@ -1,0 +1,9 @@
+langchain
+langchain-community
+langchain-openai
+sqlglot
+neo4j
+python-dotenv
+requests
+pydantic
+JPype1

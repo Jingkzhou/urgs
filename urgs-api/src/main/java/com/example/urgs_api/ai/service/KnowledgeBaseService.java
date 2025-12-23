@@ -1,0 +1,298 @@
+package com.example.urgs_api.ai.service;
+
+import com.example.urgs_api.ai.entity.KnowledgeBase;
+import com.example.urgs_api.ai.entity.KnowledgeFile;
+import com.example.urgs_api.ai.repository.KnowledgeBaseRepository;
+import com.example.urgs_api.ai.repository.KnowledgeFileRepository;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import org.springframework.scheduling.annotation.Async;
+
+@Service
+public class KnowledgeBaseService {
+
+    @Autowired
+    private KnowledgeBaseRepository kbRepository;
+
+    @Autowired
+    private KnowledgeFileRepository fileRepository;
+
+    private final String DOC_STORE_PATH = "/Users/work/Documents/gitee/urgs/urgs-rag/doc_store";
+    private final String PYTHON_RAG_URL = "http://localhost:8001/api/rag";
+    private final String DEFAULT_EMBEDDING_MODEL = "shibing624/text2vec-base-chinese";
+
+    private final RestTemplate restTemplate = new RestTemplate();
+
+    public List<KnowledgeBase> listKBs() {
+        syncExistingKBs();
+        return kbRepository.selectList(new QueryWrapper<KnowledgeBase>().orderByDesc("id"));
+    }
+
+    private void syncExistingKBs() {
+        Path root = Paths.get(DOC_STORE_PATH);
+        if (!Files.exists(root))
+            return;
+
+        try (Stream<Path> stream = Files.list(root)) {
+            stream.filter(Files::isDirectory).forEach(path -> {
+                String name = path.getFileName().toString();
+                KnowledgeBase existing = kbRepository.selectOne(new QueryWrapper<KnowledgeBase>().eq("name", name));
+                if (existing == null) {
+                    KnowledgeBase kb = new KnowledgeBase();
+                    kb.setName(name);
+                    kb.setCollectionName(name);
+                    kb.setEmbeddingModel(DEFAULT_EMBEDDING_MODEL);
+                    kb.setDescription("Auto-discovered from filesystem");
+                    kb.setCreatedAt(new Date());
+                    kbRepository.insert(kb);
+
+                    // Sync files for this new KB
+                    syncFilesForKB(kb);
+                } else {
+                    syncFilesForKB(existing);
+                }
+            });
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void syncFilesForKB(KnowledgeBase kb) {
+        Path dir = Paths.get(DOC_STORE_PATH, kb.getName());
+        if (!Files.exists(dir))
+            return;
+
+        try (Stream<Path> stream = Files.list(dir)) {
+            stream.filter(f -> !Files.isDirectory(f)).forEach(f -> {
+                String fileName = f.getFileName().toString();
+                KnowledgeFile existing = fileRepository.selectOne(new QueryWrapper<KnowledgeFile>()
+                        .eq("kb_id", kb.getId()).eq("file_name", fileName));
+                if (existing == null) {
+                    KnowledgeFile kf = new KnowledgeFile();
+                    kf.setKbId(kb.getId());
+                    kf.setFileName(fileName);
+                    try {
+                        kf.setFileSize(Files.size(f));
+                    } catch (IOException ignored) {
+                    }
+                    kf.setStatus("UPLOADED");
+                    kf.setUploadTime(new Date());
+                    fileRepository.insert(kf);
+                }
+            });
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void uploadFile(String kbName, MultipartFile file) throws IOException {
+        KnowledgeBase kb = kbRepository.selectOne(new QueryWrapper<KnowledgeBase>().eq("name", kbName));
+        if (kb == null)
+            throw new RuntimeException("Knowledge Base not found: " + kbName);
+
+        Path uploadDir = Paths.get(DOC_STORE_PATH, kbName);
+        if (!Files.exists(uploadDir)) {
+            Files.createDirectories(uploadDir);
+        }
+        String fileName = file.getOriginalFilename();
+        Path dest = uploadDir.resolve(fileName);
+        file.transferTo(dest);
+
+        // Record in DB
+        KnowledgeFile existing = fileRepository.selectOne(new QueryWrapper<KnowledgeFile>()
+                .eq("kb_id", kb.getId()).eq("file_name", fileName));
+        if (existing == null) {
+            KnowledgeFile kf = new KnowledgeFile();
+            kf.setKbId(kb.getId());
+            kf.setFileName(fileName);
+            kf.setFileSize(file.getSize());
+            kf.setStatus("UPLOADED");
+            kf.setUploadTime(new Date());
+            fileRepository.insert(kf);
+        } else {
+            existing.setFileSize(file.getSize());
+            existing.setStatus("UPLOADED"); // Reset status if re-uploaded
+            existing.setUploadTime(new Date());
+            fileRepository.updateById(existing);
+        }
+    }
+
+    public List<KnowledgeFile> listFiles(String kbName) {
+        KnowledgeBase kb = kbRepository.selectOne(new QueryWrapper<KnowledgeBase>().eq("name", kbName));
+        if (kb == null)
+            return new ArrayList<>();
+
+        return fileRepository.selectList(new QueryWrapper<KnowledgeFile>()
+                .eq("kb_id", kb.getId())
+                .eq("is_deleted", 0)
+                .orderByDesc("upload_time"));
+    }
+
+    public void deleteFile(String kbName, String fileName) throws IOException {
+        KnowledgeBase kb = kbRepository.selectOne(new QueryWrapper<KnowledgeBase>().eq("name", kbName));
+        if (kb != null) {
+            fileRepository.delete(new QueryWrapper<KnowledgeFile>()
+                    .eq("kb_id", kb.getId()).eq("file_name", fileName));
+        }
+        Path file = Paths.get(DOC_STORE_PATH, kbName, fileName);
+        Files.deleteIfExists(file);
+    }
+
+    public KnowledgeBase createKB(KnowledgeBase kb) {
+        if (kb.getCollectionName() == null || kb.getCollectionName().isEmpty()) {
+            kb.setCollectionName(kb.getName());
+        }
+        if (kb.getEmbeddingModel() == null || kb.getEmbeddingModel().isEmpty()) {
+            kb.setEmbeddingModel(DEFAULT_EMBEDDING_MODEL);
+        }
+        kb.setCreatedAt(new Date());
+        kbRepository.insert(kb);
+        return kb;
+    }
+
+    public void deleteKB(Long id) {
+        kbRepository.deleteById(id);
+    }
+
+    public Map<String, Object> ingestFiles(String kbName, List<String> fileNames) {
+        KnowledgeBase kb = kbRepository.selectOne(new QueryWrapper<KnowledgeBase>().eq("name", kbName));
+        if (kb == null)
+            throw new RuntimeException("Knowledge Base not found");
+
+        List<KnowledgeFile> files = fileRepository.selectList(new QueryWrapper<KnowledgeFile>()
+                .eq("kb_id", kb.getId()).in("file_name", fileNames));
+
+        if (files.isEmpty())
+            throw new RuntimeException("No file records found");
+
+        // 1. Update all to VECTORIZING
+        for (KnowledgeFile file : files) {
+            file.setStatus("VECTORIZING");
+            file.setErrorMessage(null);
+            fileRepository.updateById(file);
+        }
+
+        // 2. Start Async process
+        performAsyncIngestion(kb, files, fileNames);
+
+        Map<String, Object> result = new java.util.HashMap<>();
+        result.put("status", "success");
+        result.put("message", "Batch ingestion started in background for " + files.size() + " files.");
+        return result;
+    }
+
+    @Async("aiTaskExecutor")
+    public void performAsyncIngestion(KnowledgeBase kb, List<KnowledgeFile> files, List<String> fileNames) {
+        // Sort files by priority (desc) then hit_count (desc)
+        List<KnowledgeFile> sortedFiles = files.stream()
+                .sorted((a, b) -> {
+                    int pComp = Integer.compare(
+                            b.getPriority() != null ? b.getPriority() : 0,
+                            a.getPriority() != null ? a.getPriority() : 0);
+                    if (pComp != 0)
+                        return pComp;
+                    return Integer.compare(
+                            b.getHitCount() != null ? b.getHitCount() : 0,
+                            a.getHitCount() != null ? a.getHitCount() : 0);
+                })
+                .collect(Collectors.toList());
+
+        String kbName = kb.getName();
+        for (KnowledgeFile file : sortedFiles) {
+            try {
+                // Call Python Backend for individual file to track progress more granularly
+                String url = PYTHON_RAG_URL + "/ingest?collection_name=" + kbName + "&filenames=" + file.getFileName();
+                @SuppressWarnings("rawtypes")
+                ResponseEntity<Map> response = restTemplate.postForEntity(url, null, Map.class);
+                @SuppressWarnings("unchecked")
+                Map<String, Object> body = (Map<String, Object>) response.getBody();
+
+                if (body != null && "success".equals(body.get("status"))) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Integer> fileStats = (Map<String, Integer>) body.get("file_stats");
+                    UpdateWrapper<KnowledgeFile> uw = new UpdateWrapper<>();
+                    uw.eq("id", file.getId())
+                            .set("status", "COMPLETED")
+                            .set("vector_time", new Date())
+                            .setSql("error_message = NULL")
+                            .set("chunk_count", (fileStats != null && fileStats.containsKey(file.getFileName()))
+                                    ? fileStats.get(file.getFileName())
+                                    : 0);
+                    fileRepository.update(null, uw);
+                } else {
+                    file.setStatus("FAILED");
+                    file.setErrorMessage(body != null ? (String) body.get("message") : "Ingestion failed");
+                    fileRepository.updateById(file);
+                }
+            } catch (Exception e) {
+                file.setStatus("FAILED");
+                file.setErrorMessage(e.getMessage());
+                fileRepository.updateById(file);
+            }
+        }
+    }
+
+    public Map<String, Object> ingestFile(String kbName, String fileName) {
+        return ingestFiles(kbName, List.of(fileName));
+    }
+
+    public Map<String, Object> triggerIngestion(String kbName) {
+        String url = PYTHON_RAG_URL + "/ingest?collection_name=" + kbName;
+        try {
+            @SuppressWarnings("rawtypes")
+            ResponseEntity<Map> response = restTemplate.postForEntity(url, null, Map.class);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            return body;
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException("Failed to trigger ingestion: " + e.getMessage());
+        }
+    }
+
+    public Map<String, Object> resetKB(String kbName) {
+        KnowledgeBase kb = kbRepository.selectOne(new QueryWrapper<KnowledgeBase>().eq("name", kbName));
+        if (kb == null)
+            throw new RuntimeException("Knowledge Base not found");
+
+        // 1. Call Python Reset
+        String url = PYTHON_RAG_URL + "/reset?collection_name=" + kbName;
+        try {
+            @SuppressWarnings("rawtypes")
+            ResponseEntity<Map> response = restTemplate.postForEntity(url, null, Map.class);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+
+            if (body != null && "success".equals(body.get("status"))) {
+                // 2. Clear File Status in DB
+                KnowledgeFile update = new KnowledgeFile();
+                update.setStatus("UPLOADED");
+                update.setChunkCount(0);
+                update.setTokenCount(0);
+                update.setVectorTime(null);
+                update.setErrorMessage(null);
+
+                fileRepository.update(update, new QueryWrapper<KnowledgeFile>().eq("kb_id", kb.getId()));
+            }
+            return body;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to reset knowledge base: " + e.getMessage());
+        }
+    }
+}

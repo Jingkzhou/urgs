@@ -1,0 +1,12 @@
+-- 手动执行（或在 CI/初始化脚本中执行），创建功能点表
+CREATE TABLE IF NOT EXISTS sys_permission (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    code VARCHAR(128) NOT NULL UNIQUE,
+    type VARCHAR(16) NOT NULL COMMENT 'dir|menu|button',
+    path VARCHAR(256),
+    level INT,
+    parent_id VARCHAR(128),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);

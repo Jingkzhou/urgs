@@ -1,0 +1,38 @@
+-- 角色表
+CREATE TABLE IF NOT EXISTS sys_role (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    code VARCHAR(128) NOT NULL UNIQUE,
+    permission VARCHAR(128),
+    status VARCHAR(16) DEFAULT 'active',
+    remark VARCHAR(512),
+    user_count INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- 角色-权限关联表
+CREATE TABLE IF NOT EXISTS sys_role_permission (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    role_id BIGINT NOT NULL,
+    perm_code VARCHAR(128) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_role_perm (role_id, perm_code)
+);
+
+-- 用户表
+CREATE TABLE IF NOT EXISTS sys_user (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    emp_id VARCHAR(64) NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    org_name VARCHAR(128),
+    role_name VARCHAR(128),
+    sso_system VARCHAR(128),
+    phone VARCHAR(64),
+    last_login VARCHAR(64),
+    status VARCHAR(16) DEFAULT 'active',
+    password VARCHAR(128) DEFAULT '123456',
+    UNIQUE KEY uk_emp_id (emp_id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);

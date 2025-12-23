@@ -1,0 +1,83 @@
+CREATE TABLE IF NOT EXISTS `model_directory` (
+    `id` VARCHAR(32) NOT NULL COMMENT '目录ID',
+    `name` VARCHAR(100) NOT NULL COMMENT '目录名称',
+    `parent_id` VARCHAR(32) DEFAULT NULL COMMENT '父目录ID',
+    `sort_order` INT DEFAULT 0 COMMENT '排序',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型目录表';
+
+CREATE TABLE IF NOT EXISTS `model_table` (
+    `id` VARCHAR(32) NOT NULL COMMENT '表ID',
+    `name` VARCHAR(100) NOT NULL COMMENT '表名',
+    `cn_name` VARCHAR(100) DEFAULT NULL COMMENT '中文名称',
+    `directory_id` VARCHAR(32) DEFAULT NULL COMMENT '所属目录ID',
+    `data_source_id` BIGINT(20) DEFAULT NULL COMMENT '数据源ID',
+    `owner` VARCHAR(100) DEFAULT NULL COMMENT '所属用户/Schema',
+    `requirement` VARCHAR(50) DEFAULT NULL COMMENT '需求编号',
+    `subject_code` VARCHAR(50) DEFAULT NULL COMMENT '科目号',
+    `subject_name` VARCHAR(100) DEFAULT NULL COMMENT '科目中文名',
+    `theme` VARCHAR(100) DEFAULT NULL COMMENT '业务主题',
+    `business_scope` VARCHAR(100) DEFAULT NULL COMMENT '业务范围',
+    `freq` VARCHAR(20) DEFAULT NULL COMMENT '报送频度',
+    `version` VARCHAR(20) DEFAULT NULL COMMENT '版本',
+    `retention_time` VARCHAR(50) DEFAULT NULL COMMENT '保留时间',
+    `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_model_table_source_owner` (`data_source_id`, `owner`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型表信息';
+
+CREATE TABLE IF NOT EXISTS `maintenance_record` (
+    `id` VARCHAR(32) NOT NULL COMMENT '记录ID',
+    `table_name` VARCHAR(100) DEFAULT NULL COMMENT '表名',
+    `table_cn_name` VARCHAR(100) DEFAULT NULL COMMENT '表中文名',
+    `mod_type` VARCHAR(50) DEFAULT NULL COMMENT '修改类型',
+    `field_name` VARCHAR(100) DEFAULT NULL COMMENT '字段名称',
+    `field_cn_name` VARCHAR(100) DEFAULT NULL COMMENT '字段中文名',
+    `time` DATETIME DEFAULT NULL COMMENT '操作时间',
+    `planned_date` DATE DEFAULT NULL COMMENT '计划上线日期',
+    `operator` VARCHAR(50) DEFAULT NULL COMMENT '操作人',
+    `req_id` VARCHAR(50) DEFAULT NULL COMMENT '需求编号',
+    `description` VARCHAR(500) DEFAULT NULL COMMENT '变更描述',
+    `script` TEXT DEFAULT NULL COMMENT '执行脚本',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='维护记录表';
+
+CREATE TABLE IF NOT EXISTS `model_field` (
+    `id` VARCHAR(32) NOT NULL COMMENT '字段ID',
+    `table_id` VARCHAR(32) NOT NULL COMMENT '所属表ID',
+    `name` VARCHAR(100) NOT NULL COMMENT '字段名称',
+    `cn_name` VARCHAR(100) DEFAULT NULL COMMENT '中文名称',
+    `type` VARCHAR(100) DEFAULT NULL COMMENT '字段类型',
+    `is_pk` TINYINT(1) DEFAULT 0 COMMENT '是否主键',
+    `nullable` TINYINT(1) DEFAULT 1 COMMENT '是否可空',
+    `domain` VARCHAR(100) DEFAULT NULL COMMENT '值域',
+    `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
+    `sort_order` INT DEFAULT 0 COMMENT '排序',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型字段表';
+
+CREATE TABLE IF NOT EXISTS `code_directory` (
+    `id` VARCHAR(32) NOT NULL COMMENT 'ID',
+    `table_code` VARCHAR(50) NOT NULL COMMENT '码表编号',
+    `table_name` VARCHAR(100) NOT NULL COMMENT '码表名称',
+    `sort_order` INT DEFAULT 0 COMMENT '排序号',
+    `code` VARCHAR(50) NOT NULL COMMENT '代码',
+    `name` VARCHAR(100) NOT NULL COMMENT '名称',
+    `parent_code` VARCHAR(50) DEFAULT NULL COMMENT '上级代码',
+    `level` VARCHAR(20) DEFAULT NULL COMMENT '代码级别',
+    `description` VARCHAR(500) DEFAULT NULL COMMENT '特别说明',
+    `start_date` DATE DEFAULT NULL COMMENT '启用日期',
+    `end_date` DATE DEFAULT NULL COMMENT '废止日期',
+    `standard` VARCHAR(100) DEFAULT NULL COMMENT '执行标准',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='码表管理';

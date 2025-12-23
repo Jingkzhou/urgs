@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar for a cleaner look */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Highlight.js SQL Syntax Theme (Dark) */
+.hljs-keyword {
+  color: #c792ea;
+  font-weight: 500;
+}
+.hljs-string {
+  color: #c3e88d;
+}
+.hljs-number {
+  color: #f78c6c;
+}
+.hljs-built_in,
+.hljs-type {
+  color: #82aaff;
+}
+.hljs-comment {
+  color: #636c83;
+  font-style: italic;
+}
+.hljs-operator {
+  color: #89ddff;
+}
+.hljs-variable {
+  color: #f07178;
+}
+.hljs-function {
+  color: #ffcb6b;
+}
+.hljs-title {
+  color: #82aaff;
+}
+.hljs-params {
+  color: #e2e8f0;
+}

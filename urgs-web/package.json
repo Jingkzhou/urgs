@@ -1,0 +1,51 @@
+{
+  "name": "finregulate-portal",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.1.0",
+    "@monaco-editor/react": "^4.7.0",
+    "@types/dagre": "^0.7.53",
+    "@types/uuid": "^10.0.0",
+    "@wangeditor/editor": "^5.1.23",
+    "@wangeditor/editor-for-react": "^1.0.6",
+    "antd": "^6.0.0",
+    "axios": "^1.13.2",
+    "dagre": "^0.8.5",
+    "date-fns": "^4.1.0",
+    "framer-motion": "^12.23.26",
+    "highlight.js": "^11.11.1",
+    "katex": "^0.16.27",
+    "lucide-react": "^0.554.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-is": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^16.1.0",
+    "reactflow": "^11.11.4",
+    "recharts": "^3.5.0",
+    "rehype-highlight": "^7.0.2",
+    "rehype-katex": "^7.0.1",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.22",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.13",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

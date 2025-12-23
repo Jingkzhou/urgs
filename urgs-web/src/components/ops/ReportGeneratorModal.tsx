@@ -1,0 +1,223 @@
+import React, { useState, useEffect } from 'react';
+import { Modal, Button, message, Spin, Card } from 'antd';
+import { Sparkles, Copy, RefreshCw, FileText } from 'lucide-react';
+
+interface ReportGeneratorModalProps {
+    open: boolean;
+    onCancel: () => void;
+    data: any; // The stats data
+}
+
+const ReportGeneratorModal: React.FC<ReportGeneratorModalProps> = ({ open, onCancel, data }) => {
+    const [loading, setLoading] = useState(false);
+    const [report, setReport] = useState('');
+    const [isStreaming, setIsStreaming] = useState(false);
+    const endRef = React.useRef<HTMLDivElement>(null);
+
+    // Auto-scroll to bottom when report updates
+    useEffect(() => {
+        if (isStreaming) {
+            endRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [report, isStreaming]);
+
+    const generateReport = async () => {
+        if (!data) return;
+
+        setLoading(true);
+        setReport(''); // Clear previous report
+        setIsStreaming(true);
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            const response = await fetch('/api/ai/chat/stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    systemPrompt: "你是一个专业的运维经理。请根据提供的数据生成一份格式清晰的运维工作报告。使用 Markdown 格式（标题、列表、加粗）。报告应包含：1. 概览 2. 关键指标趋势 3. 问题分布分析 4. 改进建议。",
+                    userPrompt: `以下是当前的运维统计数据：\n${JSON.stringify(data, null, 2)}`
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to start generation');
+            }
+
+            // Set loading to false once stream starts
+            setLoading(false);
+
+            const reader = response.body?.getReader();
+            const decoder = new TextDecoder();
+
+            if (!reader) return;
+
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                buffer += chunk;
+
+                const lines = buffer.split('\n');
+                // Keep the last line in buffer if it's potentially incomplete
+                // (SSE events end with double newline, but we split by single newline here)
+                // Actually simpler: process all complete lines (ending in \n), keep remainder.
+
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    const trimmedLine = line.trim();
+                    if (!trimmedLine) continue;
+
+                    if (trimmedLine.startsWith('data:')) {
+                        // Handle "data: " or "data:"
+                        const dataStr = trimmedLine.replace(/^data:\s?/, '').trim();
+                        if (dataStr === '[DONE]') break;
+
+                        try {
+                            const parsed = JSON.parse(dataStr);
+                            if (parsed.content) {
+                                setReport(prev => prev + parsed.content);
+                            } else if (parsed.error) {
+                                message.error('生成出错: ' + parsed.error);
+                            }
+                        } catch (e) {
+                            console.error('JSON parse error', e);
+                        }
+                    }
+                }
+            }
+
+        } catch (error) {
+            console.error('Generation failed:', error);
+            message.error('生成失败，请重试');
+            setLoading(false);
+        } finally {
+            setIsStreaming(false);
+            setLoading(false);
+        }
+    };
+
+    // Auto generate when opened if empty
+    useEffect(() => {
+        if (open && !report) {
+            generateReport();
+        }
+    }, [open]);
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(report);
+        message.success('已复制到剪贴板');
+    };
+
+    return (
+        <Modal
+            title={
+                <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-purple-600" />
+                    <span className="font-bold">AI 智能工作报告</span>
+                </div>
+            }
+            open={open}
+            onCancel={onCancel}
+            width={800}
+            footer={[
+                <Button key="close" onClick={onCancel}>关闭</Button>,
+                <Button
+                    key="copy"
+                    icon={<Copy size={16} />}
+                    onClick={handleCopy}
+                    disabled={!report}
+                >
+                    复制报告
+                </Button>,
+                <Button
+                    key="regenerate"
+                    type="primary"
+                    icon={<RefreshCw size={16} />}
+                    onClick={generateReport}
+                    loading={loading || isStreaming}
+                >
+                    重新生成
+                </Button>
+            ]}
+        >
+            <div className="min-h-[400px] max-h-[60vh] overflow-y-auto">
+                {loading && !report ? (
+                    <div className="flex flex-col items-center justify-center h-full py-12 space-y-4">
+                        <div className="relative">
+                            <div className="absolute inset-0 bg-purple-200 rounded-full animate-ping opacity-75"></div>
+                            <div className="relative bg-purple-100 p-4 rounded-full">
+                                <Sparkles className="w-8 h-8 text-purple-600 animate-pulse" />
+                            </div>
+                        </div>
+                        <p className="text-slate-500 font-medium">AI 正在分析数据并撰写报告...</p>
+                    </div>
+                ) : (
+                    <div className="prose prose-slate max-w-none">
+                        {/* Simple Markdown Rendering Support: 
+                            1. Split by newlines
+                            2. Detect headers (#, ##, ###)
+                            3. Detect list items (-, *)
+                            4. Detect bold (**text**) 
+                        */}
+                        {report.split('\n').map((line, i) => {
+                            let content = line;
+                            let className = "mb-2 text-slate-700 leading-relaxed";
+
+                            // Headers
+                            if (line.startsWith('# ')) {
+                                className = "text-2xl font-bold text-slate-900 mt-6 mb-4";
+                                content = line.replace('# ', '');
+                            } else if (line.startsWith('## ')) {
+                                className = "text-xl font-bold text-slate-800 mt-5 mb-3 border-b pb-2";
+                                content = line.replace('## ', '');
+                            } else if (line.startsWith('### ')) {
+                                className = "text-lg font-bold text-slate-800 mt-4 mb-2";
+                                content = line.replace('### ', '');
+                            }
+                            // List items
+                            else if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+                                className = "ml-4 mb-1 flex gap-2";
+                                content = (
+                                    <>
+                                        <span className="text-slate-400">•</span>
+                                        <span>{line.trim().substring(2)}</span>
+                                    </>
+                                ) as any;
+                            }
+
+                            // Bold processing (Simple regex)
+                            if (typeof content === 'string') {
+                                const parts = content.split(/(\*\*.*?\*\*)/g);
+                                content = (
+                                    <span>
+                                        {parts.map((part, idx) => {
+                                            if (part.startsWith('**') && part.endsWith('**')) {
+                                                return <strong key={idx} className="font-semibold text-slate-800">{part.slice(2, -2)}</strong>;
+                                            }
+                                            return part;
+                                        })}
+                                    </span>
+                                ) as any;
+                            }
+
+                            return <div key={i} className={className}>{content}</div>
+                        })}
+                        {isStreaming && (
+                            <span className="inline-block w-2 h-4 bg-purple-500 animate-pulse ml-1 align-middle"></span>
+                        )}
+                        <div ref={endRef} />
+                    </div>
+                )}
+            </div>
+        </Modal>
+    );
+};
+
+export default ReportGeneratorModal;

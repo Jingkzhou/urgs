@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.urgs_api.task.mapper.TaskStatisticsMapper">
+
+    <select id="selectBatchStatusStats" resultType="com.example.urgs_api.task.dto.TaskStatsVO">
+        SELECT 
+            ts.system_id as systemId,
+            ts.system_name as systemName,
+            COALESCE(SUM(tes.total_count), 0) as totalTasks,
+            COALESCE(SUM(tes.completed_count), 0) as totalCompleted,
+            COALESCE(SUM(tes.in_progress_count), 0) as totalInProgress,
+            COALESCE(SUM(tes.not_started_count), 0) as totalNotStarted,
+            COALESCE(SUM(tes.failed_count), 0) as totalFailed,
+            COALESCE(ROUND(AVG(tes.progress_percentage), 2), 0) as avgProgressPercentage
+        FROM t_task_subject ts
+        LEFT JOIN t_task_execution_status tes ON ts.subject_id = tes.subject_id
+        <where>
+            ts.status = 1
+            <if test="queryForm.systemIds != null and queryForm.systemIds.size() > 0">
+                AND ts.system_id IN
+                <foreach collection="queryForm.systemIds" item="systemId" open="(" separator="," close=")">
+                    #{systemId}
+                </foreach>
+            </if>
+            <if test="queryForm.subjectIds != null and queryForm.subjectIds.size() > 0">
+                AND ts.subject_id IN
+                <foreach collection="queryForm.subjectIds" item="subjectId" open="(" separator="," close=")">
+                    #{subjectId}
+                </foreach>
+            </if>
+            <if test="queryForm.taskStatuses != null and queryForm.taskStatuses.size() > 0">
+                AND tes.task_status IN
+                <foreach collection="queryForm.taskStatuses" item="taskStatus" open="(" separator="," close=")">
+                    #{taskStatus}
+                </foreach>
+            </if>
+            <if test="queryForm.startTimeBegin != null">
+                AND tes.start_time >= #{queryForm.startTimeBegin}
+            </if>
+            <if test="queryForm.startTimeEnd != null">
+                AND tes.start_time &lt;= #{queryForm.startTimeEnd}
+            </if>
+            <if test="queryForm.updateTimeBegin != null">
+                AND tes.update_time >= #{queryForm.updateTimeBegin}
+            </if>
+            <if test="queryForm.updateTimeEnd != null">
+                AND tes.update_time &lt;= #{queryForm.updateTimeEnd}
+            </if>
+            <if test="queryForm.onlyLatest != null and queryForm.onlyLatest == true">
+                AND tes.status_id IN (
+                    SELECT MAX(t.status_id) 
+                    FROM t_task_execution_status t 
+                    WHERE t.subject_id = tes.subject_id
+                )
+            </if>
+        </where>
+        GROUP BY ts.system_id, ts.system_name
+        ORDER BY ts.system_id
+    </select>
+
+</mapper>

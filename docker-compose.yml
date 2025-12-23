@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  neo4j:
+    image: neo4j:5.15.0
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
+    ports:
+      - "${HOST_PORT_NEO4J_HTTP}:7474"
+      - "${HOST_PORT_NEO4J_BOLT}:7687"
+    volumes:
+      - neo4j_data:/data
+    networks:
+      - urgs-net
+
+  urgs-api:
+    build: ./urgs-api
+    image: urgs-api:latest
+    environment:
+      SPRING_PROFILES_ACTIVE: ${APP_ENV}
+      SPRING_DATASOURCE_URL: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useSSL=false&serverTimezone=UTC&characterEncoding=utf8&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ${DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_NEO4J_URI: bolt://${NEO4J_HOST}:${NEO4J_PORT_BOLT}
+      SPRING_NEO4J_AUTHENTICATION_USERNAME: ${NEO4J_USER}
+      SPRING_NEO4J_AUTHENTICATION_PASSWORD: ${NEO4J_PASSWORD}
+    ports:
+      - "${HOST_PORT_API}:8080"
+    depends_on:
+      neo4j:
+        condition: service_started
+    networks:
+      - urgs-net
+    volumes:
+      - ./urgs-api/uploads:/app/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  urgs-executor:
+    build: ./urgs-executor
+    image: urgs-executor:latest
+    environment:
+      SPRING_PROFILES_ACTIVE: ${APP_ENV}
+      SPRING_DATASOURCE_URL: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useSSL=false&serverTimezone=UTC&characterEncoding=utf8&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ${DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${HOST_PORT_EXECUTOR}:8082"
+    networks:
+      - urgs-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  urgs-rag:
+    build: ./urgs-rag
+    image: urgs-rag:latest
+    environment:
+      NEO4J_URI: bolt://${NEO4J_HOST}:${NEO4J_PORT_BOLT}
+      NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
+      CHROMA_PERSIST_DIRECTORY: /app/data/chroma
+      APP_ENV: ${APP_ENV}
+    ports:
+      - "${HOST_PORT_RAG}:8001"
+    depends_on:
+      neo4j:
+        condition: service_started
+    networks:
+      - urgs-net
+    volumes:
+      - ./urgs-rag/data:/app/data
+
+  urgs-web:
+    build: ./urgs-web
+    image: urgs-web:latest
+    ports:
+      - "${HOST_PORT_WEB}:80"
+    depends_on:
+      - urgs-api
+      - urgs-rag
+    networks:
+      - urgs-net
+
+  sql-lineage-engine:
+    build: ./sql-lineage-engine
+    image: sql-lineage-engine:latest
+    entrypoint: [ "tail", "-f", "/dev/null" ]
+    networks:
+      - urgs-net
+
+networks:
+  urgs-net:
+    driver: bridge
+
+volumes:
+  neo4j_data:

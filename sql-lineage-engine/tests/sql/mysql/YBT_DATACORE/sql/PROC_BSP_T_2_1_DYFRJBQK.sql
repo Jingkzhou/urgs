@@ -1,0 +1,496 @@
+DROP PROCEDURE IF EXISTS PROC_BSP_T_2_1_DYFRJBQK;
+
+CREATE PROCEDURE PROC_BSP_T_2_1_DYFRJBQK(
+  IN I_DATE STRING,
+  OUT OI_RETCODE INT,
+  OUT OI_REMESSAGE STRING
+)
+LANGUAGE HIVE
+BEGIN
+  /******
+        程序名称  ：单一法人基本情况
+        程序功能  ：加工单一法人基本情况
+        目标表：T_2_1
+        源表  ： 一段
+        创建人  ：87V
+        创建日期  ：20240105
+        版本号：V0.0.1 
+        -- JLBA202411070004_关于一表通监管数据报送系统修改逻辑的需求 20241212
+        -- JLBA202412200001_关于一表通监管数据报送系统修改逻辑及转EAST脚本的需求_20250116
+        -- JLBA202501240018_关于一表通监管数据报送系统变更的需求_20250311
+        /* 需求编号：JLBA202502210009 上线日期：20250415，修改人：姜俐锋，提出人：吴大为 */
+        /* JLBA202503050026_关于在监管集市修改科技贷款相关字段取数逻辑的需求 上线日期：2025-04-29 */
+        /* 需求编号：JLBA202504060003 上线日期：20250513，修改人：狄家卉，提出人：吴大为 */
+        /* 需求编号：JLBA202504160004 上线日期：20250708，修改人：姜俐锋，提出人：吴大为 */
+        /* JLBA202507250003 上线日期：2025-09-09，修改人：巴启威，提出人：吴大为 */
+  ******/
+
+  #声明变量
+  DECLARE P_DATE DATE;
+  DECLARE P_PROC_NAME STRING;
+  DECLARE P_STATUS INT;
+  DECLARE P_START_DT TIMESTAMP;
+  DECLARE P_END_TIME TIMESTAMP;
+  DECLARE P_SQLCDE STRING;
+  DECLARE P_STATE STRING;
+  DECLARE P_SQLMSG STRING;
+  DECLARE P_STEP_NO INT;
+  DECLARE P_DESCB STRING;
+  DECLARE BEG_MON_DT STRING;
+  DECLARE BEG_QUAR_DT STRING;
+  DECLARE BEG_YEAR_DT STRING;
+  DECLARE LAST_MON_DT STRING;
+  DECLARE LAST_QUAR_DT STRING;
+  DECLARE LAST_YEAR_DT STRING;
+  DECLARE LAST_DT STRING;
+  DECLARE FINISH_FLG STRING;
+  DECLARE P_COLLECT_DT STRING;
+  DECLARE P_COLLECT_DT_NOSEP STRING;
+  DECLARE P_COLLECT_MONTH STRING;
+
+  #变量初始化
+  SET P_DATE = to_date(from_unixtime(unix_timestamp(I_DATE,'yyyyMMdd')));
+  SET BEG_MON_DT = date_format(trunc(P_DATE,'MM'),'yyyyMMdd');
+  SET BEG_QUAR_DT = date_format(trunc(P_DATE,'Q'),'yyyyMMdd');
+  SET BEG_YEAR_DT = date_format(trunc(P_DATE,'YY'),'yyyyMMdd');
+  SET LAST_MON_DT = date_format(date_sub(trunc(P_DATE,'MM'),1),'yyyyMMdd');
+  SET LAST_QUAR_DT = date_format(date_sub(trunc(P_DATE,'Q'),1),'yyyyMMdd');
+  SET LAST_YEAR_DT = date_format(date_sub(trunc(P_DATE,'YY'),1),'yyyyMMdd');
+  SET LAST_DT = date_format(date_sub(P_DATE,1),'yyyyMMdd');
+  SET P_COLLECT_DT = date_format(P_DATE,'yyyy-MM-dd');
+  SET P_COLLECT_DT_NOSEP = date_format(P_DATE,'yyyyMMdd');
+  SET P_COLLECT_MONTH = date_format(P_DATE,'yyyy-MM');
+  SET P_PROC_NAME = 'PROC_BSP_T_2_1_DYFRJBQK';
+  SET OI_RETCODE = 0;
+  SET P_STATUS = 0;
+  SET P_STEP_NO = 0;
+
+  #1.过程开始执行
+  SET P_START_DT = current_timestamp();
+  SET P_STEP_NO = P_STEP_NO + 1;
+  SET P_DESCB = '过程开始执行';
+  CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+  
+  #2.清除数据
+  SET P_START_DT = current_timestamp();
+  SET P_STEP_NO = P_STEP_NO + 1;
+  SET P_DESCB = '清除数据';
+  TRUNCATE TABLE YBT_DATACORE.T_2_1;
+  CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+
+  #3.数据插入
+  SET P_START_DT = current_timestamp();
+  SET P_STEP_NO = P_STEP_NO + 1;
+  SET P_DESCB = '数据插入';
+  INSERT INTO YBT_DATACORE.T_2_1 (
+    B010001,
+    B010002,
+    B010003,
+    B010004,
+    B010005,
+    B010006,
+    B010007,
+    B010008,
+    B010019,
+    B010020,
+    B010021,
+    B010022,
+    B010023,
+    B010024,
+    B010025,
+    B010026,
+    B010027,
+    B010028,
+    B010029,
+    B010030,
+    B010031,
+    B010032,
+    B010033,
+    B010034,
+    B010035,
+    B010036,
+    B010037,
+    B010038,
+    B010039,
+    B010040,
+    B010041,
+    B010042,
+    B010043,
+    B010044,
+    B010045,
+    B010046,
+    B010047,
+    B010048,
+    B010049,
+    B010050,
+    B010053,
+    B010057,
+    B010058,
+    B010061,
+    B010060,
+    DIS_DATA_DATE,
+    DIS_BANK_ID,
+    DEPARTMENT_ID
+  )
+  SELECT
+    T1.CUST_ID AS B010001,
+    T2.ORG_ID AS B010002,
+    coalesce(T1.CUST_NAM, T1.CUST_NAM_EN, T3.FINA_ORG_NAME_LEGAL,'') AS B010003,
+    T3.TYSHXYDM AS B010004,
+    coalesce(date_format(to_date(from_unixtime(unix_timestamp(T3.ORG_UPD_DT,'yyyyMMdd'))),'yyyy-MM-dd'),'9999-12-31') AS B010005,
+    T1.ID_NO AS B010006,
+    coalesce(date_format(to_date(from_unixtime(unix_timestamp(T3.REGISTER_INFO_UPD_DT,'yyyyMMdd'))),'yyyy-MM-dd'),'9999-12-31') AS B010007,
+    T3.LEI_CODE AS B010008,
+    T3.CAPITAL_AMT AS B010019,
+    coalesce(T3.CAPITAL_CURRENCY,'CNY') AS B010020,
+    coalesce(T3.PAICL_UP_CAPITAL,'0') AS B010021,
+    coalesce(T3.PAICL_UP_CAP_CURR,'CNY') AS B010022,
+    coalesce(date_format(to_date(from_unixtime(unix_timestamp(T3.BORROWER_BULID_YEAR,'yyyyMMdd'))),'yyyy-MM-dd'),'9999-12-31') AS B010023,
+    CASE
+      WHEN T3.CORP_BUSINSESS_TYPE IS NOT NULL AND substr(T3.BORROWER_PRODUCT_DESC,1,300) = '无'
+        THEN CASE WHEN T1.INLANDORRSHORE_FLG = 'Y' THEN trim(T3.CORP_BUSINSESS_TYPE) ELSE '境外' END
+      WHEN T3.CORP_BUSINSESS_TYPE IS NULL AND substr(T3.BORROWER_PRODUCT_DESC,1,300) = '无'
+        THEN '承受招标人的委托，可承担工程总投资一亿元人民币以下的工程招标代理业务；建设项目可行性投资估算，项目经济评价、工程项目概算、预算、结算、决算编制及审核、工程量清算编制及审核、工程量清算编制、计价、标底编制。'
+      WHEN substr(T3.BORROWER_PRODUCT_DESC,1,300) IS NULL OR substr(T3.BORROWER_PRODUCT_DESC,1,300) = ''
+        THEN '承受招标人的委托，可承担工程总投资一亿元人民币以下的工程招标代理业务；建设项目可行性投资估算，项目经济评价、工程项目概算、预算、结算、决算编制及审核、工程量清算编制及审核、工程量清算编制、计价、标底编制。'
+      WHEN substr(T3.BORROWER_PRODUCT_DESC,1,300) <> '无'
+        THEN substr(T3.BORROWER_PRODUCT_DESC,1,300)
+      ELSE '承受招标人的委托，可承担工程总投资一亿元人民币以下的工程招标代理业务；建设项目可行性投资估算，项目经济评价、工程项目概算、预算、结算、决算编制及审核、工程量清算编制及审核、工程量清算编制、计价、标底编制。'
+    END AS B010024,
+    CASE WHEN T1.INLANDORRSHORE_FLG = 'N' THEN '99999' ELSE T3.CORP_BUSINSESS_TYPE END AS B010025,
+    CASE
+      WHEN T1.INLANDORRSHORE_FLG = 'N' THEN '9'
+      WHEN substr(T3.CUST_TYP,1,1) IN ('1','0') AND coalesce(T3.CORP_SCALE,T3.CORP_SCALE_GL) = 'B' THEN '1'
+      WHEN substr(T3.CUST_TYP,1,1) IN ('1','0') AND coalesce(T3.CORP_SCALE,T3.CORP_SCALE_GL) = 'M' THEN '2'
+      WHEN substr(T3.CUST_TYP,1,1) IN ('1','0') AND coalesce(T3.CORP_SCALE,T3.CORP_SCALE_GL) = 'S' THEN '3'
+      WHEN substr(T3.CUST_TYP,1,1) IN ('1','0') AND coalesce(T3.CORP_SCALE,T3.CORP_SCALE_GL) = 'T' THEN '4'
+      WHEN substr(T3.CUST_TYP,1,1) = '2' THEN '5'
+      WHEN substr(T3.CUST_TYP,1,1) = '5' THEN '6'
+      WHEN substr(T3.CUST_TYP,1,1) = '4' THEN '7'
+      ELSE '8'
+    END AS B010026,
+    CASE
+      WHEN substr(T3.CORP_HOLD_TYPE,1,1) = 'A' THEN '01'
+      WHEN substr(T3.CORP_HOLD_TYPE,1,1) = 'B' THEN '02'
+      WHEN substr(T3.CORP_HOLD_TYPE,1,1) = 'C' THEN '03'
+      WHEN substr(T3.CORP_HOLD_TYPE,1,1) = 'D' THEN '04'
+      WHEN substr(T3.CORP_HOLD_TYPE,1,1) = 'E' THEN '05'
+      ELSE '06'
+    END AS B010027,
+    T3.NATION_CD AS B010028,
+    coalesce(T4.BORROWER_REGISTER_ADDR,'无') AS B010029,
+    T3.ORG_AREA AS B010030,
+    coalesce(T4.CUST_TELEPHONE_NO,T4.HAND_PHONE_NO) AS B010031,
+    T3.LEGAL_NAME AS B010032,
+    coalesce(M.GB_CODE,M2.GB_CODE) AS B010033,
+    T3.LEGAL_CARD_NO AS B010034,
+    T3.FINANCIAL_NAME AS B010035,
+    M1.GB_CODE AS B010036,
+    T3.FINANCIAL_CARD_TYPE AS B010037,
+    CASE
+      WHEN coalesce(T3.BASE_ACCT, T8.O_ACCT_NUM) IS NOT NULL
+       AND coalesce(T3.BASE_ACCT_OP_ID, T12.BANK_CD) IS NOT NULL
+       AND coalesce(T3.BASE_ACCT_OP_NAME, T2.ORG_NAM, CASE WHEN T1.ORG_NUM IS NULL THEN '金融市场部' END) IS NOT NULL
+        THEN replace(coalesce(T3.BASE_ACCT, T8.O_ACCT_NUM),' ','')
+      ELSE NULL
+    END AS B010038,
+    CASE
+      WHEN coalesce(T3.BASE_ACCT, T8.O_ACCT_NUM) IS NOT NULL
+       AND coalesce(T3.BASE_ACCT_OP_ID, T12.BANK_CD) IS NOT NULL
+       AND coalesce(T3.BASE_ACCT_OP_NAME, T2.ORG_NAM, CASE WHEN T1.ORG_NUM IS NULL THEN '金融市场部' END) IS NOT NULL
+        THEN coalesce(T3.BASE_ACCT_OP_ID, T12.BANK_CD)
+      ELSE NULL
+    END AS B010039,
+    CASE
+      WHEN coalesce(T3.BASE_ACCT, T8.O_ACCT_NUM) IS NOT NULL
+       AND coalesce(T3.BASE_ACCT_OP_ID, T12.BANK_CD) IS NOT NULL
+       AND coalesce(T3.BASE_ACCT_OP_NAME, T2.ORG_NAM, CASE WHEN T1.ORG_NUM IS NULL THEN '金融市场部' END) IS NOT NULL
+        THEN coalesce(replace(T3.BASE_ACCT_OP_NAME,' ',''),replace(T2.ORG_NAM,' ',''), CASE WHEN T1.ORG_NUM IS NULL THEN '金融市场部' END)
+      ELSE NULL
+    END AS B010040,
+    CASE WHEN T13.CUST_ID IS NOT NULL AND coalesce(T3.STAFF_NUM,0) = 0 THEN 1 ELSE coalesce(T3.STAFF_NUM,0) END AS B010041,
+    CASE
+      WHEN T3.SSGSBZ = '01' AND T3.SSD IN ('01','02') AND T3.SSGSDM IS NOT NULL
+        THEN concat('A-CHN-',T3.SSGSDM)
+      WHEN T3.SSGSBZ = '02' AND T3.SSD IN ('01','02') AND T3.SSGSDM IS NOT NULL
+        THEN concat('B-CHN-',T3.SSGSDM)
+      WHEN T3.SSGSBZ = '03' AND T3.SSD = '03' AND T3.SSGSDM IS NOT NULL
+        THEN concat('C-HKG-',T3.SSGSDM)
+      WHEN T3.SSGSBZ = '04' AND T3.SSD = '04' AND T3.SSGSDM IS NOT NULL
+        THEN concat('D-SGP-',T3.SSGSDM)
+      WHEN T3.SSGSBZ = '04' AND T3.SSD = '05' AND T3.SSGSDM IS NOT NULL
+        THEN concat('D-LON-',T3.SSGSDM)
+      WHEN T3.SSGSBZ = '04' AND T3.SSD = '06' AND T3.SSGSDM IS NOT NULL
+        THEN concat('D-USA-',T3.SSGSDM)
+      WHEN T3.SSGSBZ = '04' AND T3.SSD = '07' AND T3.SSGSDM IS NOT NULL
+        THEN concat('D-TYO-',T3.SSGSDM)
+      ELSE NULL
+    END AS B010042,
+    CASE WHEN T3.AGRICLTURAL_MANAGE_TYPE IN ('A','B','C','D','E','F','G') THEN '1' ELSE '0' END AS B010043,
+    T3.CUS_RISK_LEV_EXT AS B010044,
+    T3.RATING_ORGNAME AS B010045,
+    T3.CUS_RISK_LV_DE AS B010046,
+    T3.SAFETY_RISK_TYPE AS B010047,
+    coalesce(date_format(to_date(from_unixtime(unix_timestamp(T3.FIRST_CREDIT_DATE,'yyyyMMdd'))),'yyyy-MM'),'9999-12') AS B010048,
+    T6.RISK_SGN AS B010049,
+    F.RISK_SGN_B AS B010050,
+    CASE WHEN T3.CORP_CLOSE_FLG = 'Y' THEN '1' ELSE '0' END AS B010053,
+    T9.CUST_GROUP_NAM AS B010057,
+    T3.CUST_PD AS B010058,
+    substr(concat(
+      CASE WHEN T3.IF_ST_SMAL_CORP = '1' THEN '1' ELSE '0' END,
+      CASE WHEN T3.IF_SPCLED_NEW_CUST = '1' AND coalesce(T3.CORP_SCALE,'') IN ('B','S','M','T') THEN '1' ELSE '0' END,
+      CASE WHEN T3.HUGE_SPCLED_NEW_CORP = '1' THEN '1' ELSE '0' END,
+      CASE WHEN T3.NAT_TECH_INVT_CORP = '1' THEN '1' ELSE '0' END,
+      CASE WHEN T3.MNFT_SIGL_FRST_CORP = '1' THEN '1' ELSE '0' END,
+      CASE WHEN T3.IF_HIGH_SALA_CORP = 'Y' THEN '1' ELSE '0' END
+    ),1,6) AS B010061,
+    date_format(to_date(from_unixtime(unix_timestamp(T1.DATA_DATE,'yyyyMMdd'))),'yyyy-MM-dd') AS B010060,
+    P_COLLECT_DT AS DIS_DATA_DATE,
+    T1.ORG_NUM AS DIS_BANK_ID,
+    '0098SJ' AS DEPARTMENT_ID
+  FROM SMTMODS.L_CUST_ALL T1
+  INNER JOIN SMTMODS.L_CUST_C T3
+    ON T1.CUST_ID = T3.CUST_ID
+   AND T3.DATA_DATE = I_DATE
+  LEFT JOIN VIEW_L_PUBL_ORG_BRA T2
+    ON T1.ORG_NUM = T2.ORG_NUM
+   AND T2.DATA_DATE = I_DATE
+  LEFT JOIN SMTMODS.L_CUST_CONTACT T4
+    ON T3.CUST_ID = T4.CUST_ID
+   AND T4.DATA_DATE = I_DATE
+  LEFT JOIN (
+    SELECT
+      F.CUST_ID,
+      concat_ws(';', collect_set(CASE WHEN F.SGN_TYP = 'A' THEN F.RISK_SGN END)) AS RISK_SGN_A,
+      concat_ws(';', collect_set(CASE WHEN F.SGN_TYP = 'B' THEN F.RISK_SGN END)) AS RISK_SGN_B
+    FROM SMTMODS.L_CUST_C_RISK_SGN F
+    WHERE F.DATA_DATE = I_DATE
+      AND F.SGN_TYP IN ('A','B')
+    GROUP BY F.CUST_ID
+  ) F
+    ON T3.CUST_ID = F.CUST_ID
+  LEFT JOIN (
+    SELECT *
+    FROM (
+      SELECT
+        AA.*,
+        row_number() OVER (PARTITION BY AA.CUST_ID ORDER BY AA.RISK_SGN) AS RN
+      FROM SMTMODS.L_CUST_C_RISK_SGN AA
+      WHERE AA.DATA_DATE = I_DATE
+    ) BB
+    WHERE BB.RN = 1
+  ) T6
+    ON T3.CUST_ID = T6.CUST_ID
+  LEFT JOIN SMTMODS.L_CUST_C_GROUP_INFO T9
+    ON T3.CUST_GROUP_NO = T9.CUST_GROUP_NO
+   AND T9.DATA_DATE = I_DATE
+  LEFT JOIN (
+    SELECT *
+    FROM (
+      SELECT
+        CUST_ID,
+        O_ACCT_NUM,
+        ORG_NUM,
+        row_number() OVER (PARTITION BY CUST_ID ORDER BY O_ACCT_NUM) AS RN
+      FROM SMTMODS.L_ACCT_DEPOSIT
+      WHERE DATA_DATE = I_DATE
+        AND DEPARTMENTD = 'CH'
+    ) N
+    WHERE RN = 1
+  ) T8
+    ON T1.CUST_ID = T8.CUST_ID
+  LEFT JOIN SMTMODS.L_PUBL_ORG_BRA T12
+    ON T8.ORG_NUM = T12.ORG_NUM
+   AND T12.DATA_DATE = I_DATE
+  LEFT JOIN (
+    SELECT DISTINCT CUST_ID
+    FROM SMTMODS.L_AGRE_CREDITLINE
+    WHERE DATA_DATE = I_DATE
+  ) T13
+    ON T1.CUST_ID = T13.CUST_ID
+  LEFT JOIN M_DICT_CODETABLE M
+    ON T3.LEGAL_CARD_TYPE = M.L_CODE
+   AND M.L_CODE_TABLE_CODE = 'C0001'
+  LEFT JOIN M_DICT_CODETABLE M1
+    ON T3.FINANCIAL_TYPE = M1.L_CODE
+   AND M1.L_CODE_TABLE_CODE = 'C0001'
+  LEFT JOIN M_DICT_CODETABLE M2
+    ON T3.LEGAL_CARD_TYPE2 = M2.L_CODE
+   AND M2.L_CODE_TABLE_CODE = 'C0001'
+  LEFT JOIN SMTMODS.L_CUST_BILL_TY TY
+    ON T3.CUST_ID = TY.ECIF_CUST_ID
+   AND TY.DATA_DATE = I_DATE
+  WHERE T1.DATA_DATE = I_DATE
+    AND (
+         (
+           coalesce(T3.CUST_TYP,'0') NOT IN ('3') AND T3.IS_NGI_CUST = '1'
+         ) OR (
+           coalesce(T3.IS_NGI_CUST,'0') = '0'
+           AND coalesce(T3.DEPOSIT_CUSTTYPE,'0') NOT IN ('13','14')
+         )
+    )
+    AND (
+         EXISTS (
+           SELECT 1
+           FROM YBT_DATACORE.T_4_3 A
+           WHERE A.D030015 = P_COLLECT_DT
+             AND A.D030003 = T1.CUST_ID
+         )
+         OR EXISTS (
+           SELECT 1
+           FROM ybt_datacore.t_8_13 B
+           WHERE B.H130023 = P_COLLECT_DT
+             AND B.H130002 = T1.CUST_ID
+         )
+         OR EXISTS (
+           SELECT 1
+           FROM YBT_DATACORE.T_6_2 C
+           WHERE C.F020063 = P_COLLECT_DT
+             AND C.F020003 = T1.CUST_ID
+         )
+    )
+    AND TY.ECIF_CUST_ID IS NULL
+    AND NOT EXISTS (
+      SELECT 1
+      FROM YBT_DATACORE.T_2_3 C
+      WHERE C.DIS_DATA_DATE = P_COLLECT_DT
+        AND C.B030001 = T1.CUST_ID
+    );
+  CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+
+  #4.财管接数插入
+  SET P_START_DT = current_timestamp();
+  SET P_STEP_NO = P_STEP_NO + 1;
+  SET P_DESCB = '财管接数插入';
+  INSERT INTO YBT_DATACORE.T_2_1 (
+    B010001,
+    B010002,
+    B010003,
+    B010004,
+    B010005,
+    B010006,
+    B010007,
+    B010008,
+    B010019,
+    B010020,
+    B010021,
+    B010022,
+    B010023,
+    B010024,
+    B010025,
+    B010026,
+    B010027,
+    B010028,
+    B010029,
+    B010030,
+    B010031,
+    B010032,
+    B010033,
+    B010034,
+    B010035,
+    B010036,
+    B010037,
+    B010038,
+    B010039,
+    B010040,
+    B010041,
+    B010042,
+    B010043,
+    B010044,
+    B010045,
+    B010046,
+    B010047,
+    B010048,
+    B010049,
+    B010050,
+    B010053,
+    B010057,
+    B010058,
+    B010061,
+    B010060,
+    DIS_DATA_DATE,
+    DIS_BANK_ID,
+    DEPARTMENT_ID
+  )
+  SELECT
+    B010001,
+    B010002,
+    B010003,
+    B010004,
+    B010005,
+    B010006,
+    B010007,
+    B010008,
+    B010019,
+    B010020,
+    B010021,
+    B010022,
+    B010023,
+    B010024,
+    B010025,
+    B010026,
+    B010027,
+    B010028,
+    B010029,
+    B010030,
+    B010031,
+    B010032,
+    B010033,
+    B010034,
+    B010035,
+    B010036,
+    B010037,
+    B010038,
+    B010039,
+    B010040,
+    B010041,
+    B010042,
+    B010043,
+    B010044,
+    B010045,
+    B010046,
+    B010047,
+    B010048,
+    B010049,
+    B010050,
+    B010053,
+    B010057,
+    B010058,
+    substr(B010061,1,6),
+    B010060,
+    P_COLLECT_DT,
+    '990000' AS DIS_BANK_ID,
+    CASE
+      WHEN YWXT = '总行机关战略投资管理部' THEN '0098ZT'
+      WHEN YWXT = '总行机关运营管理部' THEN '009801'
+    END AS DEPARTMENT_ID
+  FROM SMTMODS.RSF_GQ_CORPORATION_SOLE T
+  WHERE T.DATA_DATE = I_DATE;
+
+  CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+
+  #5.过程结束执行
+  SET P_START_DT = current_timestamp();
+  SET P_STEP_NO = P_STEP_NO + 1;
+  SET P_DESCB = '过程结束执行';
+  CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+  SET OI_RETCODE = P_STATUS;
+  SET OI_REMESSAGE = P_DESCB;
+  SELECT OI_RETCODE,'|',OI_REMESSAGE;
+
+EXCEPTION
+  WHEN ANY THEN
+    SET P_SQLCDE = cast(SQLCODE AS STRING);
+    SET P_STATE = SQLSTATE;
+    SET P_SQLMSG = SQLERRM;
+    SET P_STATUS = -1;
+    SET P_START_DT = current_timestamp();
+    SET P_STEP_NO = P_STEP_NO + 1;
+    SET P_DESCB = '程序异常';
+    CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+    SET OI_RETCODE = P_STATUS;
+    SET OI_REMESSAGE = concat(P_DESCB, ':', P_SQLCDE, ' - ', P_SQLMSG);
+    SELECT OI_RETCODE,'|',OI_REMESSAGE;
+END;
+
