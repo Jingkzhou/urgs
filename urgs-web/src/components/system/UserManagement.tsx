@@ -235,7 +235,7 @@ const UserForm: React.FC<{
         name: initialData?.name || '',
         empId: initialData?.empId || '',
         orgName: initialData?.orgName || (safeOrgOptions[0] || ''),
-        roleId: initialData?.roleId || (safeRoleOptions[0]?.id || ''), // Use roleId
+        roleId: initialData?.roleId || (safeRoleOptions[0]?.id || 0), // Use roleId
         roleName: initialData?.roleName || (safeRoleOptions[0]?.name || ''),
         ssoSystems: initialData?.system ? initialData.system.split(',').filter(Boolean) : [],
         phone: initialData?.phone || '',
@@ -244,7 +244,8 @@ const UserForm: React.FC<{
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSave({ ...formData, id: initialData?.id, system: formData.ssoSystems.join(',') });
+        const { ssoSystems, ...dataToSave } = formData;
+        onSave({ ...dataToSave, id: initialData?.id, system: ssoSystems.join(',') });
     };
 
     return (

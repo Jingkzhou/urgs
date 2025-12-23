@@ -16,6 +16,7 @@ public class User {
     @com.baomidou.mybatisplus.annotation.TableField("role_id")
     private Long roleId;
 
+    @com.baomidou.mybatisplus.annotation.TableField("`system`")
     private String system; // optional association to SSO system name
     private String phone;
     private String lastLogin;

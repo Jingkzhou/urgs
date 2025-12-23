@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Force Java 17 for Lombok compatibility
+export JAVA_HOME=$(/usr/libexec/java_home -v 17)
+echo "Using JAVA_HOME: $JAVA_HOME"
+
 ENVIRONMENT="${1:-dev}"
 case "$ENVIRONMENT" in
   dev|sit|prod) ;;
@@ -50,7 +54,21 @@ start_backend() {
   echo "Starting backend (profile: $ENVIRONMENT)..."
   cd "$API_DIR"
   kill_port_if_exists 8080
-  ./mvnw spring-boot:run -P"$ENVIRONMENT" &
+  # Load .env if exists
+  if [ -f "$SCRIPT_DIR/../.env" ]; then
+    export $(grep -v '^#' "$SCRIPT_DIR/../.env" | xargs)
+  elif [ -f "$SCRIPT_DIR/.env" ]; then
+    export $(grep -v '^#' "$SCRIPT_DIR/.env" | xargs)
+  fi
+
+  # Construct DataSource URL if var exists
+  if [ -n "${DB_HOST:-}" ]; then
+    export SPRING_DATASOURCE_URL="jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useSSL=false&serverTimezone=UTC&characterEncoding=utf8&allowPublicKeyRetrieval=true"
+    export SPRING_DATASOURCE_USERNAME="${DB_USER}"
+    export SPRING_DATASOURCE_PASSWORD="${DB_PASSWORD}"
+  fi
+
+  ./mvnw spring-boot:run -Dspring-boot.run.profiles="$ENVIRONMENT" &
   pids+=($!)
 }
 
