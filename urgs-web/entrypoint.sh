@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Ensure generated files are world-readable (avoid 640 umask)
+umask 022
+
 # Generate config.js from environment variables
 # This allows "Build Once, Run Anywhere" strategy
 # Variables started with VITE_ are picked up
