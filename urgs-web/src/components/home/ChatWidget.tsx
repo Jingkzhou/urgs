@@ -489,6 +489,8 @@ const ChatWidget: React.FC = () => {
         }
     };
 
+    const totalUnread = sessions.reduce((sum, s) => sum + (s.unread || 0), 0);
+
     return (
         <div className="fixed bottom-8 right-8 z-50 flex flex-col items-end print:hidden font-sans antialiased">
             {/* Chat Window */}
@@ -818,6 +820,7 @@ const ChatWidget: React.FC = () => {
                 onClick={() => setIsOpen(!isOpen)}
                 className={`
                     ${isOpen ? 'bg-gradient-to-r from-red-500 to-red-600' : 'bg-gradient-to-r from-indigo-500 to-purple-600'} 
+                    ${!isOpen && totalUnread > 0 ? 'animate-pulse ring-4 ring-red-400/50' : ''}
                     text-white p-4 rounded-full shadow-xl shadow-indigo-500/30 hover:shadow-2xl hover:shadow-indigo-500/40 
                     transition-all duration-300 flex items-center justify-center relative group backdrop-blur-sm z-50
                 `}
@@ -829,14 +832,14 @@ const ChatWidget: React.FC = () => {
 
                 {/* Unread Indicator */}
                 <AnimatePresence>
-                    {!isOpen && sessions.reduce((sum, s) => sum + (s.unread || 0), 0) > 0 && (
+                    {!isOpen && totalUnread > 0 && (
                         <motion.span
                             initial={{ scale: 0 }}
                             animate={{ scale: 1 }}
                             exit={{ scale: 0 }}
                             className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white px-1 shadow-sm"
                         >
-                            {sessions.reduce((sum, s) => sum + (s.unread || 0), 0)}
+                            {totalUnread}
                         </motion.span>
                     )}
                 </AnimatePresence>
