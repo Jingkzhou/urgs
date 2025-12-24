@@ -173,7 +173,7 @@ const ChatWidget: React.FC = () => {
                 return {
                     id: s.peerId,
                     name: s.name || meta.name, // Use backend name if available (now fixed in Entity)
-                    avatar: s.avatar || meta.avatar,
+                    avatar: getAvatarUrl(s.avatar || meta.avatar, s.peerId),
                     message: s.lastMsgContent || '',
                     time: s.lastMsgTime ? new Date(s.lastMsgTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
                     unread: s.unreadCount,

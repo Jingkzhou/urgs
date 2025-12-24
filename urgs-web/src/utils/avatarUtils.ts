@@ -47,9 +47,14 @@ export const getAvatarUrl = (originalUrl?: string | null, seed?: string | number
         return generateAvatar(seed || 'User');
     }
 
+    // Normalize URL: Strip domain/port if it contains '/profile/' 
+    // This solves the issue where hardcoded IPs in DB cause 404/Connection Refused on different networks
+    if (originalUrl.includes('/profile/')) {
+        const parts = originalUrl.split('/profile/');
+        return '/profile/' + parts[parts.length - 1];
+    }
+
     // Handle relative paths (e.g. "profile/...")
-    // Assuming API is proxied at /api or root, adjust based on deployment
-    // If it starts with 'profile/', prepend '/' to make it absolute from domain root
     if (originalUrl.startsWith('profile/')) {
         return '/' + originalUrl;
     }

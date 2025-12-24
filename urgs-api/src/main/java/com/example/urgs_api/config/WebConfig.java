@@ -33,7 +33,8 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addResourceHandlers(
             org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry registry) {
+        String absolutePath = new java.io.File(profile).getAbsolutePath();
         registry.addResourceHandler("/profile/**")
-                .addResourceLocations("file:" + profile + "/");
+                .addResourceLocations("file:" + absolutePath + "/");
     }
 }

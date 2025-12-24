@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MoreHorizontal, Trash2 } from 'lucide-react';
+import { getAvatarUrl } from '../../utils/avatarUtils';
 
 interface Session {
     id: number;
@@ -60,7 +61,7 @@ const SessionList: React.FC<SessionListProps> = ({ sessions, activeSessionId, on
                 >
                     <div className="relative">
                         {session.avatar ? (
-                            <img src={session.avatar} className="w-10 h-10 rounded-lg object-cover" alt={session.name} />
+                            <img src={getAvatarUrl(session.avatar, session.id)} className="w-10 h-10 rounded-lg object-cover" alt={session.name} />
                         ) : (
                             <div className="w-10 h-10 rounded-lg bg-slate-200 flex items-center justify-center text-slate-500">
                                 <MoreHorizontal size={20} />
