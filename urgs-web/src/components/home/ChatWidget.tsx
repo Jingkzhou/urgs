@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { getAvatarUrl } from '../../utils/avatarUtils';
 import { MessageCircle, X, Search, Plus, Minus } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import SessionList from '../im/SessionList';
 import ChatWindow from '../im/ChatWindow';
 import { imService } from '../../services/imService';
@@ -173,7 +174,7 @@ const ChatWidget: React.FC = () => {
                 return {
                     id: s.peerId,
                     name: s.name || meta.name, // Use backend name if available (now fixed in Entity)
-                    avatar: getAvatarUrl(s.avatar || meta.avatar, s.peerId),
+                    avatar: getAvatarUrl(s.avatar || meta.avatar, s.name || meta.name || String(s.peerId)),
                     message: s.lastMsgContent || '',
                     time: s.lastMsgTime ? new Date(s.lastMsgTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
                     unread: s.unreadCount,
@@ -489,103 +490,124 @@ const ChatWidget: React.FC = () => {
     };
 
     return (
-        <div className="fixed bottom-8 right-8 z-50 flex flex-col items-end print:hidden">
+        <div className="fixed bottom-8 right-8 z-50 flex flex-col items-end print:hidden font-sans antialiased">
             {/* Chat Window */}
-            {isOpen && (
-                <div className="mb-4 bg-white rounded-lg shadow-2xl border border-slate-200 w-[800px] h-[600px] flex overflow-hidden animate-in slide-in-from-bottom-5 fade-in duration-300">
+            <AnimatePresence>
+                {isOpen && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                        className="mb-6 bg-white/85 backdrop-blur-2xl rounded-2xl shadow-2xl border border-white/50 w-[950px] h-[700px] flex overflow-hidden ring-1 ring-black/5"
+                    >
 
-                    {/* Sidebar */}
-                    <div className="w-80 bg-slate-50 border-r border-slate-200 flex flex-col flex-shrink-0">
-                        <div className="p-4 flex items-center justify-between border-b border-slate-100">
-                            <div className="flex items-center gap-3">
-                                <img
-                                    src={getAvatarUrl(currentUser?.avatarUrl, currentUser?.userId || 'Me')}
-                                    className="w-8 h-8 rounded-full object-cover"
-                                    alt="My Profile"
-                                />
-                                <span className="font-bold text-slate-700">消息</span>
-                            </div>
-                            <div className="relative">
-                                <button
-                                    onClick={() => setShowMenu(!showMenu)}
-                                    className="p-1 hover:bg-slate-200 rounded text-slate-500"
-                                >
-                                    <Plus size={20} />
-                                </button>
-                                {/* Menu Backdrop */}
-                                {showMenu && (
-                                    <div
-                                        className="fixed inset-0 z-40"
-                                        onClick={() => setShowMenu(false)}
-                                    />
-                                )}
-
-                                {/* Dropdown Menu */}
-                                {showMenu && (
-                                    <div className="absolute right-0 top-12 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-200">
-                                        <button
-                                            className="w-full text-left px-4 py-2 hover:bg-slate-50 text-sm text-slate-700"
-                                            onClick={handleOpenAddFriend}
-                                        >
-                                            添加好友
-                                        </button>
-                                        <button
-                                            className="w-full text-left px-4 py-2 hover:bg-slate-50 text-sm text-slate-700"
-                                            onClick={handleOpenCreateGroup}
-                                        >
-                                            发起群聊
-                                        </button>
+                        {/* Sidebar */}
+                        <div className="w-80 bg-slate-50/50 backdrop-blur-md border-r border-slate-200/60 flex flex-col flex-shrink-0">
+                            {/* Header */}
+                            <div className="h-16 px-5 flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-slate-50/50 to-white/50">
+                                <div className="flex items-center gap-3">
+                                    <div className="relative">
+                                        <img
+                                            src={getAvatarUrl(currentUser?.avatarUrl, currentUser?.name || currentUser?.wxId || 'Me')}
+                                            className="w-9 h-9 rounded-full object-cover ring-2 ring-white shadow-sm"
+                                            alt="My Profile"
+                                        />
+                                        <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full"></div>
                                     </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="p-4">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                                <input
-                                    type="text"
-                                    placeholder="搜索"
-                                    className="w-full pl-9 pr-4 py-2 bg-slate-200/50 border-transparent rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-all"
-                                />
-                            </div>
-                        </div>
-
-                        <SessionList
-                            sessions={sessions}
-                            activeSessionId={activeSessionId || undefined}
-                            onSelectSession={handleSelectSession}
-                            onDeleteSession={handleDeleteSession}
-                        />
-
-                    </div>
-
-                    {/* Main Chat Area */}
-                    <div className="flex-1 bg-[#FDFDFC] flex flex-col relative w-full">
-
-
-                        {activeSessionId && activeSession ? (
-                            <ChatWindow
-                                key={activeSessionId}
-                                sessionName={activeSession.name}
-                                messages={messages[activeSessionId] || []}
-                                onSendMessage={handleSendMessage}
-                                onFileUpload={userService.uploadFile}
-                                onShowDetails={handleShowGroupDetails}
-                            />
-                        ) : (
-                            <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-                                <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6 text-slate-400">
-                                    <MessageCircle size={32} />
+                                    <div className="flex flex-col">
+                                        <span className="font-bold text-slate-800 text-sm tracking-tight">{currentUser?.name || currentUser?.wxId || '消息'}</span>
+                                        <span className="text-[10px] text-slate-500 font-medium">在线</span>
+                                    </div>
                                 </div>
-                                <h3 className="text-slate-400 text-sm font-medium">选择一个会话开始聊天</h3>
-                            </div>
-                        )}
-                    </div>
+                                <div className="relative">
+                                    <button
+                                        onClick={() => setShowMenu(!showMenu)}
+                                        className="w-8 h-8 flex items-center justify-center hover:bg-slate-200/80 rounded-full text-slate-600 transition-colors"
+                                    >
+                                        <Plus size={18} strokeWidth={2.5} />
+                                    </button>
 
-                </div>
-            )
-            }
+                                    {/* Backdrop */}
+                                    {showMenu && (
+                                        <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
+                                    )}
+
+                                    {/* Dropdown Menu */}
+                                    <AnimatePresence>
+                                        {showMenu && (
+                                            <motion.div
+                                                initial={{ opacity: 0, y: -10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0, y: -10 }}
+                                                className="absolute right-0 top-10 w-48 bg-white/90 backdrop-blur-xl rounded-xl shadow-xl border border-white/50 py-1.5 z-50 ring-1 ring-black/5"
+                                            >
+                                                <button
+                                                    className="w-full text-left px-4 py-2.5 hover:bg-slate-100/80 text-sm text-slate-700 font-medium transition-colors flex items-center gap-2"
+                                                    onClick={handleOpenAddFriend}
+                                                >
+                                                    <div className="w-6 h-6 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600"><Plus size={14} /></div>
+                                                    添加好友
+                                                </button>
+                                                <button
+                                                    className="w-full text-left px-4 py-2.5 hover:bg-slate-100/80 text-sm text-slate-700 font-medium transition-colors flex items-center gap-2"
+                                                    onClick={handleOpenCreateGroup}
+                                                >
+                                                    <div className="w-6 h-6 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600"><MessageCircle size={14} /></div>
+                                                    发起群聊
+                                                </button>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
+                            </div>
+
+                            {/* Search */}
+                            <div className="p-4">
+                                <div className="relative group">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 transition-colors group-focus-within:text-indigo-500" />
+                                    <input
+                                        type="text"
+                                        placeholder="搜索联系人、群组"
+                                        className="w-full pl-9 pr-4 py-2.5 bg-white/60 border border-slate-200/60 rounded-xl text-sm placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500/50 transition-all shadow-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            <SessionList
+                                sessions={sessions}
+                                activeSessionId={activeSessionId || undefined}
+                                onSelectSession={handleSelectSession}
+                                onDeleteSession={handleDeleteSession}
+                            />
+
+                        </div>
+
+                        {/* Main Chat Area */}
+                        <div className="flex-1 bg-white/40 flex flex-col relative w-full">
+                            {activeSessionId && activeSession ? (
+                                <ChatWindow
+                                    key={activeSessionId}
+                                    sessionName={activeSession.name}
+                                    messages={messages[activeSessionId] || []}
+                                    onSendMessage={handleSendMessage}
+                                    onFileUpload={userService.uploadFile}
+                                    onShowDetails={handleShowGroupDetails}
+                                />
+                            ) : (
+                                <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-slate-50/30">
+                                    <div className="w-24 h-24 bg-gradient-to-tr from-indigo-50 to-purple-50 rounded-3xl flex items-center justify-center mb-6 shadow-sm border border-white">
+                                        <MessageCircle size={40} className="text-indigo-200" />
+                                    </div>
+                                    <h3 className="text-slate-600 font-semibold text-lg mb-2">欢迎使用 URGS 消息</h3>
+                                    <p className="text-slate-400 text-sm max-w-xs leading-relaxed">选择左侧会话开始聊天，或点击 <span className="inline-flex items-center justify-center w-5 h-5 bg-slate-200 rounded-full text-xs text-slate-500 mx-1"><Plus size={10} /></span> 发起新的对话</p>
+                                </div>
+                            )}
+                        </div>
+
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Modals */}
             {
@@ -789,17 +811,36 @@ const ChatWidget: React.FC = () => {
             }
 
             {/* Floating Action Button */}
-            <button
+            <motion.button
+                layout
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => setIsOpen(!isOpen)}
-                className={`${isOpen ? 'bg-red-500 rotate-90' : 'bg-[#07C160] rotate-0'} text-white p-3.5 rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300 flex items-center justify-center relative group`}
+                className={`
+                    ${isOpen ? 'bg-gradient-to-r from-red-500 to-red-600' : 'bg-gradient-to-r from-indigo-500 to-purple-600'} 
+                    text-white p-4 rounded-full shadow-xl shadow-indigo-500/30 hover:shadow-2xl hover:shadow-indigo-500/40 
+                    transition-all duration-300 flex items-center justify-center relative group backdrop-blur-sm z-50
+                `}
             >
-                {isOpen ? <X size={24} /> : <MessageCircle size={24} />}
+                <div className="relative z-10">
+                    {isOpen ? <X size={26} /> : <MessageCircle size={26} fill="currentColor" className="text-white/20" strokeWidth={1.5} />}
+                    {!isOpen && <MessageCircle size={26} className="absolute inset-0 text-white" strokeWidth={2} />}
+                </div>
 
                 {/* Unread Indicator */}
-                {!isOpen && sessions.reduce((sum, s) => sum + (s.unread || 0), 0) > 0 && (
-                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full border-2 border-white"></span>
-                )}
-            </button>
+                <AnimatePresence>
+                    {!isOpen && sessions.reduce((sum, s) => sum + (s.unread || 0), 0) > 0 && (
+                        <motion.span
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            exit={{ scale: 0 }}
+                            className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white px-1 shadow-sm"
+                        >
+                            {sessions.reduce((sum, s) => sum + (s.unread || 0), 0)}
+                        </motion.span>
+                    )}
+                </AnimatePresence>
+            </motion.button>
         </div >
     );
 };

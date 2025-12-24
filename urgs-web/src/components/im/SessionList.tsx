@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { MoreHorizontal, Trash2 } from 'lucide-react';
 import { getAvatarUrl } from '../../utils/avatarUtils';
 
@@ -87,12 +88,13 @@ const SessionList: React.FC<SessionListProps> = ({ sessions, activeSessionId, on
                 </div>
             ))}
 
-            {/* Context Menu */}
-            {contextMenu && (
+            {/* Context Menu - Portaled to body */}
+            {contextMenu && createPortal(
                 <div
                     ref={contextMenuRef}
-                    className="fixed bg-white shadow-xl border border-slate-100 rounded-lg z-[100] py-1 w-32 animate-in fade-in duration-200"
+                    className="fixed bg-white shadow-xl border border-slate-100 rounded-lg z-[9999] py-1 w-32 animate-in fade-in duration-200"
                     style={{ top: contextMenu.y, left: contextMenu.x }}
+                    onClick={(e) => e.stopPropagation()}
                 >
                     <button
                         onClick={handleDelete}
@@ -101,7 +103,8 @@ const SessionList: React.FC<SessionListProps> = ({ sessions, activeSessionId, on
                         <Trash2 size={14} />
                         <span>删除会话</span>
                     </button>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );

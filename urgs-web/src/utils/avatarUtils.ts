@@ -1,13 +1,18 @@
 /**
  * Generate a consistent color based on a string (e.g., username or ID)
  */
+const COLORS = [
+    '#F87171', '#FB923C', '#FBBF24', '#A3E635', '#34D399', '#22D3EE', '#818CF8', '#A78BFA', '#F472B6', '#FB7185', // Red to Rose (400)
+    '#EF4444', '#F97316', '#F59E0B', '#84CC16', '#10B981', '#06B6D4', '#6366F1', '#8B5CF6', '#EC4899', '#F43F5E', // Red to Rose (500)
+];
+
 const stringToColor = (str: string) => {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
         hash = str.charCodeAt(i) + ((hash << 5) - hash);
     }
-    const c = (hash & 0x00ffffff).toString(16).toUpperCase();
-    return '#' + '00000'.substring(0, 6 - c.length) + c;
+    const index = Math.abs(hash) % COLORS.length;
+    return COLORS[index];
 };
 
 /**
