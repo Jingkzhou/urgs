@@ -183,8 +183,6 @@ cp .env.example .env
 
 # 启动服务 (不需要 --build)
 docker-compose up -d
-# 启动服务 (不需要 --build)
-docker-compose up -d
 ```
 
 ### 增量更新 / 单独更新服务 (例如 urgs-api)

@@ -4,7 +4,7 @@ import SessionList from '../im/SessionList';
 import ChatWindow from '../im/ChatWindow';
 import { imService } from '../../services/imService';
 import { userService } from '../../services/userService';
-
+import { WS_URL } from '../../config';
 const ChatWidget: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
@@ -194,7 +194,7 @@ const ChatWidget: React.FC = () => {
 
         // 2. Connect WebSocket
         if (currentUser.userId && currentUser.userId !== -1) {
-            const socket = new WebSocket('ws://localhost:8080/ws/im?userId=' + currentUser.userId);
+            const socket = new WebSocket(WS_URL + '?userId=' + currentUser.userId);
             socket.onopen = () => console.log('IM WS Connected');
             socket.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
