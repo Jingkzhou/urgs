@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { getAvatarUrl } from '../../utils/avatarUtils';
 import { MessageCircle, X, Search, Plus, Minus } from 'lucide-react';
 import SessionList from '../im/SessionList';
 import ChatWindow from '../im/ChatWindow';
@@ -368,10 +369,10 @@ const ChatWidget: React.FC = () => {
             // Re-map (duplicated logic, should refactor)
             const getMeta = (id: number, type: number) => {
                 if (type === 2) return { name: 'Risk Dept Group', avatar: null };
-                if (id === 102) return { name: 'Li Manager', avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop' };
-                if (id === 103) return { name: 'Smart Assistant', avatar: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=100&h=100&fit=crop' };
+                if (id === 102) return { name: 'Li Manager', avatar: null };
+                if (id === 103) return { name: 'Smart Assistant', avatar: null };
                 const u = availableUsers.find(u => u.userId === id) || { wxId: 'User ' + id };
-                return { name: u.wxId || ('User ' + id), avatar: null };
+                return { name: u.wxId || ('User ' + id), avatar: getAvatarUrl(u.avatarUrl, u.userId) };
             };
 
             const uiSessions = newSessions.map(s => {
@@ -498,7 +499,7 @@ const ChatWidget: React.FC = () => {
                         <div className="p-4 flex items-center justify-between border-b border-slate-100">
                             <div className="flex items-center gap-3">
                                 <img
-                                    src={currentUser?.avatarUrl || "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop"}
+                                    src={getAvatarUrl(currentUser?.avatarUrl, currentUser?.userId || 'Me')}
                                     className="w-8 h-8 rounded-full object-cover"
                                     alt="My Profile"
                                 />
@@ -615,7 +616,7 @@ const ChatWidget: React.FC = () => {
                                                 }
                                             }}
                                         />
-                                        <img src={u.avatarUrl || ('https://api.dicebear.com/7.x/avataaars/svg?seed=' + u.userId)} className="w-8 h-8 rounded-full" />
+                                        <img src={getAvatarUrl(u.avatarUrl, u.userId)} className="w-8 h-8 rounded-full" />
                                         <span>{u.wxId} (ID: {u.userId})</span>
                                     </div>
                                 ))}
@@ -684,7 +685,7 @@ const ChatWidget: React.FC = () => {
                                                 </button>
                                             )}
                                             <img
-                                                src={m.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop'}
+                                                src={getAvatarUrl(m.avatarUrl, m.userId)}
                                                 className={`w-10 h-10 rounded-lg object-cover transition-all ${isDeleteMode ? 'shake-animation opacity-90' : ''}`}
                                                 alt={m.wxId}
                                             />
@@ -727,7 +728,7 @@ const ChatWidget: React.FC = () => {
                                         <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedUserIds.includes(u.userId) ? 'bg-[#07C160] border-[#07C160]' : 'border-slate-300'}`}>
                                             {selectedUserIds.includes(u.userId) && <div className="w-2 h-2 bg-white rounded-full" />}
                                         </div>
-                                        <img src={u.avatarUrl || ('https://api.dicebear.com/7.x/avataaars/svg?seed=' + u.userId)} className="w-8 h-8 rounded-full" />
+                                        <img src={getAvatarUrl(u.avatarUrl, u.userId)} className="w-8 h-8 rounded-full" />
                                         <span>{u.wxId || ('用户 ' + u.userId)}</span>
                                     </div>
                                 ))}
@@ -766,7 +767,7 @@ const ChatWidget: React.FC = () => {
                                         <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedUserIds.includes(u.userId) ? 'bg-[#07C160] border-[#07C160]' : 'border-slate-300'}`}>
                                             {selectedUserIds.includes(u.userId) && <div className="w-2 h-2 bg-white rounded-full" />}
                                         </div>
-                                        <img src={u.avatarUrl || ('https://api.dicebear.com/7.x/avataaars/svg?seed=' + u.userId)} className="w-8 h-8 rounded-full" />
+                                        <img src={getAvatarUrl(u.avatarUrl, u.userId)} className="w-8 h-8 rounded-full" />
                                         <span>{u.wxId || ('用户 ' + u.userId)}</span>
                                     </div>
                                 ))}

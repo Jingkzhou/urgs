@@ -332,13 +332,17 @@ const UserForm: React.FC<{
                                     label="关联角色"
                                     value={formData.roleId}
                                     onChange={e => {
-                                        const selectedId = Number(e.target.value);
-                                        const selectedRole = safeRoleOptions.find(r => r.id === selectedId);
+                                        const selectedId = e.target.value; // Keep as string first
+                                        // Use loose comparison or string conversion to find role
+                                        const selectedRole = safeRoleOptions.find(r => String(r.id) === String(selectedId));
                                         setFormData({
                                             ...formData,
-                                            roleId: selectedId,
+                                            roleId: Number(selectedId), // Still save as number if backend expects number
                                             roleName: selectedRole?.name || ''
                                         });
+                                        if (!selectedRole && selectedId) {
+                                            console.warn("Role not found for ID:", selectedId, "Available:", safeRoleOptions);
+                                        }
                                     }}
                                     icon={<div className="w-4 h-4 flex items-center justify-center font-bold text-xs">👤</div>}
                                 >

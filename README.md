@@ -193,6 +193,7 @@ docker-compose up -d
 ```bash
 # 只构建 urgs-api
 docker-compose build urgs-api
+docker-compose build urgs-api
 
 # 导出 urgs-api 镜像
 docker save -o urgs-api-update.tar urgs-api:latest

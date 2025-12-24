@@ -2,6 +2,50 @@
 
 I have implemented the **Batch Process Monitoring** component as requested, matching the provided design mockups.
 
+# 配置重构完成：Docker 动态环境支持 (SIT/UAT/PROD)
+
+我已经将系统升级为“一次构建，到处运行”的架构。现在，你可以在不重新构建镜像的情况下，通过 Docker 环境变量动态配置所有 IP 和 URL 信息。
+
+## 核心变更
+
+### 1. Docker 运行时注入
+- **新增 [entrypoint.sh](file:///Users/work/Documents/JLbankGit/URGS/urgs-web/entrypoint.sh)**：容器启动时自动将环境变量写入 `config.js` 并更新 Nginx 配置。
+- **Dockerfile 升级**：集成了自动配置流程，使用 `ENTRYPOINT` 模式。
+
+### 2. Nginx 配置动态化
+- **新增 [nginx.conf.template](file:///Users/work/Documents/JLbankGit/URGS/urgs-web/nginx.conf.template)**：后端代理地址（API, RAG）现在支持通过环境变量动态替换。
+
+### 3. 前端载入逻辑
+- **[index.html](file:///Users/work/Documents/JLbankGit/URGS/urgs-web/index.html)**：自动加载容器生成的 `config.js`。
+- **[src/config.ts](file:///Users/work/Documents/JLbankGit/URGS/urgs-web/src/config.ts)**：优先使用容器注入的运行时配置，无缝对接不同环境。
+
+## SIT / UAT / PROD 部署说明
+
+你可以使用同一个 Docker 镜像，通过 `-e` 参数运行在不同环境：
+
+### SIT 环境
+```bash
+docker run -d -p 80:80 \
+  -e VITE_WS_URL=ws://sit-server:8080/ws/im \
+  -e VITE_API_URL=http://sit-server:8080 \
+  -e VITE_RAG_URL=http://sit-rag:8001 \
+  urgs-web:latest
+```
+
+### PROD 环境
+```bash
+docker run -d -p 80:80 \
+  -e VITE_WS_URL=ws://prod-server.company.com/ws/im \
+  -e VITE_API_URL=http://prod-api.company.com \
+  -e VITE_RAG_URL=http://prod-rag.company.com \
+  urgs-web:latest
+```
+
+## 环境变量说明
+- `VITE_WS_URL`: 前端 WebSocket 连接地址。
+- `VITE_API_URL`: Nginx 代理后端 API 的目标地址。
+- `VITE_RAG_URL`: Nginx 代理 RAG 服务的目标地址。
+
 ## Features
 
 ### 1. Metrics Dashboard

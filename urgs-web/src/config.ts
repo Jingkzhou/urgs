@@ -10,4 +10,14 @@
 // Default to localhost if not specified in environment
 const DEFAULT_WS_URL = 'ws://localhost:8080/ws/im';
 
-export const WS_URL = import.meta.env.VITE_WS_URL || DEFAULT_WS_URL;
+// Interface for window object
+declare global {
+    interface Window {
+        __RUNTIME_CONFIG__?: {
+            VITE_WS_URL?: string;
+        };
+    }
+}
+
+// Priority: Runtime config.js (Docker) > Build-time Env > Default
+export const WS_URL = window.__RUNTIME_CONFIG__?.VITE_WS_URL || import.meta.env.VITE_WS_URL || DEFAULT_WS_URL;

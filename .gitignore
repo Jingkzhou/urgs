@@ -63,3 +63,4 @@ logs/
 # t_quartz_task.sql
 urgs-images.tar
 urgs-api-update.tar
+urgs-web-update.tar

@@ -35,7 +35,7 @@ export const getSessions = async (): Promise<Session[]> => {
     try {
         const user = getUserInfo();
         const sessions = await get<any[]>(`${API_BASE}/chat/session`, {
-            userId: user.id,
+            userId: user.id || '1',
             _t: Date.now().toString()
         });
         if (!sessions) return [];
@@ -93,7 +93,7 @@ export const createSession = async (agentId?: number): Promise<Session> => {
 
 export const deleteSession = async (id: string) => {
     const user = getUserInfo();
-    await del(`${API_BASE}/chat/session/${id}`, { userId: user.id });
+    await del(`${API_BASE}/chat/session/${id}`, { userId: user.id || '1' });
 };
 
 export const saveSession = (session: Session) => {

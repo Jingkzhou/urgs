@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MoreHorizontal, Paperclip, Mic, Send, Image, ZoomIn, ZoomOut, RotateCw, Download, X } from 'lucide-react';
+import { getAvatarUrl } from '../../utils/avatarUtils';
 
 interface Message {
     id: number;
@@ -131,7 +132,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
     };
 
     // Default Avatar
-    const defaultAvatar = 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix';
+    const defaultAvatar = getAvatarUrl(null, 'User');
 
     return (
         <div className="flex-1 bg-[#F5F5F5] flex flex-col relative h-full"> {/* WeChat bg color closer to F5F5F5 */}
@@ -155,7 +156,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
                         {!msg.isSelf && (
                             <>
                                 <img
-                                    src={msg.senderAvatar || defaultAvatar}
+                                    src={getAvatarUrl(msg.senderAvatar, msg.senderId)}
                                     className="w-10 h-10 rounded-md mr-3 flex-shrink-0 cursor-pointer hover:opacity-90"
                                     alt="Avatar"
                                 />
@@ -204,7 +205,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
                                     </div>
                                 </div>
                                 <img
-                                    src={msg.senderAvatar || defaultAvatar}
+                                    src={getAvatarUrl(msg.senderAvatar, msg.senderId)}
                                     className="w-10 h-10 rounded-md ml-3 flex-shrink-0 cursor-pointer hover:opacity-90"
                                     alt="Avatar"
                                 />
