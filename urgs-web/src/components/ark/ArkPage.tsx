@@ -54,6 +54,7 @@ const ArkPage: React.FC = () => {
             const filteredAgents = await fetchAgents();
             const sessionList = await getSessions();
             setSessions(sessionList);
+
             if (sessionList.length > 0) {
                 const firstId = sessionList[0].id;
                 isSwitchingSession.current = true;

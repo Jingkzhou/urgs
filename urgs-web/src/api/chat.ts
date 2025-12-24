@@ -15,6 +15,7 @@ export interface Session {
     messages: Message[];
     updatedAt: number;
     agentId?: number;
+    userId: string;
 }
 
 const API_BASE = '/api/ai';
@@ -34,17 +35,35 @@ const getUserInfo = () => {
 export const getSessions = async (): Promise<Session[]> => {
     try {
         const user = getUserInfo();
+        // Use id or empId. Only fallback to '1' if absolutely nothing identifies the user.
+        const userId = (user.id || user.empId) ? String(user.id || user.empId) : '1';
+        console.log('[DEBUG] getSessions: Resolved Current User ID (id/empId):', userId);
+
         const sessions = await get<any[]>(`${API_BASE}/chat/session`, {
-            userId: user.id || '1',
+            userId: userId,
             _t: Date.now().toString()
         });
         if (!sessions) return [];
-        return sessions.map((s: any) => ({
+
+        // Filter sessions to ensure they belong to the current user
+        const filtered = sessions.filter((s: any) => {
+            // Do NOT default to '1'. If userId is missing, it's not a match.
+            const sessionUserId = (s.userId !== undefined && s.userId !== null) ? String(s.userId) : 'MISSING_IN_RESPONSE';
+
+            const match = sessionUserId === userId;
+            // Debug log only on mismatch if it's not the common '1' case to avoid noise, or mismatch logic
+            return match;
+        });
+
+        // console.log(`[DEBUG] getSessions: Total ${sessions.length} -> Filtered ${filtered.length}`);
+
+        return filtered.map((s: any) => ({
             id: s.id,
             title: s.title,
             messages: [],
             updatedAt: new Date(s.updateTime).getTime(),
-            agentId: s.agentId
+            agentId: s.agentId,
+            userId: s.userId
         }));
     } catch (e) {
         console.error('Failed to fetch sessions', e);
@@ -71,7 +90,10 @@ export const loadSessionMessages = async (sessionId: string): Promise<Message[]>
 export const createSession = async (agentId?: number): Promise<Session> => {
     try {
         const user = getUserInfo();
-        const userId = user.id || '1'; // Fallback to '1' if id is missing to prevent DB error
+        // Use id or empId
+        const userId = (user.id || user.empId) ? String(user.id || user.empId) : '1';
+        console.log('[DEBUG] createSession: Creating for User ID:', userId);
+
         const payload: any = { userId: userId, title: 'New Chat' };
         if (agentId) {
             payload.agentId = agentId;
@@ -83,17 +105,19 @@ export const createSession = async (agentId?: number): Promise<Session> => {
             title: s.title,
             messages: [],
             updatedAt: Date.now(),
-            agentId: s.agentId
+            agentId: s.agentId,
+            userId: s.userId || userId
         };
     } catch (e) {
         console.error("Create session failed", e);
-        return { id: uuidv4(), title: 'Error Session', messages: [], updatedAt: Date.now() };
+        return { id: uuidv4(), title: 'Error Session', messages: [], updatedAt: Date.now(), userId: '1' };
     }
 };
 
 export const deleteSession = async (id: string) => {
     const user = getUserInfo();
-    await del(`${API_BASE}/chat/session/${id}`, { userId: user.id || '1' });
+    const userId = (user.id || user.empId) ? String(user.id || user.empId) : '1';
+    await del(`${API_BASE}/chat/session/${id}`, { userId: userId });
 };
 
 export const saveSession = (session: Session) => {
