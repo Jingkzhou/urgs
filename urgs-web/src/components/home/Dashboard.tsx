@@ -3,7 +3,6 @@ import SystemLinks from './SystemLinks';
 import StatsSection from './StatsSection';
 import Notices from './Notices';
 import Auth from '../Auth';
-import QuickAccess from './QuickAccess';
 import BatchMonitoring from './BatchMonitoring';
 import DevWorkbench from './DevWorkbench';
 

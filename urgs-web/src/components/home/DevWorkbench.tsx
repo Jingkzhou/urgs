@@ -10,7 +10,7 @@ import { motion } from 'framer-motion';
 // --- Shared VS Code / Tech Aesthetic Components ---
 
 const GlassCard: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-    <div className={`bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden ${className}`}>
+    <div className={`bg-white/70 backdrop-blur-2xl border border-white/40 shadow-xl shadow-black/5 rounded-3xl overflow-hidden ${className}`}>
         {children}
     </div>
 );
@@ -18,13 +18,13 @@ const GlassCard: React.FC<{ children: React.ReactNode; className?: string }> = (
 // ... (Keeping imports and setups)
 
 const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; subtitle: string; color: string }> = ({ icon, title, subtitle, color }) => (
-    <div className="flex items-center gap-3 mb-4">
-        <div className={`p-2.5 rounded-xl ${color} text-white shadow-lg shadow-indigo-500/20`}>
-            {React.cloneElement(icon as React.ReactElement, { size: 20 } as any)}
+    <div className="flex items-center gap-3 mb-5">
+        <div className={`p-2.5 rounded-xl ${color} text-white shadow-lg shadow-black/5`}>
+            {React.cloneElement(icon as React.ReactElement, { size: 18, strokeWidth: 2.5 } as any)}
         </div>
         <div>
-            <h3 className="font-bold text-slate-800 text-lg tracking-tight">{title}</h3>
-            <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">{subtitle}</p>
+            <h3 className="font-bold text-slate-800 text-lg tracking-tight leading-none">{title}</h3>
+            <p className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mt-1">{subtitle}</p>
         </div>
     </div>
 );
@@ -68,7 +68,7 @@ const GitStatRow: React.FC<{ label: string; value: string; trend: string; trendU
     <div className="flex items-center justify-between p-3 bg-slate-50/50 rounded-xl hover:bg-slate-50 transition-colors group">
         <div className="flex items-center gap-3">
             <div className="p-2 bg-white rounded-lg shadow-sm text-slate-500 group-hover:text-indigo-600 transition-colors">
-                {React.cloneElement(icon as React.ReactElement, { size: 16 })}
+                {React.cloneElement(icon as React.ReactElement<any>, { size: 16 })}
             </div>
             <span className="text-sm font-medium text-slate-600">{label}</span>
         </div>
@@ -83,12 +83,12 @@ const GitStatRow: React.FC<{ label: string; value: string; trend: string; trendU
 
 const GitStatsPanel: React.FC = () => {
     return (
-        <GlassCard className="p-6 h-full border border-violet-100">
+        <GlassCard className="p-6 h-full border-none ring-1 ring-black/5">
             <SectionHeader
                 icon={<GitBranch />}
-                title="代码仓库概览"
-                subtitle="Git Repository Statistics"
-                color="bg-gradient-to-br from-violet-600 to-fuchsia-600"
+                title="代码仓库"
+                subtitle="Repositories"
+                color="bg-black"
             />
 
             <div className="grid grid-cols-2 gap-4 mb-6">
@@ -135,12 +135,12 @@ const GitStatsPanel: React.FC = () => {
 
 const LineageEngineCard: React.FC = () => {
     return (
-        <GlassCard className="p-6 h-full border border-blue-100">
+        <GlassCard className="p-6 h-full border-none ring-1 ring-black/5">
             <SectionHeader
                 icon={<Network />}
-                title="血缘解析引擎"
-                subtitle="SQL 血缘解析"
-                color="bg-gradient-to-br from-blue-500 to-cyan-500"
+                title="血缘解析"
+                subtitle="Lineage Engine"
+                color="bg-blue-500"
             />
 
             <div className="relative h-40 flex items-center justify-center mb-4">
@@ -181,46 +181,49 @@ const LineageEngineCard: React.FC = () => {
 
 const RagStatusCard: React.FC = () => {
     return (
-        <div className="bg-slate-800 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden h-full flex flex-col">
+        <GlassCard className="p-6 h-full border-none ring-1 ring-black/5 relative overflow-hidden group">
+            {/* Ambient Background Blob */}
+            <div className="absolute -top-20 -right-20 w-64 h-64 bg-purple-200/30 rounded-full blur-3xl group-hover:bg-purple-200/40 transition-colors duration-700"></div>
 
-            <div className="relative z-10 flex items-center gap-3 mb-6">
-                <div className="p-2 bg-white/10 rounded-lg border border-white/5">
-                    <Box size={20} className="text-purple-400" />
-                </div>
-                <div>
-                    <h3 className="font-bold text-white text-lg">RAG 知识库</h3>
-                    <p className="text-xs text-white/40 font-medium uppercase tracking-wider">向量知识库</p>
-                </div>
-            </div>
+            <SectionHeader
+                icon={<Box />}
+                title="RAG 知识库"
+                subtitle="Knowledge Base"
+                color="bg-purple-500"
+            />
 
-            <div className="flex-1 space-y-4 relative z-10">
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/5">
-                    <span className="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]"></span>
+            <div className="flex-1 space-y-4 relative z-10 mt-2">
+                <div className="flex items-center gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-100/50">
+                    <span className="relative flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                    </span>
                     <div className="flex-1">
-                        <div className="text-xs text-white/60">向量索引状态</div>
-                        <div className="text-sm font-bold text-white">正常</div>
+                        <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Index Status</div>
+                        <div className="text-sm font-bold text-slate-700">Healthy</div>
                     </div>
                     <div className="text-right">
-                        <div className="text-xs text-white/60">文档数</div>
-                        <div className="text-sm font-bold text-white">2,850</div>
+                        <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Docs</div>
+                        <div className="text-md font-black text-slate-800">2,850</div>
                     </div>
                 </div>
 
                 <div className="space-y-2 pt-2">
-                    <div className="flex justify-between text-xs text-white/40">
-                        <span>嵌入队列</span>
-                        <span>处理中...</span>
+                    <div className="flex justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                        <span>Embedding Queue</span>
+                        <span className="text-purple-500">Processing</span>
                     </div>
-                    <div className="w-full bg-white/10 rounded-full h-1">
+                    <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                         <div className="h-full bg-purple-500 rounded-full w-2/3 animate-pulse"></div>
                     </div>
                 </div>
             </div>
 
-            <button className="mt-6 w-full py-2.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-xs font-bold text-white border border-white/5 flex items-center justify-center gap-2">
-                <Search size={14} /> 知识检索测试
+            <button className="mt-6 w-full py-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-purple-600 transition-all text-xs font-bold border border-slate-200/50 flex items-center justify-center gap-2 group/btn">
+                <Search size={14} className="group-hover/btn:scale-110 transition-transform" />
+                <span>知识检索测试</span>
             </button>
-        </div>
+        </GlassCard>
     );
 };
 
@@ -229,17 +232,17 @@ const RagStatusCard: React.FC = () => {
 
 const MyTasksList: React.FC = () => {
     return (
-        <GlassCard className="col-span-1 lg:col-span-2 p-6 border border-slate-100">
+        <GlassCard className="col-span-1 lg:col-span-2 p-6 border-none ring-1 ring-black/5">
             <div className="flex justify-between items-center mb-6">
                 <SectionHeader
                     icon={<Terminal />}
-                    title="我的任务实例"
-                    subtitle="我的执行实例"
-                    color="bg-gradient-to-br from-slate-700 to-slate-800"
+                    title="任务实例"
+                    subtitle="Execution Instances"
+                    color="bg-slate-700"
                 />
                 <div className="flex gap-2">
-                    <button className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors">
-                        <RefreshCw size={18} />
+                    <button className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors">
+                        <RefreshCw size={16} />
                     </button>
                 </div>
             </div>
@@ -289,20 +292,20 @@ const MyTasksList: React.FC = () => {
 
 const DevWorkbench: React.FC = () => {
     return (
-        <div className="animate-fade-in-up space-y-6">
+        <div className="animate-fade-in-up space-y-8 p-2">
 
             {/* Header Area */}
-            <div className="flex items-center justify-between mb-4 px-1">
+            <div className="flex items-center justify-between mb-2">
                 <div>
-                    <h2 className="text-2xl font-black text-slate-800 tracking-tight">研发指挥中心</h2>
-                    <p className="text-sm text-slate-500 font-medium">URGS 统一资源治理平台</p>
+                    <h2 className="text-3xl font-black text-slate-900 tracking-tight">研发控制台</h2>
+                    <p className="text-sm text-slate-500 font-medium mt-1">Unified Resource Governance System</p>
                 </div>
                 <div className="flex gap-3">
-                    <button className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 hover:text-indigo-600 shadow-sm transition-all flex items-center gap-2">
-                        <Play size={16} /> 新建作业
+                    <button className="px-5 py-2.5 bg-white/80 backdrop-blur-md border border-white/50 rounded-full text-sm font-bold text-slate-700 hover:bg-white hover:shadow-lg transition-all flex items-center gap-2">
+                        <Play size={16} className="text-blue-500" /> <span className="pt-0.5">新建作业</span>
                     </button>
-                    <button className="px-4 py-2 bg-indigo-600 rounded-xl text-sm font-bold text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all flex items-center gap-2">
-                        <Zap size={16} /> 快速调试
+                    <button className="px-5 py-2.5 bg-black text-white rounded-full text-sm font-bold hover:scale-105 hover:shadow-xl hover:shadow-black/20 transition-all flex items-center gap-2">
+                        <Zap size={16} className="text-yellow-400" /> <span className="pt-0.5">快速调试</span>
                     </button>
                 </div>
             </div>
