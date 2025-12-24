@@ -54,6 +54,10 @@ services:
   urgs-web:
     build: ./urgs-web
     image: urgs-web:latest
+    environment:
+      - VITE_WS_URL=${VITE_WS_URL}
+      - VITE_API_URL=${VITE_API_URL}
+      - VITE_RAG_URL=${VITE_RAG_URL}
     ports:
       - "${HOST_PORT_WEB}:80"
     depends_on:

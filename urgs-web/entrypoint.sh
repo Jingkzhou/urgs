@@ -12,6 +12,8 @@ window.__RUNTIME_CONFIG__ = {
 };
 EOF
 
+chmod 644 /usr/share/nginx/html/config.js
+
 # Handle Nginx dynamic proxy targets
 # We use /etc/nginx/conf.d/default.conf.template as the source
 export API_TARGET="${VITE_API_URL:-http://urgs-api:8080}"
