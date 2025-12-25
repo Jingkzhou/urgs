@@ -818,7 +818,6 @@ const RegulatoryAssetView: React.FC = () => {
                                         <div className="text-sm text-slate-700 font-medium">{el.cnName || el.name}</div>
                                         {el.cnName && <div className="text-xs text-slate-400 font-mono">{el.name}</div>}
                                     </div>
-                                    <div className="w-32 text-xs text-slate-500 font-mono truncate">{el.code || '-'}</div>
                                     <div className="w-48 text-xs text-slate-500 px-1">
                                         {el.type === 'FIELD' ? (
                                             // 字段：显示值域
@@ -1092,7 +1091,7 @@ const DetailModal: React.FC<{
                             <h3 className="text-lg font-bold text-slate-800">{data.cnName || data.name}</h3>
                             <div className="flex items-center gap-2 text-sm text-slate-500 font-mono mt-1">
                                 {data.name}
-                                {!isTable && element.code && <span className="bg-slate-200 px-1.5 py-0.5 rounded text-xs text-slate-600">{element.code}</span>}
+                                {!isTable && <span className="text-xs text-slate-400 font-mono">ID: {element.id}</span>}
                                 {isTable && table.sortOrder !== undefined && <span className="bg-slate-200 px-1.5 py-0.5 rounded text-xs text-slate-600">Seq: {table.sortOrder}</span>}
                             </div>
                         </div>
@@ -1330,7 +1329,7 @@ const ElementModal: React.FC<{
                     <FormField label="名称 *" value={form.name} onChange={v => setForm({ ...form, name: v })} />
                     <FormField label="序号" value={String(form.sortOrder ?? 0)} onChange={v => setForm({ ...form, sortOrder: v ? parseInt(v) : 0 })} />
                     <FormField label="中文名" value={form.cnName} onChange={v => setForm({ ...form, cnName: v })} />
-                    <FormField label="编码" value={form.code} onChange={v => setForm({ ...form, code: v })} />
+
                     {isField && (
                         <>
                             <FormField label="数据类型" value={form.dataType} onChange={v => setForm({ ...form, dataType: v })} />

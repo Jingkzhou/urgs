@@ -45,9 +45,6 @@ public class RegElement {
     @ExcelProperty(value = "中文名", index = 3)
     private String cnName;
 
-    @ExcelProperty(value = "编码", index = 4)
-    private String code;
-
     @TableField("data_type")
     @ExcelProperty(value = "数据类型", index = 5)
     private String dataType;

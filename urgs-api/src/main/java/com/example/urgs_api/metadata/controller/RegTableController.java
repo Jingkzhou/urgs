@@ -116,99 +116,6 @@ public class RegTableController {
     }
 
     /**
-     * 同步代码片段
-     * 从 docs/sql/{systemCode}/ 目录下读取 SQL 文件，
-     * 根据指标编号匹配提取对应的 SQL 语句作为代码片段
-     */
-    @PostMapping("/sync-code-snippets")
-    public Map<String, Object> syncCodeSnippets(@RequestParam String systemCode) {
-        Map<String, Object> result = new HashMap<>();
-        int matchedCount = 0;
-        int updatedCount = 0;
-        List<String> matchedIndicators = new ArrayList<>();
-
-        try {
-            // 1. 获取项目根目录下的 SQL 文件目录
-            String basePath = System.getProperty("user.dir");
-            java.nio.file.Path sqlDir = java.nio.file.Paths.get(basePath, "docs", "sql", systemCode);
-
-            if (!java.nio.file.Files.exists(sqlDir)) {
-                result.put("success", false);
-                result.put("message", "SQL 目录不存在: " + sqlDir.toString());
-                return result;
-            }
-
-            // 2. 读取所有 SQL 文件内容
-            Map<String, String> sqlFileContents = new HashMap<>();
-            try (java.nio.file.DirectoryStream<java.nio.file.Path> stream = java.nio.file.Files
-                    .newDirectoryStream(sqlDir, "*.sql")) {
-                for (java.nio.file.Path sqlFile : stream) {
-                    String content = java.nio.file.Files.readString(sqlFile);
-                    String fileName = sqlFile.getFileName().toString().toLowerCase();
-                    sqlFileContents.put(fileName, content);
-                }
-            }
-
-            if (sqlFileContents.isEmpty()) {
-                result.put("success", false);
-                result.put("message", "SQL 目录中没有找到 .sql 文件");
-                return result;
-            }
-
-            // 3. 查询该系统下所有表
-            List<RegTable> tables = regTableService.list(
-                    new LambdaQueryWrapper<RegTable>().eq(RegTable::getSystemCode, systemCode));
-
-            // 4. 遍历每个表的指标，查找匹配的代码片段
-            for (RegTable table : tables) {
-                List<RegElement> elements = regElementService.list(
-                        new LambdaQueryWrapper<RegElement>()
-                                .eq(RegElement::getTableId, table.getId())
-                                .eq(RegElement::getType, "INDICATOR"));
-
-                for (RegElement element : elements) {
-                    String indicatorCode = element.getCode();
-                    if (indicatorCode == null || indicatorCode.isEmpty()) {
-                        continue;
-                    }
-
-                    // 在所有 SQL 文件中查找包含该指标编号的语句
-                    for (Map.Entry<String, String> entry : sqlFileContents.entrySet()) {
-                        String sqlContent = entry.getValue();
-
-                        // 查找包含该指标编号的 SQL 语句
-                        String codeSnippet = extractCodeSnippet(sqlContent, indicatorCode);
-                        if (codeSnippet != null && !codeSnippet.isEmpty()) {
-                            // 更新元素的代码片段
-                            element.setCodeSnippet(codeSnippet);
-                            element.setUpdateTime(LocalDateTime.now());
-                            regElementService.updateById(element);
-
-                            matchedCount++;
-                            updatedCount++;
-                            matchedIndicators.add(indicatorCode);
-                            break; // 找到就停止，每个指标只匹配一次
-                        }
-                    }
-                }
-            }
-
-            result.put("success", true);
-            result.put("message", String.format("同步完成，共匹配 %d 个指标", matchedCount));
-            result.put("matchedCount", matchedCount);
-            result.put("updatedCount", updatedCount);
-            result.put("matchedIndicators", matchedIndicators);
-
-        } catch (Exception e) {
-            result.put("success", false);
-            result.put("message", "同步失败: " + e.getMessage());
-            e.printStackTrace();
-        }
-
-        return result;
-    }
-
-    /**
      * 生成 Hive SQL 文件
      * 优化点：
      * 1. 逻辑去重：对于相同的取数逻辑，使用 CTE (WITH) 语法只定义一次。
@@ -241,7 +148,7 @@ public class RegTableController {
                 // LogicKey -> List<IndicatorCode>
                 Map<String, List<String>> logicGroups = new LinkedHashMap<>();
                 for (RegElement element : elements) {
-                    String indicatorCode = element.getCode();
+                    String indicatorCode = "N/A"; // Code removed
                     String codeSnippet = element.getCodeSnippet();
 
                     // 使用占位符替换表名，以此作为逻辑主键
@@ -436,41 +343,6 @@ public class RegTableController {
     // 已移除旧的 generateSqlFiles，由新的 writeTableSqlFile 替代
 
     /**
-     * 从 SQL 内容中提取包含指定指标编号的代码片段
-     */
-    private String extractCodeSnippet(String sqlContent, String indicatorCode) {
-        if (sqlContent == null || indicatorCode == null) {
-            return null;
-        }
-
-        // 将 SQL 内容按语句分割（以分号为分隔符）
-        String[] statements = sqlContent.split(";");
-        StringBuilder matchedSnippets = new StringBuilder();
-
-        for (String stmt : statements) {
-            String trimmedStmt = stmt.trim();
-            if (trimmedStmt.isEmpty()) {
-                continue;
-            }
-
-            // 检查该语句是否包含指标编号（精确匹配，考虑引号包围）
-            // 匹配 'G01_5..B' 或 "G01_5..B" 形式
-            if (trimmedStmt.contains("'" + indicatorCode + "'") ||
-                    trimmedStmt.contains("\"" + indicatorCode + "\"") ||
-                    trimmedStmt.contains("'" + indicatorCode.toUpperCase() + "'") ||
-                    trimmedStmt.contains("'" + indicatorCode.toLowerCase() + "'")) {
-
-                if (matchedSnippets.length() > 0) {
-                    matchedSnippets.append("\n\n");
-                }
-                matchedSnippets.append(trimmedStmt).append(";");
-            }
-        }
-
-        return matchedSnippets.length() > 0 ? matchedSnippets.toString() : null;
-    }
-
-    /**
      * 批量导出报表（多 Sheet Excel）
      * 第一个 Sheet：报表列表
      * 后续 Sheet：每个报表的字段详情（以报表编码命名）
@@ -563,7 +435,9 @@ public class RegTableController {
                     dto.setType(el.getType());
                     dto.setName(el.getName());
                     dto.setCnName(el.getCnName());
-                    dto.setCode(el.getCode());
+                    dto.setCnName(el.getCnName());
+                    // dto.setCode(el.getCode()); // Removed
+                    dto.setDataType(el.getDataType());
                     dto.setDataType(el.getDataType());
                     dto.setLength(el.getLength());
                     dto.setIsPk(el.getIsPk());
@@ -702,7 +576,9 @@ public class RegTableController {
                     el.setType(getCellValue(row.getCell(1)));
                     el.setName(getCellValue(row.getCell(2)));
                     el.setCnName(getCellValue(row.getCell(3)));
-                    el.setCode(getCellValue(row.getCell(4)));
+                    el.setCnName(getCellValue(row.getCell(3)));
+                    // el.setCode(getCellValue(row.getCell(4))); // Removed
+                    el.setDataType(getCellValue(row.getCell(5)));
                     el.setDataType(getCellValue(row.getCell(5)));
                     el.setLength(getIntValue(row.getCell(6)));
                     el.setIsPk(getIntValue(row.getCell(7)));
