@@ -151,53 +151,34 @@ uvicorn app.main:app --reload --port 8001
 
 如果生产服务器无法直接构建镜像，可先在开发机导出镜像，再导入生产环境。
 
-#### 1. 开发机：构建并导出镜像
-```bash
-# 构建所有镜像
-docker-compose build
+#### 1. 开发机：使用自动化脚本打包
+项目根目录提供了 `package.sh` 脚本，可一键完成镜像构建、导出及配置文件打包。
 
-# 导出镜像为 tar 文件
-docker save -o urgs-images.tar \
-  urgs-api:latest \
-  urgs-executor:latest \
-  urgs-web:latest \
-  urgs-rag:latest \
-  sql-lineage-engine:latest \
-  neo4j:5.15.0
+```bash
+# 执行打包脚本
+chmod +x package.sh
+./package.sh
 ```
+
+执行完成后，会生成 `urgs-dist` 目录，包含：
+- `urgs-images.tar`: 所有服务的离线镜像包
+- `install.sh`: 生产环境一键安装脚本
+- `docker-compose.yml`: 服务编排文件
+- `.env`: 生产环境配置文件
 
 #### 2. 传输文件到生产服务器
-将以下文件传输到生产服务器：
-- `urgs-images.tar` (镜像包)
-- `docker-compose.yml`
-- `.env.example` (复制为 `.env` 后修改)
+将打包生成的 `urgs-dist` 目录传输到生产服务器即可。
 
-#### 3. 生产服务器：导入镜像并启动
+#### 3. 生产服务器：一键部署
+进入目录并执行安装脚本：
+
 ```bash
-# 导入镜像
-docker load -i urgs-images.tar
-
-# 配置环境变量
-cp .env.example .env
-# 编辑 .env 文件，设置生产数据库地址等
-
-# 启动服务 (不需要 --build)
-docker-compose up -d
+cd urgs-dist
+# 执行一键安装
+./install.sh
 ```
 
-### 增量更新 / 单独更新服务 (例如 urgs-api)
-
-如果只修复了某个服务的代码 (例如 `urgs-api`)，不需要重新部署所有服务。
-
-#### 1. 开发机：重新构建并导出该服务的镜像
-```bash
-# 只构建 urgs-api
-docker-compose build urgs-api
-docker-compose build urgs-api
-
-# 导出 urgs-api 镜像
-docker save -o urgs-api-update.tar urgs-api:latest
-```
+脚本会自动导入镜像并启动所有服务。
 
 #### 2. 传输文件
 将 `urgs-api-update.tar` 传输到生产服务器。
