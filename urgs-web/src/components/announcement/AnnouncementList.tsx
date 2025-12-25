@@ -4,7 +4,11 @@ import { NOTICES } from '../../constants';
 import { message, Modal, Badge } from 'antd';
 import AnnouncementDetail from './AnnouncementDetail';
 
-const AnnouncementList: React.FC = () => {
+interface AnnouncementListProps {
+    onEdit?: (id: string) => void;
+}
+
+const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState<string>('all');
 
@@ -251,7 +255,11 @@ const AnnouncementList: React.FC = () => {
                                                 if (notice.createBy === currentUser) {
                                                     return (
                                                         <>
-                                                            <button className="p-1 text-slate-400 hover:text-slate-700 transition-colors" title="编辑">
+                                                            <button
+                                                                className="p-1 text-slate-400 hover:text-slate-700 transition-colors"
+                                                                title="编辑"
+                                                                onClick={() => onEdit && onEdit(notice.id)}
+                                                            >
                                                                 <Edit className="w-4 h-4" />
                                                             </button>
                                                             <button

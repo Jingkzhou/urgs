@@ -287,7 +287,7 @@ const ChatWidget: React.FC = () => {
                                 message: incomingMsg.type === 'image' ? '[Image]' : incomingMsg.content,
                                 time: incomingMsg.time,
                                 // Use Refs to check current state safely within closure
-                                unread: (isOpenRef.current && activeSessionIdRef.current === peerId) ? 0 : (session.unread + 1)
+                                unread: (isOpenRef.current && activeSessionIdRef.current === peerId) ? 0 : ((session.unread || 0) + 1)
                             };
                         }
                         return session;
@@ -619,7 +619,10 @@ const ChatWidget: React.FC = () => {
                             {/* Global Close Button */}
                             <div className="absolute top-0 right-0 h-16 flex items-center pr-6 z-20">
                                 <button
-                                    onClick={() => setIsOpen(false)}
+                                    onClick={() => {
+                                        setIsOpen(false);
+                                        setActiveSessionId(null);
+                                    }}
                                     className="p-2 hover:bg-white/50 rounded-xl text-slate-500 hover:text-red-600 transition-colors"
                                     title="关闭"
                                 >
@@ -857,7 +860,13 @@ const ChatWidget: React.FC = () => {
                 layout
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => setIsOpen(!isOpen)}
+                onClick={() => {
+                    const newState = !isOpen;
+                    setIsOpen(newState);
+                    if (!newState) {
+                        setActiveSessionId(null);
+                    }
+                }}
                 className={`
                     ${isOpen ? 'bg-gradient-to-r from-red-500 to-red-600' : 'bg-gradient-to-r from-indigo-500 to-purple-600'} 
                     ${!isOpen && totalUnread > 0 ? 'animate-pulse ring-4 ring-red-400/50' : ''}

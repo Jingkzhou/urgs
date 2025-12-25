@@ -17,4 +17,12 @@ public class AnnouncementComment {
     private String content;
     private String parentId; // For nested replies
     private LocalDateTime createTime;
+
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private String userName;
+
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private String userAvatar;
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private java.util.List<String> mentionedUserIds;
 }

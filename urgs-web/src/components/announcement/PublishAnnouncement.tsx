@@ -6,7 +6,12 @@ import '@wangeditor/editor/dist/css/style.css'; // import css
 import { Editor, Toolbar } from '@wangeditor/editor-for-react';
 import { IDomEditor, IEditorConfig, IToolbarConfig } from '@wangeditor/editor';
 
-const PublishAnnouncement: React.FC = () => {
+interface PublishAnnouncementProps {
+    editId?: string | null;
+    onSuccess?: () => void;
+}
+
+const PublishAnnouncement: React.FC<PublishAnnouncementProps> = ({ editId, onSuccess }) => {
     const [editor, setEditor] = useState<IDomEditor | null>(null);
     const [html, setHtml] = useState('');
     const [fileList, setFileList] = useState<UploadFile[]>([]);
@@ -27,6 +32,50 @@ const PublishAnnouncement: React.FC = () => {
         }
     }, []);
 
+    // Fetch details when editing
+    useEffect(() => {
+        if (editId) {
+            setLoading(true);
+            const token = localStorage.getItem('auth_token');
+            fetch(`/api/announcement/${editId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+                .then(res => res.json())
+                .then(data => {
+                    let systems = [];
+                    try {
+                        systems = typeof data.systems === 'string' ? JSON.parse(data.systems) : data.systems;
+                    } catch (e) { }
+
+                    form.setFieldsValue({
+                        title: data.title,
+                        type: data.type,
+                        category: data.category,
+                        systems: systems
+                    });
+                    setHtml(data.content);
+                    if (data.attachments) {
+                        try {
+                            const atts = typeof data.attachments === 'string' ? JSON.parse(data.attachments) : data.attachments;
+                            setFileList(atts.map((a: any) => ({
+                                uid: a.url,
+                                name: a.name,
+                                status: 'done',
+                                url: a.url
+                            })));
+                        } catch (e) { }
+                    }
+                })
+                .catch(err => {
+                    message.error('获取详情失败');
+                    console.error(err);
+                })
+                .finally(() => setLoading(false));
+        } else {
+            handleReset();
+        }
+    }, [editId, form]);
+
     // Publish API call
     const publishAPI = async (data: any) => {
         const userStr = localStorage.getItem('auth_user');
@@ -37,18 +86,20 @@ const PublishAnnouncement: React.FC = () => {
         }
 
         const token = localStorage.getItem('auth_token');
-        const response = await fetch('/api/announcement/publish', {
-            method: 'POST',
+        const url = editId ? '/api/announcement/update' : '/api/announcement/publish';
+
+        const response = await fetch(url, {
+            method: editId ? 'PUT' : 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`,
                 'X-User-Id': encodeURIComponent(userId)
             },
-            body: JSON.stringify(data)
+            body: JSON.stringify(editId ? { ...data, id: editId } : data)
         });
 
         if (!response.ok) {
-            throw new Error('Publish failed');
+            throw new Error('Operation failed');
         }
         return await response.json();
     };
@@ -81,13 +132,17 @@ const PublishAnnouncement: React.FC = () => {
                 url: item.response?.url || item.url
             }));
             await publishAPI({ ...values, content: html, attachments });
-            message.success('公告发布成功！');
-            form.resetFields();
-            setFileList([]);
-            editor?.clear();
-            setHtml('');
+            message.success(editId ? '保存成功！' : '公告发布成功！');
+            if (onSuccess) {
+                onSuccess();
+            } else {
+                form.resetFields();
+                setFileList([]);
+                editor?.clear();
+                setHtml('');
+            }
         } catch (error) {
-            message.error('发布失败，请重试');
+            message.error(editId ? '保存失败' : '发布失败，请重试');
         } finally {
             setLoading(false);
         }
@@ -102,7 +157,7 @@ const PublishAnnouncement: React.FC = () => {
 
     return (
         <div className="space-y-4">
-            <Card bordered={false} className="shadow-sm">
+            <Card variant="borderless" className="shadow-sm">
                 <Form
                     form={form}
                     layout="vertical"
@@ -214,7 +269,7 @@ const PublishAnnouncement: React.FC = () => {
                                 size="large"
                                 className="bg-red-600 hover:bg-red-500"
                             >
-                                发布公告
+                                {editId ? '保存修改' : '发布公告'}
                             </Button>
                             <Button
                                 icon={<RotateCcw size={16} />}

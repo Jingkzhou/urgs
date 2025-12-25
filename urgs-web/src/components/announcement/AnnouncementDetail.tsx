@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Tag, Button, Avatar, Divider, Input, message, List, Space } from 'antd';
+import { getAvatarUrl } from '../../utils/avatarUtils';
+import { Card, Tag, Button, Avatar, Divider, Input, message, List, Space, Mentions } from 'antd';
 import { User, Clock, Calendar, MessageSquare, Reply, ArrowLeft } from 'lucide-react';
+import { debounce } from 'lodash';
+
+const { Option } = Mentions;
 
 interface Comment {
     id: string;
     userId: string;
+    userName?: string;
+    userAvatar?: string;
     content: string;
     createTime: string;
     parentId?: string;
@@ -22,6 +28,9 @@ const AnnouncementDetail: React.FC<AnnouncementDetailProps> = ({ id, onBack }) =
     const [loading, setLoading] = useState(false);
     const [replyContent, setReplyContent] = useState('');
     const [replyTo, setReplyTo] = useState<string | null>(null);
+    const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
+    const [mentionOptions, setMentionOptions] = useState<any[]>([]);
+    const [mentionLoading, setMentionLoading] = useState(false);
 
     const currentUser = JSON.parse(localStorage.getItem('auth_user') || '{}');
     const token = localStorage.getItem('auth_token');
@@ -100,7 +109,8 @@ const AnnouncementDetail: React.FC<AnnouncementDetailProps> = ({ id, onBack }) =
                 },
                 body: JSON.stringify({
                     content: replyContent,
-                    parentId: parentId
+                    parentId: parentId,
+                    mentionedUserIds: Array.from(replyContent.matchAll(/@([^\s#]+)#([a-zA-Z0-9]+)/g)).map(m => m[2])
                 })
             });
 
@@ -117,17 +127,55 @@ const AnnouncementDetail: React.FC<AnnouncementDetailProps> = ({ id, onBack }) =
         }
     };
 
+    const handleSearchUsers = debounce(async (search: string) => {
+        if (!search) {
+            setMentionOptions([]);
+            return;
+        }
+        setMentionLoading(true);
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch(`/api/users?keyword=${search}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setMentionOptions(data);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setMentionLoading(false);
+        }
+    }, 500);
+
+    const toggleExpand = (commentId: string) => {
+        setExpandedComments(prev => {
+            const next = new Set(prev);
+            if (next.has(commentId)) {
+                next.delete(commentId);
+            } else {
+                next.add(commentId);
+            }
+            return next;
+        });
+    };
+
     if (!detail) return <div>Loading...</div>;
 
     const renderComments = (list: Comment[], level = 0) => {
         return list.map(item => (
             <div key={item.id} className={`mb-4 ${level > 0 ? 'ml-8' : ''}`}>
                 <div className="flex gap-3">
-                    <Avatar style={{ backgroundColor: '#f56a00' }}>{item.userId?.[0] || 'U'}</Avatar>
+                    <img
+                        src={getAvatarUrl(item.userAvatar, item.userName || item.userId)}
+                        className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                        alt={item.userName || item.userId}
+                    />
                     <div className="flex-1">
                         <div className="bg-slate-50 p-3 rounded-lg">
                             <div className="flex justify-between items-center mb-1">
-                                <span className="font-medium text-slate-700">{item.userId}</span>
+                                <span className="font-medium text-slate-700">{item.userName || item.userId}</span>
                                 <span className="text-xs text-slate-400">
                                     {new Date(item.createTime).toLocaleString()}
                                 </span>
@@ -143,21 +191,62 @@ const AnnouncementDetail: React.FC<AnnouncementDetailProps> = ({ id, onBack }) =
                             </Button>
                         </div>
 
-                        {replyTo === item.id && (
+                        {item.children && item.children.length > 0 && (
                             <div className="mt-2 flex gap-2">
-                                <Input.TextArea
+                                <Mentions
                                     rows={2}
                                     value={replyContent}
-                                    onChange={e => setReplyContent(e.target.value)}
-                                    placeholder={`回复 ${item.userId}...`}
-                                />
+                                    onChange={setReplyContent}
+                                    onSearch={handleSearchUsers}
+                                    loading={mentionLoading}
+                                    placeholder={`回复 ${item.userName || item.userId} (支持@)...`}
+                                    className="flex-1"
+                                    placement="top"
+                                    prefix={['@']}
+                                >
+                                    {mentionOptions.map(user => (
+                                        <Option key={user.id} value={user.name + '#' + user.empId + ' '}>
+                                            {user.name} ({user.empId})
+                                        </Option>
+                                    ))}
+                                </Mentions>
                                 <Button type="primary" onClick={() => handleComment(item.id)}>发送</Button>
                             </div>
                         )}
 
                         {item.children && item.children.length > 0 && (
                             <div className="mt-3">
-                                {renderComments(item.children, level + 1)}
+                                {expandedComments.has(item.id) ? (
+                                    <>
+                                        {renderComments(item.children, level + 1)}
+                                        {/* Optional: Add collapse button at the bottom if list is long, 
+                                            but usually clicking the reply count text above effectively toggles it 
+                                            or we add a collapse button here. For now, let's keep it simple. */}
+                                    </>
+                                ) : (
+                                    <Button
+                                        type="link"
+                                        size="small"
+                                        className="p-0 h-auto text-blue-600 bg-slate-50 px-2 py-1 rounded"
+                                        onClick={() => toggleExpand(item.id)}
+                                    >
+                                        查看 {item.children.length} 条回复
+                                    </Button>
+                                )}
+                            </div>
+                        )}
+                        {/* If expanded, maybe show a "Collapse" button? Or rely on the user knowing how to collapse? 
+                            Let's add a collapse action near the replies if expanded. */}
+                        {item.children && item.children.length > 0 && expandedComments.has(item.id) && (
+                            <div className="mt-2">
+                                <Button
+                                    type="link"
+                                    size="small"
+                                    className="p-0 text-slate-400"
+                                    onClick={() => toggleExpand(item.id)}
+                                >
+                                    收起回复
+                                </Button>
                             </div>
                         )}
                     </div>
@@ -170,7 +259,7 @@ const AnnouncementDetail: React.FC<AnnouncementDetailProps> = ({ id, onBack }) =
         <div className="space-y-4">
             <Button icon={<ArrowLeft size={16} />} onClick={onBack}>返回列表</Button>
 
-            <Card bordered={false} className="shadow-sm">
+            <Card variant="borderless" className="shadow-sm">
                 <div className="mb-6">
                     <h1 className="text-2xl font-bold text-slate-800 mb-4">{detail.title}</h1>
                     <div className="flex items-center gap-4 text-slate-500 text-sm">
@@ -194,17 +283,27 @@ const AnnouncementDetail: React.FC<AnnouncementDetailProps> = ({ id, onBack }) =
                 )}
             </Card>
 
-            <Card bordered={false} title={<><MessageSquare className="inline mr-2 my-auto" size={18} /> 评论区</>} className="shadow-sm">
+            <Card variant="borderless" title={<><MessageSquare className="inline mr-2 my-auto" size={18} /> 评论区</>} className="shadow-sm">
                 <div className="mb-6">
-                    <Input.TextArea
+                    <Mentions
                         rows={3}
-                        placeholder="写下你的评论..."
+                        placeholder="写下你的评论 (支持@用户)..."
                         value={!replyTo ? replyContent : ''}
-                        onChange={e => {
-                            if (!replyTo) setReplyContent(e.target.value);
+                        onChange={(text) => {
+                            if (!replyTo) setReplyContent(text);
                         }}
+                        onSearch={handleSearchUsers}
+                        loading={mentionLoading}
                         disabled={!!replyTo}
-                    />
+                        prefix={['@']}
+                        className="w-full"
+                    >
+                        {mentionOptions.map(user => (
+                            <Option key={user.id} value={user.name + '#' + user.empId + ' '}>
+                                {user.name} ({user.empId})
+                            </Option>
+                        ))}
+                    </Mentions>
                     <div className="mt-2 text-right">
                         <Button type="primary" onClick={() => handleComment(null)} disabled={!!replyTo}>发布评论</Button>
                     </div>

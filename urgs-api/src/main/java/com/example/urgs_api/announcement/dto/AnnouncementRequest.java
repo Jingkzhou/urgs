@@ -5,6 +5,7 @@ import java.util.List;
 
 @Data
 public class AnnouncementRequest {
+    private String id;
     private String title;
     private String type;
     private String category;

@@ -34,5 +34,6 @@ public class Announcement {
     private Integer status; // 1: Published, 0: Draft
 
     private LocalDateTime createTime;
+    private LocalDateTime updateTime;
     private String createBy;
 }
