@@ -76,4 +76,10 @@ public class RegTable {
     @TableField("update_time")
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime updateTime;
+    @TableField(exist = false)
+    private String reqId;
+
+    @TableField(exist = false)
+    @JsonFormat(pattern = "yyyy-MM-dd")
+    private LocalDate plannedDate;
 }

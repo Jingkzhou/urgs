@@ -24,6 +24,9 @@ interface RegTable {
     devNotes?: string;
     owner?: string;
     status?: number;
+    // Transient fields for logging
+    reqId?: string;
+    plannedDate?: string;
 }
 
 interface CodeTable {
@@ -64,6 +67,9 @@ interface RegElement {
     isInit?: number;
     isMergeFormula?: number;
     isFillBusiness?: number;
+    // Transient fields for logging
+    reqId?: string;
+    plannedDate?: string;
 }
 
 const RegulatoryAssetView: React.FC = () => {
@@ -1300,7 +1306,8 @@ const TableModal: React.FC<{
         name: '', cnName: '', sortOrder: 0, systemCode: defaultSystemCode || '',
         subjectCode: '', subjectName: '', theme: '', frequency: '',
         sourceType: '', autoFetchStatus: '', documentNo: '', documentTitle: '',
-        businessCaliber: '', devNotes: '', owner: '', status: 1
+        businessCaliber: '', devNotes: '', owner: '', status: 1,
+        reqId: '', plannedDate: '' // Init new fields
     });
 
     return (
@@ -1363,6 +1370,25 @@ const TableModal: React.FC<{
                     <div className="col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">开发备注</label>
                         <textarea className="w-full border border-slate-200 rounded-lg p-2 text-sm h-20 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.devNotes || ''} onChange={e => setForm({ ...form, devNotes: e.target.value })} />
+                    </div>
+
+                    {/* Maintenance Log Info */}
+                    <div className="col-span-2 border-t border-slate-100 pt-4 mt-2">
+                        <h4 className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-1">
+                            <Clock size={12} /> 变更登记
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4">
+                            <FormField label="需求编号" value={form.reqId} onChange={v => setForm({ ...form, reqId: v })} />
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">计划上线日期</label>
+                                <input
+                                    type="date"
+                                    className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none"
+                                    value={form.plannedDate || ''}
+                                    onChange={e => setForm({ ...form, plannedDate: e.target.value })}
+                                />
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div className="p-4 border-t border-slate-200 flex justify-end gap-2 bg-slate-50 rounded-b-xl">
@@ -1559,6 +1585,25 @@ const ElementModal: React.FC<{
                     <div className="col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">开发备注</label>
                         <textarea className="w-full border border-slate-200 rounded-lg p-2 text-sm h-16 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.devNotes || ''} onChange={e => setForm({ ...form, devNotes: e.target.value })} />
+                    </div>
+
+                    {/* Maintenance Log Info */}
+                    <div className="col-span-2 border-t border-slate-100 pt-4 mt-2">
+                        <h4 className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-1">
+                            <Clock size={12} /> 变更登记
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4">
+                            <FormField label="需求编号" value={form.reqId} onChange={v => setForm({ ...form, reqId: v })} />
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">计划上线日期</label>
+                                <input
+                                    type="date"
+                                    className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none"
+                                    value={form.plannedDate || ''}
+                                    onChange={e => setForm({ ...form, plannedDate: e.target.value })}
+                                />
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div className="p-4 border-t border-slate-200 flex justify-end gap-2 bg-slate-50 rounded-b-xl">

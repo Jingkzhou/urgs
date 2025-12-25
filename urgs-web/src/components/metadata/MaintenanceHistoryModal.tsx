@@ -8,6 +8,8 @@ interface MaintenanceRecord {
     tableCnName: string;
     fieldName: string;
     fieldCnName: string;
+    reqId?: string; // Added
+    plannedDate?: string; // Added
     modType: string;
     description: string;
     operator: string;
@@ -17,10 +19,10 @@ interface MaintenanceRecord {
 interface MaintenanceHistoryModalProps {
     isOpen: boolean;
     onClose: () => void;
-    tableId?: number | string; // ADDED
+    tableId?: number | string;
     tableName: string;
     tableCnName?: string;
-    fieldName?: string; // Optional: if provided, filter by field
+    fieldName?: string;
     fieldCnName?: string;
 }
 
@@ -45,10 +47,10 @@ const MaintenanceHistoryModal: React.FC<MaintenanceHistoryModalProps> = ({
     const fetchRecords = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('auth_token'); // Get token
+            const token = localStorage.getItem('auth_token');
             const params: any = {
                 tableName,
-                size: 100, // Fetch first 100 records for history view
+                size: 100,
             };
             if (tableId) {
                 params.tableId = tableId;
@@ -58,7 +60,7 @@ const MaintenanceHistoryModal: React.FC<MaintenanceHistoryModalProps> = ({
             }
             const response = await axios.get('/api/metadata/maintenance-record', {
                 params,
-                headers: { 'Authorization': `Bearer ${token}` } // Add header
+                headers: { 'Authorization': `Bearer ${token}` }
             });
             setRecords(response.data.records);
         } catch (error) {
@@ -135,6 +137,24 @@ const MaintenanceHistoryModal: React.FC<MaintenanceHistoryModalProps> = ({
                                                 {record.modType}
                                             </span>
                                         </div>
+
+                                        {/* Requirement Info */}
+                                        {(record.reqId || record.plannedDate) && (
+                                            <div className="flex flex-wrap gap-3 mb-2 text-xs">
+                                                {record.reqId && (
+                                                    <span className="flex items-center gap-1 bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-100">
+                                                        <Tag className="w-3 h-3" />
+                                                        需求: {record.reqId}
+                                                    </span>
+                                                )}
+                                                {record.plannedDate && (
+                                                    <span className="flex items-center gap-1 bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-100">
+                                                        <Calendar className="w-3 h-3" />
+                                                        计划上线: {record.plannedDate}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
 
                                         <p className="text-gray-800 text-base leading-relaxed">
                                             {record.description}

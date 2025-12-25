@@ -87,7 +87,23 @@ public class MaintenanceLogManager {
             record.setDescription(description);
 
             // 根据类型填充关联信息
+            // 根据类型填充关联信息
             fillContextInfo(record, type, oldVal != null ? oldVal : newVal);
+
+            // Fix: Allways try to extract reqId/plannedDate from newVal
+            if (newVal != null) {
+                if (newVal instanceof RegTable t) {
+                    if (t.getReqId() != null && !t.getReqId().isEmpty())
+                        record.setReqId(t.getReqId());
+                    if (t.getPlannedDate() != null)
+                        record.setPlannedDate(t.getPlannedDate());
+                } else if (newVal instanceof RegElement el) {
+                    if (el.getReqId() != null && !el.getReqId().isEmpty())
+                        record.setReqId(el.getReqId());
+                    if (el.getPlannedDate() != null)
+                        record.setPlannedDate(el.getPlannedDate());
+                }
+            }
 
             maintenanceRecordService.save(record);
             log.info("Logged maintenance record: {}", description);
@@ -108,6 +124,25 @@ public class MaintenanceLogManager {
                 record.setOperator(operator != null ? operator : "system");
                 record.setDescription("Auto-generated log (AI failed): " + action + " operation performed.");
                 fillContextInfo(record, type, oldVal != null ? oldVal : newVal);
+
+                // Fix: Always try to extract reqId/plannedDate from newVal (the incoming
+                // request)
+                // because oldVal (from DB) will not have these transient fields.
+                // Fix: Always try to extract reqId/plannedDate from newVal
+                if (newVal != null) {
+                    if (newVal instanceof RegTable t) {
+                        if (t.getReqId() != null && !t.getReqId().isEmpty())
+                            record.setReqId(t.getReqId());
+                        if (t.getPlannedDate() != null)
+                            record.setPlannedDate(t.getPlannedDate());
+                    } else if (newVal instanceof RegElement el) {
+                        if (el.getReqId() != null && !el.getReqId().isEmpty())
+                            record.setReqId(el.getReqId());
+                        if (el.getPlannedDate() != null)
+                            record.setPlannedDate(el.getPlannedDate());
+                    }
+                }
+
                 maintenanceRecordService.save(record);
             } catch (Exception ex) {
                 log.error("Failed to save fallback maintenance record", ex);
@@ -122,6 +157,11 @@ public class MaintenanceLogManager {
         if (entity instanceof RegTable table) {
             record.setTableName(table.getName());
             record.setTableCnName(table.getCnName());
+            // Extract transient fields
+            if (table.getReqId() != null)
+                record.setReqId(table.getReqId());
+            if (table.getPlannedDate() != null)
+                record.setPlannedDate(table.getPlannedDate());
         } else if (entity instanceof RegElement element) {
             // Need to fetch table info
             try {
@@ -137,6 +177,11 @@ public class MaintenanceLogManager {
             }
             record.setFieldName(element.getName());
             record.setFieldCnName(element.getCnName());
+            // Extract transient fields
+            if (element.getReqId() != null)
+                record.setReqId(element.getReqId());
+            if (element.getPlannedDate() != null)
+                record.setPlannedDate(element.getPlannedDate());
         } else if (entity instanceof CodeDirectory codeDir) {
             record.setTableName("CodeTable:" + codeDir.getTableName());
             record.setFieldName(codeDir.getCode());
