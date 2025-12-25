@@ -94,14 +94,26 @@ public class RegTableController {
      */
     @PostMapping
     public boolean save(@RequestBody RegTable regTable) {
-        if (regTable.getId() == null) {
+        RegTable oldTable = null;
+        if (regTable.getId() != null) {
+            oldTable = regTableService.getById(regTable.getId());
+        } else {
             regTable.setCreateTime(LocalDateTime.now());
         }
+
         regTable.setUpdateTime(LocalDateTime.now());
         if (regTable.getStatus() == null) {
             regTable.setStatus(1);
         }
-        return regTableService.saveOrUpdate(regTable);
+
+        boolean result = regTableService.saveOrUpdate(regTable);
+
+        if (result) {
+            maintenanceLogManager.logChange(com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.TABLE,
+                    oldTable, regTable, "admin");
+        }
+
+        return result;
     }
 
     /**
@@ -116,6 +128,9 @@ public class RegTableController {
         boolean result = regTableService.removeById(id);
 
         if (result && oldTable != null) {
+            // Cascade delete: remove all associated elements (fields/indicators)
+            regElementService.remove(new LambdaQueryWrapper<RegElement>().eq(RegElement::getTableId, id));
+
             maintenanceLogManager.logChange(com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.TABLE,
                     oldTable, null, "admin");
         }
@@ -567,40 +582,39 @@ public class RegTableController {
                     el.setType(getCellValue(row.getCell(1)));
                     el.setName(getCellValue(row.getCell(2)));
                     el.setCnName(getCellValue(row.getCell(3)));
-                    el.setCnName(getCellValue(row.getCell(3)));
-                    // el.setCode(getCellValue(row.getCell(4))); // Removed
-                    el.setDataType(getCellValue(row.getCell(5)));
-                    el.setDataType(getCellValue(row.getCell(5)));
-                    el.setLength(getIntValue(row.getCell(6)));
-                    el.setIsPk(getIntValue(row.getCell(7)));
-                    el.setNullable(getIntValue(row.getCell(8)));
-                    el.setFormula(getCellValue(row.getCell(9)));
-                    el.setFetchSql(getCellValue(row.getCell(10)));
-                    el.setCodeTableCode(getCellValue(row.getCell(11)));
-                    el.setValueRange(getCellValue(row.getCell(12)));
-                    el.setValidationRule(getCellValue(row.getCell(13)));
-                    el.setDocumentNo(getCellValue(row.getCell(14)));
-                    el.setDocumentTitle(getCellValue(row.getCell(15)));
-                    String effDate = getCellValue(row.getCell(16));
+
+                    // Match RegElementImportExportDTO indices
+                    el.setDataType(getCellValue(row.getCell(4)));
+                    el.setLength(getIntValue(row.getCell(5)));
+                    el.setIsPk(getIntValue(row.getCell(6)));
+                    el.setNullable(getIntValue(row.getCell(7)));
+                    el.setFormula(getCellValue(row.getCell(8)));
+                    el.setFetchSql(getCellValue(row.getCell(9)));
+                    el.setCodeTableCode(getCellValue(row.getCell(10)));
+                    el.setValueRange(getCellValue(row.getCell(11)));
+                    el.setValidationRule(getCellValue(row.getCell(12)));
+                    el.setDocumentNo(getCellValue(row.getCell(13)));
+                    el.setDocumentTitle(getCellValue(row.getCell(14)));
+                    String effDate = getCellValue(row.getCell(15));
                     if (effDate != null && !effDate.isEmpty()) {
                         try {
                             el.setEffectiveDate(LocalDate.parse(effDate, dateFormatter));
                         } catch (Exception ignored) {
                         }
                     }
-                    el.setBusinessCaliber(getCellValue(row.getCell(17)));
-                    el.setFillInstruction(getCellValue(row.getCell(18)));
-                    el.setDevNotes(getCellValue(row.getCell(19)));
-                    el.setAutoFetchStatus(getCellValue(row.getCell(20)));
-                    el.setOwner(getCellValue(row.getCell(21)));
-                    el.setStatus(getIntValue(row.getCell(22)));
+                    el.setBusinessCaliber(getCellValue(row.getCell(16)));
+                    el.setFillInstruction(getCellValue(row.getCell(17)));
+                    el.setDevNotes(getCellValue(row.getCell(18)));
+                    el.setAutoFetchStatus(getCellValue(row.getCell(19)));
+                    el.setOwner(getCellValue(row.getCell(20)));
+                    el.setStatus(getIntValue(row.getCell(21)));
                     if (el.getStatus() == null)
                         el.setStatus(1);
 
-                    el.setIsInit(getIntValue(row.getCell(23)));
-                    el.setIsMergeFormula(getIntValue(row.getCell(24)));
-                    el.setIsFillBusiness(getIntValue(row.getCell(25)));
-                    el.setCodeSnippet(getCellValue(row.getCell(26)));
+                    el.setIsInit(getIntValue(row.getCell(22)));
+                    el.setIsMergeFormula(getIntValue(row.getCell(23)));
+                    el.setIsFillBusiness(getIntValue(row.getCell(24)));
+                    el.setCodeSnippet(getCellValue(row.getCell(25)));
 
                     if (el.getSortOrder() == null)
                         el.setSortOrder(0);

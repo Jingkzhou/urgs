@@ -833,6 +833,7 @@ const RegulatoryAssetView: React.FC = () => {
                             <div className="w-12 text-center">序号</div>
                             <div className="w-48">名称</div>
                             {/* <div className="w-32">编码</div> Removed */}
+                            <div className="w-24">数据类型</div>
                             <div className="w-48">值域/计算公式</div>
                             <div className="w-32">自动取数/状态</div>
                             <div className="flex-1">业务口径/说明</div>
@@ -855,6 +856,17 @@ const RegulatoryAssetView: React.FC = () => {
                                     <div className="w-48 pr-2 truncate">
                                         <div className="text-sm text-slate-700 font-medium">{el.cnName || el.name}</div>
                                         {el.cnName && <div className="text-xs text-slate-400 font-mono">{el.name}</div>}
+                                    </div>
+                                    <div className="w-24 text-xs text-slate-600 px-1 font-mono flex flex-col">
+                                        <span>
+                                            {el.type === 'FIELD' ? ((el.dataType || '-') + (el.length ? `(${el.length})` : '')) : '-'}
+                                        </span>
+                                        {el.type === 'FIELD' && (
+                                            <div className="flex gap-1 mt-0.5">
+                                                {el.isPk === 1 && <span className="px-1 py-px rounded bg-yellow-100 text-yellow-700 text-[10px]">PK</span>}
+                                                {el.nullable === 0 && <span className="px-1 py-px rounded bg-red-50 text-red-500 text-[10px]">NN</span>}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="w-48 text-xs text-slate-500 px-1">
                                         {el.type === 'FIELD' ? (
@@ -1163,6 +1175,8 @@ const DetailModal: React.FC<{
                                         <DetailItem icon={<Code size={14} />} label="数据类型" value={element.dataType} />
                                         <DetailItem label="长度" value={element.length} />
                                         <DetailItem label="主键" value={element.isPk ? '是' : '否'} />
+                                        <DetailItem label="允许为空" value={element.nullable ? '是' : '否'} />
+                                        <DetailItem label="校验规则" value={element.validationRule} />
                                     </>
                                 )}
                                 {element.type === 'INDICATOR' && (

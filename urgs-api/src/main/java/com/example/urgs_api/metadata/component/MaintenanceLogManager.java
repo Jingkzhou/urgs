@@ -30,7 +30,9 @@ public class MaintenanceLogManager {
     @Autowired
     private MaintenanceRecordService maintenanceRecordService;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
+            .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     /**
      * 记录变更日志 (异步执行，不阻塞主流程)
@@ -91,18 +93,48 @@ public class MaintenanceLogManager {
             log.info("Logged maintenance record: {}", description);
 
         } catch (Exception e) {
-            log.error("Failed to log maintenance record", e);
+            log.error("Failed to generate AI description", e);
+            // Fallback: save record without AI description
+            try {
+                MaintenanceRecord record = new MaintenanceRecord();
+                String action = "UPDATE";
+                if (oldVal == null)
+                    action = "CREATE";
+                else if (newVal == null)
+                    action = "DELETE";
+
+                record.setModType(action);
+                record.setTime(LocalDateTime.now());
+                record.setOperator(operator != null ? operator : "system");
+                record.setDescription("Auto-generated log (AI failed): " + action + " operation performed.");
+                fillContextInfo(record, type, oldVal != null ? oldVal : newVal);
+                maintenanceRecordService.save(record);
+            } catch (Exception ex) {
+                log.error("Failed to save fallback maintenance record", ex);
+            }
         }
     }
+
+    @Autowired
+    private com.example.urgs_api.metadata.service.RegTableService regTableService;
 
     private void fillContextInfo(MaintenanceRecord record, LogType type, Object entity) {
         if (entity instanceof RegTable table) {
             record.setTableName(table.getName());
             record.setTableCnName(table.getCnName());
         } else if (entity instanceof RegElement element) {
-            // 需要字段所属表的信息，这里尽量从 element 中获取 tableId，或者传入时带入
-            // 由于 Element 只有 tableId，没法直接填 tableName，暂时存 tableId
-            record.setTableName("TableID:" + element.getTableId());
+            // Need to fetch table info
+            try {
+                RegTable table = regTableService.getById(element.getTableId());
+                if (table != null) {
+                    record.setTableName(table.getName());
+                    record.setTableCnName(table.getCnName());
+                } else {
+                    record.setTableName("Unknown Table (ID:" + element.getTableId() + ")");
+                }
+            } catch (Exception e) {
+                record.setTableName("TableID:" + element.getTableId());
+            }
             record.setFieldName(element.getName());
             record.setFieldCnName(element.getCnName());
         } else if (entity instanceof CodeDirectory codeDir) {
