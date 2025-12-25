@@ -23,7 +23,7 @@ const SqlConsole: React.FC = () => {
     const fetchDataSources = async () => {
         const token = localStorage.getItem('auth_token');
         try {
-            const res = await fetch('/api/datasource/list', {
+            const res = await fetch('/api/datasource/config', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
