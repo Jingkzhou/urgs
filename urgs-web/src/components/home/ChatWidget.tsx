@@ -616,6 +616,17 @@ const ChatWidget: React.FC = () => {
 
                         {/* Main Chat Area */}
                         <div className="flex-1 bg-white/40 flex flex-col relative w-full">
+                            {/* Global Close Button */}
+                            <div className="absolute top-0 right-0 h-16 flex items-center pr-6 z-20">
+                                <button
+                                    onClick={() => setIsOpen(false)}
+                                    className="p-2 hover:bg-white/50 rounded-xl text-slate-500 hover:text-red-600 transition-colors"
+                                    title="关闭"
+                                >
+                                    <X size={22} />
+                                </button>
+                            </div>
+
                             {activeSessionId && activeSession ? (
                                 <ChatWindow
                                     key={activeSessionId}
@@ -624,7 +635,6 @@ const ChatWidget: React.FC = () => {
                                     onSendMessage={handleSendMessage}
                                     onFileUpload={userService.uploadFile}
                                     onShowDetails={handleShowGroupDetails}
-                                    onClose={() => setActiveSessionId(null)}
                                 />
                             ) : (
                                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-slate-50/30">

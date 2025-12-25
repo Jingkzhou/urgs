@@ -298,21 +298,6 @@ const DevWorkbench: React.FC = () => {
     return (
         <div className="animate-fade-in-up space-y-8 p-2">
 
-            {/* Header Area */}
-            <div className="flex items-center justify-between mb-2">
-                <div>
-                    <h2 className="text-3xl font-black text-slate-900 tracking-tight">研发控制台</h2>
-                    <p className="text-sm text-slate-500 font-medium mt-1">Unified Resource Governance System</p>
-                </div>
-                <div className="flex gap-3">
-                    <button className="px-5 py-2.5 bg-white/80 backdrop-blur-md border border-white/50 rounded-full text-sm font-bold text-slate-700 hover:bg-white hover:shadow-lg transition-all flex items-center gap-2">
-                        <Play size={16} className="text-blue-500" /> <span className="pt-0.5">新建作业</span>
-                    </button>
-                    <button className="px-5 py-2.5 bg-black text-white rounded-full text-sm font-bold hover:scale-105 hover:shadow-xl hover:shadow-black/20 transition-all flex items-center gap-2">
-                        <Zap size={16} className="text-yellow-400" /> <span className="pt-0.5">快速调试</span>
-                    </button>
-                </div>
-            </div>
 
             {/* Top Row: System Core (Executor + RAG) */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-auto lg:h-[320px]">
