@@ -28,7 +28,13 @@ const SqlConsole: React.FC = () => {
             });
             if (res.ok) {
                 const list = await res.json();
-                setDataSources(list);
+                // Filter to show only database-related sources
+                // Exclude SSH and other non-data sources that might be in 'Others'
+                const dbSources = list.filter((ds: any) =>
+                    ['RDBMS', 'NoSQL', 'Big Data', 'OLAP', 'Others'].includes(ds.category) &&
+                    !['ssh', 'http', 'stream'].includes(ds.typeCode)
+                );
+                setDataSources(dbSources);
             }
         } catch (err) {
             console.error(err);
@@ -82,7 +88,7 @@ const SqlConsole: React.FC = () => {
                     >
                         <option value="">Default Database (Local)</option>
                         {dataSources.map(ds => (
-                            <option key={ds.id} value={ds.id}>{ds.name} ({ds.type})</option>
+                            <option key={ds.id} value={ds.id}>{ds.name} ({ds.typeName || 'Unknown'})</option>
                         ))}
                     </select>
                 </div>
@@ -139,7 +145,10 @@ const SqlConsole: React.FC = () => {
                     )}
                 </div>
 
-                <div className="flex-1 overflow-auto p-0">
+                <div
+                    className="flex-1 overflow-auto p-0 select-none"
+                    onContextMenu={(e) => e.preventDefault()}
+                >
                     {!result && (
                         <div className="h-full flex flex-col items-center justify-center text-slate-400">
                             <Database className="w-12 h-12 mb-3 opacity-20" />

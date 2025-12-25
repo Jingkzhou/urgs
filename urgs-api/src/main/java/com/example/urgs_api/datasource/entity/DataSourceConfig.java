@@ -25,6 +25,15 @@ public class DataSourceConfig {
 
     private Integer status;
 
+    @TableField(exist = false)
+    private String typeName;
+
+    @TableField(exist = false)
+    private String typeCode;
+
+    @TableField(exist = false)
+    private String category;
+
     private LocalDateTime createTime;
 
     public Long getId() {

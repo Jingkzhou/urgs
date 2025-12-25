@@ -10,6 +10,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class DataSourceService extends ServiceImpl<DataSourceConfigMapper, DataSourceConfig> {
@@ -22,6 +24,21 @@ public class DataSourceService extends ServiceImpl<DataSourceConfigMapper, DataS
     }
 
     public List<DataSourceConfig> getAllConfigs() {
-        return this.list();
+        List<DataSourceConfig> list = this.list();
+        List<DataSourceMeta> metas = metaMapper.selectList(null);
+        Map<Long, String> metaMap = metas.stream()
+                .collect(Collectors.toMap(DataSourceMeta::getId, DataSourceMeta::getName));
+
+        for (DataSourceConfig config : list) {
+            DataSourceMeta meta = metas.stream().filter(m -> m.getId().equals(config.getMetaId())).findFirst()
+                    .orElse(null);
+
+            if (meta != null) {
+                config.setTypeName(meta.getName());
+                config.setTypeCode(meta.getCode());
+                config.setCategory(meta.getCategory());
+            }
+        }
+        return list;
     }
 }
