@@ -10,14 +10,14 @@ import lombok.Data;
 @Data
 public class RegTableImportExportDTO {
 
-    @ExcelProperty(value = "表名", index = 0)
-    private String name;
+    @ExcelProperty(value = "序号", index = 0)
+    private Integer sortOrder;
 
-    @ExcelProperty(value = "中文名", index = 1)
-    private String cnName;
+    @ExcelProperty(value = "中文名/表名", index = 1)
+    private String cnName; // 原index=1
 
-    @ExcelProperty(value = "报表编码", index = 2)
-    private String code;
+    @ExcelProperty(value = "表名", index = 2)
+    private String name; // 原index=0，现在往后移
 
     @ExcelProperty(value = "系统编码", index = 3)
     private String systemCode;

@@ -65,11 +65,10 @@ public class RegTableController {
         if (keyword != null && !keyword.isEmpty()) {
             String kw = keyword.toLowerCase();
             query.and(w -> w.like("LOWER(name)", kw)
-                    .or().like("LOWER(cn_name)", kw)
-                    .or().like("LOWER(code)", kw));
+                    .or().like("LOWER(cn_name)", kw));
         }
 
-        query.orderByAsc("name");
+        query.orderByAsc("sort_order");
 
         com.baomidou.mybatisplus.extension.plugins.pagination.Page<RegTable> pageParam = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(
                 page, size);
@@ -503,7 +502,7 @@ public class RegTableController {
             if (systemCode != null && !systemCode.isEmpty()) {
                 query.eq(RegTable::getSystemCode, systemCode);
             }
-            query.orderByAsc(RegTable::getName);
+            query.orderByAsc(RegTable::getSortOrder);
             tables = regTableService.list(query);
         }
 
@@ -514,9 +513,10 @@ public class RegTableController {
             List<RegTableImportExportDTO> tableDtos = new ArrayList<>();
             for (RegTable table : tables) {
                 RegTableImportExportDTO dto = new RegTableImportExportDTO();
+                dto.setSortOrder(table.getSortOrder());
                 dto.setName(table.getName());
                 dto.setCnName(table.getCnName());
-                dto.setCode(table.getCode());
+                // dto.setCode(table.getCode()); // Removed
                 dto.setSystemCode(table.getSystemCode());
                 dto.setSubjectCode(table.getSubjectCode());
                 dto.setSubjectName(table.getSubjectName());
@@ -542,9 +542,9 @@ public class RegTableController {
             // 2. 每个报表一个详情 Sheet
             int sheetIndex = 1;
             for (RegTable table : tables) {
-                String sheetName = table.getCode();
+                String sheetName = table.getName();
                 if (sheetName == null || sheetName.isEmpty()) {
-                    sheetName = table.getName();
+                    sheetName = "Sheet" + sheetIndex; // Fallback
                 }
                 // Excel sheet 名称限制 31 字符
                 if (sheetName.length() > 31) {
@@ -583,6 +583,10 @@ public class RegTableController {
                     dto.setAutoFetchStatus(el.getAutoFetchStatus());
                     dto.setOwner(el.getOwner());
                     dto.setStatus(el.getStatus());
+                    dto.setIsInit(el.getIsInit());
+                    dto.setIsMergeFormula(el.getIsMergeFormula());
+                    dto.setIsFillBusiness(el.getIsFillBusiness());
+                    dto.setCodeSnippet(el.getCodeSnippet());
                     elementDtos.add(dto);
                 }
 
@@ -610,7 +614,7 @@ public class RegTableController {
         try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
             // 1. 读取第一个 Sheet（报表列表）
             Sheet summarySheet = workbook.getSheetAt(0);
-            Map<String, RegTable> codeToTable = new HashMap<>();
+            Map<String, RegTable> nameToTable = new HashMap<>();
 
             // 跳过表头
             for (int i = 1; i <= summarySheet.getLastRowNum(); i++) {
@@ -618,21 +622,22 @@ public class RegTableController {
                 if (row == null)
                     continue;
 
-                String code = getCellValue(row.getCell(2)); // 报表编码
-                if (code == null || code.isEmpty())
+                Integer sortOrder = getIntValue(row.getCell(0)); // 序号
+                if (sortOrder == null)
                     continue;
 
-                // 查找或创建报表
+                // 查找或创建报表 (按序号匹配)
                 RegTable table = regTableService.getOne(
-                        new LambdaQueryWrapper<RegTable>().eq(RegTable::getCode, code));
+                        new LambdaQueryWrapper<RegTable>().eq(RegTable::getSortOrder, sortOrder));
                 if (table == null) {
                     table = new RegTable();
                     table.setCreateTime(LocalDateTime.now());
+                    table.setSortOrder(sortOrder);
                 }
 
-                table.setName(getCellValue(row.getCell(0)));
-                table.setCnName(getCellValue(row.getCell(1)));
-                table.setCode(code);
+                table.setCnName(getCellValue(row.getCell(1))); // 中文名/表名 (Index 1)
+                table.setName(getCellValue(row.getCell(2))); // 表名 (Index 2)
+                // Index 3: System Code
                 table.setSystemCode(getCellValue(row.getCell(3)));
                 table.setSubjectCode(getCellValue(row.getCell(4)));
                 table.setSubjectName(getCellValue(row.getCell(5)));
@@ -656,7 +661,9 @@ public class RegTableController {
                 table.setStatus(1);
 
                 regTableService.saveOrUpdate(table);
-                codeToTable.put(code, table);
+                if (table.getName() != null) {
+                    nameToTable.put(table.getName(), table);
+                }
                 tableCount++;
             }
 
@@ -665,12 +672,16 @@ public class RegTableController {
                 Sheet sheet = workbook.getSheetAt(sheetIdx);
                 String sheetName = sheet.getSheetName();
 
-                // 根据 sheet 名找到对应的报表
-                RegTable table = codeToTable.get(sheetName);
+                // 根据 sheet 名找到对应的报表 (使用物理表名匹配)
+                RegTable table = nameToTable.get(sheetName);
                 if (table == null) {
-                    // 可能是按名字匹配
-                    table = regTableService.getOne(
-                            new LambdaQueryWrapper<RegTable>().eq(RegTable::getCode, sheetName));
+                    // 尝试从数据库查找 (按名称)
+                    try {
+                        table = regTableService.getOne(
+                                new LambdaQueryWrapper<RegTable>().eq(RegTable::getName, sheetName));
+                    } catch (Exception e) {
+                        // ignore duplicates error for robustness
+                    }
                 }
                 if (table == null)
                     continue;
@@ -718,6 +729,12 @@ public class RegTableController {
                     el.setStatus(getIntValue(row.getCell(22)));
                     if (el.getStatus() == null)
                         el.setStatus(1);
+
+                    el.setIsInit(getIntValue(row.getCell(23)));
+                    el.setIsMergeFormula(getIntValue(row.getCell(24)));
+                    el.setIsFillBusiness(getIntValue(row.getCell(25)));
+                    el.setCodeSnippet(getCellValue(row.getCell(26)));
+
                     if (el.getSortOrder() == null)
                         el.setSortOrder(0);
 

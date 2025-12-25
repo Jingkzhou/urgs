@@ -8,7 +8,7 @@ interface RegTable {
     id?: number | string;
     name: string;
     cnName: string;
-    code: string;
+    sortOrder?: number;
     systemCode: string;
     subjectCode?: string;
     subjectName?: string;
@@ -39,7 +39,7 @@ interface RegElement {
     type: 'FIELD' | 'INDICATOR';
     name: string;
     cnName?: string;
-    code?: string;
+    // code?: string; // Removed
     dataType?: string;
     length?: number;
     isPk?: number;
@@ -647,8 +647,9 @@ const RegulatoryAssetView: React.FC = () => {
                                 />
                             </div>
                             <div className="w-10"></div>
+                            <div className="w-16">序号</div>
+
                             <div className="w-48">中文名/表名</div>
-                            <div className="w-32">编码</div>
                             <div className="w-24">报送频度</div>
                             <div className="w-24">取数来源</div>
                             <div className="w-24">状态</div>
@@ -682,11 +683,11 @@ const RegulatoryAssetView: React.FC = () => {
                                     <div className="w-10 text-center">
                                         <Table2 size={16} className="text-blue-500 mx-auto" />
                                     </div>
+                                    <div className="w-16 text-center text-xs text-slate-500 font-mono px-1">{table.sortOrder || '-'}</div>
                                     <div className="w-48 pr-2">
                                         <div className="font-medium text-sm text-slate-800 truncate" title={table.cnName}>{table.cnName || '-'}</div>
                                         <div className="text-xs text-slate-400 font-mono truncate" title={table.name}>{table.name}</div>
                                     </div>
-                                    <div className="w-32 text-xs text-slate-500 font-mono truncate px-1" title={table.code}>{table.code || '-'}</div>
                                     <div className="w-24 text-xs text-slate-600 px-1">{table.frequency || '-'}</div>
                                     <div className="w-24 text-xs text-slate-600 px-1">{table.sourceType || '-'}</div>
                                     <div className="w-24 px-1">{getAutoFetchStatusBadge(table.autoFetchStatus)}</div>
@@ -738,8 +739,8 @@ const RegulatoryAssetView: React.FC = () => {
                                     </h2>
                                     <div className="text-xs text-slate-500 font-mono mt-0.5 flex gap-2">
                                         <span>{currentTable.name}</span>
-                                        {currentTable.code && <span className="text-slate-300">|</span>}
-                                        <span>{currentTable.code}</span>
+                                        <span className="text-slate-300">|</span>
+                                        <span className="bg-slate-100 px-1 py-0.5 rounded">Seq: {currentTable.sortOrder}</span>
                                     </div>
                                 </div>
                             </div>
@@ -793,7 +794,7 @@ const RegulatoryAssetView: React.FC = () => {
                             <div className="w-10"></div> {/* Icon */}
                             <div className="w-12 text-center">序号</div>
                             <div className="w-48">名称</div>
-                            <div className="w-32">编码</div>
+                            {/* <div className="w-32">编码</div> Removed */}
                             <div className="w-48">值域/计算公式</div>
                             <div className="w-32">自动取数/状态</div>
                             <div className="flex-1">业务口径/说明</div>
@@ -1091,7 +1092,8 @@ const DetailModal: React.FC<{
                             <h3 className="text-lg font-bold text-slate-800">{data.cnName || data.name}</h3>
                             <div className="flex items-center gap-2 text-sm text-slate-500 font-mono mt-1">
                                 {data.name}
-                                {data.code && <span className="bg-slate-200 px-1.5 py-0.5 rounded text-xs text-slate-600">{data.code}</span>}
+                                {!isTable && element.code && <span className="bg-slate-200 px-1.5 py-0.5 rounded text-xs text-slate-600">{element.code}</span>}
+                                {isTable && table.sortOrder !== undefined && <span className="bg-slate-200 px-1.5 py-0.5 rounded text-xs text-slate-600">Seq: {table.sortOrder}</span>}
                             </div>
                         </div>
                     </div>
@@ -1192,7 +1194,7 @@ const TableModal: React.FC<{
     onClose: () => void;
 }> = ({ table, systems, defaultSystemCode, onSave, onClose }) => {
     const [form, setForm] = useState<RegTable>(table || {
-        name: '', cnName: '', code: '', systemCode: defaultSystemCode || '',
+        name: '', cnName: '', sortOrder: 0, systemCode: defaultSystemCode || '',
         subjectCode: '', subjectName: '', theme: '', frequency: '',
         sourceType: '', autoFetchStatus: '', documentNo: '', documentTitle: '',
         businessCaliber: '', devNotes: '', owner: '', status: 1
@@ -1208,7 +1210,7 @@ const TableModal: React.FC<{
                 <div className="p-6 overflow-y-auto grid grid-cols-2 gap-4">
                     <FormField label="表名 *" value={form.name} onChange={v => setForm({ ...form, name: v })} />
                     <FormField label="中文名" value={form.cnName} onChange={v => setForm({ ...form, cnName: v })} />
-                    <FormField label="编码" value={form.code} onChange={v => setForm({ ...form, code: v })} />
+                    <FormField label="序号" value={String(form.sortOrder)} onChange={v => setForm({ ...form, sortOrder: Number(v) })} />
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">所属系统</label>
                         <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.systemCode || ''} onChange={e => setForm({ ...form, systemCode: e.target.value })}>

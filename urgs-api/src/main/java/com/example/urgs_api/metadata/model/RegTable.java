@@ -23,12 +23,13 @@ public class RegTable {
     @com.fasterxml.jackson.databind.annotation.JsonSerialize(using = com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
     private Long id;
 
+    @TableField("sort_order")
+    private Integer sortOrder;
+
     private String name;
 
     @TableField("cn_name")
     private String cnName;
-
-    private String code;
 
     @TableField("system_code")
     private String systemCode;

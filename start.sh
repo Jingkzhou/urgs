@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Force Java 17 for Lombok compatibility
-export JAVA_HOME=$(/usr/libexec/java_home -v 17)
+export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home
+export PATH=$JAVA_HOME/bin:$PATH
 echo "Using JAVA_HOME: $JAVA_HOME"
 
 ENVIRONMENT="${1:-dev}"

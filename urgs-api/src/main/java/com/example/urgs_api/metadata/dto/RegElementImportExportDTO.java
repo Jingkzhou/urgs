@@ -78,4 +78,16 @@ public class RegElementImportExportDTO {
 
     @ExcelProperty(value = "状态", index = 22)
     private Integer status;
+
+    @ExcelProperty(value = "是否初始化项", index = 23)
+    private Integer isInit;
+
+    @ExcelProperty(value = "是否归并公式项", index = 24)
+    private Integer isMergeFormula;
+
+    @ExcelProperty(value = "是否填报业务项", index = 25)
+    private Integer isFillBusiness;
+
+    @ExcelProperty(value = "代码片段", index = 26)
+    private String codeSnippet;
 }
