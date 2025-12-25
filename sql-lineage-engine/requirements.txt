@@ -7,3 +7,4 @@ python-dotenv
 requests
 pydantic
 JPype1
+numpy<2

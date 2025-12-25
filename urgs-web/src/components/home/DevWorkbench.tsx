@@ -1,23 +1,23 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
     Activity, Server, Database, Network, Cpu, Layers,
     Play, Clock, Zap, GitBranch, Box, Code,
     Terminal, Search, FileText, Settings, RefreshCw,
     Shield, ArrowUpRight, BarChart2
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+
 
 // --- Shared VS Code / Tech Aesthetic Components ---
 
-const GlassCard: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
+const GlassCard: React.FC<{ children: React.ReactNode; className?: string }> = React.memo(({ children, className = '' }) => (
     <div className={`bg-white/70 backdrop-blur-2xl border border-white/40 shadow-xl shadow-black/5 rounded-3xl overflow-hidden ${className}`}>
         {children}
     </div>
-);
+));
 
 // ... (Keeping imports and setups)
 
-const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; subtitle: string; color: string }> = ({ icon, title, subtitle, color }) => (
+const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; subtitle: string; color: string }> = React.memo(({ icon, title, subtitle, color }) => (
     <div className="flex items-center gap-3 mb-5">
         <div className={`p-2.5 rounded-xl ${color} text-white shadow-lg shadow-black/5`}>
             {React.cloneElement(icon as React.ReactElement, { size: 18, strokeWidth: 2.5 } as any)}
@@ -27,9 +27,9 @@ const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; subtitle: 
             <p className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mt-1">{subtitle}</p>
         </div>
     </div>
-);
+));
 
-const ExecutorNode: React.FC<{ name: string; cpu: number; mem: number; tasks: number; status: 'active' | 'busy' | 'idle' }> = ({ name, cpu, mem, tasks, status }) => {
+const ExecutorNode: React.FC<{ name: string; cpu: number; mem: number; tasks: number; status: 'active' | 'busy' | 'idle' }> = React.memo(({ name, cpu, mem, tasks, status }) => {
     const isBusy = status === 'busy';
     return (
         <div className="relative group">
@@ -57,14 +57,14 @@ const ExecutorNode: React.FC<{ name: string; cpu: number; mem: number; tasks: nu
             </div>
         </div>
     );
-};
+});
 
 
 
 
 // --- Module 1: Executor Cluster (The Engine) ---
 
-const GitStatRow: React.FC<{ label: string; value: string; trend: string; trendUp: boolean; icon: React.ReactNode }> = ({ label, value, trend, trendUp, icon }) => (
+const GitStatRow: React.FC<{ label: string; value: string; trend: string; trendUp: boolean; icon: React.ReactNode }> = React.memo(({ label, value, trend, trendUp, icon }) => (
     <div className="flex items-center justify-between p-3 bg-slate-50/50 rounded-xl hover:bg-slate-50 transition-colors group">
         <div className="flex items-center gap-3">
             <div className="p-2 bg-white rounded-lg shadow-sm text-slate-500 group-hover:text-indigo-600 transition-colors">
@@ -79,9 +79,11 @@ const GitStatRow: React.FC<{ label: string; value: string; trend: string; trendU
             </div>
         </div>
     </div>
-);
+));
 
-const GitStatsPanel: React.FC = () => {
+const COMMIT_DATA = [12, 45, 30, 60, 25, 80, 45];
+
+const GitStatsPanel: React.FC = React.memo(() => {
     return (
         <GlassCard className="p-6 h-full border-none ring-1 ring-black/5">
             <SectionHeader
@@ -118,7 +120,7 @@ const GitStatsPanel: React.FC = () => {
                     <span className="text-[10px] font-mono text-slate-400 bg-slate-50 px-2 py-1 rounded">Last 7 Days</span>
                 </div>
                 <div className="flex gap-1 h-12 items-end">
-                    {[12, 45, 30, 60, 25, 80, 45].map((h, i) => (
+                    {COMMIT_DATA.map((h, i) => (
                         <div key={i} className="flex-1 bg-violet-100 hover:bg-violet-500 transition-all rounded-md group relative" style={{ height: `${h}%` }}>
                             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-1.5 py-0.5 bg-slate-800 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                                 {h} commits
@@ -129,11 +131,11 @@ const GitStatsPanel: React.FC = () => {
             </div>
         </GlassCard>
     );
-};
+});
 
 // --- Module 2: Governance & Lineage (The Brain) ---
 
-const LineageEngineCard: React.FC = () => {
+const LineageEngineCard: React.FC = React.memo(() => {
     return (
         <GlassCard className="p-6 h-full border-none ring-1 ring-black/5">
             <SectionHeader
@@ -177,9 +179,9 @@ const LineageEngineCard: React.FC = () => {
             </div>
         </GlassCard>
     );
-};
+});
 
-const RagStatusCard: React.FC = () => {
+const RagStatusCard: React.FC = React.memo(() => {
     return (
         <GlassCard className="p-6 h-full border-none ring-1 ring-black/5 relative overflow-hidden group">
             {/* Ambient Background Blob */}
@@ -225,12 +227,18 @@ const RagStatusCard: React.FC = () => {
             </button>
         </GlassCard>
     );
-};
+});
 
 
 // --- Module 3: My Workbench (The Work) ---
 
-const MyTasksList: React.FC = () => {
+const TASKS_DATA = [
+    { name: 't_data_sync_daily', type: 'DataX', exec: 'Executor-02', status: 'Running', color: 'blue' },
+    { name: 'calc_risk_model_v2', type: 'Python', exec: 'Executor-04', status: 'Success', color: 'green' },
+    { name: 'tmp_check_balance', type: 'SQL', exec: 'Executor-01', status: 'Failed', color: 'red' },
+];
+
+const MyTasksList: React.FC = React.memo(() => {
     return (
         <GlassCard className="col-span-1 lg:col-span-2 p-6 border-none ring-1 ring-black/5">
             <div className="flex justify-between items-center mb-6">
@@ -259,11 +267,7 @@ const MyTasksList: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody className="text-sm">
-                        {[
-                            { name: 't_data_sync_daily', type: 'DataX', exec: 'Executor-02', status: 'Running', color: 'blue' },
-                            { name: 'calc_risk_model_v2', type: 'Python', exec: 'Executor-04', status: 'Success', color: 'green' },
-                            { name: 'tmp_check_balance', type: 'SQL', exec: 'Executor-01', status: 'Failed', color: 'red' },
-                        ].map((task, i) => (
+                        {TASKS_DATA.map((task, i) => (
                             <tr key={i} className="group hover:bg-slate-50 transition-colors">
                                 <td className="py-3 pl-2 font-medium text-slate-700 flex items-center gap-2">
                                     <div className={`w-1.5 h-1.5 rounded-full bg-${task.color}-500`}></div>
@@ -286,7 +290,7 @@ const MyTasksList: React.FC = () => {
             </div>
         </GlassCard>
     );
-};
+});
 
 // --- Main Component ---
 

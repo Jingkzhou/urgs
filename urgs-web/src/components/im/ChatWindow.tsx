@@ -157,7 +157,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
                         {!msg.isSelf && (
                             <>
                                 <img
-                                    src={getAvatarUrl(msg.senderAvatar, msg.senderName || msg.senderId)}
+                                    src={getAvatarUrl(msg.senderAvatar, msg.senderName || `User ${msg.senderId}`)}
                                     className="w-9 h-9 rounded-full mr-3 flex-shrink-0 cursor-pointer shadow-sm border border-white/50 hover:scale-105 transition-transform"
                                     alt="Avatar"
                                 />
@@ -205,7 +205,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
                                     </div>
                                 </div>
                                 <img
-                                    src={getAvatarUrl(msg.senderAvatar, msg.senderName || msg.senderId)}
+                                    src={getAvatarUrl(msg.senderAvatar, msg.senderName || `User ${msg.senderId}`)}
                                     className="w-9 h-9 rounded-full ml-3 flex-shrink-0 cursor-pointer shadow-sm border border-white/50 hover:scale-105 transition-transform"
                                     alt="Avatar"
                                 />

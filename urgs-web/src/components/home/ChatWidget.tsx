@@ -96,10 +96,27 @@ const ChatWidget: React.FC = () => {
     const sessionsRef = useRef(sessions);
     const groupMembersRef = useRef(groupMembers);
     const availableUsersRef = useRef(availableUsers);
+    const activeSessionIdRef = useRef(activeSessionId);
+    const isOpenRef = useRef(isOpen);
 
     useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
     useEffect(() => { groupMembersRef.current = groupMembers; }, [groupMembers]);
     useEffect(() => { availableUsersRef.current = availableUsers; }, [availableUsers]);
+    useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
+    useEffect(() => { isOpenRef.current = isOpen; }, [isOpen]);
+
+    // Clear unread when opening widget if active session exists
+    useEffect(() => {
+        if (isOpen && activeSessionId) {
+            setSessions(prev => prev.map(s => {
+                if (s.id === activeSessionId) {
+                    return { ...s, unread: 0 };
+                }
+                return s;
+            }));
+            imService.clearUnread(activeSessionId).catch(e => console.error("Failed to clear unread", e));
+        }
+    }, [isOpen, activeSessionId]);
 
     // WebSocket Ref
     const ws = useRef<WebSocket | null>(null);
@@ -171,10 +188,12 @@ const ChatWidget: React.FC = () => {
 
             const uiSessions = data.map(s => {
                 const meta = getMeta(s.peerId, s.chatType);
+                // Fallback to "User {ID}" to avoid "1" avatar, ensuring "U" or consistent letter
+                const finalName = s.name || meta.name || ('User ' + s.peerId);
                 return {
                     id: s.peerId,
-                    name: s.name || meta.name, // Use backend name if available (now fixed in Entity)
-                    avatar: getAvatarUrl(s.avatar || meta.avatar, s.name || meta.name || String(s.peerId)),
+                    name: finalName,
+                    avatar: getAvatarUrl(s.avatar || meta.avatar, finalName),
                     message: s.lastMsgContent || '',
                     time: s.lastMsgTime ? new Date(s.lastMsgTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
                     unread: s.unreadCount,
@@ -259,7 +278,8 @@ const ChatWidget: React.FC = () => {
                                 ...session,
                                 message: incomingMsg.type === 'image' ? '[Image]' : incomingMsg.content,
                                 time: incomingMsg.time,
-                                unread: (activeSessionId === peerId) ? 0 : (session.unread + 1)
+                                // Use Refs to check current state safely within closure
+                                unread: (isOpenRef.current && activeSessionIdRef.current === peerId) ? 0 : (session.unread + 1)
                             };
                         }
                         return session;
@@ -291,7 +311,8 @@ const ChatWidget: React.FC = () => {
             type: type, // Frontend prop
             isSelf: true,
             time: new Date().toLocaleTimeString(),
-            senderAvatar: currentUser.avatarUrl
+            senderAvatar: currentUser.avatarUrl,
+            senderName: currentUser.name || currentUser.wxId || 'Me' // Ensure name is present for avatar generation
         };
 
         // UI Optimistic Update

@@ -61,7 +61,7 @@ sql-lineage-engine/
    ```bash
    ./run.sh parse-sql --file ./path/to/sql_files/ --output json --output-file results.json
    ```
-
+   ./run.sh parse-sql --file ./tests/sql/ --output neo4j
 ## 未来路线 (Roadmap)
 
 - **元数据驱动 (Metadata-Driven)**：引入外部 DDL 元数据注入，解决字段歧义（如无别名引用）导致的血缘误判。 (正在设计中, 见 `docs/design/`)

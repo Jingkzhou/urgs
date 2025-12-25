@@ -8,7 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Set JAVA_HOME
-ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+# Set JAVA_HOME (Multi-arch support)
+RUN ln -s /usr/lib/jvm/java-21-openjdk-$(dpkg --print-architecture) /usr/lib/jvm/default-java
+ENV JAVA_HOME=/usr/lib/jvm/default-java
 
 COPY requirements.txt .
 RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --no-cache-dir -r requirements.txt
