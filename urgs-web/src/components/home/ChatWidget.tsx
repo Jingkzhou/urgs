@@ -202,6 +202,14 @@ const ChatWidget: React.FC = () => {
             });
 
             if (uiSessions.length > 0) {
+                // Fix: Ensure active session is marked as read in the fetched list to avoid race condition
+                // where fetchSessions overwrites the local clearUnread effect.
+                if (activeSessionIdRef.current) {
+                    const activeDetails = uiSessions.find(s => s.id === activeSessionIdRef.current);
+                    if (activeDetails) {
+                        activeDetails.unread = 0;
+                    }
+                }
                 setSessions(uiSessions);
             }
         } catch (e) {
@@ -616,6 +624,7 @@ const ChatWidget: React.FC = () => {
                                     onSendMessage={handleSendMessage}
                                     onFileUpload={userService.uploadFile}
                                     onShowDetails={handleShowGroupDetails}
+                                    onClose={() => setActiveSessionId(null)}
                                 />
                             ) : (
                                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-slate-50/30">

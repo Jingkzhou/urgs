@@ -19,9 +19,10 @@ interface ChatWindowProps {
     onSendMessage: (content: string, type?: 'text' | 'image') => void;
     onFileUpload?: (file: File) => Promise<string>;
     onShowDetails?: () => void;
+    onClose?: () => void;
 }
 
-const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMessage, onFileUpload, onShowDetails }) => {
+const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMessage, onFileUpload, onShowDetails, onClose }) => {
     const [inputValue, setInputValue] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -142,11 +143,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
                     <h3 className="font-bold text-slate-800 text-lg tracking-tight">{sessionName}</h3>
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                 </div>
-                <button
-                    onClick={onShowDetails}
-                    className="p-2 hover:bg-white/50 rounded-xl text-slate-500 hover:text-indigo-600 transition-colors">
-                    <MoreHorizontal size={22} />
-                </button>
+                <div className="flex gap-2">
+                    {/* Keep Details button for Group only? Or just remove as requested?
+                        The user said "replace", so I will replace.
+                        But to be safe if onShowDetails is passed (maybe for group), we could show it differently.
+                        User instruction: "Change the three dots to close icon".
+                        I'll assume complete replacement.
+                     */}
+                    <button
+                        onClick={onClose}
+                        className="p-2 hover:bg-white/50 rounded-xl text-slate-500 hover:text-red-600 transition-colors"
+                        title="Close Chat"
+                    >
+                        <X size={22} />
+                    </button>
+                </div>
             </div>
 
             {/* Messages */}
