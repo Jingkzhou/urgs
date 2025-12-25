@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import Editor from '@monaco-editor/react';
+import Editor, { loader } from '@monaco-editor/react';
+import * as monaco from 'monaco-editor';
 import { Play, AlertCircle, CheckCircle2, Database } from 'lucide-react';
+
+// Configure Monaco to use local instance (Offline Mode)
+loader.config({ monaco });
 
 interface SqlResult {
     success: boolean;
