@@ -21,6 +21,9 @@ public class CodeDirectoryController {
     @Autowired
     private CodeDirectoryService codeDirectoryService;
 
+    @Autowired
+    private com.example.urgs_api.metadata.component.MaintenanceLogManager maintenanceLogManager;
+
     /**
      * 分页查询代码目录列表
      *
@@ -78,11 +81,25 @@ public class CodeDirectoryController {
      */
     @PostMapping
     public boolean save(@RequestBody CodeDirectory codeDirectory) {
-        if (codeDirectory.getId() == null) {
+        // Fetch old data for update
+        CodeDirectory oldDir = null;
+        if (codeDirectory.getId() != null) {
+            oldDir = codeDirectoryService.getById(codeDirectory.getId());
+        } else {
             codeDirectory.setCreateTime(LocalDateTime.now());
         }
+
         codeDirectory.setUpdateTime(LocalDateTime.now());
-        return codeDirectoryService.saveOrUpdate(codeDirectory);
+        boolean result = codeDirectoryService.saveOrUpdate(codeDirectory);
+
+        if (result) {
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.CODE_DIR,
+                    oldDir,
+                    codeDirectory,
+                    "admin");
+        }
+        return result;
     }
 
     /**
@@ -105,7 +122,17 @@ public class CodeDirectoryController {
      */
     @DeleteMapping("/{id}")
     public boolean delete(@PathVariable String id) {
-        return codeDirectoryService.removeById(id);
+        CodeDirectory oldDir = codeDirectoryService.getById(id);
+        boolean result = codeDirectoryService.removeById(id);
+
+        if (result && oldDir != null) {
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.CODE_DIR,
+                    oldDir,
+                    null,
+                    "admin");
+        }
+        return result;
     }
 
     /**

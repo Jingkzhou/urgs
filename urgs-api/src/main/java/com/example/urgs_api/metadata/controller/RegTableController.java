@@ -38,6 +38,9 @@ public class RegTableController {
     private RegTableService regTableService;
 
     @Autowired
+    private com.example.urgs_api.metadata.component.MaintenanceLogManager maintenanceLogManager;
+
+    @Autowired
     private RegElementService regElementService;
 
     /**
@@ -50,10 +53,8 @@ public class RegTableController {
      * @return 报表分页结果
      */
     @GetMapping("/list")
-    public PageResult<RegTable> list(
-            @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String systemCode,
-            @RequestParam(defaultValue = "1") int page,
+    public PageResult<RegTable> list(@RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String systemCode, @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size) {
 
         QueryWrapper<RegTable> query = new QueryWrapper<>();
@@ -64,8 +65,7 @@ public class RegTableController {
 
         if (keyword != null && !keyword.isEmpty()) {
             String kw = keyword.toLowerCase();
-            query.and(w -> w.like("LOWER(name)", kw)
-                    .or().like("LOWER(cn_name)", kw));
+            query.and(w -> w.like("LOWER(name)", kw).or().like("LOWER(cn_name)", kw));
         }
 
         query.orderByAsc("sort_order");
@@ -112,7 +112,14 @@ public class RegTableController {
      */
     @DeleteMapping("/{id}")
     public boolean delete(@PathVariable Long id) {
-        return regTableService.removeById(id);
+        RegTable oldTable = regTableService.getById(id);
+        boolean result = regTableService.removeById(id);
+
+        if (result && oldTable != null) {
+            maintenanceLogManager.logChange(com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.TABLE,
+                    oldTable, null, "admin");
+        }
+        return result;
     }
 
     /**
@@ -129,17 +136,14 @@ public class RegTableController {
 
         try {
             // 1. 查询该系统下所有表
-            List<RegTable> tables = regTableService.list(
-                    new LambdaQueryWrapper<RegTable>().eq(RegTable::getSystemCode, systemCode));
+            List<RegTable> tables = regTableService
+                    .list(new LambdaQueryWrapper<RegTable>().eq(RegTable::getSystemCode, systemCode));
 
             for (RegTable table : tables) {
                 String tableName = table.getName();
-                List<RegElement> elements = regElementService.list(
-                        new LambdaQueryWrapper<RegElement>()
-                                .eq(RegElement::getTableId, table.getId())
-                                .eq(RegElement::getType, "INDICATOR")
-                                .isNotNull(RegElement::getCodeSnippet)
-                                .ne(RegElement::getCodeSnippet, ""));
+                List<RegElement> elements = regElementService.list(new LambdaQueryWrapper<RegElement>()
+                        .eq(RegElement::getTableId, table.getId()).eq(RegElement::getType, "INDICATOR")
+                        .isNotNull(RegElement::getCodeSnippet).ne(RegElement::getCodeSnippet, ""));
 
                 if (elements.isEmpty())
                     continue;
@@ -148,7 +152,8 @@ public class RegTableController {
                 // LogicKey -> List<IndicatorCode>
                 Map<String, List<String>> logicGroups = new LinkedHashMap<>();
                 for (RegElement element : elements) {
-                    String indicatorCode = "N/A"; // Code removed
+                    String indicatorCode = "N/A"; // Code
+                                                  // removed
                     String codeSnippet = element.getCodeSnippet();
 
                     // 使用占位符替换表名，以此作为逻辑主键
@@ -176,8 +181,8 @@ public class RegTableController {
                         if (selectPart != null && indicatorCodes.size() > 1) {
                             fileContent.append("-- ========== 逻辑组 ").append(groupIdx).append(": 共 ")
                                     .append(indicatorCodes.size()).append(" 个指标 ==========\n");
-                            fileContent.append("FROM (\n")
-                                    .append(selectPart).append("\n) q_").append(groupIdx).append("\n");
+                            fileContent.append("FROM (\n").append(selectPart).append("\n) q_").append(groupIdx)
+                                    .append("\n");
                             for (int k = 0; k < indicatorCodes.size(); k++) {
                                 String code = indicatorCodes.get(k);
                                 // 尝试从本组的指标逻辑中找回原本的字段列表（如果有的话）
@@ -185,8 +190,7 @@ public class RegTableController {
                                 String columnList = extractColumnList(logicKey);
                                 // Ensure newline after column list to prevent potential comment issues
                                 fileContent.append("INSERT INTO `").append(code).append("` ")
-                                        .append(columnList != null ? "(" + columnList + ")\n" : "")
-                                        .append("SELECT *");
+                                        .append(columnList != null ? "(" + columnList + ")\n" : "").append("SELECT *");
                                 if (k == indicatorCodes.size() - 1) {
                                     fileContent.append(";");
                                 }
@@ -196,8 +200,7 @@ public class RegTableController {
                             // 退化模式：逐个输出（或者只有一个指标时也无需逻辑聚合）
                             for (String code : indicatorCodes) {
                                 String snippet = replaceInsertTableNameWithBackticks(logicKey, code);
-                                fileContent.append("-- 指标: ").append(code).append("\n")
-                                        .append(snippet);
+                                fileContent.append("-- 指标: ").append(code).append("\n").append(snippet);
                                 if (!snippet.trim().endsWith(";"))
                                     fileContent.append(";");
                                 fileContent.append("\n\n");
@@ -299,17 +302,15 @@ public class RegTableController {
 
     private void writeTableSqlFile(String fileName, String content) throws IOException {
         String basePath = System.getProperty("user.dir");
-        java.nio.file.Path targetDir = java.nio.file.Paths.get(basePath).getParent()
-                .resolve("urgs-agent").resolve("tests").resolve("sql").resolve("hive");
+        java.nio.file.Path targetDir = java.nio.file.Paths.get(basePath).getParent().resolve("urgs-agent")
+                .resolve("tests").resolve("sql").resolve("hive");
         java.nio.file.Files.createDirectories(targetDir);
 
         java.nio.file.Path sqlFile = targetDir.resolve(fileName + ".sql");
         String header = String.format(
-                "-- ============================================================\n" +
-                        "-- 文件名: %s.sql\n" +
-                        "-- 生成时间: %s\n" +
-                        "-- 说明: 采用 CTE (WITH) 聚合去重模式生成，大幅减小血缘解析压力\n" +
-                        "-- ============================================================\n\n",
+                "-- ============================================================\n" + "-- 文件名: %s.sql\n"
+                        + "-- 生成时间: %s\n" + "-- 说明: 采用 CTE (WITH) 聚合去重模式生成，大幅减小血缘解析压力\n"
+                        + "-- ============================================================\n\n",
                 fileName,
                 LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
 
@@ -348,10 +349,8 @@ public class RegTableController {
      * 后续 Sheet：每个报表的字段详情（以报表编码命名）
      */
     @GetMapping("/export")
-    public void exportTables(
-            @RequestParam(required = false) String systemCode,
-            @RequestParam(required = false) String tableIds,
-            HttpServletResponse response) throws IOException {
+    public void exportTables(@RequestParam(required = false) String systemCode,
+            @RequestParam(required = false) String tableIds, HttpServletResponse response) throws IOException {
 
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         response.setCharacterEncoding("utf-8");
@@ -362,11 +361,8 @@ public class RegTableController {
         List<RegTable> tables;
         if (tableIds != null && !tableIds.isEmpty()) {
             // 导出选中的报表
-            List<Long> ids = Arrays.stream(tableIds.split(","))
-                    .map(String::trim)
-                    .filter(s -> !s.isEmpty())
-                    .map(Long::parseLong)
-                    .toList();
+            List<Long> ids = Arrays.stream(tableIds.split(",")).map(String::trim).filter(s -> !s.isEmpty())
+                    .map(Long::parseLong).toList();
             tables = regTableService.listByIds(ids);
         } else {
             // 导出全部（或按系统过滤）
@@ -406,9 +402,7 @@ public class RegTableController {
                 tableDtos.add(dto);
             }
 
-            WriteSheet summarySheet = EasyExcel.writerSheet(0, "报表列表")
-                    .head(RegTableImportExportDTO.class)
-                    .build();
+            WriteSheet summarySheet = EasyExcel.writerSheet(0, "报表列表").head(RegTableImportExportDTO.class).build();
             excelWriter.write(tableDtos, summarySheet);
 
             // 2. 每个报表一个详情 Sheet
@@ -423,10 +417,8 @@ public class RegTableController {
                     sheetName = sheetName.substring(0, 31);
                 }
 
-                List<RegElement> elements = regElementService.list(
-                        new LambdaQueryWrapper<RegElement>()
-                                .eq(RegElement::getTableId, table.getId())
-                                .orderByAsc(RegElement::getSortOrder));
+                List<RegElement> elements = regElementService.list(new LambdaQueryWrapper<RegElement>()
+                        .eq(RegElement::getTableId, table.getId()).orderByAsc(RegElement::getSortOrder));
 
                 List<RegElementImportExportDTO> elementDtos = new ArrayList<>();
                 for (RegElement el : elements) {
@@ -465,8 +457,7 @@ public class RegTableController {
                 }
 
                 WriteSheet detailSheet = EasyExcel.writerSheet(sheetIndex++, sheetName)
-                        .head(RegElementImportExportDTO.class)
-                        .build();
+                        .head(RegElementImportExportDTO.class).build();
                 excelWriter.write(elementDtos, detailSheet);
             }
         }
@@ -501,8 +492,8 @@ public class RegTableController {
                     continue;
 
                 // 查找或创建报表 (按序号匹配)
-                RegTable table = regTableService.getOne(
-                        new LambdaQueryWrapper<RegTable>().eq(RegTable::getSortOrder, sortOrder));
+                RegTable table = regTableService
+                        .getOne(new LambdaQueryWrapper<RegTable>().eq(RegTable::getSortOrder, sortOrder));
                 if (table == null) {
                     table = new RegTable();
                     table.setCreateTime(LocalDateTime.now());
@@ -551,8 +542,8 @@ public class RegTableController {
                 if (table == null) {
                     // 尝试从数据库查找 (按名称)
                     try {
-                        table = regTableService.getOne(
-                                new LambdaQueryWrapper<RegTable>().eq(RegTable::getName, sheetName));
+                        table = regTableService
+                                .getOne(new LambdaQueryWrapper<RegTable>().eq(RegTable::getName, sheetName));
                     } catch (Exception e) {
                         // ignore duplicates error for robustness
                     }
@@ -561,8 +552,8 @@ public class RegTableController {
                     continue;
 
                 // 删除该表原有字段（覆盖更新）
-                regElementService.remove(
-                        new LambdaQueryWrapper<RegElement>().eq(RegElement::getTableId, table.getId()));
+                regElementService
+                        .remove(new LambdaQueryWrapper<RegElement>().eq(RegElement::getTableId, table.getId()));
 
                 // 导入新字段
                 for (int i = 1; i <= sheet.getLastRowNum(); i++) {

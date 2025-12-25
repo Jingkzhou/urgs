@@ -27,6 +27,9 @@ public class RegElementController {
     @Autowired
     private RegElementService regElementService;
 
+    @Autowired
+    private com.example.urgs_api.metadata.component.MaintenanceLogManager maintenanceLogManager;
+
     /**
      * 分页查询监管元素列表
      *
@@ -85,17 +88,24 @@ public class RegElementController {
      */
     @PostMapping
     public boolean save(@RequestBody RegElement regElement) {
-        if (regElement.getId() == null) {
+        // Fetch old data if update
+        RegElement oldElement = null;
+        if (regElement.getId() != null) {
+            oldElement = regElementService.getById(regElement.getId());
+        } else {
             regElement.setCreateTime(LocalDateTime.now());
         }
-        regElement.setUpdateTime(LocalDateTime.now());
-        if (regElement.getStatus() == null) {
-            regElement.setStatus(1);
+
+        boolean result = regElementService.saveOrUpdate(regElement);
+
+        if (result) {
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.ELEMENT,
+                    oldElement,
+                    regElement,
+                    "admin");
         }
-        if (regElement.getSortOrder() == null) {
-            regElement.setSortOrder(0);
-        }
-        return regElementService.saveOrUpdate(regElement);
+        return result;
     }
 
     /**
@@ -106,7 +116,17 @@ public class RegElementController {
      */
     @DeleteMapping("/{id}")
     public boolean delete(@PathVariable Long id) {
-        return regElementService.removeById(id);
+        RegElement oldElement = regElementService.getById(id);
+        boolean result = regElementService.removeById(id);
+
+        if (result && oldElement != null) {
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.ELEMENT,
+                    oldElement,
+                    null,
+                    "admin");
+        }
+        return result;
     }
 
     /**

@@ -270,6 +270,39 @@ const RegulatoryAssetView: React.FC = () => {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             fetchTables();
+            // Remove from selection if selected
+            if (selectedTableIds.has(id)) {
+                const newSet = new Set(selectedTableIds);
+                newSet.delete(id);
+                setSelectedTableIds(newSet);
+            }
+        }
+    };
+
+    const handleBatchDeleteTables = async () => {
+        if (selectedTableIds.size === 0) return;
+        if (!window.confirm(`确定要批量删除选中的 ${selectedTableIds.size} 张表吗？\n此操作不可恢复，关联的字段/指标也将被删除。`)) {
+            return;
+        }
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            // Parallel delete requests
+            const promises = Array.from(selectedTableIds).map(id =>
+                fetch(`/api/reg/table/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                })
+            );
+
+            await Promise.all(promises);
+            setSelectedTableIds(new Set()); // Clear selection
+            fetchTables();
+            alert('批量删除成功');
+        } catch (error) {
+            console.error('Batch delete failed', error);
+            alert('批量删除部分或全部失败，请重试');
+            fetchTables(); // Refresh to see what's left
         }
     };
 
@@ -602,6 +635,11 @@ const RegulatoryAssetView: React.FC = () => {
                                 <button onClick={handleTableExport} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-blue-300 hover:text-blue-600 flex items-center gap-1 px-3 transition-colors" title="导出报表">
                                     <Download size={14} className="text-blue-500" /> <span className="text-sm">导出{selectedTableIds.size > 0 ? `(${selectedTableIds.size})` : '全部'}</span>
                                 </button>
+                                {selectedTableIds.size > 0 && (
+                                    <button onClick={handleBatchDeleteTables} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-red-300 hover:text-red-600 flex items-center gap-1 px-3 transition-colors" title="批量删除">
+                                        <Trash2 size={14} className="text-red-500" /> <span className="text-sm">批量删除({selectedTableIds.size})</span>
+                                    </button>
+                                )}
                                 {(selectedSystem === 'PBOC' || selectedSystem === 'CBRC') && (
                                     <>
                                         <button
