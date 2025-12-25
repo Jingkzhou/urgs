@@ -35,6 +35,7 @@ public class MaintenanceRecordController {
     public com.baomidou.mybatisplus.core.metadata.IPage<MaintenanceRecord> list(
             @RequestParam(required = false) String tableName,
             @RequestParam(required = false) String tableCnName,
+            @RequestParam(required = false) Long tableId, // Add tableId param
             @RequestParam(required = false) String fieldName,
             @RequestParam(required = false) String fieldCnName,
             @RequestParam(required = false) String plannedDate,
@@ -42,9 +43,20 @@ public class MaintenanceRecordController {
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer size) {
         LambdaQueryWrapper<MaintenanceRecord> query = new LambdaQueryWrapper<>();
-        if (StringUtils.hasText(tableName)) {
-            query.like(MaintenanceRecord::getTableName, tableName);
+
+        // Table Name Logic: Matches Name OR "TableID:ID" format if ID is provided
+        if (StringUtils.hasText(tableName) || tableId != null) {
+            query.and(wrapper -> {
+                if (StringUtils.hasText(tableName)) {
+                    wrapper.like(MaintenanceRecord::getTableName, tableName);
+                }
+                if (tableId != null) {
+                    wrapper.or().eq(MaintenanceRecord::getTableName, "TableID:" + tableId);
+                    wrapper.or().like(MaintenanceRecord::getTableName, "Unknown Table (ID:" + tableId + ")");
+                }
+            });
         }
+
         if (StringUtils.hasText(tableCnName)) {
             query.like(MaintenanceRecord::getTableCnName, tableCnName);
         }

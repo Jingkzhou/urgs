@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Edit, Trash2, X, Server, Database, Layers, ArrowLeft, Table2, Hash, Target, FileText, Calendar, Code, Zap, BookOpen, Info, Download, Upload, RefreshCw, FileCode } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, X, Server, Database, Layers, ArrowLeft, Table2, Hash, Target, FileText, Calendar, Code, Zap, BookOpen, Info, Download, Upload, RefreshCw, FileCode, Clock } from 'lucide-react';
 import { systemService, SsoConfig } from '../../services/systemService';
 import Pagination from '../common/Pagination';
 import Editor from '@monaco-editor/react';
+import MaintenanceHistoryModal from './MaintenanceHistoryModal';
 
 interface RegTable {
     id?: number | string;
@@ -99,6 +100,16 @@ const RegulatoryAssetView: React.FC = () => {
     const [editingElement, setEditingElement] = useState<RegElement | null>(null);
     const [viewingCodeTable, setViewingCodeTable] = useState<string | null>(null);
     const [allCodeTables, setAllCodeTables] = useState<CodeTable[]>([]);
+
+    // History Modal State
+    const [showHistoryModal, setShowHistoryModal] = useState(false);
+    const [historyTarget, setHistoryTarget] = useState<{
+        tableName: string;
+        tableId?: number | string; // Added tableId
+        tableCnName?: string;
+        fieldName?: string;
+        fieldCnName?: string;
+    }>({ tableName: '' });
 
     // Fetch Systems
     useEffect(() => {
@@ -731,6 +742,20 @@ const RegulatoryAssetView: React.FC = () => {
                                     <div className="w-24 px-1">{getAutoFetchStatusBadge(table.autoFetchStatus)}</div>
                                     <div className="flex-1 text-xs text-slate-500 truncate px-1" title={table.businessCaliber}>{table.businessCaliber || '-'}</div>
                                     <div className="w-32 flex justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                                        <button
+                                            onClick={() => {
+                                                setHistoryTarget({
+                                                    tableName: table.name,
+                                                    tableId: table.id, // Pass tableId
+                                                    tableCnName: table.cnName
+                                                });
+                                                setShowHistoryModal(true);
+                                            }}
+                                            className="p-1.5 hover:bg-orange-100 text-orange-600 rounded"
+                                            title="变更历史"
+                                        >
+                                            <Clock size={14} />
+                                        </button>
                                         <button onClick={() => handleShowDetail('TABLE', table)} className="p-1.5 hover:bg-indigo-100 text-indigo-600 rounded" title="详情"><Info size={14} /></button>
                                         <button onClick={() => handleEditTable(table)} className="p-1.5 hover:bg-slate-200 text-slate-600 rounded" title="编辑"><Edit size={14} /></button>
                                         <button onClick={() => handleDeleteTable(table.id!)} className="p-1.5 hover:bg-red-50 text-red-500 rounded" title="删除"><Trash2 size={14} /></button>
@@ -903,7 +928,23 @@ const RegulatoryAssetView: React.FC = () => {
                                         </div>
                                     </div>
                                     <div className="flex-1 text-xs text-slate-500 truncate pr-4" title={el.devNotes || el.businessCaliber}>{el.devNotes || el.businessCaliber || '-'}</div>
-                                    <div className="w-32 flex justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                                    <div className="w-40 flex justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setHistoryTarget({
+                                                    tableName: currentTable.name,
+                                                    tableCnName: currentTable.cnName,
+                                                    fieldName: el.name,
+                                                    fieldCnName: el.cnName
+                                                });
+                                                setShowHistoryModal(true);
+                                            }}
+                                            className="p-1.5 hover:bg-orange-100 text-orange-600 rounded"
+                                            title="变更历史"
+                                        >
+                                            <Clock size={14} />
+                                        </button>
                                         <button onClick={() => handleShowDetail('ELEMENT', el)} className="p-1.5 hover:bg-indigo-100 text-indigo-600 rounded" title="详情"><Info size={14} /></button>
                                         <button onClick={() => handleEditElement(el)} className="p-1.5 hover:bg-slate-200 text-slate-600 rounded" title="编辑"><Edit size={14} /></button>
                                         <button onClick={() => handleDeleteElement(el.id!)} className="p-1.5 hover:bg-red-50 text-red-500 rounded" title="删除"><Trash2 size={14} /></button>
@@ -978,6 +1019,17 @@ const RegulatoryAssetView: React.FC = () => {
                     onClose={() => setViewingCodeTable(null)}
                 />
             )}
+
+            {/* History Modal */}
+            <MaintenanceHistoryModal
+                isOpen={showHistoryModal}
+                onClose={() => setShowHistoryModal(false)}
+                tableName={historyTarget.tableName}
+                tableId={historyTarget.tableId} // Pass tableId
+                tableCnName={historyTarget.tableCnName}
+                fieldName={historyTarget.fieldName}
+                fieldCnName={historyTarget.fieldCnName}
+            />
         </div>
     );
 };
