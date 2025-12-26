@@ -12,4 +12,7 @@ fi
 cp "$PRE_COMMIT_SRC" "$HOOK_DIR/pre-commit"
 chmod +x "$HOOK_DIR/pre-commit"
 
-echo "✅ Git hooks 已安装成功。"
+cp "scripts/commit-msg-hook.sh" "$HOOK_DIR/commit-msg"
+chmod +x "$HOOK_DIR/commit-msg"
+
+echo "✅ Git hooks (pre-commit & commit-msg) 已安装成功。"
