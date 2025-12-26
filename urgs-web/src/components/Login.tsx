@@ -265,7 +265,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     {/* Footer */}
                     <div className="bg-slate-50/80 p-4 border-t border-slate-100 flex items-center justify-center gap-2 text-xs text-slate-400">
                         <ShieldCheck className="w-3.5 h-3.5" />
-                        <span className="font-medium">Secure Access • Bank of Jilin © 2024</span>
+                        <span className="font-medium">Secure Access • Bank of Jilin © 2026</span>
                     </div>
                 </div>
 
