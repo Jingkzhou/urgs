@@ -53,6 +53,20 @@ const MaintenanceRecord: React.FC = () => {
     const [selectedRecord, setSelectedRecord] = useState<MaintenanceRecordItem | null>(null);
     const [showAddModal, setShowAddModal] = useState(false);
 
+    // Fetch Stats
+    const fetchStats = async () => {
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch('/api/metadata/maintenance-record/stats', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data) setStats(data);
+        } catch (error) {
+            console.error('Failed to fetch stats:', error);
+        }
+    };
+
     // Fetch Records
     const fetchRecords = async (currentPage = page) => {
         setLoading(true);
@@ -60,7 +74,7 @@ const MaintenanceRecord: React.FC = () => {
             const token = localStorage.getItem('auth_token');
             const params = new URLSearchParams();
 
-            // 全局搜索（后端需要支持）
+            // 全局搜索
             if (filters.globalSearch) params.append('keyword', filters.globalSearch);
 
             // 高级筛选
@@ -69,8 +83,8 @@ const MaintenanceRecord: React.FC = () => {
             if (filters.modTypes.length > 0) params.append('modTypes', filters.modTypes.join(','));
             if (filters.reqId) params.append('reqId', filters.reqId);
             if (filters.dateRange) {
-                params.append('startDate', filters.dateRange[0]);
-                params.append('endDate', filters.dateRange[1]);
+                if (filters.dateRange[0]) params.append('startDate', filters.dateRange[0]);
+                if (filters.dateRange[1]) params.append('endDate', filters.dateRange[1]);
             }
 
             params.append('page', currentPage.toString());
@@ -108,6 +122,11 @@ const MaintenanceRecord: React.FC = () => {
         }
     };
 
+    // Initial load
+    useEffect(() => {
+        fetchStats();
+    }, []);
+
     // Debounce Search
     useEffect(() => {
         const timer = setTimeout(() => fetchRecords(1), 500);
@@ -118,7 +137,7 @@ const MaintenanceRecord: React.FC = () => {
     const handleAddSuccess = () => {
         setShowAddModal(false);
         fetchRecords(1);
-        // Refresh stats logic here
+        fetchStats();
     };
 
     const handleExport = () => {

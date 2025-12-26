@@ -62,3 +62,4 @@ logs/
 # migrated_urgs_data.sql
 # t_quartz_task.sql
 urgs-dist/
+urgs-dist/install.sh

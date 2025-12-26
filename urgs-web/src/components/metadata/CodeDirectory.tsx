@@ -548,13 +548,15 @@ const CodeDirectory: React.FC = () => {
                             <Download size={16} />
                             导出
                         </button>
-                        <button
-                            className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg transition-colors shadow-sm"
-                            onClick={handleAddCode}
-                        >
-                            <Plus size={16} />
-                            新增{selectedTable ? '代码' : '代码'}
-                        </button>
+                        {selectedTable && (
+                            <button
+                                className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg transition-colors shadow-sm animate-in fade-in zoom-in duration-200"
+                                onClick={handleAddCode}
+                            >
+                                <Plus size={16} />
+                                新增代码
+                            </button>
+                        )}
                     </div>
                 </div>
 
