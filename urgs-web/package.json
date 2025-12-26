@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:ai": "sh ../scripts/pre-commit-hook.sh && vite",
     "build": "vite build",
     "preview": "vite preview"
   },

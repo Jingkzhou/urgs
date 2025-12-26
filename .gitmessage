@@ -1,0 +1,11 @@
+<type>(<scope>): <subject>
+
+# 变更摘要: [简述]
+# 影响/风险: [无 / 说明]
+# 验证情况: [已完成本地测试 / 已完成 SIT 测试]
+# 回滚方案: [git revert]
+
+# --- 规范说明 ---
+# type: feat (新功能), fix (修补), docs (文档), style (格式), refactor (重构), test (增加测试), chore (构建过程或辅助工具的变动)
+# scope: 影响范围 (urgs-api, urgs-web, sql-lineage, etc.)
+# subject: 简短描述，不超过 50 个字符
