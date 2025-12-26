@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getAvatarUrl } from '../../utils/avatarUtils';
 import { Card, Tag, Button, Avatar, Divider, Input, message, List, Space, Mentions, Tooltip } from 'antd';
-import { User, Clock, Calendar, MessageSquare, Reply, ArrowLeft, Download, Paperclip, Share2, Heart, MoreVertical } from 'lucide-react';
+import { User, Clock, Calendar, MessageSquare, Reply, ArrowLeft, Download, Paperclip, Share2, Heart, MoreVertical, Megaphone, FileText } from 'lucide-react';
 import { debounce } from 'lodash';
 
 const { Option } = Mentions;
@@ -263,8 +263,8 @@ const AnnouncementDetail: React.FC<AnnouncementDetailProps> = ({ id, onBack }) =
                         <div className="p-8 lg:p-12 pb-0">
                             <div className="flex items-center gap-3 mb-6">
                                 <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${detail.type === 'urgent' ? 'bg-red-50 text-red-600 border-red-100' :
-                                        detail.type === 'update' ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                                            'bg-violet-50 text-violet-600 border-violet-100'
+                                    detail.type === 'update' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                                        'bg-violet-50 text-violet-600 border-violet-100'
                                     }`}>
                                     {detail.type || 'Announcement'}
                                 </span>

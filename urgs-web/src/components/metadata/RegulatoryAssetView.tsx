@@ -238,7 +238,7 @@ const RegulatoryAssetView: React.FC = () => {
     };
 
     // Handlers
-    const handleTableDoubleClick = (table: RegTable) => {
+    const handleTableClick = (table: RegTable) => {
         setCurrentTable(table);
         setActiveView('ELEMENT_LIST');
         setElementKeyword('');
@@ -828,7 +828,7 @@ const RegulatoryAssetView: React.FC = () => {
                                         {tables.map((table, index) => (
                                             <div
                                                 key={`${table.id}-${index}`}
-                                                onDoubleClick={() => handleTableDoubleClick(table)}
+                                                onClick={() => handleTableClick(table)}
                                                 className={`flex items-center px-4 py-3.5 cursor-pointer border-b border-slate-50 transition-all hover:bg-indigo-50/30 group ${selectedTableIds.has(table.id!) ? 'bg-indigo-50/50' : ''}`}
                                             >
                                                 <div className="w-8 flex items-center justify-center" onClick={e => e.stopPropagation()}>
@@ -891,7 +891,7 @@ const RegulatoryAssetView: React.FC = () => {
                                             <ReportCard
                                                 key={table.id}
                                                 table={table}
-                                                onDoubleClick={() => handleTableDoubleClick(table)}
+                                                onClick={() => handleTableClick(table)}
                                                 isSelected={selectedTableIds.has(table.id!)}
                                                 onToggleSelect={(e) => {
                                                     const newSet = new Set(selectedTableIds);

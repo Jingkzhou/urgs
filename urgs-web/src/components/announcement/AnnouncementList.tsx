@@ -213,7 +213,10 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit }) => {
                             <div
                                 key={notice.id}
                                 className="group relative bg-white rounded-2xl border border-slate-100 p-5 hover:shadow-xl hover:shadow-slate-200/50 hover:border-violet-100 transition-all duration-300 flex flex-col h-full cursor-pointer"
-                                onClick={() => setSelectedId(notice.id)}
+                                onClick={() => {
+                                    console.log('Opening announcement:', notice.id);
+                                    setSelectedId(notice.id);
+                                }}
                             >
                                 <div className="flex justify-between items-start mb-4">
                                     <span className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold uppercase tracking-wider border ${config.bg} ${config.color}`}>
@@ -298,7 +301,14 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit }) => {
                                 const isOwner = notice.createBy === currentUser;
 
                                 return (
-                                    <tr key={notice.id} className="hover:bg-slate-50/80 transition-colors group cursor-pointer" onClick={() => setSelectedId(notice.id)}>
+                                    <tr
+                                        key={notice.id}
+                                        className="hover:bg-slate-50/80 transition-colors group cursor-pointer"
+                                        onClick={() => {
+                                            console.log('Opening announcement (table):', notice.id);
+                                            setSelectedId(notice.id);
+                                        }}
+                                    >
                                         <td className="px-5 py-4">
                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold ${config.bg} ${config.color}`}>
                                                 {config.label}

@@ -5,7 +5,7 @@ import { getAutoFetchStatusBadge } from './RegAssetHelper';
 
 interface ReportCardProps {
     table: RegTable;
-    onDoubleClick: () => void;
+    onClick: () => void;
     isSelected: boolean;
     onToggleSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onShowDetail: () => void;
@@ -16,7 +16,7 @@ interface ReportCardProps {
 
 export const ReportCard: React.FC<ReportCardProps> = ({
     table,
-    onDoubleClick,
+    onClick,
     isSelected,
     onToggleSelect,
     onShowDetail,
@@ -25,7 +25,7 @@ export const ReportCard: React.FC<ReportCardProps> = ({
     onShowHistory
 }) => (
     <div
-        onDoubleClick={onDoubleClick}
+        onClick={onClick}
         className={`group bg-white rounded-2xl border transition-all duration-300 relative overflow-hidden flex flex-col ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-50 shadow-lg shadow-indigo-100/50' : 'border-slate-200 hover:border-indigo-300 hover:shadow-xl hover:shadow-slate-200/50'}`}
     >
         <div className="p-5 flex-1 flex flex-col gap-4">
