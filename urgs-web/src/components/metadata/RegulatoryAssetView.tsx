@@ -158,6 +158,7 @@ const RegulatoryAssetView: React.FC = () => {
             fetchStats();
             setTablePage(1);
         }
+        setSelectedTableIds(new Set()); // 【核心修复】切换系统时清空选中项
     }, [selectedSystem]);
 
     useEffect(() => {
@@ -386,9 +387,12 @@ const RegulatoryAssetView: React.FC = () => {
         try {
             const token = localStorage.getItem('auth_token');
             const params = new URLSearchParams();
-            if (selectedSystem) {
-                params.append('systemCode', selectedSystem);
-            }
+            if (selectedSystem) params.append('systemCode', selectedSystem);
+            if (tableKeyword) params.append('keyword', tableKeyword);
+            if (filterStatus) params.append('autoFetchStatus', filterStatus);
+            if (filterFrequency) params.append('frequency', filterFrequency);
+            if (filterSourceType) params.append('sourceType', filterSourceType);
+
             // 如果有选中的报表，导出选中的；否则导出全部
             if (selectedTableIds.size > 0) {
                 params.append('tableIds', Array.from(selectedTableIds).join(','));

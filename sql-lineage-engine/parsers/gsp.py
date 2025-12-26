@@ -80,14 +80,27 @@ class GSPParser:
         if jpype.isJVMStarted():
             return
 
-        curdir = os.path.dirname(__file__)
+        curdir = os.path.abspath(os.path.dirname(__file__))
         jar_dir = os.path.join(curdir, 'jar')
         project_jars = glob.glob(os.path.join(jar_dir, '*.jar'))
         
+        # Add JAXB jars for Java 11+ runtimes (required since javax.xml.bind is removed from JDK)
+        jaxb_jars = [
+            "/usr/share/java/jaxb-api.jar",
+            "/usr/share/java/jaxb-core.jar",
+            "/usr/share/java/jaxb-impl.jar",
+            "/usr/share/java/jaxb-runtime.jar",
+        ]
+        for jar in jaxb_jars:
+            if os.path.exists(jar):
+                project_jars.append(jar)
+        
+        logging.info(f"Looking for JARs in: {jar_dir}")
         if not project_jars:
-            logging.error(f"No JARs found in {jar_dir}")
+            logging.error(f"No JARs found in {jar_dir}! Current directory files: {os.listdir(curdir)}")
             return
 
+        logging.info(f"Found JARs: {[os.path.basename(j) for j in project_jars]}")
         classpath = os.pathsep.join(project_jars)
         
         # Try to find Java 8 specifically as GSP might depend on it (JAXB)

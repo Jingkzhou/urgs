@@ -407,45 +407,69 @@ public class RegTableController {
     /**
      * 批量导出报表（多 Sheet Excel）
      * 第一个 Sheet：报表列表
-     * 后续 Sheet：每个报表的字段详情（以报表编码命名）
+     * 后续 Sheet：每个报表的字段详情（以报表名称命名）
      */
     @GetMapping("/export")
-    public void exportTables(@RequestParam(required = false) String systemCode,
-            @RequestParam(required = false) String tableIds, HttpServletResponse response) throws IOException {
+    public void exportTables(
+            @RequestParam(required = false) String systemCode,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String autoFetchStatus,
+            @RequestParam(required = false) String frequency,
+            @RequestParam(required = false) String sourceType,
+            @RequestParam(required = false) String tableIds,
+            HttpServletResponse response) throws IOException {
 
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         response.setCharacterEncoding("utf-8");
         String fileName = URLEncoder.encode("报表数据导出", "UTF-8").replaceAll("\\+", "%20");
         response.setHeader("Content-disposition", "attachment;filename*=utf-8''" + fileName + ".xlsx");
 
-        // 查询报表
-        List<RegTable> tables;
-        if (tableIds != null && !tableIds.isEmpty()) {
-            // 导出选中的报表
-            List<Long> ids = Arrays.stream(tableIds.split(",")).map(String::trim).filter(s -> !s.isEmpty())
-                    .map(Long::parseLong).toList();
-            tables = regTableService.listByIds(ids);
+        // 1. 构建过滤条件
+        QueryWrapper<RegTable> query = new QueryWrapper<>();
+        if (StringUtils.isNotBlank(tableIds)) {
+            List<Long> ids = Arrays.stream(tableIds.split(","))
+                    .map(String::trim)
+                    .filter(StringUtils::isNotBlank)
+                    .map(Long::parseLong)
+                    .toList();
+            query.in("id", ids);
         } else {
-            // 导出全部（或按系统过滤）
-            LambdaQueryWrapper<RegTable> query = new LambdaQueryWrapper<>();
-            if (systemCode != null && !systemCode.isEmpty()) {
-                query.eq(RegTable::getSystemCode, systemCode);
+            if (StringUtils.isNotBlank(systemCode))
+                query.eq("system_code", systemCode);
+            if (StringUtils.isNotBlank(autoFetchStatus))
+                query.eq("auto_fetch_status", autoFetchStatus);
+            if (StringUtils.isNotBlank(frequency))
+                query.eq("frequency", frequency);
+            if (StringUtils.isNotBlank(sourceType))
+                query.eq("source_type", sourceType);
+            if (StringUtils.isNotBlank(keyword)) {
+                String kw = keyword.toLowerCase();
+                query.and(w -> w.like("LOWER(name)", kw).or().like("LOWER(cn_name)", kw));
             }
-            query.orderByAsc(RegTable::getSortOrder);
-            tables = regTableService.list(query);
+        }
+        query.orderByAsc("sort_order");
+        List<RegTable> tables = regTableService.list(query);
+
+        // 2. 预获取所有相关的指标字段（优化 N+1 查询）
+        Map<Long, List<RegElement>> elementMap = new HashMap<>();
+        if (!tables.isEmpty()) {
+            List<Long> tIds = tables.stream().map(RegTable::getId).collect(Collectors.toList());
+            List<RegElement> allElements = regElementService.list(new LambdaQueryWrapper<RegElement>()
+                    .in(RegElement::getTableId, tIds)
+                    .orderByAsc(RegElement::getSortOrder));
+            elementMap = allElements.stream().collect(Collectors.groupingBy(RegElement::getTableId));
         }
 
         DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        Set<String> usedSheetNames = new HashSet<>();
 
         try (ExcelWriter excelWriter = EasyExcel.write(response.getOutputStream()).build()) {
-            // 1. 写报表汇总 Sheet
-            List<RegTableImportExportDTO> tableDtos = new ArrayList<>();
-            for (RegTable table : tables) {
+            // 3. 写汇总 Sheet
+            List<RegTableImportExportDTO> tableDtos = tables.stream().map(table -> {
                 RegTableImportExportDTO dto = new RegTableImportExportDTO();
                 dto.setSortOrder(table.getSortOrder());
                 dto.setName(table.getName());
                 dto.setCnName(table.getCnName());
-                // dto.setCode(table.getCode()); // Removed
                 dto.setSystemCode(table.getSystemCode());
                 dto.setSubjectCode(table.getSubjectCode());
                 dto.setSubjectName(table.getSubjectName());
@@ -460,37 +484,40 @@ public class RegTableController {
                 dto.setBusinessCaliber(table.getBusinessCaliber());
                 dto.setDevNotes(table.getDevNotes());
                 dto.setOwner(table.getOwner());
-                tableDtos.add(dto);
-            }
+                return dto;
+            }).collect(Collectors.toList());
 
             WriteSheet summarySheet = EasyExcel.writerSheet(0, "报表列表").head(RegTableImportExportDTO.class).build();
             excelWriter.write(tableDtos, summarySheet);
 
-            // 2. 每个报表一个详情 Sheet
+            // 4. 写字段详情 Sheet
             int sheetIndex = 1;
             for (RegTable table : tables) {
-                String sheetName = table.getName();
-                if (sheetName == null || sheetName.isEmpty()) {
-                    sheetName = "Sheet" + sheetIndex; // Fallback
-                }
-                // Excel sheet 名称限制 31 字符
-                if (sheetName.length() > 31) {
-                    sheetName = sheetName.substring(0, 31);
-                }
+                // 清洗并处理重名页签
+                String rawName = StringUtils.getIfBlank(table.getName(), () -> "Sheet" + sheetIndex);
+                String safeName = rawName.replaceAll("[\\\\/\\?\\*\\ prescription\\[\\]\\:]", "_");
+                if (safeName.length() > 31)
+                    safeName = safeName.substring(0, 31);
 
-                List<RegElement> elements = regElementService.list(new LambdaQueryWrapper<RegElement>()
-                        .eq(RegElement::getTableId, table.getId()).orderByAsc(RegElement::getSortOrder));
+                String finalName = safeName;
+                int counter = 1;
+                while (usedSheetNames.contains(finalName.toLowerCase())) {
+                    String suffix = "_" + (counter++);
+                    if (safeName.length() + suffix.length() > 31) {
+                        finalName = safeName.substring(0, 31 - suffix.length()) + suffix;
+                    } else {
+                        finalName = safeName + suffix;
+                    }
+                }
+                usedSheetNames.add(finalName.toLowerCase());
 
-                List<RegElementImportExportDTO> elementDtos = new ArrayList<>();
-                for (RegElement el : elements) {
+                List<RegElement> elements = elementMap.getOrDefault(table.getId(), new ArrayList<>());
+                List<RegElementImportExportDTO> elementDtos = elements.stream().map(el -> {
                     RegElementImportExportDTO dto = new RegElementImportExportDTO();
                     dto.setSortOrder(el.getSortOrder());
                     dto.setType(el.getType());
                     dto.setName(el.getName());
                     dto.setCnName(el.getCnName());
-                    dto.setCnName(el.getCnName());
-                    // dto.setCode(el.getCode()); // Removed
-                    dto.setDataType(el.getDataType());
                     dto.setDataType(el.getDataType());
                     dto.setLength(el.getLength());
                     dto.setIsPk(el.getIsPk());
@@ -514,10 +541,10 @@ public class RegTableController {
                     dto.setIsMergeFormula(el.getIsMergeFormula());
                     dto.setIsFillBusiness(el.getIsFillBusiness());
                     dto.setCodeSnippet(el.getCodeSnippet());
-                    elementDtos.add(dto);
-                }
+                    return dto;
+                }).collect(Collectors.toList());
 
-                WriteSheet detailSheet = EasyExcel.writerSheet(sheetIndex++, sheetName)
+                WriteSheet detailSheet = EasyExcel.writerSheet(sheetIndex++, finalName)
                         .head(RegElementImportExportDTO.class).build();
                 excelWriter.write(elementDtos, detailSheet);
             }
