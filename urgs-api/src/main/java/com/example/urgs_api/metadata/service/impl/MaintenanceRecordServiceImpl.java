@@ -17,45 +17,51 @@ import java.time.temporal.TemporalAdjusters;
  * 维护记录服务实现类
  */
 public class MaintenanceRecordServiceImpl extends ServiceImpl<MaintenanceRecordMapper, MaintenanceRecord>
-        implements MaintenanceRecordService {
+                implements MaintenanceRecordService {
 
-    @Override
-    public MaintenanceRecordStatsVO getStats() {
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime firstDayOfMonth = now.with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0)
-                .withSecond(0).withNano(0);
-        LocalDateTime firstDayOfLastMonth = firstDayOfMonth.minusMonths(1);
+        @Override
+        public MaintenanceRecordStatsVO getStats() {
+                LocalDateTime now = LocalDateTime.now();
+                LocalDateTime firstDayOfMonth = now.with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0)
+                                .withSecond(0).withNano(0);
+                LocalDateTime firstDayOfLastMonth = firstDayOfMonth.minusMonths(1);
 
-        MaintenanceRecordStatsVO stats = new MaintenanceRecordStatsVO();
+                MaintenanceRecordStatsVO stats = new MaintenanceRecordStatsVO();
 
-        // This Month Stats
-        stats.setTotalThisMonth((int) count(new LambdaQueryWrapper<MaintenanceRecord>()
-                .ge(MaintenanceRecord::getTime, firstDayOfMonth)));
+                // This Month Stats
+                stats.setTotalThisMonth((int) count(new LambdaQueryWrapper<MaintenanceRecord>()
+                                .ge(MaintenanceRecord::getTime, firstDayOfMonth)));
 
-        stats.setAddCount((int) count(new LambdaQueryWrapper<MaintenanceRecord>()
-                .ge(MaintenanceRecord::getTime, firstDayOfMonth)
-                .like(MaintenanceRecord::getModType, "新增")));
+                // Add: CREATE or contains "新增"
+                stats.setAddCount((int) count(new LambdaQueryWrapper<MaintenanceRecord>()
+                                .ge(MaintenanceRecord::getTime, firstDayOfMonth)
+                                .and(w -> w.eq(MaintenanceRecord::getModType, "CREATE").or()
+                                                .like(MaintenanceRecord::getModType, "新增"))));
 
-        stats.setUpdateCount((int) count(new LambdaQueryWrapper<MaintenanceRecord>()
-                .ge(MaintenanceRecord::getTime, firstDayOfMonth)
-                .like(MaintenanceRecord::getModType, "修改")));
+                // Update: UPDATE or contains "修改"
+                stats.setUpdateCount((int) count(new LambdaQueryWrapper<MaintenanceRecord>()
+                                .ge(MaintenanceRecord::getTime, firstDayOfMonth)
+                                .and(w -> w.eq(MaintenanceRecord::getModType, "UPDATE").or()
+                                                .like(MaintenanceRecord::getModType, "修改"))));
 
-        stats.setDeleteCount((int) count(new LambdaQueryWrapper<MaintenanceRecord>()
-                .ge(MaintenanceRecord::getTime, firstDayOfMonth)
-                .like(MaintenanceRecord::getModType, "删除")));
+                // Delete: DELETE or contains "删除"
+                stats.setDeleteCount((int) count(new LambdaQueryWrapper<MaintenanceRecord>()
+                                .ge(MaintenanceRecord::getTime, firstDayOfMonth)
+                                .and(w -> w.eq(MaintenanceRecord::getModType, "DELETE").or()
+                                                .like(MaintenanceRecord::getModType, "删除"))));
 
-        // Last Month Total for trend
-        long totalLastMonth = count(new LambdaQueryWrapper<MaintenanceRecord>()
-                .ge(MaintenanceRecord::getTime, firstDayOfLastMonth)
-                .lt(MaintenanceRecord::getTime, firstDayOfMonth));
+                // Last Month Total for trend
+                long totalLastMonth = count(new LambdaQueryWrapper<MaintenanceRecord>()
+                                .ge(MaintenanceRecord::getTime, firstDayOfLastMonth)
+                                .lt(MaintenanceRecord::getTime, firstDayOfMonth));
 
-        if (totalLastMonth > 0) {
-            double increase = (double) (stats.getTotalThisMonth() - totalLastMonth) / totalLastMonth * 100;
-            stats.setTrend(String.format("%+d%%", (int) increase));
-        } else {
-            stats.setTrend("+100%");
+                if (totalLastMonth > 0) {
+                        double increase = (double) (stats.getTotalThisMonth() - totalLastMonth) / totalLastMonth * 100;
+                        stats.setTrend(String.format("%+d%%", (int) increase));
+                } else {
+                        stats.setTrend("+100%");
+                }
+
+                return stats;
         }
-
-        return stats;
-    }
 }

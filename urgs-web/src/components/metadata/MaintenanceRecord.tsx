@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Download, Calendar, RefreshCw, Plus, TrendingUp, BarChart3, List, LayoutList, ChevronDown, Check } from 'lucide-react';
+import { Search, Plus, Filter, Database, MoreHorizontal, ChevronRight, LayoutList, List, RefreshCw, Calendar, ArrowUpRight, ArrowDownRight, User, X, Tag, BarChart3, TrendingUp, ChevronDown, Download, Check } from 'lucide-react';
 import Pagination from '../common/Pagination';
 import AddMaintenanceModal from './AddMaintenanceModal';
 import MaintenanceDetailPanel, { MaintenanceRecordItem } from './MaintenanceDetailPanel';
@@ -35,7 +35,7 @@ const defaultFilters: MaintenanceFilters = {
 };
 
 // 变更类型选项
-const MOD_TYPE_OPTIONS = ['新增表', '新增字段', '修改属性', '修改字段', '删除字段', '删除表'];
+const MOD_TYPE_OPTIONS = ['新增资产', '修改调整', '删除资产'];
 
 const MaintenanceRecord: React.FC = () => {
     // 状态
@@ -96,20 +96,27 @@ const MaintenanceRecord: React.FC = () => {
             const data = await res.json();
 
             // 适配字段
-            const adaptedRecords = (data.records || []).map((r: any) => ({
-                id: r.id?.toString() || Math.random().toString(),
-                tableName: r.tableName || '未知表',
-                tableCnName: r.tableCnName || '',
-                fieldName: r.fieldName || '',
-                fieldCnName: r.fieldCnName || '',
-                modType: r.modType || '未知类型',
-                description: r.description || '',
-                operator: r.operator || '系统',
-                time: r.time || new Date().toISOString(),
-                reqId: r.reqId,
-                plannedDate: r.plannedDate,
-                script: r.script
-            })).sort((a: any, b: any) => new Date(b.time).getTime() - new Date(a.time).getTime());
+            const adaptedRecords = (data.records || []).map((r: any) => {
+                let modType = r.modType || '未知类型';
+                if (modType === 'CREATE') modType = '新增资产';
+                if (modType === 'UPDATE') modType = '修改调整';
+                if (modType === 'DELETE') modType = '删除资产';
+
+                return {
+                    id: r.id?.toString() || Math.random().toString(),
+                    tableName: r.tableName || '未知表',
+                    tableCnName: r.tableCnName || '',
+                    fieldName: r.fieldName || '',
+                    fieldCnName: r.fieldCnName || '',
+                    modType: modType,
+                    description: r.description || '',
+                    operator: r.operator || '系统',
+                    time: r.time || new Date().toISOString(),
+                    reqId: r.reqId,
+                    plannedDate: r.plannedDate,
+                    script: r.script
+                };
+            }).sort((a: any, b: any) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
             setRecords(adaptedRecords);
             setTotal(data.total || 0);
@@ -160,9 +167,10 @@ const MaintenanceRecord: React.FC = () => {
 
     // Helper to get color for mod type
     const getModTypeColor = (type: string) => {
-        if (type.includes('新增')) return 'bg-emerald-50 text-emerald-600 border-emerald-200';
-        if (type.includes('删除')) return 'bg-red-50 text-red-600 border-red-200';
-        return 'bg-blue-50 text-blue-600 border-blue-200';
+        const t = type.toUpperCase();
+        if (t.includes('新增') || t.includes('CREATE')) return 'bg-emerald-50 text-emerald-600 border-emerald-200';
+        if (t.includes('删除') || t.includes('DELETE')) return 'bg-red-50 text-red-600 border-red-200';
+        return 'bg-blue-50 text-blue-600 border-blue-200'; // Default for UPDATE / 修改
     };
 
     return (
@@ -346,102 +354,186 @@ const MaintenanceRecord: React.FC = () => {
                             <button
                                 onClick={() => setViewMode('TIMELINE')}
                                 className={`p-1.5 rounded-md transition-all ${viewMode === 'TIMELINE' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                title="时间线视图 (Coming Soon)"
+                                title="时间线视图"
                             >
                                 <LayoutList size={16} />
                             </button>
                         </div>
                     </div>
 
-                    {/* Table View */}
+                    {/* Content View Area */}
                     <div className="flex-1 overflow-auto relative">
                         {loading && (
                             <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-10 flex items-center justify-center">
                                 <RefreshCw className="animate-spin text-indigo-600" size={32} />
                             </div>
                         )}
-                        <table className="w-full text-sm text-left">
-                            <thead className="bg-slate-50 text-xs text-slate-500 uppercase font-semibold sticky top-0 z-10 border-b border-slate-200">
-                                <tr>
-                                    <th className="px-6 py-3 w-4"></th>
-                                    <th className="px-4 py-3">表名/中文名</th>
-                                    <th className="px-4 py-3">字段/中文名</th>
-                                    <th className="px-4 py-3">变更类型</th>
-                                    <th className="px-4 py-3">变更描述</th>
-                                    <th className="px-4 py-3">需求/计划</th>
-                                    <th className="px-4 py-3">操作人</th>
-                                    <th className="px-4 py-3 text-right">时间</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {records.map((record) => (
-                                    <tr
-                                        key={record.id}
-                                        onClick={() => setSelectedRecord(record)}
-                                        className={`cursor-pointer transition-colors group ${selectedRecord?.id === record.id ? 'bg-indigo-50/60' : 'hover:bg-slate-50'
-                                            }`}
-                                    >
-                                        <td className="px-6 py-4">
-                                            <div className={`w-2 h-2 rounded-full ${record.modType.includes('新增') ? 'bg-emerald-500' :
-                                                record.modType.includes('删除') ? 'bg-red-500' :
+
+                        {viewMode === 'TABLE' ? (
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-50 text-xs text-slate-500 uppercase font-semibold sticky top-0 z-10 border-b border-slate-200">
+                                    <tr>
+                                        <th className="px-6 py-3 w-4"></th>
+                                        <th className="px-4 py-3">表名/中文名</th>
+                                        <th className="px-4 py-3">字段/中文名</th>
+                                        <th className="px-4 py-3">变更类型</th>
+                                        <th className="px-4 py-3">变更描述</th>
+                                        <th className="px-4 py-3">需求/计划</th>
+                                        <th className="px-4 py-3">操作人</th>
+                                        <th className="px-4 py-3 text-right">时间</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {records.map((record) => (
+                                        <tr
+                                            key={record.id}
+                                            onClick={() => setSelectedRecord(record)}
+                                            className={`cursor-pointer transition-colors group ${selectedRecord?.id === record.id ? 'bg-indigo-50/60' : 'hover:bg-slate-50'
+                                                }`}
+                                        >
+                                            <td className="px-6 py-4">
+                                                <div className={`w-2 h-2 rounded-full ${(record.modType.toUpperCase().includes('新增') || record.modType.toUpperCase().includes('CREATE')) ? 'bg-emerald-500' :
+                                                    (record.modType.toUpperCase().includes('删除') || record.modType.toUpperCase().includes('DELETE')) ? 'bg-red-500' :
+                                                        'bg-blue-500'
+                                                    }`}></div>
+                                            </td>
+                                            <td className="px-4 py-4 min-w-[200px]">
+                                                <div className="font-medium text-slate-900 font-mono">{record.tableName}</div>
+                                                <div className="text-xs text-slate-500">{record.tableCnName}</div>
+                                            </td>
+                                            <td className="px-4 py-4 min-w-[150px]">
+                                                <div className="font-mono text-slate-700">{record.fieldName || '-'}</div>
+                                                <div className="text-xs text-slate-500">{record.fieldCnName}</div>
+                                            </td>
+                                            <td className="px-4 py-4 whitespace-nowrap">
+                                                <span className={`px-2 py-1 rounded-md text-xs font-semibold border ${getModTypeColor(record.modType)}`}>
+                                                    {record.modType}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-4 text-slate-600 max-w-[300px] truncate" title={record.description}>
+                                                {record.description}
+                                            </td>
+                                            <td className="px-4 py-4 whitespace-nowrap">
+                                                {record.reqId && (
+                                                    <div className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 w-fit mb-1">
+                                                        <span className="font-mono">{record.reqId}</span>
+                                                    </div>
+                                                )}
+                                                {record.plannedDate && (
+                                                    <div className="text-xs text-slate-400 font-mono">{record.plannedDate}</div>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-4">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
+                                                        {record.operator?.[0]?.toUpperCase()}
+                                                    </div>
+                                                    <span className="text-slate-700 text-sm">{record.operator}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-4 text-right whitespace-nowrap text-slate-400 font-mono text-xs">
+                                                {record.time.split('T')[0]}<br />
+                                                {record.time.split('T')[1]?.split('.')[0]}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {records.length === 0 && !loading && (
+                                        <tr>
+                                            <td colSpan={8} className="py-20 text-center text-slate-400">
+                                                <div className="flex flex-col items-center gap-2">
+                                                    <div className="bg-slate-50 p-4 rounded-full">
+                                                        <Search size={32} className="text-slate-300" />
+                                                    </div>
+                                                    <p>未找到相关记录</p>
+                                                    <button onClick={clearFilters} className="text-indigo-600 hover:underline text-sm font-medium">清除筛选</button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        ) : (
+                            <div className="p-8 max-w-4xl mx-auto h-full">
+                                <div className="relative border-l-2 border-slate-200 ml-4 space-y-8 pb-10">
+                                    {records.map((record) => (
+                                        <div key={record.id} className="relative pl-8 group">
+                                            {/* Dot */}
+                                            <div className={`absolute -left-[9px] top-1.5 w-4 h-4 rounded-full border-4 border-white shadow-sm transition-all duration-300 group-hover:scale-125 group-hover:shadow-md ${(record.modType.toUpperCase().includes('新增') || record.modType.toUpperCase().includes('CREATE')) ? 'bg-emerald-500' :
+                                                (record.modType.toUpperCase().includes('删除') || record.modType.toUpperCase().includes('DELETE')) ? 'bg-red-500' :
                                                     'bg-blue-500'
                                                 }`}></div>
-                                        </td>
-                                        <td className="px-4 py-4 min-w-[200px]">
-                                            <div className="font-medium text-slate-900 font-mono">{record.tableName}</div>
-                                            <div className="text-xs text-slate-500">{record.tableCnName}</div>
-                                        </td>
-                                        <td className="px-4 py-4 min-w-[150px]">
-                                            <div className="font-mono text-slate-700">{record.fieldName || '-'}</div>
-                                            <div className="text-xs text-slate-500">{record.fieldCnName}</div>
-                                        </td>
-                                        <td className="px-4 py-4 whitespace-nowrap">
-                                            <span className={`px-2 py-1 rounded-md text-xs font-semibold border ${getModTypeColor(record.modType)}`}>
-                                                {record.modType}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-4 text-slate-600 max-w-[300px] truncate" title={record.description}>
-                                            {record.description}
-                                        </td>
-                                        <td className="px-4 py-4 whitespace-nowrap">
-                                            {record.reqId && (
-                                                <div className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 w-fit mb-1">
-                                                    <span className="font-mono">{record.reqId}</span>
-                                                </div>
-                                            )}
-                                            {record.plannedDate && (
-                                                <div className="text-xs text-slate-400 font-mono">{record.plannedDate}</div>
-                                            )}
-                                        </td>
-                                        <td className="px-4 py-4">
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
-                                                    {record.operator?.[0]?.toUpperCase()}
-                                                </div>
-                                                <span className="text-slate-700 text-sm">{record.operator}</span>
+
+                                            {/* Date Header (only if date changed? simplified for now) */}
+                                            <div className="text-xs font-bold text-slate-400 mb-2 flex items-center gap-2 tracking-wider">
+                                                <Calendar size={12} className="text-indigo-400" />
+                                                {new Date(record.time).toLocaleString('zh-CN', {
+                                                    month: 'long',
+                                                    day: 'numeric',
+                                                    hour: '2-digit',
+                                                    minute: '2-digit'
+                                                })}
                                             </div>
-                                        </td>
-                                        <td className="px-4 py-4 text-right whitespace-nowrap text-slate-400 font-mono text-xs">
-                                            {record.time.split('T')[0]}<br />
-                                            {record.time.split('T')[1]?.split('.')[0]}
-                                        </td>
-                                    </tr>
-                                ))}
-                                {records.length === 0 && !loading && (
-                                    <tr>
-                                        <td colSpan={8} className="py-20 text-center text-slate-400">
-                                            <div className="flex flex-col items-center gap-2">
-                                                <div className="bg-slate-50 p-4 rounded-full">
-                                                    <Search size={32} className="text-slate-300" />
+
+                                            {/* Card */}
+                                            <div
+                                                onClick={() => setSelectedRecord(record)}
+                                                className={`bg-white p-5 rounded-2xl border transition-all cursor-pointer hover:shadow-lg group/card ${selectedRecord?.id === record.id
+                                                    ? 'border-indigo-400 shadow-md ring-4 ring-indigo-50'
+                                                    : 'border-slate-100 hover:border-slate-300 shadow-sm'
+                                                    }`}
+                                            >
+                                                <div className="flex justify-between items-start mb-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase border shadow-sm ${getModTypeColor(record.modType)}`}>
+                                                            {record.modType}
+                                                        </span>
+                                                        <div>
+                                                            <h4 className="font-bold text-slate-800 text-base group-hover/card:text-indigo-600 transition-colors uppercase font-mono">{record.tableName}</h4>
+                                                            <div className="text-xs text-slate-400 font-medium">{record.tableCnName}</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded-full border border-slate-100">
+                                                        <div className="w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center text-[10px] font-bold text-indigo-600">
+                                                            {record.operator?.[0]?.toUpperCase()}
+                                                        </div>
+                                                        <span className="text-slate-600 text-[10px] font-bold">{record.operator}</span>
+                                                    </div>
                                                 </div>
-                                                <p>未找到相关记录</p>
-                                                <button onClick={clearFilters} className="text-indigo-600 hover:underline text-sm font-medium">清除筛选</button>
+
+                                                <p className="text-sm text-slate-600 mb-4 leading-relaxed font-medium">{record.description}</p>
+
+                                                <div className="flex flex-wrap gap-3 items-end">
+                                                    {record.fieldName && (
+                                                        <div className="flex-1 min-w-[200px] text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-100 font-mono text-slate-500">
+                                                            <div className="flex items-center gap-2 opacity-70 mb-1">
+                                                                <Database size={10} />
+                                                                <span className="font-bold tracking-widest uppercase">Target Field</span>
+                                                            </div>
+                                                            <div className="text-slate-700 font-bold">
+                                                                {record.fieldName} {record.fieldCnName && <span className="text-slate-400 font-medium italic ml-1">({record.fieldCnName})</span>}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {record.reqId && (
+                                                        <div className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-200 flex items-center gap-1.5 shadow-sm">
+                                                            <Tag size={10} />
+                                                            REQ: {record.reqId}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
+                                        </div>
+                                    ))}
+                                    {records.length === 0 && !loading && (
+                                        <div className="flex flex-col items-center justify-center py-20 text-slate-300">
+                                            <LayoutList size={48} className="opacity-20 mb-4" />
+                                            <p className="font-medium">暂无变更足迹</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Pagination */}

@@ -400,7 +400,7 @@ const ArkPage: React.FC = () => {
                         />
                         <div className="text-center mt-4">
                             <span className="text-[11px] text-slate-400 font-medium tracking-tight">
-                                Gemini Powered · {activeAgent ? activeAgent.name : 'AI Assistant'}
+                                Qwen3 Powered · {activeAgent ? activeAgent.name : 'AI Assistant'}
                             </span>
                         </div>
                     </div>
