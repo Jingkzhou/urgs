@@ -1,76 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Edit, Trash2, X, Server, Database, Layers, ArrowLeft, Table2, Hash, Target, FileText, Calendar, Code, Zap, BookOpen, Info, Download, Upload, RefreshCw, FileCode, Clock } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Server, Database, Layers, ArrowLeft, Table2, Hash, Target, Info, Download, Upload, RefreshCw, Clock, LayoutGrid, List, Filter, TrendingUp, CheckCircle, BarChart3, ChevronDown, ChevronUp } from 'lucide-react';
 import { systemService, SsoConfig } from '../../services/systemService';
 import Pagination from '../common/Pagination';
-import Editor from '@monaco-editor/react';
 import MaintenanceHistoryModal from './MaintenanceHistoryModal';
-
-interface RegTable {
-    id?: number | string;
-    name: string;
-    cnName: string;
-    sortOrder?: number;
-    systemCode: string;
-    subjectCode?: string;
-    subjectName?: string;
-    theme?: string;
-    frequency?: string;
-    sourceType?: string;
-    autoFetchStatus?: string;
-    documentNo?: string;
-    documentTitle?: string;
-    effectiveDate?: string;
-    businessCaliber?: string;
-    devNotes?: string;
-    owner?: string;
-    status?: number;
-    // Transient fields for logging
-    reqId?: string;
-    plannedDate?: string;
-}
-
-interface CodeTable {
-    id: string;
-    tableCode: string;
-    tableName: string;
-    systemCode?: string;
-    autoFetchStatus?: string;
-}
-
-interface RegElement {
-    id?: number | string;
-    tableId: number | string;
-    type: 'FIELD' | 'INDICATOR';
-    name: string;
-    cnName?: string;
-    // code?: string; // Removed
-    dataType?: string;
-    length?: number;
-    isPk?: number;
-    nullable?: number;
-    formula?: string;
-    fetchSql?: string;
-    codeSnippet?: string;  // 代码片段 (指标类型专用)
-    codeTableCode?: string;
-    valueRange?: string;
-    validationRule?: string;
-    documentNo?: string;
-    documentTitle?: string;
-    effectiveDate?: string;
-    businessCaliber?: string;
-    fillInstruction?: string;
-    devNotes?: string;
-    autoFetchStatus?: string;
-    owner?: string;
-    status?: number;
-    sortOrder?: number;
-    isInit?: number;
-    isMergeFormula?: number;
-    isFillBusiness?: number;
-    // Transient fields for logging
-    reqId?: string;
-    plannedDate?: string;
-}
+import { Stats, RegTable, CodeTable, RegElement } from './reg-asset/types';
+import { ReportCard } from './reg-asset/components/ReportCard';
+import { TableModal } from './reg-asset/components/TableModal';
+import { ElementModal } from './reg-asset/components/ElementModal';
+import { DetailModal } from './reg-asset/components/DetailModal';
+import { CodeValuesModal } from './reg-asset/components/CodeValuesModal';
+import { getAutoFetchStatusBadge, StatsCard, TableSkeleton, CardSkeleton } from './reg-asset/components/RegAssetHelper';
 
 const RegulatoryAssetView: React.FC = () => {
     // Systems
@@ -80,6 +19,23 @@ const RegulatoryAssetView: React.FC = () => {
     // View State
     const [activeView, setActiveView] = useState<'TABLE_LIST' | 'ELEMENT_LIST'>('TABLE_LIST');
     const [currentTable, setCurrentTable] = useState<RegTable | null>(null);
+
+    // View Mode: card or table
+    const [viewMode, setViewMode] = useState<'table' | 'card'>('card');
+
+    // Stats
+    const [stats, setStats] = useState<Stats | null>(null);
+    const [loadingStats, setLoadingStats] = useState(false);
+
+    // Advanced Filter
+    const [showAdvancedFilter, setShowAdvancedFilter] = useState(false);
+    const [filterStatus, setFilterStatus] = useState<string>('');
+    const [filterFrequency, setFilterFrequency] = useState<string>('');
+    const [filterSourceType, setFilterSourceType] = useState<string>('');
+    const appliedFilterCount = [filterStatus, filterFrequency, filterSourceType].filter(Boolean).length;
+
+    // Loading State
+    const [loading, setLoading] = useState(false);
 
     // Tables
     const [tables, setTables] = useState<RegTable[]>([]);
@@ -117,6 +73,29 @@ const RegulatoryAssetView: React.FC = () => {
         fieldCnName?: string;
     }>({ tableName: '' });
 
+    // Fetch Stats
+    const fetchStats = async () => {
+        setLoadingStats(true);
+        try {
+            const token = localStorage.getItem('auth_token');
+            let url = '/api/reg/table/stats';
+            if (selectedSystem) {
+                url += `?systemCode=${encodeURIComponent(selectedSystem)}`;
+            }
+            const res = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setStats(data);
+            }
+        } catch (e) {
+            console.error('Failed to fetch stats', e);
+        } finally {
+            setLoadingStats(false);
+        }
+    };
+
     // Fetch Systems
     useEffect(() => {
         const fetchSystems = async () => {
@@ -128,16 +107,22 @@ const RegulatoryAssetView: React.FC = () => {
             }
         };
         fetchSystems();
+
     }, []);
 
     // Fetch Tables
     const fetchTables = async (page = tablePage, size = tableSize) => {
+        setLoading(true);
         try {
             const token = localStorage.getItem('auth_token');
             let url = `/api/reg/table/list?page=${page}&size=${size}`;
             const params = new URLSearchParams();
             if (selectedSystem) params.append('systemCode', selectedSystem);
             if (tableKeyword) params.append('keyword', tableKeyword);
+            // Advanced filters
+            if (filterStatus) params.append('autoFetchStatus', filterStatus);
+            if (filterFrequency) params.append('frequency', filterFrequency);
+            if (filterSourceType) params.append('sourceType', filterSourceType);
             if (params.toString()) url += '&' + params.toString();
 
             const res = await fetch(url, {
@@ -156,16 +141,20 @@ const RegulatoryAssetView: React.FC = () => {
             console.error('Failed to fetch tables', e);
             setTables([]);
             setTableTotal(0);
+        } finally {
+            setLoading(false);
         }
     };
 
     useEffect(() => {
         if (activeView === 'TABLE_LIST') {
             fetchTables(tablePage, tableSize);
+            fetchStats();
         } else {
             setActiveView('TABLE_LIST');
             setCurrentTable(null);
             fetchTables(1, tableSize); // Reset to page 1 on system change
+            fetchStats();
             setTablePage(1);
         }
     }, [selectedSystem]);
@@ -588,15 +577,7 @@ const RegulatoryAssetView: React.FC = () => {
         }
     };
 
-    const getAutoFetchStatusBadge = (status?: string) => {
-        const map: Record<string, { bg: string; text: string; label: string }> = {
-            '已上线': { bg: 'bg-green-50', text: 'text-green-600', label: '已上线' },
-            '开发中': { bg: 'bg-yellow-50', text: 'text-yellow-600', label: '开发中' },
-            '未开发': { bg: 'bg-slate-100', text: 'text-slate-500', label: '未开发' },
-        };
-        const s = map[status || ''] || map['未开发'];
-        return <span className={`px-2 py-0.5 rounded text-xs font-medium ${s.bg} ${s.text}`}>{s.label}</span>;
-    };
+
 
     return (
         <div className="flex h-full bg-white rounded-lg overflow-hidden">
@@ -625,153 +606,338 @@ const RegulatoryAssetView: React.FC = () => {
 
                 {/* View 1: Table List */}
                 {activeView === 'TABLE_LIST' && (
-                    <div className="flex flex-col h-full animate-in fade-in duration-300">
-                        <div className="p-3 border-b border-slate-200 flex items-center gap-2">
-                            <div className="relative flex-1 max-w-md">
-                                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                                <input
-                                    type="text"
-                                    placeholder="搜索表..."
-                                    value={tableKeyword}
-                                    onChange={(e) => setTableKeyword(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleTableSearch()}
-                                    className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-100"
-                                />
-                            </div>
-                            <div className="flex gap-2">
-                                <input
-                                    type="file"
-                                    ref={tableFileInputRef}
-                                    className="hidden"
-                                    accept=".xlsx, .xls"
-                                    onChange={handleTableImport}
-                                />
-                                <button onClick={() => tableFileInputRef.current?.click()} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-green-300 hover:text-green-600 flex items-center gap-1 px-3 transition-colors" title="导入报表">
-                                    <Upload size={14} className="text-green-500" /> <span className="text-sm">导入</span>
+                    <div className="flex flex-col h-full animate-in fade-in slide-in-from-top-2 duration-300">
+                        {/* Stats Panel */}
+                        <div className="p-4 grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50/50 border-b border-slate-100">
+                            <StatsCard
+                                title="总报表数"
+                                value={stats?.tableCount || 0}
+                                icon={<Table2 size={20} />}
+                                color="indigo"
+                                loading={loadingStats}
+                            />
+                            <StatsCard
+                                title="已上线报表"
+                                value={stats?.onlineCount || 0}
+                                icon={<CheckCircle size={20} />}
+                                color="emerald"
+                                loading={loadingStats}
+                            />
+                            <StatsCard
+                                title="开发中报表"
+                                value={stats?.developingCount || 0}
+                                icon={<TrendingUp size={20} />}
+                                color="amber"
+                                loading={loadingStats}
+                            />
+                            <StatsCard
+                                title="字段/指标总数"
+                                value={stats?.elementCount || 0}
+                                icon={<BarChart3 size={20} />}
+                                color="blue"
+                                loading={loadingStats}
+                            />
+                        </div>
+
+                        {/* Toolbar */}
+                        <div className="p-3 border-b border-slate-200 flex flex-col gap-3 bg-white/95 backdrop-blur sticky top-0 z-10 shadow-sm">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="relative flex-1 min-w-[260px] max-w-xl">
+                                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="搜索表..."
+                                        value={tableKeyword}
+                                        onChange={(e) => setTableKeyword(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleTableSearch()}
+                                        className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all shadow-sm bg-white"
+                                    />
+                                </div>
+
+                                <button
+                                    onClick={() => setShowAdvancedFilter(!showAdvancedFilter)}
+                                    className={`h-10 rounded-lg border transition-all flex items-center gap-1.5 px-3 text-sm ${showAdvancedFilter ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-medium' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm'}`}
+                                    >
+                                    <Filter size={14} className={showAdvancedFilter ? 'text-indigo-600' : 'text-slate-400'} />
+                                    筛选
+                                    {appliedFilterCount > 0 && (
+                                        <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[11px] font-semibold">
+                                            {appliedFilterCount}
+                                        </span>
+                                    )}
+                                    {showAdvancedFilter ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                                 </button>
-                                <button onClick={handleTableExport} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-blue-300 hover:text-blue-600 flex items-center gap-1 px-3 transition-colors" title="导出报表">
-                                    <Download size={14} className="text-blue-500" /> <span className="text-sm">导出{selectedTableIds.size > 0 ? `(${selectedTableIds.size})` : '全部'}</span>
-                                </button>
-                                {selectedTableIds.size > 0 && (
-                                    <button onClick={handleBatchDeleteTables} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-red-300 hover:text-red-600 flex items-center gap-1 px-3 transition-colors" title="批量删除">
-                                        <Trash2 size={14} className="text-red-500" /> <span className="text-sm">批量删除({selectedTableIds.size})</span>
+
+                                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 shadow-inner">
+                                    <button
+                                        onClick={() => setViewMode('card')}
+                                        className={`p-2 rounded-md transition-all ${viewMode === 'card' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                        title="卡片视图"
+                                    >
+                                        <LayoutGrid size={16} />
                                     </button>
-                                )}
-                                {(selectedSystem === 'PBOC' || selectedSystem === 'CBRC') && (
-                                    <>
-                                        <button
-                                            onClick={handleSyncCodeSnippets}
-                                            disabled={isSyncing}
-                                            className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-purple-300 hover:text-purple-600 flex items-center gap-1 px-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                            title="同步代码片段（从SQL文件匹配指标编号）"
-                                        >
-                                            <RefreshCw size={14} className={`text-purple-500 ${isSyncing ? 'animate-spin' : ''}`} />
-                                            <span className="text-sm">{isSyncing ? '同步中...' : '同步代码片段'}</span>
+                                    <button
+                                        onClick={() => setViewMode('table')}
+                                        className={`p-2 rounded-md transition-all ${viewMode === 'table' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                        title="表格视图"
+                                    >
+                                        <List size={16} />
+                                    </button>
+                                </div>
+
+                                <div className="flex-1" />
+
+                                <div className="flex gap-2 flex-wrap justify-end items-center">
+                                    {selectedTableIds.size > 0 && (
+                                        <span className="px-2 py-1 text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-md">
+                                            已选 {selectedTableIds.size} 张
+                                        </span>
+                                    )}
+                                    <input
+                                        type="file"
+                                        ref={tableFileInputRef}
+                                        className="hidden"
+                                        accept=".xlsx, .xls"
+                                        onChange={handleTableImport}
+                                    />
+                                    <button onClick={() => tableFileInputRef.current?.click()} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="导入报表">
+                                        <Upload size={14} className="text-emerald-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">导入</span>
+                                    </button>
+                                    <button onClick={handleTableExport} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="导出报表">
+                                        <Download size={14} className="text-blue-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">导出{selectedTableIds.size > 0 ? `(${selectedTableIds.size})` : '全部'}</span>
+                                    </button>
+                                    {selectedTableIds.size > 0 && (
+                                        <button onClick={handleBatchDeleteTables} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-red-300 hover:text-red-700 hover:bg-red-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="批量删除">
+                                            <Trash2 size={14} className="text-red-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">删除({selectedTableIds.size})</span>
                                         </button>
-                                        <button
-                                            onClick={handleGenerateHiveSql}
-                                            disabled={isGeneratingHiveSql}
-                                            className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-orange-300 hover:text-orange-600 flex items-center gap-1 px-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                            title="生成 Hive SQL（用于血缘分析）"
-                                        >
-                                            <FileCode size={14} className={`text-orange-500 ${isGeneratingHiveSql ? 'animate-pulse' : ''}`} />
-                                            <span className="text-sm">{isGeneratingHiveSql ? '生成中...' : '生成Hive SQL'}</span>
-                                        </button>
-                                    </>
-                                )}
+                                    )}
+                                    <button onClick={handleAddTable} className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 hover:shadow-lg hover:shadow-indigo-200 flex items-center gap-1 px-3 transition-all">
+                                        <Plus size={16} /> <span className="text-sm font-medium">新增报表</span>
+                                    </button>
+                                </div>
                             </div>
-                            <button onClick={handleAddTable} className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-1 px-3">
-                                <Plus size={16} /> <span className="text-sm">新增表</span>
-                            </button>
-                        </div>
 
-                        {/* Table Header */}
-                        <div className="flex items-center px-4 py-2 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500">
-                            <div className="w-8 flex items-center justify-center">
-                                <input
-                                    type="checkbox"
-                                    checked={tables.length > 0 && selectedTableIds.size === tables.length}
-                                    onChange={(e) => {
-                                        if (e.target.checked) {
-                                            setSelectedTableIds(new Set(tables.map(t => t.id!)));
-                                        } else {
-                                            setSelectedTableIds(new Set());
-                                        }
-                                    }}
-                                    className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                                />
-                            </div>
-                            <div className="w-10"></div>
-                            <div className="w-16">序号</div>
-
-                            <div className="w-48">中文名/表名</div>
-                            <div className="w-24">报送频度</div>
-                            <div className="w-24">取数来源</div>
-                            <div className="w-24">状态</div>
-                            <div className="flex-1">业务口径</div>
-                            <div className="w-32 text-right">操作</div>
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto">
-                            {tables.map((table, index) => (
-                                <div
-                                    key={`${table.id}-${index}`}
-                                    onDoubleClick={() => handleTableDoubleClick(table)}
-                                    className="flex items-center px-4 py-3 cursor-pointer border-b border-slate-100 hover:bg-slate-50 transition-colors group"
-                                >
-                                    <div className="w-8 flex items-center justify-center" onClick={e => e.stopPropagation()}>
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedTableIds.has(table.id!)}
+                            {/* Advanced Filter Panel */}
+                            {showAdvancedFilter && (
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border border-indigo-100 bg-indigo-50/20 rounded-xl animate-in slide-in-from-top-2 duration-200">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">报送状态</label>
+                                        <select
+                                            value={filterStatus}
                                             onChange={(e) => {
-                                                const newSet = new Set(selectedTableIds);
-                                                if (e.target.checked) {
-                                                    newSet.add(table.id!);
-                                                } else {
-                                                    newSet.delete(table.id!);
-                                                }
-                                                setSelectedTableIds(newSet);
+                                                setFilterStatus(e.target.value);
+                                                setTablePage(1);
                                             }}
-                                            className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                                        />
+                                            className="w-full border border-slate-200 rounded-lg p-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all outline-none"
+                                        >
+                                            <option value="">全部状态</option>
+                                            <option value="已上线">已上线</option>
+                                            <option value="开发中">开发中</option>
+                                            <option value="未开发">未开发</option>
+                                        </select>
                                     </div>
-                                    <div className="w-10 text-center">
-                                        <Table2 size={16} className="text-blue-500 mx-auto" />
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">报送频度</label>
+                                        <select
+                                            value={filterFrequency}
+                                            onChange={(e) => {
+                                                setFilterFrequency(e.target.value);
+                                                setTablePage(1);
+                                            }}
+                                            className="w-full border border-slate-200 rounded-lg p-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all outline-none"
+                                        >
+                                            <option value="">全部频度</option>
+                                            <option value="日">日报</option>
+                                            <option value="周">周报</option>
+                                            <option value="月">月报</option>
+                                            <option value="季">季报</option>
+                                            <option value="年">年报</option>
+                                        </select>
                                     </div>
-                                    <div className="w-16 text-center text-xs text-slate-500 font-mono px-1">{table.sortOrder || '-'}</div>
-                                    <div className="w-48 pr-2">
-                                        <div className="font-medium text-sm text-slate-800 truncate" title={table.cnName}>{table.cnName || '-'}</div>
-                                        <div className="text-xs text-slate-400 font-mono truncate" title={table.name}>{table.name}</div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">取数来源</label>
+                                        <select
+                                            value={filterSourceType}
+                                            onChange={(e) => {
+                                                setFilterSourceType(e.target.value);
+                                                setTablePage(1);
+                                            }}
+                                            className="w-full border border-slate-200 rounded-lg p-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all outline-none"
+                                        >
+                                            <option value="">全部来源</option>
+                                            <option value="手工">手工填报</option>
+                                            <option value="接口">系统接口</option>
+                                            <option value="SQL">SQL取数</option>
+                                        </select>
                                     </div>
-                                    <div className="w-24 text-xs text-slate-600 px-1">{table.frequency || '-'}</div>
-                                    <div className="w-24 text-xs text-slate-600 px-1">{table.sourceType || '-'}</div>
-                                    <div className="w-24 px-1">{getAutoFetchStatusBadge(table.autoFetchStatus)}</div>
-                                    <div className="flex-1 text-xs text-slate-500 truncate px-1" title={table.businessCaliber}>{table.businessCaliber || '-'}</div>
-                                    <div className="w-32 flex justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                                    <div className="flex items-end gap-2">
                                         <button
                                             onClick={() => {
-                                                setHistoryTarget({
-                                                    tableName: table.name,
-                                                    tableId: table.id, // Pass tableId
-                                                    tableCnName: table.cnName
-                                                });
-                                                setShowHistoryModal(true);
+                                                setFilterStatus('');
+                                                setFilterFrequency('');
+                                                setFilterSourceType('');
+                                                setTableKeyword('');
+                                                setTablePage(1);
                                             }}
-                                            className="p-1.5 hover:bg-orange-100 text-orange-600 rounded"
-                                            title="变更历史"
+                                            className="h-9 px-4 text-sm bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-all flex items-center justify-center gap-1.5 flex-1 shadow-sm"
                                         >
-                                            <Clock size={14} />
+                                            <RefreshCw size={14} /> 重置
                                         </button>
-                                        <button onClick={() => handleShowDetail('TABLE', table)} className="p-1.5 hover:bg-indigo-100 text-indigo-600 rounded" title="详情"><Info size={14} /></button>
-                                        <button onClick={() => handleEditTable(table)} className="p-1.5 hover:bg-slate-200 text-slate-600 rounded" title="编辑"><Edit size={14} /></button>
-                                        <button onClick={() => handleDeleteTable(table.id!)} className="p-1.5 hover:bg-red-50 text-red-500 rounded" title="删除"><Trash2 size={14} /></button>
+                                        <button
+                                            onClick={() => fetchTables(1)}
+                                            className="h-9 px-4 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all flex items-center justify-center gap-1.5 flex-[1.5] shadow-md shadow-indigo-100"
+                                        >
+                                            应用筛选
+                                        </button>
                                     </div>
                                 </div>
-                            ))}
-                            {tables.length === 0 && (
-                                <div className="p-12 text-center text-slate-400 flex flex-col items-center">
-                                    <Table2 size={40} className="text-slate-200 mb-2" />
-                                    <p className="text-sm">暂无表数据</p>
+                            )}
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto overflow-x-auto min-h-0 bg-slate-50/30">
+                            {loading ? (
+                                viewMode === 'table' ? <TableSkeleton /> : <CardSkeleton />
+                            ) : tables.length > 0 ? (
+                                viewMode === 'table' ? (
+                                    <div className="bg-white min-w-[960px]">
+                                        {/* Table Header */}
+                                        <div className="flex items-center px-4 py-3 bg-slate-50/80 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-[5]">
+                                            <div className="w-8 flex items-center justify-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={tables.length > 0 && selectedTableIds.size === tables.length}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setSelectedTableIds(new Set(tables.map(t => t.id!)));
+                                                        } else {
+                                                            setSelectedTableIds(new Set());
+                                                        }
+                                                    }}
+                                                    className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                                                />
+                                            </div>
+                                            <div className="w-10"></div>
+                                            <div className="w-16 text-center">序号</div>
+                                            <div className="w-64">中文名/表代码</div>
+                                            <div className="w-24">报送频度</div>
+                                            <div className="w-24">取数来源</div>
+                                            <div className="w-32">状态</div>
+                                            <div className="flex-1">业务口径</div>
+                                            <div className="w-40 text-right pr-4">操作</div>
+                                        </div>
+                                        {tables.map((table, index) => (
+                                            <div
+                                                key={`${table.id}-${index}`}
+                                                onDoubleClick={() => handleTableDoubleClick(table)}
+                                                className={`flex items-center px-4 py-3.5 cursor-pointer border-b border-slate-50 transition-all hover:bg-indigo-50/30 group ${selectedTableIds.has(table.id!) ? 'bg-indigo-50/50' : ''}`}
+                                            >
+                                                <div className="w-8 flex items-center justify-center" onClick={e => e.stopPropagation()}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedTableIds.has(table.id!)}
+                                                        onChange={(e) => {
+                                                            const newSet = new Set(selectedTableIds);
+                                                            if (e.target.checked) {
+                                                                newSet.add(table.id!);
+                                                            } else {
+                                                                newSet.delete(table.id!);
+                                                            }
+                                                            setSelectedTableIds(newSet);
+                                                        }}
+                                                        className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                                                    />
+                                                </div>
+                                                <div className="w-10 text-center">
+                                                    <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-500 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors duration-300">
+                                                        <Table2 size={16} />
+                                                    </div>
+                                                </div>
+                                                <div className="w-16 text-center text-xs text-slate-400 font-mono font-bold tracking-tighter">{table.sortOrder || '-'}</div>
+                                                <div className="w-64 pr-4">
+                                                    <div className="font-bold text-sm text-slate-800 transition-colors group-hover:text-indigo-600 truncate" title={table.cnName}>{table.cnName || '-'}</div>
+                                                    <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex items-center gap-1">
+                                                        <span className="bg-slate-100 px-1 py-px rounded uppercase tracking-tighter">{table.name}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="w-24 text-xs font-semibold text-slate-600">{table.frequency || '-'}</div>
+                                                <div className="w-24 text-xs font-medium text-slate-500">{table.sourceType || '-'}</div>
+                                                <div className="w-32">{getAutoFetchStatusBadge(table.autoFetchStatus)}</div>
+                                                <div className="flex-1 text-xs text-slate-400 line-clamp-1 pr-4" title={table.businessCaliber}>{table.businessCaliber || '-'}</div>
+                                                <div className="w-40 flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                                                    <button
+                                                        onClick={() => {
+                                                            setHistoryTarget({
+                                                                tableName: table.name,
+                                                                tableId: table.id,
+                                                                tableCnName: table.cnName
+                                                            });
+                                                            setShowHistoryModal(true);
+                                                        }}
+                                                        className="p-1.5 hover:bg-white text-orange-600 rounded-lg shadow-sm border border-transparent hover:border-orange-100 transition-all"
+                                                        title="变更历史"
+                                                    >
+                                                        <Clock size={14} />
+                                                    </button>
+                                                    <button onClick={() => handleShowDetail('TABLE', table)} className="p-1.5 hover:bg-white text-indigo-600 rounded-lg shadow-sm border border-transparent hover:border-indigo-100 transition-all" title="详情"><Info size={14} /></button>
+                                                    <button onClick={() => handleEditTable(table)} className="p-1.5 hover:bg-white text-slate-600 rounded-lg shadow-sm border border-transparent hover:border-slate-200 transition-all" title="编辑"><Edit size={14} /></button>
+                                                    <button onClick={() => handleDeleteTable(table.id!)} className="p-1.5 hover:bg-white text-red-500 rounded-lg shadow-sm border border-transparent hover:border-red-100 transition-all" title="删除"><Trash2 size={14} /></button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6 p-4 lg:p-6 auto-rows-fr">
+                                        {tables.map((table) => (
+                                            <ReportCard
+                                                key={table.id}
+                                                table={table}
+                                                onDoubleClick={() => handleTableDoubleClick(table)}
+                                                isSelected={selectedTableIds.has(table.id!)}
+                                                onToggleSelect={(e) => {
+                                                    const newSet = new Set(selectedTableIds);
+                                                    if (e.target.checked) {
+                                                        newSet.add(table.id!);
+                                                    } else {
+                                                        newSet.delete(table.id!);
+                                                    }
+                                                    setSelectedTableIds(newSet);
+                                                }}
+                                                onShowDetail={() => handleShowDetail('TABLE', table)}
+                                                onEdit={() => handleEditTable(table)}
+                                                onDelete={() => handleDeleteTable(table.id!)}
+                                                onShowHistory={() => {
+                                                    setHistoryTarget({
+                                                        tableName: table.name,
+                                                        tableId: table.id,
+                                                        tableCnName: table.cnName
+                                                    });
+                                                    setShowHistoryModal(true);
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+                                )
+                            ) : (
+                                <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center h-full">
+                                    <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6 text-slate-300">
+                                        <BarChart3 size={40} />
+                                    </div>
+                                    <h3 className="text-lg font-bold text-slate-600 mb-2">未找到匹配的报表</h3>
+                                    <p className="text-sm text-slate-400 max-w-xs mx-auto leading-relaxed">
+                                        尝试调整您的搜索关键词或筛选条件，或者点击右上角的“新增报表”手动创建一个。
+                                    </p>
+                                    <button
+                                        onClick={() => {
+                                            setFilterStatus('');
+                                            setFilterFrequency('');
+                                            setFilterSourceType('');
+                                            setTableKeyword('');
+                                            setTablePage(1);
+                                        }}
+                                        className="mt-6 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-all shadow-sm"
+                                    >
+                                        清除所有筛选
+                                    </button>
                                 </div>
                             )}
                         </div>
@@ -1039,588 +1205,5 @@ const RegulatoryAssetView: React.FC = () => {
         </div>
     );
 };
-
-// Code Values Modal
-const CodeValuesModal: React.FC<{ tableCode: string; onClose: () => void }> = ({ tableCode, onClose }) => {
-    const [codes, setCodes] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [keyword, setKeyword] = useState('');
-    const [tableInfo, setTableInfo] = useState<any>(null);
-
-    useEffect(() => {
-        fetchCodes();
-        // Also fetch table info for title
-        const fetchTableInfo = async () => {
-            try {
-                const token = localStorage.getItem('auth_token');
-                const res = await fetch(`/api/metadata/code-tables`, { headers: { 'Authorization': `Bearer ${token}` } });
-                if (res.ok) {
-                    const tables = await res.json();
-                    const found = tables.find((t: any) => t.tableCode === tableCode);
-                    if (found) setTableInfo(found);
-                }
-            } catch (e) { console.error(e); }
-        };
-        fetchTableInfo();
-    }, [tableCode]);
-
-    const fetchCodes = async (kw = keyword) => {
-        setLoading(true);
-        try {
-            const token = localStorage.getItem('auth_token');
-            let url = `/api/metadata/code-directory?page=1&size=100&tableCode=${encodeURIComponent(tableCode)}`;
-            if (kw) url += `&keyword=${encodeURIComponent(kw)}`;
-
-            const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-            const data = await res.json();
-            if (data && data.records) {
-                setCodes(data.records);
-            } else {
-                setCodes([]);
-            }
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-2xl w-[800px] max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200">
-                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-xl">
-                    <div>
-                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                            <Table2 size={18} className="text-blue-500" />
-                            {tableInfo ? tableInfo.tableName : tableCode}
-                        </h3>
-                        <div className="text-xs text-slate-500 font-mono mt-0.5">
-                            {tableCode} {tableInfo?.systemCode && <span className="ml-2 bg-slate-200 px-1 rounded text-slate-600">{tableInfo.systemCode}</span>}
-                        </div>
-                    </div>
-                    <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full"><X size={20} /></button>
-                </div>
-
-                <div className="p-4 border-b border-slate-100 flex items-center gap-2">
-                    <div className="relative flex-1">
-                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input
-                            type="text"
-                            placeholder="搜索码值..."
-                            className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-100"
-                            value={keyword}
-                            onChange={(e) => setKeyword(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && fetchCodes(e.currentTarget.value)}
-                        />
-                    </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-0">
-                    <table className="w-full text-sm text-left">
-                        <thead className="text-xs text-slate-500 bg-slate-50 uppercase sticky top-0">
-                            <tr>
-                                <th className="px-4 py-3">码值</th>
-                                <th className="px-4 py-3">名称</th>
-                                <th className="px-4 py-3">描述</th>
-                                <th className="px-4 py-3">标准依据</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {loading ? (
-                                <tr><td colSpan={4} className="text-center py-8 text-slate-400">加载中...</td></tr>
-                            ) : codes.length > 0 ? (
-                                codes.map((c, i) => (
-                                    <tr key={i} className="hover:bg-slate-50">
-                                        <td className="px-4 py-2 font-mono text-slate-600">{c.code}</td>
-                                        <td className="px-4 py-2 font-medium text-slate-800">{c.name}</td>
-                                        <td className="px-4 py-2 text-slate-500">{c.description || '-'}</td>
-                                        <td className="px-4 py-2 text-slate-500 text-xs">{c.standard || '-'}</td>
-                                    </tr>
-                                ))
-                            ) : (
-                                <tr><td colSpan={4} className="text-center py-8 text-slate-400">暂无数据</td></tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
-                <div className="p-3 border-t border-slate-200 bg-slate-50 rounded-b-xl flex justify-end">
-                    <button onClick={onClose} className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 text-sm font-medium shadow-sm">关闭</button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// --- Helper Components ---
-
-const DetailItem: React.FC<{ icon?: React.ReactNode; label: string; value: React.ReactNode; fullWidth?: boolean }> = ({ icon, label, value, fullWidth }) => (
-    <div className={`bg-slate-50 rounded-lg p-3 ${fullWidth ? 'col-span-2' : ''}`}>
-        <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
-            {icon}
-            {label}
-        </div>
-        <div className="text-sm text-slate-800 break-words">{value || '-'}</div>
-    </div>
-);
-
-// Detail Modal
-const DetailModal: React.FC<{
-    type: 'TABLE' | 'ELEMENT';
-    data: RegTable | RegElement;
-    onClose: () => void;
-}> = ({ type, data, onClose }) => {
-    const isTable = type === 'TABLE';
-    const table = data as RegTable;
-    const element = data as RegElement;
-
-    // Helper to render badge
-    const getAutoFetchStatusBadge = (status?: string) => {
-        const map: Record<string, { bg: string; text: string; label: string }> = {
-            '已上线': { bg: 'bg-green-50', text: 'text-green-600', label: '已上线' },
-            '开发中': { bg: 'bg-yellow-50', text: 'text-yellow-600', label: '开发中' },
-            '未开发': { bg: 'bg-slate-100', text: 'text-slate-500', label: '未开发' },
-        };
-        const s = map[status || ''] || map['未开发'];
-        return <span className={`px-2 py-0.5 rounded text-xs font-medium ${s.bg} ${s.text}`}>{s.label}</span>;
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-[600px] max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
-                <div className="p-5 border-b border-slate-200 flex justify-between items-start bg-slate-50 rounded-t-xl">
-                    <div className="flex gap-4">
-                        <div className="p-3 bg-white rounded-lg shadow-sm">
-                            {isTable ? <Table2 size={24} className="text-blue-500" /> :
-                                element.type === 'FIELD' ? <Hash size={24} className="text-slate-500" /> :
-                                    <Target size={24} className="text-purple-500" />}
-                        </div>
-                        <div>
-                            <h3 className="text-lg font-bold text-slate-800">{data.cnName || data.name}</h3>
-                            <div className="flex items-center gap-2 text-sm text-slate-500 font-mono mt-1">
-                                {data.name}
-                                {!isTable && <span className="text-xs text-slate-400 font-mono">ID: {element.id}</span>}
-                                {isTable && table.sortOrder !== undefined && <span className="bg-slate-200 px-1.5 py-0.5 rounded text-xs text-slate-600">Seq: {table.sortOrder}</span>}
-                            </div>
-                        </div>
-                    </div>
-                    <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full text-slate-500"><X size={20} /></button>
-                </div>
-
-                <div className="p-6 overflow-y-auto">
-                    <div className="grid grid-cols-2 gap-4">
-                        {isTable ? (
-                            <>
-                                <DetailItem label="所属系统" value={table.systemCode} />
-                                <DetailItem label="监管主题" value={table.theme} />
-                                <DetailItem label="科目号" value={table.subjectCode} />
-                                <DetailItem label="科目名称" value={table.subjectName} />
-                                <DetailItem label="报送频度" value={table.frequency} />
-                                <DetailItem label="取数来源" value={table.sourceType} />
-                                <DetailItem label="自动取数状态" value={getAutoFetchStatusBadge(table.autoFetchStatus)} />
-                                <DetailItem icon={<Calendar size={14} />} label="生效日期" value={table.effectiveDate} />
-                                <DetailItem icon={<FileText size={14} />} label="发文号" value={table.documentNo} fullWidth />
-                                <DetailItem label="发文标题" value={table.documentTitle} fullWidth />
-                                <DetailItem icon={<BookOpen size={14} />} label="业务口径" value={table.businessCaliber} fullWidth />
-                                <DetailItem label="开发备注" value={table.devNotes} fullWidth />
-                            </>
-                        ) : (
-                            <>
-                                <DetailItem label="序号" value={element.sortOrder} />
-                                <DetailItem label="类型" value={element.type === 'FIELD' ? '字段' : '指标'} />
-                                {element.type === 'FIELD' && (
-                                    <>
-                                        <DetailItem icon={<Code size={14} />} label="数据类型" value={element.dataType} />
-                                        <DetailItem label="长度" value={element.length} />
-                                        <DetailItem label="主键" value={element.isPk ? '是' : '否'} />
-                                        <DetailItem label="允许为空" value={element.nullable ? '是' : '否'} />
-                                        <DetailItem label="校验规则" value={element.validationRule} />
-                                    </>
-                                )}
-                                {element.type === 'INDICATOR' && (
-                                    <>
-                                        <DetailItem icon={<Zap size={14} />} label="计算公式" value={element.formula} fullWidth />
-                                        <DetailItem icon={<Code size={14} />} label="代码片段" value={
-                                            element.codeSnippet ? (
-                                                <div className="border border-slate-200 rounded-lg overflow-hidden">
-                                                    <Editor
-                                                        height="150px"
-                                                        language="sql"
-                                                        value={element.codeSnippet}
-                                                        theme="vs-dark"
-                                                        options={{
-                                                            readOnly: true,
-                                                            minimap: { enabled: false },
-                                                            scrollBeyondLastLine: false,
-                                                            lineNumbers: 'off',
-                                                            folding: false,
-                                                            fontSize: 12,
-                                                            wordWrap: 'on'
-                                                        }}
-                                                    />
-                                                </div>
-                                            ) : '-'
-                                        } fullWidth />
-                                    </>
-                                )}
-                                <DetailItem label="值域代码表" value={element.codeTableCode} />
-                                <DetailItem label="取值范围" value={element.valueRange} />
-                                <DetailItem label="自动取数状态" value={getAutoFetchStatusBadge(element.autoFetchStatus)} />
-                                <DetailItem icon={<Calendar size={14} />} label="生效日期" value={element.effectiveDate} />
-                                <DetailItem icon={<FileText size={14} />} label="发文号" value={element.documentNo} fullWidth />
-                                <DetailItem label="发文标题" value={element.documentTitle} fullWidth />
-                                <DetailItem icon={<BookOpen size={14} />} label="业务口径" value={element.businessCaliber} fullWidth />
-                                <DetailItem label="填报说明" value={element.fillInstruction} fullWidth />
-                                <DetailItem label="开发备注" value={element.devNotes} fullWidth />
-                            </>
-                        )}
-                    </div>
-                </div>
-
-                <div className="p-4 border-t border-slate-200 bg-slate-50 rounded-b-xl flex justify-end">
-                    <button onClick={onClose} className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-medium shadow-sm">关闭</button>
-                    {isTable ? (
-                        <button className="px-4 py-2 ml-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium shadow-sm">
-                            编辑表
-                        </button>
-                    ) : (
-                        <button className="px-4 py-2 ml-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium shadow-sm">
-                            编辑{element.type === 'FIELD' ? '字段' : '指标'}
-                        </button>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// Table Modal
-const TableModal: React.FC<{
-    table: RegTable | null;
-    systems: SsoConfig[];
-    defaultSystemCode?: string;
-    onSave: (data: RegTable) => void;
-    onClose: () => void;
-}> = ({ table, systems, defaultSystemCode, onSave, onClose }) => {
-    const [form, setForm] = useState<RegTable>(table || {
-        name: '', cnName: '', sortOrder: 0, systemCode: defaultSystemCode || '',
-        subjectCode: '', subjectName: '', theme: '', frequency: '',
-        sourceType: '', autoFetchStatus: '', documentNo: '', documentTitle: '',
-        businessCaliber: '', devNotes: '', owner: '', status: 1,
-        reqId: '', plannedDate: '' // Init new fields
-    });
-
-    return (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-2xl w-[700px] max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-5 duration-200">
-                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-xl">
-                    <h3 className="text-lg font-bold text-slate-800">{table ? '编辑表' : '新增表'}</h3>
-                    <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full"><X size={20} /></button>
-                </div>
-                <div className="p-6 overflow-y-auto grid grid-cols-2 gap-4">
-                    <FormField label="表名 *" value={form.name} onChange={v => setForm({ ...form, name: v })} />
-                    <FormField label="中文名" value={form.cnName} onChange={v => setForm({ ...form, cnName: v })} />
-                    <FormField label="序号" value={String(form.sortOrder)} onChange={v => setForm({ ...form, sortOrder: Number(v) })} />
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">所属系统</label>
-                        <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.systemCode || ''} onChange={e => setForm({ ...form, systemCode: e.target.value })}>
-                            <option value="">-- 请选择 --</option>
-                            {systems.map(s => <option key={s.id} value={s.clientId}>{s.name}</option>)}
-                        </select>
-                    </div>
-                    <FormField label="科目号" value={form.subjectCode} onChange={v => setForm({ ...form, subjectCode: v })} />
-                    <FormField label="科目名称" value={form.subjectName} onChange={v => setForm({ ...form, subjectName: v })} />
-                    <FormField label="监管主题" value={form.theme} onChange={v => setForm({ ...form, theme: v })} />
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">报送频度</label>
-                        <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.frequency || ''} onChange={e => setForm({ ...form, frequency: e.target.value })}>
-                            <option value="">-- 请选择 --</option>
-                            <option value="日">日</option>
-                            <option value="周">周</option>
-                            <option value="月">月</option>
-                            <option value="季">季</option>
-                            <option value="年">年</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">取数来源</label>
-                        <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.sourceType || ''} onChange={e => setForm({ ...form, sourceType: e.target.value })}>
-                            <option value="">-- 请选择 --</option>
-                            <option value="手工">手工</option>
-                            <option value="接口">接口</option>
-                            <option value="SQL">SQL</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">自动取数状态</label>
-                        <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.autoFetchStatus || ''} onChange={e => setForm({ ...form, autoFetchStatus: e.target.value })}>
-                            <option value="">-- 请选择 --</option>
-                            <option value="未开发">未开发</option>
-                            <option value="开发中">开发中</option>
-                            <option value="已上线">已上线</option>
-                        </select>
-                    </div>
-                    <FormField label="发文号" value={form.documentNo} onChange={v => setForm({ ...form, documentNo: v })} />
-                    <FormField label="发文标题" value={form.documentTitle} onChange={v => setForm({ ...form, documentTitle: v })} />
-                    <FormField label="责任人" value={form.owner} onChange={v => setForm({ ...form, owner: v })} />
-                    <div className="col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">业务口径</label>
-                        <textarea className="w-full border border-slate-200 rounded-lg p-2 text-sm h-20 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.businessCaliber || ''} onChange={e => setForm({ ...form, businessCaliber: e.target.value })} />
-                    </div>
-                    <div className="col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">开发备注</label>
-                        <textarea className="w-full border border-slate-200 rounded-lg p-2 text-sm h-20 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.devNotes || ''} onChange={e => setForm({ ...form, devNotes: e.target.value })} />
-                    </div>
-
-                    {/* Maintenance Log Info */}
-                    <div className="col-span-2 border-t border-slate-100 pt-4 mt-2">
-                        <h4 className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-1">
-                            <Clock size={12} /> 变更登记
-                        </h4>
-                        <div className="grid grid-cols-2 gap-4">
-                            <FormField label="需求编号" value={form.reqId} onChange={v => setForm({ ...form, reqId: v })} />
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">计划上线日期</label>
-                                <input
-                                    type="date"
-                                    className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none"
-                                    value={form.plannedDate || ''}
-                                    onChange={e => setForm({ ...form, plannedDate: e.target.value })}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div className="p-4 border-t border-slate-200 flex justify-end gap-2 bg-slate-50 rounded-b-xl">
-                    <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg">取消</button>
-                    <button onClick={() => onSave(form)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200">保存</button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// Element Modal
-const ElementModal: React.FC<{
-    element: RegElement;
-    systemCode?: string;
-    onSave: (data: RegElement) => void;
-    onClose: () => void;
-}> = ({ element, systemCode, onSave, onClose }) => {
-    const [form, setForm] = useState<RegElement>(element);
-    const isField = form.type === 'FIELD';
-    const [codeTables, setCodeTables] = useState<any[]>([]);
-
-    useEffect(() => {
-        const fetchCodeTables = async () => {
-            try {
-                const token = localStorage.getItem('auth_token');
-                const res = await fetch('/api/metadata/code-tables', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    setCodeTables(data);
-                }
-            } catch (error) {
-                console.error('Failed to fetch code tables', error);
-            }
-        };
-        fetchCodeTables();
-    }, []);
-
-    // Searchable Code Table State
-    const [ctSearch, setCtSearch] = useState(form.codeTableCode || '');
-    const [showCtDropdown, setShowCtDropdown] = useState(false);
-
-    // Update search text if form changes externally (unlikely but good practice)
-    useEffect(() => {
-        setCtSearch(form.codeTableCode || '');
-    }, [form.codeTableCode]);
-
-    const filteredCodeTables = codeTables.filter(ct => {
-        // Filter by System: strict match or global (no system code)
-        if (systemCode && ct.systemCode && ct.systemCode !== systemCode) {
-            return false;
-        }
-
-        const kw = ctSearch.toLowerCase();
-        return (ct.tableCode?.toLowerCase().includes(kw) || ct.tableName?.toLowerCase().includes(kw));
-    });
-
-    return (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-2xl w-[700px] max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-5 duration-200">
-                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-xl">
-                    <h3 className="text-lg font-bold text-slate-800">{element.id ? '编辑' : '新增'}{isField ? '字段' : '指标'}</h3>
-                    <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full"><X size={20} /></button>
-                </div>
-                <div className="p-6 overflow-y-auto grid grid-cols-2 gap-4" onClick={() => setShowCtDropdown(false)}>
-                    <FormField label="名称 *" value={form.name} onChange={v => setForm({ ...form, name: v })} />
-                    <FormField label="序号" value={String(form.sortOrder ?? 0)} onChange={v => setForm({ ...form, sortOrder: v ? parseInt(v) : 0 })} />
-                    <FormField label="中文名" value={form.cnName} onChange={v => setForm({ ...form, cnName: v })} />
-
-                    {isField && (
-                        <>
-                            <FormField label="数据类型" value={form.dataType} onChange={v => setForm({ ...form, dataType: v })} />
-                            <FormField label="长度" value={String(form.length || '')} onChange={v => setForm({ ...form, length: v ? parseInt(v) : undefined })} />
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">是否主键</label>
-                                <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.isPk || 0} onChange={e => setForm({ ...form, isPk: parseInt(e.target.value) })}>
-                                    <option value={0}>否</option>
-                                    <option value={1}>是</option>
-                                </select>
-                            </div>
-                        </>
-                    )}
-                    {!isField && (
-                        <>
-                            <div className="col-span-2">
-                                <label className="block text-sm font-medium text-slate-700 mb-1">计算公式</label>
-                                <textarea className="w-full border border-slate-200 rounded-lg p-2 text-sm h-16 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.formula || ''} onChange={e => setForm({ ...form, formula: e.target.value })} />
-                            </div>
-                            <div className="col-span-2">
-                                <label className="block text-sm font-medium text-slate-700 mb-1">代码片段</label>
-                                <div className="border border-slate-200 rounded-lg overflow-hidden">
-                                    <Editor
-                                        height="120px"
-                                        language="sql"
-                                        value={form.codeSnippet || ''}
-                                        theme="vs-dark"
-                                        onChange={(value) => setForm({ ...form, codeSnippet: value || '' })}
-                                        options={{
-                                            minimap: { enabled: false },
-                                            scrollBeyondLastLine: false,
-                                            lineNumbers: 'on',
-                                            fontSize: 12,
-                                            wordWrap: 'on',
-                                            automaticLayout: true
-                                        }}
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">是否初始化项</label>
-                                <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.isInit ?? 0} onChange={e => setForm({ ...form, isInit: parseInt(e.target.value) })}>
-                                    <option value={0}>否</option>
-                                    <option value={1}>是</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">是否归并公式项</label>
-                                <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.isMergeFormula ?? 0} onChange={e => setForm({ ...form, isMergeFormula: parseInt(e.target.value) })}>
-                                    <option value={0}>否</option>
-                                    <option value={1}>是</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">是否填报业务项</label>
-                                <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.isFillBusiness ?? 0} onChange={e => setForm({ ...form, isFillBusiness: parseInt(e.target.value) })}>
-                                    <option value={0}>否</option>
-                                    <option value={1}>是</option>
-                                </select>
-                            </div>
-                        </>
-                    )}
-                    <div className="relative" onClick={(e) => e.stopPropagation()}>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">值域代码表</label>
-                        <div className="relative">
-                            <input
-                                type="text"
-                                className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none"
-                                placeholder="搜索名称或编码..."
-                                value={ctSearch}
-                                onChange={(e) => {
-                                    setCtSearch(e.target.value);
-                                    setShowCtDropdown(true);
-                                    if (!e.target.value) setForm({ ...form, codeTableCode: '' });
-                                }}
-                                onFocus={() => setShowCtDropdown(true)}
-                            />
-                            {showCtDropdown && (
-                                <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto z-10">
-                                    {filteredCodeTables.length > 0 ? (
-                                        filteredCodeTables.map((ct: any) => (
-                                            <div
-                                                key={ct.id}
-                                                className="px-3 py-2 text-sm hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0"
-                                                onClick={() => {
-                                                    setForm({ ...form, codeTableCode: ct.tableCode });
-                                                    setCtSearch(ct.tableCode);
-                                                    setShowCtDropdown(false);
-                                                }}
-                                            >
-                                                <div className="font-medium text-slate-700">{ct.tableCode}</div>
-                                                <div className="text-xs text-slate-500">{ct.tableName}</div>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <div className="p-2 text-xs text-slate-400 text-center">无匹配项</div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                    <FormField label="取值范围" value={form.valueRange} onChange={v => setForm({ ...form, valueRange: v })} />
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">自动取数状态</label>
-                        <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.autoFetchStatus || ''} onChange={e => setForm({ ...form, autoFetchStatus: e.target.value })}>
-                            <option value="">-- 请选择 --</option>
-                            <option value="未开发">未开发</option>
-                            <option value="开发中">开发中</option>
-                            <option value="已上线">已上线</option>
-                        </select>
-                    </div>
-                    <FormField label="发文号" value={form.documentNo} onChange={v => setForm({ ...form, documentNo: v })} />
-                    <FormField label="发文标题" value={form.documentTitle} onChange={v => setForm({ ...form, documentTitle: v })} />
-                    <FormField label="责任人" value={form.owner} onChange={v => setForm({ ...form, owner: v })} />
-                    <div className="col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">业务口径</label>
-                        <textarea className="w-full border border-slate-200 rounded-lg p-2 text-sm h-16 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.businessCaliber || ''} onChange={e => setForm({ ...form, businessCaliber: e.target.value })} />
-                    </div>
-                    <div className="col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">填报说明</label>
-                        <textarea className="w-full border border-slate-200 rounded-lg p-2 text-sm h-16 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.fillInstruction || ''} onChange={e => setForm({ ...form, fillInstruction: e.target.value })} />
-                    </div>
-                    <div className="col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">开发备注</label>
-                        <textarea className="w-full border border-slate-200 rounded-lg p-2 text-sm h-16 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.devNotes || ''} onChange={e => setForm({ ...form, devNotes: e.target.value })} />
-                    </div>
-
-                    {/* Maintenance Log Info */}
-                    <div className="col-span-2 border-t border-slate-100 pt-4 mt-2">
-                        <h4 className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-1">
-                            <Clock size={12} /> 变更登记
-                        </h4>
-                        <div className="grid grid-cols-2 gap-4">
-                            <FormField label="需求编号" value={form.reqId} onChange={v => setForm({ ...form, reqId: v })} />
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">计划上线日期</label>
-                                <input
-                                    type="date"
-                                    className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none"
-                                    value={form.plannedDate || ''}
-                                    onChange={e => setForm({ ...form, plannedDate: e.target.value })}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div className="p-4 border-t border-slate-200 flex justify-end gap-2 bg-slate-50 rounded-b-xl">
-                    <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg">取消</button>
-                    <button onClick={() => onSave(form)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200">保存</button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// Form Field Helper
-const FormField: React.FC<{ label: string; value?: string; onChange: (v: string) => void }> = ({ label, value, onChange }) => (
-    <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
-        <input type="text" className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={value || ''} onChange={e => onChange(e.target.value)} />
-    </div>
-);
 
 export default RegulatoryAssetView;
