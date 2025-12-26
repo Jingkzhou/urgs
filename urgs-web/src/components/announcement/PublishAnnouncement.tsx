@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Form, Input, Select, Button, message, Space, Upload, Tooltip, Divider } from 'antd';
-import { Save, RotateCcw, Megaphone, Upload as UploadIcon, Eye, Settings, FileText, ChevronRight, Layout } from 'lucide-react';
+import { Save, RotateCcw, Megaphone, Upload as UploadIcon, Eye, Settings, FileText, ChevronRight, Layout, Sparkles } from 'lucide-react';
 import type { UploadFile } from 'antd/es/upload/interface';
 import '@wangeditor/editor/dist/css/style.css';
 import { Editor, Toolbar } from '@wangeditor/editor-for-react';
@@ -19,6 +19,7 @@ const PublishAnnouncement: React.FC<PublishAnnouncementProps> = ({ editId, onSuc
     const [loading, setLoading] = useState(false);
     const [userSystems, setUserSystems] = useState<string[]>([]);
     const [activeSection, setActiveSection] = useState<'edit' | 'preview'>('edit');
+    const [polishing, setPolishing] = useState(false);
 
     // 获取当前表单值用于预览
     const [previewData, setPreviewData] = useState<any>({});
@@ -148,6 +149,44 @@ const PublishAnnouncement: React.FC<PublishAnnouncementProps> = ({ editId, onSuc
         setPreviewData({});
     };
 
+    const handleAiPolish = async () => {
+        if (!html || html === '<p><br></p>') {
+            message.warning('请先输入一些内容再进行润色');
+            return;
+        }
+
+        setPolishing(true);
+        try {
+            const token = localStorage.getItem('auth_token');
+            const response = await fetch('/api/ai/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    systemPrompt: "你是一个专业的文案润色专家。请对用户提供的公告内容进行润色，使其语言更专业、正式、得体。请直接返回润色后的 HTML 内容，必须保留原有的 HTML 标签结构（如 p, b, li 等），不要添加任何解释性文字或 Markdown 标签。",
+                    userPrompt: html
+                })
+            });
+
+            if (!response.ok) throw new Error('AI 响应异常');
+
+            const data = await response.json();
+            if (data.content) {
+                setHtml(data.content);
+                message.success('AI 润色完成！');
+            } else {
+                throw new Error('未获取到润色内容');
+            }
+        } catch (error) {
+            console.error('AI 润色失败:', error);
+            message.error('AI 润色失败，请重试');
+        } finally {
+            setPolishing(false);
+        }
+    };
+
     return (
         <div className="max-w-[1400px] mx-auto">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -180,7 +219,21 @@ const PublishAnnouncement: React.FC<PublishAnnouncementProps> = ({ editId, onSuc
                             </Form.Item>
 
                             <Form.Item
-                                label={<span className="text-slate-700 font-semibold">正文内容</span>}
+                                label={
+                                    <div className="flex items-center justify-between w-full">
+                                        <span className="text-slate-700 font-semibold">正文内容</span>
+                                        <Button
+                                            type="text"
+                                            size="small"
+                                            icon={<Sparkles size={14} className={polishing ? "animate-pulse" : ""} />}
+                                            onClick={handleAiPolish}
+                                            loading={polishing}
+                                            className="text-violet-600 hover:text-violet-700 hover:bg-violet-50 font-bold text-xs flex items-center gap-1"
+                                        >
+                                            AI 润色
+                                        </Button>
+                                    </div>
+                                }
                                 required
                             >
                                 <div className="border border-slate-200 rounded-2xl overflow-hidden focus-within:border-violet-500 focus-within:ring-4 focus-within:ring-violet-500/10 transition-all">
@@ -328,8 +381,8 @@ const PublishAnnouncement: React.FC<PublishAnnouncementProps> = ({ editId, onSuc
                             </h4>
                             <div className="flex items-center gap-2 mb-4">
                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border uppercase ${previewData.type === 'urgent' ? 'bg-red-50 text-red-600 border-red-100' :
-                                        previewData.type === 'update' ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                                            'bg-blue-50 text-blue-600 border-blue-100'
+                                    previewData.type === 'update' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                                        'bg-blue-50 text-blue-600 border-blue-100'
                                     }`}>
                                     {previewData.type || 'normal'}
                                 </span>

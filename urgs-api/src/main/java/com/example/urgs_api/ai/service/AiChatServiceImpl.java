@@ -62,10 +62,14 @@ public class AiChatServiceImpl implements AiChatService {
      * 同步聊天（带请求类型）
      */
     public String chat(String systemPrompt, String userPrompt, String requestType) {
+        List<Map<String, String>> messages = List.of(
+                Map.of("role", "system", "content", systemPrompt),
+                Map.of("role", "user", "content", userPrompt));
         StringBuilder result = new StringBuilder();
-        streamChat(systemPrompt, userPrompt, requestType, result::append, () -> {
+        executeCoreStream(messages, requestType, result::append, () -> {
         }, e -> {
             log.error("AI chat error", e);
+            throw new RuntimeException("AI 响应失败: " + e.getMessage());
         });
         return result.toString();
     }

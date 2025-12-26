@@ -68,7 +68,7 @@ const BatchMonitoring: React.FC = () => {
 
 
     return (
-        <div className="min-h-screen bg-[#F5F5F7] text-slate-900 px-8 pb-8 pt-4 -mt-14 font-sans">
+        <div className="min-h-screen bg-[#F5F5F7] text-slate-900 px-8 pb-8 pt-4  font-sans">
             {/* Header */}
             <div className="flex justify-between items-center mb-8">
                 <div>
