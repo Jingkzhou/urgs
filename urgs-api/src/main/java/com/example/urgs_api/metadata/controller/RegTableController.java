@@ -12,6 +12,7 @@ import com.example.urgs_api.metadata.model.RegElement;
 import com.example.urgs_api.metadata.model.RegTable;
 import com.example.urgs_api.metadata.service.RegElementService;
 import com.example.urgs_api.metadata.service.RegTableService;
+import org.apache.commons.lang3.StringUtils;
 import jakarta.servlet.http.HttpServletResponse;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -25,6 +26,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/reg/table")
@@ -42,6 +44,50 @@ public class RegTableController {
 
     @Autowired
     private RegElementService regElementService;
+
+    /**
+     * 统计报表及元素数量（可按所属系统过滤）
+     *
+     * @param systemCode 系统代码（可选）
+     * @return 统计结果
+     */
+    @GetMapping("/stats")
+    public Map<String, Long> stats(@RequestParam(required = false) String systemCode) {
+        LambdaQueryWrapper<RegTable> tableWrapper = new LambdaQueryWrapper<>();
+        if (StringUtils.isNotBlank(systemCode)) {
+            tableWrapper.eq(RegTable::getSystemCode, systemCode);
+        }
+
+        long tableCount = regTableService.count(tableWrapper);
+        long onlineCount = regTableService.count(tableWrapper.clone().eq(RegTable::getAutoFetchStatus, "已上线"));
+        long developingCount = regTableService.count(tableWrapper.clone().eq(RegTable::getAutoFetchStatus, "开发中"));
+        long notStartedCount = regTableService.count(tableWrapper.clone().eq(RegTable::getAutoFetchStatus, "未开发"));
+
+        List<Long> tableIds = regTableService.list(tableWrapper).stream()
+                .map(RegTable::getId)
+                .collect(Collectors.toList());
+        LambdaQueryWrapper<RegElement> elementWrapper = new LambdaQueryWrapper<>();
+        if (!tableIds.isEmpty()) {
+            elementWrapper.in(RegElement::getTableId, tableIds);
+        } else if (StringUtils.isNotBlank(systemCode)) {
+            // 指定系统且无报表时直接返回零值
+            elementWrapper.eq(RegElement::getTableId, -1L);
+        }
+
+        long elementCount = regElementService.count(elementWrapper);
+        long fieldCount = regElementService.count(elementWrapper.clone().eq(RegElement::getType, "FIELD"));
+        long indicatorCount = regElementService.count(elementWrapper.clone().eq(RegElement::getType, "INDICATOR"));
+
+        Map<String, Long> result = new HashMap<>();
+        result.put("tableCount", tableCount);
+        result.put("onlineCount", onlineCount);
+        result.put("developingCount", developingCount);
+        result.put("notStartedCount", notStartedCount);
+        result.put("elementCount", elementCount);
+        result.put("fieldCount", fieldCount);
+        result.put("indicatorCount", indicatorCount);
+        return result;
+    }
 
     /**
      * 分页查询报表列表
