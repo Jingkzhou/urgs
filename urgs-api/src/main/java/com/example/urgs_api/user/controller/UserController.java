@@ -61,6 +61,22 @@ public class UserController {
         return removed ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
     }
 
+    @PostMapping("/batch")
+    public ResponseEntity<Void> batch(@RequestBody List<UserRequest> requests) {
+        List<User> users = requests.stream()
+                .map(req -> toEntity(req, null))
+                .collect(Collectors.toList());
+        userService.batchUpsert(users);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/export")
+    public List<UserDTO> export() {
+        return userService.listAll().stream()
+                .map(UserDTO::fromEntity)
+                .collect(Collectors.toList());
+    }
+
     @GetMapping("/permissions")
     public ResponseEntity<java.util.Set<String>> getMyPermissions(
             @RequestAttribute(value = "userId", required = false) Long userId) {

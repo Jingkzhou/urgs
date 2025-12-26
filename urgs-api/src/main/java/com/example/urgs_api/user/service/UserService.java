@@ -11,4 +11,8 @@ public interface UserService extends IService<User> {
     boolean changePassword(Long userId, String oldPassword, String newPassword);
 
     java.util.List<User> searchUsers(String keyword);
+
+    void batchUpsert(java.util.List<User> users);
+
+    java.util.List<User> listAll();
 }
