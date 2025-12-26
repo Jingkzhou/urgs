@@ -29,7 +29,7 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
 
     @Override
     public Page<Issue> getIssueList(Page<Issue> page, String keyword, String status, String issueType, String system,
-            String reporter, String startTime, String endTime) {
+            String reporter, String handler, String startTime, String endTime) {
         LambdaQueryWrapper<Issue> wrapper = new LambdaQueryWrapper<>();
 
         if (StringUtils.hasText(keyword)) {
@@ -55,6 +55,10 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
 
         if (StringUtils.hasText(reporter)) {
             wrapper.like(Issue::getReporter, reporter);
+        }
+
+        if (StringUtils.hasText(handler)) {
+            wrapper.like(Issue::getHandler, handler);
         }
 
         if (StringUtils.hasText(startTime)) {
@@ -142,7 +146,8 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
     }
 
     @Override
-    public void exportData(HttpServletResponse response, String keyword, String status, String issueType) {
+    public void exportData(HttpServletResponse response, String keyword, String status, String issueType,
+            String handler) {
         try {
             response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             response.setCharacterEncoding("utf-8");
@@ -165,6 +170,9 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
             if (StringUtils.hasText(issueType) && !"all".equals(issueType)) {
                 wrapper.eq(Issue::getIssueType, issueType);
             }
+            if (StringUtils.hasText(handler)) {
+                wrapper.like(Issue::getHandler, handler);
+            }
             wrapper.orderByDesc(Issue::getCreateTime);
 
             List<Issue> list = list(wrapper);
@@ -178,6 +186,7 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
                 dto.setSystem(issue.getSystem());
                 dto.setReporter(issue.getReporter());
                 dto.setHandler(issue.getHandler());
+                dto.setSolution(issue.getSolution());
                 dto.setIssueType(issue.getIssueType());
                 dto.setStatus(issue.getStatus());
 

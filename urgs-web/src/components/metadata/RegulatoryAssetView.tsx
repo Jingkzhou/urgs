@@ -64,6 +64,9 @@ const RegulatoryAssetView: React.FC = () => {
     const [viewingCodeTable, setViewingCodeTable] = useState<string | null>(null);
     const [allCodeTables, setAllCodeTables] = useState<CodeTable[]>([]);
 
+    // Loading for Import
+    const [isImporting, setIsImporting] = useState(false);
+
     // History Modal State
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [historyTarget, setHistoryTarget] = useState<{
@@ -430,6 +433,7 @@ const RegulatoryAssetView: React.FC = () => {
         const formData = new FormData();
         formData.append('file', file);
 
+        setIsImporting(true);
         try {
             const token = localStorage.getItem('auth_token');
             const res = await fetch('/api/reg/table/import', {
@@ -441,6 +445,7 @@ const RegulatoryAssetView: React.FC = () => {
                 const result = await res.json();
                 alert(`导入成功！\n报表：${result.tableCount} 个\n字段/指标：${result.elementCount} 个`);
                 fetchTables();
+                fetchStats();
             } else {
                 alert('导入失败');
             }
@@ -448,6 +453,7 @@ const RegulatoryAssetView: React.FC = () => {
             console.error('Import failed', e);
             alert('导入失败');
         } finally {
+            setIsImporting(false);
             if (tableFileInputRef.current) tableFileInputRef.current.value = '';
         }
     };
@@ -1269,6 +1275,22 @@ const RegulatoryAssetView: React.FC = () => {
                     data={detailItem.data}
                     onClose={() => setShowDetailModal(false)}
                 />
+            )}
+
+            {/* Global Loading Overlay for Import */}
+            {isImporting && (
+                <div className="fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center animate-in fade-in duration-300">
+                    <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in-95 duration-300">
+                        <div className="relative">
+                            <div className="w-12 h-12 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>
+                            <Upload className="absolute inset-0 m-auto text-indigo-600 animate-pulse" size={20} />
+                        </div>
+                        <div className="text-center">
+                            <h3 className="font-bold text-slate-800">正在导入数据...</h3>
+                            <p className="text-sm text-slate-500 mt-1">请勿关闭页面，系统正在处理您的 Excel 文件</p>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {/* Code Values Modal */}

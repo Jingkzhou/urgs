@@ -481,8 +481,8 @@ public class RegTableController {
                 dto.setDocumentTitle(table.getDocumentTitle());
                 dto.setEffectiveDate(
                         table.getEffectiveDate() != null ? table.getEffectiveDate().format(dateFormatter) : null);
-                dto.setBusinessCaliber(table.getBusinessCaliber());
-                dto.setDevNotes(table.getDevNotes());
+                dto.setBusinessCaliber(safeTruncate(table.getBusinessCaliber()));
+                dto.setDevNotes(safeTruncate(table.getDevNotes()));
                 dto.setOwner(table.getOwner());
                 return dto;
             }).collect(Collectors.toList());
@@ -494,8 +494,9 @@ public class RegTableController {
             int sheetIndex = 1;
             for (RegTable table : tables) {
                 // 清洗并处理重名页签
-                String rawName = StringUtils.getIfBlank(table.getName(), () -> "Sheet" + sheetIndex);
-                String safeName = rawName.replaceAll("[\\\\/\\?\\*\\ prescription\\[\\]\\:]", "_");
+                final int currentIdx = sheetIndex;
+                String rawName = StringUtils.getIfBlank(table.getName(), () -> "Sheet" + currentIdx);
+                String safeName = rawName.replaceAll("[\\\\/\\?\\*\\s\\[\\]\\:]", "_");
                 if (safeName.length() > 31)
                     safeName = safeName.substring(0, 31);
 
@@ -522,8 +523,8 @@ public class RegTableController {
                     dto.setLength(el.getLength());
                     dto.setIsPk(el.getIsPk());
                     dto.setNullable(el.getNullable());
-                    dto.setFormula(el.getFormula());
-                    dto.setFetchSql(el.getFetchSql());
+                    dto.setFormula(safeTruncate(el.getFormula()));
+                    dto.setFetchSql(safeTruncate(el.getFetchSql()));
                     dto.setCodeTableCode(el.getCodeTableCode());
                     dto.setValueRange(el.getValueRange());
                     dto.setValidationRule(el.getValidationRule());
@@ -531,16 +532,15 @@ public class RegTableController {
                     dto.setDocumentTitle(el.getDocumentTitle());
                     dto.setEffectiveDate(
                             el.getEffectiveDate() != null ? el.getEffectiveDate().format(dateFormatter) : null);
-                    dto.setBusinessCaliber(el.getBusinessCaliber());
-                    dto.setFillInstruction(el.getFillInstruction());
-                    dto.setDevNotes(el.getDevNotes());
+                    dto.setBusinessCaliber(safeTruncate(el.getBusinessCaliber()));
+                    dto.setFillInstruction(safeTruncate(el.getFillInstruction()));
+                    dto.setDevNotes(safeTruncate(el.getDevNotes()));
                     dto.setAutoFetchStatus(el.getAutoFetchStatus());
                     dto.setOwner(el.getOwner());
                     dto.setStatus(el.getStatus());
                     dto.setIsInit(el.getIsInit());
                     dto.setIsMergeFormula(el.getIsMergeFormula());
                     dto.setIsFillBusiness(el.getIsFillBusiness());
-                    dto.setCodeSnippet(el.getCodeSnippet());
                     return dto;
                 }).collect(Collectors.toList());
 
@@ -687,7 +687,6 @@ public class RegTableController {
                     el.setIsInit(getIntValue(row.getCell(22)));
                     el.setIsMergeFormula(getIntValue(row.getCell(23)));
                     el.setIsFillBusiness(getIntValue(row.getCell(24)));
-                    el.setCodeSnippet(getCellValue(row.getCell(25)));
 
                     if (el.getSortOrder() == null)
                         el.setSortOrder(0);
@@ -745,5 +744,15 @@ public class RegTableController {
         } catch (Exception ignored) {
         }
         return null;
+    }
+
+    /**
+     * 安全截断字符串，防止 Excel 单元格超长 (32767) 报错
+     */
+    private String safeTruncate(String val) {
+        if (val == null || val.length() <= 32700) {
+            return val;
+        }
+        return val.substring(0, 32700) + "... [Truncated due to Excel Limit]";
     }
 }

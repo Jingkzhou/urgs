@@ -31,6 +31,7 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
     const [filterType, setFilterType] = useState('all');
     const [filterSystem, setFilterSystem] = useState('');
     const [filterReporter, setFilterReporter] = useState('');
+    const [filterHandler, setFilterHandler] = useState('');
     const [filterStartTime, setFilterStartTime] = useState('');
     const [filterEndTime, setFilterEndTime] = useState('');
     const [keyword, setKeyword] = useState('');
@@ -77,6 +78,7 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
             });
             if (filterSystem) params.append('system', filterSystem);
             if (filterReporter) params.append('reporter', filterReporter);
+            if (filterHandler) params.append('handler', filterHandler);
             if (filterStartTime) params.append('startTime', filterStartTime);
             if (filterEndTime) params.append('endTime', filterEndTime);
             if (keyword) {
@@ -101,7 +103,7 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
         } finally {
             setLoading(false);
         }
-    }, [currentPage, filterStatus, filterType, filterSystem, filterReporter, filterStartTime, filterEndTime, keyword]);
+    }, [currentPage, filterStatus, filterType, filterSystem, filterReporter, filterHandler, filterStartTime, filterEndTime, keyword]);
 
     useEffect(() => {
         fetchIssues();
@@ -315,6 +317,7 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
         const params = new URLSearchParams({
             status: filterStatus,
             issueType: filterType,
+            handler: filterHandler,
         });
         if (keyword) {
             params.append('keyword', keyword);
@@ -510,6 +513,15 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                 className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none"
                                 value={filterReporter}
                                 onChange={(e) => setFilterReporter(e.target.value)}
+                            />
+
+                            {/* Handler Filter */}
+                            <input
+                                type="text"
+                                placeholder="处理人姓名..."
+                                className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none"
+                                value={filterHandler}
+                                onChange={(e) => setFilterHandler(e.target.value)}
                             />
                         </div>
 

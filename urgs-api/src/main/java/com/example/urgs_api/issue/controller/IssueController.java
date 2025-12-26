@@ -28,11 +28,13 @@ public class IssueController {
             @RequestParam(defaultValue = "all") String issueType,
             @RequestParam(required = false) String system,
             @RequestParam(required = false) String reporter,
+            @RequestParam(required = false) String handler,
             @RequestParam(required = false) String startTime,
             @RequestParam(required = false) String endTime) {
 
         Page<Issue> page = new Page<>(current, size);
-        Page<Issue> result = issueService.getIssueList(page, keyword, status, issueType, system, reporter, startTime,
+        Page<Issue> result = issueService.getIssueList(page, keyword, status, issueType, system, reporter, handler,
+                startTime,
                 endTime);
 
         return ResponseEntity.ok(PageResult.of(result));
@@ -96,8 +98,9 @@ public class IssueController {
             HttpServletResponse response,
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "all") String status,
-            @RequestParam(defaultValue = "all") String issueType) {
-        issueService.exportData(response, keyword, status, issueType);
+            @RequestParam(defaultValue = "all") String issueType,
+            @RequestParam(required = false) String handler) {
+        issueService.exportData(response, keyword, status, issueType, handler);
     }
 
     @PostMapping("/import")

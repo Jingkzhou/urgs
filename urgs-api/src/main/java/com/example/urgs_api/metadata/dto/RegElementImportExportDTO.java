@@ -84,7 +84,4 @@ public class RegElementImportExportDTO {
 
     @ExcelProperty(value = "是否填报业务项", index = 24)
     private Integer isFillBusiness;
-
-    @ExcelProperty(value = "代码片段", index = 25)
-    private String codeSnippet;
 }
