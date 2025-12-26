@@ -51,6 +51,7 @@ const RegulatoryAssetView: React.FC = () => {
     const [elementPage, setElementPage] = useState(1);
     const [elementSize, setElementSize] = useState(10);
     const [elementTotal, setElementTotal] = useState(0);
+    const [selectedElementIds, setSelectedElementIds] = useState<Set<number | string>>(new Set()); // 选中的字段/指标ID
 
     // Modal State
     const [showTableModal, setShowTableModal] = useState(false);
@@ -243,6 +244,7 @@ const RegulatoryAssetView: React.FC = () => {
         setActiveView('ELEMENT_LIST');
         setElementKeyword('');
         setElementPage(1); // Reset element page
+        setSelectedElementIds(new Set()); // Clear element selection
         fetchElements(table.id!, 1, elementSize, ''); // Explicitly pass empty keyword
     };
 
@@ -250,6 +252,7 @@ const RegulatoryAssetView: React.FC = () => {
         setActiveView('TABLE_LIST');
         setCurrentTable(null);
         setElements([]);
+        setSelectedElementIds(new Set()); // Clear element selection
         // fetchTables will be triggered by re-render or we can leave it to state
     };
 
@@ -333,9 +336,46 @@ const RegulatoryAssetView: React.FC = () => {
             });
             if (res.ok) {
                 if (currentTable) fetchElements(currentTable.id!);
+                // Remove from selection if exists
+                if (selectedElementIds.has(id)) {
+                    const newSet = new Set(selectedElementIds);
+                    newSet.delete(id);
+                    setSelectedElementIds(newSet);
+                }
             }
         } catch (e) {
             console.error('Failed to delete element', e);
+        }
+    };
+
+    const handleBatchDeleteElements = async () => {
+        if (selectedElementIds.size === 0) return;
+        if (!window.confirm(`确定要批量删除选中的 ${selectedElementIds.size} 个字段/指标吗？\n此操作不可恢复。`)) {
+            return;
+        }
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch('/api/reg/element/batch', {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(Array.from(selectedElementIds))
+            });
+
+            if (res.ok) {
+                setSelectedElementIds(new Set()); // Clear selection
+                if (currentTable) fetchElements(currentTable.id!);
+                alert('批量删除成功');
+            } else {
+                throw new Error('Batch delete failed on server');
+            }
+        } catch (error) {
+            console.error('Batch delete elements failed', error);
+            alert('批量删除失败，请重试');
+            if (currentTable) fetchElements(currentTable.id!);
         }
     };
 
@@ -657,7 +697,7 @@ const RegulatoryAssetView: React.FC = () => {
                                 <button
                                     onClick={() => setShowAdvancedFilter(!showAdvancedFilter)}
                                     className={`h-10 rounded-lg border transition-all flex items-center gap-1.5 px-3 text-sm ${showAdvancedFilter ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-medium' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm'}`}
-                                    >
+                                >
                                     <Filter size={14} className={showAdvancedFilter ? 'text-indigo-600' : 'text-slate-400'} />
                                     筛选
                                     {appliedFilterCount > 0 && (
@@ -1001,6 +1041,19 @@ const RegulatoryAssetView: React.FC = () => {
                         <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                             <span className="text-xs font-semibold text-slate-500">字段与指标列表 ({elementTotal})</span>
                             <div className="flex gap-2">
+                                {selectedElementIds.size > 0 && (
+                                    <div className="flex items-center gap-2 mr-2">
+                                        <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-1 rounded border border-indigo-100 font-bold">
+                                            已选 {selectedElementIds.size}
+                                        </span>
+                                        <button
+                                            onClick={handleBatchDeleteElements}
+                                            className="text-xs bg-white border border-red-200 text-red-600 px-2 py-1.5 rounded flex items-center gap-1 hover:bg-red-50 shadow-sm transition-colors"
+                                        >
+                                            <Trash2 size={12} /> 批量删除
+                                        </button>
+                                    </div>
+                                )}
                                 <input
                                     type="file"
                                     ref={fileInputRef}
@@ -1026,6 +1079,20 @@ const RegulatoryAssetView: React.FC = () => {
 
                         {/* Element Header */}
                         <div className="flex items-center px-4 py-2 bg-white border-b border-slate-100 text-xs font-medium text-slate-500">
+                            <div className="w-8 flex items-center justify-center">
+                                <input
+                                    type="checkbox"
+                                    checked={elements.length > 0 && selectedElementIds.size === elements.length}
+                                    onChange={(e) => {
+                                        if (e.target.checked) {
+                                            setSelectedElementIds(new Set(elements.map(el => el.id!)));
+                                        } else {
+                                            setSelectedElementIds(new Set());
+                                        }
+                                    }}
+                                    className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                                />
+                            </div>
                             <div className="w-10"></div> {/* Icon */}
                             <div className="w-12 text-center">序号</div>
                             <div className="w-48">名称</div>
@@ -1042,8 +1109,24 @@ const RegulatoryAssetView: React.FC = () => {
                                 <div
                                     key={`${el.id}-${index}`}
                                     onDoubleClick={() => handleShowDetail('ELEMENT', el)}
-                                    className="flex items-center px-4 py-2.5 bg-white border-b border-slate-100 hover:bg-slate-50 transition-colors group"
+                                    className={`flex items-center px-4 py-2.5 bg-white border-b border-slate-100 hover:bg-slate-50 transition-colors group ${selectedElementIds.has(el.id!) ? 'bg-indigo-50/30' : ''}`}
                                 >
+                                    <div className="w-8 flex items-center justify-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedElementIds.has(el.id!)}
+                                            onChange={(e) => {
+                                                const newSet = new Set(selectedElementIds);
+                                                if (e.target.checked) {
+                                                    newSet.add(el.id!);
+                                                } else {
+                                                    newSet.delete(el.id!);
+                                                }
+                                                setSelectedElementIds(newSet);
+                                            }}
+                                            className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                                        />
+                                    </div>
                                     <div className="w-10 flex justify-center">
                                         {el.type === 'FIELD' ? <Hash size={16} className="text-slate-400" /> : <Target size={16} className="text-purple-500" />}
                                     </div>

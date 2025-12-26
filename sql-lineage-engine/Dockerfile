@@ -20,6 +20,11 @@ COPY . .
 # Add current directory to PYTHONPATH
 ENV PYTHONPATH=/app
 
+# Fix OpenBLAS issue in restricted Docker environments
+ENV OPENBLAS_NUM_THREADS=1
+ENV GOTO_NUM_THREADS=1
+ENV OMP_NUM_THREADS=1
+
 # This container seems to be a CLI tool, but for composition we might want it to stay alive or run a specific command.
 # For now, we set the entrypoint so arguments can be passed.
 # Or if it's meant to be a service, we'd need a server wrapper.

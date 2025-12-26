@@ -130,6 +130,33 @@ public class RegElementController {
     }
 
     /**
+     * 批量删除元素
+     *
+     * @param ids 元素ID列表
+     * @return 是否成功
+     */
+    @DeleteMapping("/batch")
+    public boolean deleteBatch(@RequestBody List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return false;
+        }
+
+        List<RegElement> oldElements = regElementService.listByIds(ids);
+        boolean result = regElementService.removeByIds(ids);
+
+        if (result && oldElements != null) {
+            for (RegElement oldElement : oldElements) {
+                maintenanceLogManager.logChange(
+                        com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.ELEMENT,
+                        oldElement,
+                        null,
+                        "admin");
+            }
+        }
+        return result;
+    }
+
+    /**
      * 导出监管元素
      *
      * @param tableId  报表ID

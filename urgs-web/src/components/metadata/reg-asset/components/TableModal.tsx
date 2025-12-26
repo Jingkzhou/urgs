@@ -5,7 +5,7 @@ import { FormField } from './RegAssetHelper';
 
 // Define the system interface locally if needed, or pass only what's necessary
 interface SsoConfig {
-    id: string;
+    id: number;
     clientId: string;
     name: string;
 }
