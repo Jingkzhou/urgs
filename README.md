@@ -152,19 +152,28 @@ uvicorn app.main:app --reload --port 8001
 如果生产服务器无法直接构建镜像，可先在开发机导出镜像，再导入生产环境。
 
 #### 1. 开发机：使用自动化脚本打包
-项目根目录提供了 `package.sh` 脚本，可一键完成镜像构建、导出及配置文件打包。
+项目根目录提供了 `package.sh` 脚本，支持全量打包或针对某个模块进行选择性打包。
 
 ```bash
-# 执行打包脚本
+# 执行权限 (仅首次)
 chmod +x package.sh
+
+# 方式 A: 全量打包 (原有行为)
 ./package.sh
+
+# 方式 B: 单模块打包 (例如只更新前端)
+./package.sh web
+
+# 方式 C: 多模块打包
+./package.sh api web lineage
 ```
 
-执行完成后，会生成 `urgs-dist` 目录，包含：
-- `urgs-images.tar`: 所有服务的离线镜像包
-- `install.sh`: 生产环境一键安装脚本
-- `docker-compose.yml`: 服务编排文件
-- `.env`: 生产环境配置文件
+执行完成后，会根据选择生成对应的 `urgs-dist` 或 `urgs-dist-[modules]` 目录，包含：
+- `urgs-images.tar`: 选定服务的离线镜像包
+- `install.sh`: 该模块的一键安装/更新脚本
+- `docker-compose.yml` & `.env`: 必要的配置文件
+
+> 💡 **支持的模块名**: `api`, `web`, `executor`, `lineage`, `neo4j`
 
 #### 2. 传输文件到生产服务器
 将打包生成的 `urgs-dist` 目录传输到生产服务器即可。

@@ -94,10 +94,10 @@ class GSPParser:
         java_home = "/Users/work/Library/Java/JavaVirtualMachines/corretto-1.8.0_392/Contents/Home"
         if os.path.exists(java_home):
             os.environ['JAVA_HOME'] = java_home
+            logging.info(f"Setting JAVA_HOME to {java_home}")
             try:
                 jvm_path = jpype.getDefaultJVMPath()
             except:
-                 # Fallback
                  pass
         
         try:
@@ -117,8 +117,13 @@ class GSPParser:
             "-XX:CICompilerCount=2"
         ]
         
-        logging.info(f"Starting JVM with classpath: {classpath}")
-        jpype.startJVM(jvm_path, *jvm_args)
+        logging.info(f"Starting JVM with args: {' '.join(jvm_args)}")
+        try:
+            jpype.startJVM(jvm_path, *jvm_args)
+            logging.info("JVM started successfully in process %s", os.getpid())
+        except Exception as e:
+            logging.error(f"Failed to start JVM in process {os.getpid()}: {e}")
+            raise
 
     def parse(self, sql: str, db_type: str = "mysql", source_file: str = None) -> Dict[str, Any]:
         """
