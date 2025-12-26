@@ -110,7 +110,11 @@ class GSPParser:
         jvm_args = [
             "-ea",
             f"-Djava.class.path={classpath}",
-            "-Djava.awt.headless=true"
+            "-Djava.awt.headless=true",
+            "-Xss256k",
+            "-Xmx512m",
+            "-XX:ParallelGCThreads=2",
+            "-XX:CICompilerCount=2"
         ]
         
         logging.info(f"Starting JVM with classpath: {classpath}")
