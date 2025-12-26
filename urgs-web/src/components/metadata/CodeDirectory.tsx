@@ -623,8 +623,8 @@ const CodeDirectory: React.FC = () => {
             {/* Code Edit Modal */}
             {
                 showCodeModal && (
-                    <div className="absolute inset-0 z-50 flex items-center justify-center">
-                        <div className="absolute inset-0 bg-black/10" onClick={() => setShowCodeModal(false)}></div>
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center">
+                        <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowCodeModal(false)}></div>
                         <div className="w-[900px] max-h-[90vh] bg-white rounded-xl shadow-2xl relative flex flex-col animate-scale-in">
                             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl flex-none">
                                 <h3 className="text-lg font-bold text-slate-800">
@@ -706,8 +706,8 @@ const CodeDirectory: React.FC = () => {
             {/* Table Management Modal */}
             {
                 showTableModal && (
-                    <div className="absolute inset-0 z-50 flex items-center justify-center">
-                        <div className="absolute inset-0 bg-black/10" onClick={() => setShowTableModal(false)}></div>
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center">
+                        <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowTableModal(false)}></div>
                         <div className="w-[600px] bg-white rounded-xl shadow-2xl relative flex flex-col animate-scale-in">
                             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
                                 <h3 className="text-lg font-bold text-slate-800">
