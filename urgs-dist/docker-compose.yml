@@ -76,6 +76,9 @@ services:
       GOTO_NUM_THREADS: 1
       OMP_NUM_THREADS: 1
     entrypoint: [ "tail", "-f", "/dev/null" ]
+    security_opt:
+      - seccomp:unconfined
+    pids_limit: 8192
     networks:
       - urgs-net
 
