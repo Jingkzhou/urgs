@@ -4,6 +4,19 @@ import * as monaco from 'monaco-editor';
 import { Play, AlertCircle, CheckCircle2, Database } from 'lucide-react';
 
 // Configure Monaco to use local instance (Offline Mode)
+if (typeof window !== 'undefined') {
+    // Standard fix for Monaco worker origin warning in Vite/CRA environments
+    (window as any).MonacoEnvironment = {
+        getWorkerUrl: function (_moduleId: any, label: string) {
+            // By returning a data URI that imports the worker, we satisfy the same-origin policy
+            // while still allowing the worker to be created.
+            return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
+                self.MonacoEnvironment = { baseUrl: '${window.location.origin}/' };
+                importScripts('https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/base/worker/workerMain.js');
+            `)}`;
+        }
+    };
+}
 loader.config({ monaco });
 
 interface SqlResult {
