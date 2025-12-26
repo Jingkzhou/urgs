@@ -362,7 +362,7 @@ const CodeDirectory: React.FC = () => {
     );
 
     return (
-        <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex overflow-hidden h-full">
+        <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex overflow-hidden h-full relative">
             {/* Left Sidebar: Value Domains */}
             <div className="w-80 border-r border-slate-200 flex flex-col bg-slate-50/30">
                 <div className="p-4 border-b border-slate-100">
@@ -521,7 +521,7 @@ const CodeDirectory: React.FC = () => {
                                 value={keyword}
                                 onChange={(e) => setKeyword(e.target.value)}
                                 onKeyDown={handleSearch}
-                                className="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 w-64"
+                                className="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-64 transition-all"
                             />
                         </div>
                     </div>
@@ -647,10 +647,10 @@ const CodeDirectory: React.FC = () => {
                                             <span className="font-mono bg-white px-1 border rounded">{editingCode?.tableCode || selectedTable?.tableCode}</span>
                                             <span className="ml-1">{editingCode?.tableName || selectedTable?.tableName}</span>
                                         </div>
-                                        <input type="hidden" name="tableCode" value={editingCode?.tableCode || selectedTable?.tableCode} />
-                                        <input type="hidden" name="tableName" value={editingCode?.tableName || selectedTable?.tableName} />
-                                        <input type="hidden" name="systemCode" value={editingCode?.systemCode || selectedTable?.systemCode} />
-                                        <input type="hidden" name="standard" value={editingCode?.standard || selectedTable?.standard} />
+                                        <input type="hidden" name="tableCode" value={editingCode?.tableCode || selectedTable?.tableCode || ''} />
+                                        <input type="hidden" name="tableName" value={editingCode?.tableName || selectedTable?.tableName || ''} />
+                                        <input type="hidden" name="systemCode" value={editingCode?.systemCode || selectedTable?.systemCode || ''} />
+                                        <input type="hidden" name="standard" value={editingCode?.standard || selectedTable?.standard || ''} />
                                     </div>
 
                                     <div className="col-span-3 border-t border-slate-100 my-1"></div>
@@ -729,7 +729,7 @@ const CodeDirectory: React.FC = () => {
                                         >
                                             <option value="">-- 请选择 --</option>
                                             {systems.map(sys => (
-                                                <option key={sys.id} value={sys.clientId}>{sys.name}</option>
+                                                <option key={sys.id || sys.clientId} value={sys.clientId}>{sys.name}</option>
                                             ))}
                                         </select>
                                     </div>
