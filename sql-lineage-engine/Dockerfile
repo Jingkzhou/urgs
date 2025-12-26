@@ -1,15 +1,14 @@
-FROM python:3.10-slim
+FROM python:3.10-slim-bullseye
 
 WORKDIR /app
 
-# Install Java 21
+# Install Java 11 (Standard in Bullseye) to avoid clone3/EPERM issues in restricted envs
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    openjdk-21-jre-headless \
+    openjdk-11-jre-headless \
     && rm -rf /var/lib/apt/lists/*
 
-# Set JAVA_HOME
 # Set JAVA_HOME (Multi-arch support)
-RUN ln -s /usr/lib/jvm/java-21-openjdk-$(dpkg --print-architecture) /usr/lib/jvm/default-java
+RUN ln -s /usr/lib/jvm/java-11-openjdk-$(dpkg --print-architecture) /usr/lib/jvm/default-java
 ENV JAVA_HOME=/usr/lib/jvm/default-java
 
 COPY requirements.txt .

@@ -13,6 +13,18 @@ get_image() {
     esac
 }
 
+# Define helper function to get service name in docker-compose.yml
+get_service_name() {
+    case $1 in
+        api) echo "urgs-api" ;;
+        web) echo "urgs-web" ;;
+        executor) echo "urgs-executor" ;;
+        lineage) echo "sql-lineage-engine" ;;
+        neo4j) echo "neo4j" ;;
+        *) echo "" ;;
+    esac
+}
+
 ALL_MODULES=("api" "web" "executor" "lineage" "neo4j")
 
 # Parse requested modules
@@ -35,17 +47,16 @@ else
 fi
 
 # 1. Build selected images
-echo "Building Docker images for: ${SELECTED_MODULES[*]}..."
+echo "Building Docker images..."
 for mod in "${SELECTED_MODULES[@]}"; do
-    # Map lineage to the service name in docker-compose.yml if different
-    SERVICE_NAME=$mod
-    if [ "$mod" == "lineage" ]; then SERVICE_NAME="sql-lineage-engine"; fi
-    docker-compose build "$SERVICE_NAME"
+    SERVICE_NAME=$(get_service_name "$mod")
+    if [ -n "$SERVICE_NAME" ]; then
+        docker-compose build "$SERVICE_NAME"
+    fi
 done
 
 # 2. Prepare output directory
-DIST_SUFFIX=$([ $# -eq 0 ] && echo "dist" || echo "dist-$(echo ${SELECTED_MODULES[*]} | tr ' ' '-')")
-DIST_DIR="urgs-$DIST_SUFFIX"
+DIST_DIR="urgs-dist"
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
 
@@ -69,6 +80,11 @@ else
 fi
 
 # 5. Create a dynamic install script
+SELECTED_SERVICES=()
+for mod in "${SELECTED_MODULES[@]}"; do
+    SELECTED_SERVICES+=($(get_service_name "$mod"))
+done
+
 cat > "$DIST_DIR/install.sh" << EOF
 #!/bin/bash
 set -e
@@ -76,10 +92,10 @@ set -e
 echo "Loading docker images from $TAR_NAME..."
 docker load -i $TAR_NAME
 
-echo "Updating services: ${SELECTED_MODULES[*]}..."
-docker-compose up -d ${SELECTED_MODULES[*]}
+echo "Updating services: ${SELECTED_SERVICES[*]}..."
+docker-compose up -d ${SELECTED_SERVICES[*]}
 
-echo "URGS components [${SELECTED_MODULES[*]}] updated successfully!"
+echo "URGS components [${SELECTED_SERVICES[*]}] updated successfully!"
 EOF
 
 chmod +x "$DIST_DIR/install.sh"

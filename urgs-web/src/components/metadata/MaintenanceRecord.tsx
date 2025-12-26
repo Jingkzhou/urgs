@@ -95,7 +95,7 @@ const MaintenanceRecord: React.FC = () => {
                 reqId: r.reqId,
                 plannedDate: r.plannedDate,
                 script: r.script
-            }));
+            })).sort((a: any, b: any) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
             setRecords(adaptedRecords);
             setTotal(data.total || 0);
@@ -287,8 +287,8 @@ const MaintenanceRecord: React.FC = () => {
                                             key={type}
                                             onClick={() => toggleModTypeFilter(type)}
                                             className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${filters.modTypes.includes(type)
-                                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200'
-                                                    : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200'
+                                                : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
                                                 }`}
                                         >
                                             {filters.modTypes.includes(type) && <Check size={12} className="inline mr-1" />}
@@ -364,8 +364,8 @@ const MaintenanceRecord: React.FC = () => {
                                     >
                                         <td className="px-6 py-4">
                                             <div className={`w-2 h-2 rounded-full ${record.modType.includes('新增') ? 'bg-emerald-500' :
-                                                    record.modType.includes('删除') ? 'bg-red-500' :
-                                                        'bg-blue-500'
+                                                record.modType.includes('删除') ? 'bg-red-500' :
+                                                    'bg-blue-500'
                                                 }`}></div>
                                         </td>
                                         <td className="px-4 py-4 min-w-[200px]">
