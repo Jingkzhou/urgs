@@ -118,8 +118,8 @@ public class UserController {
         if (req.getAvatarUrl() != null) {
             user.setAvatarUrl(req.getAvatarUrl());
         }
-        // Add other profile fields here if needed later (phone, email etc)
 
+        user.setPassword(null);
         userService.updateById(user);
         return ResponseEntity.ok(UserDTO.fromEntity(user));
     }

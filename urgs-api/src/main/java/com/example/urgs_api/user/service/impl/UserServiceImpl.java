@@ -27,7 +27,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Override
     public boolean updateById(User entity) {
         if (entity.getPassword() != null && !entity.getPassword().isEmpty()) {
-            entity.setPassword(passwordEncoder.encode(entity.getPassword()));
+            // 防御性检查：如果是以 $2a$ 开头的字符串，则认为是已经加密过的 BCrypt 哈希值，不再加密
+            if (!entity.getPassword().startsWith("$2a$")) {
+                entity.setPassword(passwordEncoder.encode(entity.getPassword()));
+            }
         }
         return super.updateById(entity);
     }
