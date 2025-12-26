@@ -15,6 +15,19 @@ public class DataSourceController {
     @Autowired
     private DataSourceService dataSourceService;
 
+    @Autowired
+    private com.example.urgs_api.datasource.service.DynamicDataSourceService dynamicDataSourceService;
+
+    @PostMapping("/test")
+    public org.springframework.http.ResponseEntity<String> testConnection(@RequestBody DataSourceConfig config) {
+        try {
+            dynamicDataSourceService.testConnection(config);
+            return org.springframework.http.ResponseEntity.ok("Connection successful!");
+        } catch (Exception e) {
+            return org.springframework.http.ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
     @GetMapping("/meta")
     public List<DataSourceMeta> getMeta() {
         return dataSourceService.getAllMeta();

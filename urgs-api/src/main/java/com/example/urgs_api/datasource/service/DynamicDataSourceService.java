@@ -25,10 +25,23 @@ public class DynamicDataSourceService {
         if (config == null) {
             throw new IllegalArgumentException("DataSource not found: " + dataSourceId);
         }
+        return buildJdbcTemplate(config);
+    }
 
+    public void testConnection(DataSourceConfig config) {
+        JdbcTemplate jdbcTemplate = buildJdbcTemplate(config);
+        try {
+            // Short timeout for testing
+            jdbcTemplate.getDataSource().getConnection().close();
+        } catch (Exception e) {
+            throw new RuntimeException("Connection failed: " + e.getMessage(), e);
+        }
+    }
+
+    private JdbcTemplate buildJdbcTemplate(DataSourceConfig config) {
         DataSourceMeta meta = metaMapper.selectById(config.getMetaId());
         if (meta == null) {
-            throw new IllegalArgumentException("DataSource Meta not found for config: " + dataSourceId);
+            throw new IllegalArgumentException("DataSource Meta not found for ID: " + config.getMetaId());
         }
 
         Map<String, Object> params = config.getConnectionParams();

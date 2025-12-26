@@ -98,9 +98,8 @@ const DataSourceManager: React.FC = () => {
             });
             setSources(enrichedConfigs);
         } catch (error) {
-            console.error('Failed to fetch data:', error);
-            // Fallback for demo if API fails
-            // message.error('Failed to load data from backend');
+            console.error('获取数据失败:', error);
+            // message.error('加载后端数据失败');
         }
     };
 
@@ -157,14 +156,29 @@ const DataSourceManager: React.FC = () => {
         try {
             const values = await form.validateFields();
             setTestLoading(true);
-            console.log('Testing connection:', values);
-            // Implement actual test connection API call here
-            setTimeout(() => {
-                setTestLoading(false);
-                message.success('Connection successful!');
-            }, 1000);
+
+            const { name, metaId, ...connectionParams } = values;
+            const payload = { metaId, connectionParams };
+
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch('/api/datasource/test', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            setTestLoading(false);
+            if (res.ok) {
+                message.success('连接成功！');
+            } else {
+                const errorMsg = await res.text();
+                message.error(errorMsg || '连接失败');
+            }
         } catch (error) {
-            // Validation failed
+            // 校验失败，错误信息已在表单显示
         }
     };
 
@@ -195,14 +209,14 @@ const DataSourceManager: React.FC = () => {
             });
 
             if (res.ok) {
-                message.success('Saved successfully');
+                message.success('保存成功');
                 setIsModalOpen(false);
-                fetchData(); // Refresh list
+                fetchData(); // 刷新列表
             } else {
-                message.error('Failed to save');
+                message.error('保存失败');
             }
         } catch (error) {
-            console.error('Validation failed:', error);
+            console.error('表单校验失败:', error);
         } finally {
             setLoading(false);
         }
@@ -216,26 +230,26 @@ const DataSourceManager: React.FC = () => {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
-                message.success('Deleted successfully');
+                message.success('删除成功');
                 fetchData();
             } else {
-                message.error('Failed to delete');
+                message.error('删除失败');
             }
         } catch (error) {
-            console.error('Delete failed:', error);
+            console.error('删除失败:', error);
         }
     };
 
     // Table Columns
     const columns = [
         {
-            title: 'Name',
+            title: '名称',
             dataIndex: 'name',
             key: 'name',
             render: (text: string) => <span className="font-medium">{text}</span>
         },
         {
-            title: 'Type',
+            title: '类型',
             key: 'type',
             render: (_: any, record: any) => {
                 const meta = metaList.find(m => m.id === record.metaId);
@@ -256,7 +270,7 @@ const DataSourceManager: React.FC = () => {
             }
         },
         {
-            title: 'Connection Info',
+            title: '连接信息',
             key: 'config',
             render: (_: any, record: any) => {
                 const config = record.connectionParams;
@@ -288,7 +302,7 @@ const DataSourceManager: React.FC = () => {
             }
         },
         {
-            title: 'Actions',
+            title: '操作',
             key: 'actions',
             align: 'right' as const,
             render: (_: any, record: any) => (
@@ -299,7 +313,7 @@ const DataSourceManager: React.FC = () => {
                         onClick={() => handleOpenModal(record)}
                         className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                     />
-                    <Popconfirm title="Are you sure?" onConfirm={() => handleDelete(record.id)}>
+                    <Popconfirm title="确定要删除吗？" onConfirm={() => handleDelete(record.id)}>
                         <Button
                             type="text"
                             icon={<DeleteOutlined />}
@@ -336,10 +350,10 @@ const DataSourceManager: React.FC = () => {
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-lg font-bold flex items-center gap-2">
                         <DatabaseOutlined className="text-blue-600" />
-                        Data Source Management
+                        数据源管理
                     </h2>
                     <Button type="primary" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>
-                        Add Source
+                        新增数据源
                     </Button>
                 </div>
 
@@ -352,13 +366,13 @@ const DataSourceManager: React.FC = () => {
             </Card>
 
             <Modal
-                title={editingId ? "Edit Data Source" : "New Data Source"}
+                title={editingId ? "编辑数据源" : "新建数据源"}
                 open={isModalOpen}
                 onCancel={() => setIsModalOpen(false)}
                 width={600}
                 footer={[
                     <Button key="cancel" onClick={() => setIsModalOpen(false)}>
-                        Cancel
+                        取消
                     </Button>,
                     <Button
                         key="test"
@@ -366,7 +380,7 @@ const DataSourceManager: React.FC = () => {
                         loading={testLoading}
                         onClick={handleTestConnection}
                     >
-                        Test Connection
+                        测试连接
                     </Button>,
                     <Button
                         key="submit"
@@ -374,7 +388,7 @@ const DataSourceManager: React.FC = () => {
                         loading={loading}
                         onClick={handleSave}
                     >
-                        Save Configuration
+                        保存配置
                     </Button>
                 ]}
             >
@@ -385,19 +399,20 @@ const DataSourceManager: React.FC = () => {
                     <div className="grid grid-cols-2 gap-4">
                         <Form.Item
                             name="name"
-                            label="Display Name"
-                            rules={[{ required: true, message: 'Please enter a name' }]}
+                            label="显示名称"
+                            rules={[{ required: true, message: '请输入名称' }]}
                         >
-                            <Input placeholder="e.g. Prod DB" />
+                            <Input placeholder="例如：生产环境数据库" />
                         </Form.Item>
                         <Form.Item
                             name="metaId"
-                            label="Database Type"
-                            rules={[{ required: true, message: 'Please select a type' }]}
+                            label="数据库类型"
+                            rules={[{ required: true, message: '请选择类型' }]}
                         >
                             <Select
                                 onChange={handleMetaChange}
                                 options={getGroupedOptions()}
+                                placeholder="选择数据库类型"
                                 showSearch
                                 filterOption={(input, option) =>
                                     (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
@@ -408,7 +423,7 @@ const DataSourceManager: React.FC = () => {
 
                     {selectedMetaId && (
                         <>
-                            <Divider titlePlacement="left" className="!my-4 text-xs text-slate-400">Connection Details</Divider>
+                            <Divider titlePlacement="left" className="!my-4 text-xs text-slate-400">连接详情</Divider>
 
                             <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 max-h-[400px] overflow-y-auto">
                                 {currentSchema.map((field) => (
@@ -417,7 +432,7 @@ const DataSourceManager: React.FC = () => {
                                         name={field.name}
                                         label={field.label}
                                         tooltip={field.help}
-                                        rules={[{ required: field.required, message: `${field.label} is required` }]}
+                                        rules={[{ required: field.required, message: `${field.label}是必填项` }]}
                                         className="mb-4"
                                     >
                                         <FieldRenderer field={field} />
