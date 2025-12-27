@@ -15,7 +15,7 @@ const VersionManagement: React.FC = () => {
     const TABS = [
         { id: 'app', label: '应用系统库', icon: Server, code: 'version:app:list', component: AppSystemList },
         { id: 'repos', label: 'Git 仓库管理', icon: GitBranch, code: 'version:repo:list', component: GitRepoManagement },
-        { id: 'code_audit', label: 'AI 代码走查', icon: ShieldCheck, code: 'version:audit:view', component: AICodeAudit },
+        { id: 'code_audit', label: 'AI 代码走查', icon: ShieldCheck, code: 'version:ai:audit', component: AICodeAudit },
         { id: 'notice', label: '业务公告管理', icon: Megaphone, code: 'version:notice:config', component: NoticeManagement },
         { id: 'stats', label: '绩效统计', icon: BarChart3, code: 'version:stats', component: ReleaseStats },
     ];

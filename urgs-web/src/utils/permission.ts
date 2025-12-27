@@ -25,6 +25,13 @@ export const hasPermission = (code: string): boolean => {
 
     // 2. Authorization Check: Check if user has this permission
     try {
+        // Bypass check if user is a System Administrator
+        const userStr = localStorage.getItem('auth_user');
+        if (userStr) {
+            const user = JSON.parse(userStr);
+            if (user.roleName === '系统管理员') return true;
+        }
+
         const permissionsStr = localStorage.getItem('user_permissions');
         if (!permissionsStr) return false;
 
@@ -33,7 +40,7 @@ export const hasPermission = (code: string): boolean => {
 
         return userPermissions.includes(code);
     } catch (e) {
-        // JSON parse error or other issues -> treat as no permission
+        // Any error -> restrict permission
         return false;
     }
 };

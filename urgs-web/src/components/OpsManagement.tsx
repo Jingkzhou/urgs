@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Timer, AlertTriangle, Activity } from 'lucide-react';
+import { Timer, AlertTriangle, Activity, Server } from 'lucide-react';
 import Auth from './Auth';
 import ScheduleManagement from './ops/ScheduleManagement';
 import IssueTracking from './ops/IssueTracking';
+import InfrastructureManagement from './ops/InfrastructureManagement';
 
-type SubModule = 'schedule' | 'issue';
+type SubModule = 'schedule' | 'issue' | 'infra';
 
 const OpsManagement: React.FC = () => {
     const [activeModule, setActiveModule] = useState<SubModule>('schedule');
@@ -21,6 +22,7 @@ const OpsManagement: React.FC = () => {
     };
 
     const tabs = [
+        { id: 'infra', label: '基础设施管理', icon: Server, permission: 'ops:infra:view' },
         { id: 'schedule', label: '调度管理', icon: Timer, permission: 'ops:schedule' },
         { id: 'issue', label: '生产问题登记', icon: AlertTriangle, permission: 'ops:issue' },
     ];
@@ -60,6 +62,11 @@ const OpsManagement: React.FC = () => {
 
             {/* Module Content */}
             <div className="min-h-[500px]">
+                {activeModule === 'infra' && (
+                    <Auth code="ops:infra:view">
+                        <InfrastructureManagement />
+                    </Auth>
+                )}
                 {activeModule === 'schedule' && (
                     <Auth code="ops:schedule">
                         <ScheduleManagement onTurnToIssue={handleTurnToIssue} />

@@ -152,5 +152,5 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '6-2-2', name: '删除问题', code: 'ops:issue:delete', type: 'button', path: '/ops/issue/delete', level: 2, parentId: '6-2' },
     { id: '6-2-3', name: '编辑问题', code: 'ops:issue:edit', type: 'button', path: '/ops/issue/edit', level: 2, parentId: '6-2' },
     { id: '6-2-4', name: '查看问题', code: 'ops:issue:view', type: 'button', path: '/ops/issue/view', level: 2, parentId: '6-2' },
-
+    { id: '6-3', name: '基础设施管理', code: 'ops:infra:view', type: 'menu', path: '/ops/infra', level: 1, parentId: '6' },
 ];

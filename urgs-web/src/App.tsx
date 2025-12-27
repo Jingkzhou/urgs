@@ -16,13 +16,13 @@ import ArkPage from './components/ark/ArkPage';
 import { LOGO_URL } from './constants';
 
 const NAV_ITEMS = [
-    { id: 'dashboard', label: '工作台', icon: LayoutDashboard },
-    { id: 'ark', label: 'Ark (方舟)', icon: Sparkles },
-    { id: 'announcement', label: '公告管理', icon: Megaphone },
-    { id: 'version', label: '版本管理', icon: GitBranch },
-    { id: 'metadata', label: '数据管理', icon: Database },
-    { id: 'ops', label: '运维管理', icon: Activity },
-    { id: 'sys', label: '系统管理', icon: Settings },
+    { id: 'dashboard', label: '工作台', icon: LayoutDashboard, permission: 'dashboard' },
+    { id: 'ark', label: 'Ark (方舟)', icon: Sparkles, permission: 'ark' },
+    { id: 'announcement', label: '公告管理', icon: Megaphone, permission: 'announcement' },
+    { id: 'version', label: '版本管理', icon: GitBranch, permission: 'version' },
+    { id: 'metadata', label: '数据管理', icon: Database, permission: 'metadata' },
+    { id: 'ops', label: '运维管理', icon: Activity, permission: 'ops' },
+    { id: 'sys', label: '系统管理', icon: Settings, permission: 'sys' },
 ];
 
 const App: React.FC = () => {
@@ -181,7 +181,7 @@ const App: React.FC = () => {
                     </div>
 
                     <nav className="flex-1 p-4 space-y-2">
-                        {NAV_ITEMS.filter(item => hasPermission(item.id)).map((item) => (
+                        {NAV_ITEMS.filter(item => hasPermission(item.permission)).map((item) => (
                             <NavItem
                                 key={item.id}
                                 icon={<item.icon size={20} />}
@@ -230,7 +230,7 @@ const App: React.FC = () => {
                                     <img src={LOGO_URL} alt="Bank of Jilin" className="h-8 object-contain" />
                                 </div>
                                 <nav className="hidden md:flex items-center gap-1">
-                                    {NAV_ITEMS.filter(item => hasPermission(item.id)).map((item) => (
+                                    {NAV_ITEMS.filter(item => hasPermission(item.permission)).map((item) => (
                                         <button
                                             key={item.id}
                                             onClick={() => setActiveTab(item.id)}
