@@ -32,8 +32,8 @@ const AppSystemDetail: React.FC<AppSystemDetailProps> = ({ system, onClose }) =>
     }, [system.id]);
 
     return (
-        <div className="fixed inset-0 bg-slate-900/50 flex justify-end z-50 animate-fade-in">
-            <div className="w-[600px] bg-white h-full shadow-2xl overflow-y-auto animate-slide-in-right">
+        <div className="fixed inset-0 bg-slate-900/50 flex justify-end z-50 animate-fade-in" onClick={onClose}>
+            <div className="w-[600px] bg-white h-full shadow-2xl overflow-y-auto animate-slide-in-right" onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
                     <div>
