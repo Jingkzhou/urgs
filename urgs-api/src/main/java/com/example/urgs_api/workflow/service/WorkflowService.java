@@ -34,7 +34,7 @@ public class WorkflowService {
     @Transactional(rollbackFor = Exception.class)
     public void saveWorkflow(Long workflowId, String name, String owner, String description, String content,
             String cron,
-            List<String> nodes, List<Map<String, String>> edges) {
+            List<String> nodes, List<Map<String, String>> edges, Long systemId) {
         // 1. Cycle Detection
         if (hasCycle(nodes, edges)) {
             throw new IllegalArgumentException("Cycle detected in workflow DAG");
@@ -116,6 +116,7 @@ public class WorkflowService {
         workflow.setName(name);
         workflow.setOwner(owner);
         workflow.setDescription(description);
+        workflow.setSystemId(systemId);
         workflow.setContent(content);
         if (workflow.getId() == null) {
             workflow.setCreateTime(java.time.LocalDateTime.now());

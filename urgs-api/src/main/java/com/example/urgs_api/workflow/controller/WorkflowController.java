@@ -19,7 +19,7 @@ public class WorkflowController {
     public String saveWorkflow(@RequestBody WorkflowDto dto) {
         try {
             workflowService.saveWorkflow(dto.getWorkflowId(), dto.getName(), dto.getOwner(), dto.getDescription(),
-                    dto.getContent(), dto.getCron(), dto.getNodes(), dto.getEdges());
+                    dto.getContent(), dto.getCron(), dto.getNodes(), dto.getEdges(), dto.getSystemId());
             return "Success";
         } catch (IllegalArgumentException e) {
             return "Failed: " + e.getMessage();
@@ -49,6 +49,7 @@ public class WorkflowController {
         private String description;
         private String content;
         private String cron;
+        private Long systemId;
         private List<String> nodes;
         private List<Map<String, String>> edges;
 
@@ -98,6 +99,14 @@ public class WorkflowController {
 
         public void setCron(String cron) {
             this.cron = cron;
+        }
+
+        public Long getSystemId() {
+            return systemId;
+        }
+
+        public void setSystemId(Long systemId) {
+            this.systemId = systemId;
         }
 
         public List<String> getNodes() {

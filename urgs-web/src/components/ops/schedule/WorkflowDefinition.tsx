@@ -24,6 +24,9 @@ const WorkflowDefinition: React.FC = () => {
     const [currentNodes, setCurrentNodes] = useState<any[]>([]);
     const [currentEdges, setCurrentEdges] = useState<any[]>([]);
 
+    // Systems list for selection
+    const [systems, setSystems] = useState<any[]>([]);
+
     const handleNewWorkflow = () => {
         setEditingWorkflow(null);
         setViewMode('canvas');
@@ -120,7 +123,8 @@ const WorkflowDefinition: React.FC = () => {
                 name: editingWorkflow.name,
                 owner: editingWorkflow.owner,
                 description: editingWorkflow.description,
-                cron: editingWorkflow.cron || '0 0 2 * * ?'
+                cron: editingWorkflow.cron || '0 0 2 * * ?',
+                systemId: editingWorkflow.systemId
             });
         } else {
             form.resetFields();
@@ -129,10 +133,26 @@ const WorkflowDefinition: React.FC = () => {
         setIsSaveModalOpen(true);
     };
 
-    // Fetch Workflows
+    // Fetch Workflows and Systems
     React.useEffect(() => {
         fetchWorkflows();
+        fetchSystems();
     }, []);
+
+    const fetchSystems = async () => {
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch('/api/sys/system/list', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setSystems(data);
+            }
+        } catch (err) {
+            console.error('Failed to fetch systems:', err);
+        }
+    };
 
     const fetchWorkflows = () => {
         const token = localStorage.getItem('auth_token');
@@ -581,6 +601,7 @@ const WorkflowDefinition: React.FC = () => {
                 description: values.description,
                 content: JSON.stringify({ nodes: savedNodes, edges: savedEdges }), // Save graph state with new IDs
                 cron: values.cron, // Use from form
+                systemId: values.systemId,
                 nodes: savedNodes.map(n => n.id),
                 edges: savedEdges.map(e => ({ source: e.source, target: e.target }))
             };
@@ -678,6 +699,20 @@ const WorkflowDefinition: React.FC = () => {
                         </Form.Item>
 
                         <Form.Item
+                            name="systemId"
+                            label="关联系统"
+                            rules={[{ required: true, message: '请选择关联系统' }]}
+                        >
+                            <Select placeholder="请选择关联系统" showSearch filterOption={(input, option) => (option?.label as unknown as string ?? '').toLowerCase().includes(input.toLowerCase())}>
+                                {systems.map(sys => (
+                                    <Select.Option key={sys.id} value={sys.id} label={sys.name}>
+                                        {sys.name} ({sys.code})
+                                    </Select.Option>
+                                ))}
+                            </Select>
+                        </Form.Item>
+
+                        <Form.Item
                             name="description"
                             label="描述"
                         >
@@ -750,6 +785,7 @@ const WorkflowDefinition: React.FC = () => {
                             <th className="px-6 py-3 font-medium whitespace-nowrap">工作流名称</th>
                             <th className="px-6 py-3 font-medium whitespace-nowrap">负责人</th>
                             <th className="px-6 py-3 font-medium whitespace-nowrap">描述</th>
+                            <th className="px-6 py-3 font-medium whitespace-nowrap">关联系统</th>
                             <th className="px-6 py-3 font-medium whitespace-nowrap">创建时间</th>
                             <th className="px-6 py-3 font-medium whitespace-nowrap">修改时间</th>
 
@@ -772,6 +808,9 @@ const WorkflowDefinition: React.FC = () => {
                                     </div>
                                 </td>
                                 <td className="px-6 py-4 text-slate-600">{wf.description}</td>
+                                <td className="px-6 py-4 text-slate-600">
+                                    {systems.find(s => s.id === wf.systemId)?.name || wf.systemId || '-'}
+                                </td>
                                 <td className="px-6 py-4 text-slate-500 text-xs whitespace-nowrap">
                                     {wf.createTime ? dayjs(wf.createTime).format('YYYY-MM-DD HH:mm:ss') : '-'}
                                 </td>
