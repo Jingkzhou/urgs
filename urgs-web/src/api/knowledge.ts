@@ -73,6 +73,10 @@ export const updateFolder = (id: number, data: { name?: string; parentId?: numbe
 export const deleteFolder = (id: number) =>
     del(`/api/wiki/folders/${id}`);
 
+/** 确保文件夹存在（查找或创建） */
+export const ensureFolder = (data: { name: string; parentId?: number | null }) =>
+    post<KnowledgeFolder>('/api/wiki/folders/ensure', data);
+
 // ==================== 文档 API ====================
 
 /** 分页查询文档 */

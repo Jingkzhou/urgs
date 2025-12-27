@@ -47,6 +47,17 @@ public class KnowledgeFolderController {
     }
 
     /**
+     * 确保文件夹存在（查找或创建）
+     */
+    @PostMapping("/ensure")
+    public ResponseEntity<KnowledgeFolder> ensureFolder(
+            HttpServletRequest request,
+            @RequestBody CreateFolderRequest req) {
+        Long userId = getUserId(request);
+        return ResponseEntity.ok(folderService.getOrCreateFolder(userId, req.getName(), req.getParentId()));
+    }
+
+    /**
      * 更新文件夹
      */
     @PutMapping("/{id}")

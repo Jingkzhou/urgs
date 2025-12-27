@@ -56,6 +56,9 @@ const KnowledgeCenter: React.FC = () => {
     const [tagModalOpen, setTagModalOpen] = useState(false);
     const [editingFolder, setEditingFolder] = useState<FolderTreeNode | null>(null);
 
+    // 文件夹创建缓存（防止并发上传时重复创建）
+    const folderCreationCache = React.useRef<Map<string, Promise<number>>>(new Map());
+
     // 表单
     const [folderForm] = Form.useForm();
     const [tagForm] = Form.useForm();
@@ -212,31 +215,247 @@ const KnowledgeCenter: React.FC = () => {
         }
     };
 
-    // 文件上传配置
+    // 空白区域右键菜单
+    const containerMenuItems = [
+        {
+            key: 'upload',
+            label: '上传文件',
+            icon: <UploadIcon size={16} />,
+            onClick: () => document.getElementById('hidden-context-upload')?.click()
+        },
+        {
+            key: 'newFolder',
+            label: '新建文件夹',
+            icon: <FolderPlus size={16} />,
+            onClick: () => {
+                setEditingFolder(null);
+                folderForm.resetFields();
+                setFolderModalOpen(true);
+            }
+        },
+    ];
+
+    // 确保路径存在
+    const ensureDirectoryPath = async (baseFolderId: number | null, fullPath: string): Promise<number | null> => {
+        // fullPath 类似 "root/sub/file.txt"
+        const parts = fullPath.split('/');
+        // 移除文件名，只保留目录部分
+        parts.pop();
+
+        if (parts.length === 0) return baseFolderId;
+
+        let currentParentId = baseFolderId;
+
+        for (const part of parts) {
+            // 构建缓存 key: "parentId/folderName"
+            const parentKey = currentParentId === null ? 'root' : currentParentId.toString();
+            const cacheKey = `${parentKey}/${part}`;
+
+            let folderPromise = folderCreationCache.current.get(cacheKey);
+
+            if (!folderPromise) {
+                // 如果缓存中没有，发起创建请求（后端 getOrCreate 会处理幂等）
+                folderPromise = api.ensureFolder({
+                    name: part,
+                    parentId: currentParentId ?? undefined
+                }).then(folder => folder.id);
+
+                folderCreationCache.current.set(cacheKey, folderPromise);
+            }
+
+            try {
+                currentParentId = await folderPromise;
+            } catch (e) {
+                console.error(`Failed to ensure folder ${part}`, e);
+                // 出错时移除缓存，允许重试
+                folderCreationCache.current.delete(cacheKey);
+                throw e;
+            }
+        }
+
+        return currentParentId;
+    };
+
+    // 文件上传处理
+    const handleUploadChange = async (info: any) => {
+        const { status, response, originFileObj } = info.file;
+
+        if (status === 'done') {
+            try {
+                const { url, name } = response;
+                // 检查是否有相对路径 (文件夹上传)
+                const relativePath = originFileObj.webkitRelativePath || '';
+
+                let targetFolderId = selectedFolderId;
+                if (relativePath) {
+                    targetFolderId = (await ensureDirectoryPath(selectedFolderId, relativePath)) ?? null;
+                }
+
+                await api.createDocument({
+                    title: name,
+                    fileUrl: url,
+                    fileName: name,
+                    fileSize: info.file.size,
+                    folderId: targetFolderId ?? undefined,
+                });
+
+                message.success(`${name} 上传成功`);
+
+                // 稍微延迟刷新，避免太频繁
+                if (!info.fileList || info.fileList.every((f: any) => f.status === 'done')) {
+                    loadDocuments();
+                    loadFolders(); // 文件夹结构可能变了
+                    // 清理缓存
+                    folderCreationCache.current.clear();
+                }
+            } catch (error) {
+                console.error('上传后处理失败', error);
+                message.error(`${info.file.name} 处理失败`);
+            }
+        } else if (status === 'error') {
+            message.error(`${info.file.name} 上传失败`);
+        }
+    };
+
+    // 普通文件上传配置
     const uploadProps: UploadProps = {
         name: 'file',
+        multiple: true,
         action: '/api/common/upload',
         showUploadList: false,
         headers: {
             Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
         },
-        onChange(info) {
-            if (info.file.status === 'done') {
-                const { url, name } = info.file.response;
-                api.createDocument({
-                    title: name,
-                    fileUrl: url,
-                    fileName: name,
-                    fileSize: info.file.size,
-                    folderId: selectedFolderId ?? undefined,
-                }).then(() => {
-                    message.success('文件上传成功');
-                    loadDocuments();
+        onChange: handleUploadChange,
+    };
+
+    // 递归扫描文件项
+    const scanFiles = async (entry: any, path: string = ''): Promise<Array<{ file: File, path: string }>> => {
+        if (entry.isFile) {
+            return new Promise((resolve) => {
+                entry.file((file: File) => {
+                    resolve([{ file, path: path }]);
                 });
-            } else if (info.file.status === 'error') {
-                message.error('文件上传失败');
+            });
+        } else if (entry.isDirectory) {
+            const dirReader = entry.createReader();
+            const entries: any[] = [];
+
+            const readEntries = async () => {
+                return new Promise<void>((resolve, reject) => {
+                    dirReader.readEntries(async (results: any[]) => {
+                        if (results.length > 0) {
+                            entries.push(...results);
+                            await readEntries();
+                        } else {
+                            resolve();
+                        }
+                    }, reject);
+                });
+            };
+
+            await readEntries();
+
+            let files: Array<{ file: File, path: string }> = [];
+            for (const childEntry of entries) {
+                // 递归路径：当前路径/文件夹名
+                const childPath = path ? `${path}/${entry.name}` : entry.name;
+                files = files.concat(await scanFiles(childEntry, childPath));
             }
-        },
+            return files;
+        }
+        return [];
+    };
+
+    // 拖拽上传处理
+    const handleDrop = async (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const items = e.dataTransfer.items;
+        if (!items) return;
+
+        const queue: Promise<any>[] = [];
+
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            // webkitGetAsEntry 是标准但在 TS 类型中可能未定义，需断言
+            const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+
+            if (entry) {
+                queue.push(scanFiles(entry));
+            }
+        }
+
+        try {
+            message.loading({ content: '正在解析文件...', key: 'uploading' });
+            const results = await Promise.all(queue);
+            const allFiles = results.flat();
+
+            if (allFiles.length === 0) return;
+
+            message.loading({ content: `正在上传 ${allFiles.length} 个文件...`, key: 'uploading' });
+
+            // 批量上传
+            for (const { file, path } of allFiles) {
+                // 先传文件
+                const formData = new FormData();
+                formData.append('file', file);
+
+                // 简单的 XHR 上传或复用 api (此处复用 fetch/xhr 逻辑因为 antd upload 是封装的)
+                // 为保持一致性，我们手动调用 /api/common/upload
+                const token = localStorage.getItem('auth_token');
+
+                try {
+                    const uploadRes = await fetch('/api/common/upload', {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${token}` },
+                        body: formData
+                    });
+
+                    if (uploadRes.ok) {
+                        const { url, name } = await uploadRes.json();
+
+                        // 确保目录
+                        let targetFolderId = selectedFolderId;
+                        if (path) {
+                            targetFolderId = (await ensureDirectoryPath(selectedFolderId, path)) ?? null;
+                        }
+
+                        // 创建记录
+                        await api.createDocument({
+                            title: name,
+                            fileUrl: url,
+                            fileName: name,
+                            fileSize: file.size,
+                            folderId: targetFolderId ?? undefined,
+                        });
+                    }
+                } catch (err) {
+                    console.error('上传失败', file.name, err);
+                }
+            }
+
+            message.success({ content: '上传完成', key: 'uploading' });
+            loadDocuments();
+            loadFolders();
+            folderCreationCache.current.clear();
+
+        } catch (error) {
+            console.error('拖拽上传失败', error);
+            message.error({ content: '上传出错', key: 'uploading' });
+        }
+    };
+
+    const handleDownloadItem = (doc: KnowledgeDocument) => {
+        if (doc.fileUrl) {
+            const link = document.createElement('a');
+            link.href = doc.fileUrl;
+            link.download = doc.fileName || doc.title;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
     };
 
     // 桌面图标组件
@@ -307,6 +526,7 @@ const KnowledgeCenter: React.FC = () => {
                         className="flex flex-col items-center p-2 rounded-lg cursor-pointer transition-all hover:bg-slate-200 group relative"
                         style={{ width: 100, height: 110 }}
                         onDoubleClick={onEnter}
+                        onContextMenu={(e) => e.stopPropagation()}
                     >
                         <div className="mb-2 relative">
                             {isDoc ? (
@@ -337,6 +557,7 @@ const KnowledgeCenter: React.FC = () => {
                 <div
                     className="flex items-center px-4 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-100 group text-sm"
                     onDoubleClick={onEnter}
+                    onContextMenu={(e) => e.stopPropagation()}
                 >
                     <div className="w-8 flex-shrink-0">
                         {isDoc ? (
@@ -418,51 +639,59 @@ const KnowledgeCenter: React.FC = () => {
             </header>
 
             {/* 图标展示区 */}
-            <main className="flex-1 overflow-auto bg-white flex flex-col relative">
-                {layoutMode === 'list' && (currentSubFolders.length > 0 || documents.length > 0) && (
-                    <div className="flex items-center px-4 py-2 border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-400 uppercase tracking-wider sticky top-0 z-10">
-                        <div className="w-8"></div>
-                        <div className="flex-1">名称</div>
-                        <div className="w-32 text-center">类型</div>
-                        <div className="w-44">最后修改</div>
-                        <div className="w-24 text-right">大小</div>
-                        <div className="w-10 ml-4"></div>
-                    </div>
-                )}
-
-                <div className="flex-1 overflow-auto p-4 relative">
-                    <Spin spinning={loading}>
-                        {(currentSubFolders.length === 0 && documents.length === 0) ? (
-                            <div className="h-full flex items-center justify-center py-20">
-                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这是一个空文件夹" />
-                            </div>
-                        ) : (
-                            <div className={layoutMode === 'grid' ? "flex flex-wrap gap-4 content-start" : "flex flex-col"}>
-                                {/* 文件夹 */}
-                                {currentSubFolders.map(f => (
-                                    <ItemEntry
-                                        key={`folder-${f.id}`}
-                                        type="folder"
-                                        title={f.name}
-                                        id={f.id}
-                                        onEnter={() => handleFolderDoubleClick(f.id)}
-                                    />
-                                ))}
-                                {/* 文档 */}
-                                {documents.map(d => (
-                                    <ItemEntry
-                                        key={`doc-${d.id}`}
-                                        type="doc"
-                                        title={d.title}
-                                        id={d.id}
-                                        doc={d}
-                                        onEnter={() => handleDownloadItem(d)}
-                                    />
-                                ))}
+            <main
+                className="flex-1 bg-white flex flex-col relative overflow-hidden"
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onDrop={handleDrop}
+            >
+                <Dropdown menu={{ items: containerMenuItems }} trigger={['contextMenu']}>
+                    <div className="flex-1 flex flex-col overflow-auto h-full">
+                        {layoutMode === 'list' && (currentSubFolders.length > 0 || documents.length > 0) && (
+                            <div className="flex items-center px-4 py-2 border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-400 uppercase tracking-wider sticky top-0 z-10">
+                                <div className="w-8"></div>
+                                <div className="flex-1">名称</div>
+                                <div className="w-32 text-center">类型</div>
+                                <div className="w-44">最后修改</div>
+                                <div className="w-24 text-right">大小</div>
+                                <div className="w-10 ml-4"></div>
                             </div>
                         )}
-                    </Spin>
-                </div>
+
+                        <div className="flex-1 p-4 relative h-full min-h-[400px]">
+                            <Spin spinning={loading}>
+                                {(currentSubFolders.length === 0 && documents.length === 0) ? (
+                                    <div className="h-full flex items-center justify-center py-20">
+                                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这是一个空文件夹" />
+                                    </div>
+                                ) : (
+                                    <div className={layoutMode === 'grid' ? "flex flex-wrap gap-4 content-start" : "flex flex-col"}>
+                                        {/* 文件夹 */}
+                                        {currentSubFolders.map(f => (
+                                            <ItemEntry
+                                                key={`folder-${f.id}`}
+                                                type="folder"
+                                                title={f.name}
+                                                id={f.id}
+                                                onEnter={() => handleFolderDoubleClick(f.id)}
+                                            />
+                                        ))}
+                                        {/* 文档 */}
+                                        {documents.map(d => (
+                                            <ItemEntry
+                                                key={`doc-${d.id}`}
+                                                type="doc"
+                                                title={d.title}
+                                                id={d.id}
+                                                doc={d}
+                                                onEnter={() => handleDownloadItem(d)}
+                                            />
+                                        ))}
+                                    </div>
+                                )}
+                            </Spin>
+                        </div>
+                    </div>
+                </Dropdown>
 
                 {/* 底部信息栏 */}
                 <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white/80 backdrop-blur shadow-lg border border-slate-200 rounded-full px-4 py-1.5 flex items-center gap-4 text-[10px] text-slate-500 uppercase tracking-widest font-bold z-20">
@@ -480,7 +709,7 @@ const KnowledgeCenter: React.FC = () => {
                 open={folderModalOpen}
                 onCancel={() => setFolderModalOpen(false)}
                 onOk={() => folderForm.submit()}
-                destroyOnClose
+                destroyOnHidden
             >
                 <Form form={folderForm} layout="vertical" onFinish={onSaveFolder}>
                     <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
@@ -527,19 +756,12 @@ const KnowledgeCenter: React.FC = () => {
                     ))}
                 </div>
             </Modal>
+            {/* 隐藏的右键上传触发器 (文件) */}
+            <Upload {...uploadProps} style={{ display: 'none' }}>
+                <span id="hidden-context-upload" />
+            </Upload>
         </div>
     );
-
-    function handleDownloadItem(doc: KnowledgeDocument) {
-        if (doc.fileUrl) {
-            const link = document.createElement('a');
-            link.href = doc.fileUrl;
-            link.download = doc.fileName || doc.title;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
-    }
 };
 
 export default KnowledgeCenter;

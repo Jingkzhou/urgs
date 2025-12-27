@@ -93,6 +93,28 @@ public class KnowledgeFolderService {
     }
 
     /**
+     * 获取或创建文件夹（用于上传目录时自动同步结构）
+     */
+    @Transactional
+    public KnowledgeFolder getOrCreateFolder(Long userId, String name, Long parentId) {
+        LambdaQueryWrapper<KnowledgeFolder> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(KnowledgeFolder::getUserId, userId)
+                .eq(KnowledgeFolder::getName, name);
+        if (parentId == null) {
+            wrapper.isNull(KnowledgeFolder::getParentId);
+        } else {
+            wrapper.eq(KnowledgeFolder::getParentId, parentId);
+        }
+
+        KnowledgeFolder existing = folderMapper.selectOne(wrapper);
+        if (existing != null) {
+            return existing;
+        }
+
+        return createFolder(userId, name, parentId);
+    }
+
+    /**
      * 更新文件夹
      */
     @Transactional
