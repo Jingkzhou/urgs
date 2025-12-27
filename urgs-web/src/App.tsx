@@ -13,6 +13,7 @@ import ChangePasswordModal from './components/ChangePasswordModal';
 import ChatWidget from './components/home/ChatWidget';
 import BasicInfo from './components/BasicInfo';
 import ArkPage from './components/ark/ArkPage';
+import KnowledgeCenter from './components/knowledge/KnowledgeCenter';
 import { LOGO_URL } from './constants';
 
 const NAV_ITEMS = [
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
     { id: 'version', label: '版本管理', icon: GitBranch, permission: 'version' },
     { id: 'metadata', label: '数据管理', icon: Database, permission: 'metadata' },
     { id: 'ops', label: '运维管理', icon: Activity, permission: 'ops' },
+    { id: 'knowledge', label: '知识中心', icon: Database, permission: 'knowledge' },
     { id: 'sys', label: '系统管理', icon: Settings, permission: 'sys' },
 ];
 
@@ -338,6 +340,7 @@ const App: React.FC = () => {
                         {activeTab === 'version' && <VersionManagement />}
                         {activeTab === 'metadata' && <MetadataManagement />}
                         {activeTab === 'ops' && <OpsManagement />}
+                        {activeTab === 'knowledge' && <KnowledgeCenter />}
                         {activeTab === 'basic_info' && <BasicInfo userInfo={userInfo} />}
                     </div>
                 </main>

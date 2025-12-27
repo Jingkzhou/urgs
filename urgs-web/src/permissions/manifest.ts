@@ -153,4 +153,17 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '6-2-3', name: '编辑问题', code: 'ops:issue:edit', type: 'button', path: '/ops/issue/edit', level: 2, parentId: '6-2' },
     { id: '6-2-4', name: '查看问题', code: 'ops:issue:view', type: 'button', path: '/ops/issue/view', level: 2, parentId: '6-2' },
     { id: '6-3', name: '基础设施管理', code: 'ops:infra:view', type: 'menu', path: '/ops/infra', level: 1, parentId: '6' },
+
+    // ================= 知识中心 =================
+    { id: '8', name: '知识中心', code: 'knowledge', type: 'menu', path: '/knowledge', level: 0, parentId: 'root' },
+    { id: '8-1', name: '全部文档', code: 'knowledge:view', type: 'menu', path: '/knowledge/all', level: 1, parentId: '8' },
+    { id: '8-1-1', name: '新建文档', code: 'knowledge:doc:create', type: 'button', path: '-', level: 2, parentId: '8-1' },
+    { id: '8-1-2', name: '编辑文档', code: 'knowledge:doc:edit', type: 'button', path: '-', level: 2, parentId: '8-1' },
+    { id: '8-1-3', name: '删除文档', code: 'knowledge:doc:delete', type: 'button', path: '-', level: 2, parentId: '8-1' },
+    { id: '8-2', name: '文件夹管理', code: 'knowledge:folder', type: 'menu', path: '/knowledge/folder', level: 1, parentId: '8' },
+    { id: '8-2-1', name: '新建文件夹', code: 'knowledge:folder:create', type: 'button', path: '-', level: 2, parentId: '8-2' },
+    { id: '8-2-2', name: '删除文件夹', code: 'knowledge:folder:delete', type: 'button', path: '-', level: 2, parentId: '8-2' },
+    { id: '8-3', name: '标签管理', code: 'knowledge:tag', type: 'menu', path: '/knowledge/tag', level: 1, parentId: '8' },
+    { id: '8-3-1', name: '新建标签', code: 'knowledge:tag:create', type: 'button', path: '-', level: 2, parentId: '8-3' },
+    { id: '8-3-2', name: '删除标签', code: 'knowledge:tag:delete', type: 'button', path: '-', level: 2, parentId: '8-3' },
 ];
