@@ -14,6 +14,8 @@ export interface User {
     roleName: string;
     roleId?: number; // Added for role association
     orgName: string;
+    gitAccessToken?: string;
+    gitlabUsername?: string;
 }
 
 export const userService = {

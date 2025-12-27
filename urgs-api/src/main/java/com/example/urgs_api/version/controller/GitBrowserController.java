@@ -121,4 +121,69 @@ public class GitBrowserController {
         gitPlatformService.deleteBranch(repoId, name);
         return ResponseEntity.ok().build();
     }
+
+    private final com.example.urgs_api.user.service.UserService userService;
+    private final com.example.urgs_api.version.service.GitRepositoryService gitRepositoryService;
+
+    /**
+     * 获取用户在 GitLab 上的项目列表
+     */
+    @GetMapping("/sync")
+    public ResponseEntity<List<com.example.urgs_api.version.dto.GitProjectVO>> listGitLabProjects(
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+        if (userId == null) {
+            userId = 1L; // Fallback for dev
+        }
+
+        com.example.urgs_api.user.model.User user = userService.getById(userId);
+        if (user == null) {
+            throw new RuntimeException("User not found");
+        }
+
+        String token = user.getGitAccessToken();
+        if (token == null || token.isEmpty()) {
+            throw new RuntimeException("Git Access Token not configured for user. Please check your profile.");
+        }
+
+        try {
+            List<com.example.urgs_api.version.dto.GitProjectVO> projects = gitPlatformService.getGitLabProjects(token);
+            return ResponseEntity.ok(projects);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to fetch projects from GitLab: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 导入选中的仓库
+     */
+    @PostMapping("/import")
+    public ResponseEntity<Void> importRepositories(
+            @RequestBody com.example.urgs_api.version.dto.GitImportRequest request) {
+        if (request.getSystemId() == null) {
+            throw new IllegalArgumentException("System ID is required");
+        }
+        if (request.getProjects() == null || request.getProjects().isEmpty()) {
+            throw new IllegalArgumentException("No projects selected");
+        }
+
+        for (com.example.urgs_api.version.dto.GitProjectVO project : request.getProjects()) {
+            com.example.urgs_api.version.entity.GitRepository repo = new com.example.urgs_api.version.entity.GitRepository();
+            repo.setSsoId(request.getSystemId());
+            repo.setName(project.getName());
+            repo.setFullName(project.getPathWithNamespace());
+            repo.setCloneUrl(project.getCloneUrl());
+            repo.setSshUrl(project.getSshUrl());
+            repo.setDefaultBranch(project.getDefaultBranch());
+            repo.setPlatform("gitlab");
+            repo.setEnabled(true);
+
+            try {
+                gitRepositoryService.create(repo);
+            } catch (Exception e) {
+                // Ignore duplicates or log
+                System.err.println("Skipping duplicate or failed repo: " + project.getName() + " " + e.getMessage());
+            }
+        }
+        return ResponseEntity.ok().build();
+    }
 }

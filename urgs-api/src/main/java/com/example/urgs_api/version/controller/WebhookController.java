@@ -84,7 +84,10 @@ public class WebhookController {
     /**
      * 处理 Push 事件
      */
-    private final com.example.urgs_api.version.service.CodeReviewService codeReviewService;
+    /**
+     * 处理 Push 事件
+     */
+    private final com.example.urgs_api.version.audit.service.AiCodeReviewService aiCodeReviewService;
 
     /**
      * 处理 Push 事件
@@ -122,7 +125,7 @@ public class WebhookController {
         if (commitSha != null && !commitSha.equals("0000000000000000000000000000000000000000")) {
             // Trigger AI Code Review
             try {
-                codeReviewService.triggerReview(repoId, commitSha, branch, authorEmail);
+                aiCodeReviewService.triggerReview(repoId, commitSha, branch, authorEmail);
             } catch (Exception e) {
                 log.error("Failed to trigger AI review", e);
             }

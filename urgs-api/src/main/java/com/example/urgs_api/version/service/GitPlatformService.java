@@ -830,6 +830,46 @@ public class GitPlatformService {
         return allBranches;
     }
 
+    public List<com.example.urgs_api.version.dto.GitProjectVO> getGitLabProjects(String accessToken) throws Exception {
+        // Fetch user's projects (membership=true to include shared projects)
+        // Only return projects the user is a member of
+        List<com.example.urgs_api.version.dto.GitProjectVO> allProjects = new ArrayList<>();
+        int page = 1;
+        int perPage = 100;
+
+        while (true) {
+            String url = String.format(
+                    "https://gitlab.com/api/v4/projects?membership=true&simple=true&page=%d&per_page=%d", page,
+                    perPage);
+            JsonNode response = httpGetWithAuth(url, accessToken, "PRIVATE-TOKEN");
+
+            if (!response.isArray() || response.isEmpty()) {
+                break;
+            }
+
+            for (JsonNode node : response) {
+                allProjects.add(com.example.urgs_api.version.dto.GitProjectVO.builder()
+                        .id(node.path("id").asText())
+                        .name(node.path("name").asText())
+                        .pathWithNamespace(node.path("path_with_namespace").asText())
+                        .description(node.path("description").asText())
+                        .webUrl(node.path("web_url").asText())
+                        .cloneUrl(node.path("http_url_to_repo").asText())
+                        .sshUrl(node.path("ssh_url_to_repo").asText())
+                        .defaultBranch(node.path("default_branch").asText("master"))
+                        .visibility(node.path("visibility").asText())
+                        .lastActivityAt(node.path("last_activity_at").asText())
+                        .build());
+            }
+
+            if (response.size() < perPage) {
+                break;
+            }
+            page++;
+        }
+        return allProjects;
+    }
+
     private GitCommit getGitLabLatestCommit(GitRepository repo, String ref) throws Exception {
         String projectId = java.net.URLEncoder.encode(repo.getFullName(), "UTF-8");
         String url = String.format("https://gitlab.com/api/v4/projects/%s/repository/commits?ref_name=%s&per_page=1",

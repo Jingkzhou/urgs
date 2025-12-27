@@ -114,9 +114,12 @@ public class UserController {
             return ResponseEntity.notFound().build();
         }
 
-        // Only update allowed fields (e.g., avatar)
+        // Only update allowed fields (e.g., avatar, git token)
         if (req.getAvatarUrl() != null) {
             user.setAvatarUrl(req.getAvatarUrl());
+        }
+        if (req.getGitAccessToken() != null) {
+            user.setGitAccessToken(req.getGitAccessToken());
         }
 
         user.setPassword(null);

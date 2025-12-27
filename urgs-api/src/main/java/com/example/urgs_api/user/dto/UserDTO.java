@@ -14,12 +14,16 @@ public class UserDTO {
     private String lastLogin;
     private String status;
     private String avatarUrl;
+    private String email;
+    private String gitlabUsername;
+    private String gitAccessToken;
 
     public UserDTO() {
     }
 
     public UserDTO(String id, String empId, String name, String orgName, String roleName, Long roleId, String system,
-            String phone, String lastLogin, String status, String avatarUrl) {
+            String phone, String lastLogin, String status, String avatarUrl, String email, String gitlabUsername,
+            String gitAccessToken) {
         this.id = id;
         this.empId = empId;
         this.name = name;
@@ -31,21 +35,31 @@ public class UserDTO {
         this.lastLogin = lastLogin;
         this.status = status;
         this.avatarUrl = avatarUrl;
+        this.email = email;
+        this.gitlabUsername = gitlabUsername;
+        this.gitAccessToken = gitAccessToken;
     }
 
-    public static UserDTO fromEntity(User u) {
-        return new UserDTO(
-                u.getId() == null ? null : String.valueOf(u.getId()),
-                u.getEmpId(),
-                u.getName(),
-                u.getOrgName(),
-                u.getRoleName(),
-                u.getRoleId(),
-                u.getSystem(),
-                u.getPhone(),
-                u.getLastLogin(),
-                u.getStatus(),
-                u.getAvatarUrl());
+    public static UserDTO fromEntity(User user) {
+        if (user == null) {
+            return null;
+        }
+        UserDTO dto = new UserDTO();
+        dto.setId(user.getId() == null ? null : String.valueOf(user.getId())); // Convert Long to String for id
+        dto.setEmpId(user.getEmpId());
+        dto.setName(user.getName());
+        dto.setOrgName(user.getOrgName());
+        dto.setRoleName(user.getRoleName());
+        dto.setRoleId(user.getRoleId());
+        dto.setSystem(user.getSystem());
+        dto.setPhone(user.getPhone());
+        dto.setLastLogin(user.getLastLogin());
+        dto.setStatus(user.getStatus());
+        dto.setAvatarUrl(user.getAvatarUrl());
+        dto.setEmail(user.getEmail());
+        dto.setGitlabUsername(user.getGitlabUsername());
+        dto.setGitAccessToken(user.getGitAccessToken());
+        return dto;
     }
 
     public User toEntity() {
@@ -147,5 +161,37 @@ public class UserDTO {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public String getGitlabUsername() {
+        return gitlabUsername;
+    }
+
+    public void setGitlabUsername(String gitlabUsername) {
+        this.gitlabUsername = gitlabUsername;
+    }
+
+    public String getGitAccessToken() {
+        return gitAccessToken;
+    }
+
+    public void setGitAccessToken(String gitAccessToken) {
+        this.gitAccessToken = gitAccessToken;
+    }
+
+    public Long getRoleId() {
+        return roleId;
+    }
+
+    public void setRoleId(Long roleId) {
+        this.roleId = roleId;
     }
 }

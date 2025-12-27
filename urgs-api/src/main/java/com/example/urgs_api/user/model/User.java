@@ -33,6 +33,19 @@ public class User {
      */
     private String gitlabUsername;
 
+    /**
+     * Git Personal Access Token for API integration
+     */
+    private String gitAccessToken;
+
+    public String getGitAccessToken() {
+        return gitAccessToken;
+    }
+
+    public void setGitAccessToken(String gitAccessToken) {
+        this.gitAccessToken = gitAccessToken;
+    }
+
     public String getEmail() {
         return email;
     }

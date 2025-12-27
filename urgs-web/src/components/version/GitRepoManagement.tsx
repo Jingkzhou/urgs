@@ -89,7 +89,52 @@ const GitRepoManagement: React.FC = () => {
         }
     };
 
+    const [syncModalVisible, setSyncModalVisible] = useState(false);
+    const [syncLoading, setSyncLoading] = useState(false);
+    const [gitLabProjects, setGitLabProjects] = useState<import('@/api/version').GitProjectVO[]>([]);
+    const [selectedProjects, setSelectedProjects] = useState<import('@/api/version').GitProjectVO[]>([]);
+    const [selectedSystemId, setSelectedSystemId] = useState<number | undefined>(undefined);
+
+    const handleOpenSync = async () => {
+        setSyncModalVisible(true);
+        setSyncLoading(true);
+        try {
+            const projects = await import('@/api/version').then(mod => mod.syncGitLabProjects());
+            setGitLabProjects(projects || []);
+        } catch (error) {
+            message.error('同步 GitLab 项目失败，请检查是否在个人设置中配置了 Token');
+        } finally {
+            setSyncLoading(false);
+        }
+    };
+
+    const handleImport = async () => {
+        if (!selectedSystemId) {
+            message.error('请选择关联系统');
+            return;
+        }
+        if (selectedProjects.length === 0) {
+            message.error('请选择要导入的项目');
+            return;
+        }
+
+        try {
+            await import('@/api/version').then(mod => mod.importGitRepositories({
+                systemId: selectedSystemId,
+                projects: selectedProjects
+            }));
+            message.success('导入成功');
+            setSyncModalVisible(false);
+            fetchRepos();
+            setSelectedProjects([]);
+            setGitLabProjects([]);
+        } catch (error) {
+            message.error('导入失败');
+        }
+    };
+
     const columns = [
+        // ... existing columns
         {
             title: '仓库名称',
             dataIndex: 'name',
@@ -166,6 +211,7 @@ const GitRepoManagement: React.FC = () => {
                 extra={
                     <Space>
                         <Button icon={<RefreshCw className="w-4 h-4" />} onClick={fetchRepos}>刷新</Button>
+                        <Button icon={<GitBranch className="w-4 h-4" />} onClick={handleOpenSync}>同步 GitLab 项目</Button>
                         <Button type="primary" icon={<Plus className="w-4 h-4" />} onClick={handleAdd}>
                             添加仓库
                         </Button>
@@ -238,6 +284,52 @@ const GitRepoManagement: React.FC = () => {
                         <Switch />
                     </Form.Item>
                 </Form>
+            </Modal>
+
+            <Modal
+                title="同步 GitLab 项目"
+                open={syncModalVisible}
+                onOk={handleImport}
+                onCancel={() => setSyncModalVisible(false)}
+                width={800}
+                confirmLoading={syncLoading}
+                okText="导入选中项目"
+            >
+                <div className="space-y-4">
+                    <div className="flex items-center gap-4">
+                        <span className="text-sm font-medium">选择关联系统：</span>
+                        <Select
+                            placeholder="请选择要导入到的系统"
+                            className="w-64"
+                            value={selectedSystemId}
+                            onChange={(val) => setSelectedSystemId(val)}
+                        >
+                            {ssoList.map(sso => (
+                                <Option key={sso.id} value={sso.id}>{sso.name}</Option>
+                            ))}
+                        </Select>
+                    </div>
+
+                    <Table
+                        dataSource={gitLabProjects}
+                        rowKey="id"
+                        loading={syncLoading}
+                        rowSelection={{
+                            onChange: (_, selectedRows) => {
+                                // @ts-ignore
+                                setSelectedProjects(selectedRows);
+                            }
+                        }}
+                        pagination={{ pageSize: 5 }}
+                        size="small"
+                        scroll={{ y: 400 }}
+                    >
+                        <Table.Column title="项目名称" dataIndex="name" key="name" />
+                        <Table.Column title="完整路径" dataIndex="pathWithNamespace" key="path" />
+                        <Table.Column title="默认分支" dataIndex="defaultBranch" key="branch" />
+                        <Table.Column title="可见性" dataIndex="visibility" key="visibility" render={(acc: string) => <Tag>{acc}</Tag>} />
+                    </Table>
+                </div>
             </Modal>
         </div>
     );

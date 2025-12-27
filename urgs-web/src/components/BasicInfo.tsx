@@ -107,16 +107,7 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
             console.log('Uploaded Avatar:', url);
 
             // 2. Update User Profile
-            // Try to get ID
-            const storedUserStr = localStorage.getItem('auth_user');
-            const storedUser = JSON.parse(storedUserStr || '{}');
-            console.log('DEBUG: displayInfo', displayInfo);
-            console.log('DEBUG: storedUser', storedUser);
-
-            // Check if storedUser has id (string) or userId (number). usually id for sys user.
-            const userId = displayInfo.userId || displayInfo.id || storedUser.id || storedUser.userId;
-            console.log('DEBUG: Resolved userId', userId);
-
+            const userId = displayInfo.userId || displayInfo.id;
             if (userId) {
                 await userService.updateProfile({
                     avatarUrl: url
@@ -124,21 +115,31 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
 
                 // 3. Update Local State
                 setDisplayInfo(prev => ({ ...prev, avatarUrl: url }));
-
-                // 4. Update Local Storage
-                localStorage.setItem('auth_user', JSON.stringify({ ...storedUser, avatarUrl: url }));
-                // Force update for other components listening to storage
-                window.dispatchEvent(new Event('storage'));
-
                 alert('头像更新成功');
-            } else {
-                alert('无法获取用户ID，更新失败');
             }
         } catch (error) {
             console.error('Update avatar failed', error);
             alert('头像上传失败');
         }
     };
+
+    const handleUpdateToken = async (e: any) => {
+        e.preventDefault();
+        const form = e.target;
+        const token = form.token.value;
+        if (!token) return;
+
+        try {
+            await userService.updateProfile({
+                gitAccessToken: token
+            });
+            alert('Token 更新成功');
+        } catch (error) {
+            alert('Token 更新失败');
+        }
+    };
+
+
 
     return (
         <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -236,6 +237,27 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    <div className="md:col-span-2 border-t border-slate-100 pt-6 mt-6">
+                        <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+                            Git 集成配置
+                        </h3>
+                        <form onSubmit={handleUpdateToken} className="flex gap-4 items-end">
+                            <div className="flex-1">
+                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Personal Access Token</label>
+                                <input
+                                    name="token"
+                                    type="password"
+                                    placeholder="输入 GitLab / GitHub 访问令牌"
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">用于同步您的代码仓库权限和提交记录</p>
+                            </div>
+                            <button type="submit" className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm hover:bg-slate-700 transition-colors h-[38px]">
+                                保存令牌
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>

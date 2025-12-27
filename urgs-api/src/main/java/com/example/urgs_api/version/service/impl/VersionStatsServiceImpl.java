@@ -3,9 +3,9 @@ package com.example.urgs_api.version.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.urgs_api.user.mapper.UserMapper;
 import com.example.urgs_api.user.model.User;
+import com.example.urgs_api.version.audit.entity.AiCodeReview;
+import com.example.urgs_api.version.audit.mapper.AiCodeReviewMapper;
 import com.example.urgs_api.version.dto.DeveloperKpiVO;
-import com.example.urgs_api.version.entity.AICodeReview;
-import com.example.urgs_api.version.repository.AICodeReviewRepository;
 import com.example.urgs_api.version.service.VersionStatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class VersionStatsServiceImpl implements VersionStatsService {
 
-    private final AICodeReviewRepository reviewRepository;
+    private final AiCodeReviewMapper reviewMapper;
     private final UserMapper userMapper;
     private final com.example.urgs_api.version.repository.AppSystemRepository appSystemRepository;
     private final com.example.urgs_api.version.repository.DeploymentRepository deploymentRepository;
@@ -55,7 +55,7 @@ public class VersionStatsServiceImpl implements VersionStatsService {
         List<User> users = userMapper.selectList(new QueryWrapper<>());
 
         // 2. Get all reviews
-        List<AICodeReview> reviews = reviewRepository.findAll();
+        List<AiCodeReview> reviews = reviewMapper.selectList(new QueryWrapper<>());
 
         List<DeveloperKpiVO> kpis = new ArrayList<>();
 
@@ -71,7 +71,7 @@ public class VersionStatsServiceImpl implements VersionStatsService {
             vo.setGitlabUsername(user.getGitlabUsername());
 
             // Calculate stats from reviews
-            List<AICodeReview> userReviews = reviews.stream()
+            List<AiCodeReview> userReviews = reviews.stream()
                     .filter(r -> r.getDeveloperId() != null && r.getDeveloperId().equals(user.getId()))
                     .collect(Collectors.toList());
 
@@ -80,7 +80,7 @@ public class VersionStatsServiceImpl implements VersionStatsService {
 
             double avgScore = userReviews.stream()
                     .filter(r -> r.getScore() != null)
-                    .mapToInt(AICodeReview::getScore)
+                    .mapToInt(AiCodeReview::getScore)
                     .average()
                     .orElse(0.0);
             vo.setAverageCodeScore(avgScore);

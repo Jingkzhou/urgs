@@ -143,6 +143,32 @@ export const getRepoCommits = (repoId: number, params?: { ref?: string; page?: n
 export const getRepoCommitDetail = (repoId: number, sha: string) =>
     get<GitCommit>(`/api/version/repos/${repoId}/commits/${sha}`);
 
+// ===== GitLab Sync API =====
+
+export interface GitProjectVO {
+    id: string;
+    name: string;
+    pathWithNamespace: string;
+    description?: string;
+    webUrl: string;
+    cloneUrl: string;
+    sshUrl: string;
+    defaultBranch: string;
+    visibility: string;
+    lastActivityAt?: string;
+}
+
+export interface GitImportRequest {
+    systemId: number;
+    projects: GitProjectVO[];
+}
+
+export const syncGitLabProjects = () =>
+    get<GitProjectVO[]>('/api/version/repos/sync');
+
+export const importGitRepositories = (data: GitImportRequest) =>
+    post<void>('/api/version/repos/import', data);
+
 // ===== 概览 API =====
 
 export interface VersionOverviewData {

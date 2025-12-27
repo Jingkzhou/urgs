@@ -19,3 +19,4 @@ CREATE TABLE ver_ai_code_review (
     INDEX idx_repo_commit (repo_id, commit_sha),
     INDEX idx_developer (developer_id)
 ) COMMENT='AI代码走查记录表';
+ALTER TABLE sys_user ADD COLUMN git_access_token VARCHAR(255) COMMENT 'Git Access Token';
