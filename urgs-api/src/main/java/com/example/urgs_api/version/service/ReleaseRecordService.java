@@ -20,6 +20,33 @@ public class ReleaseRecordService {
 
     private final ReleaseRecordRepository releaseRepository;
     private final ApprovalRecordRepository approvalRepository;
+    private final com.example.urgs_api.ai.service.AiChatService aiChatService;
+
+    /**
+     * 调用 AI 格式化描述文本
+     */
+    public String formatDescription(String description) {
+        if (description == null || description.trim().isEmpty()) {
+            return description;
+        }
+
+        String systemPrompt = "你是一个专业的版本发布管理专家。你的任务是将用户提供的粗糙、非正式的变更说明，" +
+                "重写为专业、结构清晰、逻辑严密的正式版本发布记录（文案风格类似于 iOS App Store 的版本说明）。\n" +
+                "要求：\n" +
+                "1. 分类列出变更点，如：[新增]、[优化]、[修复]、[变更]。\n" +
+                "2. 语言简练，适合专业技术人员及产品经理阅读。\n" +
+                "3. 保持原意不变，不要捏造事实。\n" +
+                "4. 结果仅返回格式化后的文本内容，不要包含任何前导词或结语。";
+
+        String userPrompt = "待格式化的原始变更说明：\n" + description;
+
+        try {
+            return aiChatService.chat(systemPrompt, userPrompt);
+        } catch (Exception e) {
+            log.error("AI 格式化失败", e);
+            throw new RuntimeException("AI 格式化服务暂时不可用: " + e.getMessage());
+        }
+    }
 
     // ========== 发布记录 CRUD ==========
 

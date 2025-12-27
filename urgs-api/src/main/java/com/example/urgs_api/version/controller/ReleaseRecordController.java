@@ -54,6 +54,12 @@ public class ReleaseRecordController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/ai/format-description")
+    public ResponseEntity<String> formatDescription(@RequestBody Map<String, String> body) {
+        String description = body.get("description");
+        return ResponseEntity.ok(releaseService.formatDescription(description));
+    }
+
     // ========== 审批流程 ==========
 
     /**

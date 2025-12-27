@@ -357,6 +357,9 @@ export const markAsReleased = (releaseId: number, deploymentId?: number) =>
 export const getApprovalHistory = (releaseId: number) =>
     get<ApprovalRecord[]>(`/api/version/releases/${releaseId}/approvals`);
 
+export const formatReleaseDescription = (description: string) =>
+    post<string>('/api/version/releases/ai/format-description', { description });
+
 // ===== 发布策略 API =====
 
 export interface ReleaseStrategy {
