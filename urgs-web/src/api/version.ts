@@ -407,3 +407,6 @@ export const getDeveloperKpis = (systemId?: number) =>
 
 export const getQualityTrend = (userId?: number) =>
     get<any>('/api/version/stats/quality-trend', userId ? { userId } : {});
+
+export const getOverviewStats = () =>
+    get<any>('/api/version/stats/overview');

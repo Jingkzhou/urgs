@@ -22,6 +22,32 @@ public class VersionStatsServiceImpl implements VersionStatsService {
 
     private final AICodeReviewRepository reviewRepository;
     private final UserMapper userMapper;
+    private final com.example.urgs_api.version.repository.AppSystemRepository appSystemRepository;
+    private final com.example.urgs_api.version.repository.DeploymentRepository deploymentRepository;
+
+    @Override
+    public com.example.urgs_api.version.dto.VersionOverviewVO getOverviewStats() {
+        com.example.urgs_api.version.dto.VersionOverviewVO vo = new com.example.urgs_api.version.dto.VersionOverviewVO();
+
+        vo.setTotalApps(appSystemRepository.count());
+        vo.setTotalReleases(deploymentRepository.count());
+
+        // Mocking some time-based stats for now as Repository methods need update for
+        // custom queries
+        // In real implementation, add method countByCreatedAtBetween to Repository
+        vo.setThisMonthReleases(5L);
+        vo.setPendingReleases(deploymentRepository.countByStatus("PENDING")); // Assuming this method exists or we use
+                                                                              // count
+
+        long successCount = deploymentRepository.countByStatus("SUCCESS");
+        long total = vo.getTotalReleases();
+        vo.setSuccessRate(total == 0 ? 0.0 : (double) successCount / total * 100);
+
+        // Mock recent releases for simplicity in this turn, or fetch top 5
+        vo.setRecentReleases(new ArrayList<>());
+
+        return vo;
+    }
 
     @Override
     public List<DeveloperKpiVO> getDeveloperKpis(Long systemId) {

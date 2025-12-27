@@ -17,4 +17,6 @@ public interface DeploymentRepository extends JpaRepository<Deployment, Long> {
     List<Deployment> findByStatus(String status);
 
     List<Deployment> findByPipelineRunId(Long pipelineRunId);
+
+    long countByStatus(String status);
 }

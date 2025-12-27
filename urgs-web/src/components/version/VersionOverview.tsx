@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BarChart3, GitBranch, Server, Clock, TrendingUp, AlertCircle, CheckCircle2, Package } from 'lucide-react';
-import { get } from '@/utils/request';
+import { getOverviewStats } from '../../api/version';
 
 interface OverviewStats {
     totalApps: number;
@@ -28,23 +28,8 @@ const VersionOverview: React.FC = () => {
     const fetchStats = async () => {
         setLoading(true);
         try {
-            // 模拟数据（实际应调用 API）
-            // const res = await get('/api/version/overview');
-            const mockData: OverviewStats = {
-                totalApps: 42,
-                totalReleases: 158,
-                thisMonthReleases: 12,
-                pendingReleases: 3,
-                successRate: 94.5,
-                recentReleases: [
-                    { id: 1, appName: '核心交易系统', version: 'v2.5.1', releaseDate: '2025-12-14', status: 'success' },
-                    { id: 2, appName: '监管报送平台', version: 'v1.8.0', releaseDate: '2025-12-13', status: 'success' },
-                    { id: 3, appName: '数据治理平台', version: 'v3.2.0', releaseDate: '2025-12-12', status: 'pending' },
-                    { id: 4, appName: '风控管理系统', version: 'v1.4.2', releaseDate: '2025-12-11', status: 'success' },
-                    { id: 5, appName: '客户关系管理', version: 'v2.1.0', releaseDate: '2025-12-10', status: 'failed' },
-                ]
-            };
-            setStats(mockData);
+            const data = await getOverviewStats();
+            setStats(data);
         } catch (error) {
             console.error('Failed to fetch overview stats:', error);
         } finally {

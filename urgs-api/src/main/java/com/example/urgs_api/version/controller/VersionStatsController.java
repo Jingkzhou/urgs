@@ -30,4 +30,12 @@ public class VersionStatsController {
     public ResponseEntity<Object> getQualityTrend(@RequestParam(required = false) Long userId) {
         return ResponseEntity.ok(statsService.getQualityTrend(userId));
     }
+
+    /**
+     * Get Version Overview Stats
+     */
+    @GetMapping("/overview")
+    public ResponseEntity<com.example.urgs_api.version.dto.VersionOverviewVO> getOverviewStats() {
+        return ResponseEntity.ok(statsService.getOverviewStats());
+    }
 }
