@@ -31,6 +31,15 @@ import {
     ArrowLeft,
     LayoutGrid,
     List as ListIcon,
+    FileText,
+    Image as ImageIcon,
+    FileCode,
+    Music,
+    Video,
+    FileArchive,
+    FileSpreadsheet,
+    FileBarChart,
+    FileType,
 } from 'lucide-react';
 import type { UploadProps } from 'antd';
 import * as api from '../../api/knowledge';
@@ -40,6 +49,51 @@ import type {
     KnowledgeDocument,
     KnowledgeTag,
 } from '../../api/knowledge';
+
+// 文件图标映射辅助函数
+const getFileIcon = (fileName: string, size: number = 24) => {
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+
+    // 图片
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(ext)) {
+        return <ImageIcon size={size} className="text-purple-500" />;
+    }
+    // PDF
+    if (['pdf'].includes(ext)) {
+        return <FileText size={size} className="text-red-500" />;
+    }
+    // Word/文档
+    if (['doc', 'docx', 'txt', 'md', 'rtf'].includes(ext)) {
+        return <FileText size={size} className="text-blue-500" />;
+    }
+    // Excel/表格
+    if (['xls', 'xlsx', 'csv'].includes(ext)) {
+        return <FileSpreadsheet size={size} className="text-emerald-500" />;
+    }
+    // PPT/演示
+    if (['ppt', 'pptx'].includes(ext)) {
+        return <FileBarChart size={size} className="text-orange-500" />;
+    }
+    // 代码
+    if (['js', 'ts', 'tsx', 'jsx', 'java', 'py', 'c', 'cpp', 'html', 'css', 'json', 'xml', 'yaml', 'sql'].includes(ext)) {
+        return <FileCode size={size} className="text-slate-600" />;
+    }
+    // 音频
+    if (['mp3', 'wav', 'ogg', 'flac'].includes(ext)) {
+        return <Music size={size} className="text-pink-500" />;
+    }
+    // 视频
+    if (['mp4', 'avi', 'mov', 'mkv', 'webm'].includes(ext)) {
+        return <Video size={size} className="text-indigo-500" />;
+    }
+    // 压缩包
+    if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
+        return <FileArchive size={size} className="text-yellow-600" />;
+    }
+
+    // 默认文件
+    return <File size={size} className="text-slate-400" />;
+};
 
 const KnowledgeCenter: React.FC = () => {
     // 状态
@@ -530,11 +584,11 @@ const KnowledgeCenter: React.FC = () => {
                     >
                         <div className="mb-2 relative">
                             {isDoc ? (
-                                <div className="w-14 h-14 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-500 shadow-sm group-hover:shadow-md transition-shadow">
-                                    <File size={32} />
+                                <div className="w-14 h-14 bg-white rounded-xl flex items-center justify-center text-slate-500 shadow-sm border border-slate-100 group-hover:shadow-md transition-shadow">
+                                    {getFileIcon(doc?.fileName || title, 32)}
                                 </div>
                             ) : (
-                                <div className="w-14 h-14 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500 shadow-sm group-hover:shadow-md transition-shadow">
+                                <div className="w-14 h-14 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500 shadow-sm border border-amber-100 group-hover:shadow-md transition-shadow">
                                     <Folder size={32} className="fill-amber-500/20" />
                                 </div>
                             )}
@@ -559,9 +613,9 @@ const KnowledgeCenter: React.FC = () => {
                     onDoubleClick={onEnter}
                     onContextMenu={(e) => e.stopPropagation()}
                 >
-                    <div className="w-8 flex-shrink-0">
+                    <div className="w-8 flex-shrink-0 flex items-center justify-center">
                         {isDoc ? (
-                            <File size={18} className="text-emerald-500" />
+                            getFileIcon(doc?.fileName || title, 18)
                         ) : (
                             <Folder size={18} className="text-amber-400 fill-amber-400" />
                         )}
