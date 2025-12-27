@@ -1,6 +1,7 @@
 package com.example.urgs_api.task.controller;
 
 import com.example.urgs_api.task.service.TaskService;
+import com.example.urgs_api.task.vo.TaskDefinitionStatsVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,6 +27,11 @@ public class TaskController {
         System.out.println("DEBUG: listTasks called with keyword='" + keyword + "', workflowIds='" + workflowIds
                 + "', page=" + page + ", size=" + size);
         return taskService.listTasks(keyword, workflowIds, page, size);
+    }
+
+    @GetMapping("/global-stats")
+    public TaskDefinitionStatsVO getTaskGlobalStats() {
+        return taskService.getTaskGlobalStats();
     }
 
     @DeleteMapping("/{id}")

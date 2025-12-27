@@ -25,6 +25,7 @@ const TaskDefinition: React.FC = () => {
     const [systems, setSystems] = useState<any[]>([]);
     const [listViewMode, setListViewMode] = useState<'list' | 'card'>('list');
     const [showStats, setShowStats] = useState(true);
+    const [globalStats, setGlobalStats] = useState({ total: 0, enabled: 0, disabled: 0, systems: 0, workflows: 0 });
 
     const {
         dependencyGraph,
@@ -87,11 +88,6 @@ const TaskDefinition: React.FC = () => {
     };
 
     useEffect(() => {
-        fetchWorkflows();
-        fetchSystems();
-    }, []);
-
-    useEffect(() => {
         fetchTasks(1, pagination.pageSize);
     }, [selectedWorkflows]);
 
@@ -128,6 +124,30 @@ const TaskDefinition: React.FC = () => {
             console.error('Failed to fetch systems:', error);
         }
     };
+
+    const fetchGlobalStats = async () => {
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch('/api/task/global-stats', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setGlobalStats(data);
+            }
+        } catch (error) {
+            console.error('Failed to fetch global stats:', error);
+        }
+    };
+
+    useEffect(() => {
+        fetchTasks();
+        fetchWorkflows();
+        fetchSystems();
+        fetchGlobalStats();
+    }, []);
 
     const handleWorkflowChange = (values: string[]) => {
         if (values.includes('ALL')) {
@@ -430,25 +450,25 @@ const TaskDefinition: React.FC = () => {
                     <div className="grid grid-cols-4 gap-6 mt-6 animate-in fade-in slide-in-from-top-2 duration-300">
                         <ScheduleStatsCard
                             title="任务总数"
-                            value={pagination.total}
+                            value={globalStats.total}
                             icon={<FileText />}
                             color="blue"
                         />
                         <ScheduleStatsCard
                             title="活跃任务"
-                            value={stats.enabled}
+                            value={globalStats.enabled}
                             icon={<CheckCircle />}
                             color="green"
                         />
                         <ScheduleStatsCard
                             title="接入系统"
-                            value={systems.length}
+                            value={globalStats.systems}
                             icon={<Server />}
                             color="purple"
                         />
                         <ScheduleStatsCard
                             title="关联工作流"
-                            value={workflows.length}
+                            value={globalStats.workflows}
                             icon={<Activity />}
                             color="amber"
                         />

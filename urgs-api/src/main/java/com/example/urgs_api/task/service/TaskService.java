@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
 import com.example.urgs_api.task.vo.WorkflowStatsVO;
+import com.example.urgs_api.task.vo.TaskDefinitionStatsVO;
 import com.example.urgs_api.workflow.entity.Workflow;
 import com.example.urgs_api.workflow.repository.WorkflowMapper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -554,5 +555,32 @@ public class TaskService {
         }
 
         return String.valueOf(instance.getId());
+    }
+
+    public TaskDefinitionStatsVO getTaskGlobalStats() {
+        TaskDefinitionStatsVO stats = new TaskDefinitionStatsVO();
+
+        long total = taskMapper.selectCount(null);
+        long enabled = taskMapper.selectCount(new QueryWrapper<Task>().ne("status", 0));
+        long disabled = total - enabled;
+
+        // Count distinct system IDs
+        QueryWrapper<Task> systemQuery = new QueryWrapper<>();
+        systemQuery.select("distinct system_id");
+        long systems = taskMapper.selectList(systemQuery).stream()
+                .filter(t -> t.getSystemId() != null)
+                .map(Task::getSystemId)
+                .distinct()
+                .count();
+
+        long workflows = workflowMapper.selectCount(null);
+
+        stats.setTotal(total);
+        stats.setEnabled(enabled);
+        stats.setDisabled(disabled);
+        stats.setSystems(systems);
+        stats.setWorkflows(workflows);
+
+        return stats;
     }
 }
