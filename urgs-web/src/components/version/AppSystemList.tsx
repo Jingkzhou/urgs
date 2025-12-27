@@ -12,10 +12,13 @@ type SsoSystem = {
     url?: string;
 };
 
+import AppSystemDetail from './AppSystemDetail';
+
 const AppSystemList: React.FC = () => {
     const [systems, setSystems] = useState<SsoSystem[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [selectedSystem, setSelectedSystem] = useState<SsoSystem | null>(null);
 
     const loadSystems = async () => {
         setLoading(true);
@@ -71,20 +74,28 @@ const AppSystemList: React.FC = () => {
             ) : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {systems.map(sys => (
-                        <div key={sys.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow transition-shadow">
+                        <div
+                            key={sys.id}
+                            onClick={() => setSelectedSystem(sys)}
+                            className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+                        >
                             <div className="flex items-center justify-between mb-2">
-                                <h3 className="text-sm font-semibold text-slate-800 truncate">{sys.name}</h3>
+                                <h3 className="text-sm font-semibold text-slate-800 truncate group-hover:text-blue-600 transition-colors">{sys.name}</h3>
                                 {sys.status && <StatusTag status={sys.status} />}
                             </div>
                             {sys.owner && <p className="text-xs text-slate-500 mb-1">责任人：{sys.owner}</p>}
                             {sys.url && (
-                                <a href={sys.url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">
+                                <a href={sys.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="text-xs text-blue-600 hover:underline">
                                     {sys.url}
                                 </a>
                             )}
                         </div>
                     ))}
                 </div>
+            )}
+
+            {selectedSystem && (
+                <AppSystemDetail system={selectedSystem} onClose={() => setSelectedSystem(null)} />
             )}
         </div>
     );
