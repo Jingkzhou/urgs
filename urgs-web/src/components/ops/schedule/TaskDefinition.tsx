@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Plus, Folder, FileCode, MoreVertical, Edit, Trash2, Play, Save, X, Link, GitFork, Calendar } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Search, Plus, Folder, FileCode, MoreVertical, Edit, Trash2, Play, Save, X, Link, GitFork, Calendar, LayoutGrid, List, FileText, Server, Activity, CheckCircle, ChevronUp, ChevronDown } from 'lucide-react';
 import { message, Select, Modal, DatePicker, Checkbox } from 'antd';
 import dayjs from 'dayjs';
 import Pagination from '../../common/Pagination';
 import TaskConfigForm from './TaskConfigForm';
 import { useTaskDependencies } from './hooks/useTaskDependencies';
 import DependencyGraphModal from './modals/DependencyGraphModal';
+import ScheduleStatsCard from './ScheduleStatsCard';
+import TaskCard from './TaskCard';
 
 const TaskDefinition: React.FC = () => {
     const [viewMode, setViewMode] = useState<'list' | 'editor'>('list');
@@ -21,6 +23,8 @@ const TaskDefinition: React.FC = () => {
     const [dispatchModalVisible, setDispatchModalVisible] = useState(false);
     const [dispatchDate, setDispatchDate] = useState<dayjs.Dayjs | null>(dayjs());
     const [systems, setSystems] = useState<any[]>([]);
+    const [listViewMode, setListViewMode] = useState<'list' | 'card'>('list');
+    const [showStats, setShowStats] = useState(true);
 
     const {
         dependencyGraph,
@@ -385,185 +389,300 @@ const TaskDefinition: React.FC = () => {
         );
     }
 
+    // Compute stats
+    const stats = useMemo(() => {
+        const typeCount: Record<string, number> = {};
+        tasks.forEach(t => {
+            typeCount[t.type] = (typeCount[t.type] || 0) + 1;
+        });
+        return {
+            total: tasks.length,
+            enabled: tasks.filter(t => t.status !== 0).length,
+            disabled: tasks.filter(t => t.status === 0).length,
+            typeCount
+        };
+    }, [tasks]);
+
+
     return (
-        <div className="h-full flex bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-            <div className="flex-1 flex flex-col min-w-0">
-                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-white">
-                    <div className="flex items-center gap-3">
-                        <div className="relative">
-                            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input
-                                type="text"
-                                placeholder="搜索任务..."
-                                value={searchText}
-                                onChange={(e) => setSearchText(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        fetchTasks(1, pagination.pageSize);
-                                    }
-                                }}
-                                className="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-64"
-                            />
-                        </div>
-                        <Select
-                            mode="multiple"
-                            allowClear
-                            style={{ width: 200 }}
-                            placeholder="按工作流筛选"
-                            value={selectedWorkflows}
-                            onChange={handleWorkflowChange}
-                            options={[{ label: '全部', value: 'ALL' }, ...workflows.map(w => ({ label: w.name, value: w.id }))]}
-                            maxTagCount="responsive"
-                        />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={handleBatchDispatch}
-                            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
-                        >
-                            <Calendar size={16} />
-                            批量下发
-                        </button>
+        <div className="h-full flex flex-col bg-slate-50/50 overflow-hidden">
+            {/* Header & Statistics Section */}
+            <div className="px-6 py-6 bg-white border-b border-slate-200/60">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
+                            任务定义
+                            <button
+                                onClick={() => setShowStats(!showStats)}
+                                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors"
+                                title={showStats ? "收起统计" : "展开统计"}
+                            >
+                                {showStats ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                            </button>
+                        </h1>
+                        <p className="text-xs text-slate-500 mt-1 font-medium">
+                            配置与管理所有调度任务，共 <span className="text-blue-600 tabular-nums">{pagination.total}</span> 个定义
+                        </p>
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-auto bg-white">
-                    <table className="w-full text-sm text-left">
-                        <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
-                            <tr>
-                                <th className="px-6 py-3 font-medium whitespace-nowrap w-10">
-                                    <Checkbox
-                                        checked={tasks.length > 0 && selectedRowKeys.length === tasks.length}
-                                        indeterminate={selectedRowKeys.length > 0 && selectedRowKeys.length < tasks.length}
-                                        onChange={(e) => {
-                                            if (e.target.checked) {
-                                                setSelectedRowKeys(tasks.map(t => t.id));
-                                            } else {
-                                                setSelectedRowKeys([]);
-                                            }
-                                        }}
-                                    />
-                                </th>
-                                <th className="px-6 py-3 font-medium whitespace-nowrap">ID</th>
-                                <th className="px-6 py-3 font-medium whitespace-nowrap">任务名称</th>
-                                <th className="px-6 py-3 font-medium whitespace-nowrap">所属工作流</th>
-                                <th className="px-6 py-3 font-medium whitespace-nowrap">所属系统</th>
-                                <th className="px-6 py-3 font-medium whitespace-nowrap">类型</th>
-                                <th className="px-6 py-3 font-medium whitespace-nowrap">执行器组</th>
-                                <th className="px-6 py-3 font-medium whitespace-nowrap">更新时间</th>
-                                <th className="px-6 py-3 font-medium whitespace-nowrap text-right">操作</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 relative">
-                            {loading && (
+                {showStats && (
+                    <div className="grid grid-cols-4 gap-6 mt-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                        <ScheduleStatsCard
+                            title="任务总数"
+                            value={pagination.total}
+                            icon={<FileText />}
+                            color="blue"
+                        />
+                        <ScheduleStatsCard
+                            title="活跃任务"
+                            value={stats.enabled}
+                            icon={<CheckCircle />}
+                            color="green"
+                        />
+                        <ScheduleStatsCard
+                            title="接入系统"
+                            value={systems.length}
+                            icon={<Server />}
+                            color="purple"
+                        />
+                        <ScheduleStatsCard
+                            title="关联工作流"
+                            value={workflows.length}
+                            icon={<Activity />}
+                            color="amber"
+                        />
+                    </div>
+                )}
+            </div>
+
+            {/* Toolbar */}
+            <div className="px-6 py-4 bg-white/80 backdrop-blur-md border-b border-slate-200/60 flex justify-between items-center sticky top-0 z-20">
+                <div className="flex items-center gap-4">
+                    <div className="relative group">
+                        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                        <input
+                            type="text"
+                            placeholder="搜索任务..."
+                            value={searchText}
+                            onChange={(e) => setSearchText(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    fetchTasks(1, pagination.pageSize);
+                                }
+                            }}
+                            className="pl-10 pr-4 py-2.5 text-sm border border-slate-200/80 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 w-80 bg-slate-50/50 transition-all font-medium"
+                        />
+                    </div>
+                    <Select
+                        mode="multiple"
+                        allowClear
+                        style={{ width: 220 }}
+                        placeholder="工作流筛选"
+                        value={selectedWorkflows}
+                        onChange={handleWorkflowChange}
+                        options={[{ label: '全部', value: 'ALL' }, ...workflows.map(w => ({ label: w.name, value: w.id }))]}
+                        maxTagCount="responsive"
+                    />
+                </div>
+                <div className="flex items-center gap-4">
+                    {/* View Toggle */}
+                    <div className="flex items-center bg-slate-100/80 rounded-xl p-1 border border-slate-200/50">
+                        <button
+                            onClick={() => setListViewMode('list')}
+                            className={`p-2 rounded-lg transition-all ${listViewMode === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="列表视图"
+                        >
+                            <List size={18} strokeWidth={2.5} />
+                        </button>
+                        <button
+                            onClick={() => setListViewMode('card')}
+                            className={`p-2 rounded-lg transition-all ${listViewMode === 'card' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="卡片视图"
+                        >
+                            <LayoutGrid size={18} strokeWidth={2.5} />
+                        </button>
+                    </div>
+
+                    <button
+                        onClick={handleBatchDispatch}
+                        className="flex items-center gap-2.5 px-5 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-2xl hover:bg-slate-800 active:scale-95 transition-all shadow-lg shadow-slate-200"
+                    >
+                        <Calendar size={16} strokeWidth={2.5} />
+                        批量下发任务
+                    </button>
+                </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-auto px-6 py-6">
+                {listViewMode === 'card' ? (
+                    /* Card Grid View */
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        {loading && (
+                            <div className="col-span-full py-20 text-center text-slate-500">
+                                加载中...
+                            </div>
+                        )}
+                        {!loading && tasks.length === 0 && (
+                            <div className="col-span-full py-20 text-center text-slate-500">
+                                暂无数据
+                            </div>
+                        )}
+                        {!loading && tasks.map((task) => (
+                            <TaskCard
+                                key={task.id}
+                                task={{
+                                    ...task,
+                                    systemName: systems.find(s => String(s.id) === String(task.systemId))?.name,
+                                    workflowName: getWorkflowName(task.id),
+                                    cronExpression: task.cronExpression
+                                }}
+                                onEdit={handleEditTask}
+                                onShowDependencies={(id) => handleShowDependencies(tasks.find(t => t.id === id), 'upstream')}
+                            />
+                        ))}
+                    </div>
+                ) : (
+                    /* Table List View */
+                    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                        <table className="w-full text-sm text-left">
+                            <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
                                 <tr>
-                                    <td colSpan={8} className="py-20 text-center text-slate-500">
-                                        加载中...
-                                    </td>
-                                </tr>
-                            )}
-                            {!loading && tasks.length === 0 && (
-                                <tr>
-                                    <td colSpan={8} className="py-20 text-center text-slate-500">
-                                        暂无数据
-                                    </td>
-                                </tr>
-                            )}
-                            {!loading && tasks.map((task) => (
-                                <tr key={task.id} className="hover:bg-slate-50 transition-colors group">
-                                    <td className="px-6 py-4">
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap w-10">
                                         <Checkbox
-                                            checked={selectedRowKeys.includes(task.id)}
+                                            checked={tasks.length > 0 && selectedRowKeys.length === tasks.length}
+                                            indeterminate={selectedRowKeys.length > 0 && selectedRowKeys.length < tasks.length}
                                             onChange={(e) => {
                                                 if (e.target.checked) {
-                                                    setSelectedRowKeys(prev => [...prev, task.id]);
+                                                    setSelectedRowKeys(tasks.map(t => t.id));
                                                 } else {
-                                                    setSelectedRowKeys(prev => prev.filter(id => id !== task.id));
+                                                    setSelectedRowKeys([]);
                                                 }
                                             }}
                                         />
-                                    </td>
-                                    <td className="px-6 py-4 font-mono text-slate-500">{task.id}</td>
-                                    <td className="px-6 py-4 font-medium text-slate-700">{task.name}</td>
-                                    <td className="px-6 py-4 text-slate-600">
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                                            {getWorkflowName(task.id)}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 text-slate-600">
-                                        {systems.find(s => String(s.id) === String(task.systemId))?.name || '-'}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                                            {task.type}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 text-slate-600">{task.group}</td>
-                                    <td className="px-6 py-4 text-slate-500 text-xs">{task.updateTime}</td>
-                                    <td className="px-6 py-4 text-right whitespace-nowrap">
-                                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-
-                                            <button className="p-1 text-slate-400 hover:text-blue-600" title="编辑" onClick={() => handleEditTask(task)}>
-                                                <Edit size={16} />
-                                            </button>
-                                            <button className="p-1 text-slate-400 hover:text-green-600" title="运行">
-                                                <Play size={16} />
-                                            </button>
-
-                                            <button className="p-1 text-slate-400 hover:text-blue-600" title="查看依赖 (上游)" onClick={() => handleShowDependencies(task, 'upstream')}>
-                                                <Link size={16} />
-                                            </button>
-                                            <button className="p-1 text-slate-400 hover:text-purple-600" title="查看被依赖 (下游)" onClick={() => handleShowDependencies(task, 'downstream')}>
-                                                <GitFork size={16} />
-                                            </button>
-                                        </div>
-                                    </td>
+                                    </th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">ID</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">任务名称</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">所属工作流</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">所属系统</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">类型</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">执行器组</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">更新时间</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap text-right">操作</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 relative">
+                                {loading && (
+                                    <tr>
+                                        <td colSpan={8} className="py-20 text-center text-slate-500">
+                                            加载中...
+                                        </td>
+                                    </tr>
+                                )}
+                                {!loading && tasks.length === 0 && (
+                                    <tr>
+                                        <td colSpan={8} className="py-20 text-center text-slate-500">
+                                            暂无数据
+                                        </td>
+                                    </tr>
+                                )}
+                                {!loading && tasks.map((task) => (
+                                    <tr key={task.id} className="hover:bg-slate-50 transition-colors group">
+                                        <td className="px-6 py-4">
+                                            <Checkbox
+                                                checked={selectedRowKeys.includes(task.id)}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        setSelectedRowKeys(prev => [...prev, task.id]);
+                                                    } else {
+                                                        setSelectedRowKeys(prev => prev.filter(id => id !== task.id));
+                                                    }
+                                                }}
+                                            />
+                                        </td>
+                                        <td className="px-6 py-4 font-mono text-slate-500">{task.id}</td>
+                                        <td className="px-6 py-4 font-medium text-slate-700">{task.name}</td>
+                                        <td className="px-6 py-4 text-slate-600">
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                                                {getWorkflowName(task.id)}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-slate-600">
+                                            {systems.find(s => String(s.id) === String(task.systemId))?.name || '-'}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                                                {task.type}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-slate-600">{task.group}</td>
+                                        <td className="px-6 py-4 text-slate-500 text-xs">{task.updateTime}</td>
+                                        <td className="px-6 py-4 text-right whitespace-nowrap">
+                                            <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
 
-                <div className="p-4 border-t border-slate-200 bg-slate-50">
-                    <Pagination
-                        current={pagination.current}
-                        total={pagination.total}
-                        pageSize={pagination.pageSize}
-                        onChange={(page, size) => fetchTasks(page, size)}
-                        showSizeChanger
-                    />
-                </div>
+                                                <button className="p-1 text-slate-400 hover:text-blue-600" title="编辑" onClick={() => handleEditTask(task)}>
+                                                    <Edit size={16} />
+                                                </button>
+                                                <button className="p-1 text-slate-400 hover:text-green-600" title="运行">
+                                                    <Play size={16} />
+                                                </button>
 
-                <DependencyGraphModal
-                    visible={dependencyGraph.visible}
-                    onCancel={() => setDependencyGraph(prev => ({ ...prev, visible: false }))}
-                    nodes={dependencyGraph.nodes}
-                    edges={dependencyGraph.edges}
-                />
-
-                <Modal
-                    title="批量下发任务"
-                    open={dispatchModalVisible}
-                    onOk={handleDispatchConfirm}
-                    onCancel={() => setDispatchModalVisible(false)}
-                    confirmLoading={loading}
-                >
-                    <div className="py-4">
-                        <div className="mb-2 text-slate-600">请选择数据日期：</div>
-                        <DatePicker
-                            className="w-full"
-                            value={dispatchDate}
-                            onChange={setDispatchDate}
-                            format="YYYY-MM-DD"
-                        />
-                        <div className="mt-4 text-sm text-slate-500">
-                            已选择 {selectedRowKeys.length} 个任务。
-                            <br />
-                            注意：如果任务在该日期已存在实例，将不会重复创建。
-                        </div>
+                                                <button className="p-1 text-slate-400 hover:text-blue-600" title="查看依赖 (上游)" onClick={() => handleShowDependencies(task, 'upstream')}>
+                                                    <Link size={16} />
+                                                </button>
+                                                <button className="p-1 text-slate-400 hover:text-purple-600" title="查看被依赖 (下游)" onClick={() => handleShowDependencies(task, 'downstream')}>
+                                                    <GitFork size={16} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
-                </Modal>
+                )}
             </div>
+
+            <div className="p-4 border-t border-slate-200 bg-white">
+                <Pagination
+                    current={pagination.current}
+                    total={pagination.total}
+                    pageSize={pagination.pageSize}
+                    onChange={(page, size) => fetchTasks(page, size)}
+                    showSizeChanger
+                />
+            </div>
+
+            <DependencyGraphModal
+                visible={dependencyGraph.visible}
+                onCancel={() => setDependencyGraph(prev => ({ ...prev, visible: false }))}
+                nodes={dependencyGraph.nodes}
+                edges={dependencyGraph.edges}
+            />
+
+            <Modal
+                title="批量下发任务"
+                open={dispatchModalVisible}
+                onOk={handleDispatchConfirm}
+                onCancel={() => setDispatchModalVisible(false)}
+                confirmLoading={loading}
+            >
+                <div className="py-4">
+                    <div className="mb-2 text-slate-600">请选择数据日期：</div>
+                    <DatePicker
+                        className="w-full"
+                        value={dispatchDate}
+                        onChange={setDispatchDate}
+                        format="YYYY-MM-DD"
+                    />
+                    <div className="mt-4 text-sm text-slate-500">
+                        已选择 {selectedRowKeys.length} 个任务。
+                        <br />
+                        注意：如果任务在该日期已存在实例，将不会重复创建。
+                    </div>
+                </div>
+            </Modal>
         </div>
     );
 };

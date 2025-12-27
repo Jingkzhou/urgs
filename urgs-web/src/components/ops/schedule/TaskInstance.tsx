@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, RotateCw, StopCircle, FileText, CheckCircle, X, RefreshCw, Terminal, Eye, EyeOff, Play, ArrowUpCircle, ArrowDownCircle, Boxes, ClipboardList } from 'lucide-react';
+import { Search, RotateCw, StopCircle, FileText, CheckCircle, X, RefreshCw, Terminal, Eye, EyeOff, Play, ArrowUpCircle, ArrowDownCircle, Boxes, ClipboardList, LayoutGrid, List, Activity, XCircle, Clock, ChevronUp, ChevronDown } from 'lucide-react';
 import { message, DatePicker, Modal } from 'antd';
 import dayjs from 'dayjs';
 import Pagination from '../../common/Pagination';
 import { get, post } from '../../../utils/request';
 import { useTaskDependencies } from './hooks/useTaskDependencies';
 import DependencyGraphModal from './modals/DependencyGraphModal';
+import ScheduleStatsCard from './ScheduleStatsCard';
+import InstanceCard from './InstanceCard';
 
 interface TaskInstance {
     id: string;
@@ -51,6 +53,8 @@ const TaskInstance: React.FC = () => {
     const [systemFilter, setSystemFilter] = useState('');
     const [showIds, setShowIds] = useState(false);
     const [systems, setSystems] = useState<any[]>([]);
+    const [listViewMode, setListViewMode] = useState<'list' | 'card'>('list');
+    const [showStats, setShowStats] = useState(true);
     const [tasks, setTasks] = useState<Record<string, Task>>({});
     const [workflows, setWorkflows] = useState<Workflow[]>([]);
     const [taskToWorkflowMap, setTaskToWorkflowMap] = useState<Record<string, string>>({}); // taskId -> workflowName
@@ -352,251 +356,356 @@ const TaskInstance: React.FC = () => {
         }
     };
 
+    // Compute stats
+    const stats = useMemo(() => {
+        const total = filteredInstances.length;
+        const success = filteredInstances.filter(i => i.status === 'SUCCESS' || i.status === 'FORCE_SUCCESS').length;
+        const failed = filteredInstances.filter(i => i.status === 'FAIL').length;
+        const running = filteredInstances.filter(i => i.status === 'RUNNING').length;
+        const waiting = filteredInstances.filter(i => i.status === 'WAITING' || i.status === 'PENDING').length;
+        const successRate = total > 0 ? ((success / total) * 100).toFixed(1) : '0';
+        return { total, success, failed, running, waiting, successRate };
+    }, [filteredInstances]);
+
     return (
-        <div className="h-full flex flex-col bg-white rounded-lg shadow-sm border border-slate-200 relative">
+        <div className="h-full flex flex-col bg-slate-50/50 overflow-hidden relative">
+            {/* Header & Statistics Section */}
+            <div className="px-6 py-6 bg-white border-b border-slate-200/60">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
+                            任务实例
+                            <button
+                                onClick={() => setShowStats(!showStats)}
+                                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors"
+                                title={showStats ? "收起统计" : "展开统计"}
+                            >
+                                {showStats ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                            </button>
+                        </h1>
+                        <p className="text-xs text-slate-500 mt-1 font-medium">
+                            监控实时运行状态，当前共加载 <span className="text-blue-600 tabular-nums">{filteredInstances.length}</span> 个实例
+                        </p>
+                    </div>
+                </div>
+
+                {showStats && (
+                    <div className="grid grid-cols-5 gap-6 mt-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                        <ScheduleStatsCard
+                            title="实例总数"
+                            value={stats.total}
+                            icon={<ClipboardList />}
+                            color="blue"
+                        />
+                        <ScheduleStatsCard
+                            title="运行成功"
+                            value={stats.success}
+                            icon={<CheckCircle />}
+                            color="green"
+                            trendValue={`${stats.successRate}%`}
+                            trend={Number(stats.successRate) >= 90 ? 'up' : Number(stats.successRate) >= 70 ? 'neutral' : 'down'}
+                        />
+                        <ScheduleStatsCard
+                            title="执行中"
+                            value={stats.running}
+                            icon={<Activity />}
+                            color="purple"
+                        />
+                        <ScheduleStatsCard
+                            title="队列等待"
+                            value={stats.waiting}
+                            icon={<Clock />}
+                            color="amber"
+                        />
+                        <ScheduleStatsCard
+                            title="异常终止"
+                            value={stats.failed}
+                            icon={<XCircle />}
+                            color="red"
+                        />
+                    </div>
+                )}
+            </div>
+
             {/* Toolbar */}
-            <div className="p-4 border-b border-slate-100 flex flex-wrap gap-4 justify-between items-center bg-slate-50/50">
-                <div className="flex items-center gap-3 flex-wrap">
-                    <div className="relative">
-                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <div className="px-6 py-4 bg-white/80 backdrop-blur-md border-b border-slate-200/60 flex flex-wrap gap-4 justify-between items-center sticky top-0 z-20">
+                <div className="flex items-center gap-4 flex-wrap">
+                    <div className="relative group">
+                        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
                         <input
                             type="text"
-                            placeholder="搜索任务ID或任务名称..."
+                            placeholder="任务名称 / ID ..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             onKeyDown={handleSearch}
-                            className="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-64"
+                            className="pl-10 pr-4 py-2.5 text-sm border border-slate-200/80 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 w-64 bg-slate-50/50 transition-all font-medium"
                         />
                     </div>
 
-                    <select
-                        value={workflowFilter}
-                        onChange={(e) => setWorkflowFilter(e.target.value)}
-                        className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-600 min-w-[150px]"
-                    >
-                        <option value="">所有工作流</option>
-                        {workflows.map(w => (
-                            <option key={w.id} value={w.id}>{w.name}</option>
-                        ))}
-                    </select>
+                    <div className="flex items-center gap-2 bg-slate-100/50 p-1 rounded-2xl border border-slate-200/60">
+                        <select
+                            value={workflowFilter}
+                            onChange={(e) => setWorkflowFilter(e.target.value)}
+                            className="bg-transparent px-3 py-1.5 text-sm text-slate-600 focus:outline-none font-medium min-w-[140px]"
+                        >
+                            <option value="">所有工作流</option>
+                            {workflows.map(w => (
+                                <option key={w.id} value={w.id}>{w.name}</option>
+                            ))}
+                        </select>
+                        <div className="w-[1px] h-4 bg-slate-200" />
+                        <select
+                            value={systemFilter}
+                            onChange={(e) => setSystemFilter(e.target.value)}
+                            className="bg-transparent px-3 py-1.5 text-sm text-slate-600 focus:outline-none font-medium min-w-[140px]"
+                        >
+                            <option value="">所有系统</option>
+                            {systems.map(s => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                        </select>
+                    </div>
 
-                    <select
-                        value={systemFilter}
-                        onChange={(e) => setSystemFilter(e.target.value)}
-                        className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-600 min-w-[150px]"
-                    >
-                        <option value="">所有系统</option>
-                        {systems.map(s => (
-                            <option key={s.id} value={s.id}>{s.name}</option>
-                        ))}
-                    </select>
+                    <div className="flex items-center gap-2">
+                        <DatePicker
+                            placeholder="数据日期"
+                            onChange={(date, dateString) => setDataDateFilter(typeof dateString === 'string' ? dateString : '')}
+                            style={{ borderRadius: '14px', height: '42px' }}
+                        />
+                        <DatePicker
+                            placeholder="执行日期"
+                            value={executionDateFilter ? dayjs(executionDateFilter) : null}
+                            onChange={(date, dateString) => setExecutionDateFilter(typeof dateString === 'string' ? dateString : '')}
+                            style={{ borderRadius: '14px', height: '42px' }}
+                            allowClear
+                        />
+                    </div>
+                </div>
 
-                    <select
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value)}
-                        className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-600"
-                    >
-                        <option value="">所有状态</option>
-                        <option value="WAITING">等待下发</option>
-                        <option value="PENDING">依赖等待</option>
-                        <option value="RUNNING">运行中</option>
-                        <option value="SUCCESS">成功</option>
-                        <option value="FAIL">失败</option>
-                    </select>
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center bg-slate-100/80 rounded-xl p-1 border border-slate-200/50">
+                        <button
+                            onClick={() => setListViewMode('list')}
+                            className={`p-2 rounded-lg transition-all ${listViewMode === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="列表视图"
+                        >
+                            <List size={18} strokeWidth={2.5} />
+                        </button>
+                        <button
+                            onClick={() => setListViewMode('card')}
+                            className={`p-2 rounded-lg transition-all ${listViewMode === 'card' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="卡片视图"
+                        >
+                            <LayoutGrid size={18} strokeWidth={2.5} />
+                        </button>
+                    </div>
 
-                    <DatePicker
-                        placeholder="选择数据日期"
-                        onChange={(date, dateString) => setDataDateFilter(typeof dateString === 'string' ? dateString : '')}
-                        className="w-40"
-                    />
-
-                    <DatePicker
-                        placeholder="选择执行日期"
-                        value={executionDateFilter ? dayjs(executionDateFilter) : null}
-                        onChange={(date, dateString) => setExecutionDateFilter(typeof dateString === 'string' ? dateString : '')}
-                        className="w-40"
-                        allowClear
-                    />
-
-                    <button
-                        onClick={() => setShowIds(!showIds)}
-                        className={`flex items-center gap-2 px-3 py-2 text-sm border rounded-lg transition-colors ${showIds ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                        title={showIds ? "隐藏ID" : "显示ID"}
-                    >
-                        {showIds ? <EyeOff size={16} /> : <Eye size={16} />}
-                        <span className="hidden sm:inline">ID</span>
-                    </button>
-
-                    <button
-                        onClick={handleBatchRerunClick}
-                        disabled={selectedRowKeys.length === 0}
-                        className={`flex items-center gap-2 px-3 py-2 text-sm border rounded-lg transition-colors ${selectedRowKeys.length > 0
-                            ? 'bg-blue-50 border-blue-200 text-blue-600 hover:bg-blue-100'
-                            : 'border-slate-200 text-slate-400 cursor-not-allowed bg-slate-50'
-                            }`}
-                    >
-                        <RotateCw size={16} />
-                        <span className="hidden sm:inline">批量重跑 {selectedRowKeys.length > 0 && `(${selectedRowKeys.length})`}</span>
-                    </button>
+                    <div className="flex items-center gap-2 p-1 bg-slate-100/50 rounded-2xl">
+                        <button
+                            onClick={() => setShowIds(!showIds)}
+                            className={`px-4 py-2 text-sm font-bold rounded-xl transition-all ${showIds ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            ID 展示
+                        </button>
+                        <button
+                            onClick={handleBatchRerunClick}
+                            disabled={selectedRowKeys.length === 0}
+                            className={`px-4 py-2 text-sm font-bold rounded-xl transition-all ${selectedRowKeys.length > 0 ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 pointer-events-none'}`}
+                        >
+                            批量重跑
+                        </button>
+                    </div>
 
                     <button
                         onClick={fetchInstances}
-                        className="flex items-center gap-2 px-3 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors"
+                        className="p-3 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-2xl transition-all"
                         title="刷新"
                     >
-                        <span className="hidden sm:inline">刷新</span>
+                        <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
                     </button>
-
                 </div>
             </div>
 
-            {/* Table */}
-            <div className="flex-1 overflow-auto">
-                <table className="w-full text-sm text-left">
-                    <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
-                        <tr>
-                            <th className="px-6 py-3 font-medium whitespace-nowrap w-10">
-                                <input
-                                    type="checkbox"
-                                    onChange={handleSelectAll}
-                                    checked={paginatedInstances.length > 0 && paginatedInstances.filter(isSelectable).length > 0 && paginatedInstances.filter(isSelectable).every(inst => selectedRowKeys.includes(inst.id))}
-                                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                />
-                            </th>
-                            {showIds && <th className="px-6 py-3 font-medium whitespace-nowrap">实例ID</th>}
-                            <th className="px-6 py-3 font-medium whitespace-nowrap">工作流</th>
-                            <th className="px-6 py-3 font-medium whitespace-nowrap">所属系统</th>
-                            <th className="px-6 py-3 font-medium whitespace-nowrap">任务名称</th>
-                            {showIds && <th className="px-6 py-3 font-medium whitespace-nowrap">任务ID</th>}
-                            <th className="px-6 py-3 font-medium whitespace-nowrap">任务类型</th>
-                            <th className="px-6 py-3 font-medium whitespace-nowrap">数据日期</th>
-                            <th className="px-6 py-3 font-medium whitespace-nowrap">创建时间</th>
-                            <th className="px-6 py-3 font-medium whitespace-nowrap">开始时间</th>
-                            <th className="px-6 py-3 font-medium whitespace-nowrap">结束时间</th>
-                            <th className="px-6 py-3 font-medium whitespace-nowrap">状态</th>
-                            <th className="px-6 py-3 font-medium whitespace-nowrap">重试</th>
-                            <th className="px-6 py-3 font-medium whitespace-nowrap text-right">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {loading ? (
-                            <tr>
-                                <td colSpan={showIds ? 11 : 9} className="px-6 py-8 text-center text-slate-500">
-                                    加载中...
-                                </td>
-                            </tr>
-                        ) : filteredInstances.length === 0 ? (
-                            <tr>
-                                <td colSpan={showIds ? 11 : 9} className="px-6 py-8 text-center text-slate-500">
-                                    暂无数据
-                                </td>
-                            </tr>
-                        ) : (
-                            paginatedInstances.map((inst) => {
-                                // Resolve Workflow Name
-                                const wfName = taskToWorkflowMap[inst.taskId] || '-';
-
-                                return (
-                                    <tr key={inst.id} className="hover:bg-slate-50 transition-colors group">
-                                        <td className="px-6 py-4">
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedRowKeys.includes(inst.id)}
-                                                onChange={() => handleRowSelect(inst.id)}
-                                                disabled={!isSelectable(inst)}
-                                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
-                                            />
-                                        </td>
-                                        {showIds && <td className="px-6 py-4 font-mono text-slate-500 text-xs">{inst.id}</td>}
-                                        <td className="px-6 py-4 font-medium text-slate-700">
-                                            <div className="flex items-center gap-2">
-                                                <span className="truncate max-w-[150px]" title={wfName}>{wfName}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-600">
-                                            {systems.find(s => String(s.id) === String(inst.systemId))?.name || '-'}
-                                        </td>
-                                        <td className="px-6 py-4 font-medium text-slate-700">
-                                            <span title={inst.taskId}>{tasks[inst.taskId]?.name || inst.taskId}</span>
-                                        </td>
-                                        {showIds && <td className="px-6 py-4 font-mono text-slate-500 text-xs">{inst.taskId}</td>}
-                                        <td className="px-6 py-4 font-mono text-slate-500 text-xs">{inst.taskType}</td>
-                                        <td className="px-6 py-4 font-mono text-slate-500 text-xs">{inst.dataDate}</td>
-                                        <td className="px-6 py-4 font-mono text-slate-500 text-xs">{inst.createTime ? dayjs(inst.createTime).format('YYYY-MM-DD HH:mm:ss') : '-'}</td>
-                                        <td className="px-6 py-4 font-mono text-slate-500 text-xs">
-                                            {['WAITING', 'PENDING'].includes(inst.status) ? '-' : (inst.startTime ? dayjs(inst.startTime).format('YYYY-MM-DD HH:mm:ss') : '-')}
-                                        </td>
-                                        <td className="px-6 py-4 font-mono text-slate-500 text-xs">
-                                            {['WAITING', 'PENDING'].includes(inst.status) ? '-' : (inst.endTime ? dayjs(inst.endTime).format('YYYY-MM-DD HH:mm:ss') : '-')}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${inst.status === 'SUCCESS' ? 'bg-green-50 text-green-600 border border-green-200' :
-                                                inst.status === 'FORCE_SUCCESS' ? 'bg-purple-50 text-purple-600 border border-purple-200' :
-                                                    inst.status === 'RUNNING' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
-                                                        inst.status === 'FAIL' ? 'bg-red-50 text-red-600 border border-red-200' :
-                                                            inst.status === 'WAITING' ? 'bg-cyan-50 text-cyan-600 border border-cyan-200 dashed' :
-                                                                inst.status === 'PENDING' ? 'bg-yellow-50 text-yellow-600 border border-yellow-200 dashed' :
-                                                                    'bg-slate-50 text-slate-600 border border-slate-200'
-                                                }`}>
-                                                {inst.status === 'RUNNING' && <RotateCw size={10} className="mr-1 animate-spin" />}
-                                                {{
-                                                    'WAITING': '等待下发',
-                                                    'PENDING': '依赖等待',
-                                                    'RUNNING': '运行中',
-                                                    'SUCCESS': '成功',
-                                                    'FORCE_SUCCESS': '强制成功',
-                                                    'FAIL': '失败',
-                                                    'STOPPED': '已停止'
-                                                }[inst.status] || inst.status}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-600">{inst.retryCount}</td>
-                                        <td className="px-6 py-4 text-right whitespace-nowrap">
-                                            <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                {/* Rerun: FAIL, SUCCESS, STOPPED, FORCE_SUCCESS */}
-                                                {['FAIL', 'SUCCESS', 'STOPPED', 'FORCE_SUCCESS'].includes(inst.status) && (
-                                                    <button className="p-1 text-slate-400 hover:text-blue-600" title="重跑" onClick={() => handleRerunClick(inst)}>
-                                                        <RotateCw size={16} />
-                                                    </button>
-                                                )}
-
-                                                {/* Force Success: FAIL */}
-                                                {inst.status === 'FAIL' && (
-                                                    <>
-                                                        <button className="p-1 text-slate-400 hover:text-green-600" title="强制通过" onClick={() => handleForceSuccess(inst)}>
-                                                            <CheckCircle size={16} />
-                                                        </button>
-
-
-                                                    </>
-                                                )}
-
-                                                {/* Stop: RUNNING, WAITING, PENDING */}
-                                                {['RUNNING', 'WAITING', 'PENDING'].includes(inst.status) && (
-                                                    <button className="p-1 text-slate-400 hover:text-red-600" title="强制停止" onClick={() => handleStop(inst)}>
-                                                        <StopCircle size={16} />
-                                                    </button>
-                                                )}
-
-                                                {/* Dependencies: Always */}
-                                                <button className="p-1 text-slate-400 hover:text-purple-600" title="查看依赖 (上游)" onClick={() => handleDependencyView(inst, 'upstream')}>
-                                                    <ArrowUpCircle size={16} />
-                                                </button>
-                                                <button className="p-1 text-slate-400 hover:text-orange-600" title="查看被依赖 (下游)" onClick={() => handleDependencyView(inst, 'downstream')}>
-                                                    <ArrowDownCircle size={16} />
-                                                </button>
-
-                                                <button className="p-1 text-slate-400 hover:text-slate-600" title="查看日志" onClick={() => handleViewLog(inst)}>
-                                                    <FileText size={16} />
-                                                </button>
-                                            </div>
+            {/* Content Area */}
+            <div className="flex-1 overflow-auto px-6 py-6">
+                {listViewMode === 'card' ? (
+                    /* Card Grid View */
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        {loading && (
+                            <div className="col-span-full py-20 text-center text-slate-500">
+                                加载中...
+                            </div>
+                        )}
+                        {!loading && paginatedInstances.length === 0 && (
+                            <div className="col-span-full py-20 text-center text-slate-500">
+                                暂无数据
+                            </div>
+                        )}
+                        {!loading && paginatedInstances.map((inst) => (
+                            <InstanceCard
+                                key={inst.id}
+                                instance={{
+                                    ...inst,
+                                    taskName: tasks[inst.taskId]?.name,
+                                    systemName: systems.find(s => String(s.id) === String(inst.systemId))?.name,
+                                    workflowName: taskToWorkflowMap[inst.taskId]
+                                }}
+                                onViewLog={handleViewLog}
+                                onRerun={handleRerunClick}
+                                onStop={handleStop}
+                            />
+                        ))}
+                    </div>
+                ) : (
+                    /* Table List View */
+                    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                        <table className="w-full text-sm text-left">
+                            <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
+                                <tr>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap w-10">
+                                        <input
+                                            type="checkbox"
+                                            onChange={handleSelectAll}
+                                            checked={paginatedInstances.length > 0 && paginatedInstances.filter(isSelectable).length > 0 && paginatedInstances.filter(isSelectable).every(inst => selectedRowKeys.includes(inst.id))}
+                                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                    </th>
+                                    {showIds && <th className="px-6 py-3 font-medium whitespace-nowrap">实例ID</th>}
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">工作流</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">所属系统</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">任务名称</th>
+                                    {showIds && <th className="px-6 py-3 font-medium whitespace-nowrap">任务ID</th>}
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">任务类型</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">数据日期</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">创建时间</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">开始时间</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">结束时间</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">状态</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">重试</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap text-right">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {loading ? (
+                                    <tr>
+                                        <td colSpan={showIds ? 11 : 9} className="px-6 py-8 text-center text-slate-500">
+                                            加载中...
                                         </td>
                                     </tr>
-                                )
-                            })
-                        )}
-                    </tbody>
-                </table>
+                                ) : filteredInstances.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={showIds ? 11 : 9} className="px-6 py-8 text-center text-slate-500">
+                                            暂无数据
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    paginatedInstances.map((inst) => {
+                                        // Resolve Workflow Name
+                                        const wfName = taskToWorkflowMap[inst.taskId] || '-';
+
+                                        return (
+                                            <tr key={inst.id} className="hover:bg-slate-50 transition-colors group">
+                                                <td className="px-6 py-4">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedRowKeys.includes(inst.id)}
+                                                        onChange={() => handleRowSelect(inst.id)}
+                                                        disabled={!isSelectable(inst)}
+                                                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                                                    />
+                                                </td>
+                                                {showIds && <td className="px-6 py-4 font-mono text-slate-500 text-xs">{inst.id}</td>}
+                                                <td className="px-6 py-4 font-medium text-slate-700">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="truncate max-w-[150px]" title={wfName}>{wfName}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-600">
+                                                    {systems.find(s => String(s.id) === String(inst.systemId))?.name || '-'}
+                                                </td>
+                                                <td className="px-6 py-4 font-medium text-slate-700">
+                                                    <span title={inst.taskId}>{tasks[inst.taskId]?.name || inst.taskId}</span>
+                                                </td>
+                                                {showIds && <td className="px-6 py-4 font-mono text-slate-500 text-xs">{inst.taskId}</td>}
+                                                <td className="px-6 py-4 font-mono text-slate-500 text-xs">{inst.taskType}</td>
+                                                <td className="px-6 py-4 font-mono text-slate-500 text-xs">{inst.dataDate}</td>
+                                                <td className="px-6 py-4 font-mono text-slate-500 text-xs">{inst.createTime ? dayjs(inst.createTime).format('YYYY-MM-DD HH:mm:ss') : '-'}</td>
+                                                <td className="px-6 py-4 font-mono text-slate-500 text-xs">
+                                                    {['WAITING', 'PENDING'].includes(inst.status) ? '-' : (inst.startTime ? dayjs(inst.startTime).format('YYYY-MM-DD HH:mm:ss') : '-')}
+                                                </td>
+                                                <td className="px-6 py-4 font-mono text-slate-500 text-xs">
+                                                    {['WAITING', 'PENDING'].includes(inst.status) ? '-' : (inst.endTime ? dayjs(inst.endTime).format('YYYY-MM-DD HH:mm:ss') : '-')}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${inst.status === 'SUCCESS' ? 'bg-green-50 text-green-600 border border-green-200' :
+                                                        inst.status === 'FORCE_SUCCESS' ? 'bg-purple-50 text-purple-600 border border-purple-200' :
+                                                            inst.status === 'RUNNING' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
+                                                                inst.status === 'FAIL' ? 'bg-red-50 text-red-600 border border-red-200' :
+                                                                    inst.status === 'WAITING' ? 'bg-cyan-50 text-cyan-600 border border-cyan-200 dashed' :
+                                                                        inst.status === 'PENDING' ? 'bg-yellow-50 text-yellow-600 border border-yellow-200 dashed' :
+                                                                            'bg-slate-50 text-slate-600 border border-slate-200'
+                                                        }`}>
+                                                        {inst.status === 'RUNNING' && <RotateCw size={10} className="mr-1 animate-spin" />}
+                                                        {{
+                                                            'WAITING': '等待下发',
+                                                            'PENDING': '依赖等待',
+                                                            'RUNNING': '运行中',
+                                                            'SUCCESS': '成功',
+                                                            'FORCE_SUCCESS': '强制成功',
+                                                            'FAIL': '失败',
+                                                            'STOPPED': '已停止'
+                                                        }[inst.status] || inst.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-600">{inst.retryCount}</td>
+                                                <td className="px-6 py-4 text-right whitespace-nowrap">
+                                                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        {/* Rerun: FAIL, SUCCESS, STOPPED, FORCE_SUCCESS */}
+                                                        {['FAIL', 'SUCCESS', 'STOPPED', 'FORCE_SUCCESS'].includes(inst.status) && (
+                                                            <button className="p-1 text-slate-400 hover:text-blue-600" title="重跑" onClick={() => handleRerunClick(inst)}>
+                                                                <RotateCw size={16} />
+                                                            </button>
+                                                        )}
+
+                                                        {/* Force Success: FAIL */}
+                                                        {inst.status === 'FAIL' && (
+                                                            <>
+                                                                <button className="p-1 text-slate-400 hover:text-green-600" title="强制通过" onClick={() => handleForceSuccess(inst)}>
+                                                                    <CheckCircle size={16} />
+                                                                </button>
+
+
+                                                            </>
+                                                        )}
+
+                                                        {/* Stop: RUNNING, WAITING, PENDING */}
+                                                        {['RUNNING', 'WAITING', 'PENDING'].includes(inst.status) && (
+                                                            <button className="p-1 text-slate-400 hover:text-red-600" title="强制停止" onClick={() => handleStop(inst)}>
+                                                                <StopCircle size={16} />
+                                                            </button>
+                                                        )}
+
+                                                        {/* Dependencies: Always */}
+                                                        <button className="p-1 text-slate-400 hover:text-purple-600" title="查看依赖 (上游)" onClick={() => handleDependencyView(inst, 'upstream')}>
+                                                            <ArrowUpCircle size={16} />
+                                                        </button>
+                                                        <button className="p-1 text-slate-400 hover:text-orange-600" title="查看被依赖 (下游)" onClick={() => handleDependencyView(inst, 'downstream')}>
+                                                            <ArrowDownCircle size={16} />
+                                                        </button>
+
+                                                        <button className="p-1 text-slate-400 hover:text-slate-600" title="查看日志" onClick={() => handleViewLog(inst)}>
+                                                            <FileText size={16} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )
+                                    })
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
 
             <div className="p-4 border-t border-slate-200 bg-slate-50">
