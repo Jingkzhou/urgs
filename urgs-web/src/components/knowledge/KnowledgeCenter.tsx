@@ -1,11 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-    Layout,
-    Tree,
     Input,
     Button,
     Card,
-    List,
     Tag,
     Space,
     Modal,
@@ -15,109 +12,55 @@ import {
     Empty,
     Spin,
     Tooltip,
-    Popconfirm,
     Upload,
     Segmented,
+    Breadcrumb,
 } from 'antd';
 import {
-    FolderOutlined,
-    FolderOpenOutlined,
-    FileTextOutlined,
-    FileOutlined,
-    PlusOutlined,
-    SearchOutlined,
-    StarOutlined,
-    StarFilled,
-    EditOutlined,
-    DeleteOutlined,
-    UploadOutlined,
-    TagsOutlined,
-    ClockCircleOutlined,
-    EyeOutlined,
-    MoreOutlined,
-    HomeOutlined,
-} from '@ant-design/icons';
-import type { DataNode } from 'antd/es/tree';
+    Folder,
+    File,
+    Star,
+    Plus,
+    Search,
+    Trash2,
+    Upload as UploadIcon,
+    Tags,
+    ChevronLeft,
+    MoreVertical,
+    FolderPlus,
+    ArrowLeft,
+    LayoutGrid,
+    List as ListIcon,
+} from 'lucide-react';
 import type { UploadProps } from 'antd';
 import * as api from '../../api/knowledge';
+
 import type {
     FolderTreeNode,
     KnowledgeDocument,
     KnowledgeTag,
-    DocumentDetail,
 } from '../../api/knowledge';
-
-const { Sider, Content } = Layout;
-const { Search } = Input;
-const { TextArea } = Input;
-
-// 简易 Markdown 编辑器组件
-const MarkdownEditor: React.FC<{
-    value?: string;
-    onChange?: (value: string) => void;
-    placeholder?: string;
-}> = ({ value = '', onChange, placeholder }) => {
-    return (
-        <TextArea
-            value={value}
-            onChange={(e) => onChange?.(e.target.value)}
-            placeholder={placeholder}
-            autoSize={{ minRows: 15, maxRows: 30 }}
-            style={{ fontFamily: 'monospace' }}
-        />
-    );
-};
-
-// 简易 Markdown 渲染组件
-const MarkdownPreview: React.FC<{ content: string }> = ({ content }) => {
-    // 简单的 Markdown 转 HTML（仅支持基础语法）
-    const renderMarkdown = (md: string) => {
-        let html = md
-            .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-            .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-            .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-            .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
-            .replace(/\*(.*)\*/gim, '<em>$1</em>')
-            .replace(/`([^`]+)`/gim, '<code>$1</code>')
-            .replace(/\n/gim, '<br/>');
-        return html;
-    };
-
-    return (
-        <div
-            className="markdown-preview"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
-            style={{ padding: '16px', lineHeight: 1.8 }}
-        />
-    );
-};
 
 const KnowledgeCenter: React.FC = () => {
     // 状态
     const [folders, setFolders] = useState<FolderTreeNode[]>([]);
     const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
     const [tags, setTags] = useState<KnowledgeTag[]>([]);
-    const [selectedFolder, setSelectedFolder] = useState<number | null>(null);
-    const [selectedDocument, setSelectedDocument] = useState<DocumentDetail | null>(null);
+    const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
     const [loading, setLoading] = useState(false);
     const [searchKeyword, setSearchKeyword] = useState('');
-    const [viewMode, setViewMode] = useState<'list' | 'edit'>('list');
-    const [currentPage, setCurrentPage] = useState(1);
-    const [total, setTotal] = useState(0);
+    const [layoutMode, setLayoutMode] = useState<'grid' | 'list'>('grid');
 
     // 弹窗状态
     const [folderModalOpen, setFolderModalOpen] = useState(false);
-    const [documentModalOpen, setDocumentModalOpen] = useState(false);
     const [tagModalOpen, setTagModalOpen] = useState(false);
     const [editingFolder, setEditingFolder] = useState<FolderTreeNode | null>(null);
-    const [editingDocument, setEditingDocument] = useState<KnowledgeDocument | null>(null);
 
     // 表单
     const [folderForm] = Form.useForm();
-    const [documentForm] = Form.useForm();
     const [tagForm] = Form.useForm();
 
-    // 加载数据
+    // 加载文件夹
     const loadFolders = useCallback(async () => {
         try {
             const data = await api.getFolderTree();
@@ -127,24 +70,24 @@ const KnowledgeCenter: React.FC = () => {
         }
     }, []);
 
+    // 加载文档
     const loadDocuments = useCallback(async () => {
         setLoading(true);
         try {
             const result = await api.listDocuments({
-                folderId: selectedFolder ?? undefined,
+                folderId: selectedFolderId ?? undefined,
                 keyword: searchKeyword || undefined,
-                page: currentPage,
-                size: 20,
+                page: 1,
+                size: 200,
             });
             setDocuments(result.records || []);
-            setTotal(result.total || 0);
         } catch (error) {
             console.error('加载文档失败:', error);
             setDocuments([]);
         } finally {
             setLoading(false);
         }
-    }, [selectedFolder, searchKeyword, currentPage]);
+    }, [selectedFolderId, searchKeyword]);
 
     const loadTags = useCallback(async () => {
         try {
@@ -164,101 +107,102 @@ const KnowledgeCenter: React.FC = () => {
         loadDocuments();
     }, [loadDocuments]);
 
-    // 文件夹树转换为 Ant Design Tree 格式
-    const convertToTreeData = (nodes: FolderTreeNode[]): DataNode[] => {
-        return nodes.map((node) => ({
-            key: node.id,
-            title: node.name,
-            icon: <FolderOutlined />,
-            children: node.children ? convertToTreeData(node.children) : [],
-        }));
+    // 计算当前路径和面包屑
+    const currentBreadcrumbs = useMemo(() => {
+        const path: Array<{ id: number | null, name: string }> = [{ id: null, name: '根目录' }];
+        if (!selectedFolderId) return path;
+
+        const resultPath: Array<{ id: number, name: string }> = [];
+        const findFullPath = (nodes: FolderTreeNode[], targetId: number, acc: Array<{ id: number, name: string }>) => {
+            for (const node of nodes) {
+                const newAcc = [...acc, { id: node.id, name: node.name }];
+                if (node.id === targetId) {
+                    resultPath.push(...newAcc);
+                    return true;
+                }
+                if (node.children && findFullPath(node.children, targetId, newAcc)) return true;
+            }
+            return false;
+        };
+
+        findFullPath(folders, selectedFolderId, []);
+        return [...path, ...resultPath];
+    }, [folders, selectedFolderId]);
+
+    // 获取当前文件夹下的子文件夹
+    const currentSubFolders = useMemo(() => {
+        if (!selectedFolderId) return folders;
+
+        const findNode = (nodes: FolderTreeNode[], targetId: number): FolderTreeNode | null => {
+            for (const node of nodes) {
+                if (node.id === targetId) return node;
+                if (node.children) {
+                    const found = findNode(node.children, targetId);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+
+        const currentNode = findNode(folders, selectedFolderId);
+        return currentNode?.children || [];
+    }, [folders, selectedFolderId]);
+
+    // 交互操作
+    const handleFolderDoubleClick = (id: number) => {
+        setSelectedFolderId(id);
+    };
+
+    const handleBack = () => {
+        if (currentBreadcrumbs.length > 1) {
+            const parent = currentBreadcrumbs[currentBreadcrumbs.length - 2];
+            setSelectedFolderId(parent.id);
+        }
     };
 
     // 文件夹操作
-    const handleCreateFolder = async (values: { name: string }) => {
+    const onSaveFolder = async (values: { name: string }) => {
         try {
-            await api.createFolder({
-                name: values.name,
-                parentId: editingFolder ? editingFolder.id : selectedFolder ?? undefined,
-            });
-            message.success('文件夹创建成功');
+            if (editingFolder) {
+                await api.updateFolder(editingFolder.id, { name: values.name });
+                message.success('重命名成功');
+            } else {
+                await api.createFolder({
+                    name: values.name,
+                    parentId: selectedFolderId ?? undefined,
+                });
+                message.success('文件夹创建成功');
+            }
             setFolderModalOpen(false);
             folderForm.resetFields();
             loadFolders();
         } catch (error) {
-            message.error('创建失败');
+            message.error('操作失败');
         }
     };
 
-    const handleDeleteFolder = async (id: number) => {
+    const onDeleteFolder = async (id: number) => {
         try {
             await api.deleteFolder(id);
             message.success('删除成功');
-            if (selectedFolder === id) {
-                setSelectedFolder(null);
-            }
             loadFolders();
         } catch (error) {
             message.error('删除失败');
-        }
-    };
-
-    // 文档操作
-    const handleCreateDocument = () => {
-        setEditingDocument(null);
-        documentForm.resetFields();
-        documentForm.setFieldsValue({
-            docType: 'markdown',
-            folderId: selectedFolder,
-        });
-        setDocumentModalOpen(true);
-    };
-
-    const handleEditDocument = async (doc: KnowledgeDocument) => {
-        try {
-            const detail = await api.getDocument(doc.id);
-            setEditingDocument(doc);
-            documentForm.setFieldsValue({
-                title: doc.title,
-                docType: doc.docType,
-                content: doc.content,
-                folderId: doc.folderId,
-                tagIds: detail.tags.map((t) => t.id),
-            });
-            setDocumentModalOpen(true);
-        } catch (error) {
-            message.error('加载文档失败');
-        }
-    };
-
-    const handleSaveDocument = async (values: any) => {
-        try {
-            if (editingDocument) {
-                await api.updateDocument(editingDocument.id, values);
-                message.success('更新成功');
-            } else {
-                await api.createDocument(values);
-                message.success('创建成功');
-            }
-            setDocumentModalOpen(false);
-            documentForm.resetFields();
-            loadDocuments();
-        } catch (error) {
-            message.error('保存失败');
         }
     };
 
     const handleDeleteDocument = async (id: number) => {
         try {
             await api.deleteDocument(id);
-            message.success('删除成功');
+            message.success('附件已删除');
             loadDocuments();
         } catch (error) {
             message.error('删除失败');
         }
-    };
+    }
 
-    const handleToggleFavorite = async (doc: KnowledgeDocument) => {
+    const onToggleFavorite = async (e: React.MouseEvent, doc: KnowledgeDocument) => {
+        e.stopPropagation();
         try {
             const result = await api.toggleFavorite(doc.id);
             message.success(result.favorite ? '已收藏' : '已取消收藏');
@@ -268,415 +212,334 @@ const KnowledgeCenter: React.FC = () => {
         }
     };
 
-    const handleViewDocument = async (doc: KnowledgeDocument) => {
-        try {
-            const detail = await api.getDocument(doc.id);
-            setSelectedDocument(detail);
-            setViewMode('edit');
-        } catch (error) {
-            message.error('加载文档失败');
-        }
-    };
-
-    // 标签操作
-    const handleCreateTag = async (values: { name: string; color: string }) => {
-        try {
-            await api.createTag(values);
-            message.success('标签创建成功');
-            setTagModalOpen(false);
-            tagForm.resetFields();
-            loadTags();
-        } catch (error) {
-            message.error('创建失败');
-        }
-    };
-
-    const handleDeleteTag = async (id: number) => {
-        try {
-            await api.deleteTag(id);
-            message.success('删除成功');
-            loadTags();
-        } catch (error) {
-            message.error('删除失败');
-        }
-    };
-
     // 文件上传配置
     const uploadProps: UploadProps = {
         name: 'file',
         action: '/api/common/upload',
+        showUploadList: false,
+        headers: {
+            Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
+        },
         onChange(info) {
             if (info.file.status === 'done') {
                 const { url, name } = info.file.response;
-                documentForm.setFieldsValue({
-                    docType: 'file',
+                api.createDocument({
+                    title: name,
                     fileUrl: url,
                     fileName: name,
                     fileSize: info.file.size,
-                    title: name,
+                    folderId: selectedFolderId ?? undefined,
+                }).then(() => {
+                    message.success('文件上传成功');
+                    loadDocuments();
                 });
-                message.success('文件上传成功');
             } else if (info.file.status === 'error') {
                 message.error('文件上传失败');
             }
         },
     };
 
-    // 渲染文档列表项
-    const renderDocumentItem = (doc: KnowledgeDocument) => (
-        <List.Item
-            key={doc.id}
-            className="document-item"
-            style={{
-                padding: '12px 16px',
-                cursor: 'pointer',
-                borderRadius: 8,
-                marginBottom: 8,
-                background: '#fafafa',
-                transition: 'all 0.2s',
-            }}
-            onClick={() => handleViewDocument(doc)}
-            actions={[
-                <Tooltip title={doc.isFavorite ? '取消收藏' : '收藏'} key="favorite">
-                    <Button
-                        type="text"
-                        size="small"
-                        icon={doc.isFavorite ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            handleToggleFavorite(doc);
-                        }}
-                    />
-                </Tooltip>,
-                <Tooltip title="编辑" key="edit">
-                    <Button
-                        type="text"
-                        size="small"
-                        icon={<EditOutlined />}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            handleEditDocument(doc);
-                        }}
-                    />
-                </Tooltip>,
-                <Popconfirm
-                    key="delete"
-                    title="确定删除此文档？"
-                    onConfirm={(e) => {
-                        e?.stopPropagation();
-                        handleDeleteDocument(doc.id);
-                    }}
-                    onCancel={(e) => e?.stopPropagation()}
+    // 桌面图标组件
+    const ItemEntry = ({
+        type,
+        title,
+        id,
+        doc,
+        onEnter
+    }: {
+        type: 'folder' | 'doc',
+        title: string,
+        id: number,
+        doc?: KnowledgeDocument,
+        onEnter: () => void
+    }) => {
+        const isDoc = type === 'doc';
+        const isGrid = layoutMode === 'grid';
+        const isFavorite = doc?.isFavorite === 1;
+
+        const handleDownload = () => {
+            if (isDoc) {
+                if (doc?.fileUrl) {
+                    const link = document.createElement('a');
+                    link.href = doc.fileUrl;
+                    link.download = doc.fileName || doc.title;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            } else {
+                // 文件夹打包下载
+                const url = api.getFolderDownloadUrl(id);
+                const link = document.createElement('a');
+                link.href = url;
+                link.setAttribute('download', `${title}.zip`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                message.loading('正在打包文件夹...', 2);
+            }
+        };
+
+        const menuItems = [
+            { key: 'open', label: '打开', onClick: onEnter },
+            { key: 'download', label: isDoc ? '下载' : '打包下载', onClick: handleDownload },
+            {
+                key: 'edit',
+                label: '重命名',
+                onClick: () => {
+                    if (!isDoc) {
+                        setEditingFolder({ id, name: title } as any);
+                        folderForm.setFieldsValue({ name: title });
+                        setFolderModalOpen(true);
+                    } else {
+                        message.info('暂不支持重命名附件');
+                    }
+                }
+            },
+            { key: 'favorite', label: isFavorite ? '取消收藏' : '添加收藏', onClick: (e: any) => onToggleFavorite(e, doc!) },
+            { key: 'delete', label: '删除', danger: true, onClick: () => isDoc ? handleDeleteDocument(id) : onDeleteFolder(id) },
+        ];
+
+        if (isGrid) {
+            return (
+                <Dropdown menu={{ items: menuItems }} trigger={['contextMenu']}>
+                    <div
+                        className="flex flex-col items-center p-2 rounded-lg cursor-pointer transition-all hover:bg-slate-200 group relative"
+                        style={{ width: 100, height: 110 }}
+                        onDoubleClick={onEnter}
+                    >
+                        <div className="mb-2 relative">
+                            {isDoc ? (
+                                <div className="w-14 h-14 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-500 shadow-sm group-hover:shadow-md transition-shadow">
+                                    <File size={32} />
+                                </div>
+                            ) : (
+                                <div className="w-14 h-14 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500 shadow-sm group-hover:shadow-md transition-shadow">
+                                    <Folder size={32} className="fill-amber-500/20" />
+                                </div>
+                            )}
+                            {isFavorite && (
+                                <div className="absolute -top-1 -right-1 bg-white rounded-full shadow-sm">
+                                    <Star size={14} className="text-amber-500 fill-amber-500" />
+                                </div>
+                            )}
+                        </div>
+                        <span className="text-xs text-center line-clamp-2 px-1 break-all text-slate-700 font-medium group-hover:text-slate-900 leading-tight">
+                            {title}
+                        </span>
+                    </div>
+                </Dropdown>
+            );
+        }
+
+        return (
+            <Dropdown menu={{ items: menuItems }} trigger={['contextMenu']}>
+                <div
+                    className="flex items-center px-4 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-100 group text-sm"
+                    onDoubleClick={onEnter}
                 >
-                    <Button
-                        type="text"
-                        size="small"
-                        danger
-                        icon={<DeleteOutlined />}
-                        onClick={(e) => e.stopPropagation()}
-                    />
-                </Popconfirm>,
-            ]}
-        >
-            <List.Item.Meta
-                avatar={
-                    doc.docType === 'markdown' ? (
-                        <FileTextOutlined style={{ fontSize: 24, color: '#1890ff' }} />
-                    ) : (
-                        <FileOutlined style={{ fontSize: 24, color: '#52c41a' }} />
-                    )
-                }
-                title={<span style={{ fontWeight: 500 }}>{doc.title}</span>}
-                description={
-                    <Space size={16}>
-                        <span>
-                            <ClockCircleOutlined /> {new Date(doc.updateTime).toLocaleDateString()}
-                        </span>
-                        <span>
-                            <EyeOutlined /> {doc.viewCount}
-                        </span>
-                        {doc.docType === 'file' && doc.fileSize && (
-                            <span>{(doc.fileSize / 1024).toFixed(1)} KB</span>
+                    <div className="w-8 flex-shrink-0">
+                        {isDoc ? (
+                            <File size={18} className="text-emerald-500" />
+                        ) : (
+                            <Folder size={18} className="text-amber-400 fill-amber-400" />
                         )}
-                    </Space>
-                }
-            />
-        </List.Item>
-    );
+                    </div>
+                    <div className="flex-1 truncate font-medium text-slate-700 group-hover:text-blue-600 mr-4">
+                        {title}
+                    </div>
+                    <div className="w-32 text-slate-400 text-xs text-center">
+                        {isDoc ? '附件' : '文件夹'}
+                    </div>
+                    <div className="w-44 text-slate-400 text-xs">
+                        {isDoc ? new Date(doc.updateTime).toLocaleString() : '-'}
+                    </div>
+                    <div className="w-24 text-slate-400 text-xs text-right">
+                        {isDoc && doc.fileSize ? `${(doc.fileSize / 1024).toFixed(1)} KB` : '-'}
+                    </div>
+                    <div className="w-10 flex justify-end ml-4">
+                        {isFavorite && <Star size={14} className="text-amber-500 fill-amber-500" />}
+                    </div>
+                </div>
+            </Dropdown>
+        );
+    };
 
     return (
-        <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
-            {/* 左侧边栏 - 文件夹树 */}
-            <Sider
-                width={280}
-                style={{
-                    background: '#fff',
-                    borderRight: '1px solid #f0f0f0',
-                    padding: '16px 0',
-                }}
-            >
-                <div style={{ padding: '0 16px', marginBottom: 16 }}>
-                    <h3 style={{ margin: 0, marginBottom: 12 }}>📚 知识中心</h3>
+        <div className="flex flex-col h-full bg-slate-50 overflow-hidden font-sans">
+            {/* 顶部工具栏 & 面包屑 */}
+            <header className="h-14 bg-white border-b border-slate-200 flex items-center px-4 justify-between flex-shrink-0">
+                <div className="flex items-center gap-4">
                     <Button
-                        type="dashed"
-                        block
-                        icon={<PlusOutlined />}
-                        onClick={() => {
-                            setEditingFolder(null);
-                            folderForm.resetFields();
-                            setFolderModalOpen(true);
-                        }}
-                    >
-                        新建文件夹
-                    </Button>
-                </div>
-
-                {/* 快捷入口 */}
-                <div style={{ padding: '0 16px', marginBottom: 16 }}>
-                    <div
-                        style={{
-                            padding: '8px 12px',
-                            cursor: 'pointer',
-                            borderRadius: 6,
-                            background: selectedFolder === null ? '#e6f7ff' : 'transparent',
-                        }}
-                        onClick={() => setSelectedFolder(null)}
-                    >
-                        <HomeOutlined /> 全部文档
-                    </div>
-                </div>
-
-                {/* 文件夹树 */}
-                <div style={{ padding: '0 8px' }}>
-                    <Tree
-                        showIcon
-                        defaultExpandAll
-                        selectedKeys={selectedFolder ? [selectedFolder] : []}
-                        treeData={convertToTreeData(folders)}
-                        onSelect={(keys) => {
-                            setSelectedFolder(keys[0] as number || null);
-                        }}
-                        titleRender={(node) => (
-                            <Dropdown
-                                menu={{
-                                    items: [
-                                        {
-                                            key: 'rename',
-                                            label: '重命名',
-                                            icon: <EditOutlined />,
-                                        },
-                                        {
-                                            key: 'delete',
-                                            label: '删除',
-                                            icon: <DeleteOutlined />,
-                                            danger: true,
-                                            onClick: () => handleDeleteFolder(node.key as number),
-                                        },
-                                    ],
-                                }}
-                                trigger={['contextMenu']}
-                            >
-                                <span>{node.title as string}</span>
-                            </Dropdown>
-                        )}
+                        icon={<ArrowLeft size={16} />}
+                        disabled={selectedFolderId === null}
+                        onClick={handleBack}
+                        type="text"
+                        className="hover:bg-slate-100"
+                    />
+                    <Breadcrumb
+                        className="text-sm font-medium"
+                        items={currentBreadcrumbs.map((b) => ({
+                            title: b.name,
+                            onClick: () => setSelectedFolderId(b.id),
+                            className: "cursor-pointer hover:text-blue-600 transition-colors"
+                        }))}
                     />
                 </div>
 
-                {/* 标签列表 */}
-                <div style={{ padding: '16px', borderTop: '1px solid #f0f0f0', marginTop: 16 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                        <span><TagsOutlined /> 标签</span>
-                        <Button type="text" size="small" icon={<PlusOutlined />} onClick={() => setTagModalOpen(true)} />
-                    </div>
-                    <Space wrap>
-                        {tags.map((tag) => (
-                            <Tag
-                                key={tag.id}
-                                color={tag.color}
-                                closable
-                                onClose={() => handleDeleteTag(tag.id)}
-                            >
-                                {tag.name}
-                            </Tag>
-                        ))}
+                <div className="flex items-center gap-2">
+                    <Input
+                        prefix={<Search size={14} className="text-slate-400" />}
+                        placeholder="搜索文件..."
+                        className="w-48 sm:w-64 rounded-full bg-slate-100 border-none px-4"
+                        value={searchKeyword}
+                        onChange={e => setSearchKeyword(e.target.value)}
+                    />
+                    <Space size={8} className="ml-2">
+                        <Upload {...uploadProps}>
+                            <Button type="primary" icon={<UploadIcon size={18} />} className="bg-emerald-600 hover:bg-emerald-700 border-none">
+                                上传文件
+                            </Button>
+                        </Upload>
+                        <Button icon={<FolderPlus size={18} />} onClick={() => { setEditingFolder(null); folderForm.resetFields(); setFolderModalOpen(true); }}>
+                            新建文件夹
+                        </Button>
+                        <div className="w-px h-6 bg-slate-200 mx-1"></div>
+                        <Segmented
+                            value={layoutMode}
+                            onChange={val => setLayoutMode(val as any)}
+                            options={[
+                                { value: 'grid', icon: <LayoutGrid size={14} /> },
+                                { value: 'list', icon: <ListIcon size={14} /> },
+                            ]}
+                        />
                     </Space>
                 </div>
-            </Sider>
+            </header>
 
-            {/* 主内容区 */}
-            <Content style={{ padding: 24 }}>
-                {viewMode === 'list' ? (
-                    <>
-                        {/* 工具栏 */}
-                        <Card style={{ marginBottom: 16 }} bodyStyle={{ padding: '12px 16px' }}>
-                            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                                <Space>
-                                    <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateDocument}>
-                                        新建文档
-                                    </Button>
-                                    <Upload {...uploadProps} showUploadList={false}>
-                                        <Button icon={<UploadOutlined />}>上传文件</Button>
-                                    </Upload>
-                                </Space>
-                                <Search
-                                    placeholder="搜索文档..."
-                                    allowClear
-                                    style={{ width: 300 }}
-                                    value={searchKeyword}
-                                    onChange={(e) => setSearchKeyword(e.target.value)}
-                                    onSearch={() => loadDocuments()}
-                                />
-                            </Space>
-                        </Card>
+            {/* 图标展示区 */}
+            <main className="flex-1 overflow-auto bg-white flex flex-col relative">
+                {layoutMode === 'list' && (currentSubFolders.length > 0 || documents.length > 0) && (
+                    <div className="flex items-center px-4 py-2 border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-400 uppercase tracking-wider sticky top-0 z-10">
+                        <div className="w-8"></div>
+                        <div className="flex-1">名称</div>
+                        <div className="w-32 text-center">类型</div>
+                        <div className="w-44">最后修改</div>
+                        <div className="w-24 text-right">大小</div>
+                        <div className="w-10 ml-4"></div>
+                    </div>
+                )}
 
-                        {/* 文档列表 */}
-                        <Card>
-                            <Spin spinning={loading}>
-                                {documents.length > 0 ? (
-                                    <List
-                                        dataSource={documents}
-                                        renderItem={renderDocumentItem}
-                                        pagination={{
-                                            current: currentPage,
-                                            total,
-                                            pageSize: 20,
-                                            onChange: setCurrentPage,
-                                            showTotal: (t) => `共 ${t} 个文档`,
-                                        }}
-                                    />
-                                ) : (
-                                    <Empty description="暂无文档" />
-                                )}
-                            </Spin>
-                        </Card>
-                    </>
-                ) : (
-                    /* 文档查看/编辑模式 */
-                    <Card
-                        title={
-                            <Space>
-                                <Button type="text" onClick={() => setViewMode('list')}>
-                                    ← 返回列表
-                                </Button>
-                                <span>{selectedDocument?.document.title}</span>
-                            </Space>
-                        }
-                        extra={
-                            <Space>
-                                {selectedDocument?.tags.map((tag) => (
-                                    <Tag key={tag.id} color={tag.color}>
-                                        {tag.name}
-                                    </Tag>
-                                ))}
-                            </Space>
-                        }
-                    >
-                        {selectedDocument?.document.docType === 'markdown' ? (
-                            <MarkdownPreview content={selectedDocument.document.content || ''} />
+                <div className="flex-1 overflow-auto p-4 relative">
+                    <Spin spinning={loading}>
+                        {(currentSubFolders.length === 0 && documents.length === 0) ? (
+                            <div className="h-full flex items-center justify-center py-20">
+                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这是一个空文件夹" />
+                            </div>
                         ) : (
-                            <div style={{ textAlign: 'center', padding: 40 }}>
-                                <FileOutlined style={{ fontSize: 64, color: '#52c41a' }} />
-                                <p>{selectedDocument?.document.fileName}</p>
-                                <Button type="primary" href={selectedDocument?.document.fileUrl || ''} target="_blank">
-                                    下载文件
-                                </Button>
+                            <div className={layoutMode === 'grid' ? "flex flex-wrap gap-4 content-start" : "flex flex-col"}>
+                                {/* 文件夹 */}
+                                {currentSubFolders.map(f => (
+                                    <ItemEntry
+                                        key={`folder-${f.id}`}
+                                        type="folder"
+                                        title={f.name}
+                                        id={f.id}
+                                        onEnter={() => handleFolderDoubleClick(f.id)}
+                                    />
+                                ))}
+                                {/* 文档 */}
+                                {documents.map(d => (
+                                    <ItemEntry
+                                        key={`doc-${d.id}`}
+                                        type="doc"
+                                        title={d.title}
+                                        id={d.id}
+                                        doc={d}
+                                        onEnter={() => handleDownloadItem(d)}
+                                    />
+                                ))}
                             </div>
                         )}
-                    </Card>
-                )}
-            </Content>
+                    </Spin>
+                </div>
 
-            {/* 新建/编辑文件夹弹窗 */}
+                {/* 底部信息栏 */}
+                <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white/80 backdrop-blur shadow-lg border border-slate-200 rounded-full px-4 py-1.5 flex items-center gap-4 text-[10px] text-slate-500 uppercase tracking-widest font-bold z-20">
+                    <span>{documents.length + currentSubFolders.length} 个项目</span>
+                    <div className="w-1 h-1 bg-slate-300 rounded-full"></div>
+                    <span className="flex items-center gap-1 cursor-pointer hover:text-blue-500" onClick={() => setTagModalOpen(true)}>
+                        <Tags size={10} /> 标签管理
+                    </span>
+                </div>
+            </main>
+
+            {/* 新建文件夹 Modal */}
             <Modal
-                title={editingFolder ? '编辑文件夹' : '新建文件夹'}
+                title={editingFolder ? '重命名文件夹' : '新建文件夹'}
                 open={folderModalOpen}
                 onCancel={() => setFolderModalOpen(false)}
                 onOk={() => folderForm.submit()}
+                destroyOnClose
             >
-                <Form form={folderForm} layout="vertical" onFinish={handleCreateFolder}>
-                    <Form.Item name="name" label="文件夹名称" rules={[{ required: true, message: '请输入文件夹名称' }]}>
-                        <Input placeholder="请输入文件夹名称" />
+                <Form form={folderForm} layout="vertical" onFinish={onSaveFolder}>
+                    <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
+                        <Input placeholder="文件夹名称" autoFocus />
                     </Form.Item>
                 </Form>
             </Modal>
 
-            {/* 新建/编辑文档弹窗 */}
+            {/* 标签管理弹窗 */}
             <Modal
-                title={editingDocument ? '编辑文档' : '新建文档'}
-                open={documentModalOpen}
-                onCancel={() => setDocumentModalOpen(false)}
-                onOk={() => documentForm.submit()}
-                width={800}
-            >
-                <Form form={documentForm} layout="vertical" onFinish={handleSaveDocument}>
-                    <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
-                        <Input placeholder="请输入文档标题" />
-                    </Form.Item>
-                    <Form.Item name="docType" label="类型" initialValue="markdown">
-                        <Segmented
-                            options={[
-                                { label: 'Markdown 文档', value: 'markdown' },
-                                { label: '文件附件', value: 'file' },
-                            ]}
-                        />
-                    </Form.Item>
-                    <Form.Item noStyle shouldUpdate={(prev, cur) => prev.docType !== cur.docType}>
-                        {({ getFieldValue }) =>
-                            getFieldValue('docType') === 'markdown' ? (
-                                <Form.Item name="content" label="内容">
-                                    <MarkdownEditor placeholder="请输入 Markdown 内容..." />
-                                </Form.Item>
-                            ) : (
-                                <Form.Item label="上传文件">
-                                    <Upload {...uploadProps}>
-                                        <Button icon={<UploadOutlined />}>选择文件</Button>
-                                    </Upload>
-                                </Form.Item>
-                            )
-                        }
-                    </Form.Item>
-                    <Form.Item name="tagIds" label="标签">
-                        <Space wrap>
-                            {tags.map((tag) => (
-                                <Tag.CheckableTag
-                                    key={tag.id}
-                                    checked={documentForm.getFieldValue('tagIds')?.includes(tag.id)}
-                                    onChange={(checked) => {
-                                        const current = documentForm.getFieldValue('tagIds') || [];
-                                        documentForm.setFieldsValue({
-                                            tagIds: checked
-                                                ? [...current, tag.id]
-                                                : current.filter((id: number) => id !== tag.id),
-                                        });
-                                    }}
-                                    style={{ border: `1px solid ${tag.color}`, borderRadius: 4 }}
-                                >
-                                    {tag.name}
-                                </Tag.CheckableTag>
-                            ))}
-                        </Space>
-                    </Form.Item>
-                </Form>
-            </Modal>
-
-            {/* 新建标签弹窗 */}
-            <Modal
-                title="新建标签"
+                title="标签管理"
                 open={tagModalOpen}
                 onCancel={() => setTagModalOpen(false)}
-                onOk={() => tagForm.submit()}
+                footer={null}
             >
-                <Form form={tagForm} layout="vertical" onFinish={handleCreateTag}>
-                    <Form.Item name="name" label="标签名称" rules={[{ required: true, message: '请输入标签名称' }]}>
-                        <Input placeholder="请输入标签名称" />
-                    </Form.Item>
-                    <Form.Item name="color" label="颜色" initialValue="#1890ff">
-                        <Input type="color" style={{ width: 100, height: 32 }} />
-                    </Form.Item>
-                </Form>
+                <div className="mb-6">
+                    <Form form={tagForm} layout="inline" onFinish={async (v) => {
+                        await api.createTag(v);
+                        tagForm.resetFields();
+                        loadTags();
+                    }}>
+                        <Form.Item name="name" rules={[{ required: true }]} style={{ flex: 1 }}>
+                            <Input placeholder="新标签名称" />
+                        </Form.Item>
+                        <Form.Item name="color" initialValue="#3b82f6">
+                            <Input type="color" className="w-12 p-0 h-8 border-none" />
+                        </Form.Item>
+                        <Form.Item>
+                            <Button type="primary" htmlType="submit" icon={<Plus size={14} />} />
+                        </Form.Item>
+                    </Form>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    {tags.map(t => (
+                        <Tag
+                            key={t.id}
+                            color={t.color}
+                            closable
+                            onClose={() => api.deleteTag(t.id).then(loadTags)}
+                            className="px-3 py-1 rounded-full border-none shadow-sm"
+                        >
+                            {t.name}
+                        </Tag>
+                    ))}
+                </div>
             </Modal>
-        </Layout>
+        </div>
     );
+
+    function handleDownloadItem(doc: KnowledgeDocument) {
+        if (doc.fileUrl) {
+            const link = document.createElement('a');
+            link.href = doc.fileUrl;
+            link.download = doc.fileName || doc.title;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    }
 };
 
 export default KnowledgeCenter;

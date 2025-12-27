@@ -23,14 +23,8 @@ public class KnowledgeDocument {
     /** 所属文件夹ID（NULL为根目录） */
     private Long folderId;
 
-    /** 文档标题 */
+    /** 文档标题（文件名） */
     private String title;
-
-    /** 类型：markdown/file */
-    private String docType;
-
-    /** Markdown 内容（type=markdown） */
-    private String content;
 
     /** 文件路径（type=file） */
     private String fileUrl;

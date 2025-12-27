@@ -13,7 +13,7 @@ export interface KnowledgeFolder {
     updateTime: string;
 }
 
-/** 文件夹树节点 */
+/** 文件夹 tree 节点 */
 export interface FolderTreeNode {
     id: number;
     name: string;
@@ -22,14 +22,12 @@ export interface FolderTreeNode {
     children: FolderTreeNode[];
 }
 
-/** 文档 */
+/** 文档 (现仅作为附件文件) */
 export interface KnowledgeDocument {
     id: number;
     userId: number;
     folderId: number | null;
     title: string;
-    docType: 'markdown' | 'file';
-    content: string | null;
     fileUrl: string | null;
     fileName: string | null;
     fileSize: number | null;
@@ -46,12 +44,6 @@ export interface KnowledgeTag {
     name: string;
     color: string;
     createTime: string;
-}
-
-/** 文档详情 */
-export interface DocumentDetail {
-    document: KnowledgeDocument;
-    tags: KnowledgeTag[];
 }
 
 /** 分页结果 */
@@ -87,36 +79,25 @@ export const deleteFolder = (id: number) =>
 export const listDocuments = (params: {
     folderId?: number;
     keyword?: string;
-    docType?: string;
     favorite?: boolean;
     page?: number;
     size?: number;
 }) => get<PageResult<KnowledgeDocument>>('/api/wiki/documents', params);
 
-/** 获取文档详情 */
-export const getDocument = (id: number) =>
-    get<DocumentDetail>(`/api/wiki/documents/${id}`);
-
-/** 创建文档 */
+/** 创建文档（附件上传后调用） */
 export const createDocument = (data: {
     folderId?: number;
     title: string;
-    docType: 'markdown' | 'file';
-    content?: string;
-    fileUrl?: string;
-    fileName?: string;
-    fileSize?: number;
+    fileUrl: string;
+    fileName: string;
+    fileSize: number;
     tagIds?: number[];
 }) => post<KnowledgeDocument>('/api/wiki/documents', data);
 
-/** 更新文档 */
+/** 更新文档信息 */
 export const updateDocument = (id: number, data: {
     folderId?: number;
     title?: string;
-    content?: string;
-    fileUrl?: string;
-    fileName?: string;
-    fileSize?: number;
     tagIds?: number[];
 }) => put<KnowledgeDocument>(`/api/wiki/documents/${id}`, data);
 
@@ -154,6 +135,5 @@ export const updateTag = (id: number, data: { name?: string; color?: string }) =
 export const deleteTag = (id: number) =>
     del(`/api/wiki/tags/${id}`);
 
-/** 获取文档的标签 */
-export const getDocumentTags = (documentId: number) =>
-    get<KnowledgeTag[]>(`/api/wiki/tags/document/${documentId}`);
+// 文件夹下载
+export const getFolderDownloadUrl = (id: number) => `/api/wiki/folders/${id}/download`;

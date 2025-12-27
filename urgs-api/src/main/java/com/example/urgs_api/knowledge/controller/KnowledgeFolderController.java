@@ -9,7 +9,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.net.URLEncoder;
 import java.util.List;
+import java.util.zip.ZipOutputStream;
+import java.nio.charset.StandardCharsets;
 
 /**
  * 知识文件夹控制器
@@ -58,6 +63,29 @@ public class KnowledgeFolderController {
     public ResponseEntity<Void> deleteFolder(@PathVariable Long id) {
         folderService.deleteFolder(id);
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/{id}/download")
+    public void downloadFolder(
+            @PathVariable Long id,
+            @RequestHeader(value = "X-User-Id", defaultValue = "1") Long userId,
+            HttpServletResponse response) throws IOException {
+
+        KnowledgeFolder folder = folderService.getById(id);
+        if (folder == null || !folder.getUserId().equals(userId)) {
+            response.setStatus(404);
+            return;
+        }
+
+        String fileName = URLEncoder.encode(folder.getName() + ".zip", StandardCharsets.UTF_8.toString()).replace("+",
+                "%20");
+        response.setContentType("application/zip");
+        response.setHeader("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
+
+        try (ZipOutputStream zos = new ZipOutputStream(response.getOutputStream())) {
+            folderService.writeFolderToZip(id, userId, zos, "");
+            zos.finish();
+        }
     }
 
     /**

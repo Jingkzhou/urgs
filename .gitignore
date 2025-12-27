@@ -63,3 +63,4 @@ logs/
 # t_quartz_task.sql
 urgs-dist/
 urgs-dist/install.sh
+urgs-api/uploads/

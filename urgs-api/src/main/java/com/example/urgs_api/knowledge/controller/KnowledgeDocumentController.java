@@ -3,7 +3,6 @@ package com.example.urgs_api.knowledge.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.example.urgs_api.knowledge.entity.KnowledgeDocument;
 import com.example.urgs_api.knowledge.service.KnowledgeDocumentService;
-import com.example.urgs_api.knowledge.service.KnowledgeDocumentService.DocumentDetailVO;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -14,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 知识文档控制器
+ * 知识文档（附件）控制器
  */
 @RestController
 @RequestMapping("/api/wiki/documents")
@@ -31,29 +30,16 @@ public class KnowledgeDocumentController {
             HttpServletRequest request,
             @RequestParam(required = false) Long folderId,
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String docType,
             @RequestParam(required = false) Boolean favorite,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
         Long userId = getUserId(request);
         return ResponseEntity
-                .ok(documentService.listDocuments(userId, folderId, keyword, docType, favorite, page, size));
+                .ok(documentService.listDocuments(userId, folderId, keyword, favorite, page, size));
     }
 
     /**
-     * 获取文档详情
-     */
-    @GetMapping("/{id}")
-    public ResponseEntity<DocumentDetailVO> getDocument(@PathVariable Long id) {
-        DocumentDetailVO detail = documentService.getDocumentDetail(id);
-        if (detail == null) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(detail);
-    }
-
-    /**
-     * 创建文档
+     * 创建文档（附件上传记录）
      */
     @PostMapping
     public ResponseEntity<KnowledgeDocument> createDocument(
@@ -64,8 +50,6 @@ public class KnowledgeDocumentController {
         KnowledgeDocument doc = new KnowledgeDocument();
         doc.setFolderId(req.getFolderId());
         doc.setTitle(req.getTitle());
-        doc.setDocType(req.getDocType());
-        doc.setContent(req.getContent());
         doc.setFileUrl(req.getFileUrl());
         doc.setFileName(req.getFileName());
         doc.setFileSize(req.getFileSize());
@@ -74,7 +58,7 @@ public class KnowledgeDocumentController {
     }
 
     /**
-     * 更新文档
+     * 更新文档信息
      */
     @PutMapping("/{id}")
     public ResponseEntity<KnowledgeDocument> updateDocument(
@@ -82,11 +66,7 @@ public class KnowledgeDocumentController {
             @RequestBody UpdateDocumentRequest req) {
         KnowledgeDocument updates = new KnowledgeDocument();
         updates.setTitle(req.getTitle());
-        updates.setContent(req.getContent());
         updates.setFolderId(req.getFolderId());
-        updates.setFileUrl(req.getFileUrl());
-        updates.setFileName(req.getFileName());
-        updates.setFileSize(req.getFileSize());
 
         return ResponseEntity.ok(documentService.updateDocument(id, updates, req.getTagIds()));
     }
@@ -141,8 +121,6 @@ public class KnowledgeDocumentController {
     public static class CreateDocumentRequest {
         private Long folderId;
         private String title;
-        private String docType;
-        private String content;
         private String fileUrl;
         private String fileName;
         private Long fileSize;
@@ -153,10 +131,6 @@ public class KnowledgeDocumentController {
     public static class UpdateDocumentRequest {
         private Long folderId;
         private String title;
-        private String content;
-        private String fileUrl;
-        private String fileName;
-        private Long fileSize;
         private List<Long> tagIds;
     }
 }

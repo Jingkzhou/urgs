@@ -13,6 +13,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.io.*;
+import java.util.zip.*;
+import org.springframework.beans.factory.annotation.Value;
+import com.example.urgs_api.knowledge.entity.KnowledgeDocument;
+import com.example.urgs_api.knowledge.mapper.KnowledgeDocumentMapper;
 
 /**
  * 知识文件夹服务
@@ -23,6 +28,10 @@ import java.util.stream.Collectors;
 public class KnowledgeFolderService {
 
     private final KnowledgeFolderMapper folderMapper;
+    private final KnowledgeDocumentMapper documentMapper;
+
+    @Value("${urgs.profile:./uploads}")
+    private String profile;
 
     /**
      * 获取用户的文件夹树结构
@@ -122,6 +131,56 @@ public class KnowledgeFolderService {
      */
     public KnowledgeFolder getById(Long id) {
         return folderMapper.selectById(id);
+    }
+
+    /**
+     * 将目录及其子目录下的文件递归写入 ZIP 流
+     */
+    public void writeFolderToZip(Long folderId, Long userId, ZipOutputStream zos, String currentPath)
+            throws IOException {
+        // 1. 获取当前目录下所有文档
+        LambdaQueryWrapper<KnowledgeDocument> docQuery = new LambdaQueryWrapper<>();
+        if (folderId == null) {
+            docQuery.isNull(KnowledgeDocument::getFolderId);
+        } else {
+            docQuery.eq(KnowledgeDocument::getFolderId, folderId);
+        }
+        docQuery.eq(KnowledgeDocument::getUserId, userId);
+        List<KnowledgeDocument> documents = documentMapper.selectList(docQuery);
+
+        for (KnowledgeDocument doc : documents) {
+            if (doc.getFileUrl() != null) {
+                // 读取原始文件
+                String relativePath = doc.getFileUrl().replace("/profile/", "");
+                File file = new File(profile, relativePath);
+                if (file.exists()) {
+                    try (FileInputStream fis = new FileInputStream(file)) {
+                        ZipEntry zipEntry = new ZipEntry(currentPath + doc.getFileName());
+                        zos.putNextEntry(zipEntry);
+                        byte[] bytes = new byte[1024];
+                        int length;
+                        while ((length = fis.read(bytes)) >= 0) {
+                            zos.write(bytes, 0, length);
+                        }
+                        zos.closeEntry();
+                    }
+                }
+            }
+        }
+
+        // 2. 递归子目录
+        List<KnowledgeFolder> subFolders;
+        if (folderId == null) {
+            LambdaQueryWrapper<KnowledgeFolder> folderQuery = new LambdaQueryWrapper<>();
+            folderQuery.isNull(KnowledgeFolder::getParentId).eq(KnowledgeFolder::getUserId, userId);
+            subFolders = folderMapper.selectList(folderQuery);
+        } else {
+            subFolders = folderMapper.findByParentId(folderId);
+        }
+
+        for (KnowledgeFolder subFolder : subFolders) {
+            writeFolderToZip(subFolder.getId(), userId, zos, currentPath + subFolder.getName() + "/");
+        }
     }
 
     /**

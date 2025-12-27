@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.urgs_api.knowledge.entity.KnowledgeDocument;
-import com.example.urgs_api.knowledge.entity.KnowledgeTag;
 import com.example.urgs_api.knowledge.mapper.KnowledgeDocumentMapper;
 import com.example.urgs_api.knowledge.mapper.KnowledgeTagMapper;
 import lombok.RequiredArgsConstructor;
@@ -31,20 +30,19 @@ public class KnowledgeDocumentService {
      * 分页查询文档
      */
     public IPage<KnowledgeDocument> listDocuments(Long userId, Long folderId, String keyword,
-            String docType, Boolean favorite,
+            Boolean favorite,
             int page, int size) {
         LambdaQueryWrapper<KnowledgeDocument> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(KnowledgeDocument::getUserId, userId);
 
         if (folderId != null) {
             wrapper.eq(KnowledgeDocument::getFolderId, folderId);
+        } else if (!StringUtils.hasText(keyword)) {
+            // 如果未指定文件夹且没有搜索关键词，则只查询根目录下的文件
+            wrapper.isNull(KnowledgeDocument::getFolderId);
         }
         if (StringUtils.hasText(keyword)) {
-            wrapper.and(w -> w.like(KnowledgeDocument::getTitle, keyword)
-                    .or().like(KnowledgeDocument::getContent, keyword));
-        }
-        if (StringUtils.hasText(docType)) {
-            wrapper.eq(KnowledgeDocument::getDocType, docType);
+            wrapper.like(KnowledgeDocument::getTitle, keyword);
         }
         if (Boolean.TRUE.equals(favorite)) {
             wrapper.eq(KnowledgeDocument::getIsFavorite, 1);
@@ -53,28 +51,6 @@ public class KnowledgeDocumentService {
         wrapper.orderByDesc(KnowledgeDocument::getUpdateTime);
 
         return documentMapper.selectPage(new Page<>(page, size), wrapper);
-    }
-
-    /**
-     * 获取文档详情（同时增加查看次数）
-     */
-    @Transactional
-    public DocumentDetailVO getDocumentDetail(Long id) {
-        KnowledgeDocument doc = documentMapper.selectById(id);
-        if (doc == null) {
-            return null;
-        }
-        // 增加查看次数
-        documentMapper.incrementViewCount(id);
-        doc.setViewCount(doc.getViewCount() + 1);
-
-        // 查询关联标签
-        List<KnowledgeTag> tags = tagMapper.findByDocumentId(id);
-
-        DocumentDetailVO vo = new DocumentDetailVO();
-        vo.setDocument(doc);
-        vo.setTags(tags);
-        return vo;
     }
 
     /**
@@ -96,12 +72,12 @@ public class KnowledgeDocumentService {
             }
         }
 
-        log.info("用户 {} 创建文档: {}", userId, doc.getTitle());
+        log.info("用户 {} 上传附件: {}", userId, doc.getTitle());
         return doc;
     }
 
     /**
-     * 更新文档
+     * 更新文档信息
      */
     @Transactional
     public KnowledgeDocument updateDocument(Long id, KnowledgeDocument updates, List<Long> tagIds) {
@@ -112,18 +88,10 @@ public class KnowledgeDocumentService {
 
         if (updates.getTitle() != null)
             doc.setTitle(updates.getTitle());
-        if (updates.getContent() != null)
-            doc.setContent(updates.getContent());
         if (updates.getFolderId() != null)
             doc.setFolderId(updates.getFolderId());
-        if (updates.getFileUrl() != null)
-            doc.setFileUrl(updates.getFileUrl());
-        if (updates.getFileName() != null)
-            doc.setFileName(updates.getFileName());
-        if (updates.getFileSize() != null)
-            doc.setFileSize(updates.getFileSize());
-        doc.setUpdateTime(LocalDateTime.now());
 
+        doc.setUpdateTime(LocalDateTime.now());
         documentMapper.updateById(doc);
 
         // 更新标签关联
@@ -183,14 +151,5 @@ public class KnowledgeDocumentService {
                 .eq(KnowledgeDocument::getIsFavorite, 1)
                 .orderByDesc(KnowledgeDocument::getUpdateTime);
         return documentMapper.selectList(wrapper);
-    }
-
-    /**
-     * 文档详情 VO
-     */
-    @lombok.Data
-    public static class DocumentDetailVO {
-        private KnowledgeDocument document;
-        private List<KnowledgeTag> tags;
     }
 }
