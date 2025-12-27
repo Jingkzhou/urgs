@@ -12,6 +12,7 @@ const InfrastructureManagement: React.FC = () => {
     const [assets, setAssets] = useState<InfrastructureAsset[]>([]);
     const [ssoList, setSsoList] = useState<SsoConfig[]>([]);
     const [envs, setEnvs] = useState<any[]>([]);
+    const [modalEnvs, setModalEnvs] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [modalVisible, setModalVisible] = useState(false);
     const [editingAsset, setEditingAsset] = useState<InfrastructureAsset | null>(null);
@@ -61,10 +62,14 @@ const InfrastructureManagement: React.FC = () => {
         }
     };
 
-    const fetchEnvs = async (systemId: number) => {
+    const fetchEnvs = async (systemId: number, isModal: boolean = false) => {
         try {
             const data = await getDeployEnvironments(systemId);
-            setEnvs(data || []);
+            if (isModal) {
+                setModalEnvs(data || []);
+            } else {
+                setEnvs(data || []);
+            }
         } catch (error) {
             console.error(error);
         }
@@ -72,7 +77,7 @@ const InfrastructureManagement: React.FC = () => {
 
     const handleAdd = () => {
         setEditingAsset(null);
-        setEnvs([]);
+        setModalEnvs([]);
         form.resetFields();
         form.setFieldsValue({ status: 'active', osType: 'Linux' });
         setModalVisible(true);
@@ -81,7 +86,7 @@ const InfrastructureManagement: React.FC = () => {
     const handleEdit = (record: InfrastructureAsset) => {
         setEditingAsset(record);
         if (record.appSystemId) {
-            fetchEnvs(record.appSystemId);
+            fetchEnvs(record.appSystemId, true);
         }
         form.setFieldsValue(record);
         setModalVisible(true);
@@ -309,7 +314,7 @@ const InfrastructureManagement: React.FC = () => {
                             <Form.Item name="appSystemId" label="关联系统" rules={[{ required: true }]}>
                                 <Select placeholder="选择系统" onChange={(val) => {
                                     form.setFieldValue('envId', undefined);
-                                    fetchEnvs(val);
+                                    fetchEnvs(val, true);
                                 }}>
                                     {ssoList.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
                                 </Select>
@@ -330,9 +335,9 @@ const InfrastructureManagement: React.FC = () => {
 
                     <Row gutter={16}>
                         <Col span={12}>
-                            <Form.Item name="envId" label="具体部署环境">
+                            <Form.Item name="envId" label="具体部署环境" extra={modalEnvs.length === 0 && form.getFieldValue('appSystemId') ? "该系统暂未配置部署环境，请先在[版本管理]中添加" : null}>
                                 <Select placeholder="选择环境" allowClear>
-                                    {envs.map(e => <Option key={e.id} value={e.id}>{e.name}</Option>)}
+                                    {modalEnvs.map(e => <Option key={e.id} value={e.id}>{e.name}</Option>)}
                                 </Select>
                             </Form.Item>
                         </Col>
