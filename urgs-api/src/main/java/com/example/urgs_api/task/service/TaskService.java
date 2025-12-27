@@ -568,7 +568,7 @@ public class TaskService {
         QueryWrapper<Task> systemQuery = new QueryWrapper<>();
         systemQuery.select("distinct system_id");
         long systems = taskMapper.selectList(systemQuery).stream()
-                .filter(t -> t.getSystemId() != null)
+                .filter(t -> t != null && t.getSystemId() != null)
                 .map(Task::getSystemId)
                 .distinct()
                 .count();
