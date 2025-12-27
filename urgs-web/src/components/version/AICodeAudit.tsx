@@ -3,7 +3,12 @@ import { getAICodeReviews, AICodeReview, triggerAICodeReview } from '../../api/v
 import { Bot, CheckCircle, XCircle, Clock, GitCommit, Search, RefreshCw, FileCode } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
-const AICodeAudit: React.FC = () => {
+interface Props {
+    ssoId?: number;
+    repoId?: number;
+}
+
+const AICodeAudit: React.FC<Props> = ({ ssoId, repoId }) => {
     const [reviews, setReviews] = useState<AICodeReview[]>([]);
     const [loading, setLoading] = useState(false);
     const [selectedReview, setSelectedReview] = useState<AICodeReview | null>(null);
@@ -11,7 +16,7 @@ const AICodeAudit: React.FC = () => {
     const fetchReviews = async () => {
         setLoading(true);
         try {
-            const data = await getAICodeReviews();
+            const data = await getAICodeReviews({ repoId });
             setReviews(data || []);
         } catch (error) {
             console.error(error);

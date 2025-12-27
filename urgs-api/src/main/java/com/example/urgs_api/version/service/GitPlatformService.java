@@ -183,15 +183,20 @@ public class GitPlatformService {
     /**
      * 创建分支
      */
-    public void createBranch(Long repoId, String name, String ref) {
+    public void createBranch(Long repoId, String name, String ref, String userToken) {
         GitRepository repo = gitRepositoryService.findById(repoId)
                 .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
 
+        String effectiveToken = (userToken != null && !userToken.isEmpty()) ? userToken : repo.getAccessToken();
+        if (effectiveToken == null || effectiveToken.isEmpty()) {
+            throw new RuntimeException("No access token available (user or repo)");
+        }
+
         try {
             switch (repo.getPlatform().toLowerCase()) {
-                case "gitee" -> createGiteeBranch(repo, name, ref);
-                case "github" -> createGitHubBranch(repo, name, ref);
-                case "gitlab" -> createGitLabBranch(repo, name, ref);
+                case "gitee" -> createGiteeBranch(repo, name, ref, effectiveToken);
+                case "github" -> createGitHubBranch(repo, name, ref, effectiveToken);
+                case "gitlab" -> createGitLabBranch(repo, name, ref, effectiveToken);
                 default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
             }
         } catch (Exception e) {
@@ -203,15 +208,17 @@ public class GitPlatformService {
     /**
      * 删除分支
      */
-    public void deleteBranch(Long repoId, String name) {
+    public void deleteBranch(Long repoId, String name, String userToken) {
         GitRepository repo = gitRepositoryService.findById(repoId)
                 .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
 
+        String effectiveToken = (userToken != null && !userToken.isEmpty()) ? userToken : repo.getAccessToken();
+
         try {
             switch (repo.getPlatform().toLowerCase()) {
-                case "gitee" -> deleteGiteeBranch(repo, name);
-                case "github" -> deleteGitHubBranch(repo, name);
-                case "gitlab" -> deleteGitLabBranch(repo, name);
+                case "gitee" -> deleteGiteeBranch(repo, name, effectiveToken);
+                case "github" -> deleteGitHubBranch(repo, name, effectiveToken);
+                case "gitlab" -> deleteGitLabBranch(repo, name, effectiveToken);
                 default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
             }
         } catch (Exception e) {
@@ -458,19 +465,16 @@ public class GitPlatformService {
                 .build();
     }
 
-    private void createGiteeBranch(GitRepository repo, String branchName, String refs) throws Exception {
+    private void createGiteeBranch(GitRepository repo, String branchName, String refs, String token) throws Exception {
         String url = String.format("https://gitee.com/api/v5/repos/%s/branches", repo.getFullName());
-        String body = String.format("{\"branch_name\":\"%s\",\"refs\":\"%s\"}", branchName, refs);
-
-        if (repo.getAccessToken() != null) {
-            body = String.format("{\"access_token\":\"%s\",\"branch_name\":\"%s\",\"refs\":\"%s\"}",
-                    repo.getAccessToken(), branchName, refs);
-        }
+        // Use provided token in body
+        String body = String.format("{\"access_token\":\"%s\",\"branch_name\":\"%s\",\"refs\":\"%s\"}",
+                token, branchName, refs);
 
         httpPost(url, body, null, null);
     }
 
-    private void deleteGiteeBranch(GitRepository repo, String branchName) throws Exception {
+    private void deleteGiteeBranch(GitRepository repo, String branchName, String token) throws Exception {
         // Gitee API V5 does NOT expose a public DELETE endpoint for branches.
         // Only branch protection removal is available (/branches/{branch}/protection).
         // See: https://gitee.com/api/v5/swagger - no DELETE
@@ -691,17 +695,17 @@ public class GitPlatformService {
                 .build();
     }
 
-    private void createGitHubBranch(GitRepository repo, String branchName, String sha) throws Exception {
+    private void createGitHubBranch(GitRepository repo, String branchName, String sha, String token) throws Exception {
         String url = String.format("https://api.github.com/repos/%s/git/refs", repo.getFullName());
         String body = String.format("{\"ref\":\"refs/heads/%s\",\"sha\":\"%s\"}", branchName, sha);
 
-        httpPost(url, body, repo.getAccessToken(), "Bearer");
+        httpPost(url, body, token, "Bearer");
     }
 
-    private void deleteGitHubBranch(GitRepository repo, String branchName) throws Exception {
+    private void deleteGitHubBranch(GitRepository repo, String branchName, String token) throws Exception {
         String url = String.format("https://api.github.com/repos/%s/git/refs/heads/%s", repo.getFullName(), branchName);
 
-        httpDelete(url, repo.getAccessToken(), "Bearer");
+        httpDelete(url, token, "Bearer");
     }
 
     private List<GitTag> getGitHubTags(GitRepository repo) throws Exception {
@@ -957,21 +961,22 @@ public class GitPlatformService {
                 .build();
     }
 
-    private void createGitLabBranch(GitRepository repo, String branchName, String ref) throws Exception {
+    private void createGitLabBranch(GitRepository repo, String branchName, String ref, String token) throws Exception {
         String projectId = java.net.URLEncoder.encode(repo.getFullName(), "UTF-8");
         String url = String.format("https://gitlab.com/api/v4/projects/%s/repository/branches", projectId);
+
         String body = String.format("{\"branch\":\"%s\",\"ref\":\"%s\"}", branchName, ref);
 
-        httpPost(url, body, repo.getAccessToken(), "PRIVATE-TOKEN");
+        httpPost(url, body, token, "PRIVATE-TOKEN");
     }
 
-    private void deleteGitLabBranch(GitRepository repo, String branchName) throws Exception {
+    private void deleteGitLabBranch(GitRepository repo, String branchName, String token) throws Exception {
         String projectId = java.net.URLEncoder.encode(repo.getFullName(), "UTF-8");
-        String encodedBranch = java.net.URLEncoder.encode(branchName, "UTF-8");
+        String branch = java.net.URLEncoder.encode(branchName, "UTF-8");
         String url = String.format("https://gitlab.com/api/v4/projects/%s/repository/branches/%s",
-                projectId, encodedBranch);
+                projectId, branch);
 
-        httpDelete(url, repo.getAccessToken(), "PRIVATE-TOKEN");
+        httpDelete(url, token, "PRIVATE-TOKEN");
     }
 
     private List<GitTag> getGitLabTags(GitRepository repo) throws Exception {

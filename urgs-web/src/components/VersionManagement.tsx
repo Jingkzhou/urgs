@@ -8,8 +8,6 @@ import NoticeManagement from './version/NoticeManagement';
 import ReleaseStats from './version/ReleaseStats';
 import VersionOverview from './version/VersionOverview';
 import GitRepoManagement from './version/GitRepoManagement';
-import PipelineManagement from './version/PipelineManagement';
-import DeploymentManagement from './version/DeploymentManagement';
 
 const VersionManagement: React.FC = () => {
     const [activeTab, setActiveTab] = useState<string>('');
@@ -17,8 +15,6 @@ const VersionManagement: React.FC = () => {
     const TABS = [
         { id: 'app', label: '应用系统库', icon: Server, code: 'version:app:list', component: AppSystemList },
         { id: 'repos', label: 'Git 仓库管理', icon: GitBranch, code: 'version:repo:list', component: GitRepoManagement },
-        { id: 'pipelines', label: '流水线编排', icon: Workflow, code: 'version:pipeline:list', component: PipelineManagement },
-        { id: 'deploy', label: '部署管理', icon: Rocket, code: 'version:deploy:list', component: DeploymentManagement },
         { id: 'code_audit', label: 'AI 代码走查', icon: ShieldCheck, code: 'version:audit:view', component: AICodeAudit },
         { id: 'notice', label: '业务公告管理', icon: Megaphone, code: 'version:notice:config', component: NoticeManagement },
         { id: 'stats', label: '绩效统计', icon: BarChart3, code: 'version:stats', component: ReleaseStats },

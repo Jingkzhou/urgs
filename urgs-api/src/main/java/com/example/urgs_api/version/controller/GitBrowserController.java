@@ -106,8 +106,18 @@ public class GitBrowserController {
     public ResponseEntity<Void> createBranch(
             @PathVariable Long repoId,
             @RequestParam String name,
-            @RequestParam String ref) {
-        gitPlatformService.createBranch(repoId, name, ref);
+            @RequestParam String ref,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+
+        String userToken = null;
+        if (userId != null) {
+            com.example.urgs_api.user.model.User user = userService.getById(userId);
+            if (user != null) {
+                userToken = user.getGitAccessToken();
+            }
+        }
+
+        gitPlatformService.createBranch(repoId, name, ref, userToken);
         return ResponseEntity.ok().build();
     }
 
@@ -117,8 +127,18 @@ public class GitBrowserController {
     @DeleteMapping("/{repoId}/branches/{name}")
     public ResponseEntity<Void> deleteBranch(
             @PathVariable Long repoId,
-            @PathVariable String name) {
-        gitPlatformService.deleteBranch(repoId, name);
+            @PathVariable String name,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+
+        String userToken = null;
+        if (userId != null) {
+            com.example.urgs_api.user.model.User user = userService.getById(userId);
+            if (user != null) {
+                userToken = user.getGitAccessToken();
+            }
+        }
+
+        gitPlatformService.deleteBranch(repoId, name, userToken);
         return ResponseEntity.ok().build();
     }
 
