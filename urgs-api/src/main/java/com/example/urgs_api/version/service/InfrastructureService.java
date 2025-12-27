@@ -10,6 +10,10 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
+/**
+ * 基础设施资产服务
+ * 管理服务器、虚拟机等基础设施资产
+ */
 public class InfrastructureService {
 
     private final InfrastructureAssetRepository repository;
@@ -18,8 +22,16 @@ public class InfrastructureService {
         return repository.findAll();
     }
 
+    /**
+     * 根据条件筛选资产
+     * 
+     * @param appSystemId 应用系统 ID
+     * @param envId       环境 ID
+     * @param envType     环境类型
+     * @return 匹配的资产列表
+     */
     public List<InfrastructureAsset> findByFilter(Long appSystemId, Long envId, String envType) {
-        // Simple manual filtering for now
+        // 当前使用简单的手动过滤
         return repository.findAll().stream()
                 .filter(a -> appSystemId == null || appSystemId.equals(a.getAppSystemId()))
                 .filter(a -> envId == null || envId.equals(a.getEnvId()))

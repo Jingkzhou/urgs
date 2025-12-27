@@ -16,6 +16,10 @@ import java.util.Optional;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+/**
+ * 版本发布记录服务
+ * 管理版本发布记录及审批流程
+ */
 public class ReleaseRecordService {
 
     private final ReleaseRecordRepository releaseRepository;
@@ -66,12 +70,27 @@ public class ReleaseRecordService {
         return releaseRepository.findById(id);
     }
 
+    /**
+     * 创建发布记录（默认为草稿状态）
+     * 
+     * @param record 发布记录实体
+     * @return 创建后的发布记录
+     */
     @Transactional
     public ReleaseRecord create(ReleaseRecord record) {
         record.setStatus(ReleaseRecord.STATUS_DRAFT);
         return releaseRepository.save(record);
     }
 
+    /**
+     * 更新发布记录
+     * 只有草稿状态的记录允许编辑
+     * 
+     * @param id     记录 ID
+     * @param record 更新的记录信息
+     * @return 更新后的发布记录
+     * @throws IllegalStateException 如果记录不在草稿状态
+     */
     @Transactional
     public ReleaseRecord update(Long id, ReleaseRecord record) {
         ReleaseRecord existing = releaseRepository.findById(id)
@@ -91,6 +110,13 @@ public class ReleaseRecordService {
         return releaseRepository.save(existing);
     }
 
+    /**
+     * 删除发布记录
+     * 只有草稿状态的记录允许删除
+     * 
+     * @param id 记录 ID
+     * @throws IllegalStateException 如果记录不在草稿状态
+     */
     @Transactional
     public void delete(Long id) {
         ReleaseRecord existing = releaseRepository.findById(id)

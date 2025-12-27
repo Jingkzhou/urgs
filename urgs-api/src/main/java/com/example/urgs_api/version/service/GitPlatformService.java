@@ -250,7 +250,7 @@ public class GitPlatformService {
     // ==================== Gitee ====================
 
     private List<GitFileEntry> getGiteeFileTree(GitRepository repo, String ref, String path) throws Exception {
-        // Gitee API: GET
+        // Gitee API: 获取仓库内容
         // https://gitee.com/api/v5/repos/{owner}/{repo}/contents/{path}?ref={ref}&access_token={token}
         String fullName = repo.getFullName(); // owner/repo
         String encodedPath = path.isEmpty() ? "" : "/" + path;
@@ -467,7 +467,7 @@ public class GitPlatformService {
 
     private void createGiteeBranch(GitRepository repo, String branchName, String refs, String token) throws Exception {
         String url = String.format("https://gitee.com/api/v5/repos/%s/branches", repo.getFullName());
-        // Use provided token in body
+        // 在 body 中使用提供的 token
         String body = String.format("{\"access_token\":\"%s\",\"branch_name\":\"%s\",\"refs\":\"%s\"}",
                 token, branchName, refs);
 
@@ -475,10 +475,10 @@ public class GitPlatformService {
     }
 
     private void deleteGiteeBranch(GitRepository repo, String branchName, String token) throws Exception {
-        // Gitee API V5 does NOT expose a public DELETE endpoint for branches.
-        // Only branch protection removal is available (/branches/{branch}/protection).
-        // See: https://gitee.com/api/v5/swagger - no DELETE
-        // /repos/{owner}/{repo}/branches/{branch} endpoint.
+        // Gitee API V5 没有公开的删除分支接口
+        // 只有移除分支保护的接口 (/branches/{branch}/protection)
+        // 参考: https://gitee.com/api/v5/swagger - 没有 DELETE
+        // /repos/{owner}/{repo}/branches/{branch} 端点.
         throw new RuntimeException("Gitee 平台 API 暂不支持通过 API 删除分支，请在 Gitee 网页端手动删除。");
     }
 

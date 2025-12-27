@@ -12,72 +12,72 @@ import java.util.List;
 @Service
 public class AppSystemVersionServiceImpl implements AppSystemVersionService {
 
-    @Override
-    public List<AppEnvironmentMatrixVO> getEnvironmentMatrix(Long systemId) {
-        // Mock data logic for prototype
-        List<AppEnvironmentMatrixVO> matrix = new ArrayList<>();
+        @Override
+        public List<AppEnvironmentMatrixVO> getEnvironmentMatrix(Long systemId) {
+                // 原型模拟数据逻辑
+                List<AppEnvironmentMatrixVO> matrix = new ArrayList<>();
 
-        // SIT
-        matrix.add(AppEnvironmentMatrixVO.builder()
-                .envName("SIT")
-                .version("v2.1.0-RC3")
-                .status("SUCCESS")
-                // .plotTime("2025-12-26 14:30") // Removed undefined field
-                .deployTime("2025-12-26 14:30")
-                .commitLag(0)
-                .branch("develop")
-                .build());
+                // SIT 环境
+                matrix.add(AppEnvironmentMatrixVO.builder()
+                                .envName("SIT")
+                                .version("v2.1.0-RC3")
+                                .status("SUCCESS")
+                                // .plotTime("2025-12-26 14:30") // 已移除未定义的字段
+                                .deployTime("2025-12-26 14:30")
+                                .commitLag(0)
+                                .branch("develop")
+                                .build());
 
-        // UAT
-        matrix.add(AppEnvironmentMatrixVO.builder()
-                .envName("UAT")
-                .version("v2.1.0-RC1")
-                .status("SUCCESS")
-                .deployTime("2025-12-24 10:00")
-                .commitLag(12)
-                .branch("release/v2.1.0")
-                .build());
+                // UAT 环境
+                matrix.add(AppEnvironmentMatrixVO.builder()
+                                .envName("UAT")
+                                .version("v2.1.0-RC1")
+                                .status("SUCCESS")
+                                .deployTime("2025-12-24 10:00")
+                                .commitLag(12)
+                                .branch("release/v2.1.0")
+                                .build());
 
-        // PROD
-        matrix.add(AppEnvironmentMatrixVO.builder()
-                .envName("PROD")
-                .version("v2.0.5")
-                .status("SUCCESS")
-                .deployTime("2025-12-10 22:00")
-                .commitLag(45)
-                .branch("master")
-                .build());
+                // PROD 环境
+                matrix.add(AppEnvironmentMatrixVO.builder()
+                                .envName("PROD")
+                                .version("v2.0.5")
+                                .status("SUCCESS")
+                                .deployTime("2025-12-10 22:00")
+                                .commitLag(45)
+                                .branch("master")
+                                .build());
 
-        return matrix;
-    }
+                return matrix;
+        }
 
-    @Override
-    public List<AppBranchStatsVO> getBranchGovernance(Long systemId) {
-        // Mock data logic
-        return Arrays.asList(
-                AppBranchStatsVO.builder()
-                        .branchName("feat/user-kpi")
-                        .author("Wang Xiao")
-                        .lastCommitTime("2 hours ago")
-                        .status("ACTIVE")
-                        .behindCount(2)
-                        .aheadCount(5)
-                        .build(),
-                AppBranchStatsVO.builder()
-                        .branchName("fix/login-bug")
-                        .author("Li Lei")
-                        .lastCommitTime("3 days ago")
-                        .status("ACTIVE")
-                        .behindCount(0)
-                        .aheadCount(1)
-                        .build(),
-                AppBranchStatsVO.builder()
-                        .branchName("feat/old-payment")
-                        .author("Zhang San")
-                        .lastCommitTime("3 months ago")
-                        .status("STALE")
-                        .behindCount(100)
-                        .aheadCount(3)
-                        .build());
-    }
+        @Override
+        public List<AppBranchStatsVO> getBranchGovernance(Long systemId) {
+                // 模拟数据逻辑
+                return Arrays.asList(
+                                AppBranchStatsVO.builder()
+                                                .branchName("feat/user-kpi")
+                                                .author("Wang Xiao")
+                                                .lastCommitTime("2 hours ago")
+                                                .status("ACTIVE")
+                                                .behindCount(2)
+                                                .aheadCount(5)
+                                                .build(),
+                                AppBranchStatsVO.builder()
+                                                .branchName("fix/login-bug")
+                                                .author("Li Lei")
+                                                .lastCommitTime("3 days ago")
+                                                .status("ACTIVE")
+                                                .behindCount(0)
+                                                .aheadCount(1)
+                                                .build(),
+                                AppBranchStatsVO.builder()
+                                                .branchName("feat/old-payment")
+                                                .author("Zhang San")
+                                                .lastCommitTime("3 months ago")
+                                                .status("STALE")
+                                                .behindCount(100)
+                                                .aheadCount(3)
+                                                .build());
+        }
 }

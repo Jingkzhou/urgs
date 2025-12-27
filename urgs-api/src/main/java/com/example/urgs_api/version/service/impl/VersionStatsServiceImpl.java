@@ -32,18 +32,16 @@ public class VersionStatsServiceImpl implements VersionStatsService {
         vo.setTotalApps(appSystemRepository.count());
         vo.setTotalReleases(deploymentRepository.count());
 
-        // Mocking some time-based stats for now as Repository methods need update for
-        // custom queries
-        // In real implementation, add method countByCreatedAtBetween to Repository
+        // 暂时模拟一些基于时间的统计数据，因为 Repository 方法不支持自定义查询
+        // 在实际实现中，需要在 Repository 中添加 countByCreatedAtBetween 方法
         vo.setThisMonthReleases(5L);
-        vo.setPendingReleases(deploymentRepository.countByStatus("PENDING")); // Assuming this method exists or we use
-                                                                              // count
+        vo.setPendingReleases(deploymentRepository.countByStatus("PENDING")); // 假设此方法存在或使用 count
 
         long successCount = deploymentRepository.countByStatus("SUCCESS");
         long total = vo.getTotalReleases();
         vo.setSuccessRate(total == 0 ? 0.0 : (double) successCount / total * 100);
 
-        // Mock recent releases for simplicity in this turn, or fetch top 5
+        // 为了简化，本次模拟最近的发布记录，实际应获取前 5 条
         vo.setRecentReleases(new ArrayList<>());
 
         return vo;
@@ -51,16 +49,16 @@ public class VersionStatsServiceImpl implements VersionStatsService {
 
     @Override
     public List<DeveloperKpiVO> getDeveloperKpis(Long systemId) {
-        // 1. Get all developers (filtered by system if needed, currently getting all)
+        // 1. 获取所有开发人员（如果需要可以按系统过滤，目前获取所有）
         List<User> users = userMapper.selectList(new QueryWrapper<>());
 
-        // 2. Get all reviews
+        // 2. 获取所有评审记录
         List<AiCodeReview> reviews = reviewMapper.selectList(new QueryWrapper<>());
 
         List<DeveloperKpiVO> kpis = new ArrayList<>();
 
         for (User user : users) {
-            // Basic filter: only consider users with email or gitlab username
+            // 基本过滤：只考虑有邮箱或 gitlab 用户名的用户
             if (user.getEmail() == null && user.getGitlabUsername() == null)
                 continue;
 
@@ -70,12 +68,12 @@ public class VersionStatsServiceImpl implements VersionStatsService {
             vo.setEmail(user.getEmail());
             vo.setGitlabUsername(user.getGitlabUsername());
 
-            // Calculate stats from reviews
+            // 根据评审记录计算统计数据
             List<AiCodeReview> userReviews = reviews.stream()
                     .filter(r -> r.getDeveloperId() != null && r.getDeveloperId().equals(user.getId()))
                     .collect(Collectors.toList());
 
-            vo.setTotalCommits(userReviews.size()); // Approximation: Commits = Reviewed Commits
+            vo.setTotalCommits(userReviews.size()); // 近似值：提交数 = 已评审的提交数
             vo.setTotalReviews(userReviews.size());
 
             double avgScore = userReviews.stream()
@@ -85,20 +83,20 @@ public class VersionStatsServiceImpl implements VersionStatsService {
                     .orElse(0.0);
             vo.setAverageCodeScore(avgScore);
 
-            vo.setActiveDays(0); // TODO: Calculate distinct days from createdAt
-            vo.setBugCount(0); // TODO: Integrate with Issue system?
+            vo.setActiveDays(0); // TODO: 根据 createdAt 计算不同天数
+            vo.setBugCount(0); // TODO: 集成 Issue 系统？
 
             kpis.add(vo);
         }
 
-        // Filter out users with 0 activity if desired, or keep to show 0s
+        // 如果需要，过滤掉 0 活动的用户，或者保留以显示 0
         return kpis.stream().filter(k -> k.getTotalCommits() > 0).collect(Collectors.toList());
     }
 
     @Override
     public Map<String, Object> getQualityTrend(Long userId) {
         Map<String, Object> result = new HashMap<>();
-        // Mock data for trend
+        // 模拟趋势数据
         result.put("dates", List.of("2023-12-01", "2023-12-02", "2023-12-03", "2023-12-04"));
         result.put("scores", List.of(80, 82, 78, 85));
         return result;
