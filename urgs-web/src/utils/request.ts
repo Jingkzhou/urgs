@@ -57,7 +57,7 @@ export const request = async <T = any>(url: string, options: RequestOptions = {}
     }
 };
 
-export const get = <T = any>(url: string, params?: Record<string, string>, options?: RequestOptions) => {
+export const get = <T = any>(url: string, params?: RequestOptions['params'], options?: RequestOptions) => {
     return request<T>(url, { ...options, method: 'GET', params });
 };
 
@@ -69,6 +69,6 @@ export const put = <T = any>(url: string, data?: any, options?: RequestOptions) 
     return request<T>(url, { ...options, method: 'PUT', body: JSON.stringify(data) });
 };
 
-export const del = <T = any>(url: string, params?: Record<string, string>, options?: RequestOptions) => {
+export const del = <T = any>(url: string, params?: RequestOptions['params'], options?: RequestOptions) => {
     return request<T>(url, { ...options, method: 'DELETE', params });
 };

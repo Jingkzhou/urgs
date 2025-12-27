@@ -23,6 +23,32 @@ public class User {
     private String status;
     private String avatarUrl;
 
+    /**
+     * Email address used for Git commit association
+     */
+    private String email;
+
+    /**
+     * GitLab username for permission and mapping
+     */
+    private String gitlabUsername;
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public String getGitlabUsername() {
+        return gitlabUsername;
+    }
+
+    public void setGitlabUsername(String gitlabUsername) {
+        this.gitlabUsername = gitlabUsername;
+    }
+
     public String getAvatarUrl() {
         return avatarUrl;
     }

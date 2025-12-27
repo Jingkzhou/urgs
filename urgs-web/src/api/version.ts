@@ -357,3 +357,53 @@ export const updateReleaseStrategy = (id: number, data: ReleaseStrategy) =>
 
 export const deleteReleaseStrategy = (id: number) =>
     del(`/api/version/strategies/${id}`);
+
+// ===== AI Code Review API =====
+
+export interface AICodeReview {
+    id: number;
+    repoId: number;
+    commitSha: string;
+    branch: string;
+    developerEmail?: string;
+    developerId?: number;
+    score?: number;
+    summary?: string;
+    content?: string;
+    status: 'PENDING' | 'COMPLETED' | 'FAILED';
+    createdAt?: string;
+    updatedAt?: string;
+}
+
+export const triggerAICodeReview = (data: { repoId: number; commitSha: string; branch?: string; email?: string }) =>
+    post<AICodeReview>('/api/version/audit/trigger', null, { params: data });
+
+export const getAICodeReviews = (params?: { repoId?: number; developerId?: number }) =>
+    get<AICodeReview[]>('/api/version/audit/list', params || {});
+
+export const getAICodeReviewDetail = (id: number) =>
+    get<AICodeReview>(`/api/version/audit/${id}`);
+
+export const getAICodeReviewByCommit = (commitSha: string) =>
+    get<AICodeReview>(`/api/version/audit/commit/${commitSha}`);
+
+
+// ===== Developer KPI API =====
+
+export interface DeveloperKpiVO {
+    userId: number;
+    name: string;
+    email: string;
+    gitlabUsername: string;
+    totalCommits: number;
+    totalReviews: number;
+    averageCodeScore: number;
+    activeDays: number;
+    bugCount: number;
+}
+
+export const getDeveloperKpis = (systemId?: number) =>
+    get<DeveloperKpiVO[]>('/api/version/stats/kpi', systemId ? { systemId } : {});
+
+export const getQualityTrend = (userId?: number) =>
+    get<any>('/api/version/stats/quality-trend', userId ? { userId } : {});
