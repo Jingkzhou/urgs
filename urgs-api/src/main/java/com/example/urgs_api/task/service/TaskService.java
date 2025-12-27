@@ -46,7 +46,7 @@ public class TaskService {
 
     @Transactional(rollbackFor = Exception.class)
     public String saveTask(String id, String name, String type, String content,
-            String cronExpression, Integer status, Integer priority, List<String> preTaskIds) {
+            String cronExpression, Integer status, Integer priority, List<String> preTaskIds, Long systemId) {
         Task task = null;
         if (id != null) {
             task = taskMapper.selectById(id);
@@ -70,6 +70,7 @@ public class TaskService {
             task.setStatus(1); // Default to enabled for new tasks
         }
         task.setPriority(priority != null ? priority : 0);
+        task.setSystemId(systemId);
         task.setUpdateTime(LocalDateTime.now());
 
         if (taskMapper.selectById(task.getId()) == null) {
@@ -527,6 +528,13 @@ public class TaskService {
         instance.setTaskId(taskId);
         instance.setDataDate(dataDate);
         instance.setStatus("PENDING"); // Wait for dependencies
+
+        // Inherit systemId from task
+        Task task = taskMapper.selectById(taskId);
+        if (task != null) {
+            instance.setSystemId(task.getSystemId());
+        }
+
         instance.setCreateTime(LocalDateTime.now());
         instance.setUpdateTime(LocalDateTime.now());
 

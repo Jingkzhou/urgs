@@ -14,7 +14,7 @@ public class TaskController {
     @PostMapping("/save")
     public String saveTask(@RequestBody TaskDto dto) {
         return taskService.saveTask(dto.getId(), dto.getName(), dto.getType(), dto.getContent(),
-                dto.getCronExpression(), dto.getStatus(), dto.getPriority(), dto.getPreTaskIds());
+                dto.getCronExpression(), dto.getStatus(), dto.getPriority(), dto.getPreTaskIds(), dto.getSystemId());
     }
 
     @GetMapping("/list")
@@ -43,6 +43,7 @@ public class TaskController {
         private Integer status;
         private Integer priority;
         private java.util.List<String> preTaskIds;
+        private Long systemId;
 
         public String getId() {
             return id;
@@ -106,6 +107,14 @@ public class TaskController {
 
         public void setPreTaskIds(java.util.List<String> preTaskIds) {
             this.preTaskIds = preTaskIds;
+        }
+
+        public Long getSystemId() {
+            return systemId;
+        }
+
+        public void setSystemId(Long systemId) {
+            this.systemId = systemId;
         }
     }
 }

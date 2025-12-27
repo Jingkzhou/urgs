@@ -17,6 +17,7 @@ interface TaskInstance {
     startTime: string;
     endTime: string;
     createTime: string;
+    systemId: number;
 }
 
 interface Task {
@@ -47,7 +48,9 @@ const TaskInstance: React.FC = () => {
 
     // New State
     const [workflowFilter, setWorkflowFilter] = useState('');
+    const [systemFilter, setSystemFilter] = useState('');
     const [showIds, setShowIds] = useState(false);
+    const [systems, setSystems] = useState<any[]>([]);
     const [tasks, setTasks] = useState<Record<string, Task>>({});
     const [workflows, setWorkflows] = useState<Workflow[]>([]);
     const [taskToWorkflowMap, setTaskToWorkflowMap] = useState<Record<string, string>>({}); // taskId -> workflowName
@@ -61,10 +64,13 @@ const TaskInstance: React.FC = () => {
     useEffect(() => {
         const fetchMetadata = async () => {
             try {
-                const [taskRes, workflowList] = await Promise.all([
+                const [taskRes, workflowList, systemList] = await Promise.all([
                     get<any>('/api/task/list?size=10000'), // Fetch all tasks for mapping
-                    get<Workflow[]>('/api/workflow/list')
+                    get<Workflow[]>('/api/workflow/list'),
+                    get<any[]>('/api/sys/system/list')
                 ]);
+
+                setSystems(systemList || []);
 
                 const taskList = taskRes.records || [];
 
@@ -139,8 +145,11 @@ const TaskInstance: React.FC = () => {
                 return taskToWorkflowIdMap[inst.taskId] === workflowFilter;
             });
         }
+        if (systemFilter) {
+            result = result.filter(inst => String(inst.systemId) === systemFilter);
+        }
         return result;
-    }, [instances, workflowFilter, taskToWorkflowIdMap]);
+    }, [instances, workflowFilter, systemFilter, taskToWorkflowIdMap]);
 
     const paginatedInstances = useMemo(() => {
         const start = (currentPage - 1) * pageSize;
@@ -372,6 +381,17 @@ const TaskInstance: React.FC = () => {
                     </select>
 
                     <select
+                        value={systemFilter}
+                        onChange={(e) => setSystemFilter(e.target.value)}
+                        className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-600 min-w-[150px]"
+                    >
+                        <option value="">所有系统</option>
+                        {systems.map(s => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                    </select>
+
+                    <select
                         value={statusFilter}
                         onChange={(e) => setStatusFilter(e.target.value)}
                         className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-600"
@@ -445,6 +465,7 @@ const TaskInstance: React.FC = () => {
                             </th>
                             {showIds && <th className="px-6 py-3 font-medium whitespace-nowrap">实例ID</th>}
                             <th className="px-6 py-3 font-medium whitespace-nowrap">工作流</th>
+                            <th className="px-6 py-3 font-medium whitespace-nowrap">所属系统</th>
                             <th className="px-6 py-3 font-medium whitespace-nowrap">任务名称</th>
                             {showIds && <th className="px-6 py-3 font-medium whitespace-nowrap">任务ID</th>}
                             <th className="px-6 py-3 font-medium whitespace-nowrap">任务类型</th>
@@ -491,6 +512,9 @@ const TaskInstance: React.FC = () => {
                                             <div className="flex items-center gap-2">
                                                 <span className="truncate max-w-[150px]" title={wfName}>{wfName}</span>
                                             </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-slate-600">
+                                            {systems.find(s => String(s.id) === String(inst.systemId))?.name || '-'}
                                         </td>
                                         <td className="px-6 py-4 font-medium text-slate-700">
                                             <span title={inst.taskId}>{tasks[inst.taskId]?.name || inst.taskId}</span>

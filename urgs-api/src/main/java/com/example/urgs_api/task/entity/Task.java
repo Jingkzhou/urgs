@@ -13,6 +13,7 @@ public class Task {
     private String name;
     private String type;
     private String content; // JSON content
+    private Long systemId; // Associated System ID
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -53,6 +54,14 @@ public class Task {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public Long getSystemId() {
+        return systemId;
+    }
+
+    public void setSystemId(Long systemId) {
+        this.systemId = systemId;
     }
 
     public String getCronExpression() {

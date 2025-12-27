@@ -21,6 +21,7 @@ public class TaskInstance {
 
     private String taskId;
     private String taskType;
+    private Long systemId; // Associated System ID
     private String dataDate;
     private String status;
     private Integer retryCount;

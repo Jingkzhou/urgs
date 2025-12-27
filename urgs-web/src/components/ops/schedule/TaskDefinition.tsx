@@ -20,6 +20,7 @@ const TaskDefinition: React.FC = () => {
     const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
     const [dispatchModalVisible, setDispatchModalVisible] = useState(false);
     const [dispatchDate, setDispatchDate] = useState<dayjs.Dayjs | null>(dayjs());
+    const [systems, setSystems] = useState<any[]>([]);
 
     const {
         dependencyGraph,
@@ -64,6 +65,7 @@ const TaskDefinition: React.FC = () => {
                     id: t.id,
                     name: t.name,
                     type: t.type,
+                    systemId: t.systemId,
                     group: 'default', // Backend doesn't have group yet
                     updateTime: t.updateTime,
                     ...JSON.parse(t.content || '{}') // Merge content
@@ -82,6 +84,7 @@ const TaskDefinition: React.FC = () => {
 
     useEffect(() => {
         fetchWorkflows();
+        fetchSystems();
     }, []);
 
     useEffect(() => {
@@ -102,6 +105,23 @@ const TaskDefinition: React.FC = () => {
             }
         } catch (error) {
             console.error('Failed to fetch workflows:', error);
+        }
+    };
+
+    const fetchSystems = async () => {
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch('/api/sys/system/list', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setSystems(data);
+            }
+        } catch (error) {
+            console.error('Failed to fetch systems:', error);
         }
     };
 
@@ -170,6 +190,7 @@ const TaskDefinition: React.FC = () => {
                 id: selectedTask.id, // Include ID for updates
                 name: selectedTask.name || 'New Task',
                 type: selectedTask.type || 'SHELL',
+                systemId: selectedTask.systemId,
                 content: JSON.stringify(selectedTask),
                 preTaskIds: selectedTask.dependentTasks || [] // Ensure dependencies are saved to backend
             };
@@ -333,6 +354,16 @@ const TaskDefinition: React.FC = () => {
                             <option value="PROCEDURE">PROCEDURE</option>
                             <option value="DEPENDENT">DEPENDENT</option>
                         </select>
+                        <select
+                            value={selectedTask?.systemId || ''}
+                            onChange={(e) => setSelectedTask((prev: any) => ({ ...prev, systemId: e.target.value }))}
+                            className="px-3 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white min-w-[120px]"
+                        >
+                            <option value="">选择系统</option>
+                            {systems.map(s => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                        </select>
                         <button
                             onClick={handleSaveTask}
                             className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white hover:bg-blue-700 rounded-md text-sm font-medium shadow-sm transition-colors"
@@ -416,6 +447,7 @@ const TaskDefinition: React.FC = () => {
                                 <th className="px-6 py-3 font-medium whitespace-nowrap">ID</th>
                                 <th className="px-6 py-3 font-medium whitespace-nowrap">任务名称</th>
                                 <th className="px-6 py-3 font-medium whitespace-nowrap">所属工作流</th>
+                                <th className="px-6 py-3 font-medium whitespace-nowrap">所属系统</th>
                                 <th className="px-6 py-3 font-medium whitespace-nowrap">类型</th>
                                 <th className="px-6 py-3 font-medium whitespace-nowrap">执行器组</th>
                                 <th className="px-6 py-3 font-medium whitespace-nowrap">更新时间</th>
@@ -457,6 +489,9 @@ const TaskDefinition: React.FC = () => {
                                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
                                             {getWorkflowName(task.id)}
                                         </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-slate-600">
+                                        {systems.find(s => String(s.id) === String(task.systemId))?.name || '-'}
                                     </td>
                                     <td className="px-6 py-4">
                                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">

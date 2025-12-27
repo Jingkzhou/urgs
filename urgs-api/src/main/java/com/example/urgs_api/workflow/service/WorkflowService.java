@@ -83,7 +83,8 @@ public class WorkflowService {
                         System.out.println("DEBUG: Task Data: " + data.toString());
 
                         // Save Task (sys_task)
-                        taskService.saveTask(taskId, label, type, taskContent, cronExpression, 1, 0, preTasks);
+                        taskService.saveTask(taskId, label, type, taskContent, cronExpression, 1, 0, preTasks,
+                                systemId);
 
                         // Strip heavy config from Workflow JSON
                         // We only keep UI-related fields in sys_workflow
