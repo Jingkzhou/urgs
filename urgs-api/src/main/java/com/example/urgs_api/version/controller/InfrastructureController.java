@@ -45,4 +45,16 @@ public class InfrastructureController {
         infrastructureService.delete(id);
         return ResponseEntity.noContent().build();
     }
+
+    @GetMapping("/export")
+    public void export(jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        infrastructureService.exportData(response);
+    }
+
+    @PostMapping("/import")
+    public ResponseEntity<Void> importData(@RequestParam("file") org.springframework.web.multipart.MultipartFile file)
+            throws java.io.IOException {
+        infrastructureService.importData(file);
+        return ResponseEntity.ok().build();
+    }
 }

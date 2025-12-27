@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Card, Row, Col, Badge, AutoComplete } from 'antd';
-import { Plus, Server, Cpu, HardDrive, Database, Search, RefreshCw, Edit, Trash2, Globe, Shield, Activity } from 'lucide-react';
+import { Table, Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Card, Row, Col, Badge, AutoComplete, Upload } from 'antd';
+import { Plus, Server, Cpu, HardDrive, Database, Search, RefreshCw, Edit, Trash2, Globe, Shield, Activity, Download, UploadCloud } from 'lucide-react';
 import {
     getInfrastructureAssets, createInfrastructureAsset, updateInfrastructureAsset, deleteInfrastructureAsset,
-    getSsoList, getDeployEnvironments, InfrastructureAsset, SsoConfig
+    getSsoList, getDeployEnvironments, InfrastructureAsset, SsoConfig,
+    exportInfrastructureAssets, importInfrastructureAssets
 } from '@/api/version';
 
 const { Option } = Select;
@@ -118,6 +119,37 @@ const InfrastructureManagement: React.FC = () => {
             message.error('保存失败');
         }
     };
+
+    const handleExport = async () => {
+        try {
+            const blob = await exportInfrastructureAssets();
+            if (blob) {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'infrastructure_assets.xlsx';
+                a.click();
+                window.URL.revokeObjectURL(url);
+                message.success('导出成功');
+            }
+        } catch (error) {
+            message.error('导出失败');
+        }
+    };
+
+    const handleImport = async (options: any) => {
+        const { file, onSuccess, onError } = options;
+        try {
+            await importInfrastructureAssets(file);
+            message.success('导入成功');
+            onSuccess("ok");
+            fetchAssets();
+        } catch (error) {
+            message.error('导入失败');
+            onError(error);
+        }
+    };
+
 
     const getStatusTag = (status: string) => {
         switch (status) {
@@ -269,7 +301,11 @@ const InfrastructureManagement: React.FC = () => {
                         />
                     </div>
                     <Button icon={<RefreshCw size={14} />} onClick={fetchAssets}>刷新</Button>
-                    <div className="ml-auto">
+                    <div className="ml-auto flex gap-2">
+                        <Upload customRequest={handleImport} showUploadList={false} accept=".xlsx, .xls">
+                            <Button icon={<UploadCloud size={14} />}>导入</Button>
+                        </Upload>
+                        <Button icon={<Download size={14} />} onClick={handleExport}>导出</Button>
                         <Button type="primary" icon={<Plus size={14} />} onClick={handleAdd}>
                             新增服务器
                         </Button>

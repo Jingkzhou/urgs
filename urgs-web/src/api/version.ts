@@ -480,3 +480,12 @@ export const updateInfrastructureAsset = (id: number, data: InfrastructureAsset)
 export const deleteInfrastructureAsset = (id: number) =>
     del(`/api/version/infrastructure/${id}`);
 
+export const exportInfrastructureAssets = () =>
+    get<Blob>('/api/version/infrastructure/export', undefined, { isBlob: true });
+
+export const importInfrastructureAssets = (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return post<void>('/api/version/infrastructure/import', formData);
+};
+
