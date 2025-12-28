@@ -62,6 +62,7 @@ public class VersionStatsServiceImpl implements VersionStatsService {
             if (user.getEmail() == null)
                 continue;
 
+            DeveloperKpiVO vo = new DeveloperKpiVO();
             vo.setUserId(user.getId());
             vo.setName(user.getName());
             vo.setEmail(user.getEmail());

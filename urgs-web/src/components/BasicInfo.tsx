@@ -123,21 +123,6 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
         }
     };
 
-    const handleUpdateToken = async (e: any) => {
-        e.preventDefault();
-        const form = e.target;
-        const token = form.token.value;
-        if (!token) return;
-
-        try {
-            await userService.updateProfile({
-                gitAccessToken: token
-            });
-            alert('Token 更新成功');
-        } catch (error) {
-            alert('Token 更新失败');
-        }
-    };
 
 
 
@@ -239,26 +224,6 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                         </div>
                     </div>
 
-                    <div className="md:col-span-2 border-t border-slate-100 pt-6 mt-6">
-                        <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-                            Git 集成配置
-                        </h3>
-                        <form onSubmit={handleUpdateToken} className="flex gap-4 items-end">
-                            <div className="flex-1">
-                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Personal Access Token</label>
-                                <input
-                                    name="token"
-                                    type="password"
-                                    placeholder="输入 GitLab / GitHub 访问令牌"
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                />
-                                <p className="text-[10px] text-slate-400 mt-1">用于同步您的代码仓库权限和提交记录</p>
-                            </div>
-                            <button type="submit" className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm hover:bg-slate-700 transition-colors h-[38px]">
-                                保存令牌
-                            </button>
-                        </form>
-                    </div>
                 </div>
             </div>
         </div>

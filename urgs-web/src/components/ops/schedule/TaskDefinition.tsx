@@ -427,55 +427,35 @@ const TaskDefinition: React.FC = () => {
     return (
         <div className="h-full flex flex-col bg-slate-50/50 overflow-hidden">
             {/* Header & Statistics Section */}
-            <div className="px-6 py-6 bg-white border-b border-slate-200/60">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
-                            任务定义
-                            <button
-                                onClick={() => setShowStats(!showStats)}
-                                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors"
-                                title={showStats ? "收起统计" : "展开统计"}
-                            >
-                                {showStats ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                            </button>
-                        </h1>
-                        <p className="text-xs text-slate-500 mt-1 font-medium">
-                            配置与管理所有调度任务，共 <span className="text-blue-600 tabular-nums">{pagination.total}</span> 个定义
-                        </p>
-                    </div>
+
+            {showStats && (
+                <div className="grid grid-cols-4 gap-6 mt-2 px-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <ScheduleStatsCard
+                        title="任务总数"
+                        value={globalStats.total}
+                        icon={<FileText />}
+                        color="blue"
+                    />
+                    <ScheduleStatsCard
+                        title="活跃任务"
+                        value={globalStats.enabled}
+                        icon={<CheckCircle />}
+                        color="green"
+                    />
+                    <ScheduleStatsCard
+                        title="接入系统"
+                        value={globalStats.systems}
+                        icon={<Server />}
+                        color="purple"
+                    />
+                    <ScheduleStatsCard
+                        title="关联工作流"
+                        value={globalStats.workflows}
+                        icon={<Activity />}
+                        color="amber"
+                    />
                 </div>
-
-                {showStats && (
-                    <div className="grid grid-cols-4 gap-6 mt-6 animate-in fade-in slide-in-from-top-2 duration-300">
-                        <ScheduleStatsCard
-                            title="任务总数"
-                            value={globalStats.total}
-                            icon={<FileText />}
-                            color="blue"
-                        />
-                        <ScheduleStatsCard
-                            title="活跃任务"
-                            value={globalStats.enabled}
-                            icon={<CheckCircle />}
-                            color="green"
-                        />
-                        <ScheduleStatsCard
-                            title="接入系统"
-                            value={globalStats.systems}
-                            icon={<Server />}
-                            color="purple"
-                        />
-                        <ScheduleStatsCard
-                            title="关联工作流"
-                            value={globalStats.workflows}
-                            icon={<Activity />}
-                            color="amber"
-                        />
-                    </div>
-                )}
-            </div>
-
+            )}
             {/* Toolbar */}
             <div className="px-6 py-4 bg-white/80 backdrop-blur-md border-b border-slate-200/60 flex justify-between items-center sticky top-0 z-20">
                 <div className="flex items-center gap-4">

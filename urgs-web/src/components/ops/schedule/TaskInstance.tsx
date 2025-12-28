@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, RotateCw, StopCircle, FileText, CheckCircle, X, RefreshCw, Terminal, Eye, EyeOff, Play, ArrowUpCircle, ArrowDownCircle, Boxes, ClipboardList, LayoutGrid, List, Activity, XCircle, Clock, ChevronUp, ChevronDown } from 'lucide-react';
+import { Search, RotateCw, StopCircle, FileText, CheckCircle, X, RefreshCw, Terminal, Eye, EyeOff, Play, ArrowUpCircle, ArrowDownCircle, Boxes, ClipboardList, LayoutGrid, List, Activity, XCircle, Clock, ChevronUp, ChevronDown, Filter } from 'lucide-react';
 import { message, DatePicker, Modal } from 'antd';
 import dayjs from 'dayjs';
 import Pagination from '../../common/Pagination';
@@ -370,66 +370,46 @@ const TaskInstance: React.FC = () => {
     return (
         <div className="h-full flex flex-col bg-slate-50/50 overflow-hidden relative">
             {/* Header & Statistics Section */}
-            <div className="px-6 py-6 bg-white border-b border-slate-200/60">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
-                            任务实例
-                            <button
-                                onClick={() => setShowStats(!showStats)}
-                                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors"
-                                title={showStats ? "收起统计" : "展开统计"}
-                            >
-                                {showStats ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                            </button>
-                        </h1>
-                        <p className="text-xs text-slate-500 mt-1 font-medium">
-                            监控实时运行状态，当前共加载 <span className="text-blue-600 tabular-nums">{filteredInstances.length}</span> 个实例
-                        </p>
-                    </div>
+            {showStats && (
+                <div className="grid grid-cols-5 gap-6 mt-2 px-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <ScheduleStatsCard
+                        title="实例总数"
+                        value={stats.total}
+                        icon={<ClipboardList />}
+                        color="blue"
+                    />
+                    <ScheduleStatsCard
+                        title="运行成功"
+                        value={stats.success}
+                        icon={<CheckCircle />}
+                        color="green"
+                        trendValue={`${stats.successRate}%`}
+                        trend={Number(stats.successRate) >= 90 ? 'up' : Number(stats.successRate) >= 70 ? 'neutral' : 'down'}
+                    />
+                    <ScheduleStatsCard
+                        title="执行中"
+                        value={stats.running}
+                        icon={<Activity />}
+                        color="purple"
+                    />
+                    <ScheduleStatsCard
+                        title="队列等待"
+                        value={stats.waiting}
+                        icon={<Clock />}
+                        color="amber"
+                    />
+                    <ScheduleStatsCard
+                        title="异常终止"
+                        value={stats.failed}
+                        icon={<XCircle />}
+                        color="red"
+                    />
                 </div>
-
-                {showStats && (
-                    <div className="grid grid-cols-5 gap-6 mt-6 animate-in fade-in slide-in-from-top-2 duration-300">
-                        <ScheduleStatsCard
-                            title="实例总数"
-                            value={stats.total}
-                            icon={<ClipboardList />}
-                            color="blue"
-                        />
-                        <ScheduleStatsCard
-                            title="运行成功"
-                            value={stats.success}
-                            icon={<CheckCircle />}
-                            color="green"
-                            trendValue={`${stats.successRate}%`}
-                            trend={Number(stats.successRate) >= 90 ? 'up' : Number(stats.successRate) >= 70 ? 'neutral' : 'down'}
-                        />
-                        <ScheduleStatsCard
-                            title="执行中"
-                            value={stats.running}
-                            icon={<Activity />}
-                            color="purple"
-                        />
-                        <ScheduleStatsCard
-                            title="队列等待"
-                            value={stats.waiting}
-                            icon={<Clock />}
-                            color="amber"
-                        />
-                        <ScheduleStatsCard
-                            title="异常终止"
-                            value={stats.failed}
-                            icon={<XCircle />}
-                            color="red"
-                        />
-                    </div>
-                )}
-            </div>
+            )}
 
             {/* Toolbar */}
             <div className="px-6 py-4 bg-white/80 backdrop-blur-md border-b border-slate-200/60 flex flex-wrap gap-4 justify-between items-center sticky top-0 z-20">
-                <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-3">
                     <div className="relative group">
                         <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
                         <input
@@ -438,7 +418,7 @@ const TaskInstance: React.FC = () => {
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             onKeyDown={handleSearch}
-                            className="pl-10 pr-4 py-2.5 text-sm border border-slate-200/80 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 w-64 bg-slate-50/50 transition-all font-medium"
+                            className="pl-10 pr-4 py-2.5 text-sm border border-slate-200/80 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 w-48 bg-slate-50/50 transition-all font-medium"
                         />
                     </div>
 
@@ -446,7 +426,7 @@ const TaskInstance: React.FC = () => {
                         <select
                             value={workflowFilter}
                             onChange={(e) => setWorkflowFilter(e.target.value)}
-                            className="bg-transparent px-3 py-1.5 text-sm text-slate-600 focus:outline-none font-medium min-w-[140px]"
+                            className="bg-transparent px-3 py-1.5 text-sm text-slate-600 focus:outline-none font-medium min-w-[120px]"
                         >
                             <option value="">所有工作流</option>
                             {workflows.map(w => (
@@ -457,7 +437,7 @@ const TaskInstance: React.FC = () => {
                         <select
                             value={systemFilter}
                             onChange={(e) => setSystemFilter(e.target.value)}
-                            className="bg-transparent px-3 py-1.5 text-sm text-slate-600 focus:outline-none font-medium min-w-[140px]"
+                            className="bg-transparent px-3 py-1.5 text-sm text-slate-600 focus:outline-none font-medium min-w-[120px]"
                         >
                             <option value="">所有系统</option>
                             {systems.map(s => (
@@ -470,13 +450,13 @@ const TaskInstance: React.FC = () => {
                         <DatePicker
                             placeholder="数据日期"
                             onChange={(date, dateString) => setDataDateFilter(typeof dateString === 'string' ? dateString : '')}
-                            style={{ borderRadius: '14px', height: '42px' }}
+                            style={{ borderRadius: '14px', height: '42px', width: '130px' }}
                         />
                         <DatePicker
                             placeholder="执行日期"
                             value={executionDateFilter ? dayjs(executionDateFilter) : null}
                             onChange={(date, dateString) => setExecutionDateFilter(typeof dateString === 'string' ? dateString : '')}
-                            style={{ borderRadius: '14px', height: '42px' }}
+                            style={{ borderRadius: '14px', height: '42px', width: '130px' }}
                             allowClear
                         />
                     </div>
