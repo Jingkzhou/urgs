@@ -160,6 +160,14 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
         setCurrentPath(newPath);
     };
 
+    const backToCodeView = () => {
+        setActiveTab('code');
+        setViewingPullRequests(false);
+        setViewingBranchList(false);
+        setViewingTagList(false);
+        setViewingCommitList(false);
+    };
+
 
 
     const renderHeader = () => (
@@ -443,10 +451,10 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
             key: 'pull-requests',
             label: (
                 <span
-                    className="flex items-center gap-1 text-orange-500"
+                    className="flex items-center gap-1 text-indigo-600"
                     onClick={() => setViewingPullRequests(true)}
                 >
-                    <GitPullRequest size={14} /> Pull Requests <Tag className="ml-1 bg-orange-500 text-white border-none text-xs px-1.5 py-0 rounded-full">0</Tag>
+                    <GitPullRequest size={14} /> Pull Requests <Tag className="ml-1 bg-gradient-to-tr from-indigo-500 to-purple-600 text-white border-none text-xs px-1.5 py-0 rounded-full">0</Tag>
                 </span>
             ),
             children: <div className="p-4 text-center text-slate-500">点击查看 Pull Request 列表</div>
@@ -494,7 +502,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                     setCurrentRef(ref);
                     setViewingBranchList(false);
                 }}
-                onBack={() => setViewingBranchList(false)}
+                onBack={backToCodeView}
             />
         );
     }
@@ -504,7 +512,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
         return (
             <TagList
                 repoId={repo.id!}
-                onBack={() => setViewingTagList(false)}
+                onBack={backToCodeView}
             />
         );
     }
@@ -514,7 +522,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
         return (
             <PullRequestList
                 repoId={repo.id!}
-                onBack={() => setViewingPullRequests(false)}
+                onBack={backToCodeView}
             />
         );
     }
@@ -528,7 +536,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                 branches={branches}
                 onRefChange={setCurrentRef}
                 onCommitClick={handleCommitClick}
-                onBack={() => setViewingCommitList(false)}
+                onBack={backToCodeView}
             />
         );
     }
