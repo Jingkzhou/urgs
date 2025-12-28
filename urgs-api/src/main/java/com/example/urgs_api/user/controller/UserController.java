@@ -118,9 +118,6 @@ public class UserController {
         if (req.getAvatarUrl() != null) {
             user.setAvatarUrl(req.getAvatarUrl());
         }
-        if (req.getGitAccessToken() != null) {
-            user.setGitAccessToken(req.getGitAccessToken());
-        }
 
         user.setPassword(null);
         userService.updateById(user);

@@ -4,11 +4,11 @@ import RoleManagement from './system/RoleManagement';
 import UserManagement from './system/UserManagement';
 import MenuManagement from './system/MenuManagement';
 import RegSystemManagement from './system/RegSystemManagement';
-import DataSourceManager from './DataSourceManager';
 import AiManagement from './system/ai/AiManagement';
+import DataSourceManager from './DataSourceManager';
 import Auth from './Auth';
 
-type SubModule = 'org' | 'role' | 'user' | 'menu' | 'sso' | 'datasource' | 'ai';
+type SubModule = 'org' | 'role' | 'user' | 'menu' | 'system' | 'sso' | 'datasource' | 'ai';
 
 const SystemManagement: React.FC = () => {
   const [activeModule, setActiveModule] = useState<SubModule>('org');

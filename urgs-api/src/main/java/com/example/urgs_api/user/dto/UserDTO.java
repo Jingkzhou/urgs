@@ -15,15 +15,12 @@ public class UserDTO {
     private String status;
     private String avatarUrl;
     private String email;
-    private String gitlabUsername;
-    private String gitAccessToken;
 
     public UserDTO() {
     }
 
     public UserDTO(String id, String empId, String name, String orgName, String roleName, Long roleId, String system,
-            String phone, String lastLogin, String status, String avatarUrl, String email, String gitlabUsername,
-            String gitAccessToken) {
+            String phone, String lastLogin, String status, String avatarUrl, String email) {
         this.id = id;
         this.empId = empId;
         this.name = name;
@@ -36,8 +33,6 @@ public class UserDTO {
         this.status = status;
         this.avatarUrl = avatarUrl;
         this.email = email;
-        this.gitlabUsername = gitlabUsername;
-        this.gitAccessToken = gitAccessToken;
     }
 
     public static UserDTO fromEntity(User user) {
@@ -57,8 +52,6 @@ public class UserDTO {
         dto.setStatus(user.getStatus());
         dto.setAvatarUrl(user.getAvatarUrl());
         dto.setEmail(user.getEmail());
-        dto.setGitlabUsername(user.getGitlabUsername());
-        dto.setGitAccessToken(user.getGitAccessToken());
         return dto;
     }
 
@@ -169,22 +162,6 @@ public class UserDTO {
 
     public void setEmail(String email) {
         this.email = email;
-    }
-
-    public String getGitlabUsername() {
-        return gitlabUsername;
-    }
-
-    public void setGitlabUsername(String gitlabUsername) {
-        this.gitlabUsername = gitlabUsername;
-    }
-
-    public String getGitAccessToken() {
-        return gitAccessToken;
-    }
-
-    public void setGitAccessToken(String gitAccessToken) {
-        this.gitAccessToken = gitAccessToken;
     }
 
     public Long getRoleId() {

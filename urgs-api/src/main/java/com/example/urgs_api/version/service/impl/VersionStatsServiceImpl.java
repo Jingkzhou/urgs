@@ -58,15 +58,13 @@ public class VersionStatsServiceImpl implements VersionStatsService {
         List<DeveloperKpiVO> kpis = new ArrayList<>();
 
         for (User user : users) {
-            // 基本过滤：只考虑有邮箱或 gitlab 用户名的用户
-            if (user.getEmail() == null && user.getGitlabUsername() == null)
+            // 基本过滤：只考虑有邮箱的用户
+            if (user.getEmail() == null)
                 continue;
 
-            DeveloperKpiVO vo = new DeveloperKpiVO();
             vo.setUserId(user.getId());
             vo.setName(user.getName());
             vo.setEmail(user.getEmail());
-            vo.setGitlabUsername(user.getGitlabUsername());
 
             // 根据评审记录计算统计数据
             List<AiCodeReview> userReviews = reviews.stream()

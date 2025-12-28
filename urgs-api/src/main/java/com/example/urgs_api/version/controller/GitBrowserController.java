@@ -110,12 +110,7 @@ public class GitBrowserController {
             @RequestAttribute(value = "userId", required = false) Long userId) {
 
         String userToken = null;
-        if (userId != null) {
-            com.example.urgs_api.user.model.User user = userService.getById(userId);
-            if (user != null) {
-                userToken = user.getGitAccessToken();
-            }
-        }
+        // User Git token integration removed
 
         gitPlatformService.createBranch(repoId, name, ref, userToken);
         return ResponseEntity.ok().build();
@@ -131,12 +126,7 @@ public class GitBrowserController {
             @RequestAttribute(value = "userId", required = false) Long userId) {
 
         String userToken = null;
-        if (userId != null) {
-            com.example.urgs_api.user.model.User user = userService.getById(userId);
-            if (user != null) {
-                userToken = user.getGitAccessToken();
-            }
-        }
+        // User Git token integration removed
 
         gitPlatformService.deleteBranch(repoId, name, userToken);
         return ResponseEntity.ok().build();
@@ -160,17 +150,8 @@ public class GitBrowserController {
             throw new RuntimeException("User not found");
         }
 
-        String token = user.getGitAccessToken();
-        if (token == null || token.isEmpty()) {
-            throw new RuntimeException("Git Access Token not configured for user. Please check your profile.");
-        }
-
-        try {
-            List<com.example.urgs_api.version.dto.GitProjectVO> projects = gitPlatformService.getGitLabProjects(token);
-            return ResponseEntity.ok(projects);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to fetch projects from GitLab: " + e.getMessage());
-        }
+        // User Git token integration removed
+        return ResponseEntity.ok(java.util.Collections.emptyList());
     }
 
     /**

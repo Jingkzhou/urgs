@@ -91,42 +91,7 @@ public class VersionController {
             return Collections.emptyList();
         }
 
-        // GitLab permission check
-        // We only filter 'gitlab' repos strictly. Others passed by default or need
-        // similar logic.
-        try {
-            String token = user.getGitAccessToken();
-            Set<String> allowedPaths = Collections.emptySet();
-
-            if (token != null && !token.isEmpty()) {
-                List<GitProjectVO> allowedProjects = gitPlatformService.getGitLabProjects(token);
-                allowedPaths = allowedProjects.stream()
-                        .map(GitProjectVO::getPathWithNamespace)
-                        .collect(Collectors.toSet());
-            }
-
-            // Effectively final for lambda
-            Set<String> finalAllowedPaths = allowedPaths;
-
-            return dbRepos.stream()
-                    .filter(repo -> {
-                        if ("gitlab".equalsIgnoreCase(repo.getPlatform())) {
-                            // Strict check: Must match a project in the user's allowed list
-                            return finalAllowedPaths.contains(repo.getFullName());
-                        }
-                        // For other platforms (gitee/github), pass through for now
-                        return true;
-                    })
-                    .collect(Collectors.toList());
-
-        } catch (Exception e) {
-            // Log error and return empty list or fail safe?
-            // If checking permissions fails, fail safe -> show nothing or show all?
-            // Security first: show nothing (or just the ones not requiring check?)
-            // Returning empty list for safety.
-            System.err.println("Failed to filter repositories: " + e.getMessage());
-            return Collections.emptyList();
-        }
+        return dbRepos;
     }
 
     @GetMapping("/repos/{id}")

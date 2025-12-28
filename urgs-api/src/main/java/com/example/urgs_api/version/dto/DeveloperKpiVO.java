@@ -7,7 +7,6 @@ public class DeveloperKpiVO {
     private Long userId;
     private String name;
     private String email;
-    private String gitlabUsername;
     private Integer totalCommits;
     private Integer totalReviews;
     private Double averageCodeScore; // 0-100

@@ -23,28 +23,7 @@ public class User {
     private String status;
     private String avatarUrl;
 
-    /**
-     * Email address used for Git commit association
-     */
     private String email;
-
-    /**
-     * GitLab username for permission and mapping
-     */
-    private String gitlabUsername;
-
-    /**
-     * Git Personal Access Token for API integration
-     */
-    private String gitAccessToken;
-
-    public String getGitAccessToken() {
-        return gitAccessToken;
-    }
-
-    public void setGitAccessToken(String gitAccessToken) {
-        this.gitAccessToken = gitAccessToken;
-    }
 
     public String getEmail() {
         return email;
@@ -52,14 +31,6 @@ public class User {
 
     public void setEmail(String email) {
         this.email = email;
-    }
-
-    public String getGitlabUsername() {
-        return gitlabUsername;
-    }
-
-    public void setGitlabUsername(String gitlabUsername) {
-        this.gitlabUsername = gitlabUsername;
     }
 
     public String getAvatarUrl() {
