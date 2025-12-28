@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GitBranch, Server, ShieldCheck, Megaphone, BarChart3, Layers, Folder, Cpu, Activity, Zap, Terminal, Gauge, ChevronRight } from 'lucide-react';
+import { GitBranch, ShieldCheck, Megaphone, BarChart3, Folder, Terminal, Gauge, ChevronRight, LayoutGrid, Timer, GitPullRequest, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { hasPermission } from '../utils/permission';
 import AppSystemList from './version/AppSystemList';
@@ -11,11 +11,10 @@ import GitRepoManagement from './version/GitRepoManagement';
 
 const VersionManagement: React.FC = () => {
     const [activeTab, setActiveTab] = useState<string>('');
-    const [systemStatus, setSystemStatus] = useState('在线');
 
     const TABS = [
-        { id: 'app', label: '应用系统', subLabel: 'System Grid', icon: Server, code: 'version:app:list', component: AppSystemList },
-        { id: 'repos', label: '仓库管理', subLabel: 'Git Nodes', icon: GitBranch, code: 'version:repo:list', component: GitRepoManagement },
+        { id: 'app', label: '应用系统', subLabel: 'Applications', icon: LayoutGrid, code: 'version:app:list', component: AppSystemList },
+        { id: 'repos', label: '仓库管理', subLabel: 'Repositories', icon: GitBranch, code: 'version:repo:list', component: GitRepoManagement },
         { id: 'code_audit', label: '智能走查', subLabel: 'AI Audit', icon: ShieldCheck, code: 'version:ai:audit', component: AICodeAudit },
         { id: 'notice', label: '公告配置', subLabel: 'Broadcast', icon: Megaphone, code: 'version:notice:config', component: NoticeManagement },
         { id: 'stats', label: '绩效统计', subLabel: 'Metrics', icon: BarChart3, code: 'version:stats', component: ReleaseStats },
@@ -36,14 +35,6 @@ const VersionManagement: React.FC = () => {
 
     const ActiveComponent = allTabs.find(tab => tab.id === activeTab)?.component;
 
-    // 模拟系统状态跳动
-    useEffect(() => {
-        const timer = setInterval(() => {
-            setSystemStatus(prev => prev === '在线' ? '活跃' : '在线');
-        }, 3000);
-        return () => clearInterval(timer);
-    }, []);
-
     return (
         <div className="flex h-[calc(100vh-120px)] bg-slate-50 rounded-2xl overflow-hidden border border-slate-200 shadow-xl shadow-slate-200/50 font-sans">
             {/* Control Rail (Sidebar) - Light Theme "Lab" Style */}
@@ -55,12 +46,12 @@ const VersionManagement: React.FC = () => {
 
                 {/* Header Brand */}
                 <div className="h-16 flex items-center px-6 border-b border-slate-100 bg-white/80 backdrop-blur">
-                    <div className="w-8 h-8 rounded bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20 mr-3">
-                        <Cpu className="w-5 h-5 text-white" />
+                    <div className="w-8 h-8 rounded bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 mr-3">
+                        <GitBranch className="w-5 h-5 text-white" />
                     </div>
                     <div>
-                        <h2 className="text-slate-800 font-bold tracking-tight text-sm">运维控制台</h2>
-                        <p className="text-[10px] text-slate-400 font-mono tracking-wider">V.24.0.1</p>
+                        <h2 className="text-slate-800 font-bold tracking-tight text-sm">版本控制台</h2>
+                        <p className="text-[10px] text-slate-400 font-mono tracking-wider">Release Center</p>
                     </div>
                 </div>
 
@@ -79,22 +70,22 @@ const VersionManagement: React.FC = () => {
                                 onClick={() => setActiveTab(tab.id)}
                                 className={`
                                     w-full group relative flex items-center justify-between px-3 py-3 rounded-lg transition-all duration-300 border border-transparent
-                                    ${isActive ? 'bg-blue-50 border-blue-100 text-blue-700' : 'hover:bg-slate-50 text-slate-500 hover:text-slate-800'}
+                                    ${isActive ? 'bg-indigo-50 border-indigo-100 text-indigo-700' : 'hover:bg-slate-50 text-slate-500 hover:text-slate-800'}
                                 `}
                             >
                                 {/* Active Indicator Bar */}
                                 {isActive && (
                                     <motion.div
                                         layoutId="activeRail"
-                                        className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600 rounded-l-lg"
+                                        className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-600 rounded-l-lg"
                                         transition={{ type: "spring", stiffness: 300, damping: 30 }}
                                     />
                                 )}
 
                                 <div className="flex items-center gap-3 pl-2">
-                                    <tab.icon size={18} className={`transition-colors ${isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                                    <tab.icon size={18} className={`transition-colors ${isActive ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
                                     <div className="text-left">
-                                        <div className={`text-sm font-bold leading-none mb-1 ${isActive ? 'text-blue-900' : 'text-slate-700'}`}>
+                                        <div className={`text-sm font-bold leading-none mb-1 ${isActive ? 'text-indigo-900' : 'text-slate-700'}`}>
                                             {tab.label}
                                         </div>
                                         <div className="text-[10px] opacity-60 font-mono tracking-wide uppercase">
@@ -104,25 +95,23 @@ const VersionManagement: React.FC = () => {
                                 </div>
 
                                 {isActive && (
-                                    <ChevronRight size={14} className="text-blue-400" />
+                                    <ChevronRight size={14} className="text-indigo-400" />
                                 )}
                             </button>
                         );
                     })}
                 </div>
 
-                {/* Footer Status */}
+                {/* Footer Status - Release Window */}
                 <div className="p-4 border-t border-slate-100 bg-slate-50/50">
                     <div className="flex items-center gap-3 p-3 rounded-lg bg-white border border-slate-200 shadow-sm">
-                        <div className="relative w-2 h-2">
-                            <div className="absolute inset-0 bg-emerald-500 rounded-full animate-ping opacity-75"></div>
-                            <div className="relative w-2 h-2 bg-emerald-500 rounded-full"></div>
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50 text-emerald-600">
+                            <Calendar size={14} />
                         </div>
                         <div className="flex-1">
-                            <p className="text-[10px] uppercase text-slate-400 font-bold mb-0.5">系统状态</p>
-                            <p className="text-xs font-mono text-emerald-600 font-bold tracking-wider">{systemStatus}</p>
+                            <p className="text-[10px] uppercase text-slate-400 font-bold mb-0.5">当前窗口</p>
+                            <p className="text-xs font-mono text-slate-700 font-bold tracking-wider">每周四 20:00</p>
                         </div>
-                        <Activity size={14} className="text-slate-400" />
                     </div>
                 </div>
             </aside>
@@ -137,7 +126,7 @@ const VersionManagement: React.FC = () => {
                             <span className="text-xs font-mono">/</span >
                             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">DevOps</span>
                             <span className="text-xs font-mono">/</span>
-                            <span className="text-xs font-bold uppercase tracking-wider text-blue-600">
+                            <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">
                                 {allTabs.find(t => t.id === activeTab)?.label || '未知模块'}
                             </span>
                         </div>
@@ -145,14 +134,14 @@ const VersionManagement: React.FC = () => {
 
                     <div className="flex items-center gap-6">
                         <div className="hidden md:flex items-center gap-4 text-[10px] font-mono text-slate-400">
-                            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-amber-50 border border-amber-100 text-amber-600 font-bold">
-                                <Zap size={12} />
-                                <span>延迟: 24ms</span>
+                            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-orange-50 border border-orange-100 text-orange-600 font-bold">
+                                <Timer size={12} />
+                                <span>待发布: 3</span>
                             </div>
                             <div className="w-px h-3 bg-slate-300"></div>
-                            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-indigo-50 border border-indigo-100 text-indigo-600 font-bold">
-                                <Server size={12} />
-                                <span>节点: 12/12</span>
+                            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-blue-50 border border-blue-100 text-blue-600 font-bold">
+                                <GitPullRequest size={12} />
+                                <span>合并请求: 12</span>
                             </div>
                         </div>
                     </div>
