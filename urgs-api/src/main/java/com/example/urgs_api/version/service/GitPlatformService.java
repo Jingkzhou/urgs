@@ -743,9 +743,11 @@ public class GitPlatformService {
     // ==================== GitLab ====================
 
     private GitFileContent getGitLabFileContent(GitRepository repo, String ref, String path) throws Exception {
-        String projectId = java.net.URLEncoder.encode(repo.getFullName(), "UTF-8");
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
         String encodedPath = java.net.URLEncoder.encode(path, "UTF-8");
-        String url = String.format("https://gitlab.com/api/v4/projects/%s/repository/files/%s?ref=%s",
+        String url = String.format("%s/projects/%s/repository/files/%s?ref=%s",
+                apiBase,
                 projectId, encodedPath, ref);
 
         JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
@@ -767,9 +769,11 @@ public class GitPlatformService {
     }
 
     private List<GitFileEntry> getGitLabFileTree(GitRepository repo, String ref, String path) throws Exception {
+        String apiBase = getGitLabApiBase(repo);
         // GitLab 需要 project ID，这里使用 URL 编码的 fullName
-        String projectId = java.net.URLEncoder.encode(repo.getFullName(), "UTF-8");
-        String url = String.format("https://gitlab.com/api/v4/projects/%s/repository/tree?ref=%s&path=%s",
+        String projectId = getGitLabProjectId(repo);
+        String url = String.format("%s/projects/%s/repository/tree?ref=%s&path=%s",
+                apiBase,
                 projectId, ref, path.isEmpty() ? "" : path);
 
         JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
@@ -797,13 +801,15 @@ public class GitPlatformService {
     }
 
     private List<GitBranch> getGitLabBranches(GitRepository repo) throws Exception {
-        String projectId = java.net.URLEncoder.encode(repo.getFullName(), "UTF-8");
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
         List<GitBranch> allBranches = new ArrayList<>();
         int page = 1;
         int perPage = 100;
 
         while (true) {
-            String url = String.format("https://gitlab.com/api/v4/projects/%s/repository/branches?page=%d&per_page=%d",
+            String url = String.format("%s/projects/%s/repository/branches?page=%d&per_page=%d",
+                    apiBase,
                     projectId, page, perPage);
 
             JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
@@ -875,8 +881,10 @@ public class GitPlatformService {
     }
 
     private GitCommit getGitLabLatestCommit(GitRepository repo, String ref) throws Exception {
-        String projectId = java.net.URLEncoder.encode(repo.getFullName(), "UTF-8");
-        String url = String.format("https://gitlab.com/api/v4/projects/%s/repository/commits?ref_name=%s&per_page=1",
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
+        String url = String.format("%s/projects/%s/repository/commits?ref_name=%s&per_page=1",
+                apiBase,
                 projectId, ref);
 
         JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
@@ -901,10 +909,10 @@ public class GitPlatformService {
 
     private List<GitCommit> getGitLabCommits(GitRepository repo, String ref, Integer page, Integer perPage)
             throws Exception {
-        String projectId = java.net.URLEncoder.encode(repo.getFullName(), "UTF-8");
-        String url = String.format(
-                "https://gitlab.com/api/v4/projects/%s/repository/commits?ref_name=%s&page=%d&per_page=%d",
-                projectId, ref, page, perPage);
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
+        String url = String.format("%s/projects/%s/repository/commits?ref_name=%s&page=%d&per_page=%d",
+                apiBase, projectId, ref, page, perPage);
 
         JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
         List<GitCommit> commits = new ArrayList<>();
@@ -926,14 +934,14 @@ public class GitPlatformService {
     }
 
     private GitCommit getGitLabCommitDetail(GitRepository repo, String sha) throws Exception {
-        String projectId = java.net.URLEncoder.encode(repo.getFullName(), "UTF-8");
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
         // Get Commit Info
-        String infoUrl = String.format("https://gitlab.com/api/v4/projects/%s/repository/commits/%s", projectId, sha);
+        String infoUrl = String.format("%s/projects/%s/repository/commits/%s", apiBase, projectId, sha);
         JsonNode commit = httpGetWithAuth(infoUrl, repo.getAccessToken(), "PRIVATE-TOKEN");
 
         // Get Diffs
-        String diffUrl = String.format("https://gitlab.com/api/v4/projects/%s/repository/commits/%s/diff", projectId,
-                sha);
+        String diffUrl = String.format("%s/projects/%s/repository/commits/%s/diff", apiBase, projectId, sha);
         JsonNode diffsNode = httpGetWithAuth(diffUrl, repo.getAccessToken(), "PRIVATE-TOKEN");
 
         List<GitCommitDiff> diffs = new ArrayList<>();
@@ -962,8 +970,9 @@ public class GitPlatformService {
     }
 
     private void createGitLabBranch(GitRepository repo, String branchName, String ref, String token) throws Exception {
-        String projectId = java.net.URLEncoder.encode(repo.getFullName(), "UTF-8");
-        String url = String.format("https://gitlab.com/api/v4/projects/%s/repository/branches", projectId);
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
+        String url = String.format("%s/projects/%s/repository/branches", apiBase, projectId);
 
         String body = String.format("{\"branch\":\"%s\",\"ref\":\"%s\"}", branchName, ref);
 
@@ -971,23 +980,24 @@ public class GitPlatformService {
     }
 
     private void deleteGitLabBranch(GitRepository repo, String branchName, String token) throws Exception {
-        String projectId = java.net.URLEncoder.encode(repo.getFullName(), "UTF-8");
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
         String branch = java.net.URLEncoder.encode(branchName, "UTF-8");
-        String url = String.format("https://gitlab.com/api/v4/projects/%s/repository/branches/%s",
-                projectId, branch);
+        String url = String.format("%s/projects/%s/repository/branches/%s", apiBase, projectId, branch);
 
         httpDelete(url, token, "PRIVATE-TOKEN");
     }
 
     private List<GitTag> getGitLabTags(GitRepository repo) throws Exception {
-        String projectId = java.net.URLEncoder.encode(repo.getFullName(), "UTF-8");
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
         List<GitTag> allTags = new ArrayList<>();
         int page = 1;
         int perPage = 100;
 
         while (true) {
-            String url = String.format("https://gitlab.com/api/v4/projects/%s/repository/tags?page=%d&per_page=%d",
-                    projectId, page, perPage);
+            String url = String.format("%s/projects/%s/repository/tags?page=%d&per_page=%d",
+                    apiBase, projectId, page, perPage);
 
             JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
 
@@ -1014,6 +1024,87 @@ public class GitPlatformService {
         }
 
         return allTags;
+    }
+
+    private String getGitLabProjectId(GitRepository repo) throws Exception {
+        String fullName = resolveRepoFullName(repo);
+        return java.net.URLEncoder.encode(fullName, "UTF-8");
+    }
+
+    private String resolveRepoFullName(GitRepository repo) {
+        String fullName = repo.getFullName();
+        if (fullName != null) {
+            fullName = fullName.trim();
+        }
+        if (fullName != null && !fullName.isEmpty()) {
+            String fromInput = parseFullNameFromCloneUrl(fullName);
+            return fromInput != null ? fromInput : fullName;
+        }
+        String fromClone = parseFullNameFromCloneUrl(repo.getCloneUrl());
+        if (fromClone != null) {
+            log.warn("仓库全名为空，使用仓库地址解析: {}", fromClone);
+            return fromClone;
+        }
+        throw new RuntimeException("仓库全名为空或无法从仓库地址解析");
+    }
+
+    private String parseFullNameFromCloneUrl(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (trimmed.contains("://")) {
+            try {
+                URI uri = URI.create(trimmed);
+                return normalizeRepoPath(uri.getPath());
+            } catch (IllegalArgumentException e) {
+                log.warn("解析仓库地址失败: {}", trimmed, e);
+                return null;
+            }
+        }
+        int colonIndex = trimmed.indexOf(':');
+        int atIndex = trimmed.indexOf('@');
+        if (colonIndex > -1 && (atIndex == -1 || colonIndex > atIndex)) {
+            return normalizeRepoPath(trimmed.substring(colonIndex + 1));
+        }
+        return normalizeRepoPath(trimmed);
+    }
+
+    private String normalizeRepoPath(String path) {
+        if (path == null) {
+            return null;
+        }
+        String cleaned = path.trim();
+        while (cleaned.startsWith("/")) {
+            cleaned = cleaned.substring(1);
+        }
+        if (cleaned.endsWith(".git")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 4);
+        }
+        return cleaned.isEmpty() ? null : cleaned;
+    }
+
+    private String getGitLabApiBase(GitRepository repo) {
+        String cloneUrl = repo.getCloneUrl();
+        if (cloneUrl == null || cloneUrl.isBlank()) {
+            return "https://gitlab.com/api/v4";
+        }
+        try {
+            URI uri = URI.create(cloneUrl);
+            if (uri.getHost() == null) {
+                return "https://gitlab.com/api/v4";
+            }
+            String scheme = uri.getScheme() != null ? uri.getScheme() : "https";
+            int port = uri.getPort();
+            String base = scheme + "://" + uri.getHost() + (port != -1 ? ":" + port : "");
+            return base + "/api/v4";
+        } catch (IllegalArgumentException e) {
+            log.warn("解析 GitLab cloneUrl 失败: {}", cloneUrl, e);
+            return "https://gitlab.com/api/v4";
+        }
     }
 
     // ==================== HTTP Helpers ====================

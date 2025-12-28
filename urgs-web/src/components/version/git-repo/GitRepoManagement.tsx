@@ -14,6 +14,32 @@ const platformConfig = {
     github: { label: 'GitHub', color: 'default', icon: '⚫' },
 };
 
+const parseFullNameFromCloneUrl = (cloneUrl?: string): string | null => {
+    if (!cloneUrl) {
+        return null;
+    }
+    const trimmed = cloneUrl.trim();
+    if (!trimmed) {
+        return null;
+    }
+    if (trimmed.includes('://')) {
+        try {
+            const url = new URL(trimmed);
+            const path = url.pathname.replace(/^\/+/, '').replace(/\.git$/, '');
+            return path ? path : null;
+        } catch (error) {
+            return null;
+        }
+    }
+    const colonIndex = trimmed.indexOf(':');
+    if (colonIndex > -1) {
+        const path = trimmed.substring(colonIndex + 1).replace(/^\/+/, '').replace(/\.git$/, '');
+        return path ? path : null;
+    }
+    const fallback = trimmed.replace(/^\/+/, '').replace(/\.git$/, '');
+    return fallback ? fallback : null;
+};
+
 const GitRepoManagement: React.FC = () => {
     const [repos, setRepos] = useState<GitRepository[]>([]);
     const [ssoList, setSsoList] = useState<SsoConfig[]>([]);
@@ -75,11 +101,17 @@ const GitRepoManagement: React.FC = () => {
     const handleSubmit = async () => {
         try {
             const values = await form.validateFields();
+            const fullName = parseFullNameFromCloneUrl(values.cloneUrl);
+            if (!fullName) {
+                message.error('无法从仓库地址解析仓库全名，请检查仓库地址');
+                return;
+            }
+            const payload = { ...values, fullName };
             if (editingRepo?.id) {
-                await updateGitRepository(editingRepo.id, values);
+                await updateGitRepository(editingRepo.id, payload);
                 message.success('更新成功');
             } else {
-                await createGitRepository(values);
+                await createGitRepository(payload);
                 message.success('添加成功');
             }
             setModalVisible(false);
@@ -256,15 +288,11 @@ const GitRepoManagement: React.FC = () => {
                     </Form.Item>
 
                     <Form.Item
-                        name="fullName"
-                        label="仓库全名 (owner/repo)"
-                        rules={[{ required: true, message: '请输入仓库全名，例如 jingkzhou/urgs' }]}
-                        extra="格式：用户名或组织名/仓库名，用于 API 调用"
+                        name="cloneUrl"
+                        label="仓库地址 (HTTPS)"
+                        rules={[{ required: true, message: '请输入仓库地址' }]}
+                        extra="系统将自动从仓库地址解析 owner/repo"
                     >
-                        <Input placeholder="例如：jingkzhou/urgs" />
-                    </Form.Item>
-
-                    <Form.Item name="cloneUrl" label="仓库地址 (HTTPS)" rules={[{ required: true, message: '请输入仓库地址' }]}>
                         <Input placeholder="https://gitee.com/your-org/your-repo.git" />
                     </Form.Item>
 
