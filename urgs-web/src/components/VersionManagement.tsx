@@ -7,7 +7,7 @@ import AICodeAudit from './version/AICodeAudit';
 import NoticeManagement from './version/NoticeManagement';
 import ReleaseStats from './version/ReleaseStats';
 import VersionOverview from './version/VersionOverview';
-import GitRepoManagement from './version/GitRepoManagement';
+import GitRepoManagement from './version/git-repo/GitRepoManagement';
 
 const VersionManagement: React.FC = () => {
     const [activeTab, setActiveTab] = useState<string>('');

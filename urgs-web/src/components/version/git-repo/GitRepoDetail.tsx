@@ -10,10 +10,10 @@ import BranchList from './BranchList';
 import TagList from './TagList';
 import PullRequestList from './PullRequestList';
 import { formatCommitTime } from '@/utils/dateUtils';
-import PipelineManagement from './PipelineManagement';
-import DeploymentManagement from './DeploymentManagement';
-import ReleaseLedger from './ReleaseLedger';
-import AICodeAudit from './AICodeAudit';
+import PipelineManagement from '../PipelineManagement';
+import DeploymentManagement from '../DeploymentManagement';
+import ReleaseLedger from '../ReleaseLedger';
+import AICodeAudit from '../AICodeAudit';
 
 // Menu items for the Plus button
 const plusMenuItems: MenuProps['items'] = [

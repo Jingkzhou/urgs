@@ -3,8 +3,8 @@ import { Table, Button, Modal, Form, Input, Select, Tag, Space, message, Popconf
 import { Plus, GitBranch, Trash2, Edit, ExternalLink, RefreshCw } from 'lucide-react';
 import { getGitRepositories, createGitRepository, updateGitRepository, deleteGitRepository, getSsoList, GitRepository, SsoConfig } from '@/api/version';
 import GitRepoDetail from './GitRepoDetail';
-import PageHeader from '../common/PageHeader';
-import StatusTag from '../common/StatusTag';
+import PageHeader from '../../common/PageHeader';
+import StatusTag from '../../common/StatusTag';
 
 const { Option } = Select;
 
