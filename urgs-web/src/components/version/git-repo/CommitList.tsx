@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Select, Spin, Avatar, message } from 'antd';
-import { ArrowLeft, GitBranch, Copy, Code } from 'lucide-react';
+import { ArrowLeft, GitBranch, Copy, Code, Clock } from 'lucide-react';
 import { GitCommit, GitBranch as GitBranchType, getRepoCommits } from '@/api/version';
 import { formatCommitTime } from '@/utils/dateUtils';
 
@@ -35,10 +35,19 @@ const CommitList: React.FC<Props> = ({ repoId, currentRef, branches, onRefChange
     return (
         <div className="bg-white min-h-screen">
             {/* Header */}
-            <div className="border-b px-6 py-4 flex items-center justify-between sticky top-0 bg-white z-10">
+            <div className="border-b px-6 py-4 flex items-center justify-between sticky top-0 bg-white z-10 mb-4">
                 <div className="flex items-center gap-3">
-                    <Button icon={<ArrowLeft size={16} />} onClick={onBack}>返回</Button>
-                    <h2 className="text-lg font-bold m-0">提交记录 ({commits.length})</h2>
+                    <Button
+                        icon={<ArrowLeft size={16} />}
+                        onClick={onBack}
+                        className="flex items-center"
+                    >
+                        返回
+                    </Button>
+                    <h2 className="text-lg font-bold m-0 flex items-center gap-2">
+                        <Clock size={20} className="text-orange-500" />
+                        提交记录 ({commits.length})
+                    </h2>
                 </div>
                 <div className="flex items-center gap-3">
                     <Select value={currentRef} onChange={onRefChange} style={{ width: 140 }}>

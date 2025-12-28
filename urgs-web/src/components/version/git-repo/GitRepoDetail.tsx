@@ -423,7 +423,10 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                         },
                     ]
                 }}>
-                    <span className="flex items-center gap-1" onClick={e => e.preventDefault()}>
+                    <span className="flex items-center gap-1" onClick={e => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}>
                         <Folder size={14} /> 仓库 <ChevronRight size={12} className="rotate-90" />
                     </span>
                 </Dropdown>

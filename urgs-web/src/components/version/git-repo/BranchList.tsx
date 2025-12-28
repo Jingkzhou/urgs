@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Tabs, Input, Select, Button, Table, Tag, Space, Avatar, message, Modal, Dropdown, MenuProps } from 'antd';
-import { Search, GitBranch, Plus, Trash2, Filter, MoreHorizontal, User, Clock, ArrowLeftRight, CheckCircle2 } from 'lucide-react';
+import { Search, GitBranch, Plus, Trash2, Filter, MoreHorizontal, User, Clock, ArrowLeftRight, CheckCircle2, ArrowLeft } from 'lucide-react';
 import { GitBranch as GitBranchType, getRepoBranches, createRepoBranch, deleteRepoBranch } from '@/api/version';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -153,8 +153,6 @@ const BranchList: React.FC<Props> = ({ repoId, currentRef, platform, onRefChange
         </div>
     );
 
-    // Removed renderOverview and renderList functions
-
     // Consolidate View: Default -> All
     const renderConsolidatedView = () => (
         <div className="space-y-6">
@@ -173,108 +171,112 @@ const BranchList: React.FC<Props> = ({ repoId, currentRef, platform, onRefChange
                     <span className="text-slate-400 normal-case font-normal text-xs">{filteredBranches.length} 个分支</span>
                 </div>
                 {filteredBranches.length > 0 ? (
-                    // Filter out default branch from the main list if we want to avoid duplication, 
-                    // but "All Branches" usually implies ALL. 
-                    // Let's show all, or filter default? Typically All includes Default.
-                    // User said "Default branch under display ALL branches".
-                    // If I show Default at top, maybe I should exclude it from the list below to avoid noise?
-                    // Let's keep it in "All" for completeness but it's fine.
                     filteredBranches.map(renderBranchItem)
                 ) : (
                     <div className="p-8 text-center text-slate-400">未找到匹配的分支</div>
                 )}
             </div>
-
-            {/* Active Branches Section (Optional, as requested "then show active") */}
-            {/* If All includes Active, this is redundant. But user asked for it. 
-                Maybe they meant "Active" as a separate highlighting?
-                I will skip a separate Active section if All is comprehensive, to avoid clutter.
-                Or I can put Active *before* All if that was the intent. 
-                "Default -> All -> Active" is definitely weird.
-                I will stick to Default -> All.
-            */}
         </div>
     );
 
     return (
-        <div className="max-w-7xl mx-auto py-2">
-            {/* Header / Filter Bar */}
-            <div className="flex flex-col gap-4 mb-6">
-                {/* Removed Tabs */}
-
-                <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-3 flex-1">
-                        <Input
-                            prefix={<Search size={14} className="text-slate-400" />}
-                            placeholder="输入分支名以搜索分支"
-                            className="w-64"
-                            value={searchText}
-                            onChange={e => setSearchText(e.target.value)}
-                        />
-                        <Select
-                            placeholder="创建者"
-                            allowClear
-                            className="w-40"
-                            options={creators}
-                            onChange={setCreatorFilter}
-                        />
-                        <Select
-                            placeholder="分支属性"
-                            allowClear
-                            className="w-40"
-                            options={[
-                                { label: '已合并', value: 'merged' },
-                                { label: '未合并', value: 'unmerged' },
-                                { label: '保护分支', value: 'protected' },
-                            ]}
-                        />
-                        <Button type="link" onClick={() => { setSearchText(''); setCreatorFilter(null); }}>清空</Button>
-                    </div>
-                    <Space>
-                        <Button onClick={() => fetchBranches()} icon={<Clock size={14} />}>刷新</Button>
-                        <Button type="primary" className="bg-orange-500 hover:bg-orange-600 border-none" icon={<Plus size={16} />} onClick={() => setIsCreateModalOpen(true)}>新建分支</Button>
-                        <Button icon={<Trash2 size={14} />}>已删除分支</Button>
-                    </Space>
+        <div className="bg-white min-h-screen">
+            {/* Header */}
+            <div className="border-b px-6 py-4 flex items-center justify-between sticky top-0 bg-white z-10 mb-4">
+                <div className="flex items-center gap-3">
+                    <Button
+                        icon={<ArrowLeft size={16} />}
+                        onClick={onBack}
+                        className="flex items-center"
+                    >
+                        返回
+                    </Button>
+                    <h2 className="text-lg font-bold m-0 flex items-center gap-2">
+                        <GitBranch size={20} className="text-blue-500" />
+                        分支列表 ({branches.length})
+                    </h2>
+                </div>
+                <div className="flex items-center gap-2">
+                    <Button onClick={() => fetchBranches()} icon={<Clock size={14} />}>刷新</Button>
+                    <Button type="primary" className="bg-orange-500 hover:bg-orange-600 border-none" icon={<Plus size={16} />} onClick={() => setIsCreateModalOpen(true)}>新建分支</Button>
                 </div>
             </div>
 
-            {/* Content */}
-            {loading ? (
-                <div className="py-20 text-center">加载中...</div>
-            ) : (
-                renderConsolidatedView()
-            )}
-
-            {/* Create Modal */}
-            <Modal
-                title="新建分支"
-                open={isCreateModalOpen}
-                onOk={handleCreateBranch}
-                onCancel={() => setIsCreateModalOpen(false)}
-                confirmLoading={createLoading}
-                okText="创建"
-                cancelText="取消"
-            >
-                <div className="space-y-4 py-4">
-                    <div>
-                        <div className="mb-1 text-sm font-medium text-slate-700">分支名称</div>
-                        <Input
-                            placeholder="请输入新分支名称"
-                            value={newBranchName}
-                            onChange={e => setNewBranchName(e.target.value)}
-                        />
-                    </div>
-                    <div>
-                        <div className="mb-1 text-sm font-medium text-slate-700">源分支 (从哪里创建)</div>
-                        <Select
-                            className="w-full"
-                            value={sourceBranch}
-                            onChange={setSourceBranch}
-                            options={branches.map(b => ({ label: b.name, value: b.name }))}
-                        />
+            <div className="max-w-7xl mx-auto px-6">
+                {/* Filter Bar */}
+                <div className="flex flex-col gap-4 mb-6">
+                    <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3 flex-1">
+                            <Input
+                                prefix={<Search size={14} className="text-slate-400" />}
+                                placeholder="输入分支名以搜索分支"
+                                className="w-64"
+                                value={searchText}
+                                onChange={e => setSearchText(e.target.value)}
+                            />
+                            <Select
+                                placeholder="创建者"
+                                allowClear
+                                className="w-40"
+                                options={creators}
+                                onChange={setCreatorFilter}
+                            />
+                            <Select
+                                placeholder="分支属性"
+                                allowClear
+                                className="w-40"
+                                options={[
+                                    { label: '已合并', value: 'merged' },
+                                    { label: '未合并', value: 'unmerged' },
+                                    { label: '保护分支', value: 'protected' },
+                                ]}
+                            />
+                            <Button type="link" onClick={() => { setSearchText(''); setCreatorFilter(null); }}>清空</Button>
+                        </div>
+                        <Space>
+                            <Button icon={<Trash2 size={14} />}>已删除分支</Button>
+                        </Space>
                     </div>
                 </div>
-            </Modal>
+
+                {/* Content */}
+                {loading ? (
+                    <div className="py-20 text-center">加载中...</div>
+                ) : (
+                    renderConsolidatedView()
+                )}
+
+                {/* Create Modal */}
+                <Modal
+                    title="新建分支"
+                    open={isCreateModalOpen}
+                    onOk={handleCreateBranch}
+                    onCancel={() => setIsCreateModalOpen(false)}
+                    confirmLoading={createLoading}
+                    okText="创建"
+                    cancelText="取消"
+                >
+                    <div className="space-y-4 py-4">
+                        <div>
+                            <div className="mb-1 text-sm font-medium text-slate-700">分支名称</div>
+                            <Input
+                                placeholder="请输入新分支名称"
+                                value={newBranchName}
+                                onChange={e => setNewBranchName(e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <div className="mb-1 text-sm font-medium text-slate-700">源分支 (从哪里创建)</div>
+                            <Select
+                                className="w-full"
+                                value={sourceBranch}
+                                onChange={setSourceBranch}
+                                options={branches.map(b => ({ label: b.name, value: b.name }))}
+                            />
+                        </div>
+                    </div>
+                </Modal>
+            </div>
         </div>
     );
 };

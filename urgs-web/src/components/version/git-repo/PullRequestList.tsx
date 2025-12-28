@@ -74,19 +74,31 @@ const PullRequestList: React.FC<Props> = ({ repoId, onBack, onCreatePR }) => {
 
     return (
         <div className="bg-white min-h-screen">
-            {/* 页面头部及返回按钮 */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-4">
-                <Button
-                    type="text"
-                    icon={<ArrowLeft size={18} />}
-                    onClick={onBack}
-                    className="hover:bg-slate-100"
-                />
-                <div className="h-4 w-px bg-slate-200" />
-                <h2 className="text-lg font-bold text-slate-800 m-0 flex items-center gap-2">
-                    <GitPullRequest size={20} className="text-orange-500" />
-                    Pull Requests
-                </h2>
+            {/* Header */}
+            <div className="border-b px-6 py-4 flex items-center justify-between sticky top-0 bg-white z-10 mb-4">
+                <div className="flex items-center gap-3">
+                    <Button
+                        icon={<ArrowLeft size={16} />}
+                        onClick={onBack}
+                        className="flex items-center"
+                    >
+                        返回
+                    </Button>
+                    <h2 className="text-lg font-bold m-0 flex items-center gap-2">
+                        <GitPullRequest size={20} className="text-orange-500" />
+                        Pull Requests列表 ({counts.all})
+                    </h2>
+                </div>
+                <div className="flex items-center gap-2">
+                    <Button
+                        type="primary"
+                        icon={<Plus size={14} />}
+                        className="bg-orange-500 hover:bg-orange-600 border-none"
+                        onClick={onCreatePR}
+                    >
+                        新建 Pull Request
+                    </Button>
+                </div>
             </div>
 
             {/* 顶部工具栏 */}
