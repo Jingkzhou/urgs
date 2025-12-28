@@ -589,7 +589,7 @@ const TaskDefinition: React.FC = () => {
                                 )}
                                 {!loading && tasks.map((task) => (
                                     <tr key={task.id} className="hover:bg-slate-50 transition-colors group">
-                                        <td className="px-6 py-4">
+                                        <td className="px-6 py-2">
                                             <Checkbox
                                                 checked={selectedRowKeys.includes(task.id)}
                                                 onChange={(e) => {
@@ -601,24 +601,24 @@ const TaskDefinition: React.FC = () => {
                                                 }}
                                             />
                                         </td>
-                                        <td className="px-6 py-4 font-mono text-slate-500">{task.id}</td>
-                                        <td className="px-6 py-4 font-medium text-slate-700">{task.name}</td>
-                                        <td className="px-6 py-4 text-slate-600">
-                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                                        <td className="px-6 py-2 font-mono text-slate-500 max-w-[150px] truncate" title={task.id}>{task.id}</td>
+                                        <td className="px-6 py-2 font-medium text-slate-700 max-w-[200px] truncate" title={task.name}>{task.name}</td>
+                                        <td className="px-6 py-2 text-slate-600 max-w-[150px]">
+                                            <span className="inline-block max-w-full truncate px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100" title={getWorkflowName(task.id)}>
                                                 {getWorkflowName(task.id)}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 text-slate-600">
+                                        <td className="px-6 py-2 text-slate-600 whitespace-nowrap">
                                             {systems.find(s => String(s.id) === String(task.systemId))?.name || '-'}
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-6 py-2">
                                             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
                                                 {task.type}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 text-slate-600">{task.group}</td>
-                                        <td className="px-6 py-4 text-slate-500 text-xs">{task.updateTime}</td>
-                                        <td className="px-6 py-4 text-right whitespace-nowrap">
+                                        <td className="px-6 py-2 text-slate-600">{task.group}</td>
+                                        <td className="px-6 py-2 text-slate-500 text-xs">{task.updateTime}</td>
+                                        <td className="px-6 py-2 text-right whitespace-nowrap">
                                             <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
 
                                                 <button className="p-1 text-slate-400 hover:text-blue-600" title="编辑" onClick={() => handleEditTask(task)}>

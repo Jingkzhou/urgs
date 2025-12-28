@@ -31,7 +31,6 @@ const ScheduleManagement: React.FC<ScheduleManagementProps> = ({ onTurnToIssue }
     const [activeView, setActiveView] = useState('workflow-definition');
 
     const activeNav = navSections.flatMap(s => s.items).find(i => i.id === activeView);
-    const breadcrumbs = activeNav?.path || ['调度管理'];
 
     const renderContent = () => {
         switch (activeView) {
@@ -88,20 +87,6 @@ const ScheduleManagement: React.FC<ScheduleManagementProps> = ({ onTurnToIssue }
             {/* Main Content Area */}
             <main className="flex-1 flex flex-col overflow-hidden relative bg-slate-50">
                 {/* Header / Breadcrumbs */}
-                <div className="h-12 border-b border-slate-200 bg-white px-6 flex items-center justify-between shrink-0">
-                    <div className="flex items-center gap-2 text-sm text-slate-500">
-                        <Home size={14} className="text-slate-400" />
-                        {breadcrumbs.map((crumb, index) => (
-                            <React.Fragment key={index}>
-                                <ChevronRight size={14} className="text-slate-300" />
-                                <span className={index === breadcrumbs.length - 1 ? 'font-medium text-slate-800' : ''}>
-                                    {crumb}
-                                </span>
-                            </React.Fragment>
-                        ))}
-                    </div>
-
-                </div>
 
                 {/* Content */}
                 <div className="flex-1 overflow-hidden p-4">
