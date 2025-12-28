@@ -132,6 +132,56 @@ public class GitBrowserController {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * 创建标签
+     */
+    @PostMapping("/{repoId}/tags")
+    public ResponseEntity<Void> createTag(
+            @PathVariable Long repoId,
+            @RequestParam String name,
+            @RequestParam String ref,
+            @RequestParam(required = false) String message,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+
+        String userToken = null;
+        // User Git token integration removed
+
+        gitPlatformService.createTag(repoId, name, ref, message, userToken);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * 删除标签
+     */
+    @DeleteMapping("/{repoId}/tags/{name}")
+    public ResponseEntity<Void> deleteTag(
+            @PathVariable Long repoId,
+            @PathVariable String name,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+
+        String userToken = null;
+        // User Git token integration removed
+
+        gitPlatformService.deleteTag(repoId, name, userToken);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * 下载归档
+     */
+    @GetMapping("/{repoId}/archive")
+    public ResponseEntity<org.springframework.core.io.InputStreamResource> downloadArchive(
+            @PathVariable Long repoId,
+            @RequestParam String ref) {
+
+        java.io.InputStream inputStream = gitPlatformService.downloadArchive(repoId, ref);
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + ref + ".zip\"")
+                .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)
+                .body(new org.springframework.core.io.InputStreamResource(inputStream));
+    }
+
     private final com.example.urgs_api.user.service.UserService userService;
     private final com.example.urgs_api.version.service.GitRepositoryService gitRepositoryService;
 

@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
+import java.io.InputStream;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -202,6 +203,117 @@ public class GitPlatformService {
         } catch (Exception e) {
             log.error("创建分支失败: repoId={}, name={}, ref={}", repoId, name, ref, e);
             throw new RuntimeException("创建分支失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 创建标签
+     */
+    public void createTag(Long repoId, String name, String ref, String message, String userToken) {
+        GitRepository repo = gitRepositoryService.findById(repoId)
+                .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
+
+        String effectiveToken = (userToken != null && !userToken.isEmpty()) ? userToken : repo.getAccessToken();
+        if (effectiveToken == null || effectiveToken.isEmpty()) {
+            throw new RuntimeException("No access token available (user or repo)");
+        }
+
+        try {
+            switch (repo.getPlatform().toLowerCase()) {
+                case "gitee" -> createGiteeTag(repo, name, ref, message, effectiveToken);
+                case "github" -> createGitHubTag(repo, name, ref, message, effectiveToken);
+                case "gitlab" -> createGitLabTag(repo, name, ref, message, effectiveToken);
+                default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
+            }
+        } catch (Exception e) {
+            log.error("创建标签失败: repoId={}, name={}, ref={}", repoId, name, ref, e);
+            throw new RuntimeException("创建标签失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 下载归档文件 (Zip)
+     */
+    public InputStream downloadArchive(Long repoId, String ref) {
+        GitRepository repo = gitRepositoryService.findById(repoId)
+                .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
+
+        String effectiveToken = repo.getAccessToken(); // 目前使用仓库级 Token
+        if (effectiveToken == null || effectiveToken.isEmpty()) {
+            throw new RuntimeException("仓库访问令牌缺失，无法下载");
+        }
+
+        try {
+            String url;
+            String authHeader = null;
+            String authValue = null;
+
+            switch (repo.getPlatform().toLowerCase()) {
+                case "gitee" -> {
+                    url = String.format("https://gitee.com/api/v5/repos/%s/zipball?access_token=%s&ref=%s",
+                            repo.getFullName(), effectiveToken, ref);
+                }
+                case "github" -> {
+                    url = String.format("https://api.github.com/repos/%s/zipball/%s",
+                            repo.getFullName(), ref);
+                    authHeader = "Authorization";
+                    authValue = "Bearer " + effectiveToken;
+                }
+                case "gitlab" -> {
+                    String apiBase = getGitLabApiBase(repo);
+                    String projectId = getGitLabProjectId(repo);
+                    url = String.format("%s/projects/%s/repository/archive.zip?sha=%s",
+                            apiBase, projectId, ref);
+                    authHeader = "PRIVATE-TOKEN";
+                    authValue = effectiveToken;
+                }
+                default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
+            }
+
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(60));
+
+            if (authHeader != null) {
+                builder.header(authHeader, authValue);
+            }
+
+            HttpResponse<InputStream> response = httpClient.send(builder.GET().build(),
+                    HttpResponse.BodyHandlers.ofInputStream());
+
+            if (response.statusCode() >= 400) {
+                throw new RuntimeException("HTTP " + response.statusCode() + " while downloading archive");
+            }
+
+            return response.body();
+        } catch (Exception e) {
+            log.error("下载归档失败: repoId={}, ref={}", repoId, ref, e);
+            throw new RuntimeException("下载归档失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 删除标签
+     */
+    public void deleteTag(Long repoId, String name, String userToken) {
+        GitRepository repo = gitRepositoryService.findById(repoId)
+                .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
+
+        String effectiveToken = (userToken != null && !userToken.isEmpty()) ? userToken : repo.getAccessToken();
+        if (effectiveToken == null || effectiveToken.isEmpty()) {
+            throw new RuntimeException("No access token available (user or repo)");
+        }
+
+        try {
+            switch (repo.getPlatform().toLowerCase()) {
+                case "gitee" -> deleteGiteeTag(repo, name, effectiveToken);
+                case "github" -> deleteGitHubTag(repo, name, effectiveToken);
+                case "gitlab" -> deleteGitLabTag(repo, name, effectiveToken);
+                default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
+            }
+        } catch (Exception e) {
+            log.error("删除标签失败: repoId={}, name={}", repoId, name, e);
+            throw new RuntimeException("删除标签失败: " + e.getMessage());
         }
     }
 
@@ -1101,10 +1213,67 @@ public class GitPlatformService {
             int port = uri.getPort();
             String base = scheme + "://" + uri.getHost() + (port != -1 ? ":" + port : "");
             return base + "/api/v4";
-        } catch (IllegalArgumentException e) {
+        } catch (Exception e) {
             log.warn("解析 GitLab cloneUrl 失败: {}", cloneUrl, e);
             return "https://gitlab.com/api/v4";
         }
+    }
+
+    private void createGiteeTag(GitRepository repo, String tagName, String ref, String message, String token)
+            throws Exception {
+        String url = String.format("https://gitee.com/api/v5/repos/%s/tags", repo.getFullName());
+        // Gitee: POST /repos/{owner}/{repo}/tags
+        // refs 是要创建标签的提交 SHA 或者分支名
+        String body = String.format("{\"access_token\":\"%s\",\"tag_name\":\"%s\",\"refs\":\"%s\",\"message\":\"%s\"}",
+                token, tagName, ref, message == null ? "" : message);
+        httpPost(url, body, null, null);
+    }
+
+    private void createGitHubTag(GitRepository repo, String tagName, String ref, String message, String token)
+            throws Exception {
+        // GitHub:
+        // https://docs.github.com/en/rest/refs?apiVersion=2022-11-28#create-a-reference
+        // 注意：GitHub 创建标签通常需要先创建一个 tag object，或者直接创建一个 ref
+        // 简单方式：直接在 refs/tags/ 下创建 ref 指向 commit SHA
+        String url = String.format("https://api.github.com/repos/%s/git/refs", repo.getFullName());
+        String body = String.format("{\"ref\":\"refs/tags/%s\",\"sha\":\"%s\"}", tagName, ref);
+        httpPost(url, body, token, "Bearer");
+    }
+
+    private void createGitLabTag(GitRepository repo, String tagName, String ref, String message, String token)
+            throws Exception {
+        // GitLab: POST /projects/:id/repository/tags
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
+        String url = String.format("%s/projects/%s/repository/tags?tag_name=%s&ref=%s",
+                apiBase, projectId, tagName, ref);
+        if (message != null && !message.isEmpty()) {
+            url += "&message=" + java.net.URLEncoder.encode(message, "UTF-8");
+        }
+        httpPost(url, "", token, "PRIVATE-TOKEN");
+    }
+
+    private void deleteGiteeTag(GitRepository repo, String tagName, String token) throws Exception {
+        // Gitee: DELETE /repos/{owner}/{repo}/tags/{tag}
+        String url = String.format("https://gitee.com/api/v5/repos/%s/tags/%s?access_token=%s",
+                repo.getFullName(), tagName, token);
+        httpDelete(url, null, null);
+    }
+
+    private void deleteGitHubTag(GitRepository repo, String tagName, String token) throws Exception {
+        // GitHub: DELETE /repos/{owner}/{repo}/git/refs/tags/{tag_name}
+        String url = String.format("https://api.github.com/repos/%s/git/refs/tags/%s",
+                repo.getFullName(), tagName);
+        httpDelete(url, token, "Bearer");
+    }
+
+    private void deleteGitLabTag(GitRepository repo, String tagName, String token) throws Exception {
+        // GitLab: DELETE /projects/:id/repository/tags/:tag_name
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
+        String url = String.format("%s/projects/%s/repository/tags/%s",
+                apiBase, projectId, java.net.URLEncoder.encode(tagName, "UTF-8"));
+        httpDelete(url, token, "PRIVATE-TOKEN");
     }
 
     // ==================== HTTP Helpers ====================

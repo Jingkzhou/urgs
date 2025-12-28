@@ -121,6 +121,18 @@ export const createRepoBranch = (repoId: number, name: string, ref: string) =>
 export const deleteRepoBranch = (repoId: number, name: string) =>
     del<void>(`/api/version/repos/${repoId}/branches/${name}`);
 
+export const createRepoTag = (repoId: number, name: string, ref: string, message?: string) =>
+    post<void>(`/api/version/repos/${repoId}/tags`, null, { params: { name, ref, message } });
+
+export const deleteRepoTag = (repoId: number, name: string) =>
+    del<void>(`/api/version/repos/${repoId}/tags/${name}`);
+
+export const getDownloadArchiveUrl = (repoId: number, ref: string) =>
+    `/api/version/repos/${repoId}/archive?ref=${encodeURIComponent(ref)}`;
+
+export const downloadRepoArchive = (repoId: number, ref: string) =>
+    get<Blob>(`/api/version/repos/${repoId}/archive`, { ref }, { isBlob: true });
+
 export const getRepoLatestCommit = (repoId: number, ref?: string) =>
     get<GitCommit>(`/api/version/repos/${repoId}/commits/latest`, { ref: ref || '' });
 

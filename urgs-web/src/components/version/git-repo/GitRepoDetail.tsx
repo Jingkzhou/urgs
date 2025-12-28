@@ -285,7 +285,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                                     value={currentRef}
                                     onChange={(val) => { setCurrentRef(val); setViewingFile(null); }}
                                     style={{ width: 140 }}
-                                    bordered={false}
+                                    variant="borderless"
                                     className="bg-slate-100 rounded hover:bg-slate-200 transition-colors"
                                 >
                                     {branches.map(b => (
@@ -305,15 +305,21 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                                     <span className="px-2 py-1 bg-white shadow-sm rounded cursor-pointer">HTTPS</span>
                                     <span className="px-2 py-1 cursor-pointer hover:bg-white hover:shadow-sm hover:rounded transition-all">SSH</span>
                                 </div>
-                                <Input
-                                    readOnly
-                                    value={repo.cloneUrl}
-                                    className="text-xs w-64 bg-slate-50 border-slate-200"
-                                    addonAfter={<Copy size={12} className="cursor-pointer text-slate-500 hover:text-blue-500" onClick={() => {
-                                        navigator.clipboard.writeText(repo.cloneUrl || '');
-                                        message.success('已复制到剪贴板');
-                                    }} />}
-                                />
+                                <Space.Compact>
+                                    <Input
+                                        readOnly
+                                        value={repo.cloneUrl}
+                                        className="text-xs w-64 bg-slate-50 border-slate-200"
+                                    />
+                                    <Button
+                                        icon={<Copy size={12} />}
+                                        className="flex items-center justify-center text-slate-500 hover:text-blue-500"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(repo.cloneUrl || '');
+                                            message.success('已复制到剪贴板');
+                                        }}
+                                    />
+                                </Space.Compact>
                                 <Dropdown menu={{ items: plusMenuItems }} placement="bottomRight" arrow>
                                     <Button type="primary" className="bg-orange-500 hover:bg-orange-600 border-none" icon={<Plus size={16} />}></Button>
                                 </Dropdown>
@@ -329,7 +335,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                                 {latestCommit && (
                                     <div className="border border-blue-200 bg-blue-50 rounded-t-lg p-3 text-sm flex justify-between items-center">
                                         <div className="flex items-center gap-3">
-                                            <Avatar size={24} src={latestCommit.authorAvatar} style={{ backgroundColor: '#1890ff' }}>
+                                            <Avatar size={24} src={latestCommit.authorAvatar || undefined} style={{ backgroundColor: '#1890ff' }}>
                                                 {latestCommit.authorName?.charAt(0).toUpperCase()}
                                             </Avatar>
                                             <span className="font-semibold text-slate-700">{latestCommit.authorName}</span>
