@@ -69,10 +69,8 @@ def main():
         logger.info(f"Engine starting... Command: {args.command}")
         logger.info(f"Configuration: dialect={args.dialect}, output={args.output}, no-clear={args.no_clear}")
 
-        lineage_parser = get_parser()
+        # lineage_parser instantiation DEFERRED to avoid JVM start in main process
         neo4j = get_neo4j_client()
-        
-        lineage_parser.dialect = args.dialect
         
         import csv
         
@@ -106,14 +104,14 @@ def main():
         csv_header_printed = False
         csv_writer = csv.writer(output_stream)
 
-        def process_sql_content(content, file_path=None):
+        def process_sql_content(content, parser, file_path=None):
             nonlocal csv_header_printed
             
             # For table lineage
-            result = lineage_parser.parse(content, source_file=file_path)
+            result = parser.parse(content, source_file=file_path)
             
             # For column lineage (with dependency_type and source_file)
-            col_dependencies = lineage_parser.get_column_lineage(content, source_file=file_path)
+            col_dependencies = parser.get_column_lineage(content, source_file=file_path)
             
             if args.output == "json":
                 # Add column dependencies to the result for JSON output
@@ -198,11 +196,12 @@ def main():
                 )
             
             if args.sql:
-                process_sql_content(args.sql, file_path=None)
+                lineage_parser = LineageParser(dialect=args.dialect)
+                process_sql_content(args.sql, parser=lineage_parser, file_path=None)
             elif args.file:
                 if os.path.isdir(args.file):
                     # Directory mode - 使用多进程并行解析
-                    from concurrent.futures import ThreadPoolExecutor, as_completed
+                    from concurrent.futures import ProcessPoolExecutor, as_completed
                     from parsers.parallel_parser import prepare_file_tasks
                     
                     sql_files = []
@@ -226,7 +225,7 @@ def main():
                             max_workers = int(env_workers)
                         else:
                             max_workers = min(os.cpu_count() or 4, total_files)
-                        logger.info(f"Initializing concurrent parser with {max_workers} workers")
+                        logger.info(f"Initializing concurrent parser with {max_workers} processes (ProcessPoolExecutor)")
                         
                         # 收集所有结果
                         all_relationships = []
@@ -235,7 +234,7 @@ def main():
                         error_count = 0
                         
                         import time
-                        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        with ProcessPoolExecutor(max_workers=max_workers) as executor:
                             # 提交所有任务
                             future_to_file = {executor.submit(parse_single_file_with_timing, task): task[0] for task in tasks}
                             
@@ -258,7 +257,7 @@ def main():
                                         logger.error(f"[{progress}] Processed {f_name} - FAILED ({duration:.2f}s): {result['error']}")
                                 except Exception as e:
                                     error_count += 1
-                                    logger.exception(f"[{progress}] Thread error for {f_name}: {e}")
+                                    logger.exception(f"[{progress}] Process error for {f_name}: {e}")
                             
                         logger.info(f"Parsing cycle complete. Results: Success={success_count}, Failed={error_count}")
                         
@@ -299,9 +298,10 @@ def main():
                     start_single = time.time()
                     try:
                         logger.info(f"Processing single file: {args.file}")
+                        lineage_parser = LineageParser(dialect=args.dialect)
                         with open(args.file, 'r', encoding='utf-8') as f:
                             sql_content = f.read()
-                        process_sql_content(sql_content, file_path=args.file)
+                        process_sql_content(sql_content, parser=lineage_parser, file_path=args.file)
                         duration = time.time() - start_single
                         logger.info(f"Processing completed in {duration:.2f}s")
                     except Exception as e:
