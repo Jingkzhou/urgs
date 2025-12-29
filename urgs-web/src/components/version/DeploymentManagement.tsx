@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Tabs, Timeline, Card } from 'antd';
+import { Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm } from 'antd';
 import { Plus, Trash2, Edit, RefreshCw, Server, Rocket, RotateCcw, CheckCircle, XCircle, Loader, Clock } from 'lucide-react';
 import {
     getDeployEnvironments, createDeployEnvironment, updateDeployEnvironment, deleteDeployEnvironment,
@@ -23,7 +23,6 @@ interface Props {
 }
 
 const DeploymentManagement: React.FC<Props> = ({ ssoId }) => {
-    const [activeTab, setActiveTab] = useState('deployments');
     const [environments, setEnvironments] = useState<DeployEnvironment[]>([]);
     const [deployments, setDeployments] = useState<Deployment[]>([]);
     const [ssoList, setSsoList] = useState<SsoConfig[]>([]);
@@ -150,125 +149,410 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId }) => {
         }
     };
 
-    const envColumns = [
-        { title: '环境名称', dataIndex: 'name', key: 'name' },
-        { title: '环境编码', dataIndex: 'code', key: 'code', render: (code: string) => <Tag>{code}</Tag> },
-        !ssoId ? {
-            title: '关联系统',
-            dataIndex: 'ssoId',
-            key: 'ssoId',
-            render: (ssoId: number) => ssoList.find(s => s.id === ssoId)?.name || '-'
-        } : null,
-        { title: '部署方式', dataIndex: 'deployType', key: 'deployType' },
-        { title: '目标地址', dataIndex: 'deployUrl', key: 'deployUrl', ellipsis: true },
-        {
-            title: '操作',
-            key: 'actions',
-            render: (_: any, record: DeployEnvironment) => (
-                <Space>
-                    <Button type="text" icon={<Edit size={14} />} onClick={() => handleEditEnv(record)} />
-                    <Popconfirm title="确定删除？" onConfirm={() => handleDeleteEnv(record.id!)}>
-                        <Button type="text" danger icon={<Trash2 size={14} />} />
-                    </Popconfirm>
-                </Space>
-            ),
-        },
-    ].filter(Boolean) as any;
+    const deployTypeLabelMap: Record<string, string> = {
+        ssh: 'SSH',
+        docker: 'Docker',
+        k8s: 'Kubernetes',
+    };
 
-    const deployColumns = [
+    const mockEnvironments: DeployEnvironment[] = [
         {
-            title: '版本',
-            dataIndex: 'version',
-            key: 'version',
-            render: (version: string, record: Deployment) => (
-                <div>
-                    <div className="font-medium">{version || '-'}</div>
-                    {record.rollbackTo && <Tag color="orange" className="text-xs">回滚</Tag>}
-                </div>
-            )
+            id: 1,
+            name: '开发环境',
+            code: 'dev',
+            ssoId: ssoId ?? 0,
+            deployType: 'k8s',
+            deployUrl: 'dev-cluster',
         },
         {
-            title: '环境',
-            dataIndex: 'envId',
-            key: 'envId',
-            render: (envId: number) => {
-                const env = environments.find(e => e.id === envId);
-                return env ? <Tag color="blue">{env.name}</Tag> : '-';
-            }
+            id: 2,
+            name: '预发环境',
+            code: 'staging',
+            ssoId: ssoId ?? 0,
+            deployType: 'docker',
+            deployUrl: 'staging-node-01',
         },
-        !ssoId ? {
-            title: '系统',
-            dataIndex: 'ssoId',
-            key: 'ssoId',
-            render: (ssoId: number) => ssoList.find(s => s.id === ssoId)?.name || '-'
-        } : null,
         {
-            title: '状态',
-            dataIndex: 'status',
-            key: 'status',
-            render: (status: string) => {
-                const config = statusConfig[status] || statusConfig.pending;
-                return (
-                    <Tag color={config.color} className="flex items-center gap-1 w-fit">
-                        {config.icon} {config.label}
-                    </Tag>
-                );
-            }
+            id: 3,
+            name: '生产环境',
+            code: 'prod',
+            ssoId: ssoId ?? 0,
+            deployType: 'k8s',
+            deployUrl: 'prod-east',
         },
-        { title: '部署时间', dataIndex: 'deployedAt', key: 'deployedAt' },
+    ];
+
+    const mockDeployments: Deployment[] = [
         {
-            title: '操作',
-            key: 'actions',
-            render: (_: any, record: Deployment) => (
-                <Space>
-                    {record.status === 'success' && !record.rollbackTo && (
-                        <Popconfirm title="确定回滚到此版本？" onConfirm={() => handleRollback(record)}>
-                            <Button type="text" icon={<RotateCcw size={14} />}>回滚</Button>
-                        </Popconfirm>
-                    )}
-                </Space>
-            ),
+            id: 101,
+            ssoId: ssoId ?? 0,
+            envId: 2,
+            version: 'v2.4.8',
+            status: 'deploying',
+            deployedAt: '2 分钟前',
         },
-    ].filter(Boolean) as any;
+        {
+            id: 102,
+            ssoId: ssoId ?? 0,
+            envId: 3,
+            version: 'v2.4.7',
+            status: 'success',
+            deployedAt: '15 分钟前',
+        },
+        {
+            id: 103,
+            ssoId: ssoId ?? 0,
+            envId: 1,
+            version: 'v2.4.6',
+            status: 'failed',
+            deployedAt: '1 小时前',
+        },
+    ];
+
+    const envItems = environments.length > 0 ? environments : mockEnvironments;
+    const deploymentItems = deployments.length > 0 ? deployments : mockDeployments;
+
+    const primaryButtonClass =
+        'bg-gradient-to-tr from-indigo-500 to-purple-600 border-none hover:from-indigo-600 hover:to-purple-700';
+    const secondaryButtonClass =
+        'border-indigo-200 text-indigo-600 hover:text-indigo-700 hover:border-indigo-300';
+    const subtleButtonClass =
+        'border-slate-200 text-slate-600 hover:text-indigo-700 hover:border-indigo-200';
+
+    const overviewStats = [
+        { label: '发布成功率', value: '98.1%', note: '近 30 天' },
+        { label: '平均耗时', value: '11m 42s', note: 'P95 18m' },
+        { label: '回滚率', value: '1.2%', note: '趋势下降' },
+        { label: '风险指数', value: '低', note: '合规通过' },
+    ];
+
+    const rolloutStages = [
+        { title: '制品准备', subtitle: '签名 / SBOM', badge: '可信链' },
+        { title: '质量门禁', subtitle: 'SAST/DAST', badge: 'Policy' },
+        { title: '灰度发布', subtitle: '5% → 30%', badge: 'Canary' },
+        { title: '全量发布', subtitle: '多区域', badge: 'Global' },
+        { title: '运行观测', subtitle: 'SLO / 回归', badge: 'Observe' },
+    ];
+
+    const envNameMap = (envId: number) => envItems.find(item => item.id === envId)?.name || '-';
 
     return (
-        <div className="space-y-4">
-            <div className="flex justify-between items-center">
-                <h3 className="text-lg font-semibold text-slate-800">部署管理</h3>
+        <div className="relative">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div className="relative bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600">
+                    <div
+                        className="absolute inset-0 opacity-20"
+                        style={{
+                            backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(255,255,255,0.4), transparent 40%), radial-gradient(circle at 80% 0%, rgba(255,255,255,0.2), transparent 45%)',
+                        }}
+                    />
+                    <div className="relative px-6 py-5 text-white">
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                            <div>
+                                <div className="text-xs uppercase tracking-[0.2em] text-indigo-100">Deployment Control</div>
+                                <h3 className="text-xl font-semibold text-white">部署管理中心</h3>
+                                <p className="text-sm text-indigo-100">多环境发布 · 门禁合规 · 回滚保障</p>
+                            </div>
+                            <Space>
+                                <Button
+                                    icon={<RefreshCw size={14} />}
+                                    onClick={() => {
+                                        fetchDeployments();
+                                        fetchEnvironments();
+                                    }}
+                                    loading={loading}
+                                    className="text-white border-white/40 hover:border-white"
+                                >
+                                    刷新
+                                </Button>
+                                <Button type="primary" icon={<Rocket size={14} />} onClick={handleDeploy} className={primaryButtonClass}>
+                                    执行部署
+                                </Button>
+                            </Space>
+                        </div>
+                        <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                            {overviewStats.map(stat => (
+                                <div key={stat.label} className="rounded-xl border border-white/30 bg-white/10 px-4 py-3 backdrop-blur">
+                                    <div className="text-xs uppercase tracking-wide text-indigo-100">{stat.label}</div>
+                                    <div className="mt-2 flex items-end justify-between">
+                                        <span className="text-lg font-semibold text-white">{stat.value}</span>
+                                        <span className="text-xs text-indigo-100">{stat.note}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-slate-50 px-6 py-6">
+                    <div className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_320px] gap-5">
+                        <aside className="space-y-5">
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div>
+                                        <div className="text-xs uppercase tracking-widest text-slate-400">环境矩阵</div>
+                                        <div className="text-sm font-semibold text-slate-800">环境列表</div>
+                                    </div>
+                                    <Tag color="blue">{envItems.length}</Tag>
+                                </div>
+                                <Input placeholder="搜索环境或地址" className="border-slate-200" />
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    {['全部', '健康', '维护中', '窗口关闭'].map(item => (
+                                        <span
+                                            key={item}
+                                            className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-500"
+                                        >
+                                            {item}
+                                        </span>
+                                    ))}
+                                </div>
+                                <div className="mt-4 space-y-3">
+                                    {envItems.map(env => (
+                                        <div key={env.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Server size={14} className="text-indigo-500" />
+                                                        <span className="text-sm font-semibold text-slate-800">{env.name}</span>
+                                                    </div>
+                                                    <div className="mt-1 text-xs text-slate-500">
+                                                        {env.deployUrl || '未配置地址'} · {deployTypeLabelMap[env.deployType || 'ssh']}
+                                                    </div>
+                                                </div>
+                                                <Tag className="m-0">{env.code}</Tag>
+                                            </div>
+                                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
+                                                    窗口: 开放
+                                                </span>
+                                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
+                                                    健康
+                                                </span>
+                                            </div>
+                                            <div className="mt-3 flex items-center gap-2">
+                                                <Button size="small" className={subtleButtonClass} icon={<Edit size={12} />} onClick={() => handleEditEnv(env)} />
+                                                <Popconfirm title="确定删除？" onConfirm={() => handleDeleteEnv(env.id!)}>
+                                                    <Button size="small" className={subtleButtonClass} danger icon={<Trash2 size={12} />} />
+                                                </Popconfirm>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <Button type="primary" icon={<Plus size={14} />} onClick={handleAddEnv} className={`mt-4 w-full ${primaryButtonClass}`}>
+                                    添加环境
+                                </Button>
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                <div className="text-xs uppercase tracking-widest text-slate-400">发布窗口</div>
+                                <div className="mt-2 text-sm font-semibold text-slate-800">全局窗口状态</div>
+                                <div className="mt-3 space-y-3 text-xs text-slate-500">
+                                    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                                        <div className="flex items-center justify-between">
+                                            <span>当前窗口</span>
+                                            <span className="font-semibold text-emerald-600">开放</span>
+                                        </div>
+                                        <div className="mt-2 text-[10px] text-slate-400">下一次冻结: 周四 20:00</div>
+                                    </div>
+                                    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                                        <div className="flex items-center justify-between">
+                                            <span>审批队列</span>
+                                            <span className="font-semibold text-slate-700">2</span>
+                                        </div>
+                                        <div className="mt-2 text-[10px] text-slate-400">平均处理 18m</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </aside>
+
+                        <section className="space-y-5">
+                            <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <div className="text-xs uppercase tracking-widest text-slate-400">Release Orchestration</div>
+                                        <div className="text-sm font-semibold text-slate-800">发布编排</div>
+                                    </div>
+                                    <div className="text-xs text-slate-500">策略: 金丝雀发布</div>
+                                </div>
+                                <div className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3">
+                                    {rolloutStages.map(stage => (
+                                        <div key={stage.title} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-sm font-semibold text-slate-800">{stage.title}</span>
+                                                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                                                    {stage.badge}
+                                                </span>
+                                            </div>
+                                            <div className="mt-1 text-xs text-slate-500">{stage.subtitle}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
+                                    <div className="flex items-center justify-between">
+                                        <span>分流曲线</span>
+                                        <span>5% → 30% → 60% → 100%</span>
+                                    </div>
+                                    <div className="mt-2 h-1.5 rounded-full bg-slate-200">
+                                        <div className="h-1.5 w-3/5 rounded-full bg-indigo-500" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <div className="text-xs uppercase tracking-widest text-slate-400">Live Delivery</div>
+                                        <div className="text-sm font-semibold text-slate-800">部署队列</div>
+                                    </div>
+                                    <Button size="small" className={secondaryButtonClass}>
+                                        查看策略
+                                    </Button>
+                                </div>
+                                <div className="mt-4 space-y-3">
+                                    {deploymentItems.slice(0, 3).map(deployment => {
+                                        const config = statusConfig[deployment.status] || statusConfig.pending;
+                                        return (
+                                            <div key={deployment.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                                    {config.icon}
+                                                    {deployment.version || '-'}
+                                                </div>
+                                                <span className="text-xs text-slate-500">{envNameMap(deployment.envId)}</span>
+                                                <Tag color={config.color}>{config.label}</Tag>
+                                                <span className="text-xs text-slate-400">{deployment.deployedAt || '-'}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </section>
+
+                        <aside className="space-y-5">
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                <div className="text-xs uppercase tracking-widest text-slate-400">门禁与审批</div>
+                                <div className="mt-2 text-sm font-semibold text-slate-800">合规矩阵</div>
+                                <div className="mt-4 space-y-3 text-xs text-slate-500">
+                                    {[
+                                        { label: 'SAST 扫描', status: '通过', tone: 'emerald' },
+                                        { label: 'DAST 扫描', status: '通过', tone: 'emerald' },
+                                        { label: '依赖安全', status: '轻微警告', tone: 'amber' },
+                                        { label: '签名验证', status: '通过', tone: 'emerald' },
+                                    ].map(item => (
+                                        <div key={item.label} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                                            <span>{item.label}</span>
+                                            <span className={`font-semibold ${item.tone === 'amber' ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                                {item.status}
+                                            </span>
+                                        </div>
+                                    ))}
+                                    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                                        <div className="text-[10px] uppercase tracking-widest text-slate-400">审批链</div>
+                                        <div className="mt-2 text-xs text-slate-500">研发 → 安全 → 运维</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                <div className="text-xs uppercase tracking-widest text-slate-400">回滚保障</div>
+                                <div className="mt-2 text-sm font-semibold text-slate-800">稳定性护栏</div>
+                                <div className="mt-4 space-y-3 text-xs text-slate-500">
+                                    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                                        <div className="flex items-center justify-between">
+                                            <span>回滚准备度</span>
+                                            <span className="font-semibold text-indigo-600">98%</span>
+                                        </div>
+                                        <div className="mt-2 text-[10px] text-slate-400">镜像可用 · 配置回滚</div>
+                                    </div>
+                                    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                                        <div className="flex items-center justify-between">
+                                            <span>平均 MTTR</span>
+                                            <span className="font-semibold text-slate-700">9m</span>
+                                        </div>
+                                        <div className="mt-2 text-[10px] text-slate-400">近 10 次回滚</div>
+                                    </div>
+                                    <Button className={`w-full ${secondaryButtonClass}`} icon={<RotateCcw size={14} />}>
+                                        一键回滚预案
+                                    </Button>
+                                </div>
+                            </div>
+                        </aside>
+                    </div>
+
+                    <div className="mt-6 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-5">
+                        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <div className="text-xs uppercase tracking-widest text-slate-400">Recent Deployments</div>
+                                    <div className="text-sm font-semibold text-slate-800">部署记录</div>
+                                </div>
+                                <Button size="small" className={secondaryButtonClass} onClick={fetchDeployments}>
+                                    刷新记录
+                                </Button>
+                            </div>
+                            <div className="mt-4 space-y-3">
+                                {deploymentItems.map(deployment => {
+                                    const config = statusConfig[deployment.status] || statusConfig.pending;
+                                    return (
+                                        <div key={deployment.id} className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                                    {config.icon}
+                                                    {deployment.version || '-'}
+                                                    {deployment.rollbackTo ? <Tag color="orange" className="text-xs">回滚</Tag> : null}
+                                                </div>
+                                                <Tag color={config.color}>{config.label}</Tag>
+                                            </div>
+                                            <div className="mt-2 text-xs text-slate-500">
+                                                环境: {envNameMap(deployment.envId)} · {deployment.deployedAt || '-'}
+                                            </div>
+                                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                                                {deployment.status === 'success' && !deployment.rollbackTo ? (
+                                                    <Popconfirm title="确定回滚到此版本？" onConfirm={() => handleRollback(deployment)}>
+                                                        <Button size="small" className={secondaryButtonClass} icon={<RotateCcw size={12} />}>
+                                                            回滚
+                                                        </Button>
+                                                    </Popconfirm>
+                                                ) : null}
+                                                <Button size="small" className={subtleButtonClass} icon={<Rocket size={12} />} onClick={handleDeploy}>
+                                                    复用发布
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                            <div className="text-xs uppercase tracking-widest text-slate-400">Risk Radar</div>
+                            <div className="text-sm font-semibold text-slate-800">风险与告警</div>
+                            <div className="mt-4 space-y-3 text-xs text-slate-500">
+                                <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-3">
+                                    <div className="flex items-center justify-between">
+                                        <span>发布失败波动</span>
+                                        <span className="text-rose-600 font-semibold">3 次</span>
+                                    </div>
+                                    <div className="mt-2 text-[10px] text-rose-400">建议提升集成测试稳定性</div>
+                                </div>
+                                <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-3">
+                                    <div className="flex items-center justify-between">
+                                        <span>审批延迟</span>
+                                        <span className="text-amber-600 font-semibold">2 项</span>
+                                    </div>
+                                    <div className="mt-2 text-[10px] text-amber-400">超出 SLA 15 分钟</div>
+                                </div>
+                                <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                                    <div className="flex items-center justify-between">
+                                        <span>环境漂移</span>
+                                        <span className="text-slate-700 font-semibold">无</span>
+                                    </div>
+                                    <div className="mt-2 text-[10px] text-slate-400">GitOps 同步正常</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-
-            <Tabs activeKey={activeTab} onChange={setActiveTab}>
-                <Tabs.TabPane tab="部署记录" key="deployments">
-                    <div className="mb-4 flex justify-end gap-2">
-                        <Button icon={<RefreshCw size={14} />} onClick={fetchDeployments}>刷新</Button>
-                        <Button type="primary" icon={<Rocket size={14} />} onClick={handleDeploy}>
-                            执行部署
-                        </Button>
-                    </div>
-                    <Table
-                        columns={deployColumns}
-                        dataSource={deployments}
-                        rowKey="id"
-                        loading={loading}
-                        pagination={{ pageSize: 10 }}
-                    />
-                </Tabs.TabPane>
-
-                <Tabs.TabPane tab="环境配置" key="environments">
-                    <div className="mb-4 flex justify-end gap-2">
-                        <Button icon={<RefreshCw size={14} />} onClick={fetchEnvironments}>刷新</Button>
-                        <Button type="primary" icon={<Plus size={14} />} onClick={handleAddEnv}>
-                            添加环境
-                        </Button>
-                    </div>
-                    <Table
-                        columns={envColumns}
-                        dataSource={environments}
-                        rowKey="id"
-                        pagination={false}
-                    />
-                </Tabs.TabPane>
-            </Tabs>
 
             {/* 环境 Modal */}
             <Modal

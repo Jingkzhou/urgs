@@ -138,6 +138,10 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '5-5', name: '血缘管理', code: 'metadata:lineage', type: 'menu', path: '/metadata/lineage', level: 1, parentId: '5' },
     { id: '5-5-1', name: '血缘溯源', code: 'metadata:lineage:origin', type: 'menu', path: '/metadata/lineage/origin', level: 2, parentId: '5-5' },
     { id: '5-5-2', name: '影响分析', code: 'metadata:lineage:analysis', type: 'menu', path: '/metadata/lineage/analysis', level: 2, parentId: '5-5' },
+    { id: '5-5-3', name: '启动血缘引擎', code: 'metadata:lineage:engine:start', type: 'button', path: '-', level: 2, parentId: '5-5' },
+    { id: '5-5-4', name: '重启血缘引擎', code: 'metadata:lineage:engine:restart', type: 'button', path: '-', level: 2, parentId: '5-5' },
+    { id: '5-5-5', name: '停止血缘引擎', code: 'metadata:lineage:engine:stop', type: 'button', path: '-', level: 2, parentId: '5-5' },
+    { id: '5-5-6', name: '查看血缘引擎日志', code: 'metadata:lineage:engine:logs', type: 'button', path: '-', level: 2, parentId: '5-5' },
 
     { id: '6', name: '运维管理', code: 'ops', type: 'menu', path: '/ops', level: 0, parentId: 'root' },
     { id: '6-1', name: '调度管理', code: 'ops:schedule', type: 'menu', path: '/ops/schedule', level: 1, parentId: '6' },

@@ -1,6 +1,6 @@
 FROM python:3.10-slim-bullseye
 
-WORKDIR /app
+WORKDIR /sql-lineage-engine
 
 # Install Java 11 (Standard in Bullseye) to avoid clone3/EPERM issues in restricted envs
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -17,9 +17,10 @@ COPY requirements.txt .
 RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --no-cache-dir -r requirements.txt
 
 COPY . .
+RUN chmod +x run.sh
 
 # Add current directory to PYTHONPATH
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/sql-lineage-engine
 
 # Fix OpenBLAS issue in restricted Docker environments
 ENV OPENBLAS_NUM_THREADS=1

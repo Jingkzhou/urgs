@@ -33,8 +33,7 @@ services:
       - urgs-net
     volumes:
       - ./urgs-api/uploads:/app/uploads
-    extra_hosts:
-      - "host.docker.internal:172.17.0.1"
+      - /var/run/docker.sock:/var/run/docker.sock
 
   urgs-executor:
     build: ./urgs-executor
@@ -48,8 +47,6 @@ services:
       - "${HOST_PORT_EXECUTOR}:8082"
     networks:
       - urgs-net
-    extra_hosts:
-      - "host.docker.internal:172.17.0.1"
 
   urgs-web:
     build: ./urgs-web
@@ -57,6 +54,7 @@ services:
     environment:
       - VITE_WS_URL=${VITE_WS_URL}
       - VITE_API_URL=${VITE_API_URL}
+      - API_PROXY_TARGET=http://urgs-api:8080
       - VITE_RAG_URL=${VITE_RAG_URL}
     ports:
       - "${HOST_PORT_WEB}:80"
@@ -75,7 +73,9 @@ services:
       OPENBLAS_NUM_THREADS: 1
       GOTO_NUM_THREADS: 1
       OMP_NUM_THREADS: 1
+      LINEAGE_MAX_WORKERS: 1
     entrypoint: [ "tail", "-f", "/dev/null" ]
+
     security_opt:
       - seccomp:unconfined
     pids_limit: 8192
