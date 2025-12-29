@@ -3,11 +3,33 @@ import sys
 import json
 import os
 import uuid
+import logging
 from datetime import datetime
 # Updated imports for new structure
 from parsers.sql_parser import LineageParser
 from exporters.neo4j import Neo4jClient
 from config.settings import settings
+
+# Configure logging
+class CustomFormatter(logging.Formatter):
+    def format(self, record):
+        timestamp = self.formatTime(record, "%Y-%m-%d %H:%M:%S")
+        ms = int(record.msecs)
+        return f"[{timestamp}.{ms:03d}] [{record.levelname}] [{record.name}] - {record.getMessage()}"
+
+def setup_logging():
+    root = logging.getLogger()
+    # Remove existing handlers
+    for h in root.handlers[:]:
+        root.removeHandler(h)
+    
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(CustomFormatter())
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
+setup_logging()
+logger = logging.getLogger("Engine")
 
 # Helper function to get parser instance
 def get_parser():
@@ -16,6 +38,15 @@ def get_parser():
 # Helper function to get neo4j client
 def get_neo4j_client():
     return Neo4jClient()
+
+# Modified parallel parser to include duration in result
+def parse_single_file_with_timing(task_args):
+    import time
+    from parsers.parallel_parser import parse_single_file
+    start = time.time()
+    result = parse_single_file(task_args)
+    result["duration"] = time.time() - start
+    return result
 
 def main():
     parser = argparse.ArgumentParser(description="SQL Lineage Engine CLI")
@@ -34,6 +65,10 @@ def main():
     args = parser.parse_args()
 
     if args.command == "parse-sql":
+        start_time_all = datetime.now()
+        logger.info(f"Engine starting... Command: {args.command}")
+        logger.info(f"Configuration: dialect={args.dialect}, output={args.output}, no-clear={args.no_clear}")
+
         lineage_parser = get_parser()
         neo4j = get_neo4j_client()
         
@@ -43,12 +78,16 @@ def main():
         
         # 自动生成版本号
         version_id = f"v{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
-        print(f"Lineage version: {version_id}", file=sys.stderr)
+        logger.info(f"Generated lineage version record: {version_id}")
         
         # 清除现有数据（仅在 neo4j 模式且未指定 --no-clear 时）
         if args.output == "neo4j" and neo4j and not args.no_clear:
-            print("Clearing existing lineage data...", file=sys.stderr)
-            neo4j.clear_all_lineage_data()
+            logger.info("Clearing existing lineage data from Neo4j...")
+            try:
+                neo4j.clear_all_lineage_data()
+                logger.info("Clearance completed.")
+            except Exception as e:
+                logger.error(f"Failed to clear Neo4j data: {e}")
 
         # Determine output stream
         output_stream = sys.stdout
@@ -58,8 +97,9 @@ def main():
              try:
                  file_handle = open(args.output_file, 'w', encoding='utf-8', newline='')
                  output_stream = file_handle
+                 logger.info(f"Output redirected to file: {args.output_file}")
              except Exception as e:
-                 print(f"Error opening output file: {e}", file=sys.stderr)
+                 logger.error(f"Error opening output file: {e}")
                  return
 
         # Track if CSV header has been printed
@@ -125,7 +165,7 @@ def main():
                                 neo4j.create_lineage(rel.get("source"), rel.get("target"))
                                 inserted_any = True
                             except Exception as e:
-                                print(f"Error storing table lineage: {e}", file=sys.stderr)
+                                logger.error(f"Error storing table lineage: {e}")
                     
                     # Fallback to old logic if no relationships found but sources/targets exist
                     if not inserted_any and "sources" in result and "targets" in result:
@@ -134,16 +174,16 @@ def main():
                                 try:
                                     neo4j.create_lineage(source, target)
                                 except Exception as e:
-                                    print(f"Error storing table lineage: {e}", file=sys.stderr)
+                                    logger.error(f"Error storing table lineage: {e}")
                     
                     # Batch insert column lineage with version
                     try:
                         neo4j.create_column_lineage_v2(col_dependencies, version=version_id)
                     except Exception as e:
-                        print(f"Error storing column lineage: {e}", file=sys.stderr)
+                        logger.error(f"Error storing column lineage: {e}")
 
                 else:
-                    print("Neo4j client not initialized.", file=sys.stderr)
+                    logger.warning("Neo4j client not initialized, skipping storage.")
 
         try:
             # 创建版本节点 (仅在 neo4j 模式下)
@@ -163,7 +203,7 @@ def main():
                 if os.path.isdir(args.file):
                     # Directory mode - 使用多进程并行解析
                     from concurrent.futures import ThreadPoolExecutor, as_completed
-                    from parsers.parallel_parser import parse_single_file, prepare_file_tasks
+                    from parsers.parallel_parser import prepare_file_tasks
                     
                     sql_files = []
                     for root, dirs, files in os.walk(args.file):
@@ -172,10 +212,10 @@ def main():
                                 sql_files.append(os.path.join(root, file))
                     
                     total_files = len(sql_files)
-                    print(f"Found {total_files} SQL files to process", file=sys.stderr)
+                    logger.info(f"Discovered {total_files} SQL files in directory: {args.file}")
                     
                     if total_files == 0:
-                        print("No SQL files found.", file=sys.stderr)
+                        logger.warning("No SQL files found in the specified directory.")
                     else:
                         # 准备任务参数
                         tasks = prepare_file_tasks(sql_files, args.dialect)
@@ -186,7 +226,7 @@ def main():
                             max_workers = int(env_workers)
                         else:
                             max_workers = min(os.cpu_count() or 4, total_files)
-                        print(f"Using {max_workers} worker processes", file=sys.stderr)
+                        logger.info(f"Initializing concurrent parser with {max_workers} workers")
                         
                         # 收集所有结果
                         all_relationships = []
@@ -195,64 +235,43 @@ def main():
                         error_count = 0
                         
                         import time
-                        if max_workers == 1:
-                            print(f'[DEBUG] Running in SERIAL mode (bypassed) at {time.strftime("%H:%M:%S")}', file=sys.stderr)
-                            for idx, task in enumerate(tasks, 1):
+                        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                            # 提交所有任务
+                            future_to_file = {executor.submit(parse_single_file_with_timing, task): task[0] for task in tasks}
+                            
+                            # 处理并行完成的任务
+                            for idx, future in enumerate(as_completed(future_to_file), 1):
+                                file_path = future_to_file[future]
+                                f_name = os.path.basename(file_path)
+                                progress = f"{idx}/{total_files} ({idx*100/total_files:.1f}%)"
+                                
                                 try:
-                                    start_time = time.time()
-                                    print(f"[DEBUG] Processing: {os.path.basename(task[0])}", file=sys.stderr)
-                                    result = parse_single_file(task)
-                                    duration = time.time() - start_time
-                                    print(f"[{idx}/{total_files}] Completed: {os.path.basename(task[0])} in {duration:.2f}s", file=sys.stderr)
+                                    result = future.result()
+                                    duration = result.get("duration", 0)
                                     if result["success"]:
                                         success_count += 1
                                         all_relationships.extend(result.get("relationships", []))
                                         all_column_deps.extend(result.get("column_dependencies", []))
+                                        logger.info(f"[{progress}] Processed {f_name} - OK ({duration:.2f}s)")
                                     else:
                                         error_count += 1
-                                        print(f"  Error: {result.get('error')}", file=sys.stderr)
+                                        logger.error(f"[{progress}] Processed {f_name} - FAILED ({duration:.2f}s): {result['error']}")
                                 except Exception as e:
                                     error_count += 1
-                                    print(f"  Exception: {e}", file=sys.stderr)
-                        else:
-                            print(f"[DEBUG] Running in THREADED mode with {max_workers} workers", file=sys.stderr)
-                            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                                # 提交所有任务
-                                future_to_file = {executor.submit(parse_single_file, task): task[0] for task in tasks}
-                                
-                                # 处理完成的任务
-                                for idx, future in enumerate(as_completed(future_to_file), 1):
-                                    file_path = future_to_file[future]
-                                    print(f"[{idx}/{total_files}] Completed: {os.path.basename(file_path)}", file=sys.stderr)
-                                    
-                                    try:
-                                        result = future.result()
-                                        if result["success"]:
-                                            success_count += 1
-                                            all_relationships.extend(result.get("relationships", []))
-                                            all_column_deps.extend(result.get("column_dependencies", []))
-                                        else:
-                                            error_count += 1
-                                            print(f"  Error: {result['error']}", file=sys.stderr)
-                                    except Exception as e:
-                                        error_count += 1
-                                        print(f"  Exception: {e}", file=sys.stderr)
+                                    logger.exception(f"[{progress}] Thread error for {f_name}: {e}")
                             
-                        print(f"Parsing complete: {success_count} succeeded, {error_count} failed", file=sys.stderr)
+                        logger.info(f"Parsing cycle complete. Results: Success={success_count}, Failed={error_count}")
                         
                         # 批量写入结果
                         if args.output == "neo4j" and neo4j:
-                            print(f"Writing {len(all_relationships)} table relationships to Neo4j (Batch)...", file=sys.stderr)
+                            logger.info(f"Syncing results to Neo4j... ({len(all_relationships)} tables, {len(all_column_deps)} columns)")
                             try:
+                                start_sync = time.time()
                                 neo4j.create_lineage_batch(all_relationships)
-                            except Exception as e:
-                                print(f"Error storing table lineage batch: {e}", file=sys.stderr)
-                            
-                            print(f"Writing {len(all_column_deps)} column dependencies to Neo4j...", file=sys.stderr)
-                            try:
                                 neo4j.create_column_lineage_v2(all_column_deps, version=version_id)
+                                logger.info(f"Sync completed in {time.time() - start_sync:.2f}s")
                             except Exception as e:
-                                print(f"Error storing column lineage: {e}", file=sys.stderr)
+                                logger.error(f"Sync failed: {e}")
                         
                         elif args.output == "json":
                             combined_result = {
@@ -274,22 +293,28 @@ def main():
                                     dep.get("target_table", ""),
                                     dep.get("target_column", ""),
                                     dep.get("dependency_type", "fdd")
-                                ])
+                                ] )
                 else:
                     # Single file mode
+                    start_single = time.time()
                     try:
+                        logger.info(f"Processing single file: {args.file}")
                         with open(args.file, 'r', encoding='utf-8') as f:
                             sql_content = f.read()
                         process_sql_content(sql_content, file_path=args.file)
+                        duration = time.time() - start_single
+                        logger.info(f"Processing completed in {duration:.2f}s")
                     except Exception as e:
-                        print(f"Error reading SQL file: {e}", file=sys.stderr)
+                        logger.error(f"Error reading SQL file: {e}")
         finally:
             if file_handle:
                 file_handle.close()
             
-            # 打印版本信息
+            total_duration = datetime.now() - start_time_all
+            logger.info(f"Engine shutdown. Total execution time: {total_duration}")
+            # 打印版本信息 (仅供人类阅读，前端会捕获 stderr)
             if args.output == "neo4j":
-                print(f"Lineage stored with version: {version_id}", file=sys.stderr)
+                logger.info(f"Lineage stored with version: {version_id}")
 
 
     else:
@@ -297,4 +322,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

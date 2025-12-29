@@ -150,6 +150,9 @@ class GSPParser:
         if not jpype.isJVMStarted():
             self._start_jvm()
 
+        if not jpype.isThreadAttachedToJVM():
+            jpype.attachThreadToJVM()
+
         # Preprocess
         cleaned_sql = preprocess_sql(sql)
         
@@ -173,9 +176,6 @@ class GSPParser:
             dlineage = DataFlowAnalyzer(cleaned_sql, vendor, True) # simple=True
             
             # Configure options to enable all relationship types
-            # setShowCallRelation: 显示函数调用关系
-            # setShowIndirectRelation: 显示间接数据流(fdr) - WHERE/HAVING/GROUP BY 等条件
-            # setShowJoinRelation: 显示 JOIN 关系
             try:
                 dlineage.setShowCallRelation(True)
                 dlineage.setShowIndirectRelation(True)  # 启用 fdr (间接数据流)
@@ -184,42 +184,11 @@ class GSPParser:
                 # GSP Lite 版本可能不支持这些选项，静默忽略
                 pass
             
-            # Define context manager for stderr suppression inside method if not global
-            import sys
-            import os
-            from contextlib import contextmanager
+            # Note: Previously we used a context manager to suppress stderr using os.dup2.
+            # However, os.dup2 is not thread-safe and caused deadlocks in the parallel engine.
+            # We removed it to ensure stability.
+            dlineage.generateDataFlow()
 
-            @contextmanager
-            def suppress_stderr():
-                # Open a pair of null files
-                null_fds = [os.open(os.devnull, os.O_RDWR) for x in range(2)]
-                # Save the actual stdout (1) and stderr (2) file descriptors.
-                save_fds = [os.dup(1), os.dup(2)]
-
-                try:
-                    # Assign the null pointers to stdout and stderr.
-                    # We redirect both just in case, but mostly stderr (2) is the target.
-                    os.dup2(null_fds[1], 2)
-                    # os.dup2(null_fds[0], 1) # Keep stdout? Generally GSP prints errors to stderr.
-                    yield
-                finally:
-                    # Re-assign the real stdout/stderr back to (1) and (2)
-                    os.dup2(save_fds[0], 1)
-                    os.dup2(save_fds[1], 2)
-                    # Close the null files and saved fds
-                    for fd in null_fds + save_fds:
-                        os.close(fd)
-
-            try:
-                with suppress_stderr():
-                    dlineage.generateDataFlow()
-            except Exception:
-                # If suppression fails or something, try running without it?
-                # But actually invalid fd might raise. 
-                # Let's just wrap the call.
-                dlineage.generateDataFlow()
-
-            # dlineage.generateDataFlow() # Replaced by wrapped call above
             dataflow = dlineage.getDataFlow()
             
             if not dataflow:

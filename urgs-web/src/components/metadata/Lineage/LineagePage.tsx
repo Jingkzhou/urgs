@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Layout, Input, Button, message, Empty, Spin, Tag, Badge, Pagination, Tooltip, Space, Modal } from 'antd';
+import { Layout, Input, Button, message, Empty, Spin, Tag, Badge, Pagination, Tooltip, Space, Modal, Switch } from 'antd';
 import {
     SearchOutlined,
     TableOutlined,
@@ -28,12 +28,41 @@ import LineageDiagramTrace from './origin/components/LineageDiagram';
 import LineageReportModal from './analysis/components/LineageReportModal';
 import { NodeData, LinkData, ViewportState } from './analysis/types';
 import { NODE_HEADER_HEIGHT, COLUMN_ROW_HEIGHT } from './analysis/constants';
+import EngineLogViewer from './analysis/components/EngineLogViewer';
 
 const { Sider, Content } = Layout;
 
 interface LineagePageProps {
     mode?: 'trace' | 'impact';
 }
+
+const RunDuration: React.FC<{ startTime: string }> = ({ startTime }) => {
+    const [duration, setDuration] = useState<string>('');
+
+    useEffect(() => {
+        const update = () => {
+            if (!startTime) return;
+            const start = new Date(startTime).getTime();
+            const now = new Date().getTime();
+            const diff = Math.max(0, Math.floor((now - start) / 1000));
+
+            const hours = Math.floor(diff / 3600);
+            const minutes = Math.floor((diff % 3600) / 60);
+            const seconds = diff % 60;
+
+            setDuration(
+                `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+            );
+        };
+
+        update();
+        const timer = setInterval(update, 1000);
+        return () => clearInterval(timer);
+    }, [startTime]);
+
+    if (!duration) return null;
+    return <span style={{ fontFamily: 'monospace' }}>{duration}</span>;
+};
 
 const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
     const [searchText, setSearchText] = useState('');
@@ -56,6 +85,7 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
     const [engineLogs, setEngineLogs] = useState<string[]>([]);
     const [engineLogsLoading, setEngineLogsLoading] = useState(false);
     const [engineMeta, setEngineMeta] = useState<{ lastStartedAt?: string; lastStoppedAt?: string; pid?: number }>({});
+    const [autoRefresh, setAutoRefresh] = useState(true);
     const engineStatusMeta = {
         running: { badge: 'success' as const, label: '运行中' },
         stopped: { badge: 'default' as const, label: '未启动' },
@@ -82,21 +112,6 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
         });
     };
 
-    useEffect(() => {
-        handleSearch();
-    }, []);
-
-    useEffect(() => {
-        if (!canViewEngineStatus) {
-            return;
-        }
-        fetchEngineStatus();
-        const timer = window.setInterval(() => {
-            fetchEngineStatus();
-        }, 15000);
-        return () => window.clearInterval(timer);
-    }, [canViewEngineStatus]);
-
     const fetchEngineStatus = async () => {
         if (!canViewEngineStatus) {
             return;
@@ -119,22 +134,48 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
         }
     };
 
-    const fetchEngineLogs = async () => {
+    const fetchEngineLogs = async (silent: boolean = false) => {
         if (!canViewEngineLogs) {
             message.error('无权限查看日志');
             return;
         }
-        setEngineLogsLoading(true);
+        if (!silent) setEngineLogsLoading(true);
         try {
             const res = await getLineageEngineLogs(200);
             const lines = Array.isArray(res?.lines) ? res.lines : [];
             setEngineLogs(lines);
         } catch (error) {
-            message.error('获取日志失败');
+            if (!silent) message.error('获取日志失败');
         } finally {
-            setEngineLogsLoading(false);
+            if (!silent) setEngineLogsLoading(false);
         }
     };
+
+    useEffect(() => {
+        handleSearch();
+    }, []);
+
+    useEffect(() => {
+        if (!canViewEngineStatus) {
+            return;
+        }
+        fetchEngineStatus();
+        const timer = window.setInterval(() => {
+            fetchEngineStatus();
+        }, 15000);
+        return () => window.clearInterval(timer);
+    }, [canViewEngineStatus]);
+
+    useEffect(() => {
+        if (showLogModal && autoRefresh) {
+            const timer = setInterval(() => {
+                fetchEngineLogs(true);
+            }, 3000);
+            return () => clearInterval(timer);
+        }
+    }, [showLogModal, autoRefresh]);
+
+
 
     const handleStartEngine = async () => {
         if (!canStartEngine) {
@@ -216,7 +257,8 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
             return;
         }
         setShowLogModal(true);
-        fetchEngineLogs();
+        setShowLogModal(true);
+        fetchEngineLogs(false);
     };
 
     const handleSearch = async (page: number = 1) => {
@@ -716,6 +758,8 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                                 {engineMeta.lastStartedAt && engineStatus === 'running' ? (
                                     <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8 }} title={engineMeta.lastStartedAt}>
                                         启动于 {new Date(engineMeta.lastStartedAt).toLocaleString('zh-CN', { hour12: false })}
+                                        <span style={{ margin: '0 4px' }}>·</span>
+                                        已运行 <RunDuration startTime={engineMeta.lastStartedAt} />
                                     </span>
                                 ) : null}
                             </>
@@ -928,32 +972,23 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                     />
                 )}
                 <Modal
-                    title="引擎执行日志"
+                    title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><FileTextOutlined /> 引擎执行日志</div>}
                     open={showLogModal}
                     onCancel={() => setShowLogModal(false)}
                     footer={null}
-                    width={720}
+                    width={840}
+                    styles={{ body: { padding: 0 } }}
                 >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                        <span style={{ color: '#64748b', fontSize: 12 }}>最近日志 · 仅展示最新 200 行</span>
-                        <Space size={8}>
-                            <Button size="small" icon={<ReloadOutlined />} loading={engineLogsLoading} onClick={fetchEngineLogs}>
-                                刷新
-                            </Button>
-                        </Space>
-                    </div>
-                    <div style={{ background: '#0f172a', borderRadius: 8, padding: 16, color: '#e2e8f0', fontSize: 12, lineHeight: 1.6, maxHeight: 360, overflow: 'auto' }}>
-                        <Spin spinning={engineLogsLoading}>
-                            {engineLogs.length === 0 ? (
-                                <div style={{ color: '#94a3b8' }}>暂无日志</div>
-                            ) : (
-                                <pre style={{ margin: 0, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace', whiteSpace: 'pre-wrap' }}>
-                                    {engineLogs.join('\n')}
-                                </pre>
-                            )}
-                        </Spin>
-                    </div>
+                    <EngineLogViewer
+                        logs={engineLogs}
+                        loading={engineLogsLoading}
+                        autoRefresh={autoRefresh}
+                        onAutoRefreshChange={setAutoRefresh}
+                        onRefresh={() => fetchEngineLogs(false)}
+                    />
                 </Modal>
+
+
             </Layout>
         </div>
     );
