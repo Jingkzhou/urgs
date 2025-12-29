@@ -40,6 +40,10 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
     }
     
     try:
+        import threading
+        import sys
+        print(f"[DEBUG-THREAD] Starting {os.path.basename(file_path)} on thread {threading.get_ident()}", file=sys.stderr)
+
         # 直接导入 LineageParser，避免触发 container.py 中的 Agent 初始化
         from parsers.sql_parser import LineageParser
         

@@ -712,7 +712,12 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                         {canViewEngineStatus ? (
                             <>
                                 <Badge status={engineStatusInfo.badge} text={engineStatusInfo.label} />
-                                {engineMeta.pid ? <span style={{ fontSize: 11, color: '#94a3b8' }}>PID {engineMeta.pid}</span> : null}
+                                {engineMeta.pid ? <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 4 }}>PID {engineMeta.pid}</span> : null}
+                                {engineMeta.lastStartedAt && engineStatus === 'running' ? (
+                                    <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8 }} title={engineMeta.lastStartedAt}>
+                                        启动于 {new Date(engineMeta.lastStartedAt).toLocaleString('zh-CN', { hour12: false })}
+                                    </span>
+                                ) : null}
                             </>
                         ) : (
                             <Badge status="default" text="无权限" />

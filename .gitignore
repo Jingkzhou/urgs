@@ -10,7 +10,6 @@
 .classpath
 .project
 .settings/
-bin/
 
 # Java/Maven
 target/
