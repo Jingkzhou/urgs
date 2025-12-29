@@ -1,7 +1,6 @@
 package com.example.urgs_api.ops.service;
 
 import com.example.urgs_api.ops.entity.InfrastructureAsset;
-import com.example.urgs_api.ops.entity.InfrastructureUser;
 import com.example.urgs_api.ops.repository.InfrastructureAssetRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

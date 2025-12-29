@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Card, Row, Col, Badge, AutoComplete, Upload } from 'antd';
 import { Plus, Server, Cpu, HardDrive, Database, Search, RefreshCw, Edit, Trash2, Globe, Shield, Activity, Download, UploadCloud, Users } from 'lucide-react';
 import {
-    getSsoList, getDeployEnvironments, SsoConfig,
+    getDeployEnvironments, SsoConfig,
 } from '@/api/version';
 import {
     getInfrastructureAssets, createInfrastructureAsset, updateInfrastructureAsset, deleteInfrastructureAsset,
-    InfrastructureAsset, exportInfrastructureAssets, importInfrastructureAssets
+    InfrastructureAsset, exportInfrastructureAssets, importInfrastructureAssets, getSystemList as getSsoList
 } from '@/api/ops';
 
 const { Option } = Select;

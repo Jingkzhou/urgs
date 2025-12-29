@@ -93,7 +93,7 @@ const ArkPage: React.FC = () => {
     };
 
     const scrollToBottom = (instant = false) => {
-        messagesEndRef.current?.scrollIntoView({ behavior: instant ? 'auto' : 'smooth' });
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
     };
 
     useEffect(() => {
