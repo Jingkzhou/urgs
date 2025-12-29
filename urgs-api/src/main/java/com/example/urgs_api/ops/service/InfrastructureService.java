@@ -1,7 +1,8 @@
-package com.example.urgs_api.version.service;
+package com.example.urgs_api.ops.service;
 
-import com.example.urgs_api.version.entity.InfrastructureAsset;
-import com.example.urgs_api.version.repository.InfrastructureAssetRepository;
+import com.example.urgs_api.ops.entity.InfrastructureAsset;
+import com.example.urgs_api.ops.entity.InfrastructureUser;
+import com.example.urgs_api.ops.repository.InfrastructureAssetRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -44,6 +45,9 @@ public class InfrastructureService {
     }
 
     public InfrastructureAsset save(InfrastructureAsset asset) {
+        if (asset.getUsers() != null) {
+            asset.getUsers().forEach(u -> u.setAsset(asset));
+        }
         return repository.save(asset);
     }
 
@@ -65,6 +69,17 @@ public class InfrastructureService {
         asset.setEnvType(assetDetails.getEnvType());
         asset.setStatus(assetDetails.getStatus());
         asset.setDescription(assetDetails.getDescription());
+
+        // Optimize user list update
+        if (assetDetails.getUsers() != null) {
+            asset.getUsers().clear();
+            if (!assetDetails.getUsers().isEmpty()) {
+                assetDetails.getUsers().forEach(u -> {
+                    u.setAsset(asset);
+                    asset.getUsers().add(u);
+                });
+            }
+        }
 
         return repository.save(asset);
     }

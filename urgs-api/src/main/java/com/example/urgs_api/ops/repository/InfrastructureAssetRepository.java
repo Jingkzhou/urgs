@@ -1,6 +1,6 @@
-package com.example.urgs_api.version.repository;
+package com.example.urgs_api.ops.repository;
 
-import com.example.urgs_api.version.entity.InfrastructureAsset;
+import com.example.urgs_api.ops.entity.InfrastructureAsset;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import java.util.List;

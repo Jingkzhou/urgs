@@ -1,7 +1,7 @@
-package com.example.urgs_api.version.controller;
+package com.example.urgs_api.ops.controller;
 
-import com.example.urgs_api.version.entity.InfrastructureAsset;
-import com.example.urgs_api.version.service.InfrastructureService;
+import com.example.urgs_api.ops.entity.InfrastructureAsset;
+import com.example.urgs_api.ops.service.InfrastructureService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

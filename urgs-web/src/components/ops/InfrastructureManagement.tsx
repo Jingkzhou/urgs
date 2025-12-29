@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Card, Row, Col, Badge, AutoComplete, Upload } from 'antd';
-import { Plus, Server, Cpu, HardDrive, Database, Search, RefreshCw, Edit, Trash2, Globe, Shield, Activity, Download, UploadCloud } from 'lucide-react';
+import { Plus, Server, Cpu, HardDrive, Database, Search, RefreshCw, Edit, Trash2, Globe, Shield, Activity, Download, UploadCloud, Users } from 'lucide-react';
+import {
+    getSsoList, getDeployEnvironments, SsoConfig,
+} from '@/api/version';
 import {
     getInfrastructureAssets, createInfrastructureAsset, updateInfrastructureAsset, deleteInfrastructureAsset,
-    getSsoList, getDeployEnvironments, InfrastructureAsset, SsoConfig,
-    exportInfrastructureAssets, importInfrastructureAssets
-} from '@/api/version';
+    InfrastructureAsset, exportInfrastructureAssets, importInfrastructureAssets
+} from '@/api/ops';
 
 const { Option } = Select;
 
@@ -201,6 +203,11 @@ const InfrastructureManagement: React.FC = () => {
                     <span className="flex items-center gap-1" title="CPU"><Cpu size={12} /> {record.cpu || '-'}</span>
                     <span className="flex items-center gap-1" title="内存"><Activity size={12} /> {record.memory || '-'}</span>
                     <span className="flex items-center gap-1" title="磁盘"><HardDrive size={12} /> {record.disk || '-'}</span>
+                    {record.users && record.users.length > 0 && (
+                        <span className="flex items-center gap-1 text-blue-600" title={`已配置 ${record.users.length} 个账号`}>
+                            <Users size={12} /> {record.users.length}
+                        </span>
+                    )}
                 </div>
             )
         },
@@ -432,6 +439,51 @@ const InfrastructureManagement: React.FC = () => {
                             </Form.Item>
                         </Col>
                     </Row>
+
+                    <p className="text-[11px] font-bold text-slate-400 uppercase mt-4 mb-4 tracking-wider">鉴权账号管理</p>
+                    <Form.List name="users">
+                        {(fields, { add, remove }) => (
+                            <div className="bg-slate-50 p-3 rounded-md mb-4 border border-slate-100">
+                                {fields.map(({ key, name, ...restField }) => (
+                                    <div key={key} className="flex gap-2 items-start mb-2 last:mb-0">
+                                        <Form.Item
+                                            {...restField}
+                                            name={[name, 'username']}
+                                            rules={[{ required: true, message: 'Required' }]}
+                                            className="mb-0 w-1/4"
+                                        >
+                                            <Input placeholder="用户名" size="small" />
+                                        </Form.Item>
+                                        <Form.Item
+                                            {...restField}
+                                            name={[name, 'password']}
+                                            className="mb-0 w-1/4"
+                                        >
+                                            <Input.Password placeholder="密码" size="small" />
+                                        </Form.Item>
+                                        <Form.Item
+                                            {...restField}
+                                            name={[name, 'description']}
+                                            className="mb-0 flex-1"
+                                        >
+                                            <Input placeholder="用途说明" size="small" />
+                                        </Form.Item>
+                                        <Button
+                                            type="text"
+                                            danger
+                                            size="small"
+                                            icon={<Trash2 size={14} />}
+                                            onClick={() => remove(name)}
+                                            className="mt-1"
+                                        />
+                                    </div>
+                                ))}
+                                <Button type="dashed" size="small" onClick={() => add()} block icon={<Plus size={14} />} className="mt-2 text-slate-500 border-slate-300">
+                                    添加账号信息
+                                </Button>
+                            </div>
+                        )}
+                    </Form.List>
 
                     <Row gutter={16}>
                         <Col span={8}>

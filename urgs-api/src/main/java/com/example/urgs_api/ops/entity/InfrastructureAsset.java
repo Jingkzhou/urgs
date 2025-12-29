@@ -1,4 +1,4 @@
-package com.example.urgs_api.version.entity;
+package com.example.urgs_api.ops.entity;
 
 import com.alibaba.excel.annotation.ExcelIgnore;
 import com.alibaba.excel.annotation.ExcelProperty;
@@ -13,6 +13,12 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "t_infrastructure_asset")
 public class InfrastructureAsset {
+
+    @OneToMany(mappedBy = "asset", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    // Using EAGER for simplicity as there usually won't be many users per asset.
+    // If performance issues arise, switch to LAZY and handle loading in Service.
+    @com.fasterxml.jackson.annotation.JsonManagedReference
+    private java.util.List<InfrastructureUser> users = new java.util.ArrayList<>();
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
