@@ -199,12 +199,21 @@ const InfrastructureManagement: React.FC = () => {
             title: '硬件配置',
             key: 'config',
             render: (_: any, record: InfrastructureAsset) => (
-                <div className="flex items-center gap-3 text-xs text-slate-600">
-                    <span className="flex items-center gap-1" title="CPU"><Cpu size={12} /> {record.cpu || '-'}</span>
-                    <span className="flex items-center gap-1" title="内存"><Activity size={12} /> {record.memory || '-'}</span>
-                    <span className="flex items-center gap-1" title="磁盘"><HardDrive size={12} /> {record.disk || '-'}</span>
+                <div className="flex flex-col gap-1 text-xs text-slate-600">
+                    <div className="flex items-center gap-3">
+                        <span className="flex items-center gap-1" title="CPU"><Cpu size={12} /> {record.cpu || '-'}</span>
+                        <span className="flex items-center gap-1" title="内存"><Activity size={12} /> {record.memory || '-'}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <span className="flex items-center gap-1" title="磁盘"><HardDrive size={12} /> {record.disk || '-'}</span>
+                        {record.hardwareModel && (
+                            <span className="flex items-center gap-1 text-slate-500" title="硬件型号">
+                                <Server size={12} /> {record.hardwareModel}
+                            </span>
+                        )}
+                    </div>
                     {record.users && record.users.length > 0 && (
-                        <span className="flex items-center gap-1 text-blue-600" title={`已配置 ${record.users.length} 个账号`}>
+                        <span className="flex items-center gap-1 text-blue-600 mt-0.5" title={`已配置 ${record.users.length} 个账号`}>
                             <Users size={12} /> {record.users.length}
                         </span>
                     )}
@@ -423,6 +432,14 @@ const InfrastructureManagement: React.FC = () => {
                     </Row>
 
                     <Row gutter={16}>
+                        <Col span={24}>
+                            <Form.Item name="hardwareModel" label="服务器型号">
+                                <Input placeholder="例如: Dell PowerEdge R740 / 华为泰山200" prefix={<Server size={14} className="text-slate-400" />} />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    <Row gutter={16}>
                         <Col span={8}>
                             <Form.Item name="osType" label="操作系统">
                                 <Select>
@@ -430,6 +447,12 @@ const InfrastructureManagement: React.FC = () => {
                                     <Option value="Ubuntu">Ubuntu</Option>
                                     <Option value="RedHat">RedHat</Option>
                                     <Option value="Windows">Windows Server</Option>
+                                    <Select.OptGroup label="信创系统">
+                                        <Option value="UnionTech">统信 UOS</Option>
+                                        <Option value="Kylin">麒麟操作系统</Option>
+                                        <Option value="EulerOS">欧拉操作系统</Option>
+                                        <Option value="Anolis">龙蜥操作系统</Option>
+                                    </Select.OptGroup>
                                 </Select>
                             </Form.Item>
                         </Col>
@@ -501,9 +524,9 @@ const InfrastructureManagement: React.FC = () => {
                             </Form.Item>
                         </Col>
                     </Row>
-                </Form>
-            </Modal>
-        </div>
+                </Form >
+            </Modal >
+        </div >
     );
 };
 

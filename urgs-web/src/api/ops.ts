@@ -21,6 +21,7 @@ export interface InfrastructureAsset {
     cpu?: string;
     memory?: string;
     disk?: string;
+    hardwareModel?: string;
     role?: string;
     appSystemId?: number;
     envId?: number;

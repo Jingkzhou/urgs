@@ -18,6 +18,7 @@ public class InfrastructureAsset {
     // Using EAGER for simplicity as there usually won't be many users per asset.
     // If performance issues arise, switch to LAZY and handle loading in Service.
     @com.fasterxml.jackson.annotation.JsonManagedReference
+    @ExcelIgnore
     private java.util.List<InfrastructureUser> users = new java.util.ArrayList<>();
 
     @Id
@@ -64,6 +65,11 @@ public class InfrastructureAsset {
     @Column(length = 100)
     @ExcelProperty("磁盘")
     private String disk;
+
+    /** 硬件型号 (例如: Dell PowerEdge R740) */
+    @Column(name = "hardware_model", length = 100)
+    @ExcelProperty("硬件型号")
+    private String hardwareModel;
 
     /** 服务器角色 (app, db, redis, nginx, etc.) */
     @Column(length = 50)
