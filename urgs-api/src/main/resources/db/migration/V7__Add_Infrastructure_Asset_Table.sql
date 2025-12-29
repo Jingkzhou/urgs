@@ -1,5 +1,5 @@
 -- Add table for Infrastructure Assets
-CREATE TABLE `t_infrastructure_asset` (
+CREATE TABLE IF NOT EXISTS `t_infrastructure_asset` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `hostname` varchar(100) NOT NULL COMMENT '主机名',
   `internal_ip` varchar(50) NOT NULL COMMENT '内网 IP 地址',

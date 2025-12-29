@@ -1,9 +1,32 @@
 -- Add email and gitlab_username to sys_user
-ALTER TABLE sys_user ADD COLUMN email VARCHAR(100) COMMENT 'Git邮箱';
-ALTER TABLE sys_user ADD COLUMN gitlab_username VARCHAR(100) COMMENT 'GitLab账号';
+DROP PROCEDURE IF EXISTS upgrade_v5_sys_user;
+DELIMITER $$
+CREATE PROCEDURE upgrade_v5_sys_user()
+BEGIN
+    IF NOT EXISTS (
+        SELECT * FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sys_user' AND COLUMN_NAME = 'email'
+    ) THEN
+        ALTER TABLE sys_user ADD COLUMN email VARCHAR(100) COMMENT 'Git邮箱';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT * FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sys_user' AND COLUMN_NAME = 'gitlab_username'
+    ) THEN
+        ALTER TABLE sys_user ADD COLUMN gitlab_username VARCHAR(100) COMMENT 'GitLab账号';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT * FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sys_user' AND COLUMN_NAME = 'git_access_token'
+    ) THEN
+        ALTER TABLE sys_user ADD COLUMN git_access_token VARCHAR(255) COMMENT 'Git Access Token';
+    END IF;
+END $$
+DELIMITER ;
+CALL upgrade_v5_sys_user();
+DROP PROCEDURE IF EXISTS upgrade_v5_sys_user;
 
 -- Create table for AI Code Review
-CREATE TABLE ver_ai_code_review (
+CREATE TABLE IF NOT EXISTS ver_ai_code_review (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     repo_id BIGINT NOT NULL COMMENT '仓库ID',
     commit_sha VARCHAR(64) NOT NULL COMMENT 'Commit SHA',
@@ -19,4 +42,3 @@ CREATE TABLE ver_ai_code_review (
     INDEX idx_repo_commit (repo_id, commit_sha),
     INDEX idx_developer (developer_id)
 ) COMMENT='AI代码走查记录表';
-ALTER TABLE sys_user ADD COLUMN git_access_token VARCHAR(255) COMMENT 'Git Access Token';

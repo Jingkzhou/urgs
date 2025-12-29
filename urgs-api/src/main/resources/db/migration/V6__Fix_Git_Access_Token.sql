@@ -1,5 +1,18 @@
--- Add git_access_token column if it doesn't exist (using logic or just ignore duplicate column error if DB supports it, but standard SQL doesn't really have IF NOT EXISTS for columns in MySQL easily without stored procedure, but assuming it's missing)
--- Since the user got an error "Unknown column", it is definitely missing.
--- V5 might have failed or been run before the line was added.
+DROP PROCEDURE IF EXISTS upgrade_sys_user_v6;
 
-ALTER TABLE sys_user ADD COLUMN git_access_token VARCHAR(255) COMMENT 'Git Access Token';
+DELIMITER $$
+CREATE PROCEDURE upgrade_sys_user_v6()
+BEGIN
+    IF NOT EXISTS (
+        SELECT * FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'sys_user'
+        AND COLUMN_NAME = 'git_access_token'
+    ) THEN
+        ALTER TABLE sys_user ADD COLUMN git_access_token VARCHAR(255) COMMENT 'Git Access Token';
+    END IF;
+END $$
+DELIMITER ;
+
+CALL upgrade_sys_user_v6();
+DROP PROCEDURE IF EXISTS upgrade_sys_user_v6;
