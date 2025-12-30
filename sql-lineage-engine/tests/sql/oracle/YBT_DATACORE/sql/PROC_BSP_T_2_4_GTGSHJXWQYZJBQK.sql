@@ -1,0 +1,249 @@
+DROP PROCEDURE IF EXISTS PROC_BSP_T_2_4_GTGSHJXWQYZJBQK;
+
+CREATE PROCEDURE PROC_BSP_T_2_4_GTGSHJXWQYZJBQK(
+  IN I_DATE STRING,
+  OUT OI_RETCODE INT,
+  OUT OI_REMESSAGE STRING
+)
+LANGUAGE HIVE
+BEGIN
+
+  /******
+        程序名称  ：个体工商户及小微企业主基本情况
+        程序功能  ：加工个体工商户及小微企业主基本情况
+        目标表：T_2_4
+        源表  ： 两段   CUST_C数据 和 CUST_P数据
+        创建人  ：87v
+        创建日期  ：20240109
+        版本号：V0.0.1 
+  ******/
+  /* 需求编号：JLBA202502210009 上线日期：20250415，修改人：姜俐锋，提出人：吴大为 */
+  /* 需求编号：JLBA202504060003 上线日期：20250513，修改人：狄家卉，提出人：吴大为    关于一表通监管数据报送系统、EAST报送系统修改取数逻辑的需求*/
+  /* 需求编号：JLBA202504160004 上线日期：20250708，修改人：姜俐锋，提出人：吴大为 关于吉林银行修改单一客户授信逻辑的需求*/
+  /* 需求编号：JLBA202507250003 上线日期：2025-09-09，修改人：巴启威，提出人：吴大为  修改原因：关于一表通监管数据报送系统修改取数逻辑的需求*/
+
+  #声明变量
+  DECLARE P_DATE DATE;
+  DECLARE P_PROC_NAME STRING;
+  DECLARE P_STATUS INT;
+  DECLARE P_START_DT TIMESTAMP;
+  DECLARE P_END_TIME TIMESTAMP;
+  DECLARE P_SQLCDE STRING;
+  DECLARE P_STATE STRING;
+  DECLARE P_SQLMSG STRING;
+  DECLARE P_STEP_NO INT;
+  DECLARE P_DESCB STRING;
+  DECLARE BEG_MON_DT STRING;
+  DECLARE BEG_QUAR_DT STRING;
+  DECLARE BEG_YEAR_DT STRING;
+  DECLARE LAST_MON_DT STRING;
+  DECLARE LAST_QUAR_DT STRING;
+  DECLARE LAST_YEAR_DT STRING;
+  DECLARE LAST_DT STRING;
+  DECLARE FINISH_FLG STRING;
+
+  #变量初始化
+  SET P_DATE = to_date(from_unixtime(unix_timestamp(I_DATE,'yyyyMMdd')));
+  SET BEG_MON_DT = date_format(trunc(P_DATE,'MM'),'yyyyMMdd');
+  SET BEG_QUAR_DT = date_format(trunc(P_DATE,'Q'),'yyyyMMdd');
+  SET BEG_YEAR_DT = date_format(trunc(P_DATE,'YY'),'yyyyMMdd');
+  SET LAST_MON_DT = date_format(date_sub(trunc(P_DATE,'MM'),1),'yyyyMMdd');
+  SET LAST_QUAR_DT = date_format(date_sub(trunc(P_DATE,'Q'),1),'yyyyMMdd');
+  SET LAST_YEAR_DT = date_format(date_sub(trunc(P_DATE,'YY'),1),'yyyyMMdd');
+  SET LAST_DT = date_format(date_sub(P_DATE,1),'yyyyMMdd');
+  SET P_PROC_NAME = 'PROC_BSP_T_2_4_GTGSHJXWQYZJBQK';
+  SET OI_RETCODE = 0;
+  SET P_STATUS = 0;
+  SET P_STEP_NO = 0;
+
+  #1.过程开始执行
+  SET P_START_DT = current_timestamp();
+  SET P_STEP_NO = P_STEP_NO + 1;
+  SET P_DESCB = '过程开始执行';
+  CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+
+  #2.清除数据
+  SET P_START_DT = current_timestamp();
+  SET P_STEP_NO = P_STEP_NO + 1;
+  SET P_DESCB = '清除数据';
+  TRUNCATE TABLE T_2_4;
+  CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+
+  #3.CUST_C数据插入
+  SET P_START_DT = current_timestamp();
+  SET P_STEP_NO = P_STEP_NO + 1;
+  SET P_DESCB = 'CUST_C数据插入';
+  INSERT INTO T_2_4  (
+    B040001, B040002, B040003, B040004, B040005, B040006, B040033, B040019, B040020, B040021, B040022, B040023,
+    B040032, B040024, B040025, B040026, B040027, B040028, B040029, B040030, B040031,
+    DIS_DATA_DATE, DIS_BANK_ID, DEPARTMENT_ID, B040034, DIS_DEPT
+  )
+  SELECT
+    T1.CUST_ID AS B040001,
+    ORG.ORG_ID AS B040002,
+    T1.LEGAL_NAME AS B040003,
+    coalesce(M.GB_CODE,M2.GB_CODE) AS B040004,
+    T1.LEGAL_CARD_NO AS B040005,
+    T1.JYZCYNX AS B040006,
+    coalesce(T1.CUST_NAM,T2.CUST_NAM) AS B040033,
+    CASE
+      WHEN substr(T1.BORROWER_PRODUCT_DESC,1,300) IS NOT NULL AND substr(T1.BORROWER_PRODUCT_DESC,1,300) NOT IN ('','无')
+        THEN substr(T1.BORROWER_PRODUCT_DESC,1,300)
+      WHEN T1.CORP_BUSINSESS_TYPE IS NOT NULL AND substr(T1.BORROWER_PRODUCT_DESC,1,300) = '无'
+        THEN T1.CORP_BUSINSESS_TYPE
+      WHEN T1.CORP_BUSINSESS_TYPE IS NULL AND substr(T1.BORROWER_PRODUCT_DESC,1,300) = '无'
+        THEN '承受招标人的委托，可承担工程总投资一亿元人民币以下的工程招标代理业务；建设项目可行性投资估算，项目经济评价、工程项目概算、预算、结算、决算编制及审核、工程量清算编制及审核、工程量清算编制、计价、标底编制。'
+      ELSE '承受招标人的委托，可承担工程总投资一亿元人民币以下的工程招标代理业务；建设项目可行性投资估算，项目经济评价、工程项目概算、预算、结算、决算编制及审核、工程量清算编制及审核、工程量清算编制、计价、标底编制。'
+    END AS B040019,
+    T1.CORP_BUSINSESS_TYPE AS B040020,
+    '02' AS B040021,
+    coalesce(T3.BORROWER_REGISTER_ADDR,'无') AS B040022,
+    T1.ORG_AREA AS B040023,
+    T3.CUST_TELEPHONE_NO AS B040032,
+    T1.TOTAL_ASSET AS B040024,
+    T1.TOTAL_DEBT AS B040025,
+    T1.PRETAX_PROFIT AS B040026,
+    T1.MAIN_BUSI_INCOME AS B040027,
+    date_format(to_date(from_unixtime(unix_timestamp(T4.REPORT_DT,'yyyyMMdd'))),'yyyy-MM-dd') AS B040028,
+    coalesce(T1.CUS_RISK_LV_DE,T2.CREDIT_RANK) AS B040029,
+    date_format(to_date(from_unixtime(unix_timestamp(T1.FIRST_CREDIT_DATE,'yyyyMMdd'))),'yyyy-MM') AS B040030,
+    date_format(to_date(from_unixtime(unix_timestamp(T1.DATA_DATE,'yyyyMMdd'))),'yyyy-MM-dd') AS B040031,
+    date_format(to_date(from_unixtime(unix_timestamp(I_DATE,'yyyyMMdd'))),'yyyy-MM-dd') AS DIS_DATA_DATE,
+    T1.ORG_NUM AS DIS_BANK_ID,
+    '0098SJ' AS DEPARTMENT_ID,
+    T1.CUST_ID_LEGAL AS B040034,
+    '对公' AS DIS_DEPT
+  FROM SMTMODS.L_CUST_C T1
+  LEFT JOIN SMTMODS.L_CUST_ALL T2
+    ON T1.CUST_ID = T2.CUST_ID AND T2.DATA_DATE = I_DATE
+  LEFT JOIN SMTMODS.L_CUST_CONTACT T3
+    ON T1.CUST_ID = T3.CUST_ID AND T3.DATA_DATE = I_DATE
+  LEFT JOIN VIEW_L_PUBL_ORG_BRA ORG
+    ON T1.ORG_NUM = ORG.ORG_NUM AND ORG.DATA_DATE = I_DATE
+  LEFT JOIN M_DICT_CODETABLE M
+    ON T1.LEGAL_CARD_TYPE = M.L_CODE AND M.L_CODE_TABLE_CODE = 'C0001'
+  LEFT JOIN M_DICT_CODETABLE M2
+    ON T1.LEGAL_CARD_TYPE2 = M2.L_CODE AND M2.L_CODE_TABLE_CODE = 'C0001'
+  LEFT JOIN (
+    SELECT *
+    FROM (
+      SELECT AA.*,
+             row_number() OVER (PARTITION BY AA.CUST_ID ORDER BY AA.REPORT_DT) AS RN
+      FROM SMTMODS.L_CUST_C_FINREPINFO AA
+      WHERE AA.DATA_DATE = I_DATE
+    ) BB
+    WHERE BB.RN = 1
+  ) T4
+    ON T1.CUST_ID = T4.CUST_ID AND T1.DATA_DATE = T4.DATA_DATE
+  WHERE T1.DATA_DATE = I_DATE
+    AND (T1.CUST_TYP = '3' OR (T1.IS_NGI_CUST = '0' AND T1.DEPOSIT_CUSTTYPE IN ('13','14')))
+    AND (
+      EXISTS (SELECT 1 FROM ybt_datacore.t_4_3 A
+              WHERE A.D030015 = date_format(to_date(from_unixtime(unix_timestamp(I_DATE,'yyyyMMdd'))),'yyyy-MM-dd')
+              AND A.D030003 = T1.CUST_ID)
+      OR EXISTS (SELECT 1 FROM SMTMODS.L_AGRE_CREDITLINE B
+              WHERE B.DATA_DATE = I_DATE AND B.FACILITY_STS = 'Y' AND B.CUST_ID = T1.CUST_ID)
+    );
+  CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+
+  #4.CUST_P数据插入
+  SET P_START_DT = current_timestamp();
+  SET P_STEP_NO = P_STEP_NO + 1;
+  SET P_DESCB = 'CUST_P数据插入';
+  INSERT INTO T_2_4  (
+    B040001, B040002, B040003, B040004, B040005, B040006, B040033, B040019, B040020, B040021, B040022, B040023,
+    B040032, B040024, B040025, B040026, B040027, B040028, B040029, B040030, B040031,
+    DIS_DATA_DATE, DIS_BANK_ID, DEPARTMENT_ID, B040034, DIS_DEPT
+  )
+  SELECT
+    T1.CUST_ID AS B040001,
+    ORG.ORG_ID AS B040002,
+    T1.CUST_NAM AS B040003,
+    M.GB_CODE AS B040004,
+    T2.ID_NO AS B040005,
+    T1.JYZCYNX AS B040006,
+    coalesce(T1.CORP_NAM,T2.CUST_NAM) AS B040033,
+    '承受招标人的委托，可承担工程总投资一亿元人民币以下的工程招标代理业务；建设项目可行性投资估算，项目经济评价、工程项目概算、预算、结算、决算编制及审核、工程量清算编制及审核、工程量清算编制、计价、标底编' AS B040019,
+    CASE
+      WHEN substr(T4.ACCT_TYP,1,2) = '01' AND T4.ACCT_TYP NOT LIKE '0102%' THEN NULL
+      ELSE T4.LOAN_PURPOSE_CD
+    END AS B040020,
+    CASE
+      WHEN T1.OPERATE_CUST_TYPE = 'A' THEN '01'
+      WHEN T1.OPERATE_CUST_TYPE = 'B' THEN '03'
+    END AS B040021,
+    coalesce(T1.JYDZ,'无') AS B040022,
+    T1.ORG_AREA AS B040023,
+    T3.CUST_TELEPHONE_NO AS B040032,
+    NULL AS B040024,
+    NULL AS B040025,
+    NULL AS B040026,
+    NULL AS B040027,
+    NULL AS B040028,
+    T2.CREDIT_RANK AS B040029,
+    date_format(to_date(from_unixtime(unix_timestamp(T1.FIRST_CREDIT_DATE,'yyyyMMdd'))),'yyyy-MM') AS B040030,
+    date_format(to_date(from_unixtime(unix_timestamp(T1.DATA_DATE,'yyyyMMdd'))),'yyyy-MM-dd') AS B040031,
+    date_format(to_date(from_unixtime(unix_timestamp(I_DATE,'yyyyMMdd'))),'yyyy-MM-dd') AS DIS_DATA_DATE,
+    T1.ORG_NUM AS DIS_BANK_ID,
+    '0098SJ' AS DEPARTMENT_ID,
+    T1.CUST_ID AS B040034,
+    '对私' AS DIS_DEPT
+  FROM SMTMODS.L_CUST_P T1
+  LEFT JOIN SMTMODS.L_CUST_ALL T2
+    ON T1.CUST_ID = T2.CUST_ID AND T2.DATA_DATE = I_DATE
+  LEFT JOIN SMTMODS.L_CUST_CONTACT T3
+    ON T1.CUST_ID = T3.CUST_ID AND T3.DATA_DATE = I_DATE
+  LEFT JOIN VIEW_L_PUBL_ORG_BRA ORG
+    ON T1.ORG_NUM = ORG.ORG_NUM AND ORG.DATA_DATE = I_DATE
+  LEFT JOIN M_DICT_CODETABLE M
+    ON T2.ID_TYPE = M.L_CODE AND M.L_CODE_TABLE_CODE = 'C0001'
+  LEFT JOIN (
+    SELECT CUST_ID, ACCT_TYP, LOAN_PURPOSE_CD
+    FROM (
+      SELECT CUST_ID, ACCT_TYP, LOAN_PURPOSE_CD,
+             row_number() OVER (PARTITION BY CUST_ID ORDER BY LOAN_NUM) AS RN
+      FROM SMTMODS.L_ACCT_LOAN
+      WHERE DATA_DATE = I_DATE
+    ) T
+    WHERE RN = 1
+  ) T4
+    ON T1.CUST_ID = T4.CUST_ID
+  WHERE T1.DATA_DATE = I_DATE
+    AND T1.OPERATE_CUST_TYPE IN ('A','B')
+    AND (
+      EXISTS (SELECT 1 FROM ybt_datacore.t_4_3 A
+              WHERE A.D030015 = date_format(to_date(from_unixtime(unix_timestamp(I_DATE,'yyyyMMdd'))),'yyyy-MM-dd')
+              AND A.D030003 = T1.CUST_ID)
+      OR EXISTS (SELECT 1 FROM YBT_DATACORE.T_6_2 C
+              WHERE C.F020063 = date_format(to_date(from_unixtime(unix_timestamp(I_DATE,'yyyyMMdd'))),'yyyy-MM-dd')
+              AND C.F020003 = T1.CUST_ID)
+      OR EXISTS (SELECT 1 FROM ybt_datacore.t_8_13 B
+              WHERE B.H130023 = date_format(to_date(from_unixtime(unix_timestamp(I_DATE,'yyyyMMdd'))),'yyyy-MM-dd')
+              AND B.H130002 = T1.CUST_ID)
+    );
+  CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+
+  #5.过程结束执行
+  SET P_START_DT = current_timestamp();
+  SET P_STEP_NO = P_STEP_NO + 1;
+  SET P_DESCB = '过程结束执行';
+  CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+  SET OI_RETCODE = P_STATUS;
+  SET OI_REMESSAGE = P_DESCB;
+  SELECT OI_RETCODE,'|',OI_REMESSAGE;
+
+EXCEPTION
+  WHEN ANY THEN
+    SET P_SQLCDE = cast(SQLCODE AS STRING);
+    SET P_STATE = SQLSTATE;
+    SET P_SQLMSG = SQLERRM;
+    SET P_STATUS = -1;
+    SET P_START_DT = current_timestamp();
+    SET P_STEP_NO = P_STEP_NO + 1;
+    SET P_DESCB = '程序异常';
+    CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+    SET OI_RETCODE = P_STATUS;
+    SET OI_REMESSAGE = concat(P_DESCB, ':', P_SQLCDE, ' - ', P_SQLMSG);
+    SELECT OI_RETCODE,'|',OI_REMESSAGE;
+END;
+

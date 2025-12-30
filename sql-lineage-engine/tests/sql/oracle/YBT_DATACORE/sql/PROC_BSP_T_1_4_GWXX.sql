@@ -1,0 +1,223 @@
+DROP PROCEDURE IF EXISTS PROC_BSP_T_1_4_GWXX;
+
+CREATE PROCEDURE PROC_BSP_T_1_4_GWXX(
+  IN I_DATE STRING,
+  OUT OI_RETCODE INT,
+  OUT OI_REMESSAGE STRING
+)
+LANGUAGE HIVE
+BEGIN
+  /******
+        程序名称  ：岗位信息
+        程序功能  ：加工岗位信息
+        目标表：T_1_4
+        源表  ：
+        创建人  ：LZ
+        创建日期  ：20240109
+        版本号：V0.0.1 
+  ******/
+  -- JLBA202411070004_关于一表通监管数据报送系统修改逻辑的需求 20241212
+  -- JLBA202412200001_关于一表通监管数据报送系统修改逻辑及转EAST脚本的需求_20250116
+
+  #声明变量
+  DECLARE P_DATE DATE;
+  DECLARE P_PROC_NAME STRING;
+  DECLARE P_STATUS INT;
+  DECLARE P_START_DT TIMESTAMP;
+  DECLARE P_END_TIME TIMESTAMP;
+  DECLARE P_SQLCDE STRING;
+  DECLARE P_STATE STRING;
+  DECLARE P_SQLMSG STRING;
+  DECLARE P_STEP_NO INT;
+  DECLARE P_DESCB STRING;
+  DECLARE BEG_MON_DT STRING;
+  DECLARE BEG_QUAR_DT STRING;
+  DECLARE BEG_YEAR_DT STRING;
+  DECLARE LAST_MON_DT STRING;
+  DECLARE LAST_QUAR_DT STRING;
+  DECLARE LAST_YEAR_DT STRING;
+  DECLARE LAST_DT STRING;
+  DECLARE FINISH_FLG STRING;
+
+  #变量初始化
+  SET P_DATE = to_date(from_unixtime(unix_timestamp(I_DATE,'yyyyMMdd')));
+  SET BEG_MON_DT = date_format(trunc(P_DATE,'MM'),'yyyyMMdd');
+  SET BEG_QUAR_DT = date_format(trunc(P_DATE,'Q'),'yyyyMMdd');
+  SET BEG_YEAR_DT = date_format(trunc(P_DATE,'YY'),'yyyyMMdd');
+  SET LAST_MON_DT = date_format(date_sub(trunc(P_DATE,'MM'),1),'yyyyMMdd');
+  SET LAST_QUAR_DT = date_format(date_sub(trunc(P_DATE,'Q'),1),'yyyyMMdd');
+  SET LAST_YEAR_DT = date_format(date_sub(trunc(P_DATE,'YY'),1),'yyyyMMdd');
+  SET LAST_DT = date_format(date_sub(P_DATE,1),'yyyyMMdd');
+  SET P_PROC_NAME = 'PROC_BSP_T_1_4_GWXX';
+  SET OI_RETCODE = 0;
+  SET P_STATUS = 0;
+  SET P_STEP_NO = 0;
+
+  #1.过程开始执行
+  SET P_START_DT = current_timestamp();
+  SET P_STEP_NO = P_STEP_NO + 1;
+  SET P_DESCB = '过程开始执行';
+  CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+
+  #2.清除数据
+  SET P_START_DT = current_timestamp();
+  SET P_STEP_NO = P_STEP_NO + 1;
+  SET P_DESCB = '清除数据';
+  TRUNCATE TABLE T_1_4;
+  CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+
+  #3.插入数据
+  SET P_START_DT = current_timestamp();
+  SET P_STEP_NO = P_STEP_NO + 1;
+  SET P_DESCB = '数据插入';
+  INSERT INTO YBT_DATACORE.T_1_4 (
+    A040001,
+    A040002,
+    A040003,
+    A040004,
+    A040005,
+    A040006,
+    A040009,
+    A040007,
+    A040008,
+    DIS_DATA_DATE,
+    DIS_BANK_ID,
+    DIS_DEPT,
+    DEPARTMENT_ID
+  )
+  SELECT
+    concat(substr(trim(T2.FIN_LIN_NUM),1,11),T2.ORG_NUM) AS A040001,
+    T1.POST_NUM AS A040002,
+    T1.POST_TYPE AS A040003,
+    T1.POST_NAME AS A040004,
+    coalesce(T1.POST_DES, T1.POST_NAME) AS A040005,
+    coalesce(T1.POST_STS,'有效') AS A040006,
+    CASE WHEN T5.POST_NUM IS NOT NULL THEN '01' ELSE '02' END AS A040009,
+    '' AS A040007,
+    date_format(to_date(from_unixtime(unix_timestamp(I_DATE,'yyyyMMdd'))),'yyyy-MM-dd') AS A040008,
+    date_format(to_date(from_unixtime(unix_timestamp(I_DATE,'yyyyMMdd'))),'yyyy-MM-dd') AS DIS_DATA_DATE,
+    '990000' AS DIS_BANK_ID,
+    '1' AS DIS_DEPT,
+    '0098RL' AS DEPARTMENT_ID
+  FROM SMTMODS.L_PUBL_POST T1
+  LEFT JOIN (
+    SELECT
+      T1.ORG_NUM,
+      T1.DATA_DATE,
+      T1.ORG_NAM,
+      coalesce(trim(T1.FIN_LIN_NUM),trim(T2.FIN_LIN_NUM)/*,trim(T3.FIN_LIN_NUM)*/) AS FIN_LIN_NUM,
+      coalesce(T1.BANK_CD,T2.BANK_CD/*,T3.BANK_CD*/) AS BANK_CD,
+      T1.BUSI_STATE
+    FROM SMTMODS.L_PUBL_ORG_BRA T1
+    LEFT JOIN SMTMODS.L_PUBL_ORG_BRA T2
+      ON T1.UP_ORG_NUM = T2.ORG_NUM
+     AND T2.DATA_DATE = T1.DATA_DATE
+    WHERE T1.ORG_NUM <> '999999'
+  ) T2
+    ON CASE
+         WHEN T1.ORG_NUM LIKE '0303%' THEN '030000'
+         WHEN T1.ORG_NUM LIKE '0601%' THEN '060101'
+         WHEN substr(T1.ORG_NUM,3,2) rlike '[A-Z][0-9]' THEN concat(substr(T1.ORG_NUM,1,2),'0000')
+         WHEN substr(T1.ORG_NUM,5,2) rlike '[A-Z][0-9]' THEN regexp_replace(T1.ORG_NUM,'[A-Z][0-9]','00')
+         ELSE T1.ORG_NUM
+       END = T2.ORG_NUM
+   AND T2.DATA_DATE = I_DATE
+  LEFT JOIN (
+    SELECT DISTINCT T3.POST_NUM
+    FROM SMTMODS.L_PUBL_TELLER T4
+    INNER JOIN SMTMODS.L_PUBL_EMP T3
+      ON T3.EMP_ID = T4.EMP_ID
+    WHERE T3.DATA_DATE = I_DATE
+      AND T4.DATA_DATE = I_DATE
+      AND T4.TELLER_FLG = 'Y'
+  ) T5
+    ON T1.POST_NUM = T5.POST_NUM
+  WHERE T1.DATA_DATE = I_DATE
+    AND T1.ORG_NUM <> '999999'
+    AND T1.ORG_NUM NOT LIKE '5%'
+    AND T1.ORG_NUM NOT LIKE '6%'
+    AND T1.ORG_NUM NOT LIKE '7%'
+    AND T2.ORG_NAM NOT LIKE '%村镇%'
+    AND T1.ORG_NUM NOT IN (
+      '120000','120100','120101','021203','020206','021305',
+      '020212','021407','020214','021204','020204',
+      '010312','010624','010625','010627','010911','012512'
+    )
+    AND T2.BUSI_STATE <> '04';
+
+  INSERT INTO T_1_4 (
+    A040001,
+    A040002,
+    A040003,
+    A040004,
+    A040005,
+    A040006,
+    A040009,
+    A040007,
+    A040008,
+    DIS_DATA_DATE,
+    DIS_BANK_ID,
+    DIS_DEPT,
+    DEPARTMENT_ID
+  )
+  SELECT
+    'B0302H22201990000' AS A040001,
+    T4.POST_NUM AS A040002,
+    T4.TELLER_TYPE AS A040003,
+    T4.TELLER_TYPE AS A040004,
+    '' AS A040005,
+    CASE
+      WHEN T4.TELLER_STS IN ('初始','锁定','正式签退','初始','正常','密挂','临时签退') THEN '有效'
+      WHEN T4.TELLER_STS IN ('注销','离岗') THEN '无效'
+    END AS A040006,
+    '01' AS A040009,
+    '' AS A040007,
+    date_format(to_date(from_unixtime(unix_timestamp(I_DATE,'yyyyMMdd'))),'yyyy-MM-dd') AS A040008,
+    date_format(to_date(from_unixtime(unix_timestamp(I_DATE,'yyyyMMdd'))),'yyyy-MM-dd') AS DIS_DATA_DATE,
+    '990000' AS DIS_BANK_ID,
+    '2' AS DIS_DEPT,
+    '0098RL' AS DEPARTMENT_ID
+  FROM (
+    SELECT
+      T1.POST_NUM,
+      T1.TELLER_TYPE,
+      T1.TELLER_STS,
+      row_number() OVER (PARTITION BY T1.POST_NUM ORDER BY T1.EMP_ID) AS NUM
+    FROM SMTMODS.L_PUBL_TELLER T1
+    INNER JOIN SMTMODS.L_PUBL_ORG_BRA T3
+      ON T1.ORG_NUM = T3.ORG_NUM
+     AND T3.DATA_DATE = I_DATE
+    WHERE T1.DATA_DATE = I_DATE
+      AND T1.TELLER_TYPE <> '实体柜员'
+      AND T3.BUSI_STATE <> '04'
+      AND T1.ORG_NUM NOT IN ('012102','012103','012104','012105','012106','012107','012108')
+      AND T1.POST_NUM IS NOT NULL
+  ) T4
+  WHERE T4.NUM = 1;
+
+  CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+
+  #4.过程结束执行
+  SET P_START_DT = current_timestamp();
+  SET P_STEP_NO = P_STEP_NO + 1;
+  SET P_DESCB = '过程结束执行';
+  CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+  SET OI_RETCODE = P_STATUS;
+  SET OI_REMESSAGE = P_DESCB;
+  SELECT OI_RETCODE,'|',OI_REMESSAGE;
+
+EXCEPTION
+  WHEN ANY THEN
+    SET P_SQLCDE = cast(SQLCODE AS STRING);
+    SET P_STATE = SQLSTATE;
+    SET P_SQLMSG = SQLERRM;
+    SET P_STATUS = -1;
+    SET P_START_DT = current_timestamp();
+    SET P_STEP_NO = P_STEP_NO + 1;
+    SET P_DESCB = '程序异常';
+    CALL PROC_ETL_JOB_LOG(P_DATE,P_PROC_NAME,P_STATUS,P_START_DT,current_timestamp(),P_SQLCDE,P_STATE,P_SQLMSG,P_STEP_NO,P_DESCB);
+    SET OI_RETCODE = P_STATUS;
+    SET OI_REMESSAGE = concat(P_DESCB, ':', P_SQLCDE, ' - ', P_SQLMSG);
+    SELECT OI_RETCODE,'|',OI_REMESSAGE;
+END;
+
