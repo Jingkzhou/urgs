@@ -45,6 +45,24 @@ public class RegTableController {
     @Autowired
     private RegElementService regElementService;
 
+    @Autowired
+    private com.example.urgs_api.user.service.UserService userService;
+
+    @Autowired
+    private jakarta.servlet.http.HttpServletRequest request;
+
+    private String getCurrentOperator() {
+        Object userIdObj = request.getAttribute("userId");
+        if (userIdObj != null) {
+            Long userId = (Long) userIdObj;
+            com.example.urgs_api.user.model.User user = userService.getById(userId);
+            if (user != null) {
+                return user.getName();
+            }
+        }
+        return "admin";
+    }
+
     /**
      * 统计报表及元素数量（可按所属系统过滤）
      *
@@ -156,7 +174,7 @@ public class RegTableController {
 
         if (result) {
             maintenanceLogManager.logChange(com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.TABLE,
-                    oldTable, regTable, "admin");
+                    oldTable, regTable, getCurrentOperator());
         }
 
         return result;
@@ -178,7 +196,7 @@ public class RegTableController {
             regElementService.remove(new LambdaQueryWrapper<RegElement>().eq(RegElement::getTableId, id));
 
             maintenanceLogManager.logChange(com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.TABLE,
-                    oldTable, null, "admin");
+                    oldTable, null, getCurrentOperator());
         }
         return result;
     }

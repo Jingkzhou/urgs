@@ -30,6 +30,24 @@ public class RegElementController {
     @Autowired
     private com.example.urgs_api.metadata.component.MaintenanceLogManager maintenanceLogManager;
 
+    @Autowired
+    private com.example.urgs_api.user.service.UserService userService;
+
+    @Autowired
+    private jakarta.servlet.http.HttpServletRequest request;
+
+    private String getCurrentOperator() {
+        Object userIdObj = request.getAttribute("userId");
+        if (userIdObj != null) {
+            Long userId = (Long) userIdObj;
+            com.example.urgs_api.user.model.User user = userService.getById(userId);
+            if (user != null) {
+                return user.getName();
+            }
+        }
+        return "admin";
+    }
+
     /**
      * 分页查询监管元素列表
      *
@@ -103,7 +121,7 @@ public class RegElementController {
                     com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.ELEMENT,
                     oldElement,
                     regElement,
-                    "admin");
+                    getCurrentOperator());
         }
         return result;
     }
@@ -124,7 +142,7 @@ public class RegElementController {
                     com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.ELEMENT,
                     oldElement,
                     null,
-                    "admin");
+                    getCurrentOperator());
         }
         return result;
     }
@@ -150,7 +168,7 @@ public class RegElementController {
                         com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.ELEMENT,
                         oldElement,
                         null,
-                        "admin");
+                        getCurrentOperator());
             }
         }
         return result;
