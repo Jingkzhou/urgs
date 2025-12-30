@@ -15,6 +15,12 @@ const ESTIMATED_MESSAGE_HEIGHT = 140;
 const OVERSCAN_COUNT = 8;
 const SCROLL_IDLE_MS = 120;
 
+interface SessionState {
+    scrollTop: number;
+    itemHeights: Map<string, number>;
+    isAtBottom: boolean;
+}
+
 const ArkPage: React.FC = () => {
     // ... state remains the same ...
     const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -44,6 +50,7 @@ const ArkPage: React.FC = () => {
     const scrollIdleTimerRef = useRef<number | null>(null);
     const isScrollingRef = useRef(false);
     const messagesRef = useRef<Message[]>([]);
+    const sessionStatesRef = useRef<Map<string, SessionState>>(new Map());
 
     // ... fetchAgents and useEffect remain same ...
     const fetchAgents = async () => {
@@ -119,11 +126,33 @@ const ArkPage: React.FC = () => {
     const isAtBottom = useRef(true);
 
     useEffect(() => {
-        itemHeightsRef.current = new Map();
-        pendingHeightsRef.current = new Map();
-        messagesRef.current = messages;
+        // Save current session state before switching if there was a previous session
+        // Note: This effect runs AFTER currentSessionId changes, so we can't save the OLD session here directly
+        // unless we track 'previousSessionId'. 
+        // Better strategy: The logic to save state should be in handleSessionSelect/handleNewChat
+        // before setSessionId is called. But for restoration, we do it here.
+
+        const state = currentSessionId ? sessionStatesRef.current.get(currentSessionId) : undefined;
+
+        if (state) {
+            itemHeightsRef.current = new Map(state.itemHeights);
+            // pendingHeightsRef should technically be empty on switch usually
+            pendingHeightsRef.current = new Map();
+        } else {
+            itemHeightsRef.current = new Map();
+            pendingHeightsRef.current = new Map();
+        }
+
+        messagesRef.current = messages; // This might be redundant with line 130 but harmless
         setMeasurementVersion(prev => prev + 1);
-        setScrollTop(0);
+
+        // Scroll restoration happens in the scroll effect or layout effect, 
+        // but we need to reset scrollTop state here to avoid jitter if it's a new session
+        if (state) {
+            setScrollTop(state.scrollTop);
+        } else {
+            setScrollTop(0);
+        }
     }, [currentSessionId]);
 
     useEffect(() => {
@@ -278,16 +307,44 @@ const ArkPage: React.FC = () => {
 
     useEffect(() => {
         if (isSwitchingSession.current) {
-            scrollToBottom();
+            const container = scrollContainerRef.current;
+            if (!container || !currentSessionId) return;
+
+            const state = sessionStatesRef.current.get(currentSessionId);
+            if (state) {
+                // Restore saved position
+                container.scrollTop = state.scrollTop;
+                setScrollTop(state.scrollTop);
+                isAtBottom.current = state.isAtBottom;
+
+                // If it was at bottom, ensure it stays at bottom even if new content came in
+                if (state.isAtBottom) {
+                    scrollToBottom();
+                }
+            } else {
+                // New session or no saved state -> Go to bottom
+                scrollToBottom();
+                isAtBottom.current = true;
+            }
             isSwitchingSession.current = false;
-            isAtBottom.current = true; // Reset to true on session switch
         } else if (isAtBottom.current) {
             scrollToBottom();
         }
     }, [messages, currentSessionId]); // Switched back to [messages] to trigger on streaming updates, but guarded by isAtBottom
 
+    const saveSessionState = () => {
+        if (!currentSessionId || !scrollContainerRef.current) return;
+        const { scrollTop } = scrollContainerRef.current;
+        sessionStatesRef.current.set(currentSessionId, {
+            scrollTop,
+            itemHeights: new Map(itemHeightsRef.current),
+            isAtBottom: isAtBottom.current
+        });
+    };
+
     const handleSessionSelect = async (id: string, agentId?: number) => {
         if (currentSessionId === id && messages.length > 0) return;
+        saveSessionState();
         isSwitchingSession.current = true;
         setCurrentSessionId(id);
         const msgs = await loadSessionMessages(id);
@@ -303,6 +360,7 @@ const ArkPage: React.FC = () => {
     };
 
     const handleNewChat = async (agentId?: number | React.MouseEvent) => {
+        saveSessionState();
         const searchId = typeof agentId === 'number' ? agentId : undefined;
         if (searchId) {
             const newSession = await createSession(searchId);
