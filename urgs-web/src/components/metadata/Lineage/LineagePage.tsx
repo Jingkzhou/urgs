@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Layout, Input, Button, message, Empty, Spin, Tag, Badge, Pagination, Tooltip, Space, Modal, Switch } from 'antd';
 import {
     SearchOutlined,
@@ -65,6 +65,8 @@ const RunDuration: React.FC<{ startTime: string }> = ({ startTime }) => {
 };
 
 const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [containerHeight, setContainerHeight] = useState<number | null>(null);
     const [searchText, setSearchText] = useState('');
     const [searchResults, setSearchResults] = useState<any[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
@@ -153,6 +155,23 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
 
     useEffect(() => {
         handleSearch();
+    }, []);
+
+    useLayoutEffect(() => {
+        const updateHeight = () => {
+            if (!containerRef.current) return;
+            const rect = containerRef.current.getBoundingClientRect();
+            const nextHeight = Math.max(0, window.innerHeight - rect.top);
+            setContainerHeight(nextHeight);
+        };
+
+        updateHeight();
+        window.addEventListener('resize', updateHeight);
+        window.addEventListener('scroll', updateHeight, true);
+        return () => {
+            window.removeEventListener('resize', updateHeight);
+            window.removeEventListener('scroll', updateHeight, true);
+        };
     }, []);
 
     useEffect(() => {
@@ -739,7 +758,15 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
     };
 
     return (
-        <div style={{ height: 'calc(100vh - 100px)', display: 'flex', flexDirection: 'column' }}>
+        <div
+            ref={containerRef}
+            style={{
+                height: containerHeight ? `${containerHeight}px` : 'calc(100vh - 100px)',
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0
+            }}
+        >
             <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div>
@@ -929,7 +956,7 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                         </div>
                     </div>
                 </Sider>
-                <Content style={{ background: '#fff', position: 'relative' }}>
+                <Content style={{ background: '#fff', position: 'relative', minHeight: 0 }}>
                     <Spin spinning={graphLoading} tip="加载血缘关系...">
                         <div style={{ height: '100%', width: '100%' }}>
                             {nodes.length > 0 ? (
