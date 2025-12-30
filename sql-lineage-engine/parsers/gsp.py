@@ -103,7 +103,7 @@ class GSPParser:
                    "javax.activation" in os.path.basename(j).lower()
             ]
             if jaxb_jars:
-                logging.info(f"Found system JAXB jars: {jaxb_jars}")
+                logging.debug(f"Found system JAXB jars: {jaxb_jars}")
                 classpath = classpath + os.pathsep + os.pathsep.join(jaxb_jars)
         
         # Try to find Java 8 specifically as GSP might depend on it (JAXB)
