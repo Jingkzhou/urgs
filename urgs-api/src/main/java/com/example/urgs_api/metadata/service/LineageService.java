@@ -90,10 +90,24 @@ public class LineageService {
      * @param depth      深度
      * @return 图节点和边数据
      */
+    /**
+     * 获取血缘图数据
+     * 
+     * @param tableName  表名
+     * @param columnName 列名（可选）
+     * @param depth      深度
+     * @return 图节点和边数据
+     */
     public Map<String, Object> getGraphData(String tableName, String columnName, int depth) {
         String baseStart;
         Map<String, Object> params = new HashMap<>();
         params.put("tableName", tableName);
+
+        // Handle infinite depth request with a safe upper bound to prevent timeouts
+        int queryDepth = (depth == -1) ? 30 : depth;
+        // Ensure depth is at least 1
+        if (queryDepth < 1)
+            queryDepth = 1;
 
         if (columnName != null && !columnName.isEmpty()) {
             params.put("colName", columnName);
@@ -106,20 +120,28 @@ public class LineageService {
                     "WITH n, collect(c) + n as startNodes UNWIND startNodes as startNode ";
         }
 
-        // 查询所有血缘关系类型 (DERIVES_TO, FILTERS, JOINS, GROUPS, ORDERS, CALLS, REFERENCES,
-        // CASE_WHEN)
+        // 查询所有血缘关系类型
         String allRelTypes = "DERIVES_TO|FILTERS|JOINS|GROUPS|ORDERS|CALLS|REFERENCES|CASE_WHEN";
 
+        // Optimized Query:
+        // 1. Use variable length path with specified depth
+        // 2. UNWIND relationships and return DISTINCT to avoid combinatorial explosion
+        // of paths
         String lineageQuery =
                 // Downstream
                 baseStart +
-                        "MATCH path = (startNode)-[:" + allRelTypes + "*0..15]->(m) " +
-                        "RETURN path " +
+                        "MATCH p = (startNode)-[:" + allRelTypes + "*0.." + queryDepth + "]->(m) " +
+                        "UNWIND relationships(p) as r " +
+                        "RETURN DISTINCT r, startNode(r) as source, endNode(r) as target " +
                         "UNION " +
                         // Upstream
                         baseStart +
-                        "MATCH path = (startNode)<-[:" + allRelTypes + "*0..15]-(m) " +
-                        "RETURN path";
+                        "MATCH p = (startNode)<-[:" + allRelTypes + "*0.." + queryDepth + "]-(m) " +
+                        "UNWIND relationships(p) as r " +
+                        "RETURN DISTINCT r, startNode(r) as target, endNode(r) as source"; // Note reverse for upstream
+                                                                                           // to maintain flow direction
+                                                                                           // if needed, but here we
+                                                                                           // just need nodes/edges
 
         Map<String, Object> graph = new HashMap<>();
         List<Map<String, Object>> nodes = new ArrayList<>();
@@ -131,40 +153,50 @@ public class LineageService {
         try (Session session = driver.session()) {
             Result result = session.run(lineageQuery, params);
             while (result.hasNext()) {
-                org.neo4j.driver.types.Path path = result.next().get("path").asPath();
-                path.nodes().forEach(node -> {
-                    addNode(node, nodes, seenNodes);
-                    if (node.hasLabel("Column")) {
-                        columnElementIds.add(node.elementId());
-                    }
-                });
-                path.relationships().forEach(rel -> addEdge(rel, edges, seenEdges));
+                var record = result.next();
+                Relationship rel = record.get("r").asRelationship();
+                Node source = record.get("source").asNode();
+                Node target = record.get("target").asNode();
+
+                addNode(source, nodes, seenNodes);
+                addNode(target, nodes, seenNodes);
+                addEdge(rel, edges, seenEdges);
+
+                if (source.hasLabel("Column"))
+                    columnElementIds.add(source.elementId());
+                if (target.hasLabel("Column"))
+                    columnElementIds.add(target.elementId());
             }
 
             // Enrichment: Fetch Tables for all found Columns
             if (!columnElementIds.isEmpty()) {
-                String enrichQuery = "MATCH (c:Column)-[r:BELONGS_TO]->(t:Table) WHERE elementId(c) IN $ids RETURN c, r, t";
-                Result enrichResult = session.run(enrichQuery, Map.of("ids", columnElementIds));
-                while (enrichResult.hasNext()) {
-                    var record = enrichResult.next();
-                    addNode(record.get("t").asNode(), nodes, seenNodes);
-                    addNode(record.get("c").asNode(), nodes, seenNodes);
-                    addEdge(record.get("r").asRelationship(), edges, seenEdges);
-                }
-            }
+                // Batch processing for enrichment if too many columns
+                List<String> allIds = new ArrayList<>(columnElementIds);
+                int batchSize = 1000;
+                for (int i = 0; i < allIds.size(); i += batchSize) {
+                    List<String> batchIds = allIds.subList(i, Math.min(i + batchSize, allIds.size()));
 
-            // 新增：查询列到表的间接依赖边 (FILTERS, JOINS, GROUPS, ORDERS)
-            // 这些边的目标是 Table 而非 Column，不会在路径查询中被返回
-            if (!columnElementIds.isEmpty()) {
-                String indirectRelTypes = "FILTERS|JOINS|GROUPS|ORDERS";
-                String indirectEdgesQuery = "MATCH (c:Column)-[r:" + indirectRelTypes + "]->(t:Table) " +
-                        "WHERE elementId(c) IN $ids RETURN c, r, t";
-                Result indirectResult = session.run(indirectEdgesQuery, Map.of("ids", columnElementIds));
-                while (indirectResult.hasNext()) {
-                    var record = indirectResult.next();
-                    addNode(record.get("c").asNode(), nodes, seenNodes);
-                    addNode(record.get("t").asNode(), nodes, seenNodes);
-                    addEdge(record.get("r").asRelationship(), edges, seenEdges);
+                    String enrichQuery = "MATCH (c:Column)-[r:BELONGS_TO]->(t:Table) WHERE elementId(c) IN $ids RETURN c, r, t";
+                    Result enrichResult = session.run(enrichQuery, Map.of("ids", batchIds));
+                    while (enrichResult.hasNext()) {
+                        var record = enrichResult.next();
+                        addNode(record.get("t").asNode(), nodes, seenNodes);
+                        // c is already added, but good to be safe
+                        addNode(record.get("c").asNode(), nodes, seenNodes);
+                        addEdge(record.get("r").asRelationship(), edges, seenEdges);
+                    }
+
+                    // Indirect edges
+                    String indirectRelTypes = "FILTERS|JOINS|GROUPS|ORDERS";
+                    String indirectEdgesQuery = "MATCH (c:Column)-[r:" + indirectRelTypes + "]->(t:Table) " +
+                            "WHERE elementId(c) IN $ids RETURN c, r, t";
+                    Result indirectResult = session.run(indirectEdgesQuery, Map.of("ids", batchIds));
+                    while (indirectResult.hasNext()) {
+                        var record = indirectResult.next();
+                        addNode(record.get("c").asNode(), nodes, seenNodes);
+                        addNode(record.get("t").asNode(), nodes, seenNodes);
+                        addEdge(record.get("r").asRelationship(), edges, seenEdges);
+                    }
                 }
             }
         }
@@ -332,12 +364,15 @@ public class LineageService {
      *
      * @param tableName  表名
      * @param columnName 字段名 (可选)
+     * @param depth      查询深度 (-1表示全部)
      * @param response   HttpServletResponse
      * @throws IOException
      */
-    public void exportLineage(String tableName, String columnName, HttpServletResponse response) throws IOException {
-        // 1. 获取血缘数据
-        Map<String, Object> graph = getGraphData(tableName, columnName, 15);
+    public void exportLineage(String tableName, String columnName, int depth, HttpServletResponse response)
+            throws IOException {
+        // 1. 获取血缘数据 (Use provided depth, or safe max if -1 is handled inside
+        // getGraphData)
+        Map<String, Object> graph = getGraphData(tableName, columnName, depth);
         List<Map<String, Object>> nodes = (List<Map<String, Object>>) graph.get("nodes");
         List<Map<String, Object>> edges = (List<Map<String, Object>>) graph.get("edges");
 

@@ -117,13 +117,15 @@ public class LineageController {
      *
      * @param tableName  表名
      * @param columnName 字段名 (可选)
+     * @param depth      深度 (-1表示全部)
      * @param response   HttpServletResponse
      * @throws IOException
      */
     @GetMapping("/export")
     public void exportLineage(@RequestParam String tableName,
             @RequestParam(required = false) String columnName,
+            @RequestParam(defaultValue = "-1") int depth,
             HttpServletResponse response) throws IOException {
-        lineageService.exportLineage(tableName, columnName, response);
+        lineageService.exportLineage(tableName, columnName, depth, response);
     }
 }
