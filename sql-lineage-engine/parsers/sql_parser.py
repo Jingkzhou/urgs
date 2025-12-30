@@ -3,7 +3,6 @@ from .gsp import GSPParser
 from .indirect_flow_parser import IndirectFlowParser
 from utils.splitter import SqlSplitter
 import logging
-import re
 
 # Suppress sqlglot warnings for unsupported syntax (like CALL)
 logging.getLogger("sqlglot").setLevel(logging.ERROR)
@@ -30,13 +29,13 @@ class LineageParser:
         # Safest is to always split, or split if length > threshold.
         # Let's split always for "script" support.
         
-        # Auto-detect dialect only if default 'mysql' is used and it's NOT a stored procedure
-        # or if content has very strong Oracle specific keywords
+        # Auto-detect dialect if default 'mysql' is used but content looks like specific dialect
         current_dialect = self.dialect
         detected_dialect = self._detect_dialect(sql)
         detected_switch = False
         
         if current_dialect == "mysql" and detected_dialect:
+            import logging
             logging.info(f"Auto-detected {detected_dialect.upper()} content override for MySQL default.")
             current_dialect = detected_dialect
             detected_switch = True
@@ -53,6 +52,7 @@ class LineageParser:
         gsp_json_list = []
         detailed_statements = []
         gsp_tables = set()  # 用于存储 GSP 识别的表名（标准化后）
+        import re
         
         # Aggregate results
         for stmt in statements:
@@ -164,7 +164,7 @@ class LineageParser:
                 sources.add(dep_source)
                 targets.add(dep_target)
         except Exception as e:
-
+            import logging
             logging.warning(f"Indirect flow parsing failed: {e}")
         
         # ===== 3. Schema Fallback (Directory Based) =====
@@ -212,7 +212,7 @@ class LineageParser:
                          if "source_table" in rel: rel["source_table"] = apply_schema(rel["source_table"])
                          if "target_table" in rel: rel["target_table"] = apply_schema(rel["target_table"])
             except Exception as e:
-
+                import logging
                 logging.warning(f"Schema fallback failed: {e}")
 
         return {
@@ -224,11 +224,12 @@ class LineageParser:
             "gsp_json": gsp_json_list 
         }
 
-    def _detect_dialect(self, sql: str) -> str | None:
+    def _detect_dialect(self, sql: str) -> str:
         """
         Heuristic to detect SQL dialect (Oracle/Gbase, Hive, etc.)
         Returns 'oracle', 'hive', or None (keep default).
         """
+        import re
         sql_upper = sql.upper()
         
         # 1. Oracle / GBase (PL/SQL features)
@@ -281,18 +282,21 @@ class LineageParser:
         # Import normalization utility
         from utils.normalize import normalize_table_name
         
-        # Auto-detect dialect only if default 'mysql' is used
+        # Auto-detect dialect if default 'mysql' is used but content looks like specific dialect
         current_dialect = self.dialect
         detected_dialect = self._detect_dialect(sql)
         detected_switch = False
         
         if current_dialect == "mysql" and detected_dialect:
+            import logging
             logging.info(f"Auto-detected {detected_dialect.upper()} content override for MySQL default (column lineage).")
             current_dialect = detected_dialect
             detected_switch = True
 
         statements = SqlSplitter.split(sql)
         dependencies = []
+        
+        import re
         
         for stmt in statements:
              stmts_to_process = [stmt]
@@ -419,6 +423,7 @@ class LineageParser:
         Fallback lineage extraction using regex for cases where GSP fails (e.g. huge SQL).
         Only provides Table-Level lineage.
         """
+        import re
         
         sources = set()
         targets = set()

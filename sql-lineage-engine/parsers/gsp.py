@@ -80,37 +80,24 @@ class GSPParser:
         if jpype.isJVMStarted():
             return
 
-        curdir = os.path.abspath(os.path.dirname(__file__))
+        curdir = os.path.dirname(__file__)
         jar_dir = os.path.join(curdir, 'jar')
         project_jars = glob.glob(os.path.join(jar_dir, '*.jar'))
         
-        # Add JAXB jars for Java 11+ runtimes (required since javax.xml.bind is removed from JDK)
-        jaxb_jars = [
-            "/usr/share/java/jaxb-api.jar",
-            "/usr/share/java/jaxb-core.jar",
-            "/usr/share/java/jaxb-impl.jar",
-            "/usr/share/java/jaxb-runtime.jar",
-        ]
-        for jar in jaxb_jars:
-            if os.path.exists(jar):
-                project_jars.append(jar)
-        
-        logging.info(f"Looking for JARs in: {jar_dir}")
         if not project_jars:
-            logging.error(f"No JARs found in {jar_dir}! Current directory files: {os.listdir(curdir)}")
+            logging.error(f"No JARs found in {jar_dir}")
             return
 
-        logging.info(f"Found JARs: {[os.path.basename(j) for j in project_jars]}")
         classpath = os.pathsep.join(project_jars)
         
         # Try to find Java 8 specifically as GSP might depend on it (JAXB)
         java_home = "/Users/work/Library/Java/JavaVirtualMachines/corretto-1.8.0_392/Contents/Home"
         if os.path.exists(java_home):
             os.environ['JAVA_HOME'] = java_home
-            logging.info(f"Setting JAVA_HOME to {java_home}")
             try:
                 jvm_path = jpype.getDefaultJVMPath()
             except:
+                 # Fallback
                  pass
         
         try:
@@ -123,20 +110,11 @@ class GSPParser:
         jvm_args = [
             "-ea",
             f"-Djava.class.path={classpath}",
-            "-Djava.awt.headless=true",
-            "-Xss256k",
-            "-Xmx512m",
-            "-XX:ParallelGCThreads=2",
-            "-XX:CICompilerCount=2"
+            "-Djava.awt.headless=true"
         ]
         
-        logging.info(f"Starting JVM with args: {' '.join(jvm_args)}")
-        try:
-            jpype.startJVM(jvm_path, *jvm_args)
-            logging.info("JVM started successfully in process %s", os.getpid())
-        except Exception as e:
-            logging.error(f"Failed to start JVM in process {os.getpid()}: {e}")
-            raise
+        logging.info(f"Starting JVM with classpath: {classpath}")
+        jpype.startJVM(jvm_path, *jvm_args)
 
     def parse(self, sql: str, db_type: str = "mysql", source_file: str = None) -> Dict[str, Any]:
         """
@@ -149,9 +127,6 @@ class GSPParser:
         """
         if not jpype.isJVMStarted():
             self._start_jvm()
-
-        if not jpype.isThreadAttachedToJVM():
-            jpype.attachThreadToJVM()
 
         # Preprocess
         cleaned_sql = preprocess_sql(sql)
@@ -176,6 +151,9 @@ class GSPParser:
             dlineage = DataFlowAnalyzer(cleaned_sql, vendor, True) # simple=True
             
             # Configure options to enable all relationship types
+            # setShowCallRelation: 显示函数调用关系
+            # setShowIndirectRelation: 显示间接数据流(fdr) - WHERE/HAVING/GROUP BY 等条件
+            # setShowJoinRelation: 显示 JOIN 关系
             try:
                 dlineage.setShowCallRelation(True)
                 dlineage.setShowIndirectRelation(True)  # 启用 fdr (间接数据流)
@@ -184,11 +162,42 @@ class GSPParser:
                 # GSP Lite 版本可能不支持这些选项，静默忽略
                 pass
             
-            # Note: Previously we used a context manager to suppress stderr using os.dup2.
-            # However, os.dup2 is not thread-safe and caused deadlocks in the parallel engine.
-            # We removed it to ensure stability.
-            dlineage.generateDataFlow()
+            # Define context manager for stderr suppression inside method if not global
+            import sys
+            import os
+            from contextlib import contextmanager
 
+            @contextmanager
+            def suppress_stderr():
+                # Open a pair of null files
+                null_fds = [os.open(os.devnull, os.O_RDWR) for x in range(2)]
+                # Save the actual stdout (1) and stderr (2) file descriptors.
+                save_fds = [os.dup(1), os.dup(2)]
+
+                try:
+                    # Assign the null pointers to stdout and stderr.
+                    # We redirect both just in case, but mostly stderr (2) is the target.
+                    os.dup2(null_fds[1], 2)
+                    # os.dup2(null_fds[0], 1) # Keep stdout? Generally GSP prints errors to stderr.
+                    yield
+                finally:
+                    # Re-assign the real stdout/stderr back to (1) and (2)
+                    os.dup2(save_fds[0], 1)
+                    os.dup2(save_fds[1], 2)
+                    # Close the null files and saved fds
+                    for fd in null_fds + save_fds:
+                        os.close(fd)
+
+            try:
+                with suppress_stderr():
+                    dlineage.generateDataFlow()
+            except Exception:
+                # If suppression fails or something, try running without it?
+                # But actually invalid fd might raise. 
+                # Let's just wrap the call.
+                dlineage.generateDataFlow()
+
+            # dlineage.generateDataFlow() # Replaced by wrapped call above
             dataflow = dlineage.getDataFlow()
             
             if not dataflow:
