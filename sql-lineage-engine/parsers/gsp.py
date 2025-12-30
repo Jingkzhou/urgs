@@ -89,6 +89,22 @@ class GSPParser:
             return
 
         classpath = os.pathsep.join(project_jars)
+
+        # Add system JAXB jars if available (for Java 11+)
+        # Dockerfile installs libjaxb-java which puts jars in /usr/share/java
+        system_jar_dir = "/usr/share/java"
+        if os.path.isdir(system_jar_dir):
+            system_jars = glob.glob(os.path.join(system_jar_dir, "*.jar"))
+            # Filter for JAXB related jars
+            jaxb_jars = [
+                j for j in system_jars 
+                if "jaxb" in os.path.basename(j).lower() or 
+                   "activation" in os.path.basename(j).lower() or
+                   "javax.activation" in os.path.basename(j).lower()
+            ]
+            if jaxb_jars:
+                logging.info(f"Found system JAXB jars: {jaxb_jars}")
+                classpath = classpath + os.pathsep + os.pathsep.join(jaxb_jars)
         
         # Try to find Java 8 specifically as GSP might depend on it (JAXB)
         java_home = "/Users/work/Library/Java/JavaVirtualMachines/corretto-1.8.0_392/Contents/Home"
@@ -113,7 +129,7 @@ class GSPParser:
             "-Djava.awt.headless=true"
         ]
         
-        logging.info(f"Starting JVM with classpath: {classpath}")
+        logging.debug(f"Starting JVM with classpath: {classpath}")
         jpype.startJVM(jvm_path, *jvm_args)
 
     def parse(self, sql: str, db_type: str = "mysql", source_file: str = None) -> Dict[str, Any]:

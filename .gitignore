@@ -63,3 +63,4 @@ logs/
 urgs-dist/
 urgs-dist/install.sh
 urgs-api/uploads/
+sql-lineage-engine/tests/
