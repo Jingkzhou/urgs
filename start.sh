@@ -69,6 +69,19 @@ start_backend() {
     export SPRING_DATASOURCE_PASSWORD="${DB_PASSWORD}"
   fi
 
+  # Construct Neo4j Properties if var exists
+  if [ -n "${NEO4J_HOST:-}" ]; then
+    # 如果在宿主机运行，neo4j 习惯上访问 localhost
+    REAL_NEO4J_HOST=$NEO4J_HOST
+    if [ "$REAL_NEO4J_HOST" = "neo4j" ]; then
+      REAL_NEO4J_HOST="localhost"
+    fi
+    export SPRING_NEO4J_URI="bolt://${REAL_NEO4J_HOST}:${NEO4J_PORT_BOLT:-7687}"
+    export SPRING_NEO4J_AUTHENTICATION_USERNAME="${NEO4J_USER:-neo4j}"
+    export SPRING_NEO4J_AUTHENTICATION_PASSWORD="${NEO4J_PASSWORD}"
+    echo "Configured Neo4j URI: $SPRING_NEO4J_URI"
+  fi
+
   ./mvnw spring-boot:run -Dspring-boot.run.profiles="$ENVIRONMENT" &
   pids+=($!)
 }
