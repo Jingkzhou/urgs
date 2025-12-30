@@ -89,11 +89,50 @@ public class LineageEngineService {
 
     public Map<String, Object> stop() {
         synchronized (lock) {
-            if (!isRunning()) {
-                return buildStatus(true, "引擎未在运行");
-            }
+            // 注意：不再检查 isRunning()，因为 docker exec 启动的容器内进程
+            // 与 Java 端的 process 对象状态是独立的。
+            // bridge.sh 会执行 docker exec 后立即返回，但容器中的 Python 进程仍在运行。
+            // 所以我们始终尝试执行 kill 脚本，让脚本自己判断是否有进程需要终止。
             try {
                 log.info("停止血缘引擎");
+
+                // Execute kill command via bridge script
+                Path workingDir = resolveWorkDir();
+                Path script = resolveScriptPath(workingDir);
+                if (Files.exists(script)) {
+                    List<String> command = new ArrayList<>();
+                    command.add("bash");
+                    command.add(script.toString());
+                    command.add("--kill-engine");
+
+                    ProcessBuilder builder = new ProcessBuilder(command);
+                    builder.directory(workingDir.toFile());
+                    builder.redirectErrorStream(true); // 合并 stdout 和 stderr
+                    Process killProcess = builder.start();
+
+                    // 读取 kill 脚本的输出
+                    try (var reader = new java.io.BufferedReader(
+                            new java.io.InputStreamReader(killProcess.getInputStream()))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            log.info("[kill-engine] {}", line);
+                        }
+                    }
+
+                    // 等待 kill 脚本完成，最多 15 秒（脚本有重试逻辑）
+                    boolean finished = killProcess.waitFor(15, TimeUnit.SECONDS);
+                    if (!finished) {
+                        log.warn("Kill script timeout, force destroying...");
+                        killProcess.destroyForcibly();
+                    } else {
+                        int exitCode = killProcess.exitValue();
+                        log.info("Kill script finished with exit code: {}", exitCode);
+                    }
+                } else {
+                    log.warn("Kill script not found: {}", script);
+                }
+
+                // 同时也尝试停止 Java 端记录的进程（如果仍在运行）
                 stopProcess(process);
                 return buildStatus(true, "引擎已停止");
             } catch (Exception e) {
@@ -107,9 +146,7 @@ public class LineageEngineService {
     public Map<String, Object> restart() {
         synchronized (lock) {
             log.info("重启血缘引擎");
-            if (isRunning()) {
-                stopProcess(process);
-            }
+            stop();
             return start();
         }
     }

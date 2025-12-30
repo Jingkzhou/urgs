@@ -3,10 +3,13 @@ FROM python:3.10-slim-bullseye
 WORKDIR /sql-lineage-engine
 
 # Install Java 11 (Standard in Bullseye) to avoid clone3/EPERM issues in restricted envs
+# Also install procps (kill, pkill, pgrep) and psmisc (killall) for process management
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openjdk-11-jre-headless \
     libjaxb-java \
     libjaxb-api-java \
+    procps \
+    psmisc \
     && rm -rf /var/lib/apt/lists/*
 
 # Set JAVA_HOME (Multi-arch support)

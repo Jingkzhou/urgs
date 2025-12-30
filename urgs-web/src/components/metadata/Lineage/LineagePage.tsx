@@ -414,6 +414,23 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
             }
         }
 
+        // 3.5. [Fix] 补充下游字段所属的表节点
+        // 遍历所有找到的 downstreamNodeIds，如果是 Column，找到其所属 Table 并加入
+        // nodeIdToInfo 已经有映射关系，但这里我们需要确保 Table 节点本身也被加入
+        const additionalTableIds = new Set<string>();
+        downstreamNodeIds.forEach(nodeId => {
+            const info = nodeIdToInfo.get(nodeId);
+            if (info && info.type === 'Column') {
+                // 找到该 Column 对应的 BELONGS_TO 边
+                // 注意：BELONGS_TO 是从 Column -> Table
+                const parentTableEdges = rawEdges.filter(e => e.type === 'BELONGS_TO' && e.source === nodeId);
+                parentTableEdges.forEach(e => {
+                    additionalTableIds.add(e.target);
+                });
+            }
+        });
+        additionalTableIds.forEach(id => downstreamNodeIds.add(id));
+
         // 4. 过滤节点：只保留下游节点 + BELONGS_TO 的相关表
         const filteredNodes = rawNodes.filter(n => downstreamNodeIds.has(n.id));
 

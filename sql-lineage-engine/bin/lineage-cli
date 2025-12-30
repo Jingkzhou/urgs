@@ -51,30 +51,51 @@ def parse_single_file_with_timing(task_args):
 
 # Global executor for signal handling
 _executor = None
+_shutting_down = False
 
 def signal_handler(sig, frame):
-    logger.info("Received termination signal, shutting down...")
+    global _shutting_down
+    if _shutting_down:
+        # 防止重复触发
+        logger.info("Signal handler already triggered, forcing exit...")
+        os._exit(1)
+    
+    _shutting_down = True
+    sig_name = signal.Signals(sig).name if hasattr(signal, 'Signals') else sig
+    logger.info(f"Received {sig_name} signal, initiating graceful shutdown...")
+    
     if _executor:
-        logger.info("Closing process pool and killing workers...")
+        logger.info("Terminating process pool executor and all worker processes...")
         try:
-            # Explicitly kill worker processes
-            # Access internal _processes dict of ProcessPoolExecutor to get PIDs
-            for pid in list(_executor._processes.keys()):
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                    logger.info(f"Killed worker process: {pid}")
-                except ProcessLookupError:
-                    pass  # Process already dead
-                except Exception as e:
-                    logger.error(f"Failed to kill worker process {pid}: {e}")
+            # 方法1: 获取所有 worker 进程 PID 并强制杀死
+            if hasattr(_executor, '_processes'):
+                for pid in list(_executor._processes.keys()):
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                        logger.info(f"Sent SIGKILL to worker process: {pid}")
+                    except ProcessLookupError:
+                        logger.debug(f"Worker process {pid} already terminated")
+                    except Exception as e:
+                        logger.warning(f"Failed to kill worker process {pid}: {e}")
             
-            _executor.shutdown(wait=False, cancel_futures=True)
+            # 方法2: 调用 shutdown
+            try:
+                _executor.shutdown(wait=False, cancel_futures=True)
+                logger.info("Executor shutdown initiated")
+            except Exception as e:
+                logger.warning(f"Error during executor shutdown: {e}")
+                
         except Exception as e:
-             logger.error(f"Error during executor shutdown: {e}")
-    sys.exit(0)
+            logger.error(f"Error during cleanup: {e}")
+    
+    logger.info("Cleanup complete, exiting...")
+    # 使用 os._exit 确保立即退出，不会被其他清理代码阻塞
+    os._exit(0)
 
 def main():
+    # 注册信号处理器，确保能正确响应终止请求
     signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
     global _executor
     parser = argparse.ArgumentParser(description="SQL Lineage Engine CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
