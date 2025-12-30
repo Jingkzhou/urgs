@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { RobotOutlined } from '@ant-design/icons';
 import { Sparkles, Database, ChevronRight, User, Cpu, Layers, PenTool } from 'lucide-react';
@@ -9,6 +9,11 @@ import ChatInput from './ChatInput';
 import {
     Message, Session, getSessions, createSession, streamChatResponse, loadSessionMessages, generateSessionTitle, getAgents, getRoleAgents
 } from '../../api/chat';
+
+const STREAM_THROTTLE_MS = 80;
+const ESTIMATED_MESSAGE_HEIGHT = 140;
+const OVERSCAN_COUNT = 8;
+const SCROLL_IDLE_MS = 120;
 
 const ArkPage: React.FC = () => {
     // ... state remains the same ...
@@ -21,10 +26,24 @@ const ArkPage: React.FC = () => {
     const [activeAgent, setActiveAgent] = useState<any | null>(null);
     const [sessions, setSessions] = useState<Session[]>([]);
     const [loading, setLoading] = useState(true);
+    const [scrollTop, setScrollTop] = useState(0);
+    const [viewportHeight, setViewportHeight] = useState(0);
+    const [measurementVersion, setMeasurementVersion] = useState(0);
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const isSwitchingSession = useRef(false);
+    const streamingMessageIdRef = useRef<string | null>(null);
+    const streamingMessageIndexRef = useRef<number | null>(null);
+    const streamingContentRef = useRef('');
+    const flushTimerRef = useRef<number | null>(null);
+    const itemHeightsRef = useRef<Map<string, number>>(new Map());
+    const pendingHeightsRef = useRef<Map<string, number>>(new Map());
+    const startIndexRef = useRef(0);
+    const scrollRafRef = useRef<number | null>(null);
+    const scrollIdleTimerRef = useRef<number | null>(null);
+    const isScrollingRef = useRef(false);
+    const messagesRef = useRef<Message[]>([]);
 
     // ... fetchAgents and useEffect remain same ...
     const fetchAgents = async () => {
@@ -82,23 +101,184 @@ const ArkPage: React.FC = () => {
         init();
     }, []);
 
+    useEffect(() => {
+        return () => {
+            if (flushTimerRef.current !== null) {
+                window.clearTimeout(flushTimerRef.current);
+            }
+            if (scrollRafRef.current !== null) {
+                window.cancelAnimationFrame(scrollRafRef.current);
+            }
+            if (scrollIdleTimerRef.current !== null) {
+                window.clearTimeout(scrollIdleTimerRef.current);
+            }
+        };
+    }, []);
+
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const isAtBottom = useRef(true);
+
+    useEffect(() => {
+        itemHeightsRef.current = new Map();
+        pendingHeightsRef.current = new Map();
+        messagesRef.current = messages;
+        setMeasurementVersion(prev => prev + 1);
+        setScrollTop(0);
+    }, [currentSessionId]);
+
+    useEffect(() => {
+        messagesRef.current = messages;
+    }, [messages]);
+
+    useLayoutEffect(() => {
+        const container = scrollContainerRef.current;
+        if (!container) return;
+        const updateViewport = () => {
+            setViewportHeight(container.clientHeight);
+        };
+        updateViewport();
+        const observer = new ResizeObserver(() => updateViewport());
+        observer.observe(container);
+        return () => observer.disconnect();
+    }, []);
+
+    const { offsets, totalHeight } = useMemo(() => {
+        const nextOffsets = new Array(messages.length + 1);
+        nextOffsets[0] = 0;
+        for (let i = 0; i < messages.length; i += 1) {
+            const msg = messages[i];
+            const measured = itemHeightsRef.current.get(msg.id);
+            const height = measured ?? ESTIMATED_MESSAGE_HEIGHT;
+            nextOffsets[i + 1] = nextOffsets[i] + height;
+        }
+        return { offsets: nextOffsets, totalHeight: nextOffsets[messages.length] };
+    }, [messages, measurementVersion]);
+
+    const startIndex = useMemo(() => {
+        if (messages.length === 0) return 0;
+        let low = 0;
+        let high = messages.length - 1;
+        while (low < high) {
+            const mid = Math.floor((low + high) / 2);
+            if (offsets[mid + 1] <= scrollTop) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+        return low;
+    }, [offsets, scrollTop, messages.length]);
+
+    const endIndex = useMemo(() => {
+        if (messages.length === 0) return 0;
+        const target = scrollTop + viewportHeight;
+        let low = 0;
+        let high = messages.length;
+        while (low < high) {
+            const mid = Math.floor((low + high) / 2);
+            if (offsets[mid] < target) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+        return low;
+    }, [offsets, scrollTop, viewportHeight, messages.length]);
+
+    const rangeStart = Math.max(0, startIndex - OVERSCAN_COUNT);
+    const rangeEnd = Math.min(messages.length, endIndex + OVERSCAN_COUNT);
+    const visibleMessages = useMemo(() => {
+        return messages.slice(rangeStart, rangeEnd);
+    }, [messages, rangeStart, rangeEnd]);
+
+    useEffect(() => {
+        startIndexRef.current = rangeStart;
+    }, [rangeStart]);
+
+    const flushPendingMeasurements = useCallback(() => {
+        if (pendingHeightsRef.current.size === 0) return;
+        const container = scrollContainerRef.current;
+        const currentMessages = messagesRef.current;
+        let updated = false;
+        let delta = 0;
+        for (let i = 0; i < currentMessages.length; i += 1) {
+            const msg = currentMessages[i];
+            const pendingHeight = pendingHeightsRef.current.get(msg.id);
+            if (pendingHeight === undefined) continue;
+            const prevHeight = itemHeightsRef.current.get(msg.id);
+            if (prevHeight !== pendingHeight) {
+                itemHeightsRef.current.set(msg.id, pendingHeight);
+                updated = true;
+                if (i < startIndexRef.current) {
+                    delta += pendingHeight - (prevHeight ?? ESTIMATED_MESSAGE_HEIGHT);
+                }
+            }
+        }
+        pendingHeightsRef.current.clear();
+        if (updated) {
+            if (delta !== 0 && container) {
+                container.scrollTop += delta;
+                setScrollTop(container.scrollTop);
+            }
+            setMeasurementVersion(prev => prev + 1);
+        }
+    }, []);
+
+    const handleItemResize = useCallback((id: string, height: number, index: number) => {
+        if (!height) return;
+        const nextHeight = Math.max(1, Math.round(height));
+        if (isScrollingRef.current) {
+            pendingHeightsRef.current.set(id, nextHeight);
+            return;
+        }
+        const prevHeight = itemHeightsRef.current.get(id);
+        if (prevHeight === nextHeight) return;
+        itemHeightsRef.current.set(id, nextHeight);
+        setMeasurementVersion(prev => prev + 1);
+        const container = scrollContainerRef.current;
+        if (container && index < startIndexRef.current) {
+            const delta = nextHeight - (prevHeight ?? ESTIMATED_MESSAGE_HEIGHT);
+            if (delta !== 0) {
+                container.scrollTop += delta;
+                setScrollTop(container.scrollTop);
+            }
+        }
+    }, []);
 
     const handleScroll = () => {
         if (!scrollContainerRef.current) return;
         const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
         const isBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 50; // Threshold of 50px
         isAtBottom.current = isBottom;
+        isScrollingRef.current = true;
+        if (scrollIdleTimerRef.current !== null) {
+            window.clearTimeout(scrollIdleTimerRef.current);
+        }
+        scrollIdleTimerRef.current = window.setTimeout(() => {
+            isScrollingRef.current = false;
+            flushPendingMeasurements();
+        }, SCROLL_IDLE_MS);
+        if (scrollRafRef.current !== null) return;
+        scrollRafRef.current = window.requestAnimationFrame(() => {
+            scrollRafRef.current = null;
+            if (!scrollContainerRef.current) return;
+            setScrollTop(scrollContainerRef.current.scrollTop);
+        });
     };
 
-    const scrollToBottom = (instant = false) => {
+    const scrollToBottom = () => {
+        const container = scrollContainerRef.current;
+        if (container) {
+            container.scrollTo({ top: container.scrollHeight, behavior: 'auto' });
+            setScrollTop(container.scrollTop);
+            return;
+        }
         messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
     };
 
     useEffect(() => {
         if (isSwitchingSession.current) {
-            scrollToBottom(true);
+            scrollToBottom();
             isSwitchingSession.current = false;
             isAtBottom.current = true; // Reset to true on session switch
         } else if (isAtBottom.current) {
@@ -150,11 +330,51 @@ const ArkPage: React.FC = () => {
         if (isGenerating) handleStop();
     };
 
+    const resetStreamingState = () => {
+        if (flushTimerRef.current !== null) {
+            window.clearTimeout(flushTimerRef.current);
+            flushTimerRef.current = null;
+        }
+        streamingMessageIdRef.current = null;
+        streamingMessageIndexRef.current = null;
+        streamingContentRef.current = '';
+    };
+
+    const flushStreamingUpdate = () => {
+        flushTimerRef.current = null;
+        const currentId = streamingMessageIdRef.current;
+        if (!currentId) return;
+        const content = streamingContentRef.current;
+        setMessages(prev => {
+            if (prev.length === 0) return prev;
+            let targetIndex = streamingMessageIndexRef.current;
+            if (targetIndex === null || !prev[targetIndex] || prev[targetIndex].id !== currentId) {
+                targetIndex = prev.findIndex(m => m.id === currentId);
+                if (targetIndex === -1) return prev;
+                streamingMessageIndexRef.current = targetIndex;
+            }
+            const current = prev[targetIndex];
+            if (current.content === content) return prev;
+            const next = prev.slice();
+            next[targetIndex] = { ...current, content };
+            return next;
+        });
+    };
+
+    const scheduleFlush = () => {
+        if (flushTimerRef.current !== null) return;
+        flushTimerRef.current = window.setTimeout(() => {
+            flushStreamingUpdate();
+        }, STREAM_THROTTLE_MS);
+    };
+
     const handleStop = () => {
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
         }
+        flushStreamingUpdate();
+        resetStreamingState();
         setIsGenerating(false);
     };
 
@@ -167,20 +387,27 @@ const ArkPage: React.FC = () => {
         setInputValue('');
         setIsGenerating(true);
         const userMsg: Message = { id: uuidv4(), role: 'user', content: userText, timestamp: Date.now() };
-        setMessages(prev => [...prev, userMsg]);
         const aiMsgId = uuidv4();
         const aiMsgPlaceholder: Message = { id: aiMsgId, role: 'assistant', content: '', timestamp: Date.now() };
-        setMessages(prev => [...prev, aiMsgPlaceholder]);
+        streamingMessageIdRef.current = aiMsgId;
+        streamingMessageIndexRef.current = null;
+        streamingContentRef.current = '';
+        setMessages(prev => {
+            const next = [...prev, userMsg, aiMsgPlaceholder];
+            streamingMessageIndexRef.current = next.length - 1;
+            return next;
+        });
         abortControllerRef.current = new AbortController();
         try {
             await streamChatResponse(
                 userText,
                 (chunk) => {
-                    setMessages(prev => prev.map(m =>
-                        m.id === aiMsgId ? { ...m, content: m.content + chunk } : m
-                    ));
+                    streamingContentRef.current += chunk;
+                    scheduleFlush();
                 },
                 async () => {
+                    flushStreamingUpdate();
+                    resetStreamingState();
                     setIsGenerating(false);
                     if (isFirstMessage || messages.length < 4) {
                         try {
@@ -195,12 +422,18 @@ const ArkPage: React.FC = () => {
                 currentSessionId,
                 (m) => setMetrics(m),
                 (sources) => {
-                    setMessages(prev => prev.map(m =>
-                        m.id === aiMsgId ? { ...m, sources: sources } : m
-                    ));
+                    setMessages(prev => {
+                        const index = prev.findIndex(m => m.id === aiMsgId);
+                        if (index === -1) return prev;
+                        const next = prev.slice();
+                        next[index] = { ...prev[index], sources };
+                        return next;
+                    });
                 }
             );
         } catch (e) {
+            flushStreamingUpdate();
+            resetStreamingState();
             setIsGenerating(false);
         }
     };
@@ -357,19 +590,23 @@ const ArkPage: React.FC = () => {
                                 </motion.div>
                             ) : (
                                 <div className="flex flex-col pb-48 w-full items-center pt-8">
-                                    <div className="w-full max-w-4xl px-6 flex flex-col gap-8">
-                                        {messages.map((msg, index) => (
-                                            <motion.div
-                                                key={msg.id}
-                                                initial={{ opacity: 0, y: 15 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                transition={{ duration: 0.4, delay: index === messages.length - 1 ? 0 : 0 }}
-                                            >
-                                                <ChatMessage message={msg} />
-                                            </motion.div>
-                                        ))}
+                                    <div className="w-full relative" style={{ height: totalHeight }}>
+                                        {visibleMessages.map((msg, index) => {
+                                            const messageIndex = rangeStart + index;
+                                            const top = offsets[messageIndex] || 0;
+                                            return (
+                                                <VirtualizedMessageRow
+                                                    key={msg.id}
+                                                    message={msg}
+                                                    top={top}
+                                                    index={messageIndex}
+                                                    isStreaming={isGenerating && msg.id === streamingMessageIdRef.current}
+                                                    onHeightChange={handleItemResize}
+                                                />
+                                            );
+                                        })}
+                                        <div ref={messagesEndRef} className="absolute left-0 right-0" style={{ top: totalHeight + 1, height: 1 }} />
                                     </div>
-                                    <div ref={messagesEndRef} />
                                 </div>
                             )}
                         </motion.div>
@@ -409,5 +646,52 @@ const ArkPage: React.FC = () => {
         </div>
     );
 };
+
+interface VirtualizedMessageRowProps {
+    message: Message;
+    top: number;
+    index: number;
+    isStreaming: boolean;
+    onHeightChange: (id: string, height: number, index: number) => void;
+}
+
+const VirtualizedMessageRow: React.FC<VirtualizedMessageRowProps> = React.memo(({
+    message,
+    top,
+    index,
+    isStreaming,
+    onHeightChange
+}) => {
+    const rowRef = useRef<HTMLDivElement>(null);
+
+    useLayoutEffect(() => {
+        const node = rowRef.current;
+        if (!node) return;
+        const reportHeight = () => {
+            const height = node.getBoundingClientRect().height;
+            if (height) {
+                onHeightChange(message.id, height, index);
+            }
+        };
+        reportHeight();
+        const observer = new ResizeObserver(() => reportHeight());
+        observer.observe(node);
+        return () => observer.disconnect();
+    }, [message.id, index, onHeightChange]);
+
+    return (
+        <div ref={rowRef} className="absolute left-0 right-0 pb-8" style={{ top }}>
+            <div className="w-full max-w-4xl mx-auto px-6">
+                <motion.div
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                >
+                    <ChatMessage message={message} isStreaming={isStreaming} />
+                </motion.div>
+            </div>
+        </div>
+    );
+});
 
 export default ArkPage;

@@ -13,9 +13,10 @@ import 'katex/dist/katex.min.css';
 
 interface ChatMessageProps {
     message: Message;
+    isStreaming?: boolean;
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false }) => {
     const isUser = message.role === 'user';
     const [isSourcesExpanded, setIsSourcesExpanded] = useState(false);
 
@@ -51,6 +52,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
                                     className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]"
                                 />
                                 <span className="text-slate-400 text-sm font-medium animate-pulse">思考中...</span>
+                            </div>
+                        ) : !isUser && isStreaming ? (
+                            <div className="whitespace-pre-wrap break-words text-[16px] leading-[1.8] text-slate-700">
+                                {message.content}
                             </div>
                         ) : (
                             <div className={`markdown-body ${isUser ? 'text-[#041e49]' : ''}`}>
@@ -220,4 +225,6 @@ const CodeBlock = ({ language, value }: { language: string, value: string }) => 
     );
 };
 
-export default ChatMessage;
+export default React.memo(ChatMessage, (prev, next) => {
+    return prev.message === next.message && prev.isStreaming === next.isStreaming;
+});
