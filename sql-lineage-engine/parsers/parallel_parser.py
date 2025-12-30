@@ -42,7 +42,10 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
     try:
         import threading
         import sys
-        print(f"[DEBUG-THREAD] Starting {os.path.basename(file_path)} on thread {threading.get_ident()}", file=sys.stderr)
+        pid = os.getpid()
+        tid = threading.get_ident()
+        f_name = os.path.basename(file_path)
+        print(f"[DEBUG-THREAD] STARTING {f_name} (PID: {pid}, TID: {tid})", file=sys.stderr)
 
         # 直接导入 LineageParser，避免触发 container.py 中的 Agent 初始化
         from parsers.sql_parser import LineageParser
@@ -74,7 +77,10 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
                         "type": "fdd"
                     })
         
+        print(f"[DEBUG-THREAD] FINISHED {f_name} (PID: {pid})", file=sys.stderr)
+        
     except Exception as e:
+        print(f"[DEBUG-THREAD] ERROR {f_name} (PID: {os.getpid()}) - {e}", file=sys.stderr)
         result["error"] = str(e)
     
     return result
