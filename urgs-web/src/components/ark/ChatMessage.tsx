@@ -26,7 +26,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                 {/* Avatar / Icon */}
                 <div className="flex-shrink-0 mt-1">
                     {!isUser && (
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-600 via-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-lg ring-4 ring-white transition-transform duration-500 group-hover:rotate-12">
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-600 via-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-lg ring-4 ring-white ark-avatar-glow transition-transform duration-500 group-hover:rotate-12">
                             <Sparkles size={18} fill="currentColor" />
                         </div>
                     )}

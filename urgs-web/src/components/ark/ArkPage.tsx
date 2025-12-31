@@ -330,7 +330,7 @@ const ArkPage: React.FC = () => {
         } else if (isAtBottom.current) {
             scrollToBottom();
         }
-    }, [messages, currentSessionId]); // Switched back to [messages] to trigger on streaming updates, but guarded by isAtBottom
+    }, [messages, currentSessionId, totalHeight]); // Switched back to [messages] to trigger on streaming updates, but guarded by isAtBottom
 
     const saveSessionState = () => {
         if (!currentSessionId || !scrollContainerRef.current) return;
@@ -505,7 +505,7 @@ const ArkPage: React.FC = () => {
     }
 
     return (
-        <div className="flex h-full bg-[#f8fbff] font-sans text-slate-800 overflow-hidden">
+        <div className="flex h-full ark-mesh-bg ark-noise-overlay font-sans text-slate-800 overflow-hidden">
             <Sidebar
                 currentSessionId={currentSessionId}
                 onSessionSelect={handleSessionSelect}
@@ -523,11 +523,11 @@ const ArkPage: React.FC = () => {
                             className="flex-1 flex flex-col items-center justify-center p-8 w-full max-w-6xl mx-auto overflow-y-auto"
                         >
                             {/* ... Content of Hub ... */}
-                            <div className="text-center mb-16">
+                            <div className="text-center mb-16 relative z-10">
                                 <motion.h1
                                     initial={{ y: 20 }}
                                     animate={{ y: 0 }}
-                                    className="text-6xl font-extrabold text-slate-900 mb-6 tracking-tight bg-gradient-to-r from-blue-700 via-purple-600 to-indigo-600 bg-clip-text text-transparent"
+                                    className="text-6xl ark-heading ark-heading-gradient mb-6"
                                 >
                                     你好，今天我想如何协助你？
                                 </motion.h1>
@@ -552,7 +552,7 @@ const ArkPage: React.FC = () => {
                                             visible: { opacity: 1, y: 0 }
                                         }}
                                         onClick={() => handleNewChat(agent.id)}
-                                        className="group relative flex flex-col items-start p-8 bg-white border border-slate-200/60 hover:border-blue-300 hover:shadow-[0_20px_40px_-15px_rgba(37,99,235,0.12)] rounded-[32px] transition-all duration-500 text-left"
+                                        className="group relative flex flex-col items-start p-8 ark-agent-card rounded-[28px] text-left"
                                     >
                                         <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white transition-all duration-300">
                                             <RobotOutlined className="text-2xl" />
@@ -583,7 +583,7 @@ const ArkPage: React.FC = () => {
                                         setInputValue('');
                                         setActiveAgent(null);
                                     }}
-                                    className="group relative flex flex-col items-start p-8 bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-[32px] hover:shadow-[0_20px_40px_-15px_rgba(37,99,235,0.3)] transition-all duration-500 text-left"
+                                    className="group relative flex flex-col items-start p-8 ark-primary-card text-white rounded-[28px] transition-all duration-500 text-left"
                                 >
                                     <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-md text-white flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
                                         <Sparkles size={28} />
@@ -611,10 +611,10 @@ const ArkPage: React.FC = () => {
                                 <motion.div
                                     initial={{ opacity: 0, y: 20 }}
                                     animate={{ opacity: 1, y: 0 }}
-                                    className="flex-1 flex flex-col items-center justify-center p-4 w-full max-w-3xl -mt-20"
+                                    className="flex-1 flex flex-col items-center justify-center p-4 w-full max-w-3xl -mt-20 relative z-10"
                                 >
                                     <div className="mb-10 text-center">
-                                        <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
+                                        <h1 className="text-5xl ark-heading ark-heading-gradient mb-4">
                                             {activeAgent ? `你好，我是 ${activeAgent.name}` : '你好，今天有什么想聊的？'}
                                         </h1>
                                         <p className="text-slate-400 text-lg">

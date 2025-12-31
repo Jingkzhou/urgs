@@ -38,7 +38,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ value, onChange, onSubmit, isGene
                     boxShadow: isFocused ? "0 4px 12px rgba(0,0,0,0.1)" : "0 2px 6px rgba(0,0,0,0.05)",
                     backgroundColor: isFocused ? "#ffffff" : "#f0f4f9"
                 }}
-                className="relative flex flex-col rounded-[28px] overflow-hidden transition-colors duration-300"
+                className="relative flex flex-col rounded-[28px] overflow-hidden transition-colors duration-300 ark-input-glow"
             >
                 <div className="flex items-end px-4 py-3">
                     {/* Attachment Button */}

@@ -83,9 +83,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
                 )}
                 <button
                     onClick={() => onNewChat()}
-                    className={`flex items-center justify-center gap-3 bg-[#e9eef6] hover:bg-[#d3e3fd] text-slate-700 rounded-2xl transition-all duration-200 group shadow-sm ${isCollapsed ? 'w-12 h-12' : 'px-4 py-3 min-w-[120px]'}`}
+                    className={`flex items-center justify-center gap-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-2xl transition-all duration-300 shadow-md hover:shadow-lg hover:shadow-blue-500/25 ${isCollapsed ? 'w-12 h-12' : 'px-4 py-3 min-w-[120px]'}`}
                 >
-                    <Plus size={24} strokeWidth={2} className="text-blue-600" />
+                    <Plus size={24} strokeWidth={2} />
                     {!isCollapsed && <span className="font-bold text-sm">新对话</span>}
                 </button>
             </div>
