@@ -275,3 +275,31 @@ export const getDatasourceMeta = () =>
 
 export const getDatasourceConfig = () =>
     get<any>('/api/datasource/config');
+
+// ===== Docker Management API =====
+
+export interface DockerContainer {
+    id: string;
+    name: string;
+    image: string;
+    status: 'running' | 'stopped' | 'restarting';
+    ip: string;
+    cpu: string;
+    memory: string;
+    uptime: string;
+}
+
+export interface DockerLog {
+    timestamp: string;
+    level: string;
+    message: string;
+}
+
+export const getDockerContainers = () =>
+    get<DockerContainer[]>('/api/ops/docker/containers');
+
+export const getDockerLogs = (containerId: string, params?: { lines?: number; tail?: boolean }) =>
+    get<DockerLog[]>(`/api/ops/docker/containers/${containerId}/logs`, params || { lines: 100 });
+
+export const downloadDockerLogs = (containerId: string) =>
+    get<Blob>(`/api/ops/docker/containers/${containerId}/logs/download`, undefined, { isBlob: true });

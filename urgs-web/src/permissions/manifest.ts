@@ -88,6 +88,11 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '3-7-3-2', name: '新增', code: 'sys:ai:knowledge:add', type: 'button', path: '-', level: 3, parentId: '3-7-3' },
     { id: '3-7-3-3', name: '编辑', code: 'sys:ai:knowledge:edit', type: 'button', path: '-', level: 3, parentId: '3-7-3' },
     { id: '3-7-3-4', name: '删除', code: 'sys:ai:knowledge:del', type: 'button', path: '-', level: 3, parentId: '3-7-3' },
+    { id: '3-8', name: 'Docker管理', code: 'sys:docker', type: 'menu', path: '/admin/docker', level: 1, parentId: '3' },
+    { id: '3-8-1', name: '日志管理', code: 'sys:docker:log', type: 'menu', path: '/admin/docker/log', level: 2, parentId: '3-8' },
+    { id: '3-8-1-1', name: '查询容器', code: 'sys:docker:log:list', type: 'button', path: '-', level: 3, parentId: '3-8-1' },
+    { id: '3-8-1-2', name: '查看日志', code: 'sys:docker:log:view', type: 'button', path: '-', level: 3, parentId: '3-8-1' },
+    { id: '3-8-1-3', name: '下载日志', code: 'sys:docker:log:download', type: 'button', path: '-', level: 3, parentId: '3-8-1' },
 
     { id: '4', name: '版本管理', code: 'version', type: 'menu', path: '/version', level: 0, parentId: 'root' },
 
