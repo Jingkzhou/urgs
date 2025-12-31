@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, RotateCw, StopCircle, FileText, CheckCircle, X, RefreshCw, Terminal, Eye, EyeOff, Play, ArrowUpCircle, ArrowDownCircle, Boxes, ClipboardList, LayoutGrid, List, Activity, XCircle, Clock, ChevronUp, ChevronDown, Filter } from 'lucide-react';
-import { message, DatePicker, Modal } from 'antd';
+import { message, DatePicker, Modal, Drawer, Tag, Divider, Empty, Badge } from 'antd';
 import dayjs from 'dayjs';
+import 'dayjs/locale/zh-cn';
+import zhCN from 'antd/es/date-picker/locale/zh_CN';
+dayjs.locale('zh-cn');
 import Pagination from '../../common/Pagination';
 import { get, post } from '../../../utils/request';
 import { useTaskDependencies } from './hooks/useTaskDependencies';
@@ -31,9 +34,152 @@ interface Task {
 interface Workflow {
     id: string;
     name: string;
-    owner: string; // Add owner field
+    owner: string;
     content: string;
 }
+
+// Sub-component for Detailed View
+const InstanceDetailDrawer: React.FC<{
+    visible: boolean;
+    onClose: () => void;
+    instance: TaskInstance | null;
+    task?: Task;
+    workflowName?: string;
+    systemName?: string;
+    onViewLog: (inst: TaskInstance) => void;
+}> = ({ visible, onClose, instance, task, workflowName, systemName, onViewLog }) => {
+    if (!instance) return null;
+
+    const statusMap: Record<string, { color: string, label: string }> = {
+        'SUCCESS': { color: '#10b981', label: '成功' },
+        'FORCE_SUCCESS': { color: '#8b5cf6', label: '强制成功' },
+        'RUNNING': { color: '#3b82f6', label: '运行中' },
+        'FAIL': { color: '#ef4444', label: '失败' },
+        'WAITING': { color: '#06b6d4', label: '等待下发' },
+        'PENDING': { color: '#f59e0b', label: '依赖等待' },
+        'STOPPED': { color: '#64748b', label: '已停止' }
+    };
+
+    const s = statusMap[instance.status] || { color: '#94a3b8', label: instance.status };
+
+    return (
+        <Drawer
+            title={
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                        <Activity size={20} />
+                    </div>
+                    <div>
+                        <div className="text-base font-bold text-slate-800">{task?.name || '任务详情'}</div>
+                        <div className="text-xs text-slate-400 font-mono">#{instance.id}</div>
+                    </div>
+                </div>
+            }
+            placement="right"
+            onClose={onClose}
+            open={visible}
+            width={560}
+            closeIcon={<X size={20} className="text-slate-400 hover:text-slate-600" />}
+            headerStyle={{ borderBottom: '1px solid #f1f5f9', padding: '20px 24px' }}
+            bodyStyle={{ padding: '0' }}
+        >
+            <div className="h-full flex flex-col bg-slate-50/30">
+                <div className="p-6 space-y-6">
+                    {/* Status Banner */}
+                    <div className="bg-white rounded-2xl p-5 border border-slate-200/60 shadow-sm flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                            <div className="relative">
+                                <div className="w-12 h-12 rounded-full flex items-center justify-center opacity-20" style={{ backgroundColor: s.color }}></div>
+                                <div className="absolute inset-0 flex items-center justify-center" style={{ color: s.color }}>
+                                    {instance.status === 'RUNNING' ? <RotateCw size={24} className="animate-spin" /> :
+                                        instance.status === 'SUCCESS' || instance.status === 'FORCE_SUCCESS' ? <CheckCircle size={24} /> : <Activity size={24} />}
+                                </div>
+                            </div>
+                            <div>
+                                <div className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-0.5">当前状态</div>
+                                <div className="text-lg font-bold" style={{ color: s.color }}>{s.label}</div>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => onViewLog(instance)}
+                            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-00 transition-all flex items-center gap-2 group"
+                        >
+                            <FileText size={16} className="group-hover:scale-110 transition-transform" />
+                            查看执行日志
+                        </button>
+                    </div>
+
+                    {/* Info Grid */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-white rounded-2xl p-4 border border-slate-200/60">
+                            <div className="text-xs text-slate-400 mb-1 flex items-center gap-1.5">
+                                <Clock size={12} /> 数据日期
+                            </div>
+                            <div className="text-sm font-semibold text-slate-700">{instance.dataDate}</div>
+                        </div>
+                        <div className="bg-white rounded-2xl p-4 border border-slate-200/60">
+                            <div className="text-xs text-slate-400 mb-1 flex items-center gap-1.5">
+                                <Terminal size={12} /> 任务类型
+                            </div>
+                            <div className="text-sm font-semibold text-slate-700">{instance.taskType}</div>
+                        </div>
+                        <div className="bg-white rounded-2xl p-4 border border-slate-200/60">
+                            <div className="text-xs text-slate-400 mb-1 flex items-center gap-1.5">
+                                <Boxes size={12} /> 所属系统
+                            </div>
+                            <div className="text-sm font-semibold text-slate-700">{systemName || '-'}</div>
+                        </div>
+                        <div className="bg-white rounded-2xl p-4 border border-slate-200/60">
+                            <div className="text-xs text-slate-400 mb-1 flex items-center gap-1.5">
+                                <LayoutGrid size={12} /> 关联工作流
+                            </div>
+                            <div className="text-sm font-semibold text-slate-700 truncate">{workflowName || '-'}</div>
+                        </div>
+                    </div>
+
+                    {/* Timeline / Times */}
+                    <div className="bg-white rounded-2xl overflow-hidden border border-slate-200/60 shadow-sm">
+                        <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/50 text-xs font-bold text-slate-500 uppercase tracking-tight flex items-center gap-2">
+                            <Clock size={14} /> 时间线记录
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div className="flex justify-between items-center">
+                                <span className="text-sm text-slate-500">创建时间</span>
+                                <span className="text-sm font-mono text-slate-700">{instance.createTime ? dayjs(instance.createTime).format('YYYY-MM-DD HH:mm:ss') : '-'}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-sm text-slate-500">开始时间</span>
+                                <span className="text-sm font-mono text-slate-700">{instance.startTime ? dayjs(instance.startTime).format('YYYY-MM-DD HH:mm:ss') : '-'}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-sm text-slate-500">结束时间</span>
+                                <span className="text-sm font-mono text-slate-700">{instance.endTime ? dayjs(instance.endTime).format('YYYY-MM-DD HH:mm:ss') : '-'}</span>
+                            </div>
+                            <Divider className="my-2" />
+                            <div className="flex justify-between items-center">
+                                <span className="text-sm text-slate-500">重试次数</span>
+                                <Badge count={instance.retryCount} overflowCount={99} style={{ backgroundColor: instance.retryCount > 0 ? '#ef4444' : '#94a3b8' }} />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Task Content Preview */}
+                    {task?.content && (
+                        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 overflow-hidden shadow-sm">
+                            <div className="text-xs text-slate-400 font-bold mb-3 flex items-center justify-between">
+                                <span className="flex items-center gap-2"><Terminal size={14} className="text-blue-500" /> 任务内容定义</span>
+                                <span className="px-2 py-0.5 bg-slate-50 text-slate-400 rounded text-[10px] border border-slate-100 uppercase tracking-widest">json</span>
+                            </div>
+                            <pre className="text-[12px] text-slate-600 font-mono overflow-auto max-h-[200px] scrollbar-hide p-4 bg-slate-50/50 rounded-xl border border-slate-100/50">
+                                {JSON.stringify(JSON.parse(task.content), null, 2)}
+                            </pre>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </Drawer>
+    );
+};
 
 const TaskInstance: React.FC = () => {
     const [showLog, setShowLog] = useState(false);
@@ -60,6 +206,10 @@ const TaskInstance: React.FC = () => {
     const [taskToWorkflowMap, setTaskToWorkflowMap] = useState<Record<string, string>>({}); // taskId -> workflowName
     const [taskToWorkflowIdMap, setTaskToWorkflowIdMap] = useState<Record<string, string>>({}); // taskId -> workflowId
     const [taskToWorkflowOwnerMap, setTaskToWorkflowOwnerMap] = useState<Record<string, string>>({}); // taskId -> workflowOwner
+
+    // Detail Drawer State
+    const [isDetailOpen, setIsDetailOpen] = useState(false);
+    const [detailInstance, setDetailInstance] = useState<TaskInstance | null>(null);
 
     // Dependency Graph Hook
     const { dependencyGraph, setDependencyGraph, handleShowDependencies } = useTaskDependencies();
@@ -408,89 +558,107 @@ const TaskInstance: React.FC = () => {
             )}
 
             {/* Toolbar */}
-            <div className="px-6 py-4 bg-white/80 backdrop-blur-md border-b border-slate-200/60 flex flex-wrap gap-4 justify-between items-center sticky top-0 z-20">
+            <div className="px-6 py-3 bg-white/90 backdrop-blur-xl border-b border-slate-200/50 flex flex-nowrap gap-3 justify-between items-center sticky top-0 z-20 overflow-x-auto no-scrollbar">
                 <div className="flex items-center gap-3">
-                    <div className="relative group">
-                        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                    <div className="relative group flex-shrink-0">
+                        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
                         <input
                             type="text"
-                            placeholder="任务名称 / ID ..."
+                            placeholder="搜索任务..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             onKeyDown={handleSearch}
-                            className="pl-10 pr-4 py-2.5 text-sm border border-slate-200/80 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 w-48 bg-slate-50/50 transition-all font-medium"
+                            className="pl-10 pr-4 py-2 text-xs border border-slate-200/80 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 w-44 bg-slate-50/50 transition-all font-medium"
                         />
                     </div>
 
-                    <div className="flex items-center gap-2 bg-slate-100/50 p-1 rounded-2xl border border-slate-200/60">
+                    <div className="flex items-center gap-1 bg-slate-100/50 p-1 rounded-xl border border-slate-200/60 flex-shrink-0">
                         <select
                             value={workflowFilter}
                             onChange={(e) => setWorkflowFilter(e.target.value)}
-                            className="bg-transparent px-3 py-1.5 text-sm text-slate-600 focus:outline-none font-medium min-w-[120px]"
+                            className="bg-transparent pl-3 pr-1 py-1 text-xs text-slate-600 focus:outline-none font-bold max-w-[100px] cursor-pointer"
                         >
                             <option value="">所有工作流</option>
                             {workflows.map(w => (
                                 <option key={w.id} value={w.id}>{w.name}</option>
                             ))}
                         </select>
-                        <div className="w-[1px] h-4 bg-slate-200" />
+                        <div className="w-[1px] h-3 bg-slate-300/50" />
                         <select
                             value={systemFilter}
                             onChange={(e) => setSystemFilter(e.target.value)}
-                            className="bg-transparent px-3 py-1.5 text-sm text-slate-600 focus:outline-none font-medium min-w-[120px]"
+                            className="bg-transparent px-2 py-1 text-xs text-slate-600 focus:outline-none font-bold max-w-[100px] cursor-pointer"
                         >
                             <option value="">所有系统</option>
                             {systems.map(s => (
                                 <option key={s.id} value={s.id}>{s.name}</option>
                             ))}
                         </select>
+                        <div className="w-[1px] h-3 bg-slate-300/50" />
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className="bg-transparent pl-1 pr-3 py-1 text-xs text-slate-600 focus:outline-none font-bold max-w-[90px] cursor-pointer"
+                        >
+                            <option value="">所有状态</option>
+                            <option value="SUCCESS">成功</option>
+                            <option value="FAIL">失败</option>
+                            <option value="RUNNING">运行中</option>
+                            <option value="WAITING">等待下发</option>
+                            <option value="PENDING">依赖等待</option>
+                            <option value="STOPPED">已停止</option>
+                        </select>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 flex-shrink-0">
                         <DatePicker
                             placeholder="数据日期"
+                            size="small"
+                            locale={zhCN}
                             onChange={(date, dateString) => setDataDateFilter(typeof dateString === 'string' ? dateString : '')}
-                            style={{ borderRadius: '14px', height: '42px', width: '130px' }}
+                            style={{ borderRadius: '10px', height: '36px', width: '130px', fontSize: '12px' }}
                         />
                         <DatePicker
                             placeholder="执行日期"
+                            size="small"
+                            locale={zhCN}
                             value={executionDateFilter ? dayjs(executionDateFilter) : null}
                             onChange={(date, dateString) => setExecutionDateFilter(typeof dateString === 'string' ? dateString : '')}
-                            style={{ borderRadius: '14px', height: '42px', width: '130px' }}
+                            style={{ borderRadius: '10px', height: '36px', width: '130px', fontSize: '12px' }}
                             allowClear
                         />
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center bg-slate-100/80 rounded-xl p-1 border border-slate-200/50">
+                <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center bg-slate-100/80 rounded-xl p-0.5 border border-slate-200/50">
                         <button
                             onClick={() => setListViewMode('list')}
-                            className={`p-2 rounded-lg transition-all ${listViewMode === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            className={`p-1.5 rounded-lg transition-all ${listViewMode === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
                             title="列表视图"
                         >
-                            <List size={18} strokeWidth={2.5} />
+                            <List size={16} strokeWidth={2.5} />
                         </button>
                         <button
                             onClick={() => setListViewMode('card')}
-                            className={`p-2 rounded-lg transition-all ${listViewMode === 'card' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            className={`p-1.5 rounded-lg transition-all ${listViewMode === 'card' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
                             title="卡片视图"
                         >
-                            <LayoutGrid size={18} strokeWidth={2.5} />
+                            <LayoutGrid size={16} strokeWidth={2.5} />
                         </button>
                     </div>
 
-                    <div className="flex items-center gap-2 p-1 bg-slate-100/50 rounded-2xl">
+                    <div className="flex items-center gap-1 p-1 bg-slate-100/50 rounded-xl">
                         <button
                             onClick={() => setShowIds(!showIds)}
-                            className={`px-4 py-2 text-sm font-bold rounded-xl transition-all ${showIds ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${showIds ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                         >
                             ID 展示
                         </button>
                         <button
                             onClick={handleBatchRerunClick}
                             disabled={selectedRowKeys.length === 0}
-                            className={`px-4 py-2 text-sm font-bold rounded-xl transition-all ${selectedRowKeys.length > 0 ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 pointer-events-none'}`}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${selectedRowKeys.length > 0 ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'bg-slate-200 text-slate-400 pointer-events-none'}`}
                         >
                             批量重跑
                         </button>
@@ -498,10 +666,10 @@ const TaskInstance: React.FC = () => {
 
                     <button
                         onClick={fetchInstances}
-                        className="p-3 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-2xl transition-all"
-                        title="刷新"
+                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                        title="刷新数据"
                     >
-                        <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
+                        <RefreshCw size={16} strokeWidth={2.5} className={loading ? 'animate-spin' : ''} />
                     </button>
                 </div>
             </div>
@@ -533,16 +701,20 @@ const TaskInstance: React.FC = () => {
                                 onViewLog={handleViewLog}
                                 onRerun={handleRerunClick}
                                 onStop={handleStop}
+                                onShowDetail={(inst) => {
+                                    setDetailInstance(inst);
+                                    setIsDetailOpen(true);
+                                }}
                             />
                         ))}
                     </div>
                 ) : (
                     /* Table List View */
-                    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                        <table className="w-full text-sm text-left">
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <table className="w-full text-sm text-left table-fixed">
                             <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
                                 <tr>
-                                    <th className="px-6 py-3 font-medium whitespace-nowrap w-10">
+                                    <th className="px-4 py-3 font-medium w-10">
                                         <input
                                             type="checkbox"
                                             onChange={handleSelectAll}
@@ -550,81 +722,92 @@ const TaskInstance: React.FC = () => {
                                             className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                                         />
                                     </th>
-                                    {showIds && <th className="px-6 py-3 font-medium whitespace-nowrap">实例ID</th>}
-                                    <th className="px-6 py-3 font-medium whitespace-nowrap">工作流</th>
-                                    <th className="px-6 py-3 font-medium whitespace-nowrap">所属系统</th>
-                                    <th className="px-6 py-3 font-medium whitespace-nowrap">任务名称</th>
-                                    {showIds && <th className="px-6 py-3 font-medium whitespace-nowrap">任务ID</th>}
-                                    <th className="px-6 py-3 font-medium whitespace-nowrap">任务类型</th>
-                                    <th className="px-6 py-3 font-medium whitespace-nowrap">数据日期</th>
-                                    <th className="px-6 py-3 font-medium whitespace-nowrap">创建时间</th>
-                                    <th className="px-6 py-3 font-medium whitespace-nowrap">开始时间</th>
-                                    <th className="px-6 py-3 font-medium whitespace-nowrap">结束时间</th>
-                                    <th className="px-6 py-3 font-medium whitespace-nowrap">状态</th>
-                                    <th className="px-6 py-3 font-medium whitespace-nowrap">重试</th>
-                                    <th className="px-6 py-3 font-medium whitespace-nowrap text-right">操作</th>
+                                    {showIds && <th className="px-4 py-3 font-medium w-20">实例ID</th>}
+                                    <th className="px-4 py-3 font-medium w-40">来源 / 系统</th>
+                                    <th className="px-4 py-3 font-medium w-64">任务名称</th>
+                                    {showIds && <th className="px-4 py-3 font-medium w-20">任务ID</th>}
+                                    <th className="px-4 py-3 font-medium w-24">数据日期</th>
+                                    <th className="px-4 py-3 font-medium w-44">执行时间线</th>
+                                    <th className="px-4 py-3 font-medium w-20 text-center">状态</th>
+                                    <th className="px-4 py-3 font-medium w-16 text-center">重试</th>
+                                    <th className="px-4 py-3 font-medium w-24 text-right pr-6">操作</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {loading ? (
                                     <tr>
-                                        <td colSpan={showIds ? 11 : 9} className="px-6 py-8 text-center text-slate-500">
+                                        <td colSpan={showIds ? 14 : 12} className="px-6 py-8 text-center text-slate-500">
                                             加载中...
                                         </td>
                                     </tr>
                                 ) : filteredInstances.length === 0 ? (
                                     <tr>
-                                        <td colSpan={showIds ? 11 : 9} className="px-6 py-8 text-center text-slate-500">
+                                        <td colSpan={showIds ? 14 : 12} className="px-6 py-8 text-center text-slate-500">
                                             暂无数据
                                         </td>
                                     </tr>
                                 ) : (
                                     paginatedInstances.map((inst) => {
-                                        // Resolve Workflow Name
                                         const wfName = taskToWorkflowMap[inst.taskId] || '-';
+                                        const systemName = systems.find(s => String(s.id) === String(inst.systemId))?.name || '-';
 
                                         return (
-                                            <tr key={inst.id} className="hover:bg-slate-50 transition-colors group">
-                                                <td className="px-6 py-4">
+                                            <tr
+                                                key={inst.id}
+                                                className="hover:bg-blue-50/40 transition-all cursor-pointer group active:bg-blue-50/60 border-b border-slate-50 last:border-0"
+                                                onClick={() => {
+                                                    setDetailInstance(inst);
+                                                    setIsDetailOpen(true);
+                                                }}
+                                            >
+                                                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                                                     <input
                                                         type="checkbox"
                                                         checked={selectedRowKeys.includes(inst.id)}
                                                         onChange={() => handleRowSelect(inst.id)}
                                                         disabled={!isSelectable(inst)}
-                                                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                                                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50 w-4 h-4"
                                                     />
                                                 </td>
-                                                {showIds && <td className="px-6 py-4 font-mono text-slate-500 text-xs">{inst.id}</td>}
-                                                <td className="px-6 py-4 font-medium text-slate-700">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="truncate max-w-[150px]" title={wfName}>{wfName}</span>
+                                                {showIds && <td className="px-4 py-3 font-mono text-slate-500 text-[10px] truncate" title={inst.id}>{inst.id}</td>}
+                                                <td className="px-4 py-3">
+                                                    <div className="flex flex-col gap-0.5 overflow-hidden">
+                                                        <span className="text-xs font-semibold text-slate-700 truncate" title={wfName}>{wfName}</span>
+                                                        <span className="text-[10px] text-slate-400 truncate" title={systemName}>{systemName}</span>
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-4 text-slate-600">
-                                                    {systems.find(s => String(s.id) === String(inst.systemId))?.name || '-'}
+                                                <td className="px-4 py-3">
+                                                    <div className="flex items-center gap-1.5 overflow-hidden">
+                                                        <Tag className="flex-shrink-0 text-[10px] px-1 py-0 leading-tight bg-slate-100 text-slate-500 border-none">{inst.taskType}</Tag>
+                                                        <span className="font-medium text-slate-700 truncate text-xs" title={tasks[inst.taskId]?.name || inst.taskId}>
+                                                            {tasks[inst.taskId]?.name || inst.taskId}
+                                                        </span>
+                                                    </div>
                                                 </td>
-                                                <td className="px-6 py-4 font-medium text-slate-700">
-                                                    <span title={inst.taskId}>{tasks[inst.taskId]?.name || inst.taskId}</span>
+                                                {showIds && <td className="px-4 py-3 font-mono text-slate-500 text-[10px] truncate" title={inst.taskId}>{inst.taskId}</td>}
+                                                <td className="px-4 py-3 font-mono text-slate-500 text-[10px]">{inst.dataDate}</td>
+                                                <td className="px-4 py-3">
+                                                    <div className="flex flex-col gap-0.5 text-[10px] text-slate-500 font-mono">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="px-1 bg-slate-50 text-slate-400 rounded text-[8px] scale-90">CREATE</span>
+                                                            <span>{inst.createTime ? dayjs(inst.createTime).format('MM-DD HH:mm:ss') : '-'}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="px-1 bg-blue-50 text-blue-400 rounded text-[8px] scale-90">START</span>
+                                                            <span>{inst.startTime ? dayjs(inst.startTime).format('MM-DD HH:mm:ss') : '-'}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="px-1 bg-slate-100 text-slate-400 rounded text-[8px] scale-90">END</span>
+                                                            <span>{inst.endTime ? dayjs(inst.endTime).format('MM-DD HH:mm:ss') : '-'}</span>
+                                                        </div>
+                                                    </div>
                                                 </td>
-                                                {showIds && <td className="px-6 py-4 font-mono text-slate-500 text-xs">{inst.taskId}</td>}
-                                                <td className="px-6 py-4 font-mono text-slate-500 text-xs">{inst.taskType}</td>
-                                                <td className="px-6 py-4 font-mono text-slate-500 text-xs">{inst.dataDate}</td>
-                                                <td className="px-6 py-4 font-mono text-slate-500 text-xs">{inst.createTime ? dayjs(inst.createTime).format('YYYY-MM-DD HH:mm:ss') : '-'}</td>
-                                                <td className="px-6 py-4 font-mono text-slate-500 text-xs">
-                                                    {['WAITING', 'PENDING'].includes(inst.status) ? '-' : (inst.startTime ? dayjs(inst.startTime).format('YYYY-MM-DD HH:mm:ss') : '-')}
-                                                </td>
-                                                <td className="px-6 py-4 font-mono text-slate-500 text-xs">
-                                                    {['WAITING', 'PENDING'].includes(inst.status) ? '-' : (inst.endTime ? dayjs(inst.endTime).format('YYYY-MM-DD HH:mm:ss') : '-')}
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${inst.status === 'SUCCESS' ? 'bg-green-50 text-green-600 border border-green-200' :
-                                                        inst.status === 'FORCE_SUCCESS' ? 'bg-purple-50 text-purple-600 border border-purple-200' :
-                                                            inst.status === 'RUNNING' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
-                                                                inst.status === 'FAIL' ? 'bg-red-50 text-red-600 border border-red-200' :
-                                                                    inst.status === 'WAITING' ? 'bg-cyan-50 text-cyan-600 border border-cyan-200 dashed' :
-                                                                        inst.status === 'PENDING' ? 'bg-yellow-50 text-yellow-600 border border-yellow-200 dashed' :
-                                                                            'bg-slate-50 text-slate-600 border border-slate-200'
-                                                        }`}>
+                                                <td className="px-4 py-3 text-center">
+                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${inst.status === 'SUCCESS' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
+                                                        inst.status === 'RUNNING' ? 'bg-blue-50 text-blue-600 border-blue-200' :
+                                                            inst.status === 'FAIL' ? 'bg-red-50 text-red-600 border-red-200 transition-all group-hover:bg-red-600 group-hover:text-white' :
+                                                                inst.status === 'STOPPED' ? 'bg-slate-100 text-slate-600 border-slate-200' :
+                                                                    'bg-amber-50 text-amber-600 border-amber-200'}`}>
                                                         {inst.status === 'RUNNING' && <RotateCw size={10} className="mr-1 animate-spin" />}
                                                         {{
                                                             'WAITING': '等待下发',
@@ -637,91 +820,97 @@ const TaskInstance: React.FC = () => {
                                                         }[inst.status] || inst.status}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 text-slate-600">{inst.retryCount}</td>
-                                                <td className="px-6 py-4 text-right whitespace-nowrap">
-                                                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        {/* Rerun: FAIL, SUCCESS, STOPPED, FORCE_SUCCESS */}
+                                                <td className="px-4 py-3 text-center">
+                                                    <Badge count={inst.retryCount} size="small" style={{ backgroundColor: inst.retryCount > 0 ? '#ef4444' : '#e2e8f0', color: inst.retryCount > 0 ? '#fff' : '#64748b', fontSize: '10px' }} />
+                                                </td>
+                                                <td className="px-4 py-3 text-right pr-6" onClick={(e) => e.stopPropagation()}>
+                                                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button onClick={() => handleViewLog(inst)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="查看日志">
+                                                            <FileText size={14} />
+                                                        </button>
                                                         {['FAIL', 'SUCCESS', 'STOPPED', 'FORCE_SUCCESS'].includes(inst.status) && (
-                                                            <button className="p-1 text-slate-400 hover:text-blue-600" title="重跑" onClick={() => handleRerunClick(inst)}>
-                                                                <RotateCw size={16} />
+                                                            <button onClick={() => handleRerunClick(inst)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="重跑">
+                                                                <RotateCw size={14} />
                                                             </button>
                                                         )}
-
-                                                        {/* Force Success: FAIL */}
                                                         {inst.status === 'FAIL' && (
-                                                            <>
-                                                                <button className="p-1 text-slate-400 hover:text-green-600" title="强制通过" onClick={() => handleForceSuccess(inst)}>
-                                                                    <CheckCircle size={16} />
-                                                                </button>
-
-
-                                                            </>
-                                                        )}
-
-                                                        {/* Stop: RUNNING, WAITING, PENDING */}
-                                                        {['RUNNING', 'WAITING', 'PENDING'].includes(inst.status) && (
-                                                            <button className="p-1 text-slate-400 hover:text-red-600" title="强制停止" onClick={() => handleStop(inst)}>
-                                                                <StopCircle size={16} />
+                                                            <button onClick={() => handleForceSuccess(inst)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="置为成功">
+                                                                <CheckCircle size={14} />
                                                             </button>
                                                         )}
-
-                                                        {/* Dependencies: Always */}
-                                                        <button className="p-1 text-slate-400 hover:text-purple-600" title="查看依赖 (上游)" onClick={() => handleDependencyView(inst, 'upstream')}>
-                                                            <ArrowUpCircle size={16} />
-                                                        </button>
-                                                        <button className="p-1 text-slate-400 hover:text-orange-600" title="查看被依赖 (下游)" onClick={() => handleDependencyView(inst, 'downstream')}>
-                                                            <ArrowDownCircle size={16} />
-                                                        </button>
-
-                                                        <button className="p-1 text-slate-400 hover:text-slate-600" title="查看日志" onClick={() => handleViewLog(inst)}>
-                                                            <FileText size={16} />
-                                                        </button>
+                                                        {['RUNNING', 'WAITING', 'PENDING'].includes(inst.status) && (
+                                                            <button onClick={() => handleStop(inst)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="停止">
+                                                                <StopCircle size={14} />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>
-                                        )
+                                        );
                                     })
                                 )}
                             </tbody>
                         </table>
                     </div>
                 )}
+                {listViewMode === 'list' && filteredInstances.length > 0 && (
+                    <div className="mt-4 px-2">
+                        <Pagination
+                            total={filteredInstances.length}
+                            current={currentPage}
+                            pageSize={pageSize}
+                            onChange={(page, size) => {
+                                setCurrentPage(page);
+                                setPageSize(size);
+                            }}
+                            showSizeChanger={true}
+                        />
+                    </div>
+                )}
             </div>
 
-            <div className="p-4 border-t border-slate-200 bg-slate-50">
-                <Pagination
-                    current={currentPage}
-                    total={filteredInstances.length}
-                    pageSize={pageSize}
-                    showSizeChanger
-                    onChange={(page, size) => {
-                        setCurrentPage(page);
-                        setPageSize(size);
-                    }}
-                />
-            </div>
+
+
+            {/* Detail Drawer */}
+            <InstanceDetailDrawer
+                visible={isDetailOpen}
+                onClose={() => setIsDetailOpen(false)}
+                instance={detailInstance}
+                task={detailInstance ? tasks[detailInstance.taskId] : undefined}
+                systemName={detailInstance ? systems.find(s => String(s.id) === String(detailInstance.systemId))?.name : undefined}
+                workflowName={detailInstance ? taskToWorkflowMap[detailInstance.taskId] : undefined}
+                onViewLog={handleViewLog}
+            />
 
             {/* Log Console Modal */}
             {
                 showLog && (
-                    <div className="absolute inset-0 z-[3000] flex items-center justify-center">
-                        <div className="w-[800px] h-[600px] bg-slate-900 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-scale-in">
-                            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-900">
-                                <div className="flex items-center gap-2 text-slate-300">
-                                    <Terminal size={18} />
-                                    <span className="font-mono text-sm font-bold">Task Log: {selectedInstance?.id}</span>
+                    <div className="absolute inset-0 z-[3000] flex items-center justify-center bg-slate-200/20 backdrop-blur-sm">
+                        <div className="w-[850px] h-[650px] bg-white rounded-3xl shadow-2xl border border-slate-200/60 flex flex-col overflow-hidden animate-scale-in">
+                            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+                                <div className="flex items-center gap-3 text-slate-700">
+                                    <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+                                        <Terminal size={18} />
+                                    </div>
+                                    <div>
+                                        <div className="font-bold text-sm">任务执行日志</div>
+                                        <div className="text-[10px] text-slate-400 font-mono tracking-tighter">INSTANCE ID: {selectedInstance?.id}</div>
+                                    </div>
                                 </div>
-                                <button onClick={() => setShowLog(false)} className="text-slate-500 hover:text-white transition-colors">
+                                <button onClick={() => setShowLog(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all">
                                     <X size={20} />
                                 </button>
                             </div>
-                            <div className="flex-1 p-4 overflow-auto font-mono text-xs text-slate-300 space-y-1 whitespace-pre-wrap">
+                            <div className="flex-1 p-6 overflow-auto font-mono text-[12px] text-slate-600 space-y-1 whitespace-pre-wrap bg-slate-50/30">
                                 {logLoading ? (
-                                    <div className="flex items-center justify-center h-full text-slate-500">
-                                        <RotateCw className="animate-spin mr-2" /> Loading logs...
+                                    <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3">
+                                        <RotateCw className="animate-spin" size={24} />
+                                        <span className="text-sm font-medium">正在获取运行日志...</span>
                                     </div>
                                 ) : (
-                                    logContent
+                                    <div className="leading-relaxed">
+                                        {logContent}
+                                    </div>
                                 )}
                             </div>
                         </div>

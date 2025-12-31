@@ -1,7 +1,7 @@
 package com.example.executor.urgs_executor.handler.impl;
 
 import com.example.executor.urgs_executor.entity.DataSourceConfig;
-import com.example.executor.urgs_executor.entity.TaskInstance;
+import com.example.executor.urgs_executor.entity.ExecutorTaskInstance;
 import com.example.executor.urgs_executor.handler.TaskHandler;
 import com.example.executor.urgs_executor.mapper.DataSourceConfigMapper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -28,7 +28,7 @@ public class HttpTaskHandler implements TaskHandler {
     private DataSourceConfigMapper dataSourceConfigMapper;
 
     @Override
-    public String execute(TaskInstance instance) throws Exception {
+    public String execute(ExecutorTaskInstance instance) throws Exception {
         String url = "";
         String method = "GET";
         String body = null;

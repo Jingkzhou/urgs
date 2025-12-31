@@ -1,7 +1,7 @@
 package com.example.executor.urgs_executor.handler.impl;
 
 import com.example.executor.urgs_executor.entity.DataSourceConfig;
-import com.example.executor.urgs_executor.entity.TaskInstance;
+import com.example.executor.urgs_executor.entity.ExecutorTaskInstance;
 import com.example.executor.urgs_executor.handler.TaskHandler;
 import com.example.executor.urgs_executor.mapper.DataSourceConfigMapper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -29,7 +29,7 @@ public class PythonTaskHandler implements TaskHandler {
     private DataSourceConfigMapper dataSourceConfigMapper;
 
     @Override
-    public String execute(TaskInstance instance) throws Exception {
+    public String execute(ExecutorTaskInstance instance) throws Exception {
         String script = "";
         String resourceId = null;
 
@@ -47,8 +47,7 @@ public class PythonTaskHandler implements TaskHandler {
         }
 
         if (script.isEmpty()) {
-            log.warn("Python task {} has no script content", instance.getId());
-            return "No script content";
+            throw new RuntimeException("Python task " + instance.getId() + " has no script content");
         }
 
         // Replace $dataDate with actual date
@@ -63,7 +62,7 @@ public class PythonTaskHandler implements TaskHandler {
         }
     }
 
-    private String executeRemote(TaskInstance instance, String script, String resourceId) throws Exception {
+    private String executeRemote(ExecutorTaskInstance instance, String script, String resourceId) throws Exception {
         DataSourceConfig config = dataSourceConfigMapper.selectById(resourceId);
         if (config == null) {
             throw new RuntimeException("Resource not found: " + resourceId);
@@ -166,7 +165,7 @@ public class PythonTaskHandler implements TaskHandler {
         return logBuilder.toString();
     }
 
-    private String executeLocal(TaskInstance instance, String script) throws Exception {
+    private String executeLocal(ExecutorTaskInstance instance, String script) throws Exception {
         ProcessBuilder pb = new ProcessBuilder("python3", "-c", script);
         pb.redirectErrorStream(true);
         Process process = pb.start();

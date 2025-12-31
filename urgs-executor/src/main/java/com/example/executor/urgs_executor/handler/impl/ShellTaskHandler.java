@@ -1,10 +1,10 @@
 package com.example.executor.urgs_executor.handler.impl;
 
 import com.example.executor.urgs_executor.entity.DataSourceConfig;
-import com.example.executor.urgs_executor.entity.TaskInstance;
+import com.example.executor.urgs_executor.entity.ExecutorTaskInstance;
 import com.example.executor.urgs_executor.handler.TaskHandler;
 import com.example.executor.urgs_executor.mapper.DataSourceConfigMapper;
-import com.example.executor.urgs_executor.mapper.TaskInstanceMapper;
+import com.example.executor.urgs_executor.mapper.ExecutorTaskInstanceMapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,6 +21,10 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
+/**
+ * Shell 任务处理器
+ * 负责执行 Shell 脚本，支持本地执行和通过 SSH 远程执行。
+ */
 @Slf4j
 @Component("SHELL")
 public class ShellTaskHandler implements TaskHandler {
@@ -31,21 +35,35 @@ public class ShellTaskHandler implements TaskHandler {
     private DataSourceConfigMapper dataSourceConfigMapper;
 
     @Autowired
-    private TaskInstanceMapper taskInstanceMapper;
+    private ExecutorTaskInstanceMapper taskInstanceMapper;
 
-    private void updateLog(TaskInstance instance, String content) {
-        UpdateWrapper<TaskInstance> update = new UpdateWrapper<>();
+    /**
+     * 同步更新任务实例的日志内容
+     * 
+     * @param instance 任务实例
+     * @param content  日志内容
+     */
+
+    private void updateLog(ExecutorTaskInstance instance, String content) {
+        UpdateWrapper<ExecutorTaskInstance> update = new UpdateWrapper<>();
         update.eq("id", instance.getId());
         update.set("log_content", content);
         taskInstanceMapper.update(null, update);
         instance.setLogContent(content);
     }
 
+    /**
+     * 执行 Shell 任务的主入口
+     * 
+     * @param instance 任务实例信息
+     * @return 执行产生的日志内容
+     */
     @Override
-    public String execute(TaskInstance instance) throws Exception {
+    public String execute(ExecutorTaskInstance instance) throws Exception {
         String script = "";
         String resourceId = null;
 
+        // 1. 从内容快照中解析脚本内容和资源节点信息
         if (instance.getContentSnapshot() != null) {
             JsonNode node = objectMapper.readTree(instance.getContentSnapshot());
             if (node.has("rawScript")) {
@@ -59,16 +77,19 @@ public class ShellTaskHandler implements TaskHandler {
             }
         }
 
+        // 2. 校验脚本是否为空
         if (script.isEmpty()) {
-            log.warn("Shell task {} has no script content", instance.getId());
-            return "No script content";
+            log.error("Shell task {} script is empty. Content Snapshot: {}", instance.getId(),
+                    instance.getContentSnapshot());
+            throw new RuntimeException("Shell task " + instance.getId() + " has no script content");
         }
 
-        // Replace $dataDate with actual date
+        // 3. 变量替换：将 $dataDate 替换为实例对应的业务日期
         script = script.replace("$dataDate", instance.getDataDate());
 
         log.info("Executing Shell Task {}: {}", instance.getId(), script);
 
+        // 4. 根据是否配置了 resourceId 决定是远程执行还是本地执行
         if (resourceId != null && !resourceId.isEmpty()) {
             return executeRemote(instance, script, resourceId);
         } else {
@@ -76,7 +97,11 @@ public class ShellTaskHandler implements TaskHandler {
         }
     }
 
-    private String executeRemote(TaskInstance instance, String script, String resourceId) throws Exception {
+    /**
+     * 通过 SSH 远程执行 Shell 脚本
+     */
+    private String executeRemote(ExecutorTaskInstance instance, String script, String resourceId) throws Exception {
+        // 获取远程服务器的配置信息
         DataSourceConfig config = dataSourceConfigMapper.selectById(resourceId);
         if (config == null) {
             throw new RuntimeException("Resource not found: " + resourceId);
@@ -104,6 +129,7 @@ public class ShellTaskHandler implements TaskHandler {
         ChannelExec channel = null;
 
         try {
+            // 建立 SSH 会话
             session = jsch.getSession(username, host, port);
             if (password != null) {
                 session.setPassword(password);
@@ -111,6 +137,7 @@ public class ShellTaskHandler implements TaskHandler {
             session.setConfig("StrictHostKeyChecking", "no");
             session.connect(30000);
 
+            // 开启执行通道
             channel = (ChannelExec) session.openChannel("exec");
             channel.setCommand(script);
 
@@ -119,6 +146,7 @@ public class ShellTaskHandler implements TaskHandler {
 
             channel.connect();
 
+            // 实时读取输出日志并存入数据库
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
                     BufferedReader errReader = new BufferedReader(new InputStreamReader(err, StandardCharsets.UTF_8))) {
 
@@ -144,6 +172,7 @@ public class ShellTaskHandler implements TaskHandler {
                 updateLog(instance, logBuilder.toString());
             }
 
+            // 检查退出码
             int exitCode = channel.getExitStatus();
             if (exitCode != 0) {
                 logBuilder.append("\nRemote process exited with code ").append(exitCode);
@@ -152,6 +181,7 @@ public class ShellTaskHandler implements TaskHandler {
             }
 
         } finally {
+            // 资源释放
             if (channel != null)
                 channel.disconnect();
             if (session != null)
@@ -161,22 +191,27 @@ public class ShellTaskHandler implements TaskHandler {
         return logBuilder.toString();
     }
 
-    private String executeLocal(TaskInstance instance, String script) throws Exception {
-        // Security Note: In production, this should be sandboxed!
+    /**
+     * 在执行器所在的本地环境执行 Shell 脚本
+     */
+    private String executeLocal(ExecutorTaskInstance instance, String script) throws Exception {
+        // 安全提示：生产环境应考虑沙箱化执行，防止恶意脚本
         ProcessBuilder pb = new ProcessBuilder("sh", "-c", script);
-        pb.redirectErrorStream(true);
+        pb.redirectErrorStream(true); // 将标准错误合并到标准输出
         Process process = pb.start();
 
         StringBuilder logBuilder = new StringBuilder();
         logBuilder.append("Executing Local Shell Task ").append(instance.getId()).append("\n");
         logBuilder.append("Script: ").append(script).append("\n\n");
 
+        // 异步读取脚本执行产生的输出并更新到数据库
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
             String line;
             long lastUpdate = System.currentTimeMillis();
             while ((line = reader.readLine()) != null) {
                 log.info("[Shell-{}] {}", instance.getId(), line);
                 logBuilder.append(line).append("\n");
+                // 每隔一秒钟更新一次数据库中的日志，避免高频操作导致的压力
                 if (System.currentTimeMillis() - lastUpdate > 1000) {
                     updateLog(instance, logBuilder.toString());
                     lastUpdate = System.currentTimeMillis();
@@ -186,6 +221,7 @@ public class ShellTaskHandler implements TaskHandler {
         }
 
         try {
+            // 等待进程执行完毕，获取退出码
             int exitCode = process.waitFor();
             if (exitCode != 0) {
                 logBuilder.append("\nProcess exited with code ").append(exitCode);
@@ -194,7 +230,7 @@ public class ShellTaskHandler implements TaskHandler {
             }
         } catch (InterruptedException e) {
             log.warn("Shell task {} interrupted, killing process...", instance.getId());
-            process.destroy();
+            process.destroy(); // 任务被中断时（如应用关闭），确保子进程被杀死
             logBuilder.append("\nProcess interrupted and killed.");
             throw e;
         }

@@ -14,6 +14,7 @@ public class Task {
 
     private String name;
     private String type;
+    private String systemId;
     private String content; // JSON content
 
     private String cronExpression;

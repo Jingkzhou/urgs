@@ -2,7 +2,7 @@ package com.example.executor.urgs_executor.handler.impl;
 
 import com.example.executor.urgs_executor.entity.DataSourceConfig;
 import com.example.executor.urgs_executor.entity.DataSourceMeta;
-import com.example.executor.urgs_executor.entity.TaskInstance;
+import com.example.executor.urgs_executor.entity.ExecutorTaskInstance;
 import com.example.executor.urgs_executor.handler.TaskHandler;
 import com.example.executor.urgs_executor.mapper.DataSourceConfigMapper;
 import com.example.executor.urgs_executor.mapper.DataSourceMetaMapper;
@@ -31,7 +31,7 @@ public class ProcedureTaskHandler implements TaskHandler {
     private DataSourceMetaMapper dataSourceMetaMapper;
 
     @Override
-    public String execute(TaskInstance instance) throws Exception {
+    public String execute(ExecutorTaskInstance instance) throws Exception {
         String script = "";
         String resourceId = null;
 
@@ -62,7 +62,7 @@ public class ProcedureTaskHandler implements TaskHandler {
         return executeProcedure(instance, script, resourceId);
     }
 
-    private String executeProcedure(TaskInstance instance, String script, String resourceId) throws Exception {
+    private String executeProcedure(ExecutorTaskInstance instance, String script, String resourceId) throws Exception {
         DataSourceConfig config = dataSourceConfigMapper.selectById(resourceId);
         if (config == null) {
             throw new RuntimeException("Resource not found: " + resourceId);

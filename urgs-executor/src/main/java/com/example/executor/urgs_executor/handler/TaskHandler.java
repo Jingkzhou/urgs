@@ -1,7 +1,7 @@
 package com.example.executor.urgs_executor.handler;
 
-import com.example.executor.urgs_executor.entity.TaskInstance;
+import com.example.executor.urgs_executor.entity.ExecutorTaskInstance;
 
 public interface TaskHandler {
-    String execute(TaskInstance instance) throws Exception;
+    String execute(ExecutorTaskInstance taskInstance) throws Exception;
 }

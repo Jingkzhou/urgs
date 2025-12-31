@@ -551,6 +551,7 @@ public class TaskService {
         if (task != null) {
             instance.setSystemId(task.getSystemId());
             instance.setTaskType(task.getType());
+            instance.setContentSnapshot(task.getContent());
         }
 
         instance.setCreateTime(LocalDateTime.now());
