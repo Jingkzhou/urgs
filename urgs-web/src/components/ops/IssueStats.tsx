@@ -149,7 +149,7 @@ const IssueStats: React.FC<IssueStatsProps> = ({ frequency }) => {
                 {/* 状态分布饼图 */}
                 <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
                     <h3 className="text-sm font-semibold text-slate-700 mb-4">问题状态分布</h3>
-                    <ResponsiveContainer width="100%" height={200}>
+                    <ResponsiveContainer width="100%" height={200} minWidth={0}>
                         <PieChart>
                             <Pie
                                 data={stats.statusStats}
@@ -174,7 +174,7 @@ const IssueStats: React.FC<IssueStatsProps> = ({ frequency }) => {
                 {/* 问题类型柱状图 */}
                 <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
                     <h3 className="text-sm font-semibold text-slate-700 mb-4">问题类型分布</h3>
-                    <ResponsiveContainer width="100%" height={200}>
+                    <ResponsiveContainer width="100%" height={200} minWidth={0}>
                         <BarChart data={stats.typeStats}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                             <XAxis dataKey="name" tick={{ fontSize: 12 }} />
@@ -190,7 +190,7 @@ const IssueStats: React.FC<IssueStatsProps> = ({ frequency }) => {
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="text-sm font-semibold text-slate-700">问题趋势</h3>
                     </div>
-                    <ResponsiveContainer width="100%" height={200}>
+                    <ResponsiveContainer width="100%" height={200} minWidth={0}>
                         <LineChart data={stats.trend}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                             <XAxis dataKey="period" tick={{ fontSize: 12 }} />
@@ -204,7 +204,7 @@ const IssueStats: React.FC<IssueStatsProps> = ({ frequency }) => {
                 {/* 处理人工时统计 */}
                 <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
                     <h3 className="text-sm font-semibold text-slate-700 mb-4">处理人工时统计</h3>
-                    <ResponsiveContainer width="100%" height={200}>
+                    <ResponsiveContainer width="100%" height={200} minWidth={0}>
                         <BarChart data={stats.handlerStats} layout="vertical">
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                             <XAxis type="number" tick={{ fontSize: 12 }} />

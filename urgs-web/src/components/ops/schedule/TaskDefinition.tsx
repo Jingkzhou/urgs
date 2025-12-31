@@ -27,11 +27,27 @@ const TaskDefinition: React.FC = () => {
     const [showStats, setShowStats] = useState(true);
     const [globalStats, setGlobalStats] = useState({ total: 0, enabled: 0, disabled: 0, systems: 0, workflows: 0 });
 
+
     const {
         dependencyGraph,
         setDependencyGraph,
         handleShowDependencies
     } = useTaskDependencies();
+
+    // Compute stats
+    const stats = useMemo(() => {
+        const typeCount: Record<string, number> = {};
+        tasks.forEach(t => {
+            typeCount[t.type] = (typeCount[t.type] || 0) + 1;
+        });
+        return {
+            total: tasks.length,
+            enabled: tasks.filter(t => t.status !== 0).length,
+            disabled: tasks.filter(t => t.status === 0).length,
+            typeCount
+        };
+    }, [tasks]);
+
 
     const fetchTasks = async (page = pagination.current, size = pagination.pageSize) => {
         setLoading(true);
@@ -409,19 +425,7 @@ const TaskDefinition: React.FC = () => {
         );
     }
 
-    // Compute stats
-    const stats = useMemo(() => {
-        const typeCount: Record<string, number> = {};
-        tasks.forEach(t => {
-            typeCount[t.type] = (typeCount[t.type] || 0) + 1;
-        });
-        return {
-            total: tasks.length,
-            enabled: tasks.filter(t => t.status !== 0).length,
-            disabled: tasks.filter(t => t.status === 0).length,
-            typeCount
-        };
-    }, [tasks]);
+
 
 
     return (
