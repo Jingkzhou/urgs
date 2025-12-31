@@ -27,6 +27,33 @@ class Neo4jClient:
     def close(self):
         self.driver.close()
     
+    def ensure_indexes(self):
+        """
+        确保所有必要的索引已创建。
+        应在首次连接或数据导入前调用。
+        索引会显著提升查询性能。
+        """
+        index_statements = [
+            # Table 节点唯一性约束（MERGE 操作会利用约束快速定位）
+            "CREATE CONSTRAINT constraint_table_name IF NOT EXISTS FOR (t:Table) REQUIRE t.name IS UNIQUE",
+            # Column 节点复合唯一性约束 (name + table)
+            "CREATE CONSTRAINT constraint_column_name_table IF NOT EXISTS FOR (c:Column) REQUIRE (c.name, c.table) IS UNIQUE",
+            # Column 单字段索引（用于按 table 查询）
+            "CREATE INDEX idx_column_table IF NOT EXISTS FOR (c:Column) ON (c.table)",
+            # LineageVersion 节点唯一性约束
+            "CREATE CONSTRAINT constraint_version_id IF NOT EXISTS FOR (v:LineageVersion) REQUIRE v.id IS UNIQUE",
+            "CREATE INDEX idx_version_created IF NOT EXISTS FOR (v:LineageVersion) ON (v.createdAt)",
+        ]
+        
+        with self.driver.session() as session:
+            for stmt in index_statements:
+                try:
+                    session.run(stmt)
+                except Exception as e:
+                    # 索引可能已存在，忽略错误
+                    print(f"  索引创建跳过 (可能已存在): {e}")
+            print("✓ Neo4j 索引检查完成")
+    
     # ================================
     # 版本管理相关方法
     # ================================
@@ -75,27 +102,47 @@ class Neo4jClient:
         - Column 节点
         - LineageVersion 节点
         - 所有血缘关系边
+        
+        使用批量删除以避免大数据量时事务超时
         """
+        print("正在清除血缘数据...")
         with self.driver.session() as session:
-            # 删除所有关系和节点
-            # 先删除关系，再删除节点
+            # 使用 CALL IN TRANSACTIONS 批量删除，避免大数据量时内存溢出
+            # 每批删除 10000 个节点/关系
+            
+            # 1. 批量删除 Column 节点（会自动删除相关关系）
             session.run("""
-                MATCH ()-[r]->()
-                WHERE type(r) IN ['DERIVES_TO', 'FILTERS', 'JOINS', 'GROUPS', 'ORDERS', 
-                                  'CALLS', 'REFERENCES', 'BELONGS_TO']
-                DELETE r
+                CALL {
+                    MATCH (c:Column)
+                    RETURN c
+                    LIMIT 10000
+                }
+                CALL {
+                    WITH c
+                    DETACH DELETE c
+                } IN TRANSACTIONS OF 10000 ROWS
             """)
+            print("  - Column 节点已清除")
             
-            # 删除 Column 节点
-            session.run("MATCH (c:Column) DETACH DELETE c")
+            # 2. 批量删除 Table 节点
+            session.run("""
+                CALL {
+                    MATCH (t:Table)
+                    RETURN t
+                    LIMIT 10000
+                }
+                CALL {
+                    WITH t
+                    DETACH DELETE t
+                } IN TRANSACTIONS OF 10000 ROWS
+            """)
+            print("  - Table 节点已清除")
             
-            # 删除 Table 节点
-            session.run("MATCH (t:Table) DETACH DELETE t")
-            
-            # 删除 LineageVersion 节点
+            # 3. 删除 LineageVersion 节点
             session.run("MATCH (v:LineageVersion) DETACH DELETE v")
+            print("  - LineageVersion 节点已清除")
             
-            print("Cleared all lineage data from Neo4j.")
+            print("✓ 血缘数据清除完成")
 
     def create_lineage(self, source_table: str, target_table: str):
         """
@@ -126,8 +173,8 @@ class Neo4jClient:
             return
             
         with self.driver.session() as session:
-            # Batch size of 500 for efficiency and stability
-            batch_size = 500
+            # 优化：增加批次大小到 2000
+            batch_size = 2000
             total = len(relationships)
             for i in range(0, total, batch_size):
                  chunk = relationships[i:i + batch_size]
@@ -136,11 +183,11 @@ class Neo4jClient:
                  except Exception as e:
                      print(f"\n    Error in table batch {i//batch_size}: {e}")
 
-                 # Progress Log
+                 # Progress Log - 每 5000 条或最后一批打印一次
                  processed = min(i + batch_size, total)
-                 sys.stdout.write(f"\r    Processed {processed}/{total} table relationships...")
-                 sys.stdout.flush()
-                 time.sleep(0.05)
+                 if processed % 5000 == 0 or processed == total:
+                     sys.stdout.write(f"\r    Processed {processed}/{total} table relationships...")
+                     sys.stdout.flush()
             print("") # Newline after done
 
     @staticmethod
@@ -171,9 +218,27 @@ class Neo4jClient:
         """
         if not dependencies:
             return
-            
+        
+        # 分批处理以避免事务超时
+        batch_size = 2000
+        total = len(dependencies)
+        
         with self.driver.session() as session:
-            session.execute_write(self._create_and_link_columns_batch, dependencies)
+            for i in range(0, total, batch_size):
+                chunk = dependencies[i:i + batch_size]
+                try:
+                    session.execute_write(self._create_and_link_columns_batch, chunk)
+                except Exception as e:
+                    print(f"\n    Error in column lineage batch {i//batch_size}: {e}")
+                
+                # Progress Log
+                processed = min(i + batch_size, total)
+                if processed % 5000 == 0 or processed == total:
+                    sys.stdout.write(f"\r    Processed {processed}/{total} column dependencies...")
+                    sys.stdout.flush()
+            
+            if total > 0:
+                print("")
 
     @staticmethod
     def _create_and_link_columns_batch(tx, dependencies):
@@ -247,28 +312,28 @@ class Neo4jClient:
                     grouped[rtype] = []
                 grouped[rtype].append(item)
             
-            # Reduce batch size to 500 to avoid Transaction timeouts
-            batch_size = 500
+            # 增加批次大小到 2000 以提升性能
+            batch_size = 2000
             for rtype, group_items in grouped.items():
                 total = len(group_items)
                 print(f"  - Processing items of type {rtype} (Total: {total})...")
-                for i in range(0, total, batch_size):
-                    chunk = group_items[i:i + batch_size]
-                    # Execute with specific method
-                    try:
-                        with self.driver.session() as session:
-                             session.execute_write(batch_func, chunk, rtype)
-                    except Exception as e:
-                        print(f"\n    Error in batch {i//batch_size}: {e}")
-                        # Simple retry logic could go here, but for now just logging
-                    
-                    # Progress Log
-                    processed = min(i + batch_size, total)
-                    sys.stdout.write(f"\r    Processed {processed}/{total}...")
-                    sys.stdout.flush()
-                    
-                    # Short sleep to let server breathe
-                    time.sleep(0.1)
+                
+                # 复用同一个 session 以减少连接开销
+                with self.driver.session() as session:
+                    for i in range(0, total, batch_size):
+                        chunk = group_items[i:i + batch_size]
+                        # Execute with specific method
+                        try:
+                            session.execute_write(batch_func, chunk, rtype)
+                        except Exception as e:
+                            print(f"\n    Error in batch {i//batch_size}: {e}")
+                        
+                        # Progress Log - 每 5000 条或最后一批打印一次
+                        processed = min(i + batch_size, total)
+                        if processed % 5000 == 0 or processed == total:
+                            sys.stdout.write(f"\r    Processed {processed}/{total}...")
+                            sys.stdout.flush()
+                
                 print(" Done.")
 
         # 1. Process Direct Lineage

@@ -120,6 +120,14 @@ def main():
         # lineage_parser instantiation DEFERRED to avoid JVM start in main process
         neo4j = get_neo4j_client()
         
+        # 确保 Neo4j 索引存在（优化查询性能）
+        if neo4j:
+            logger.info("Checking Neo4j indexes...")
+            try:
+                neo4j.ensure_indexes()
+            except Exception as e:
+                logger.warning(f"Failed to ensure indexes (continuing anyway): {e}")
+        
         import csv
         
         # 自动生成版本号

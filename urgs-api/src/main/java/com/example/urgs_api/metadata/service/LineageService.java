@@ -47,11 +47,14 @@ public class LineageService {
     public Map<String, Object> searchTables(String keyword, int page, int size) {
         int skip = (page - 1) * size;
 
-        // 1. Count query
-        String countQuery = "MATCH (n:Table) WHERE toLower(n.name) CONTAINS toLower($keyword) RETURN count(n) as total";
+        // 预处理关键词为大写，以匹配索引（数据导入时已统一转大写）
+        String normalizedKeyword = (keyword != null) ? keyword.toUpperCase() : "";
 
-        // 2. Data query
-        String dataQuery = "MATCH (n:Table) WHERE toLower(n.name) CONTAINS toLower($keyword) " +
+        // 1. Count query - 使用 CONTAINS 进行模糊匹配（索引仍可用于前缀匹配）
+        String countQuery = "MATCH (n:Table) WHERE n.name CONTAINS $keyword RETURN count(n) as total";
+
+        // 2. Data query - 优化后的查询，移除 toLower 函数
+        String dataQuery = "MATCH (n:Table) WHERE n.name CONTAINS $keyword " +
                 "OPTIONAL MATCH (c:Column)-[:BELONGS_TO]->(n) " +
                 "RETURN n.name AS name, collect(c.name) AS columns ORDER BY n.name SKIP $skip LIMIT $limit";
 
@@ -60,13 +63,13 @@ public class LineageService {
 
         try (Session session = driver.session()) {
             // Execute count
-            Result countResult = session.run(countQuery, Map.of("keyword", keyword));
+            Result countResult = session.run(countQuery, Map.of("keyword", normalizedKeyword));
             if (countResult.hasNext()) {
                 total = countResult.next().get("total").asLong();
             }
 
             // Execute data fetch
-            Result result = session.run(dataQuery, Map.of("keyword", keyword, "skip", skip, "limit", size));
+            Result result = session.run(dataQuery, Map.of("keyword", normalizedKeyword, "skip", skip, "limit", size));
             while (result.hasNext()) {
                 var record = result.next();
                 Map<String, Object> item = new HashMap<>();
@@ -101,7 +104,11 @@ public class LineageService {
     public Map<String, Object> getGraphData(String tableName, String columnName, int depth) {
         String baseStart;
         Map<String, Object> params = new HashMap<>();
-        params.put("tableName", tableName);
+
+        // 预处理表名和列名为大写，以匹配索引（数据导入时已统一转大写）
+        String normalizedTableName = (tableName != null) ? tableName.toUpperCase() : "";
+        String normalizedColumnName = (columnName != null && !columnName.isEmpty()) ? columnName.toUpperCase() : null;
+        params.put("tableName", normalizedTableName);
 
         // Handle infinite depth request with a safe upper bound to prevent timeouts
         int queryDepth = (depth == -1) ? 30 : depth;
@@ -109,14 +116,13 @@ public class LineageService {
         if (queryDepth < 1)
             queryDepth = 1;
 
-        if (columnName != null && !columnName.isEmpty()) {
-            params.put("colName", columnName);
-            // Start from specific column.
-            baseStart = "MATCH (t:Table)<-[:BELONGS_TO]-(c:Column {name: $colName}) WHERE toLower(t.name) = toLower($tableName) WITH c as startNode ";
+        if (normalizedColumnName != null) {
+            params.put("colName", normalizedColumnName);
+            // Start from specific column - 优化：直接使用索引匹配
+            baseStart = "MATCH (t:Table {name: $tableName})<-[:BELONGS_TO]-(c:Column {name: $colName}) WITH c as startNode ";
         } else {
-            // Start from Table and all its Columns
-            baseStart = "MATCH (n:Table) WHERE toLower(n.name) = toLower($tableName) OPTIONAL MATCH (n)<-[:BELONGS_TO]-(c:Column) "
-                    +
+            // Start from Table and all its Columns - 优化：直接使用索引匹配
+            baseStart = "MATCH (n:Table {name: $tableName}) OPTIONAL MATCH (n)<-[:BELONGS_TO]-(c:Column) " +
                     "WITH n, collect(c) + n as startNodes UNWIND startNodes as startNode ";
         }
 
@@ -221,9 +227,13 @@ public class LineageService {
         List<String> relationTypes = (types != null && !types.isEmpty()) ? types : ALL_LINEAGE_RELATION_TYPES;
         String relTypesStr = String.join("|", relationTypes);
 
+        // 预处理表名和列名为大写，以匹配索引
+        String normalizedTableName = (tableName != null) ? tableName.toUpperCase() : "";
+        String normalizedColumnName = (columnName != null) ? columnName.toUpperCase() : "";
+
         Map<String, Object> params = new HashMap<>();
-        params.put("tableName", tableName);
-        params.put("columnName", columnName);
+        params.put("tableName", normalizedTableName);
+        params.put("columnName", normalizedColumnName);
 
         // 构建版本过滤条件
         String versionFilter = "";
@@ -252,9 +262,13 @@ public class LineageService {
      */
     public Map<String, Object> getLineageTrace(String tableName, String columnName,
             String direction, String version, int depth) {
+        // 预处理表名和列名为大写，以匹配索引
+        String normalizedTableName = (tableName != null) ? tableName.toUpperCase() : "";
+        String normalizedColumnName = (columnName != null) ? columnName.toUpperCase() : "";
+
         Map<String, Object> params = new HashMap<>();
-        params.put("tableName", tableName);
-        params.put("columnName", columnName);
+        params.put("tableName", normalizedTableName);
+        params.put("columnName", normalizedColumnName);
 
         String versionFilter = "";
         if (version != null && !version.isEmpty()) {
