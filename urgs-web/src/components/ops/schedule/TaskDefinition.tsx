@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, Folder, FileCode, MoreVertical, Edit, Trash2, Play, Save, X, Link, GitFork, Calendar, LayoutGrid, List, FileText, Server, Activity, CheckCircle, ChevronUp, ChevronDown } from 'lucide-react';
+import { Search, Plus, Folder, FileCode, MoreVertical, Edit, Trash2, Play, Save, X, Link, GitFork, Calendar, LayoutGrid, List, FileText, Server, Activity, CheckCircle, ChevronUp, ChevronDown, CheckSquare, Square, PauseCircle, PlayCircle } from 'lucide-react';
 import { message, Select, Modal, DatePicker, Checkbox } from 'antd';
 import dayjs from 'dayjs';
 import Pagination from '../../common/Pagination';
@@ -88,6 +88,7 @@ const TaskDefinition: React.FC = () => {
                     type: t.type,
                     systemId: t.systemId,
                     group: 'default', // Backend doesn't have group yet
+                    status: t.status,
                     updateTime: t.updateTime,
                     ...JSON.parse(t.content || '{}') // Merge content
                 }));
@@ -295,6 +296,39 @@ const TaskDefinition: React.FC = () => {
             }
         });
         return relatedWorkflows.map(w => w.name).join(', ') || '-';
+    };
+
+    const handleBatchStatusUpdate = async (status: number) => {
+        if (selectedRowKeys.length === 0) {
+            message.warning('请先选择任务');
+            return;
+        }
+
+        try {
+            setLoading(true);
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch('/api/task/batch-status', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ ids: selectedRowKeys, status })
+            });
+
+            if (res.ok) {
+                message.success(status === 1 ? '批量启动成功' : '批量暂停成功');
+                fetchTasks(); // Refresh list to see updated status
+                setSelectedRowKeys([]);
+            } else {
+                message.error('操作失败');
+            }
+        } catch (error) {
+            console.error('Batch update error:', error);
+            message.error('操作出错');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleBatchDispatch = () => {
@@ -507,16 +541,37 @@ const TaskDefinition: React.FC = () => {
                             <LayoutGrid size={18} strokeWidth={2.5} />
                         </button>
                     </div>
-
-                    <button
-                        onClick={handleBatchDispatch}
-                        className="flex items-center gap-2.5 px-5 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-2xl hover:bg-slate-800 active:scale-95 transition-all shadow-lg shadow-slate-200"
-                    >
-                        <Calendar size={16} strokeWidth={2.5} />
-                        批量下发任务
-                    </button>
                 </div>
+
+                {selectedRowKeys.length > 0 && (
+                    <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-4 duration-300">
+                        <button
+                            onClick={() => handleBatchStatusUpdate(1)}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 text-sm font-medium rounded-xl transition-colors border border-emerald-200/50"
+                            title="批量启动"
+                        >
+                            <PlayCircle size={16} />
+                            启动
+                        </button>
+                        <button
+                            onClick={() => handleBatchStatusUpdate(0)}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 text-amber-600 hover:bg-amber-100 hover:text-amber-700 text-sm font-medium rounded-xl transition-colors border border-amber-200/50"
+                            title="批量暂停"
+                        >
+                            <PauseCircle size={16} />
+                            暂停
+                        </button>
+                    </div>
+                )}
+                <button
+                    onClick={handleBatchDispatch}
+                    className="flex items-center gap-2.5 px-5 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-2xl hover:bg-slate-800 active:scale-95 transition-all shadow-lg shadow-slate-200"
+                >
+                    <Calendar size={16} strokeWidth={2.5} />
+                    批量下发任务
+                </button>
             </div>
+
 
             {/* Content Area */}
             <div className="flex-1 overflow-auto px-6 py-6">
@@ -570,6 +625,7 @@ const TaskDefinition: React.FC = () => {
                                     <th className="px-6 py-3 font-medium whitespace-nowrap">任务名称</th>
                                     <th className="px-6 py-3 font-medium whitespace-nowrap">所属工作流</th>
                                     <th className="px-6 py-3 font-medium whitespace-nowrap">所属系统</th>
+                                    <th className="px-6 py-3 font-medium whitespace-nowrap">状态</th>
                                     <th className="px-6 py-3 font-medium whitespace-nowrap">类型</th>
                                     <th className="px-6 py-3 font-medium whitespace-nowrap">执行器组</th>
                                     <th className="px-6 py-3 font-medium whitespace-nowrap">更新时间</th>
@@ -614,6 +670,19 @@ const TaskDefinition: React.FC = () => {
                                         </td>
                                         <td className="px-6 py-2 text-slate-600 whitespace-nowrap">
                                             {systems.find(s => String(s.id) === String(task.systemId))?.name || '-'}
+                                        </td>
+                                        <td className="px-6 py-2">
+                                            {task.status === 1 ? (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100/50">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                    启用
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200/50">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                                    禁用
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-2">
                                             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
@@ -687,7 +756,7 @@ const TaskDefinition: React.FC = () => {
                     </div>
                 </div>
             </Modal>
-        </div>
+        </div >
     );
 };
 

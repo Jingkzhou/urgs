@@ -194,6 +194,9 @@ export const saveTask = (data: Partial<Task>) =>
 export const deleteTask = (id: string) =>
     del(`/api/task/${id}`);
 
+export const batchUpdateTaskStatus = (ids: string[], status: number) =>
+    post<string>('/api/task/batch-status', { ids, status });
+
 export const getGlobalStats = () =>
     get<any>('/api/task/global-stats');
 

@@ -40,6 +40,33 @@ public class TaskController {
         return "Success";
     }
 
+    @PostMapping("/batch-status")
+    public String batchUpdateStatus(@RequestBody BatchStatusDto dto) {
+        taskService.batchUpdateStatus(dto.getIds(), dto.getStatus());
+        return "Success";
+    }
+
+    public static class BatchStatusDto {
+        private java.util.List<String> ids;
+        private Integer status;
+
+        public java.util.List<String> getIds() {
+            return ids;
+        }
+
+        public void setIds(java.util.List<String> ids) {
+            this.ids = ids;
+        }
+
+        public Integer getStatus() {
+            return status;
+        }
+
+        public void setStatus(Integer status) {
+            this.status = status;
+        }
+    }
+
     public static class TaskDto {
         private String id;
         private String name;

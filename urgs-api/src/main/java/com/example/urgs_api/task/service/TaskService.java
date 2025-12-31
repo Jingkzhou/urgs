@@ -103,6 +103,18 @@ public class TaskService {
         taskMapper.deleteById(id);
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public void batchUpdateStatus(List<String> ids, Integer status) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        UpdateWrapper<Task> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.in("id", ids);
+        updateWrapper.set("status", status);
+        updateWrapper.set("update_time", LocalDateTime.now());
+        taskMapper.update(null, updateWrapper);
+    }
+
     public com.baomidou.mybatisplus.core.metadata.IPage<Task> listTasks(String keyword, String workflowIds,
             Integer page, Integer size) {
         com.baomidou.mybatisplus.extension.plugins.pagination.Page<Task> pageObj = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(
