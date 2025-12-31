@@ -546,6 +546,7 @@ public class TaskService {
         Task task = taskMapper.selectById(taskId);
         if (task != null) {
             instance.setSystemId(task.getSystemId());
+            instance.setTaskType(task.getType());
         }
 
         instance.setCreateTime(LocalDateTime.now());
