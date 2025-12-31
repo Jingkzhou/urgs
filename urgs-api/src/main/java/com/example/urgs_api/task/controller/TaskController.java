@@ -22,11 +22,12 @@ public class TaskController {
     public com.baomidou.mybatisplus.core.metadata.IPage<com.example.urgs_api.task.entity.Task> listTasks(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String workflowIds,
+            @RequestParam(required = false) Integer status,
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer size) {
         System.out.println("DEBUG: listTasks called with keyword='" + keyword + "', workflowIds='" + workflowIds
-                + "', page=" + page + ", size=" + size);
-        return taskService.listTasks(keyword, workflowIds, page, size);
+                + "', status=" + status + ", page=" + page + ", size=" + size);
+        return taskService.listTasks(keyword, workflowIds, status, page, size);
     }
 
     @GetMapping("/global-stats")

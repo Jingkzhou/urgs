@@ -116,12 +116,16 @@ public class TaskService {
     }
 
     public com.baomidou.mybatisplus.core.metadata.IPage<Task> listTasks(String keyword, String workflowIds,
+            Integer status,
             Integer page, Integer size) {
         com.baomidou.mybatisplus.extension.plugins.pagination.Page<Task> pageObj = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(
                 page, size);
         QueryWrapper<Task> query = new QueryWrapper<>();
         if (StringUtils.hasText(keyword)) {
             query.like("name", keyword);
+        }
+        if (status != null) {
+            query.eq("status", status);
         }
 
         if (StringUtils.hasText(workflowIds)) {

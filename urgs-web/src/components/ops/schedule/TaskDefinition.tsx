@@ -28,6 +28,7 @@ const TaskDefinition: React.FC = () => {
     const [showStats, setShowStats] = useState(true);
     const [globalStats, setGlobalStats] = useState({ total: 0, enabled: 0, disabled: 0, systems: 0, workflows: 0 });
     const [targetWorkflowId, setTargetWorkflowId] = useState<string>('');
+    const [statusFilter, setStatusFilter] = useState<number | ''>('');
 
 
     const {
@@ -61,6 +62,9 @@ const TaskDefinition: React.FC = () => {
             if (searchText) params.append('keyword', searchText);
             if (selectedWorkflows.length > 0 && !selectedWorkflows.includes('ALL')) {
                 params.append('workflowIds', selectedWorkflows.join(','));
+            }
+            if (statusFilter !== '') {
+                params.append('status', statusFilter.toString());
             }
 
             const res = await fetch(`/api/task/list?${params.toString()}`, {
@@ -108,7 +112,7 @@ const TaskDefinition: React.FC = () => {
 
     useEffect(() => {
         fetchTasks(1, pagination.pageSize);
-    }, [selectedWorkflows]);
+    }, [selectedWorkflows, statusFilter]);
 
     const fetchWorkflows = async () => {
         try {
@@ -666,6 +670,18 @@ const TaskDefinition: React.FC = () => {
                         onChange={handleWorkflowChange}
                         options={[{ label: '全部', value: 'ALL' }, ...workflows.map(w => ({ label: w.name, value: w.id }))]}
                         maxTagCount="responsive"
+                    />
+
+                    <Select
+                        style={{ width: 120 }}
+                        placeholder="状态筛选"
+                        value={statusFilter}
+                        onChange={(value) => setStatusFilter(value)}
+                        options={[
+                            { label: '全部状态', value: '' },
+                            { label: '启用', value: 1 },
+                            { label: '禁用', value: 0 }
+                        ]}
                     />
                 </div>
                 <div className="flex items-center gap-4">
