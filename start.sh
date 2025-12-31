@@ -4,7 +4,9 @@ set -euo pipefail
 # Force Java 17 for Lombok compatibility
 export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home
 export PATH=$JAVA_HOME/bin:$PATH
+export HF_ENDPOINT=https://hf-mirror.com
 echo "Using JAVA_HOME: $JAVA_HOME"
+echo "Using HF_ENDPOINT: $HF_ENDPOINT"
 
 ENVIRONMENT="${1:-dev}"
 case "$ENVIRONMENT" in
