@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Card, Row, Col, Badge, AutoComplete, Upload } from 'antd';
-import { Plus, Server, Cpu, HardDrive, Database, Search, RefreshCw, Edit, Trash2, Globe, Shield, Activity, Download, UploadCloud, Users } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Table, Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Card, Row, Col, Badge, AutoComplete, Upload, Drawer, Descriptions, Divider, Tooltip, Typography } from 'antd';
+import { Plus, Server, Cpu, HardDrive, Database, Search, RefreshCw, Edit, Trash2, Globe, Shield, Activity, Download, UploadCloud, Users, X, Terminal, Info, Monitor, ChevronRight, Eye } from 'lucide-react';
 import {
     getDeployEnvironments, SsoConfig,
 } from '@/api/version';
@@ -10,6 +10,7 @@ import {
 } from '@/api/ops';
 
 const { Option } = Select;
+const { Text } = Typography;
 
 const InfrastructureManagement: React.FC = () => {
     const [assets, setAssets] = useState<InfrastructureAsset[]>([]);
@@ -21,14 +22,19 @@ const InfrastructureManagement: React.FC = () => {
     const [editingAsset, setEditingAsset] = useState<InfrastructureAsset | null>(null);
     const [form] = Form.useForm();
 
+    // 搜索条件状态
     const [filterSystemId, setFilterSystemId] = useState<number | undefined>();
     const [filterEnvId, setFilterEnvId] = useState<number | undefined>();
     const [filterEnvType, setFilterEnvType] = useState<string | undefined>();
+    const [filterHostname, setFilterHostname] = useState<string>('');
+    const [filterIp, setFilterIp] = useState<string>('');
 
-    useEffect(() => {
-        fetchAssets();
-        fetchSsoList();
-    }, []);
+    // 详情抽屉状态
+    const [detailVisible, setDetailVisible] = useState(false);
+    const [selectedAsset, setSelectedAsset] = useState<InfrastructureAsset | null>(null);
+
+    // 批量选择状态
+    const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
     const fetchAssets = async () => {
         setLoading(true);
@@ -53,6 +59,29 @@ const InfrastructureManagement: React.FC = () => {
         } catch (error) {
             console.error(error);
         }
+    };
+
+    useEffect(() => {
+        fetchAssets();
+        fetchSsoList();
+    }, []);
+
+    // 前端过滤（主机名和 IP 搜索）
+    const filteredAssets = useMemo(() => {
+        return assets.filter(asset => {
+            const hostnameMatch = !filterHostname ||
+                asset.hostname?.toLowerCase().includes(filterHostname.toLowerCase());
+            const ipMatch = !filterIp ||
+                asset.internalIp?.toLowerCase().includes(filterIp.toLowerCase()) ||
+                asset.externalIp?.toLowerCase().includes(filterIp.toLowerCase());
+            return hostnameMatch && ipMatch;
+        });
+    }, [assets, filterHostname, filterIp]);
+
+    // 打开详情抽屉
+    const handleViewDetail = (record: InfrastructureAsset) => {
+        setSelectedAsset(record);
+        setDetailVisible(true);
     };
 
     const handleSystemChange = async (systemId: number | undefined) => {
@@ -179,21 +208,25 @@ const InfrastructureManagement: React.FC = () => {
         {
             title: '关联系统/环境',
             key: 'context',
-            render: (_: any, record: InfrastructureAsset) => (
-                <div className="flex flex-col gap-1">
-                    <Tag className="m-0 border-none bg-blue-50 text-blue-700 text-[11px]">
-                        {ssoList.find(s => s.id === record.appSystemId)?.name || '未关联'}
-                    </Tag>
-                    <div className="flex items-center gap-1">
-                        {record.envType && <Tag className="m-0 text-[10px]" color="cyan">{record.envType}</Tag>}
-                        {record.envId && (
-                            <span className="text-[10px] text-slate-400">
-                                (E{record.envId})
-                            </span>
+            width: 180,
+            render: (_: any, record: InfrastructureAsset) => {
+                const systemName = ssoList.find(s => s.id === record.appSystemId)?.name;
+                return (
+                    <div className="flex items-center gap-1.5 text-sm">
+                        <span className="text-slate-700 truncate max-w-[100px]" title={systemName}>
+                            {systemName || '-'}
+                        </span>
+                        {record.envType && (
+                            <>
+                                <span className="text-slate-300">/</span>
+                                <Tag color="cyan" className="m-0 text-[10px] leading-tight px-1.5">
+                                    {record.envType}
+                                </Tag>
+                            </>
                         )}
                     </div>
-                </div>
-            )
+                );
+            }
         },
         {
             title: '硬件配置',
@@ -231,20 +264,24 @@ const InfrastructureManagement: React.FC = () => {
             dataIndex: 'status',
             key: 'status',
             render: (status: string) => getStatusTag(status)
-        },
-        {
-            title: '操作',
-            key: 'actions',
-            render: (_: any, record: InfrastructureAsset) => (
-                <Space>
-                    <Button type="text" size="small" icon={<Edit size={14} />} onClick={() => handleEdit(record)} />
-                    <Popconfirm title="确定删除资产？" onConfirm={() => handleDelete(record.id!)}>
-                        <Button type="text" size="small" danger icon={<Trash2 size={14} />} />
-                    </Popconfirm>
-                </Space>
-            )
         }
     ];
+
+    // 批量删除函数
+    const handleBatchDelete = async () => {
+        if (selectedRowKeys.length === 0) {
+            message.warning('请先选择要删除的资产');
+            return;
+        }
+        try {
+            await Promise.all(selectedRowKeys.map(id => deleteInfrastructureAsset(Number(id))));
+            message.success(`成功删除 ${selectedRowKeys.length} 个资产`);
+            setSelectedRowKeys([]);
+            fetchAssets();
+        } catch (error) {
+            message.error('批量删除失败');
+        }
+    };
 
     return (
         <div className="space-y-4">
@@ -278,45 +315,74 @@ const InfrastructureManagement: React.FC = () => {
 
             {/* Filter Area */}
             <Card size="small" className="shadow-sm border-slate-100">
-                <div className="flex flex-wrap gap-4 items-center">
-                    <div className="flex items-center gap-2">
-                        <Search size={16} className="text-slate-400" />
-                        <Select
-                            placeholder="按系统筛选"
-                            style={{ width: 180 }}
-                            allowClear
-                            onChange={handleSystemChange}
-                            value={filterSystemId}
-                        >
-                            {ssoList.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
-                        </Select>
-                        <Select
-                            placeholder="按环境筛选"
-                            style={{ width: 140 }}
-                            allowClear
-                            disabled={!filterSystemId}
-                            onChange={setFilterEnvId}
-                            value={filterEnvId}
-                        >
-                            {envs.map(e => <Option key={e.id} value={e.id}>{e.name}</Option>)}
-                        </Select>
-                        <AutoComplete
-                            placeholder="环境类型"
-                            style={{ width: 120 }}
-                            allowClear
-                            onChange={setFilterEnvType}
-                            value={filterEnvType}
-                            options={[
-                                { value: '测试环境' },
-                                { value: '生产环境' },
-                                { value: '开发环境' },
-                            ]}
-                            filterOption={(inputValue, option) =>
-                                option!.value.toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
-                            }
-                        />
-                    </div>
+                <div className="flex flex-wrap gap-3 items-center">
+                    {/* 主机名搜索 */}
+                    <Input
+                        placeholder="搜索主机名"
+                        style={{ width: 160 }}
+                        allowClear
+                        prefix={<Server size={14} className="text-slate-400" />}
+                        value={filterHostname}
+                        onChange={e => setFilterHostname(e.target.value)}
+                    />
+                    {/* IP 搜索 */}
+                    <Input
+                        placeholder="搜索 IP 地址"
+                        style={{ width: 160 }}
+                        allowClear
+                        prefix={<Globe size={14} className="text-slate-400" />}
+                        value={filterIp}
+                        onChange={e => setFilterIp(e.target.value)}
+                    />
+                    <Divider type="vertical" className="h-6 mx-1" />
+                    {/* 下拉筛选 */}
+                    <Select
+                        placeholder="按系统筛选"
+                        style={{ width: 160 }}
+                        allowClear
+                        onChange={handleSystemChange}
+                        value={filterSystemId}
+                    >
+                        {ssoList.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
+                    </Select>
+                    <Select
+                        placeholder="按环境筛选"
+                        style={{ width: 130 }}
+                        allowClear
+                        disabled={!filterSystemId}
+                        onChange={setFilterEnvId}
+                        value={filterEnvId}
+                    >
+                        {envs.map(e => <Option key={e.id} value={e.id}>{e.name}</Option>)}
+                    </Select>
+                    <AutoComplete
+                        placeholder="环境类型"
+                        style={{ width: 110 }}
+                        allowClear
+                        onChange={setFilterEnvType}
+                        value={filterEnvType}
+                        options={[
+                            { value: '测试环境' },
+                            { value: '生产环境' },
+                            { value: '开发环境' },
+                        ]}
+                        filterOption={(inputValue, option) =>
+                            option!.value.toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
+                        }
+                    />
                     <Button icon={<RefreshCw size={14} />} onClick={fetchAssets}>刷新</Button>
+                    {selectedRowKeys.length > 0 && (
+                        <Popconfirm
+                            title={`确定删除选中的 ${selectedRowKeys.length} 个资产？`}
+                            onConfirm={handleBatchDelete}
+                            okText="删除"
+                            okButtonProps={{ danger: true }}
+                        >
+                            <Button danger icon={<Trash2 size={14} />}>
+                                删除选中 ({selectedRowKeys.length})
+                            </Button>
+                        </Popconfirm>
+                    )}
                     <div className="ml-auto flex gap-2">
                         <Upload customRequest={handleImport} showUploadList={false} accept=".xlsx, .xls">
                             <Button icon={<UploadCloud size={14} />}>导入</Button>
@@ -331,11 +397,20 @@ const InfrastructureManagement: React.FC = () => {
 
             <Table
                 columns={columns}
-                dataSource={assets}
+                dataSource={filteredAssets}
                 rowKey="id"
                 loading={loading}
-                pagination={{ pageSize: 12, size: 'small' }}
+                pagination={{ pageSize: 12, size: 'small', showTotal: (total) => `共 ${total} 条` }}
                 className="bg-white rounded-lg shadow-sm border border-slate-100"
+                rowSelection={{
+                    selectedRowKeys,
+                    onChange: (keys) => setSelectedRowKeys(keys),
+                    columnWidth: 48
+                }}
+                onRow={(record) => ({
+                    onClick: () => handleViewDetail(record),
+                    className: 'cursor-pointer hover:bg-blue-50/50 transition-colors'
+                })}
             />
 
             {/* Manage Asset Modal */}
@@ -526,6 +601,210 @@ const InfrastructureManagement: React.FC = () => {
                     </Row>
                 </Form >
             </Modal >
+
+            {/* 详情抽屉 - 工业风格深色调设计 */}
+            <Drawer
+                title={null}
+                placement="right"
+                width={520}
+                open={detailVisible}
+                onClose={() => setDetailVisible(false)}
+                closable={false}
+                styles={{
+                    header: { display: 'none' },
+                    body: { padding: 0, background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)' }
+                }}
+            >
+                {selectedAsset && (
+                    <div className="min-h-full">
+                        {/* 头部区域 */}
+                        <div className="relative px-6 pt-6 pb-8 border-b border-slate-700/50">
+                            {/* 关闭按钮 */}
+                            <button
+                                onClick={() => setDetailVisible(false)}
+                                className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-slate-700/50 hover:bg-slate-600 transition-colors"
+                            >
+                                <X size={16} className="text-slate-400" />
+                            </button>
+
+                            {/* 标题区 */}
+                            <div className="flex items-start gap-4">
+                                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                                    <Server size={28} className="text-white" />
+                                </div>
+                                <div className="flex-1 pt-1">
+                                    <h2 className="text-xl font-bold text-white tracking-tight mb-1">
+                                        {selectedAsset.hostname}
+                                    </h2>
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-mono text-sm text-cyan-400">{selectedAsset.internalIp}</span>
+                                        {getStatusTag(selectedAsset.status)}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 快速信息栏 */}
+                            <div className="grid grid-cols-3 gap-3 mt-6">
+                                <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                                    <div className="text-[10px] uppercase text-slate-400 mb-1 font-medium">CPU</div>
+                                    <div className="text-white font-semibold flex items-center gap-1.5">
+                                        <Cpu size={14} className="text-cyan-400" />
+                                        {selectedAsset.cpu || '-'}
+                                    </div>
+                                </div>
+                                <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                                    <div className="text-[10px] uppercase text-slate-400 mb-1 font-medium">内存</div>
+                                    <div className="text-white font-semibold flex items-center gap-1.5">
+                                        <Activity size={14} className="text-green-400" />
+                                        {selectedAsset.memory || '-'}
+                                    </div>
+                                </div>
+                                <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                                    <div className="text-[10px] uppercase text-slate-400 mb-1 font-medium">磁盘</div>
+                                    <div className="text-white font-semibold flex items-center gap-1.5">
+                                        <HardDrive size={14} className="text-amber-400" />
+                                        {selectedAsset.disk || '-'}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 详情主体 */}
+                        <div className="px-6 py-5 space-y-6">
+                            {/* 基础信息 */}
+                            <div>
+                                <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 flex items-center gap-2">
+                                    <Monitor size={14} />
+                                    基础信息
+                                </h3>
+                                <div className="bg-slate-800/30 rounded-lg border border-slate-700/50 divide-y divide-slate-700/50">
+                                    <div className="flex px-4 py-3">
+                                        <span className="text-slate-400 text-sm w-24">主机名</span>
+                                        <span className="text-white font-medium">{selectedAsset.hostname}</span>
+                                    </div>
+                                    <div className="flex px-4 py-3">
+                                        <span className="text-slate-400 text-sm w-24">内网 IP</span>
+                                        <span className="text-cyan-400 font-mono">{selectedAsset.internalIp}</span>
+                                    </div>
+                                    {selectedAsset.externalIp && (
+                                        <div className="flex px-4 py-3">
+                                            <span className="text-slate-400 text-sm w-24">外网 IP</span>
+                                            <span className="text-cyan-400 font-mono">{selectedAsset.externalIp}</span>
+                                        </div>
+                                    )}
+                                    <div className="flex px-4 py-3">
+                                        <span className="text-slate-400 text-sm w-24">服务器角色</span>
+                                        <Tag className="uppercase font-mono text-[10px] m-0">{selectedAsset.role || 'UNCATEGORIZED'}</Tag>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 系统与环境 */}
+                            <div>
+                                <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 flex items-center gap-2">
+                                    <Globe size={14} />
+                                    系统与环境
+                                </h3>
+                                <div className="bg-slate-800/30 rounded-lg border border-slate-700/50 divide-y divide-slate-700/50">
+                                    <div className="flex px-4 py-3">
+                                        <span className="text-slate-400 text-sm w-24">关联系统</span>
+                                        <span className="text-white">{ssoList.find(s => s.id === selectedAsset.appSystemId)?.name || '未关联'}</span>
+                                    </div>
+                                    <div className="flex px-4 py-3">
+                                        <span className="text-slate-400 text-sm w-24">环境类型</span>
+                                        <Tag color="cyan" className="m-0">{selectedAsset.envType || '-'}</Tag>
+                                    </div>
+                                    <div className="flex px-4 py-3">
+                                        <span className="text-slate-400 text-sm w-24">操作系统</span>
+                                        <span className="text-white">{selectedAsset.osType || '-'}</span>
+                                    </div>
+                                    <div className="flex px-4 py-3">
+                                        <span className="text-slate-400 text-sm w-24">系统版本</span>
+                                        <span className="text-slate-300 font-mono text-sm">{selectedAsset.osVersion || '-'}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 硬件配置 */}
+                            {selectedAsset.hardwareModel && (
+                                <div>
+                                    <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 flex items-center gap-2">
+                                        <Server size={14} />
+                                        硬件信息
+                                    </h3>
+                                    <div className="bg-slate-800/30 rounded-lg border border-slate-700/50 px-4 py-3">
+                                        <span className="text-white">{selectedAsset.hardwareModel}</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 鉴权账号 */}
+                            {selectedAsset.users && selectedAsset.users.length > 0 && (
+                                <div>
+                                    <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 flex items-center gap-2">
+                                        <Users size={14} />
+                                        鉴权账号 ({selectedAsset.users.length})
+                                    </h3>
+                                    <div className="space-y-2">
+                                        {selectedAsset.users.map((user, idx) => (
+                                            <div key={idx} className="bg-slate-800/30 rounded-lg border border-slate-700/50 px-4 py-3 flex items-center gap-4">
+                                                <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                                                    <Terminal size={14} className="text-blue-400" />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className="text-white font-medium font-mono">{user.username}</div>
+                                                    {user.description && (
+                                                        <div className="text-slate-400 text-xs mt-0.5">{user.description}</div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 备注说明 */}
+                            {selectedAsset.description && (
+                                <div>
+                                    <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 flex items-center gap-2">
+                                        <Info size={14} />
+                                        备注说明
+                                    </h3>
+                                    <div className="bg-slate-800/30 rounded-lg border border-slate-700/50 px-4 py-3">
+                                        <Text className="text-slate-300 whitespace-pre-wrap">{selectedAsset.description}</Text>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 底部操作栏 */}
+                        <div className="px-6 py-4 border-t border-slate-700/50 bg-slate-900/50">
+                            <div className="flex gap-3">
+                                <Button
+                                    type="primary"
+                                    icon={<Edit size={14} />}
+                                    onClick={() => {
+                                        setDetailVisible(false);
+                                        handleEdit(selectedAsset);
+                                    }}
+                                    className="flex-1"
+                                >
+                                    编辑资产
+                                </Button>
+                                <Popconfirm
+                                    title="确定删除该资产？"
+                                    onConfirm={() => {
+                                        handleDelete(selectedAsset.id!);
+                                        setDetailVisible(false);
+                                    }}
+                                >
+                                    <Button danger icon={<Trash2 size={14} />}>删除</Button>
+                                </Popconfirm>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </Drawer>
         </div >
     );
 };
