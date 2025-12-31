@@ -21,11 +21,13 @@ const TaskDefinition: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
     const [dispatchModalVisible, setDispatchModalVisible] = useState(false);
+    const [dispatchTaskIds, setDispatchTaskIds] = useState<string[]>([]); // Track tasks to dispatch
     const [dispatchDate, setDispatchDate] = useState<dayjs.Dayjs | null>(dayjs());
     const [systems, setSystems] = useState<any[]>([]);
     const [listViewMode, setListViewMode] = useState<'list' | 'card'>('list');
     const [showStats, setShowStats] = useState(true);
     const [globalStats, setGlobalStats] = useState({ total: 0, enabled: 0, disabled: 0, systems: 0, workflows: 0 });
+    const [targetWorkflowId, setTargetWorkflowId] = useState<string>('');
 
 
     const {
@@ -201,6 +203,49 @@ const TaskDefinition: React.FC = () => {
         }
     };
 
+    const computedAvailableTasks = useMemo(() => {
+        let allowedTaskIds: Set<string> | null = null;
+        let workflowIdForContext = targetWorkflowId;
+
+        // If existing task and no explicit target workflow (which is normal for edit mode),
+        // try to find the workflow it belongs to.
+        if (selectedTask?.id && !workflowIdForContext) {
+            const foundWf = workflows.find(w => {
+                // Skip workflow filter check if 'ALL' was selected in list, just scan all
+                try {
+                    const c = JSON.parse(w.content || '{}');
+                    return c.nodes?.some((n: any) => n.id === selectedTask.id);
+                } catch { return false; }
+            });
+            if (foundWf) workflowIdForContext = foundWf.id;
+        }
+
+        if (workflowIdForContext) {
+            const wf = workflows.find(w => String(w.id) === String(workflowIdForContext));
+            if (wf) {
+                try {
+                    const c = JSON.parse(wf.content || '{}');
+                    if (Array.isArray(c.nodes)) {
+                        allowedTaskIds = new Set(c.nodes.map((n: any) => n.id));
+                    }
+                } catch (e) { }
+            }
+        }
+
+        if (allowedTaskIds) {
+            return allTasksOptions.filter(t =>
+                t.value !== selectedTask?.id && allowedTaskIds?.has(t.value)
+            );
+        }
+
+        // If creating new task and no workflow selected, allow no dependencies (must select WF first)
+        if (!selectedTask?.id && !targetWorkflowId) {
+            return [];
+        }
+
+        return allTasksOptions.filter(t => t.value !== selectedTask?.id);
+    }, [allTasksOptions, selectedTask, targetWorkflowId, workflows]);
+
     const handleEditTask = (task: any) => {
         setSelectedTask(task);
         setViewMode('editor');
@@ -210,6 +255,14 @@ const TaskDefinition: React.FC = () => {
     const handleNewTask = () => {
         setSelectedTask(null);
         setViewMode('editor');
+
+        // Auto-select workflow if strictly one is selected in filter (and not ALL)
+        if (selectedWorkflows.length === 1 && selectedWorkflows[0] !== 'ALL') {
+            setTargetWorkflowId(selectedWorkflows[0]);
+        } else {
+            setTargetWorkflowId('');
+        }
+
         fetchAllTasksForSelect();
     };
 
@@ -223,17 +276,24 @@ const TaskDefinition: React.FC = () => {
     };
 
     const handleSaveTask = async () => {
-        if (!selectedTask) return;
+        // Validation: New tasks must have a workflow selected
+        if (!selectedTask?.id && !targetWorkflowId) {
+            message.error('新建任务必须选择所属工作流');
+            return;
+        }
+
+        if (!selectedTask && !targetWorkflowId) return; // Should not happen given validation
 
         try {
             const token = localStorage.getItem('auth_token');
             const payload = {
-                id: selectedTask.id, // Include ID for updates
-                name: selectedTask.name || 'New Task',
-                type: selectedTask.type || 'SHELL',
-                systemId: selectedTask.systemId,
-                content: JSON.stringify(selectedTask),
-                preTaskIds: selectedTask.dependentTasks || [] // Ensure dependencies are saved to backend
+                id: selectedTask?.id,
+                name: selectedTask?.name || 'New Task',
+                type: selectedTask?.type || 'SHELL',
+                systemId: selectedTask?.systemId,
+                content: JSON.stringify(selectedTask || {}),
+                preTaskIds: selectedTask?.dependentTasks || [],
+                status: selectedTask?.status
             };
 
             const response = await fetch('/api/task/save', {
@@ -246,8 +306,64 @@ const TaskDefinition: React.FC = () => {
             });
 
             if (response.ok) {
-                message.success('任务保存成功');
+                const savedTaskId = await response.text();
+
+                // If it's a new task, associate with workflow
+                if (!selectedTask?.id && targetWorkflowId) {
+                    try {
+                        // 1. Get workflow details
+                        const wfRes = await fetch(`/api/workflow/${targetWorkflowId}`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        if (wfRes.ok) {
+                            const workflow = await wfRes.json();
+                            // 2. Parse content
+                            let content: any = {};
+                            try {
+                                content = JSON.parse(workflow.content || '{}');
+                            } catch (e) { }
+                            if (!content.nodes) content.nodes = [];
+
+                            // 3. Add node if not exists
+                            if (!content.nodes.some((n: any) => n.id === savedTaskId)) {
+                                content.nodes.push({
+                                    id: savedTaskId,
+                                    label: payload.name,
+                                    type: payload.type,
+                                    x: 50 + (content.nodes.length * 20), // Simple offset
+                                    y: 50 + (content.nodes.length * 20)
+                                });
+
+                                // 4. Save workflow
+                                await fetch('/api/workflow/save', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'Authorization': `Bearer ${token}`
+                                    },
+                                    body: JSON.stringify({
+                                        ...workflow,
+                                        content: JSON.stringify(content)
+                                    })
+                                });
+                                message.success(`任务保存成功，并已关联到 "${workflow.name}"`);
+                            } else {
+                                message.success('任务保存成功');
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Failed to associate task with workflow', e);
+                        message.warning('任务保存成功，但自动关联工作流失败');
+                    }
+                } else {
+                    message.success('任务保存成功');
+                }
+
                 fetchTasks(); // Refresh list
+                if (!selectedTask?.id) {
+                    // Add slight delay or just go back
+                    handleBackToList();
+                }
             } else {
                 message.error('保存失败');
             }
@@ -331,12 +447,17 @@ const TaskDefinition: React.FC = () => {
         }
     };
 
-    const handleBatchDispatch = () => {
-        if (selectedRowKeys.length === 0) {
+    const handleDispatch = (taskIds: string[]) => {
+        if (taskIds.length === 0) {
             message.warning('请先选择任务');
             return;
         }
+        setDispatchTaskIds(taskIds);
         setDispatchModalVisible(true);
+    };
+
+    const handleBatchDispatch = () => {
+        handleDispatch(selectedRowKeys);
     };
 
     const handleDispatchConfirm = async () => {
@@ -352,7 +473,11 @@ const TaskDefinition: React.FC = () => {
             const errors: string[] = [];
             let successCount = 0;
 
-            for (const taskId of selectedRowKeys) {
+
+            // Use dispatchTaskIds instead of selectedRowKeys
+            const targets = dispatchTaskIds.length > 0 ? dispatchTaskIds : selectedRowKeys;
+
+            for (const taskId of targets) {
                 const taskName = tasks.find(t => t.id === taskId)?.name || taskId;
                 const params = new URLSearchParams();
                 params.append('taskId', taskId);
@@ -393,6 +518,7 @@ const TaskDefinition: React.FC = () => {
             }
             setDispatchModalVisible(false);
             setSelectedRowKeys([]);
+            setDispatchTaskIds([]);
         } catch (error) {
             console.error(error);
             message.error('下发过程出错');
@@ -428,16 +554,35 @@ const TaskDefinition: React.FC = () => {
                             <option value="PROCEDURE">PROCEDURE</option>
                             <option value="DEPENDENT">DEPENDENT</option>
                         </select>
-                        <select
-                            value={selectedTask?.systemId || ''}
-                            onChange={(e) => setSelectedTask((prev: any) => ({ ...prev, systemId: e.target.value }))}
-                            className="px-3 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white min-w-[120px]"
-                        >
-                            <option value="">选择系统</option>
-                            {systems.map(s => (
-                                <option key={s.id} value={s.id}>{s.name}</option>
-                            ))}
-                        </select>
+                        {selectedTask?.id && (
+                            <select
+                                value={selectedTask?.systemId || ''}
+                                onChange={(e) => setSelectedTask((prev: any) => ({ ...prev, systemId: e.target.value }))}
+                                className="px-3 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white min-w-[120px]"
+                            >
+                                <option value="">选择系统</option>
+                                {systems.map(s => (
+                                    <option key={s.id} value={s.id}>{s.name}</option>
+                                ))}
+                            </select>
+                        )}
+
+                        {!selectedTask?.id && (
+                            <div className="flex items-center gap-2 border-l border-slate-200 pl-2 ml-1">
+                                <span className="text-xs text-slate-500 font-medium">所属工作流:</span>
+                                <select
+                                    value={targetWorkflowId}
+                                    onChange={(e) => setTargetWorkflowId(e.target.value)}
+                                    className="px-3 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white min-w-[140px] text-slate-700"
+                                    required
+                                >
+                                    <option value="" disabled>请选择工作流</option>
+                                    {workflows.map(w => (
+                                        <option key={w.id} value={w.id}>{w.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                         <button
                             onClick={handleSaveTask}
                             className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white hover:bg-blue-700 rounded-md text-sm font-medium shadow-sm transition-colors"
@@ -452,10 +597,10 @@ const TaskDefinition: React.FC = () => {
                         data={selectedTask}
                         type={selectedTask?.type || 'SHELL'}
                         onChange={handleTaskChange}
-                        availableTasks={allTasksOptions.filter(t => t.value !== selectedTask?.id)}
+                        availableTasks={computedAvailableTasks}
                     />
                 </div>
-            </div>
+            </div >
         );
     }
 
@@ -563,12 +708,21 @@ const TaskDefinition: React.FC = () => {
                         </button>
                     </div>
                 )}
+
+                <button
+                    onClick={handleNewTask}
+                    className="flex items-center gap-2.5 px-5 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-2xl hover:bg-blue-700 active:scale-95 transition-all shadow-lg shadow-blue-200"
+                >
+                    <Plus size={16} strokeWidth={2.5} />
+                    新建任务
+                </button>
+
                 <button
                     onClick={handleBatchDispatch}
                     className="flex items-center gap-2.5 px-5 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-2xl hover:bg-slate-800 active:scale-95 transition-all shadow-lg shadow-slate-200"
                 >
                     <Calendar size={16} strokeWidth={2.5} />
-                    批量下发任务
+                    批量执行
                 </button>
             </div>
 
@@ -697,7 +851,7 @@ const TaskDefinition: React.FC = () => {
                                                 <button className="p-1 text-slate-400 hover:text-blue-600" title="编辑" onClick={() => handleEditTask(task)}>
                                                     <Edit size={16} />
                                                 </button>
-                                                <button className="p-1 text-slate-400 hover:text-green-600" title="运行">
+                                                <button className="p-1 text-slate-400 hover:text-green-600" title="执行" onClick={() => handleDispatch([task.id])}>
                                                     <Play size={16} />
                                                 </button>
 
