@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm } from 'antd';
-import { Plus, Trash2, Edit, RefreshCw, Server, Rocket, RotateCcw, CheckCircle, XCircle, Loader, Clock } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Badge } from 'antd';
+import { Plus, Trash2, Edit, RefreshCw, Server, Rocket, RotateCcw, CheckCircle, XCircle, Loader, Clock, Globe } from 'lucide-react';
 import {
     getDeployEnvironments, createDeployEnvironment, updateDeployEnvironment, deleteDeployEnvironment,
     getDeployments, executeDeploy, rollbackDeploy,
     getSsoList,
     DeployEnvironment, Deployment, SsoConfig
 } from '@/api/version';
+import { getInfrastructureAssets, InfrastructureAsset } from '@/api/ops';
 
 const { Option } = Select;
 
@@ -26,7 +27,9 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId }) => {
     const [environments, setEnvironments] = useState<DeployEnvironment[]>([]);
     const [deployments, setDeployments] = useState<Deployment[]>([]);
     const [ssoList, setSsoList] = useState<SsoConfig[]>([]);
+    const [infrastructureAssets, setInfrastructureAssets] = useState<InfrastructureAsset[]>([]);
     const [loading, setLoading] = useState(false);
+    const [envSearchKeyword, setEnvSearchKeyword] = useState('');
 
     // 环境 Modal
     const [envModalVisible, setEnvModalVisible] = useState(false);
@@ -41,6 +44,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId }) => {
         fetchSsoList();
         fetchEnvironments();
         fetchDeployments();
+        fetchInfrastructureAssets();
     }, []);
 
     const fetchSsoList = async () => {
@@ -60,6 +64,38 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId }) => {
             message.error('获取环境列表失败');
         }
     };
+
+    const fetchInfrastructureAssets = async () => {
+        try {
+            const data = await getInfrastructureAssets({ appSystemId: ssoId });
+            setInfrastructureAssets(data || []);
+        } catch (error) {
+            console.error('获取基础设施资产失败', error);
+        }
+    };
+
+    // 按系统和环境类型分组的服务器资产
+    const filteredAssets = useMemo(() => {
+        return infrastructureAssets.filter(asset => {
+            const matchSearch = !envSearchKeyword ||
+                asset.hostname?.toLowerCase().includes(envSearchKeyword.toLowerCase()) ||
+                asset.internalIp?.toLowerCase().includes(envSearchKeyword.toLowerCase());
+            return matchSearch;
+        });
+    }, [infrastructureAssets, envSearchKeyword]);
+
+    // 按环境类型分组
+    const assetsByEnvType = useMemo(() => {
+        const groups: Record<string, InfrastructureAsset[]> = {};
+        filteredAssets.forEach(asset => {
+            const envType = asset.envType || '未分类';
+            if (!groups[envType]) {
+                groups[envType] = [];
+            }
+            groups[envType].push(asset);
+        });
+        return groups;
+    }, [filteredAssets]);
 
     const fetchDeployments = async () => {
         setLoading(true);
@@ -290,56 +326,77 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId }) => {
                             <div className="rounded-2xl border border-slate-200 bg-white p-4">
                                 <div className="flex items-center justify-between mb-3">
                                     <div>
-                                        <div className="text-xs uppercase tracking-widest text-slate-400">环境矩阵</div>
-                                        <div className="text-sm font-semibold text-slate-800">环境列表</div>
+                                        <div className="text-xs uppercase tracking-widest text-slate-400">服务器资产</div>
+                                        <div className="text-sm font-semibold text-slate-800">关联服务器</div>
                                     </div>
-                                    <Tag color="blue">{envItems.length}</Tag>
+                                    <Tag color="blue">{infrastructureAssets.length}</Tag>
                                 </div>
-                                <Input placeholder="搜索环境或地址" className="border-slate-200" />
+                                <Input
+                                    placeholder="搜索主机名或IP"
+                                    className="border-slate-200"
+                                    value={envSearchKeyword}
+                                    onChange={(e) => setEnvSearchKeyword(e.target.value)}
+                                    allowClear
+                                />
                                 <div className="mt-3 flex flex-wrap gap-2">
-                                    {['全部', '健康', '维护中', '窗口关闭'].map(item => (
+                                    {Object.keys(assetsByEnvType).map(envType => (
                                         <span
-                                            key={item}
+                                            key={envType}
                                             className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-500"
                                         >
-                                            {item}
+                                            {envType} ({assetsByEnvType[envType].length})
                                         </span>
                                     ))}
                                 </div>
-                                <div className="mt-4 space-y-3">
-                                    {envItems.map(env => (
-                                        <div key={env.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-                                            <div className="flex items-start justify-between gap-2">
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <Server size={14} className="text-indigo-500" />
-                                                        <span className="text-sm font-semibold text-slate-800">{env.name}</span>
-                                                    </div>
-                                                    <div className="mt-1 text-xs text-slate-500">
-                                                        {env.deployUrl || '未配置地址'} · {deployTypeLabelMap[env.deployType || 'ssh']}
-                                                    </div>
-                                                </div>
-                                                <Tag className="m-0">{env.code}</Tag>
+                                <div className="mt-4 space-y-4 max-h-[400px] overflow-y-auto">
+                                    {Object.entries(assetsByEnvType).map(([envType, assets]) => (
+                                        <div key={envType}>
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <Tag color={envType.includes('生产') ? 'red' : envType.includes('测试') ? 'blue' : 'default'} className="m-0">
+                                                    {envType}
+                                                </Tag>
+                                                <span className="text-xs text-slate-400">{assets.length} 台服务器</span>
                                             </div>
-                                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
-                                                    窗口: 开放
-                                                </span>
-                                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
-                                                    健康
-                                                </span>
-                                            </div>
-                                            <div className="mt-3 flex items-center gap-2">
-                                                <Button size="small" className={subtleButtonClass} icon={<Edit size={12} />} onClick={() => handleEditEnv(env)} />
-                                                <Popconfirm title="确定删除？" onConfirm={() => handleDeleteEnv(env.id!)}>
-                                                    <Button size="small" className={subtleButtonClass} danger icon={<Trash2 size={12} />} />
-                                                </Popconfirm>
+                                            <div className="space-y-2">
+                                                {assets.map(asset => (
+                                                    <div key={asset.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm hover:border-indigo-200 transition-colors">
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2">
+                                                                    <Server size={14} className="text-indigo-500 flex-shrink-0" />
+                                                                    <span className="text-sm font-semibold text-slate-800 truncate">{asset.hostname}</span>
+                                                                </div>
+                                                                <div className="mt-1 text-xs text-slate-500 font-mono flex items-center gap-1">
+                                                                    <Globe size={12} />
+                                                                    {asset.internalIp}
+                                                                </div>
+                                                            </div>
+                                                            <Badge
+                                                                status={asset.status === 'active' ? 'success' : asset.status === 'maintenance' ? 'warning' : 'default'}
+                                                                text={asset.status === 'active' ? '运行中' : asset.status === 'maintenance' ? '维护中' : '离线'}
+                                                                className="text-[10px]"
+                                                            />
+                                                        </div>
+                                                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
+                                                            {asset.cpu && <span>CPU: {asset.cpu}</span>}
+                                                            {asset.memory && <span>内存: {asset.memory}</span>}
+                                                            {asset.role && <Tag className="m-0 text-[10px]">{asset.role}</Tag>}
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
                                     ))}
+                                    {Object.keys(assetsByEnvType).length === 0 && (
+                                        <div className="text-center text-slate-400 text-sm py-8">
+                                            <Server size={32} className="mx-auto mb-2 opacity-30" />
+                                            <div>暂无关联服务器</div>
+                                            <div className="text-xs mt-1">请在基础设施管理中添加服务器并关联系统</div>
+                                        </div>
+                                    )}
                                 </div>
-                                <Button type="primary" icon={<Plus size={14} />} onClick={handleAddEnv} className={`mt-4 w-full ${primaryButtonClass}`}>
-                                    添加环境
+                                <Button type="primary" icon={<RefreshCw size={14} />} onClick={fetchInfrastructureAssets} className={`mt-4 w-full ${primaryButtonClass}`}>
+                                    刷新资产
                                 </Button>
                             </div>
 
