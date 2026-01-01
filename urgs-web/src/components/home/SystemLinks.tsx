@@ -47,12 +47,6 @@ const SystemLinks: React.FC = () => {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(async res => {
-        if (res.status === 401) {
-          localStorage.removeItem('auth_token');
-          localStorage.removeItem('auth_user');
-          window.location.href = '/login';
-          throw new Error('Unauthorized');
-        }
         if (!res.ok) {
           throw new Error(`Sso list failed: ${res.status}`);
         }
@@ -81,10 +75,6 @@ const SystemLinks: React.FC = () => {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (res.status === 401) {
-        window.location.href = '/login';
-        return;
-      }
       if (!res.ok) throw new Error('Jump failed');
       const data = await res.json();
       // Open in new tab

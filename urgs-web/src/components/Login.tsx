@@ -139,7 +139,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </div>
 
             {/* 2. Main Container - Split Layout or Centered Card? -> Centered Floating Glass Card looks very premium */}
-            <div className={`relative z-10 w-full max-w-[440px] px-6 transition-all duration-1000 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
+            <div className={`relative z-10 w-full max-w-[440px] px-6 transition-all duration-1000 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-0 opacity-100'}`}>
 
                 {/* Glass Card */}
                 <div className="backdrop-blur-xl bg-white/90 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] border border-white/50 rounded-2xl overflow-hidden">

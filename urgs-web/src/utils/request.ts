@@ -33,10 +33,12 @@ export const request = async <T = any>(url: string, options: RequestOptions = {}
     });
 
     if (response.status === 401) {
-        // Handle 401 Unauthorized
-        // Optionally redirect to login or clear token
-        // localStorage.removeItem('auth_token');
-        // window.location.href = '/login';
+        // Handle 401 Unauthorized - Centralized logout logic
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
+        localStorage.removeItem('user_permissions');
+        // Use hash-friendly redirect or just reload to trigger App's re-render
+        window.location.href = '/';
         throw new Error('Unauthorized');
     }
 
