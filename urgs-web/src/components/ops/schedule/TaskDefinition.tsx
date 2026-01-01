@@ -29,6 +29,7 @@ const TaskDefinition: React.FC = () => {
     const [globalStats, setGlobalStats] = useState({ total: 0, enabled: 0, disabled: 0, systems: 0, workflows: 0 });
     const [targetWorkflowId, setTargetWorkflowId] = useState<string>('');
     const [statusFilter, setStatusFilter] = useState<number | ''>('');
+    const [systemFilter, setSystemFilter] = useState<number | ''>('');
 
 
     const {
@@ -65,6 +66,9 @@ const TaskDefinition: React.FC = () => {
             }
             if (statusFilter !== '') {
                 params.append('status', statusFilter.toString());
+            }
+            if (systemFilter !== '') {
+                params.append('systemId', systemFilter.toString());
             }
 
             const res = await fetch(`/api/task/list?${params.toString()}`, {
@@ -112,7 +116,7 @@ const TaskDefinition: React.FC = () => {
 
     useEffect(() => {
         fetchTasks(1, pagination.pageSize);
-    }, [selectedWorkflows, statusFilter]);
+    }, [selectedWorkflows, statusFilter, systemFilter]);
 
     const fetchWorkflows = async () => {
         try {
@@ -647,7 +651,7 @@ const TaskDefinition: React.FC = () => {
             <div className="px-6 py-4 bg-white/80 backdrop-blur-md border-b border-slate-200/60 flex justify-between items-center sticky top-0 z-20">
                 <div className="flex items-center gap-4">
                     <div className="relative group">
-                        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
                         <input
                             type="text"
                             placeholder="搜索任务..."
@@ -658,7 +662,7 @@ const TaskDefinition: React.FC = () => {
                                     fetchTasks(1, pagination.pageSize);
                                 }
                             }}
-                            className="pl-10 pr-4 py-2.5 text-sm border border-slate-200/80 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 w-80 bg-slate-50/50 transition-all font-medium"
+                            className="pl-10 pr-4 py-2 text-xs border border-slate-200/80 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 w-44 bg-slate-50/50 transition-all font-medium"
                         />
                     </div>
 
@@ -671,6 +675,15 @@ const TaskDefinition: React.FC = () => {
                         onChange={handleWorkflowChange}
                         options={[{ label: '全部', value: 'ALL' }, ...workflows.map(w => ({ label: w.name, value: w.id }))]}
                         maxTagCount="responsive"
+                    />
+
+                    <Select
+                        style={{ width: 140 }}
+                        placeholder="系统筛选"
+                        allowClear
+                        value={systemFilter}
+                        onChange={(value) => setSystemFilter(value)}
+                        options={[{ label: '全部系统', value: '' }, ...systems.map(s => ({ label: s.name, value: s.id }))]}
                     />
 
                     <Select
