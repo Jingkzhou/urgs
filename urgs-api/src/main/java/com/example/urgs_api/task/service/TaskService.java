@@ -537,8 +537,33 @@ public class TaskService {
         QueryWrapper<TaskInstance> query = new QueryWrapper<>();
         query.eq("task_id", taskId);
         query.eq("data_date", dataDate);
-        if (taskInstanceMapper.selectCount(query) > 0) {
-            return "EXIST";
+        TaskInstance existing = taskInstanceMapper.selectOne(query);
+        if (existing != null) {
+            String status = existing.getStatus();
+            if ("RUNNING".equals(status) || "PENDING".equals(status)) {
+                return "EXIST";
+            }
+
+            Task task = taskMapper.selectById(taskId);
+            if (task != null) {
+                existing.setSystemId(task.getSystemId());
+                existing.setTaskType(task.getType());
+                existing.setContentSnapshot(task.getContent());
+            }
+
+            existing.setStatus("PENDING"); // Wait for dependencies
+            existing.setStartTime(null);
+            existing.setEndTime(null);
+            existing.setLogContent(null);
+            existing.setUpdateTime(LocalDateTime.now());
+            taskInstanceMapper.updateById(existing);
+
+            if (areAllDependenciesMet(taskId, dataDate)) {
+                existing.setStatus("WAITING");
+                taskInstanceMapper.updateById(existing);
+            }
+
+            return String.valueOf(existing.getId());
         }
 
         TaskInstance instance = new TaskInstance();
