@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, Folder, FileCode, MoreVertical, Edit, Trash2, Play, Save, X, Link, GitFork, Calendar, LayoutGrid, List, FileText, Server, Activity, CheckCircle, ChevronUp, ChevronDown, CheckSquare, Square, PauseCircle, PlayCircle } from 'lucide-react';
+import { Search, Plus, Folder, FileCode, MoreVertical, Edit, Trash2, Play, Save, X, Link, GitFork, Calendar, LayoutGrid, List, FileText, Server, Activity, CheckCircle, ChevronUp, ChevronDown, CheckSquare, Square, PauseCircle, PlayCircle, Filter } from 'lucide-react';
 import { message, Select, Modal, DatePicker, Checkbox } from 'antd';
 import dayjs from 'dayjs';
 import Pagination from '../../common/Pagination';
@@ -661,6 +661,7 @@ const TaskDefinition: React.FC = () => {
                             className="pl-10 pr-4 py-2.5 text-sm border border-slate-200/80 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 w-80 bg-slate-50/50 transition-all font-medium"
                         />
                     </div>
+
                     <Select
                         mode="multiple"
                         allowClear
@@ -683,6 +684,14 @@ const TaskDefinition: React.FC = () => {
                             { label: '禁用', value: 0 }
                         ]}
                     />
+
+                    <button
+                        onClick={() => fetchTasks(1, pagination.pageSize)}
+                        className="p-2.5 rounded-xl border border-slate-200/80 bg-white text-slate-500 hover:text-blue-600 hover:border-blue-200 transition-all"
+                        title="查询"
+                    >
+                        <Search size={18} />
+                    </button>
                 </div>
                 <div className="flex items-center gap-4">
                     {/* View Toggle */}
@@ -722,23 +731,24 @@ const TaskDefinition: React.FC = () => {
                             <PauseCircle size={16} />
                             暂停
                         </button>
+                        <div className="w-px h-4 bg-slate-200 mx-1"></div>
+                        <button
+                            onClick={handleBatchDispatch}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-purple-50 text-purple-600 hover:bg-purple-100 hover:text-purple-700 text-sm font-medium rounded-xl transition-colors border border-purple-200/50"
+                            title="批量执行"
+                        >
+                            <Calendar size={16} />
+                            执行
+                        </button>
                     </div>
                 )}
 
                 <button
                     onClick={handleNewTask}
-                    className="flex items-center gap-2.5 px-5 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-2xl hover:bg-blue-700 active:scale-95 transition-all shadow-lg shadow-blue-200"
+                    className="flex items-center gap-2.5 px-5 py-2.5 bg-blue-50 text-blue-600 text-sm font-bold rounded-2xl hover:bg-blue-100 hover:text-blue-700 active:scale-95 transition-all border border-blue-200/50"
                 >
                     <Plus size={16} strokeWidth={2.5} />
                     新建任务
-                </button>
-
-                <button
-                    onClick={handleBatchDispatch}
-                    className="flex items-center gap-2.5 px-5 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-2xl hover:bg-slate-800 active:scale-95 transition-all shadow-lg shadow-slate-200"
-                >
-                    <Calendar size={16} strokeWidth={2.5} />
-                    批量执行
                 </button>
             </div>
 
@@ -818,7 +828,7 @@ const TaskDefinition: React.FC = () => {
                                     </tr>
                                 )}
                                 {!loading && tasks.map((task) => (
-                                    <tr key={task.id} className="hover:bg-slate-50 transition-colors group">
+                                    <tr key={task.id} className={`transition-colors group ${selectedRowKeys.includes(task.id) ? 'bg-blue-50/50 hover:bg-blue-50' : 'hover:bg-slate-50'}`}>
                                         <td className="px-6 py-2">
                                             <Checkbox
                                                 checked={selectedRowKeys.includes(task.id)}
