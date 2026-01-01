@@ -5,6 +5,7 @@ import com.example.executor.urgs_executor.entity.ExecutorTaskInstance;
 import com.example.executor.urgs_executor.handler.TaskHandler;
 import com.example.executor.urgs_executor.mapper.DataSourceConfigMapper;
 import com.example.executor.urgs_executor.mapper.ExecutorTaskInstanceMapper;
+import com.example.executor.urgs_executor.util.PlaceholderUtils;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -85,7 +86,7 @@ public class ShellTaskHandler implements TaskHandler {
         }
 
         // 3. 变量替换：将 $dataDate 替换为实例对应的业务日期
-        script = script.replace("$dataDate", instance.getDataDate());
+        script = PlaceholderUtils.replaceDataDate(script, instance.getDataDate());
 
         log.info("Executing Shell Task {}: {}", instance.getId(), script);
 

@@ -6,6 +6,7 @@ import com.example.executor.urgs_executor.entity.ExecutorTaskInstance;
 import com.example.executor.urgs_executor.handler.TaskHandler;
 import com.example.executor.urgs_executor.mapper.DataSourceConfigMapper;
 import com.example.executor.urgs_executor.mapper.DataSourceMetaMapper;
+import com.example.executor.urgs_executor.util.PlaceholderUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -51,7 +52,7 @@ public class ProcedureTaskHandler implements TaskHandler {
         }
 
         // Replace $dataDate with actual date
-        script = script.replace("$dataDate", instance.getDataDate());
+        script = PlaceholderUtils.replaceDataDate(script, instance.getDataDate());
 
         if (resourceId == null || resourceId.isEmpty()) {
             throw new RuntimeException("Procedure task requires a valid resource ID");

@@ -4,6 +4,7 @@ import com.example.executor.urgs_executor.entity.DataSourceConfig;
 import com.example.executor.urgs_executor.entity.ExecutorTaskInstance;
 import com.example.executor.urgs_executor.handler.TaskHandler;
 import com.example.executor.urgs_executor.mapper.DataSourceConfigMapper;
+import com.example.executor.urgs_executor.util.PlaceholderUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jcraft.jsch.ChannelExec;
@@ -51,7 +52,7 @@ public class PythonTaskHandler implements TaskHandler {
         }
 
         // Replace $dataDate with actual date
-        script = script.replace("$dataDate", instance.getDataDate());
+        script = PlaceholderUtils.replaceDataDate(script, instance.getDataDate());
 
         log.info("Executing Python Task {}: {}", instance.getId(), script);
 

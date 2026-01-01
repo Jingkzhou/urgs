@@ -6,6 +6,7 @@ import com.example.executor.urgs_executor.entity.ExecutorTaskInstance;
 import com.example.executor.urgs_executor.handler.TaskHandler;
 import com.example.executor.urgs_executor.mapper.DataSourceConfigMapper;
 import com.example.executor.urgs_executor.mapper.DataSourceMetaMapper;
+import com.example.executor.urgs_executor.util.PlaceholderUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -54,7 +55,7 @@ public class DataXTaskHandler implements TaskHandler {
         }
 
         // 替换占位符 $dataDate 为实际的任务数据日期
-        String contentSnapshot = instance.getContentSnapshot().replace("$dataDate", instance.getDataDate());
+        String contentSnapshot = PlaceholderUtils.replaceDataDate(instance.getContentSnapshot(), instance.getDataDate());
 
         // 解析任务内容的 JSON 配置
         JsonNode contentNode = objectMapper.readTree(contentSnapshot);
