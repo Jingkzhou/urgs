@@ -908,9 +908,7 @@ const TaskInstance: React.FC = () => {
                                         <span className="text-sm font-medium">正在获取运行日志...</span>
                                     </div>
                                 ) : (
-                                    <div className="leading-relaxed">
-                                        {logContent}
-                                    </div>
+                                    <LogViewer content={logContent} />
                                 )}
                             </div>
                         </div>
@@ -1178,6 +1176,117 @@ const TaskInstance: React.FC = () => {
                 )
             }
         </div >
+    );
+};
+
+// Internal Log Viewer Component
+const LogViewer: React.FC<{ content: string }> = ({ content }) => {
+    const scrollRef = React.useRef<HTMLDivElement>(null);
+
+    // Auto-scroll to bottom
+    React.useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+    }, [content]);
+
+    // Parse Logs into Sessions
+    const { sessions } = React.useMemo(() => {
+        if (!content) return { sessions: [] };
+
+        const lines = content.split('\n');
+        const parsedSessions: { title: string, lines: string[], status?: 'SUCCESS' | 'FAIL' | 'RUNNING' }[] = [];
+        let currentSession: { title: string, lines: string[], status?: 'SUCCESS' | 'FAIL' | 'RUNNING' } | null = null;
+        let buffer: string[] = [];
+
+        lines.forEach(line => {
+            // Detect Start of a new session
+            if (line.includes('Executing task instance:')) {
+                // Save previous buffer to previous session
+                if (currentSession) {
+                    currentSession.lines = [...currentSession.lines, ...buffer];
+                    parsedSessions.push(currentSession);
+                } else if (buffer.length > 0) {
+                    // Logs occurring before the first explicit start
+                    parsedSessions.push({ title: 'System Init / Context', lines: [...buffer], status: 'RUNNING' });
+                }
+
+                // Start new session
+                currentSession = {
+                    title: line,
+                    lines: [],
+                    status: 'RUNNING' // Default
+                };
+                buffer = [];
+            } else if (line.includes('completed successfully')) {
+                if (currentSession) currentSession.status = 'SUCCESS';
+                buffer.push(line);
+            } else if (line.includes('failed')) {
+                if (currentSession) currentSession.status = 'FAIL';
+                buffer.push(line);
+            } else {
+                buffer.push(line);
+            }
+        });
+
+        // Push final session
+        if (currentSession) {
+            currentSession.lines = [...currentSession.lines, ...buffer];
+            parsedSessions.push(currentSession);
+        } else if (buffer.length > 0) {
+            parsedSessions.push({ title: 'System Log', lines: buffer });
+        }
+
+        return { sessions: parsedSessions };
+    }, [content]);
+
+    return (
+        <div className="h-full bg-[#1e1e1e] text-slate-300 font-mono text-[12px] p-4 overflow-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent" ref={scrollRef}>
+            {sessions.length === 0 && <div className="text-slate-500 italic">Console is ready. Waiting for logs...</div>}
+
+            {sessions.map((session, sIdx) => (
+                <div key={sIdx} className="mb-6 last:mb-0 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                    {/* Session Header */}
+                    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg mb-2 border-l-4 ${session.status === 'SUCCESS' ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400' :
+                            session.status === 'FAIL' ? 'bg-red-500/10 border-red-500 text-red-400' :
+                                'bg-blue-500/10 border-blue-500 text-blue-400'
+                        }`}>
+                        <div className="font-bold flex-1 truncate">{session.title.replace(/.*Executing task instance: \d+/, 'Start Execution')}</div>
+                        <div className="text-[10px] opacity-70 uppercase tracking-wider">{session.status || 'INFO'}</div>
+                    </div>
+
+                    {/* Log Lines */}
+                    <div className="space-y-0.5 pl-2">
+                        {session.lines.map((line, lIdx) => {
+                            // Simple Highlighting
+                            const isError = line.toLowerCase().includes('error') || line.toLowerCase().includes('exception') || line.toLowerCase().includes('fail');
+                            const isWarn = line.toLowerCase().includes('warn');
+
+                            // Extract Timestamp if present (Simple ISO-like check or HH:mm:ss)
+                            const timeMatch = line.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2})/) || line.match(/(\d{2}:\d{2}:\d{2}\.\d{3})/);
+                            const timestamp = timeMatch ? timeMatch[0] : '';
+                            const rest = timestamp ? line.replace(timestamp, '') : line;
+
+                            return (
+                                <div key={lIdx} className={`flex items-start gap-3 hover:bg-white/5 px-2 rounded ${isError ? 'text-red-400' : isWarn ? 'text-amber-400' : ''}`}>
+                                    {timestamp && <span className="text-slate-500 shrink-0 select-none w-[150px] text-[10px] pt-0.5 font-mono opacity-60">{dayjs(timestamp).format('HH:mm:ss.SSS')}</span>}
+                                    <div className="break-all whitespace-pre-wrap flex-1 leading-relaxed opacity-90">
+                                        {rest}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            ))}
+
+            {/* End of Log Marker */}
+            <div className="mt-8 flex items-center gap-2 text-slate-600 justify-center text-[10px] opacity-50">
+                <div className="w-16 h-[1px] bg-slate-700"></div>
+                <span>END OF LOG</span>
+                <div className="w-16 h-[1px] bg-slate-700"></div>
+            </div>
+        </div>
     );
 };
 

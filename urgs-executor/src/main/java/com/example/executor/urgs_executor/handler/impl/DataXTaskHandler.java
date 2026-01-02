@@ -20,6 +20,8 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.UUID;
 
@@ -28,7 +30,7 @@ import java.util.UUID;
  * 负责解析任务配置，生成 DataX 所需的 JSON 配置文件，并调用本地 DataX (Python) 进行数据同步。
  */
 @Slf4j
-@Component
+@Component("DATAX")
 public class DataXTaskHandler implements TaskHandler {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -55,10 +57,18 @@ public class DataXTaskHandler implements TaskHandler {
         }
 
         // 替换占位符 $dataDate 为实际的任务数据日期
-        String contentSnapshot = PlaceholderUtils.replaceDataDate(instance.getContentSnapshot(), instance.getDataDate());
+        String contentSnapshot = PlaceholderUtils.replaceDataDate(instance.getContentSnapshot(),
+                instance.getDataDate());
 
         // 解析任务内容的 JSON 配置
         JsonNode contentNode = objectMapper.readTree(contentSnapshot);
+        log.info("[Debug] Raw content snapshot: {}", contentSnapshot);
+
+        // 兼容前端扁平化结构：如果 contentNode 中没有 reader/writer，则尝试从 flattened fields 构建
+        if (!contentNode.has("reader") || !contentNode.has("writer")) {
+            contentNode = normalizeContent(contentNode);
+        }
+        log.info("[Debug] Normalized content node: {}", contentNode);
 
         // 1. 构建 DataX JSON 配置文件结构
         ObjectNode jobConfig = objectMapper.createObjectNode();
@@ -82,14 +92,28 @@ public class DataXTaskHandler implements TaskHandler {
 
         // 2. 将生成的 JSON 配置写入临时文件，供 DataX 进程调用
         String jsonString = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(jobConfig);
+
+        // 检查是否指定了执行节点 (contentNode.path("executionNodeId"))
+        long executionNodeId = contentNode.path("executionNodeId").asLong(0);
+
+        if (executionNodeId > 0) {
+            return runRemote(instance, executionNodeId, jsonString);
+        } else {
+            return runLocal(instance, jsonString);
+        }
+    }
+
+    private String runLocal(ExecutorTaskInstance instance, String jsonString) throws Exception {
         Path tempFile = Files.createTempFile("datax-job-" + instance.getId() + "-" + UUID.randomUUID(), ".json");
         Files.write(tempFile, jsonString.getBytes());
 
-        log.info("生成的 DataX 配置: \n{}", jsonString);
+        log.info("生成的 DataX 配置 (Local): \n{}", jsonString);
 
         // 3. 开启子进程执行 DataX (调用 python datax.py)
         StringBuilder logBuilder = new StringBuilder();
-        logBuilder.append("正在执行 DataX 任务 ").append(instance.getId()).append("\n");
+        String timeStart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        logBuilder.append("[").append(timeStart).append("] ").append("正在本机执行 DataX 任务 ").append(instance.getId())
+                .append("\n");
 
         try {
             // DataX 通常通过 python 脚本启动
@@ -110,12 +134,14 @@ public class DataXTaskHandler implements TaskHandler {
             // 等待进程结束并获取退出状态码
             int exitCode = process.waitFor();
             if (exitCode != 0) {
-                logBuilder.append("\nDataX 进程异常退出，状态码: ").append(exitCode);
+                String timeErr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                logBuilder.append("\n[").append(timeErr).append("] ").append("DataX 进程异常退出，状态码: ").append(exitCode);
                 throw new RuntimeException(
                         "DataX 执行失败，代码: " + exitCode + "\n日志摘要:\n" + logBuilder.toString());
             }
 
-            logBuilder.append("\nDataX 执行成功。");
+            String timeEnd = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            logBuilder.append("\n[").append(timeEnd).append("] ").append("DataX 执行成功。");
 
         } finally {
             // 执行完毕后删除临时 JSON 配置文件
@@ -123,6 +149,73 @@ public class DataXTaskHandler implements TaskHandler {
                 Files.deleteIfExists(tempFile);
             } catch (Exception e) {
                 log.warn("清理临时配置文件失败: {}", tempFile, e);
+            }
+        }
+        return logBuilder.toString();
+    }
+
+    private String runRemote(ExecutorTaskInstance instance, long nodeId, String jsonString) throws Exception {
+        // 获取 SSH 节点配置
+        DataSourceConfig nodeConfig = dataSourceConfigMapper.selectById(nodeId);
+        if (nodeConfig == null) {
+            throw new RuntimeException("指定的 DataX 执行节点不存在: " + nodeId);
+        }
+        Map<String, Object> params = nodeConfig.getConnectionParams();
+        String host = (String) params.get("host");
+        Integer port = (Integer) params.get("port");
+        String username = (String) params.get("username");
+        String password = (String) params.get("password");
+        String remoteDataxHome = (String) params.get("dataxHome");
+
+        if (remoteDataxHome == null || remoteDataxHome.isEmpty()) {
+            throw new RuntimeException("远程节点未配置 'dataxHome' 路径");
+        }
+        if (remoteDataxHome.endsWith("/")) {
+            remoteDataxHome = remoteDataxHome.substring(0, remoteDataxHome.length() - 1);
+        }
+
+        StringBuilder logBuilder = new StringBuilder();
+        String timeStart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        logBuilder.append("[").append(timeStart).append("] ").append("正在远程节点 ").append(host).append(" 执行 DataX 任务 ")
+                .append(instance.getId()).append("\n");
+
+        com.jcraft.jsch.Session session = null;
+        String remoteTempFile = "/tmp/datax-job-" + instance.getId() + "-" + UUID.randomUUID() + ".json";
+
+        try {
+            session = com.example.executor.urgs_executor.util.SshUtils.connect(host, port != null ? port : 22, username,
+                    password);
+
+            // 1. 上传 JSON 配置文件
+            log.info("不再本地生成文件，直接上传配置到远程: {}", remoteTempFile);
+            com.example.executor.urgs_executor.util.SshUtils.scpTo(session, jsonString, remoteTempFile);
+
+            // 2. 执行 DataX 命令
+            String command = String.format("python3 %s/bin/datax.py %s", remoteDataxHome, remoteTempFile);
+            log.info("远程执行命令: {}", command);
+
+            // 注意：SshUtils.exec 目前是等待执行完毕并一次性返回，对于 DataX 这种长任务可能不适合实时日志。
+            // 简单起见，我们暂且认为 log 可以在结束后一次性获取，或者后续优化 SshUtils 支持流式读取。
+            // 但为了兼容现有接口契约，我们这里等待结果。
+            String output = com.example.executor.urgs_executor.util.SshUtils.exec(session, command);
+            logBuilder.append(output);
+
+            String timeEnd = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            logBuilder.append("\n[").append(timeEnd).append("] ").append("远程 DataX 执行成功。");
+
+        } catch (Exception e) {
+            String timeErr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            logBuilder.append("\n[").append(timeErr).append("] ").append("远程执行失败: ").append(e.getMessage());
+            throw e;
+        } finally {
+            if (session != null && session.isConnected()) {
+                // 3. 清理远程文件
+                try {
+                    com.example.executor.urgs_executor.util.SshUtils.exec(session, "rm -f " + remoteTempFile);
+                    session.disconnect();
+                } catch (Exception e) {
+                    log.warn("清理远程临时文件失败", e);
+                }
             }
         }
 
@@ -173,6 +266,167 @@ public class DataXTaskHandler implements TaskHandler {
         pluginConfig.put("name", name);
         pluginConfig.set("parameter", parameter);
         return pluginConfig;
+    }
+
+    private JsonNode normalizeContent(JsonNode flatNode) {
+        ObjectNode root = (ObjectNode) flatNode;
+        ObjectMapper mapper = new ObjectMapper();
+
+        // 1. Construct Reader
+        if (!root.has("reader") && root.has("sourceId")) {
+            ObjectNode reader = mapper.createObjectNode();
+            reader.put("datasourceId", root.get("sourceId").asLong());
+
+            ObjectNode param = mapper.createObjectNode();
+
+            // Common RDBMS fields
+            // Priority: SQL > Table
+            if (root.has("sql") && !root.get("sql").asText().isEmpty()) {
+                // QuerySQL Mode: ignore table/column
+                ArrayNode sqlArray = mapper.createArrayNode();
+                sqlArray.add(root.get("sql").asText());
+                param.set("sql", sqlArray);
+            } else {
+                // Table Mode
+                if (root.has("table")) {
+                    param.set("table", root.get("table"));
+                }
+
+                if (root.has("column")) {
+                    // Convert "col1,col2" string to ["col1", "col2"] array
+                    String colStr = root.get("column").asText();
+                    ArrayNode colArray = mapper.createArrayNode();
+                    if (colStr != null && !colStr.isEmpty()) {
+                        if (colStr.equals("*")) {
+                            colArray.add("*");
+                        } else {
+                            for (String c : colStr.split(",")) {
+                                colArray.add(c.trim());
+                            }
+                        }
+                    } else {
+                        colArray.add("*"); // Explicit empty column string -> *
+                    }
+                    param.set("column", colArray);
+                } else if (!root.has("streamColumn") && !root.has("path")) {
+                    // Default to ["*"] for RDBMS if no column specified (and not stream/file)
+                    ArrayNode colArray = mapper.createArrayNode();
+                    colArray.add("*");
+                    param.set("column", colArray);
+                }
+            }
+
+            if (root.has("where"))
+                param.set("where", root.get("where"));
+            if (root.has("splitPk"))
+                param.set("splitPk", root.get("splitPk"));
+
+            // File
+            if (root.has("path")) {
+                ArrayNode pathArray = mapper.createArrayNode();
+                pathArray.add(root.get("path").asText());
+                param.set("path", pathArray);
+            }
+            if (root.has("fileType"))
+                param.set("fileType", root.get("fileType"));
+            if (root.has("fieldDelimiter"))
+                param.set("fieldDelimiter", root.get("fieldDelimiter"));
+
+            // Stream
+            // Check explicit sourceType to ensure we handle Stream defaults
+            String sourceType = root.has("sourceType") ? root.get("sourceType").asText().toUpperCase() : "";
+
+            if (root.has("sliceRecordCount")) {
+                param.set("sliceRecordCount", root.get("sliceRecordCount"));
+            } else if ("STREAM".equals(sourceType)) {
+                param.put("sliceRecordCount", 100); // Default count
+            }
+
+            if (root.has("streamColumn")) {
+                try {
+                    String streamColStr = root.get("streamColumn").asText();
+                    if (streamColStr != null && !streamColStr.isEmpty()) {
+                        JsonNode parsedCol = mapper.readTree(streamColStr);
+                        param.set("column", parsedCol);
+                    }
+                } catch (Exception e) {
+                    log.error("Failed to parse streamColumn key", e);
+                }
+            } else if ("STREAM".equals(sourceType)) {
+                // Inject default column for Stream reader if missing
+                ArrayNode defaultCol = mapper.createArrayNode();
+                ObjectNode colObj = mapper.createObjectNode();
+                colObj.put("type", "string");
+                colObj.put("value", "default_stream_value");
+                defaultCol.add(colObj);
+                param.set("column", defaultCol);
+            }
+
+            reader.set("parameter", param);
+            root.set("reader", reader);
+        }
+
+        // 2. Construct Writer
+        if (!root.has("writer") && root.has("targetId")) {
+            ObjectNode writer = mapper.createObjectNode();
+            writer.put("datasourceId", root.get("targetId").asLong());
+
+            ObjectNode param = mapper.createObjectNode();
+
+            // RDBMS
+            if (root.has("targetTable")) {
+                ArrayNode tables = mapper.createArrayNode();
+                tables.add(root.get("targetTable").asText());
+                param.set("table", tables); // Writer 'table' is usually an array too [table]
+            }
+            if (root.has("targetColumn")) {
+                String colStr = root.get("targetColumn").asText();
+                ArrayNode colArray = mapper.createArrayNode();
+                if (colStr != null && !colStr.isEmpty()) {
+                    if (colStr.equals("*")) {
+                        colArray.add("*");
+                    } else {
+                        for (String c : colStr.split(",")) {
+                            colArray.add(c.trim());
+                        }
+                    }
+                } else {
+                    colArray.add("*");
+                }
+                param.set("column", colArray);
+            }
+            if (root.has("writeMode"))
+                param.set("writeMode", root.get("writeMode"));
+            if (root.has("preSql")) {
+                ArrayNode pre = mapper.createArrayNode();
+                pre.add(root.get("preSql").asText());
+                param.set("preSql", pre);
+            }
+            if (root.has("postSql")) {
+                ArrayNode post = mapper.createArrayNode();
+                post.add(root.get("postSql").asText());
+                param.set("postSql", post);
+            }
+
+            // File
+            if (root.has("targetPath"))
+                param.set("path", root.get("targetPath"));
+            if (root.has("fileName"))
+                param.set("fileName", root.get("fileName"));
+            if (root.has("fileType"))
+                param.set("fileType", root.get("fileType"));
+            if (root.has("fieldDelimiter"))
+                param.set("fieldDelimiter", root.get("fieldDelimiter"));
+
+            // Stream Writer (usually no specific params or 'print')
+            if (root.has("print"))
+                param.put("print", root.get("print").asBoolean());
+
+            writer.set("parameter", param);
+            root.set("writer", writer);
+        }
+
+        return root;
     }
 
     /**

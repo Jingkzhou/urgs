@@ -20,6 +20,8 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 /**
@@ -121,7 +123,9 @@ public class ShellTaskHandler implements TaskHandler {
             port = 22;
 
         StringBuilder logBuilder = new StringBuilder();
-        logBuilder.append("Executing Remote Shell Task ").append(instance.getId()).append("\n");
+        String timeStart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        logBuilder.append("[").append(timeStart).append("] ").append("Executing Remote Shell Task ")
+                .append(instance.getId()).append("\n");
         logBuilder.append("Target: ").append(username).append("@").append(host).append(":").append(port).append("\n");
         logBuilder.append("Script: ").append(script).append("\n\n");
 
@@ -176,10 +180,15 @@ public class ShellTaskHandler implements TaskHandler {
             // 检查退出码
             int exitCode = channel.getExitStatus();
             if (exitCode != 0) {
-                logBuilder.append("\nRemote process exited with code ").append(exitCode);
+                String timeErr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                logBuilder.append("\n[").append(timeErr).append("] ").append("Remote process exited with code ")
+                        .append(exitCode);
                 throw new RuntimeException(
                         "Remote shell script exited with code " + exitCode + "\nLogs:\n" + logBuilder.toString());
             }
+
+            String timeEnd = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            logBuilder.append("\n[").append(timeEnd).append("] ").append("Remote Shell Task success.");
 
         } finally {
             // 资源释放
@@ -202,7 +211,9 @@ public class ShellTaskHandler implements TaskHandler {
         Process process = pb.start();
 
         StringBuilder logBuilder = new StringBuilder();
-        logBuilder.append("Executing Local Shell Task ").append(instance.getId()).append("\n");
+        String timeStart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        logBuilder.append("[").append(timeStart).append("] ").append("Executing Local Shell Task ")
+                .append(instance.getId()).append("\n");
         logBuilder.append("Script: ").append(script).append("\n\n");
 
         // 异步读取脚本执行产生的输出并更新到数据库
@@ -225,16 +236,22 @@ public class ShellTaskHandler implements TaskHandler {
             // 等待进程执行完毕，获取退出码
             int exitCode = process.waitFor();
             if (exitCode != 0) {
-                logBuilder.append("\nProcess exited with code ").append(exitCode);
+                String timeErr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                logBuilder.append("\n[").append(timeErr).append("] ").append("Process exited with code ")
+                        .append(exitCode);
                 throw new RuntimeException(
                         "Shell script exited with code " + exitCode + "\nLogs:\n" + logBuilder.toString());
             }
         } catch (InterruptedException e) {
             log.warn("Shell task {} interrupted, killing process...", instance.getId());
             process.destroy(); // 任务被中断时（如应用关闭），确保子进程被杀死
-            logBuilder.append("\nProcess interrupted and killed.");
+            String timeErr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            logBuilder.append("\n[").append(timeErr).append("] ").append("Process interrupted and killed.");
             throw e;
         }
+
+        String timeEnd = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        logBuilder.append("\n[").append(timeEnd).append("] ").append("Local Shell Task success.");
 
         return logBuilder.toString();
     }
