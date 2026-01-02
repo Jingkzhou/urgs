@@ -1,378 +1,304 @@
-import React, { useState, useMemo } from 'react';
-import { Input, Button, Dropdown, MenuProps } from 'antd';
-import {
-    Search,
-    GitPullRequest,
-    GitMerge,
-    Plus,
-    ChevronDown,
-    Tag as TagIcon,
-    Milestone,
-    XCircle,
-    CheckCircle2,
-    Check,
-    AlertTriangle,
-    MessageSquare,
-    GitBranch,
-    ArrowLeft,
-    Filter
-} from 'lucide-react';
+import React, { useState } from 'react';
+import { Input, Button, Select, Avatar, Dropdown, MenuProps, Tag, Pagination } from 'antd';
+import { Search, Filter, Plus, GitPullRequest, GitMerge, CheckCircle, Clock } from 'lucide-react';
+import PRStatusBadge, { PRStatus } from './components/PRStatusBadge';
+import { GitRepository } from '@/api/version';
 
-// Pull Request 状态类型
-type PRStatus = 'open' | 'merged' | 'closed';
+interface PullRequestListProps {
+    repoId: number;
+    onBack: () => void;
+    onCreateClick: () => void;
+    onPRClick: (prId: number) => void;
+}
 
-// 视图过滤状态 (类似 GitHub 的 Tabs)
-type ViewFilter = 'open' | 'closed';
-
-type MergeState = 'clean' | 'conflict' | 'unknown';
-type ChecksStatus = 'success' | 'pending' | 'failed';
-type ReviewState = 'approved' | 'changes_requested' | 'review_required';
-
-type LabelItem = {
-    name: string;
-    color?: string;
-    textColor?: string;
-    description?: string;
-};
-
-type LabelLike = LabelItem | string;
-
-// Mock数据类型
-interface PullRequest {
+// Mock Data Types
+export interface PullRequest {
     id: number;
     number: number;
     title: string;
     status: PRStatus;
-    author: string;
+    author: {
+        name: string;
+        avatar?: string;
+    };
     createdAt: string;
-    sourceBranch: string;
-    targetBranch: string;
-    reviewers?: string[];
-    labels?: LabelLike[];
-    commentCount?: number;
-    checksStatus?: ChecksStatus;
-    mergeState?: MergeState;
-    reviewState?: ReviewState;
-    draft?: boolean;
-    updatedAt?: string;
+    updatedAt: string;
+    base: string;
+    compare: string;
+    commentsCount: number;
+    reviewStatus?: 'approved' | 'changes_requested' | 'review_required';
+    labels?: { name: string; color: string }[];
+    checksStatus?: 'success' | 'failure' | 'pending';
 }
 
-interface Props {
-    repoId: number;
-    onBack?: () => void;
-    onCreatePR?: () => void;
-}
+const mockPRs: PullRequest[] = [
+    {
+        id: 1,
+        number: 10,
+        title: 'feat: add user authentication module',
+        status: 'open',
+        author: { name: 'zhangsan', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=zhangsan' },
+        createdAt: '2023-10-26T10:00:00Z',
+        updatedAt: '2023-10-27T09:30:00Z',
+        base: 'main',
+        compare: 'feat/auth',
+        commentsCount: 3,
+        reviewStatus: 'review_required',
+        labels: [{ name: 'feature', color: '#a2eeef' }, { name: 'backend', color: '#d4c5f9' }],
+        checksStatus: 'success'
+    },
+    {
+        id: 2,
+        number: 9,
+        title: 'fix: login page layout issue on mobile',
+        status: 'merged',
+        author: { name: 'lisi', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=lisi' },
+        createdAt: '2023-10-25T14:20:00Z',
+        updatedAt: '2023-10-26T16:45:00Z',
+        base: 'main',
+        compare: 'fix/login-layout',
+        commentsCount: 5,
+        reviewStatus: 'approved',
+        labels: [{ name: 'bug', color: '#d73a49' }],
+        checksStatus: 'success'
+    },
+    {
+        id: 3,
+        number: 8,
+        title: 'docs: update API documentation for v2 endpoints',
+        status: 'merged',
+        author: { name: 'wangwu', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=wangwu' },
+        createdAt: '2023-10-24T09:15:00Z',
+        updatedAt: '2023-10-25T11:20:00Z',
+        base: 'main',
+        compare: 'docs/api-v2',
+        commentsCount: 0,
+        labels: [{ name: 'documentation', color: '#0075ca' }],
+        checksStatus: 'success'
+    },
+    {
+        id: 4,
+        number: 11,
+        title: 'WIP: refactor database schema for scalability',
+        status: 'draft',
+        author: { name: 'zhaoliu', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=zhaoliu' },
+        createdAt: '2023-10-27T15:00:00Z',
+        updatedAt: '2023-10-27T15:00:00Z',
+        base: 'main',
+        compare: 'refactor/db-schema',
+        commentsCount: 1,
+        labels: [{ name: 'refactor', color: '#cfd3d7' }, { name: 'wip', color: '#e4e669' }],
+        checksStatus: 'pending'
+    },
+    {
+        id: 5,
+        number: 7,
+        title: 'feat: integrate payment gateway',
+        status: 'closed',
+        author: { name: 'qianqi', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=qianqi' },
+        createdAt: '2023-10-20T11:00:00Z',
+        updatedAt: '2023-10-22T10:00:00Z',
+        base: 'main',
+        compare: 'feat/payment',
+        commentsCount: 8,
+        labels: [{ name: 'feature', color: '#a2eeef' }],
+        checksStatus: 'failure'
+    }
+];
 
-const PullRequestList: React.FC<Props> = ({ repoId, onBack, onCreatePR }) => {
+const PullRequestList: React.FC<PullRequestListProps> = ({ repoId, onBack, onCreateClick, onPRClick }) => {
+    const [filterStatus, setFilterStatus] = useState<string>('all');
     const [searchText, setSearchText] = useState('');
-    const [viewFilter, setViewFilter] = useState<ViewFilter>('open');
 
-    // Mock数据 - 填充一些示例数据以便展示
-    const [pullRequests] = useState<PullRequest[]>([
-        {
-            id: 1,
-            number: 45,
-            title: 'Feat: Add support for OAuth2 authentication',
-            status: 'open',
-            author: 'johndoe',
-            createdAt: '2 hours ago',
-            sourceBranch: 'feat/oauth2',
-            targetBranch: 'main',
-            commentCount: 3,
-            checksStatus: 'success',
-            labels: [{ name: 'enhancement', color: 'a2eeef', textColor: '#003d3f' }, { name: 'backend', color: 'd4c5f9', textColor: '#2a0a55' }],
-            reviewers: ['alice'],
-            reviewState: 'approved'
-        },
-        {
-            id: 2,
-            number: 44,
-            title: 'Fix: Resolve concurrent modification exception in cache',
-            status: 'open',
-            author: 'bobsmith',
-            createdAt: '5 hours ago',
-            sourceBranch: 'fix/cache-race-condition',
-            targetBranch: 'main',
-            checksStatus: 'failed',
-            labels: [{ name: 'bug', color: 'd73a4a', textColor: '#ffffff' }, { name: 'critical', color: 'b60205', textColor: '#ffffff' }]
-        },
-        {
-            id: 3,
-            number: 42,
-            title: 'Docs: Update API documentation for v2 endpoints',
-            status: 'merged',
-            author: 'sarah',
-            createdAt: '1 day ago',
-            sourceBranch: 'docs/v2-api',
-            targetBranch: 'main',
-            commentCount: 1,
-            checksStatus: 'success',
-            labels: ['documentation']
-        },
-        {
-            id: 4,
-            number: 38,
-            title: 'Refactor: Improve database query performance',
-            status: 'closed',
-            author: 'mike',
-            createdAt: '3 days ago',
-            sourceBranch: 'refactor/db-query',
-            targetBranch: 'main',
-            checksStatus: 'success'
-        }
-    ]);
+    // Filter Logic
+    const filteredPRs = mockPRs.filter(pr => {
+        if (filterStatus !== 'all' && pr.status !== filterStatus) return false;
+        if (searchText && !pr.title.toLowerCase().includes(searchText.toLowerCase()) && !pr.number.toString().includes(searchText)) return false;
+        return true;
+    });
 
-    // 过滤逻辑
-    const filteredPRs = useMemo(() => {
-        let result = pullRequests;
-
-        // View Filter (Open vs Closed)
-        if (viewFilter === 'open') {
-            result = result.filter(pr => pr.status === 'open');
-        } else {
-            result = result.filter(pr => pr.status === 'closed' || pr.status === 'merged');
-        }
-
-        // Search Text
-        if (searchText) {
-            const lower = searchText.toLowerCase();
-            result = result.filter(pr =>
-                (pr.title || '').toLowerCase().includes(lower) ||
-                (pr.author || '').toLowerCase().includes(lower) ||
-                String(pr.number).includes(lower)
-            );
-        }
-
-        return result;
-    }, [pullRequests, viewFilter, searchText]);
-
-    // 统计数量
-    const counts = useMemo(() => ({
-        open: pullRequests.filter(pr => pr.status === 'open').length,
-        closed: pullRequests.filter(pr => pr.status === 'closed' || pr.status === 'merged').length,
-    }), [pullRequests]);
-
-    const normalizeLabel = (label: LabelLike): LabelItem => {
-        if (typeof label === 'string') {
-            return { name: label };
-        }
-        return label;
+    const stats = {
+        open: mockPRs.filter(p => p.status === 'open').length,
+        merged: mockPRs.filter(p => p.status === 'merged').filter(p => {
+            // Mock logic: check simple date condition or just random for demo
+            return true;
+        }).length, // In real app, filter by date 'today'
+        pending: mockPRs.filter(p => p.reviewStatus === 'review_required' && p.status === 'open').length,
     };
 
-    const StatusIcon = ({ status, draft }: { status: PRStatus, draft?: boolean }) => {
-        if (status === 'open') {
-            if (draft) {
-                return <GitPullRequest size={16} className="text-slate-400" />;
-            }
-            return <GitPullRequest size={16} className="text-[#1a7f37]" />; // GitHub Open Green
-        }
-        if (status === 'merged') {
-            return <GitMerge size={16} className="text-[#8250df]" />; // GitHub Merged Purple
-        }
-        return <GitPullRequest size={16} className="text-[#cf222e]" />; // GitHub Closed Red (Use PR icon for closed PRs traditionally, or XCircle)
-    };
-
-    // GitHub Button Styles
-    const btnBaseClass = "bg-[#f6f8fa] border-[#d0d7de] text-[#24292f] shadow-sm hover:bg-[#f3f4f6] hover:border-[#d0d7de] transition-all text-xs font-medium px-3 h-[32px] flex items-center gap-2 rounded-md";
-    const primaryBtnClass = "bg-[#1f883d] text-white border-[rgba(27,31,36,0.15)] shadow-sm hover:bg-[#1a7f37] hover:border-[rgba(27,31,36,0.15)] transition-all text-xs font-bold px-3 h-[32px] flex items-center gap-2 rounded-md";
-
-    const filterMenu: MenuProps['items'] = [
-        { key: 'author', label: '作者' },
-        { key: 'label', label: '标签' },
-        { key: 'projects', label: '项目' },
-        { key: 'milestones', label: '里程碑' },
-        { key: 'assignee', label: '指派给' },
-        { key: 'sort', label: '排序' },
-    ];
+    const StatusFilterButton = ({ status, label, count, active }: any) => (
+        <button
+            onClick={() => setFilterStatus(status)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${active
+                    ? 'bg-slate-800 text-white'
+                    : 'bg-white text-slate-600 hover:bg-slate-100'
+                }`}
+        >
+            {label}
+            {count !== undefined && <span className={`px-1.5 py-0.5 rounded-full text-xs ${active ? 'bg-slate-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{count}</span>}
+        </button>
+    );
 
     return (
-        <div className="min-h-screen bg-white">
-            {/* Context Header with Back Button */}
-            <div className="border-b border-slate-200 px-6 py-4 flex items-center gap-3 bg-white">
-                <Button
-                    type="text"
-                    icon={<ArrowLeft size={16} />}
-                    onClick={onBack}
-                    className="text-slate-500 hover:text-slate-700"
-                />
-                <div>
-                    <h2 className="text-lg font-semibold text-slate-900 m-0 leading-tight">Pull Requests</h2>
-                    <div className="text-xs text-slate-500 mt-1">仓库 #{repoId}</div>
+        <div className="bg-slate-50 min-h-screen -m-6 p-6">
+            {/* Top Stats Area */}
+            <div className="grid grid-cols-4 gap-4 mb-6">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <div className="text-slate-500 text-sm font-medium mb-1">开启中</div>
+                    <div className="text-2xl font-bold text-slate-800 flex items-end gap-2">
+                        {stats.open} <span className="text-slate-400 text-sm font-normal mb-1">Pull Requests</span>
+                    </div>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <div className="text-slate-500 text-sm font-medium mb-1">今日合并</div>
+                    <div className="text-2xl font-bold text-green-600 flex items-end gap-2">
+                        {stats.merged} <span className="text-slate-400 text-sm font-normal mb-1">Merged</span>
+                    </div>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <div className="text-slate-500 text-sm font-medium mb-1">待审核</div>
+                    <div className="text-2xl font-bold text-orange-500 flex items-end gap-2">
+                        {stats.pending} <span className="text-slate-400 text-sm font-normal mb-1">Pending</span>
+                    </div>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <div className="text-slate-500 text-sm font-medium mb-1">平均周期</div>
+                    <div className="text-2xl font-bold text-blue-600 flex items-end gap-2">
+                        1.2 <span className="text-slate-400 text-sm font-normal mb-1">天</span>
+                    </div>
                 </div>
             </div>
 
-            <div className="px-4 md:px-8 py-6 max-w-[1280px] mx-auto">
-                {/* Top Controls: Search & Actions */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                    <div className="flex items-center gap-2 flex-1 w-full md:max-w-3xl">
-                        <Dropdown menu={{ items: filterMenu }} trigger={['click']}>
-                            <button className={`${btnBaseClass} rounded-r-none border-r-0 px-3 bg-[#f6f8fa] text-slate-600`}>
-                                筛选 <ChevronDown size={10} />
-                            </button>
-                        </Dropdown>
-
-                        <div className="relative flex-1">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Search size={14} className="text-slate-500" />
-                            </div>
-                            <input
-                                type="text"
-                                className="block w-full rounded-md rounded-l-none border-[#d0d7de] pl-9 py-1.5 text-sm text-[#24292f] placeholder-slate-500 focus:border-[#0969da] focus:ring-1 focus:ring-[#0969da] focus:outline-none transition-shadow shadow-sm bg-[#f6f8fa] focus:bg-white"
-                                placeholder={`搜索 is:${viewFilter} `}
+            {/* Main Content Area */}
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                {/* Toolbar */}
+                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-white sticky top-0 z-10">
+                    <div className="flex items-center gap-2">
+                        <div className="flex bg-slate-100 p-1 rounded-lg mr-4">
+                            <StatusFilterButton status="all" label="全部" active={filterStatus === 'all'} />
+                            <StatusFilterButton status="open" label="开启中" count={stats.open} active={filterStatus === 'open'} />
+                            <StatusFilterButton status="closed" label="已关闭" active={filterStatus === 'closed'} />
+                        </div>
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                            <Input
+                                placeholder="搜索 PR 标题、编号或作者..."
+                                className="pl-9 w-64 rounded-lg border-slate-200 hover:border-blue-400 focus:border-blue-500"
                                 value={searchText}
                                 onChange={e => setSearchText(e.target.value)}
                             />
                         </div>
+                        <Button icon={<Filter size={14} />} className="text-slate-600 border-slate-200 rounded-lg">高级筛选</Button>
                     </div>
-
-                    <div className="flex items-center gap-2 md:gap-3 overflow-x-auto pb-1 md:pb-0">
-                        <button className={btnBaseClass}>
-                            <TagIcon size={14} className="text-slate-500" />
-                            标签
-                        </button>
-                        <button className={btnBaseClass}>
-                            <Milestone size={14} className="text-slate-500" />
-                            里程碑
-                        </button>
-                        <button className={primaryBtnClass} onClick={onCreatePR}>
+                    <div className="flex items-center gap-3">
+                        <Select
+                            defaultValue="newest"
+                            style={{ width: 120 }}
+                            variant="borderless"
+                            className="bg-transparent hover:bg-slate-50 rounded"
+                            options={[
+                                { value: 'newest', label: '最新创建' },
+                                { value: 'updated', label: '最近更新' },
+                                { value: 'comments', label: '评论最多' },
+                            ]}
+                        />
+                        <Button
+                            type="primary"
+                            icon={<Plus size={16} />}
+                            className="bg-[#1a7f37] hover:bg-[#156d2e] border-none shadow-sm rounded-lg h-9 px-4 font-medium"
+                            onClick={onCreateClick}
+                        >
                             新建 Pull Request
-                        </button>
+                        </Button>
                     </div>
                 </div>
 
-                {/* List Container */}
-                <div className="border border-[#d0d7de] rounded-md overflow-hidden bg-white shadow-sm">
-                    {/* List Header / Filter Tabs */}
-                    <div className="flex items-center justify-between bg-[#f6f8fa] px-4 py-3 border-b border-[#d0d7de]">
-                        <div className="flex items-center gap-4">
-                            <button
-                                onClick={() => setViewFilter('open')}
-                                className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${viewFilter === 'open' ? 'text-[#24292f]' : 'text-slate-500 hover:text-[#24292f]'
-                                    }`}
-                            >
-                                <GitPullRequest size={16} />
-                                {counts.open} 开启
-                            </button>
-                            <button
-                                onClick={() => setViewFilter('closed')}
-                                className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${viewFilter === 'closed' ? 'text-[#24292f]' : 'text-slate-500 hover:text-[#24292f]'
-                                    }`}
-                            >
-                                <Check size={16} />
-                                {counts.closed} 已关闭
-                            </button>
+                {/* List */}
+                <div className="divide-y divide-slate-100">
+                    {filteredPRs.length === 0 ? (
+                        <div className="py-20 text-center text-slate-500">
+                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-50 mb-4">
+                                <GitPullRequest size={32} className="text-slate-300" />
+                            </div>
+                            <p className="text-lg font-medium text-slate-700">没有找到匹配的 Pull Request</p>
+                            <p className="text-slate-400 mt-1">尝试调整筛选条件或创建一个新的 PR</p>
                         </div>
-
-                        <div className="flex items-center gap-4 text-sm text-slate-500 hidden md:flex">
-                            <div className="hover:text-slate-800 cursor-pointer flex items-center gap-1">
-                                作者 <ChevronDown size={12} />
-                            </div>
-                            <div className="hover:text-slate-800 cursor-pointer flex items-center gap-1">
-                                标签 <ChevronDown size={12} />
-                            </div>
-                            <div className="hover:text-slate-800 cursor-pointer flex items-center gap-1">
-                                项目 <ChevronDown size={12} />
-                            </div>
-                            <div className="hover:text-slate-800 cursor-pointer flex items-center gap-1">
-                                排序 <ChevronDown size={12} />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* List Items */}
-                    <div className="divide-y divide-[#d0d7de}">
-                        {filteredPRs.length === 0 ? (
-                            <div className="py-16 text-center">
-                                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 mb-3">
-                                    <GitPullRequest size={24} className="text-slate-400" />
-                                </div>
-                                <h3 className="text-sm font-medium text-slate-900">未找到匹配的 Pull Request。</h3>
-                                <p className="mt-1 text-sm text-slate-500">
-                                    尝试移除一些筛选条件以查看更多结果。
-                                </p>
-                            </div>
-                        ) : (
-                            filteredPRs.map((pr) => (
-                                <div key={pr.id} className="group p-3 sm:px-4 sm:py-3 hover:bg-[#f6f8fa] transition-colors flex items-start gap-2 sm:gap-3">
-                                    <div className="mt-1 flex-shrink-0">
-                                        <StatusIcon status={pr.status} draft={pr.draft} />
+                    ) : (
+                        filteredPRs.map(pr => (
+                            <div key={pr.id} className="p-4 hover:bg-slate-50 transition-colors group cursor-pointer" onClick={() => onPRClick(pr.id)}>
+                                <div className="flex items-start gap-3">
+                                    <div className="mt-1">
+                                        {/* Status Icon Only - visual cue */}
+                                        {pr.status === 'open' && <GitPullRequest size={18} className="text-[#1a7f37]" />}
+                                        {pr.status === 'merged' && <GitMerge size={18} className="text-[#8250df]" />}
+                                        {pr.status === 'closed' && <GitPullRequest size={18} className="text-[#cf222e]" />}
+                                        {pr.status === 'draft' && <GitPullRequest size={18} className="text-slate-400" />}
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                            <a href="#" className="text-[16px] font-semibold text-[#24292f] hover:text-[#0969da] leading-snug">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="font-semibold text-slate-800 text-base group-hover:text-blue-600 transition-colors truncate">
                                                 {pr.title}
-                                            </a>
-                                            {pr.draft && (
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                                                    草稿
+                                            </span>
+                                            {pr.labels?.map(label => (
+                                                <span
+                                                    key={label.name}
+                                                    className="px-2 py-0.5 rounded-full text-xs font-medium"
+                                                    style={{ backgroundColor: `${label.color}30`, color: label.color }} // roughly lighter bg
+                                                >
+                                                    {label.name}
+                                                </span>
+                                            ))}
+                                            {pr.status === 'draft' && (
+                                                <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 text-xs font-medium border border-slate-200">
+                                                    Draft
                                                 </span>
                                             )}
-                                            {(pr.labels || []).map((label, idx) => {
-                                                const l = normalizeLabel(label);
-                                                return (
-                                                    <span
-                                                        key={idx}
-                                                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border"
-                                                        style={{
-                                                            backgroundColor: `#${l.color || 'eaeaea'}40`, // Low opacity background
-                                                            borderColor: 'transparent',
-                                                            color: l.textColor || '#24292f'
-                                                        }}
-                                                    >
-                                                        {l.name}
-                                                    </span>
-                                                )
-                                            })}
                                         </div>
-                                        <div className="mt-1 text-xs text-slate-500 flex flex-wrap items-center gap-1">
-                                            <span>#{pr.number}</span>
-                                            <span>创建于 {pr.createdAt} 由 <span className="text-slate-700 font-medium hover:underline cursor-pointer">{pr.author}</span></span>
-                                            <span className="mx-1 hidden sm:inline">•</span>
-                                            <span className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 border border-slate-200/50">
-                                                <GitBranch size={10} />
-                                                <span className="font-mono">{pr.targetBranch}</span>
-                                                <span className="text-slate-400">←</span>
-                                                <span className="font-mono">{pr.sourceBranch}</span>
+                                        <div className="flex items-center gap-3 text-xs text-slate-500">
+                                            <span className="font-mono text-slate-400">#{pr.number}</span>
+                                            <span>
+                                                <span className="font-medium text-slate-700">{pr.author.name}</span> 创建于 2 天前
                                             </span>
+                                            <span className="flex items-center bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">
+                                                <span className="font-mono text-blue-600">{pr.base}</span>
+                                                <span className="mx-1 text-slate-300">←</span>
+                                                <span className="font-mono text-blue-600">{pr.compare}</span>
+                                            </span>
+                                            {pr.reviewStatus === 'approved' && (
+                                                <span className="text-green-600 flex items-center gap-1">
+                                                    <CheckCircle size={12} /> Approved
+                                                </span>
+                                            )}
+                                            {pr.commentsCount > 0 && (
+                                                <span className="flex items-center gap-1 hover:text-blue-600">
+                                                    <Clock size={12} /> {pr.commentsCount}
+                                                </span>
+                                            )}
+                                            <div className="flex -space-x-1 ml-2">
+                                                <Avatar size={16} src={pr.author.avatar} className="border border-white" />
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="hidden sm:flex items-center gap-4 ml-4 flex-shrink-0">
-                                        {pr.checksStatus === 'success' && <CheckCircle2 size={16} className="text-[#1a7f37]" />}
-                                        {pr.checksStatus === 'failed' && <XCircle size={16} className="text-[#cf222e]" />}
-                                        {pr.checksStatus === 'pending' && <div className="w-3 h-3 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />}
-
-                                        {pr.commentCount && pr.commentCount > 0 ? (
-                                            <div className="flex items-center gap-1 text-slate-500 hover:text-[#0969da] cursor-pointer">
-                                                <MessageSquare size={14} />
-                                                <span className="text-xs font-medium">{pr.commentCount}</span>
-                                            </div>
-                                        ) : null}
-
-                                        {pr.reviewers && (
-                                            <div className="flex -space-x-1">
-                                                {pr.reviewers.slice(0, 3).map((r, i) => (
-                                                    <div key={i} className="w-5 h-5 rounded-full bg-slate-200 border border-white flex items-center justify-center text-[10px] text-slate-600 font-medium" title={r}>
-                                                        {r[0].toUpperCase()}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
+                                    <div className="flex items-center gap-2 self-center">
+                                        {pr.checksStatus === 'success' && <CheckCircle size={16} className="text-green-500" />}
+                                        {pr.checksStatus === 'failure' && <XCircle size={16} className="text-red-500" />}
+                                        <PRStatusBadge status={pr.status} />
                                     </div>
                                 </div>
-                            ))
-                        )}
-                    </div>
+                            </div>
+                        ))
+                    )}
                 </div>
 
-                {/* Pagination placeholder */}
-                {filteredPRs.length > 0 && (
-                    <div className="mt-4 text-center text-xs text-slate-500">
-                        提示：使用 <span className="font-mono bg-slate-100 px-1 rounded">cmd+click</span> 可以打开多个标签页。
-                    </div>
-                )}
+                {/* Pagination */}
+                <div className="p-4 border-t border-slate-200 flex justify-center">
+                    <Pagination defaultCurrent={1} total={50} size="small" />
+                </div>
             </div>
         </div>
     );
 };
 
 export default PullRequestList;
+
+import { XCircle } from 'lucide-react';

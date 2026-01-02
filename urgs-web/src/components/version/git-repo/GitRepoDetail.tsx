@@ -8,7 +8,7 @@ import CommitList from './CommitList';
 import CommitDetail from './CommitDetail';
 import BranchList from './BranchList';
 import TagList from './TagList';
-import PullRequestList from './PullRequestList';
+import PullRequestModule from './PullRequestModule';
 import { formatCommitTime } from '@/utils/dateUtils';
 import PipelineManagement from '../PipelineManagement';
 import DeploymentManagement from '../DeploymentManagement';
@@ -517,11 +517,12 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
         );
     }
 
-    // Pull Request List View
+    // Pull Request Module View
     if (viewingPullRequests) {
         return (
-            <PullRequestList
+            <PullRequestModule
                 repoId={repo.id!}
+                ssoId={repo.ssoId}
                 onBack={backToCodeView}
             />
         );
