@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Input, Button } from 'antd';
+import { Input, Button, Dropdown, MenuProps } from 'antd';
 import {
     Search,
     GitPullRequest,
@@ -8,17 +8,21 @@ import {
     ChevronDown,
     Tag as TagIcon,
     Milestone,
-    ArrowLeft,
     XCircle,
     CheckCircle2,
+    Check,
     AlertTriangle,
-    Clock,
     MessageSquare,
     GitBranch,
+    ArrowLeft,
+    Filter
 } from 'lucide-react';
 
 // Pull Request 状态类型
-type PRStatus = 'all' | 'open' | 'merged' | 'closed';
+type PRStatus = 'open' | 'merged' | 'closed';
+
+// 视图过滤状态 (类似 GitHub 的 Tabs)
+type ViewFilter = 'open' | 'closed';
 
 type MergeState = 'clean' | 'conflict' | 'unknown';
 type ChecksStatus = 'success' | 'pending' | 'failed';
@@ -28,6 +32,7 @@ type LabelItem = {
     name: string;
     color?: string;
     textColor?: string;
+    description?: string;
 };
 
 type LabelLike = LabelItem | string;
@@ -37,7 +42,7 @@ interface PullRequest {
     id: number;
     number: number;
     title: string;
-    status: 'open' | 'merged' | 'closed';
+    status: PRStatus;
     author: string;
     createdAt: string;
     sourceBranch: string;
@@ -49,6 +54,7 @@ interface PullRequest {
     mergeState?: MergeState;
     reviewState?: ReviewState;
     draft?: boolean;
+    updatedAt?: string;
 }
 
 interface Props {
@@ -59,130 +65,92 @@ interface Props {
 
 const PullRequestList: React.FC<Props> = ({ repoId, onBack, onCreatePR }) => {
     const [searchText, setSearchText] = useState('');
-    const [statusFilter, setStatusFilter] = useState<PRStatus>('all');
+    const [viewFilter, setViewFilter] = useState<ViewFilter>('open');
 
-    // Mock数据 - TODO: 从API获取
-    const [pullRequests] = useState<PullRequest[]>([]);
+    // Mock数据 - 填充一些示例数据以便展示
+    const [pullRequests] = useState<PullRequest[]>([
+        {
+            id: 1,
+            number: 45,
+            title: 'Feat: Add support for OAuth2 authentication',
+            status: 'open',
+            author: 'johndoe',
+            createdAt: '2 hours ago',
+            sourceBranch: 'feat/oauth2',
+            targetBranch: 'main',
+            commentCount: 3,
+            checksStatus: 'success',
+            labels: [{ name: 'enhancement', color: 'a2eeef', textColor: '#003d3f' }, { name: 'backend', color: 'd4c5f9', textColor: '#2a0a55' }],
+            reviewers: ['alice'],
+            reviewState: 'approved'
+        },
+        {
+            id: 2,
+            number: 44,
+            title: 'Fix: Resolve concurrent modification exception in cache',
+            status: 'open',
+            author: 'bobsmith',
+            createdAt: '5 hours ago',
+            sourceBranch: 'fix/cache-race-condition',
+            targetBranch: 'main',
+            checksStatus: 'failed',
+            labels: [{ name: 'bug', color: 'd73a4a', textColor: '#ffffff' }, { name: 'critical', color: 'b60205', textColor: '#ffffff' }]
+        },
+        {
+            id: 3,
+            number: 42,
+            title: 'Docs: Update API documentation for v2 endpoints',
+            status: 'merged',
+            author: 'sarah',
+            createdAt: '1 day ago',
+            sourceBranch: 'docs/v2-api',
+            targetBranch: 'main',
+            commentCount: 1,
+            checksStatus: 'success',
+            labels: ['documentation']
+        },
+        {
+            id: 4,
+            number: 38,
+            title: 'Refactor: Improve database query performance',
+            status: 'closed',
+            author: 'mike',
+            createdAt: '3 days ago',
+            sourceBranch: 'refactor/db-query',
+            targetBranch: 'main',
+            checksStatus: 'success'
+        }
+    ]);
 
     // 过滤逻辑
     const filteredPRs = useMemo(() => {
         let result = pullRequests;
 
-        if (statusFilter !== 'all') {
-            result = result.filter(pr => pr.status === statusFilter);
+        // View Filter (Open vs Closed)
+        if (viewFilter === 'open') {
+            result = result.filter(pr => pr.status === 'open');
+        } else {
+            result = result.filter(pr => pr.status === 'closed' || pr.status === 'merged');
         }
 
+        // Search Text
         if (searchText) {
             const lower = searchText.toLowerCase();
             result = result.filter(pr =>
                 (pr.title || '').toLowerCase().includes(lower) ||
-                (pr.author || '').toLowerCase().includes(lower)
+                (pr.author || '').toLowerCase().includes(lower) ||
+                String(pr.number).includes(lower)
             );
         }
 
         return result;
-    }, [pullRequests, statusFilter, searchText]);
+    }, [pullRequests, viewFilter, searchText]);
 
     // 统计数量
     const counts = useMemo(() => ({
-        all: pullRequests.length,
         open: pullRequests.filter(pr => pr.status === 'open').length,
-        merged: pullRequests.filter(pr => pr.status === 'merged').length,
-        closed: pullRequests.filter(pr => pr.status === 'closed').length,
+        closed: pullRequests.filter(pr => pr.status === 'closed' || pr.status === 'merged').length,
     }), [pullRequests]);
-
-    const statusTabs: Array<{ key: PRStatus; label: string; count: number }> = [
-        { key: 'all', label: '全部', count: counts.all },
-        { key: 'open', label: '开启的', count: counts.open },
-        { key: 'merged', label: '已合并', count: counts.merged },
-        { key: 'closed', label: '已关闭', count: counts.closed },
-    ];
-
-    const filterActions = [
-        { key: 'author', label: '作者' },
-        { key: 'reviewer', label: '审查人' },
-        { key: 'assignee', label: '测试' },
-        { key: 'sort', label: '排序' },
-    ];
-
-    const primaryButtonClass =
-        'bg-gradient-to-tr from-indigo-500 to-purple-600 border-none hover:from-indigo-600 hover:to-purple-700';
-    const secondaryButtonClass =
-        'border-indigo-200 text-indigo-600 hover:text-indigo-700 hover:border-indigo-300';
-    const filterButtonClass =
-        'inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50/40 px-2.5 py-1.5 text-xs font-medium text-indigo-600 transition hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50';
-
-    const statusMeta = {
-        open: {
-            label: 'Open',
-            icon: <GitPullRequest size={14} />,
-            className: 'text-emerald-600 bg-emerald-50 border-emerald-200',
-        },
-        merged: {
-            label: 'Merged',
-            icon: <GitMerge size={14} />,
-            className: 'text-violet-600 bg-violet-50 border-violet-200',
-        },
-        closed: {
-            label: 'Closed',
-            icon: <XCircle size={14} />,
-            className: 'text-rose-600 bg-rose-50 border-rose-200',
-        },
-    };
-
-    const mergeStateMeta: Record<MergeState, { label: string; className: string; icon: React.ReactNode }> = {
-        clean: {
-            label: '可合并',
-            icon: <GitMerge size={12} />,
-            className: 'text-emerald-600 bg-emerald-50 border-emerald-200',
-        },
-        conflict: {
-            label: '有冲突',
-            icon: <AlertTriangle size={12} />,
-            className: 'text-rose-600 bg-rose-50 border-rose-200',
-        },
-        unknown: {
-            label: '检查中',
-            icon: <Clock size={12} />,
-            className: 'text-slate-500 bg-slate-100 border-slate-200',
-        },
-    };
-
-    const checksMeta: Record<ChecksStatus, { label: string; className: string; icon: React.ReactNode }> = {
-        success: {
-            label: 'Checks 通过',
-            icon: <CheckCircle2 size={12} />,
-            className: 'text-emerald-600',
-        },
-        pending: {
-            label: 'Checks 进行中',
-            icon: <Clock size={12} />,
-            className: 'text-amber-600',
-        },
-        failed: {
-            label: 'Checks 失败',
-            icon: <XCircle size={12} />,
-            className: 'text-rose-600',
-        },
-    };
-
-    const reviewMeta: Record<ReviewState, { label: string; className: string; icon: React.ReactNode }> = {
-        approved: {
-            label: '已批准',
-            icon: <CheckCircle2 size={12} />,
-            className: 'text-emerald-600',
-        },
-        changes_requested: {
-            label: '需修改',
-            icon: <AlertTriangle size={12} />,
-            className: 'text-rose-600',
-        },
-        review_required: {
-            label: '待审查',
-            icon: <Clock size={12} />,
-            className: 'text-slate-500',
-        },
-    };
 
     const normalizeLabel = (label: LabelLike): LabelItem => {
         if (typeof label === 'string') {
@@ -191,236 +159,215 @@ const PullRequestList: React.FC<Props> = ({ repoId, onBack, onCreatePR }) => {
         return label;
     };
 
-    const getInitials = (name: string) => {
-        const trimmed = name.trim();
-        if (!trimmed) {
-            return '';
+    const StatusIcon = ({ status, draft }: { status: PRStatus, draft?: boolean }) => {
+        if (status === 'open') {
+            if (draft) {
+                return <GitPullRequest size={16} className="text-slate-400" />;
+            }
+            return <GitPullRequest size={16} className="text-[#1a7f37]" />; // GitHub Open Green
         }
-        return trimmed
-            .split(/\s+/)
-            .map(part => part[0])
-            .join('')
-            .slice(0, 2)
-            .toUpperCase();
+        if (status === 'merged') {
+            return <GitMerge size={16} className="text-[#8250df]" />; // GitHub Merged Purple
+        }
+        return <GitPullRequest size={16} className="text-[#cf222e]" />; // GitHub Closed Red (Use PR icon for closed PRs traditionally, or XCircle)
     };
 
+    // GitHub Button Styles
+    const btnBaseClass = "bg-[#f6f8fa] border-[#d0d7de] text-[#24292f] shadow-sm hover:bg-[#f3f4f6] hover:border-[#d0d7de] transition-all text-xs font-medium px-3 h-[32px] flex items-center gap-2 rounded-md";
+    const primaryBtnClass = "bg-[#1f883d] text-white border-[rgba(27,31,36,0.15)] shadow-sm hover:bg-[#1a7f37] hover:border-[rgba(27,31,36,0.15)] transition-all text-xs font-bold px-3 h-[32px] flex items-center gap-2 rounded-md";
+
+    const filterMenu: MenuProps['items'] = [
+        { key: 'author', label: '作者' },
+        { key: 'label', label: '标签' },
+        { key: 'projects', label: '项目' },
+        { key: 'milestones', label: '里程碑' },
+        { key: 'assignee', label: '指派给' },
+        { key: 'sort', label: '排序' },
+    ];
+
     return (
-        <div className="min-h-screen bg-slate-50">
-            {/* Header */}
-            <div className="border-b border-slate-200/70 bg-white/90 backdrop-blur sticky top-0 z-10">
-                <div className="px-6 py-4 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                        <Button
-                            icon={<ArrowLeft size={16} />}
-                            onClick={onBack}
-                            className={`flex items-center ${secondaryButtonClass}`}
-                        >
-                            返回
-                        </Button>
-                        <div>
-                            <div className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-                                <GitPullRequest size={20} className="text-emerald-600" />
-                                Pull Requests
-                                <span className="text-xs font-normal text-slate-400">#{repoId}</span>
-                            </div>
-                            <div className="text-xs text-slate-500">合并视图 · GitHub 风格过滤</div>
-                        </div>
-                    </div>
-                    <div className="hidden md:flex items-center gap-2 text-xs text-slate-500">
-                        <GitMerge size={14} className="text-violet-500" />
-                        <span>模拟合并状态展示</span>
-                    </div>
+        <div className="min-h-screen bg-white">
+            {/* Context Header with Back Button */}
+            <div className="border-b border-slate-200 px-6 py-4 flex items-center gap-3 bg-white">
+                <Button
+                    type="text"
+                    icon={<ArrowLeft size={16} />}
+                    onClick={onBack}
+                    className="text-slate-500 hover:text-slate-700"
+                />
+                <div>
+                    <h2 className="text-lg font-semibold text-slate-900 m-0 leading-tight">Pull Requests</h2>
+                    <div className="text-xs text-slate-500 mt-1">仓库 #{repoId}</div>
                 </div>
             </div>
 
-            {/* 过滤与操作栏 */}
-            <div className="px-6 py-4 border-b border-slate-100 bg-white">
-                <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex-1 min-w-[240px] max-w-[720px]">
-                        <Input
-                            prefix={<Search size={14} className="text-slate-400" />}
-                            placeholder="搜索或过滤 (is:open label:bug author:you)"
-                            className="border-slate-200"
-                            value={searchText}
-                            onChange={e => setSearchText(e.target.value)}
-                        />
-                    </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                        {filterActions.map(item => (
-                            <button
-                                key={item.key}
-                                className={filterButtonClass}
-                            >
-                                {item.label}
-                                <ChevronDown size={12} />
+            <div className="px-4 md:px-8 py-6 max-w-[1280px] mx-auto">
+                {/* Top Controls: Search & Actions */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                    <div className="flex items-center gap-2 flex-1 w-full md:max-w-3xl">
+                        <Dropdown menu={{ items: filterMenu }} trigger={['click']}>
+                            <button className={`${btnBaseClass} rounded-r-none border-r-0 px-3 bg-[#f6f8fa] text-slate-600`}>
+                                筛选 <ChevronDown size={10} />
                             </button>
-                        ))}
-                        <Button
-                            icon={<TagIcon size={14} />}
-                            className={secondaryButtonClass}
-                        >
-                            标签管理
-                        </Button>
-                        <Button
-                            icon={<Milestone size={14} />}
-                            className={secondaryButtonClass}
-                        >
+                        </Dropdown>
+
+                        <div className="relative flex-1">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <Search size={14} className="text-slate-500" />
+                            </div>
+                            <input
+                                type="text"
+                                className="block w-full rounded-md rounded-l-none border-[#d0d7de] pl-9 py-1.5 text-sm text-[#24292f] placeholder-slate-500 focus:border-[#0969da] focus:ring-1 focus:ring-[#0969da] focus:outline-none transition-shadow shadow-sm bg-[#f6f8fa] focus:bg-white"
+                                placeholder={`搜索 is:${viewFilter} `}
+                                value={searchText}
+                                onChange={e => setSearchText(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 md:gap-3 overflow-x-auto pb-1 md:pb-0">
+                        <button className={btnBaseClass}>
+                            <TagIcon size={14} className="text-slate-500" />
+                            标签
+                        </button>
+                        <button className={btnBaseClass}>
+                            <Milestone size={14} className="text-slate-500" />
                             里程碑
-                        </Button>
-                        <Button
-                            type="primary"
-                            icon={<Plus size={14} />}
-                            className={primaryButtonClass}
-                            onClick={onCreatePR}
-                        >
+                        </button>
+                        <button className={primaryBtnClass} onClick={onCreatePR}>
                             新建 Pull Request
-                        </Button>
+                        </button>
                     </div>
                 </div>
-            </div>
 
-            {/* 状态标签栏 */}
-            <div className="px-6 py-3 border-b border-slate-100 bg-white">
-                <div className="flex items-center gap-2 flex-wrap">
-                    {statusTabs.map(tab => (
-                        <button
-                            key={tab.key}
-                            onClick={() => setStatusFilter(tab.key)}
-                            className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition border ${statusFilter === tab.key
-                                ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
-                                : 'border-transparent bg-transparent text-slate-500 hover:text-indigo-700 hover:bg-indigo-50/60'
-                                }`}
-                        >
-                            <span>{tab.label}</span>
-                            <span className="rounded-full bg-white/70 px-1.5 py-0.5 text-[10px] text-slate-500">
-                                {tab.count}
-                            </span>
-                        </button>
-                    ))}
-                </div>
-            </div>
+                {/* List Container */}
+                <div className="border border-[#d0d7de] rounded-md overflow-hidden bg-white shadow-sm">
+                    {/* List Header / Filter Tabs */}
+                    <div className="flex items-center justify-between bg-[#f6f8fa] px-4 py-3 border-b border-[#d0d7de]">
+                        <div className="flex items-center gap-4">
+                            <button
+                                onClick={() => setViewFilter('open')}
+                                className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${viewFilter === 'open' ? 'text-[#24292f]' : 'text-slate-500 hover:text-[#24292f]'
+                                    }`}
+                            >
+                                <GitPullRequest size={16} />
+                                {counts.open} 开启
+                            </button>
+                            <button
+                                onClick={() => setViewFilter('closed')}
+                                className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${viewFilter === 'closed' ? 'text-[#24292f]' : 'text-slate-500 hover:text-[#24292f]'
+                                    }`}
+                            >
+                                <Check size={16} />
+                                {counts.closed} 已关闭
+                            </button>
+                        </div>
 
-            {/* 内容区域 */}
-            <div className="flex-1 px-6 py-6">
-                {filteredPRs.length === 0 ? (
-                    <div className="text-center py-20">
-                        {/* 空状态插图 */}
-                        <div className="mb-6 opacity-60">
-                            <div className="relative inline-block text-slate-300">
-                                <GitPullRequest size={80} strokeWidth={1} />
+                        <div className="flex items-center gap-4 text-sm text-slate-500 hidden md:flex">
+                            <div className="hover:text-slate-800 cursor-pointer flex items-center gap-1">
+                                作者 <ChevronDown size={12} />
+                            </div>
+                            <div className="hover:text-slate-800 cursor-pointer flex items-center gap-1">
+                                标签 <ChevronDown size={12} />
+                            </div>
+                            <div className="hover:text-slate-800 cursor-pointer flex items-center gap-1">
+                                项目 <ChevronDown size={12} />
+                            </div>
+                            <div className="hover:text-slate-800 cursor-pointer flex items-center gap-1">
+                                排序 <ChevronDown size={12} />
                             </div>
                         </div>
-                        <p className="text-slate-400 text-base">没有符合条件的 Pull Request</p>
-                        <Button type="primary" className={`mt-4 ${primaryButtonClass}`} onClick={onCreatePR}>创建第一个 Pull Request</Button>
                     </div>
-                ) : (
-                    <div className="w-full">
-                        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                            {filteredPRs.map((pr, idx) => {
-                                const statusInfo = statusMeta[pr.status];
-                                const mergeStateInfo = pr.mergeState ? mergeStateMeta[pr.mergeState] : null;
-                                const checksInfo = pr.checksStatus ? checksMeta[pr.checksStatus] : null;
-                                const reviewInfo = pr.reviewState ? reviewMeta[pr.reviewState] : null;
 
-                                return (
-                                    <div
-                                        key={pr.id}
-                                        className={`group px-5 py-4 transition-colors hover:bg-slate-50 ${idx !== filteredPRs.length - 1 ? 'border-b border-slate-100' : ''}`}
-                                    >
-                                        <div className="flex items-start justify-between gap-4">
-                                            <div className="flex items-start gap-3 min-w-0">
-                                                <div className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-full border ${statusInfo.className}`}>
-                                                    {statusInfo.icon}
-                                                </div>
-                                                <div className="min-w-0">
-                                                    <div className="flex flex-wrap items-center gap-2">
-                                                        <span className="text-slate-900 font-semibold group-hover:text-blue-600 cursor-pointer">
-                                                            {pr.title || '未命名 Pull Request'}
-                                                        </span>
-                                                        {pr.draft ? (
-                                                            <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-                                                                Draft
-                                                            </span>
-                                                        ) : null}
-                                                        {(pr.labels || []).map((label, index) => {
-                                                            const data = normalizeLabel(label);
-                                                            const bgColor = data.color || undefined;
-                                                            const textColor = data.textColor || '#1f2937';
-                                                            return (
-                                                                <span
-                                                                    key={`${data.name}-${index}`}
-                                                                    className="rounded-full border px-2 py-0.5 text-[10px] font-semibold"
-                                                                    style={{
-                                                                        borderColor: bgColor || '#e2e8f0',
-                                                                        backgroundColor: bgColor || '#f8fafc',
-                                                                        color: bgColor ? textColor : '#475569',
-                                                                    }}
-                                                                >
-                                                                    {data.name}
-                                                                </span>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                    <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                                                        <span>#{pr.number}</span>
-                                                        <span>
-                                                            由 <span className="font-semibold text-slate-700">{pr.author}</span> 创建于 {pr.createdAt}
-                                                        </span>
-                                                        <span className="flex items-center gap-1 text-slate-400">
-                                                            <GitBranch size={12} />
-                                                            {pr.sourceBranch} → {pr.targetBranch}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 font-semibold ${statusInfo.className}`}>
-                                                    {statusInfo.icon}
-                                                    {statusInfo.label}
+                    {/* List Items */}
+                    <div className="divide-y divide-[#d0d7de}">
+                        {filteredPRs.length === 0 ? (
+                            <div className="py-16 text-center">
+                                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 mb-3">
+                                    <GitPullRequest size={24} className="text-slate-400" />
+                                </div>
+                                <h3 className="text-sm font-medium text-slate-900">未找到匹配的 Pull Request。</h3>
+                                <p className="mt-1 text-sm text-slate-500">
+                                    尝试移除一些筛选条件以查看更多结果。
+                                </p>
+                            </div>
+                        ) : (
+                            filteredPRs.map((pr) => (
+                                <div key={pr.id} className="group p-3 sm:px-4 sm:py-3 hover:bg-[#f6f8fa] transition-colors flex items-start gap-2 sm:gap-3">
+                                    <div className="mt-1 flex-shrink-0">
+                                        <StatusIcon status={pr.status} draft={pr.draft} />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <a href="#" className="text-[16px] font-semibold text-[#24292f] hover:text-[#0969da] leading-snug">
+                                                {pr.title}
+                                            </a>
+                                            {pr.draft && (
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                                                    草稿
                                                 </span>
-                                                {mergeStateInfo ? (
-                                                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 font-semibold ${mergeStateInfo.className}`}>
-                                                        {mergeStateInfo.icon}
-                                                        {mergeStateInfo.label}
+                                            )}
+                                            {(pr.labels || []).map((label, idx) => {
+                                                const l = normalizeLabel(label);
+                                                return (
+                                                    <span
+                                                        key={idx}
+                                                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border"
+                                                        style={{
+                                                            backgroundColor: `#${l.color || 'eaeaea'}40`, // Low opacity background
+                                                            borderColor: 'transparent',
+                                                            color: l.textColor || '#24292f'
+                                                        }}
+                                                    >
+                                                        {l.name}
                                                     </span>
-                                                ) : null}
-                                                {checksInfo ? (
-                                                    <span className={`inline-flex items-center gap-1 font-semibold ${checksInfo.className}`}>
-                                                        {checksInfo.icon}
-                                                        {checksInfo.label}
-                                                    </span>
-                                                ) : null}
-                                                {reviewInfo ? (
-                                                    <span className={`inline-flex items-center gap-1 font-semibold ${reviewInfo.className}`}>
-                                                        {reviewInfo.icon}
-                                                        {reviewInfo.label}
-                                                    </span>
-                                                ) : null}
-                                                {typeof pr.commentCount === 'number' ? (
-                                                    <span className="inline-flex items-center gap-1">
-                                                        <MessageSquare size={12} />
-                                                        {pr.commentCount}
-                                                    </span>
-                                                ) : null}
-                                                {pr.reviewers && pr.reviewers.length > 0 ? (
-                                                    <div className="flex -space-x-1">
-                                                        {pr.reviewers.slice(0, 3).map((reviewer, reviewerIndex) => (
-                                                            <div
-                                                                key={`${reviewer}-${reviewerIndex}`}
-                                                                title={reviewer}
-                                                                className="flex h-6 w-6 items-center justify-center rounded-full border border-white bg-slate-200 text-[10px] font-semibold text-slate-700 shadow-sm"
-                                                            >
-                                                                {getInitials(reviewer)}
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                ) : null}
-                                            </div>
+                                                )
+                                            })}
+                                        </div>
+                                        <div className="mt-1 text-xs text-slate-500 flex flex-wrap items-center gap-1">
+                                            <span>#{pr.number}</span>
+                                            <span>创建于 {pr.createdAt} 由 <span className="text-slate-700 font-medium hover:underline cursor-pointer">{pr.author}</span></span>
+                                            <span className="mx-1 hidden sm:inline">•</span>
+                                            <span className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 border border-slate-200/50">
+                                                <GitBranch size={10} />
+                                                <span className="font-mono">{pr.targetBranch}</span>
+                                                <span className="text-slate-400">←</span>
+                                                <span className="font-mono">{pr.sourceBranch}</span>
+                                            </span>
                                         </div>
                                     </div>
-                                );
-                            })}
-                        </div>
+                                    <div className="hidden sm:flex items-center gap-4 ml-4 flex-shrink-0">
+                                        {pr.checksStatus === 'success' && <CheckCircle2 size={16} className="text-[#1a7f37]" />}
+                                        {pr.checksStatus === 'failed' && <XCircle size={16} className="text-[#cf222e]" />}
+                                        {pr.checksStatus === 'pending' && <div className="w-3 h-3 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />}
+
+                                        {pr.commentCount && pr.commentCount > 0 ? (
+                                            <div className="flex items-center gap-1 text-slate-500 hover:text-[#0969da] cursor-pointer">
+                                                <MessageSquare size={14} />
+                                                <span className="text-xs font-medium">{pr.commentCount}</span>
+                                            </div>
+                                        ) : null}
+
+                                        {pr.reviewers && (
+                                            <div className="flex -space-x-1">
+                                                {pr.reviewers.slice(0, 3).map((r, i) => (
+                                                    <div key={i} className="w-5 h-5 rounded-full bg-slate-200 border border-white flex items-center justify-center text-[10px] text-slate-600 font-medium" title={r}>
+                                                        {r[0].toUpperCase()}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+
+                {/* Pagination placeholder */}
+                {filteredPRs.length > 0 && (
+                    <div className="mt-4 text-center text-xs text-slate-500">
+                        提示：使用 <span className="font-mono bg-slate-100 px-1 rounded">cmd+click</span> 可以打开多个标签页。
                     </div>
                 )}
             </div>

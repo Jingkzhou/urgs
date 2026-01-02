@@ -6,11 +6,21 @@ import {
     ArrowUpRight, Loader, Check
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { Progress, Badge } from 'antd';
+import { Progress, Badge, Modal, Select, Button } from 'antd';
 
 interface Props {
     ssoId?: number;
     repoId?: number;
+}
+
+// 独立的问题接口
+interface AuditIssue {
+    severity: 'critical' | 'major' | 'minor';
+    title: string;
+    line?: number;
+    description?: string;
+    recommendation?: string;
+    codeSnippet?: string;
 }
 
 // 扩展的 Review 接口
@@ -21,11 +31,7 @@ interface ExtendedReview extends AICodeReview {
         maintainability: number;
         performance: number;
     };
-    issues: {
-        severity: 'critical' | 'major' | 'minor';
-        title: string;
-        line?: number;
-    }[];
+    issues: AuditIssue[];
     language?: string;
 }
 
@@ -33,8 +39,45 @@ const AICodeAudit: React.FC<Props> = ({ ssoId, repoId }) => {
     const [reviews, setReviews] = useState<ExtendedReview[]>([]);
     const [loading, setLoading] = useState(false);
     const [selectedReview, setSelectedReview] = useState<ExtendedReview | null>(null);
+    const [selectedIssue, setSelectedIssue] = useState<AuditIssue | null>(null);
+    const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
+    const [isModalVisible, setIsModalVisible] = useState(false);
+    const [auditConfig, setAuditConfig] = useState({
+        branch: 'main',
+        depth: 'standard',
+        type: 'diff',
+        schedule: 'manual',
+        rulesets: ['security', 'performance'],
+        selectedFiles: [],
+        prId: null
+    });
+
+    const mockPRs = [
+        { id: 'PR-2042', title: 'feat: 接入支付网关 v2 接口', author: 'Zhang San', branch: 'feat-payment' },
+        { id: 'PR-1985', title: 'fix: 修复登录页移动端适配问题', author: 'Li Si', branch: 'fix-login' },
+        { id: 'PR-2103', title: 'refactor: 重构工具类函数并添加注释', author: 'Wang Wu', branch: 'refactor-utils' },
+    ];
+
+    const mockFilesMap: Record<string, { path: string, type: string }[]> = {
+        'PR-2042': [
+            { path: 'src/api/payment.ts', type: 'modified' },
+            { path: 'src/components/PaymentForm.tsx', type: 'modified' },
+            { path: 'configs/gateway.json', type: 'modified' },
+        ],
+        'PR-1985': [
+            { path: 'src/styles/responsive.css', type: 'modified' },
+            { path: 'src/components/Login/MobileView.tsx', type: 'new' },
+        ],
+        'PR-2103': [
+            { path: 'src/utils/common.ts', type: 'modified' },
+            { path: 'src/utils/date.ts', type: 'modified' },
+            { path: 'src/utils/string.ts', type: 'modified' },
+        ],
+    };
+
+    const currentFiles = auditConfig.prId ? (mockFilesMap[auditConfig.prId] || []) : [];
 
     // 模拟数据适配器
     const adaptReviewData = (data: AICodeReview[]): ExtendedReview[] => {
@@ -55,11 +98,161 @@ const AICodeAudit: React.FC<Props> = ({ ssoId, repoId }) => {
         }));
     };
 
+    // 丰富多彩的 Mock 数据
+    const MOCK_REVIEWS_DATA: ExtendedReview[] = [
+        {
+            id: 101,
+            repoId: 1,
+            commitSha: '8f3a2b1',
+            branch: 'feat/payment-gateway-v2',
+            score: 96,
+            status: 'COMPLETED',
+            summary: 'Stripe V2 支付接口实现与健壮异常处理',
+            developerEmail: 'zhangsan@jlbank.com',
+            createdAt: '2024-03-20T10:30:00Z',
+            language: 'TypeScript',
+            scoreBreakdown: { security: 98, reliability: 95, maintainability: 92, performance: 99 },
+            issues: [],
+            content: '## 🌟 卓越的代码质量\n\n支付网关 V2 的实现展示了高标准的编码实践。\n\n### 关键亮点\n- **安全性**: 强大的参数验证和输出编码。\n- **性能**: 高效使用 async/await 模式。\n- **文档**: 全面的 JSDoc 注释。'
+        },
+        {
+            id: 102,
+            repoId: 1,
+            commitSha: '7c2d9e4',
+            branch: 'fix/login-race-condition',
+            score: 72,
+            status: 'COMPLETED',
+            summary: '修复认证流程中潜在的竞态条件',
+            developerEmail: 'lisi@jlbank.com',
+            createdAt: '2024-03-19T14:15:00Z',
+            language: 'TypeScript',
+            scoreBreakdown: { security: 88, reliability: 65, maintainability: 70, performance: 65 },
+            issues: [
+                {
+                    severity: 'major',
+                    title: '认证中间件中存在潜在的未处理 Promise 拒绝',
+                    line: 45,
+                    description: '在 `validateToken` 函数中，异步操作没有正确捕获可能的异常，导致未处理的 Promise Rejection。',
+                    recommendation: '建议使用 try-catch 包裹 await 调用，或在 Promise 链末尾添加 .catch() 处理。',
+                    codeSnippet: `async function validateToken(token: string) {
+    // 🔴 Missing try-catch block for async operation
+    const user = await db.findUserByToken(token);
+    if (!user) throw new Error("Invalid token");
+    return user;
+}`
+                },
+                {
+                    severity: 'major',
+                    title: '复杂的嵌套条件判断降低了可读性',
+                    line: 89,
+                    description: '`checkPermission` 方法中存在超过 4 层的 if-else 嵌套，圈复杂度过高。',
+                    recommendation: '建议使用卫语句 (Guard Clauses) 提前返回，或将逻辑提取为独立的验证函数。',
+                    codeSnippet: `if (user.role === 'admin') {
+    if (resource.type === 'document') {
+        if (resource.status === 'active') {
+            if (action === 'edit') {
+                return true;
+            }
+        }
+    }
+}`
+                },
+                {
+                    severity: 'minor',
+                    title: '缺少边界情况的单元测试',
+                    line: 120,
+                    description: '当前的测试套件仅覆盖了 happy path，缺少 token 过期或无效时的测试用例。',
+                    recommendation: '补充针对边界条件的 jest 测试用例。'
+                }
+            ],
+            content: '## ⚠️ 检测到中等风险\n\n虽然竞态条件已解决，但解决方案引入了一些复杂性和潜在的不稳定性。\n\n### 建议\n1. **重构**: 简化 `AuthService.ts` 中的嵌套 `if-else` 块。\n2. **错误处理**: 为认证 promise 链添加全局 catch 块。'
+        },
+        {
+            id: 103,
+            repoId: 1,
+            commitSha: 'a1b2c3d',
+            branch: 'chore/legacy-cleanup',
+            score: 45,
+            status: 'FAILED',
+            summary: '移除遗留的 XML 解析器和工具函数',
+            developerEmail: 'wangwu@jlbank.com',
+            createdAt: '2024-03-18T09:00:00Z',
+            language: 'JavaScript',
+            scoreBreakdown: { security: 30, reliability: 50, maintainability: 40, performance: 60 },
+            issues: [
+                {
+                    severity: 'critical',
+                    title: '在已删除文件历史中发现硬编码凭证',
+                    line: 12,
+                    description: '检测到 AWS AK/SK 曾直接硬编码在源码中，虽然文件已删除，但 git 历史中仍可追溯。',
+                    recommendation: '立即轮换相关密钥，并使用 BFG Repo-Cleaner 清理 git 历史。',
+                    codeSnippet: `// 🚨 CRITICAL: Hardcoded credentials
+const AWS_CONFIG = {
+    accessKey: "AKIAIOSFODNN7EXAMPLE",
+    secretKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+};`
+                },
+                {
+                    severity: 'critical',
+                    title: '"LegacyUserSearch" 中存在 SQL 注入漏洞',
+                    line: 230,
+                    description: '用户输入直接拼接到 SQL 查询字符串中，未经过参数化处理。',
+                    recommendation: '使用 PreparedStatement 或 ORM 框架的参数化查询功能。',
+                    codeSnippet: `// 🚨 SQL Injection Vulnerability
+const query = "SELECT * FROM users WHERE name = '" + userName + "'";
+db.execute(query);`
+                },
+                { severity: 'major', title: '检测到直接的 DOM 操作', line: 56 },
+                { severity: 'major', title: '全局变量污染 "userData"', line: 15 }
+            ],
+            content: '## 🚨 发现严重问题\n\n检测到多个高严重性漏洞。合并前必须立即采取行动。\n\n> [!IMPORTANT]\n> **阻塞问题**: 硬编码机密和 SQL 注入漏洞必须立即解决。'
+        },
+        {
+            id: 104,
+            repoId: 1,
+            commitSha: 'e5f6g7h',
+            branch: 'feat/user-dashboard',
+            score: 88,
+            status: 'COMPLETED',
+            summary: '新用户仪表盘小组件和图表',
+            developerEmail: 'zhaoliu@jlbank.com',
+            createdAt: '2024-03-17T16:45:00Z',
+            language: 'React/TSX',
+            scoreBreakdown: { security: 90, reliability: 85, maintainability: 88, performance: 80 },
+            issues: [
+                { severity: 'minor', title: '大型组件 "DashboardGrid" 需要拆分', line: 150 },
+                { severity: 'minor', title: '直接导入未优化的 SVG 资源', line: 22 }
+            ],
+            content: '## ✅ 良好质量\n\n仪表盘实现稳固。一些小的优化可以进一步提高可维护性。\n\n- **组件结构**: 考虑将 `DashbaordGrid` 拆分为更小的子组件。\n- **资源**: 使用图标字体或精灵图以获得更好的有效缓存。'
+        },
+        {
+            id: 105,
+            repoId: 1,
+            commitSha: '9i8j0k1',
+            branch: 'docs/api-specs',
+            score: 99,
+            status: 'COMPLETED',
+            summary: '更新 v2 端点的 OpenAPI 规范',
+            developerEmail: 'devops@jlbank.com',
+            createdAt: '2024-03-16T11:20:00Z',
+            language: 'YAML',
+            scoreBreakdown: { security: 100, reliability: 100, maintainability: 98, performance: 98 },
+            issues: [],
+            content: '## 🏆 完美规范\n\nAPI 文档清晰、完整，并遵循所有组织标准。未发现问题。'
+        }
+    ];
+
     const fetchReviews = async () => {
         setLoading(true);
         try {
-            const data = await getAICodeReviews({ repoId });
-            setReviews(adaptReviewData(data || []));
+            // 优先使用 Mock 数据展示页面效果
+            // const data = await getAICodeReviews({ repoId });
+            // setReviews(adaptReviewData(data || []));
+            await new Promise(resolve => setTimeout(resolve, 800)); // Simulate loading
+            setReviews(MOCK_REVIEWS_DATA);
+            if (MOCK_REVIEWS_DATA.length > 0) {
+                setSelectedReview(MOCK_REVIEWS_DATA[0]);
+            }
         } catch (error) {
             console.error(error);
         } finally {
@@ -148,7 +341,7 @@ const AICodeAudit: React.FC<Props> = ({ ssoId, repoId }) => {
                         <div className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                             {stats.criticalIssues}
                             {stats.criticalIssues > 0 && (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-600 border border-rose-100">ATTENTION</span>
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-600 border border-rose-100">需要注意</span>
                             )}
                         </div>
                     </div>
@@ -156,14 +349,337 @@ const AICodeAudit: React.FC<Props> = ({ ssoId, repoId }) => {
                         <Shield size={20} className="text-rose-600" />
                     </div>
                 </div>
-                <div className="bg-gradient-to-br from-indigo-600 to-purple-600 p-4 rounded-2xl shadow-lg shadow-indigo-200 text-white flex flex-col justify-center items-start cursor-pointer hover:shadow-xl hover:translate-y-[-2px] transition-all duration-300" onClick={fetchReviews}>
+                <div className="bg-gradient-to-br from-indigo-600 to-purple-600 p-4 rounded-2xl shadow-lg shadow-indigo-200 text-white flex flex-col justify-center items-start cursor-pointer hover:shadow-xl hover:translate-y-[-2px] transition-all duration-300"
+                    onClick={() => setIsModalVisible(true)}>
                     <div className="flex items-center gap-2 mb-2">
                         <Bot size={18} className="text-indigo-100" />
-                        <span className="font-bold text-sm">开始新审查</span>
+                        <span className="font-bold text-sm">开始新智查</span>
                     </div>
-                    <div className="text-[10px] text-indigo-100 opacity-80 uppercase tracking-wider font-semibold">AI Engine Ready</div>
+                    <div className="text-[10px] text-indigo-100 opacity-80 uppercase tracking-wider font-semibold">配置并运行审查</div>
                 </div>
             </div>
+
+            {/* AI Audit Config Modal */}
+            <Modal
+                title={
+                    <div className="flex items-center gap-2 py-1">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+                            <Bot size={18} className="text-indigo-600" />
+                        </div>
+                        <span className="text-base font-bold text-slate-800">初始化智能代码审查</span>
+                    </div>
+                }
+                open={isModalVisible}
+                onCancel={() => setIsModalVisible(false)}
+                footer={null}
+                width={650}
+                className="crystal-modal"
+                centered
+            >
+                <div className="py-2 space-y-6">
+                    <section>
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <ArrowUpRight size={14} /> 1. 选择审查目标
+                        </h4>
+                        <div className="grid grid-cols-1 gap-4">
+                            {/* 1. Audit Mode */}
+                            <div className="space-y-1.5">
+                                <label className="text-[11px] font-bold text-slate-500 ml-1">审查模式</label>
+                                <Select
+                                    className="w-full crystal-select"
+                                    value={auditConfig.type}
+                                    onChange={(v) => setAuditConfig({ ...auditConfig, type: v })}
+                                >
+                                    <Select.Option value="diff">增量扫描 (Diff-based)</Select.Option>
+                                    <Select.Option value="full">全量扫描 (Full Repository)</Select.Option>
+                                </Select>
+                            </div>
+
+                            {/* 2. Branch Selection */}
+                            <div className="space-y-1.5">
+                                <label className="text-[11px] font-bold text-slate-500 ml-1">目标分支/版本</label>
+                                <Select
+                                    className="w-full crystal-select"
+                                    value={auditConfig.branch}
+                                    onChange={(v) => setAuditConfig({ ...auditConfig, branch: v })}
+                                >
+                                    <Select.Option value="main">main (Production)</Select.Option>
+                                    <Select.Option value="develop">develop (Dev)</Select.Option>
+                                    <Select.Option value="feature/audit">feature/audit</Select.Option>
+                                    <Select.Option value="feat-payment">feat-payment</Select.Option>
+                                    <Select.Option value="fix-login">fix-login</Select.Option>
+                                </Select>
+                            </div>
+
+                            {/* 3. PR Selection (Conditional) */}
+                            {auditConfig.type === 'diff' && (
+                                <div className="space-y-1.5 p-4 bg-indigo-50/30 rounded-2xl border border-indigo-100/50 animate-in fade-in slide-in-from-top-1">
+                                    <label className="text-[11px] font-bold text-indigo-600 ml-1 flex items-center gap-1.5">
+                                        <GitCommit size={12} /> 关联 Pull Request (PR)
+                                    </label>
+                                    <Select
+                                        className="w-full crystal-select"
+                                        placeholder="请搜索或选择要审计的 PR"
+                                        value={auditConfig.prId}
+                                        onChange={(v) => {
+                                            setAuditConfig({
+                                                ...auditConfig,
+                                                prId: v,
+                                                // 仅加载文件，不强制更改分支，分支由用户在上一步明确
+                                                selectedFiles: mockFilesMap[v]?.map(f => f.path) || []
+                                            });
+                                        }}
+                                    >
+                                        {mockPRs.map(pr => (
+                                            <Select.Option key={pr.id} value={pr.id}>
+                                                <div className="flex items-center justify-between gap-4">
+                                                    <span className="font-bold text-slate-700">{pr.title}</span>
+                                                    <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{pr.id}</span>
+                                                </div>
+                                                <div className="text-[10px] text-slate-400 mt-0.5">Author: {pr.author} · Branch: {pr.branch}</div>
+                                            </Select.Option>
+                                        ))}
+                                    </Select>
+                                </div>
+                            )}
+                        </div>
+                    </section>
+
+                    <section>
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <Zap size={14} /> 2. 智查策略与规则集
+                        </h4>
+                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-4">
+                            <div className="grid grid-cols-2 gap-6">
+                                <div className="space-y-2">
+                                    <label className="text-[11px] font-bold text-slate-400">扫描深度</label>
+                                    <div className="flex gap-2">
+                                        {[
+                                            { id: 'light', label: '基础', color: 'bg-emerald-500' },
+                                            { id: 'standard', label: '标准', color: 'bg-indigo-500' },
+                                            { id: 'deep', label: '全链路', color: 'bg-purple-600' }
+                                        ].map(d => (
+                                            <div
+                                                key={d.id}
+                                                onClick={() => setAuditConfig({ ...auditConfig, depth: d.id })}
+                                                className={`flex-1 py-1.5 rounded-lg border text-[10px] font-bold text-center cursor-pointer transition-all
+                                                    ${auditConfig.depth === d.id
+                                                        ? 'bg-white border-indigo-200 text-indigo-600 shadow-sm'
+                                                        : 'bg-white/50 border-transparent text-slate-400 hover:text-slate-500'}`}
+                                            >
+                                                {d.label}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[11px] font-bold text-slate-400">并行扫描限制</label>
+                                    <Select defaultValue="4" size="small" className="w-full crystal-select text-[10px]">
+                                        <Select.Option value="2">2 Threads (Focus)</Select.Option>
+                                        <Select.Option value="4">4 Threads (Standard)</Select.Option>
+                                        <Select.Option value="8">8 Threads (Performance)</Select.Option>
+                                    </Select>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2 pt-2 border-t border-slate-200/50">
+                                <label className="text-[11px] font-bold text-slate-400">规则集激活</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {[
+                                        { id: 'security', label: 'Security & Auth', icon: Shield },
+                                        { id: 'performance', label: 'Performance', icon: Zap },
+                                        { id: 'reliability', label: 'Robustness', icon: Activity },
+                                        { id: 'compliance', label: 'Finance Compliance', icon: AlertTriangle },
+                                    ].map(rule => (
+                                        <div
+                                            key={rule.id}
+                                            onClick={() => {
+                                                const sets = new Set(auditConfig.rulesets);
+                                                if (sets.has(rule.id)) sets.delete(rule.id);
+                                                else sets.add(rule.id);
+                                                setAuditConfig({ ...auditConfig, rulesets: Array.from(sets) });
+                                            }}
+                                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-bold cursor-pointer transition-all
+                                                ${auditConfig.rulesets.includes(rule.id)
+                                                    ? 'bg-indigo-50 border-indigo-200 text-indigo-600'
+                                                    : 'bg-white border-slate-200 text-slate-400 opacity-60'}`}
+                                        >
+                                            <rule.icon size={10} />
+                                            {rule.label}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    {auditConfig.type === 'diff' && (
+                        <section className="animate-in fade-in slide-in-from-top-2 duration-300">
+                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                <FileCode size={14} /> 3. 选择变更文件 (Selective Audit)
+                            </h4>
+                            <div className="bg-slate-50 rounded-2xl border border-slate-100 overflow-hidden shadow-inner">
+                                <div className="max-h-[160px] overflow-y-auto p-3 space-y-1">
+                                    {currentFiles.length > 0 ? currentFiles.map(file => (
+                                        <div
+                                            key={file.path}
+                                            onClick={() => {
+                                                const files = new Set(auditConfig.selectedFiles);
+                                                if (files.has(file.path)) files.delete(file.path);
+                                                else files.add(file.path);
+                                                setAuditConfig({ ...auditConfig, selectedFiles: Array.from(files) });
+                                            }}
+                                            className={`p-2 rounded-xl flex items-center justify-between group cursor-pointer transition-all
+                                                ${auditConfig.selectedFiles.includes(file.path)
+                                                    ? 'bg-white shadow-sm'
+                                                    : 'hover:bg-white/50 opacity-70'}`}
+                                        >
+                                            <div className="flex items-center gap-2.5">
+                                                <div className={`w-4 h-4 rounded flex items-center justify-center border transition-all
+                                                    ${auditConfig.selectedFiles.includes(file.path) ? 'bg-indigo-500 border-indigo-500' : 'bg-white border-slate-300'}`}>
+                                                    {auditConfig.selectedFiles.includes(file.path) && <Check size={10} className="text-white" />}
+                                                </div>
+                                                <span className="text-[11px] font-mono font-medium text-slate-600">{file.path}</span>
+                                            </div>
+                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${file.type === 'new' ? 'text-emerald-500 bg-emerald-50' : 'text-indigo-500 bg-indigo-50'}`}>
+                                                {file.type}
+                                            </span>
+                                        </div>
+                                    )) : (
+                                        <div className="py-8 flex flex-col items-center justify-center text-slate-300">
+                                            <GitCommit size={24} className="mb-2 opacity-20" />
+                                            <span className="text-[10px] font-bold uppercase tracking-wider">请先选择 PR 以加载变更文件</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="bg-slate-100/50 px-4 py-2 border-t border-slate-100 flex items-center justify-between">
+                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">已选 {auditConfig.selectedFiles.length} 个文件</span>
+                                    <button
+                                        className="text-[10px] text-indigo-600 font-bold hover:underline disabled:opacity-30"
+                                        disabled={currentFiles.length === 0}
+                                        onClick={() => setAuditConfig({ ...auditConfig, selectedFiles: currentFiles.map(f => f.path) })}
+                                    >
+                                        全选变更
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
+                    )}
+
+                    <section className="bg-slate-900 rounded-3xl p-5 text-white flex items-center justify-between shadow-2xl shadow-indigo-500/10">
+                        <div>
+                            <div className="text-sm font-bold flex items-center gap-2">
+                                <Terminal size={14} className="text-indigo-400" />
+                                确认智查指令
+                            </div>
+                            <div className="text-[10px] text-white/40 font-mono mt-1 uppercase tracking-tighter">
+                                audit-ai run --mode={auditConfig.type} --rules={auditConfig.rulesets.join(',')} --scope={auditConfig.selectedFiles.length} files
+                            </div>
+                        </div>
+                        <Button
+                            type="primary"
+                            size="large"
+                            className="bg-indigo-500 border-none shadow-xl shadow-indigo-500/30 font-bold px-10 h-11 rounded-2xl hover:scale-105 transition-all"
+                            onClick={() => {
+                                setIsModalVisible(false);
+                                fetchReviews();
+                            }}
+                        >
+                            执行分析流程
+                        </Button>
+                    </section>
+                </div>
+            </Modal>
+
+            {/* Issue Detail Modal */}
+            <Modal
+                title={null}
+                open={isIssueModalOpen}
+                onCancel={() => setIsIssueModalOpen(false)}
+                footer={null}
+                width={500}
+                className="crystal-modal"
+                centered
+                destroyOnClose
+            >
+                {selectedIssue && (
+                    <div className="pt-2">
+                        <div className="flex items-start gap-3 mb-5">
+                            <div className={`mt-1 flex-none px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase tracking-wide border ${getSeverityColor(selectedIssue.severity)}`}>
+                                {selectedIssue.severity}
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-800 leading-snug">
+                                {selectedIssue.title}
+                            </h3>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100/80">
+                                <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                    <AlertTriangle size={12} /> 问题描述
+                                </h4>
+                                <p className="text-sm text-slate-600 leading-relaxed">
+                                    {selectedIssue.description || '暂无详细描述。'}
+                                </p>
+                            </div>
+
+                            {selectedIssue.line && (
+                                <div>
+                                    <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                        <FileCode size={12} /> 代码位置
+                                    </h4>
+                                    <div className="font-mono text-xs text-slate-600 bg-white border border-slate-200 px-3 py-2 rounded-lg flex items-center gap-2">
+                                        <Terminal size={12} className="text-slate-400" />
+                                        Line {selectedIssue.line}
+                                    </div>
+                                </div>
+                            )}
+
+                            {selectedIssue.codeSnippet && (
+                                <div>
+                                    <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                        <FileCode size={12} /> 问题代码片段
+                                    </h4>
+                                    <div className="bg-slate-800 rounded-xl overflow-hidden border border-slate-700 shadow-inner">
+                                        <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-900/50 border-b border-white/5">
+                                            <div className="w-2.5 h-2.5 rounded-full bg-rose-500/20 border border-rose-500/50"></div>
+                                            <div className="w-2.5 h-2.5 rounded-full bg-amber-500/20 border border-amber-500/50"></div>
+                                            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/20 border border-emerald-500/50"></div>
+                                            <span className="text-[10px] text-slate-500 ml-2 font-mono">source.ts</span>
+                                        </div>
+                                        <div className="p-4 overflow-x-auto">
+                                            <pre className="font-mono text-[11px] leading-relaxed text-slate-300">
+                                                <code>{selectedIssue.codeSnippet}</code>
+                                            </pre>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div>
+                                <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                    <Zap size={12} className="text-amber-500 fill-amber-500" /> AI 修复建议
+                                </h4>
+                                <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100/50">
+                                    <p className="text-sm text-slate-700 leading-relaxed before:content-['💡'] before:mr-2">
+                                        {selectedIssue.recommendation || 'AI 正在分析最佳修复方案...'}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-8 flex justify-end gap-3">
+                            <Button onClick={() => setIsIssueModalOpen(false)} className="rounded-xl border-slate-200 text-slate-500 text-xs font-bold hover:text-slate-700 hover:border-slate-300">
+                                关闭
+                            </Button>
+                            <Button type="primary" className="bg-indigo-600 rounded-xl shadow-lg shadow-indigo-200 text-xs font-bold flex items-center gap-1.5">
+                                <Zap size={12} />
+                                自动修复
+                            </Button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
 
             <div className="flex-1 flex gap-5 overflow-hidden">
                 {/* Left Listing */}
@@ -224,7 +740,7 @@ const AICodeAudit: React.FC<Props> = ({ ssoId, repoId }) => {
                                     </div>
                                 </div>
                                 <div className="pl-2 mb-2">
-                                    <h4 className="text-xs text-slate-700 line-clamp-1 font-semibold">{review.summary || 'Waiting for analysis...'}</h4>
+                                    <h4 className="text-xs text-slate-700 line-clamp-1 font-semibold">{review.summary || '等待分析...'}</h4>
                                     <div className="flex items-center gap-1.5 mt-1.5">
                                         <GitCommit size={10} className="text-slate-400" />
                                         <span className="text-[10px] font-medium text-slate-400 truncate max-w-[140px] bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">
@@ -274,7 +790,7 @@ const AICodeAudit: React.FC<Props> = ({ ssoId, repoId }) => {
                                             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2 mb-2">
                                                 代码质量评估报告
                                                 {selectedReview.score && selectedReview.score >= 90 && (
-                                                    <Badge status="success" text={<span className="text-emerald-600 text-xs font-bold uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">Excellent</span>} />
+                                                    <Badge status="success" text={<span className="text-emerald-600 text-xs font-bold uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">卓越</span>} />
                                                 )}
                                             </h2>
                                             <div className="flex items-center gap-3 text-xs text-slate-500">
@@ -297,10 +813,10 @@ const AICodeAudit: React.FC<Props> = ({ ssoId, repoId }) => {
                                     {/* Multi-dim Score */}
                                     <div className="flex items-center gap-4 bg-white p-2 rounded-xl border border-slate-100 shadow-sm">
                                         {[
-                                            { label: 'Security', score: selectedReview.scoreBreakdown?.security, icon: Shield },
-                                            { label: 'Reliability', score: selectedReview.scoreBreakdown?.reliability, icon: AlertTriangle },
-                                            { label: 'Maint.', score: selectedReview.scoreBreakdown?.maintainability, icon: Layers },
-                                            { label: 'Perf.', score: selectedReview.scoreBreakdown?.performance, icon: Zap },
+                                            { label: '安全性', score: selectedReview.scoreBreakdown?.security, icon: Shield },
+                                            { label: '可靠性', score: selectedReview.scoreBreakdown?.reliability, icon: AlertTriangle },
+                                            { label: '可维护', score: selectedReview.scoreBreakdown?.maintainability, icon: Layers },
+                                            { label: '高性能', score: selectedReview.scoreBreakdown?.performance, icon: Zap },
                                         ].map(item => (
                                             <div key={item.label} className="flex flex-col items-center gap-1 px-2 border-r last:border-0 border-slate-100">
                                                 <div className="relative w-8 h-8">
@@ -332,7 +848,7 @@ const AICodeAudit: React.FC<Props> = ({ ssoId, repoId }) => {
                                     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                                         <div className="bg-slate-50/50 px-5 py-3 border-b border-slate-100 flex items-center gap-2">
                                             <Bot size={16} className="text-indigo-500" />
-                                            <span className="text-xs font-bold text-indigo-900 uppercase tracking-wide">AI Analysis Report</span>
+                                            <span className="text-xs font-bold text-indigo-900 uppercase tracking-wide">AI 分析报告</span>
                                         </div>
                                         <div className="p-6 prose prose-sm prose-slate max-w-none prose-headings:font-bold prose-h3:text-indigo-600 prose-pre:bg-slate-900 prose-pre:text-slate-50 prose-a:text-indigo-500 hover:prose-a:text-indigo-600">
                                             {selectedReview.content ? (
@@ -340,7 +856,7 @@ const AICodeAudit: React.FC<Props> = ({ ssoId, repoId }) => {
                                             ) : (
                                                 <div className="flex flex-col items-center justify-center py-16 opacity-50">
                                                     <Loader size={32} className="animate-spin text-indigo-500 mb-3" />
-                                                    <span className="font-medium text-slate-500">Analyzing code structure...</span>
+                                                    <span className="font-medium text-slate-500">正在分析代码结构...</span>
                                                 </div>
                                             )}
                                         </div>
@@ -353,25 +869,34 @@ const AICodeAudit: React.FC<Props> = ({ ssoId, repoId }) => {
                                         <div className="bg-slate-50/50 px-5 py-3 border-b border-slate-100 flex items-center justify-between">
                                             <span className="text-xs font-bold text-slate-700 uppercase flex items-center gap-2 tracking-wide">
                                                 <AlertTriangle size={14} className="text-amber-500" />
-                                                Detected Issues
+                                                检测到的问题
                                             </span>
                                             <div className="px-2 py-0.5 bg-slate-100 rounded-full text-[10px] font-bold text-slate-500">
                                                 {selectedReview.issues?.length || 0}
                                             </div>
                                         </div>
-                                        <div className="divide-y divide-slate-50 max-h-[400px] overflow-y-auto">
+                                        <div className="divide-y divide-slate-50">
                                             {selectedReview.issues?.map((issue, idx) => (
-                                                <div key={idx} className="p-4 hover:bg-slate-50 transition-colors group border-l-2 border-transparent hover:border-indigo-500">
+                                                <div
+                                                    key={idx}
+                                                    className="p-4 transition-all group border-l-2 cursor-pointer hover:bg-slate-50 border-transparent hover:border-indigo-300"
+                                                    onClick={() => {
+                                                        setSelectedIssue(issue);
+                                                        setIsIssueModalOpen(true);
+                                                    }}
+                                                >
                                                     <div className="flex items-start gap-2.5">
                                                         <span className={`mt-0.5 px-2 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wide border ${getSeverityColor(issue.severity)}`}>
                                                             {issue.severity}
                                                         </span>
-                                                        <span className="text-xs text-slate-700 font-semibold leading-relaxed group-hover:text-indigo-700 transition-colors">
+                                                        <span className="text-xs font-semibold leading-relaxed transition-colors flex-1 text-slate-700 group-hover:text-indigo-700">
                                                             {issue.title}
                                                         </span>
+                                                        <ArrowUpRight size={12} className="text-slate-300 transition-transform duration-300 group-hover:text-indigo-300 group-hover:rotate-45" />
                                                     </div>
+
                                                     {issue.line && (
-                                                        <div className="mt-2 ml-1 pl-3 border-l-2 border-slate-200 text-[10px] font-mono text-slate-500 flex items-center gap-1">
+                                                        <div className="mt-2 ml-1 pl-3 border-l-2 border-slate-200 text-[10px] font-mono text-slate-500 flex items-center gap-1 group-hover:border-indigo-100">
                                                             <Terminal size={10} />
                                                             Line {issue.line}
                                                         </div>
@@ -381,8 +906,8 @@ const AICodeAudit: React.FC<Props> = ({ ssoId, repoId }) => {
                                             {(!selectedReview.issues || selectedReview.issues.length === 0) && (
                                                 <div className="p-10 text-center text-xs text-slate-400 bg-slate-50/30">
                                                     <CheckCircle size={32} className="mx-auto mb-3 text-emerald-400 opacity-80" />
-                                                    <div className="font-semibold text-slate-500">Clean Codebase</div>
-                                                    <div className="mt-1 opacity-70">No major issues detected in this review</div>
+                                                    <div className="font-semibold text-slate-500">代码库整洁</div>
+                                                    <div className="mt-1 opacity-70">本次审查未发现重大问题</div>
                                                 </div>
                                             )}
                                         </div>
@@ -394,13 +919,13 @@ const AICodeAudit: React.FC<Props> = ({ ssoId, repoId }) => {
                                         </div>
                                         <h3 className="font-bold mb-2 relative z-10 flex items-center gap-2">
                                             <Zap size={16} className="text-yellow-300" />
-                                            AI Optimization
+                                            AI 智能优化
                                         </h3>
                                         <p className="text-xs text-indigo-100 mb-5 relative z-10 opacity-90 leading-relaxed">
-                                            AI can automatically generate fixes for the detected {selectedReview.issues?.length || 0} issues.
+                                            AI 可以自动为检测到的 {selectedReview.issues?.length || 0} 个问题生成修复方案。
                                         </p>
                                         <button className="relative z-10 w-full bg-white/10 hover:bg-white/20 border border-white/30 text-white text-xs font-bold py-2.5 rounded-xl transition-all backdrop-blur-md flex items-center justify-center gap-2 shadow-inner">
-                                            <span>Apply Auto-Fix</span>
+                                            <span>应用自动修复</span>
                                             <ArrowUpRight size={12} />
                                         </button>
                                     </div>
@@ -412,8 +937,8 @@ const AICodeAudit: React.FC<Props> = ({ ssoId, repoId }) => {
                             <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center mb-6 shadow-sm border border-slate-100">
                                 <Search size={40} className="text-slate-200" />
                             </div>
-                            <h3 className="text-lg font-bold text-slate-700 mb-2">Ready to Analyze</h3>
-                            <p className="text-sm font-medium text-slate-400 max-w-xs text-center leading-relaxed">Select a review from the sidebar to view detailed AI analysis and quality metrics.</p>
+                            <h3 className="text-lg font-bold text-slate-700 mb-2">准备开始分析</h3>
+                            <p className="text-sm font-medium text-slate-400 max-w-xs text-center leading-relaxed">从左侧选择一个审查记录以查看详细的 AI 分析和质量指标。</p>
                         </div>
                     )}
                 </div>
