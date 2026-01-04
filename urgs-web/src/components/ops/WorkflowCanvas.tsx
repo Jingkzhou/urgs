@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useMemo } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { Modal, Button, message } from 'antd';
 import {
     Play, FileText, AlertTriangle, CheckCircle, XCircle, RotateCw,
@@ -390,7 +391,7 @@ const FlowEditor: React.FC<WorkflowDefinitionProps> = ({ onTurnToIssue, initialN
     const handleSaveNode = () => {
         if (pendingNode) {
             // Generate UUID for the new node
-            const newId = crypto.randomUUID();
+            const newId = uuidv4();
 
             const finalNode = {
                 ...pendingNode,

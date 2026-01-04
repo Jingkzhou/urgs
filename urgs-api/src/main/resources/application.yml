@@ -1,0 +1,11 @@
+server:
+  port: 8080
+  
+spring:
+  servlet:
+    multipart:
+      max-file-size: 2048MB
+      max-request-size: 2048MB
+  flyway:
+    out-of-order: true
+    ignore-migration-patterns: "*:ignored"

@@ -49,51 +49,9 @@ import type {
     KnowledgeDocument,
     KnowledgeTag,
 } from '../../api/knowledge';
+import { getFileIcon } from '../../utils/fileIcons';
+import { UploadProgressPanel, UploadFileItem } from './UploadProgressPanel';
 
-// 文件图标映射辅助函数
-const getFileIcon = (fileName: string, size: number = 24) => {
-    const ext = fileName.split('.').pop()?.toLowerCase() || '';
-
-    // 图片
-    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(ext)) {
-        return <ImageIcon size={size} className="text-purple-500" />;
-    }
-    // PDF
-    if (['pdf'].includes(ext)) {
-        return <FileText size={size} className="text-red-500" />;
-    }
-    // Word/文档
-    if (['doc', 'docx', 'txt', 'md', 'rtf'].includes(ext)) {
-        return <FileText size={size} className="text-blue-500" />;
-    }
-    // Excel/表格
-    if (['xls', 'xlsx', 'csv'].includes(ext)) {
-        return <FileSpreadsheet size={size} className="text-emerald-500" />;
-    }
-    // PPT/演示
-    if (['ppt', 'pptx'].includes(ext)) {
-        return <FileBarChart size={size} className="text-orange-500" />;
-    }
-    // 代码
-    if (['js', 'ts', 'tsx', 'jsx', 'java', 'py', 'c', 'cpp', 'html', 'css', 'json', 'xml', 'yaml', 'sql'].includes(ext)) {
-        return <FileCode size={size} className="text-slate-600" />;
-    }
-    // 音频
-    if (['mp3', 'wav', 'ogg', 'flac'].includes(ext)) {
-        return <Music size={size} className="text-pink-500" />;
-    }
-    // 视频
-    if (['mp4', 'avi', 'mov', 'mkv', 'webm'].includes(ext)) {
-        return <Video size={size} className="text-indigo-500" />;
-    }
-    // 压缩包
-    if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
-        return <FileArchive size={size} className="text-yellow-600" />;
-    }
-
-    // 默认文件
-    return <File size={size} className="text-slate-400" />;
-};
 
 const KnowledgeCenter: React.FC = () => {
     // 状态
@@ -104,6 +62,11 @@ const KnowledgeCenter: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [searchKeyword, setSearchKeyword] = useState('');
     const [layoutMode, setLayoutMode] = useState<'grid' | 'list'>('grid');
+
+    // 上传状态管理器
+    const [uploadFiles, setUploadFiles] = useState<UploadFileItem[]>([]);
+    const [uploadPanelVisible, setUploadPanelVisible] = useState(false);
+    const lastLoadedMap = React.useRef<Map<string, { loaded: number, time: number }>>(new Map());
 
     // 弹窗状态
     const [folderModalOpen, setFolderModalOpen] = useState(false);
@@ -330,57 +293,175 @@ const KnowledgeCenter: React.FC = () => {
         return currentParentId;
     };
 
-    // 文件上传处理
-    const handleUploadChange = async (info: any) => {
-        const { status, response, originFileObj } = info.file;
+    // 统一上传核心逻辑
+    const performUpload = async (file: File, relativePath: string = '') => {
+        const uid = (file as any).uid || Math.random().toString(36).slice(2);
 
-        if (status === 'done') {
-            try {
-                const { url, name } = response;
-                // 检查是否有相对路径 (文件夹上传)
-                const relativePath = originFileObj.webkitRelativePath || '';
+        // 2GB check
+        if (file.size > 2 * 1024 * 1024 * 1024) {
+            message.error(`${file.name} 超过 2GB 限制`);
+            // Add error entry to list so user sees it
+            setUploadFiles(prev => [{
+                uid,
+                name: file.name,
+                size: file.size,
+                status: 'error',
+                progress: 0,
+                errorMsg: '超过 2GB 限制'
+            }, ...prev]);
+            setUploadPanelVisible(true);
+            return;
+        }
 
-                let targetFolderId = selectedFolderId;
-                if (relativePath) {
-                    targetFolderId = (await ensureDirectoryPath(selectedFolderId, relativePath)) ?? null;
+        // Init file in list
+        setUploadFiles(prev => {
+            const exists = prev.find(f => f.uid === uid);
+            if (exists) return prev;
+            return [{
+                uid,
+                name: file.name,
+                size: file.size,
+                status: 'pending',
+                progress: 0
+            }, ...prev];
+        });
+        setUploadPanelVisible(true);
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const startTime = Date.now();
+        lastLoadedMap.current.set(uid, { loaded: 0, time: startTime });
+
+        return new Promise<void>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/common/upload', true);
+            xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('auth_token')}`);
+
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    const now = Date.now();
+                    const progress = Math.min((e.loaded / e.total) * 98, 98); // Reserve 100% for final processing
+
+                    const last = lastLoadedMap.current.get(uid) || { loaded: 0, time: startTime };
+                    const timeDiff = (now - last.time) / 1000;
+
+                    let speed = '';
+                    // Calculate speed every 200ms or if significant progress
+                    if (timeDiff > 0.5 || progress === 100) {
+                        const bytesDiff = e.loaded - last.loaded;
+                        const speedBytes = bytesDiff / timeDiff; // bytes/s
+
+                        // Format speed
+                        const k = 1024;
+                        const sizes = ['B/s', 'KB/s', 'MB/s'];
+                        const i = Math.floor(Math.log(speedBytes) / Math.log(k));
+                        speed = (speedBytes / Math.pow(k, i)).toFixed(1) + ' ' + (sizes[i] || 'MB/s');
+
+                        lastLoadedMap.current.set(uid, { loaded: e.loaded, time: now });
+
+                        setUploadFiles(prev => prev.map(f => {
+                            if (f.uid === uid) {
+                                return { ...f, status: 'uploading', progress: Number(progress.toFixed(2)), speed };
+                            }
+                            return f;
+                        }));
+                    } else {
+                        // Update progress only
+                        setUploadFiles(prev => prev.map(f => {
+                            if (f.uid === uid) {
+                                return { ...f, status: 'uploading', progress: Number(progress.toFixed(2)) };
+                            }
+                            return f;
+                        }));
+                    }
                 }
+            };
 
-                await api.createDocument({
-                    title: name,
-                    fileUrl: url,
-                    fileName: name,
-                    fileSize: info.file.size,
-                    folderId: targetFolderId ?? undefined,
-                });
+            xhr.onload = async () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        const { url, name } = JSON.parse(xhr.responseText);
 
-                message.success(`${name} 上传成功`);
+                        // 确保目录
+                        let targetFolderId = selectedFolderId;
+                        if (relativePath) {
+                            // 注意：ensureDirectoryPath 是 async，但这里我们在 promise 内部
+                            // 为了简化，我们假设 createDocument 可以处理或者我们需要 await
+                            // 由于 xhr 是回调，我们需要 async function 包装
+                            try {
+                                targetFolderId = (await ensureDirectoryPath(selectedFolderId, relativePath)) ?? null;
+                            } catch (e) {
+                                console.warn("Folder creation failed", e);
+                            }
+                        }
 
-                // 稍微延迟刷新，避免太频繁
-                if (!info.fileList || info.fileList.every((f: any) => f.status === 'done')) {
-                    loadDocuments();
-                    loadFolders(); // 文件夹结构可能变了
-                    // 清理缓存
-                    folderCreationCache.current.clear();
+                        await api.createDocument({
+                            title: name,
+                            fileUrl: url,
+                            fileName: name,
+                            fileSize: file.size,
+                            folderId: targetFolderId ?? undefined,
+                        });
+
+                        setUploadFiles(prev => prev.map(f => {
+                            if (f.uid === uid) return { ...f, status: 'success', progress: 100, speed: '' };
+                            return f;
+                        }));
+                        resolve();
+                    } catch (err) {
+                        setUploadFiles(prev => prev.map(f => {
+                            if (f.uid === uid) return { ...f, status: 'error', errorMsg: '处理失败' };
+                            return f;
+                        }));
+                        reject(err);
+                    }
+                } else {
+                    setUploadFiles(prev => prev.map(f => {
+                        if (f.uid === uid) return { ...f, status: 'error', errorMsg: '上传失败' };
+                        return f;
+                    }));
+                    reject(new Error('Upload failed'));
                 }
-            } catch (error) {
-                console.error('上传后处理失败', error);
-                message.error(`${info.file.name} 处理失败`);
-            }
-        } else if (status === 'error') {
-            message.error(`${info.file.name} 上传失败`);
+            };
+
+            xhr.onerror = () => {
+                setUploadFiles(prev => prev.map(f => {
+                    if (f.uid === uid) return { ...f, status: 'error', errorMsg: '网络错误' };
+                    return f;
+                }));
+                reject(new Error('Network error'));
+            };
+
+            xhr.send(formData);
+        });
+    };
+
+    // 文件上传自定义请求
+    const customUploadRequest = async (options: any) => {
+        const { file, onSuccess, onError } = options;
+        const relativePath = file.webkitRelativePath || '';
+        try {
+            await performUpload(file, relativePath);
+            onSuccess("Ok");
+
+            // 刷新列表（防抖优化可略，因为 performUpload 是并行的，但 loadDocuments 应该在所有完成后或者单个完成后刷新）
+            // 简单策略：每个成功都刷一次，或者做一个 ref 计数
+            loadDocuments();
+            // loadFolders is heavy, maybe only if relativePath exists
+            if (relativePath) loadFolders();
+        } catch (err) {
+            onError(err);
         }
     };
+
 
     // 普通文件上传配置
     const uploadProps: UploadProps = {
         name: 'file',
         multiple: true,
-        action: '/api/common/upload',
+        customRequest: customUploadRequest,
         showUploadList: false,
-        headers: {
-            Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
-        },
-        onChange: handleUploadChange,
     };
 
     // 递归扫描文件项
@@ -451,53 +532,20 @@ const KnowledgeCenter: React.FC = () => {
             message.loading({ content: `正在上传 ${allFiles.length} 个文件...`, key: 'uploading' });
 
             // 批量上传
+            const uploadPromises = [];
             for (const { file, path } of allFiles) {
-                // 先传文件
-                const formData = new FormData();
-                formData.append('file', file);
-
-                // 简单的 XHR 上传或复用 api (此处复用 fetch/xhr 逻辑因为 antd upload 是封装的)
-                // 为保持一致性，我们手动调用 /api/common/upload
-                const token = localStorage.getItem('auth_token');
-
-                try {
-                    const uploadRes = await fetch('/api/common/upload', {
-                        method: 'POST',
-                        headers: { Authorization: `Bearer ${token}` },
-                        body: formData
-                    });
-
-                    if (uploadRes.ok) {
-                        const { url, name } = await uploadRes.json();
-
-                        // 确保目录
-                        let targetFolderId = selectedFolderId;
-                        if (path) {
-                            targetFolderId = (await ensureDirectoryPath(selectedFolderId, path)) ?? null;
-                        }
-
-                        // 创建记录
-                        await api.createDocument({
-                            title: name,
-                            fileUrl: url,
-                            fileName: name,
-                            fileSize: file.size,
-                            folderId: targetFolderId ?? undefined,
-                        });
-                    }
-                } catch (err) {
-                    console.error('上传失败', file.name, err);
-                }
+                uploadPromises.push(performUpload(file, path));
             }
 
-            message.success({ content: '上传完成', key: 'uploading' });
-            loadDocuments();
-            loadFolders();
-            folderCreationCache.current.clear();
+            Promise.allSettled(uploadPromises).then(() => {
+                loadDocuments();
+                loadFolders();
+                folderCreationCache.current.clear();
+            });
 
         } catch (error) {
             console.error('拖拽上传失败', error);
-            message.error({ content: '上传出错', key: 'uploading' });
+            message.error({ content: '解析出错', key: 'uploading' });
         }
     };
 
@@ -814,7 +862,14 @@ const KnowledgeCenter: React.FC = () => {
             <Upload {...uploadProps} style={{ display: 'none' }}>
                 <span id="hidden-context-upload" />
             </Upload>
-        </div>
+
+            {/* 上传进度面板 */}
+            <UploadProgressPanel
+                visible={uploadPanelVisible}
+                files={uploadFiles}
+                onClose={() => setUploadPanelVisible(false)}
+            />
+        </div >
     );
 };
 
