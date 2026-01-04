@@ -1,5 +1,7 @@
 package com.example.urgs_api.metadata.controller;
 
+import org.springframework.transaction.annotation.Transactional;
+
 import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.ExcelWriter;
 import com.alibaba.excel.write.metadata.WriteSheet;
@@ -571,10 +573,11 @@ public class RegTableController {
 
     /**
      * 批量导入报表（多 Sheet Excel）
-     * 第一个 Sheet：报表列表（按 code 匹配更新/新增）
-     * 后续 Sheet：字段详情（按 Sheet 名匹配报表 code）
+     * 第一个 Sheet：报表列表（按 systemCode + name 匹配更新/新增）
+     * 后续 Sheet：字段详情（按 Sheet 名匹配报表 code/name）
      */
     @PostMapping("/import")
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> importTables(@RequestParam("file") MultipartFile file) throws IOException {
         Map<String, Object> result = new HashMap<>();
         int tableCount = 0;
@@ -593,23 +596,35 @@ public class RegTableController {
                 if (row == null)
                     continue;
 
-                Integer sortOrder = getIntValue(row.getCell(0)); // 序号
-                if (sortOrder == null)
-                    continue;
+                // 序号仅用于排序，不再作为唯一标识
+                Integer sortOrder = getIntValue(row.getCell(0));
+                String cnName = getCellValue(row.getCell(1));
+                String name = getCellValue(row.getCell(2));
+                String systemCode = getCellValue(row.getCell(3));
 
-                // 查找或创建报表 (按序号匹配)
-                RegTable table = regTableService
-                        .getOne(new LambdaQueryWrapper<RegTable>().eq(RegTable::getSortOrder, sortOrder));
+                if (StringUtils.isBlank(name) || StringUtils.isBlank(systemCode)) {
+                    continue;
+                }
+
+                // 查找或创建报表 (按 系统代码 + 物理表名 匹配)
+                RegTable table = null;
+                try {
+                    table = regTableService.getOne(new LambdaQueryWrapper<RegTable>()
+                            .eq(RegTable::getName, name)
+                            .eq(RegTable::getSystemCode, systemCode));
+                } catch (Exception e) {
+                    throw new RuntimeException(String.format("匹配报表失败：系统[%s] 表名[%s] 存在重复记录", systemCode, name), e);
+                }
+
                 if (table == null) {
                     table = new RegTable();
                     table.setCreateTime(LocalDateTime.now());
-                    table.setSortOrder(sortOrder);
                 }
 
-                table.setCnName(getCellValue(row.getCell(1))); // 中文名/表名 (Index 1)
-                table.setName(getCellValue(row.getCell(2))); // 表名 (Index 2)
-                // Index 3: System Code
-                table.setSystemCode(getCellValue(row.getCell(3)));
+                table.setSortOrder(sortOrder);
+                table.setCnName(cnName);
+                table.setName(name);
+                table.setSystemCode(systemCode);
                 table.setSubjectCode(getCellValue(row.getCell(4)));
                 table.setSubjectName(getCellValue(row.getCell(5)));
                 table.setTheme(getCellValue(row.getCell(6)));
@@ -632,9 +647,7 @@ public class RegTableController {
                 table.setStatus(1);
 
                 regTableService.saveOrUpdate(table);
-                if (table.getName() != null) {
-                    nameToTable.put(table.getName(), table);
-                }
+                nameToTable.put(table.getName(), table);
                 tableCount++;
             }
 
@@ -646,12 +659,15 @@ public class RegTableController {
                 // 根据 sheet 名找到对应的报表 (使用物理表名匹配)
                 RegTable table = nameToTable.get(sheetName);
                 if (table == null) {
-                    // 尝试从数据库查找 (按名称)
+                    // 尝试从数据库查找（仅限本次导入中未出现的表名，提高鲁棒性）
                     try {
+                        // 这里的匹配由于没有 systemCode 上下文，可能存在风险，但在 Sheet 命名规范的情况下通常没问题
                         table = regTableService
                                 .getOne(new LambdaQueryWrapper<RegTable>().eq(RegTable::getName, sheetName));
                     } catch (Exception e) {
-                        // ignore duplicates error for robustness
+                        // 如果有多个同名表存在于不同系统，此处无法简单定位，跳过该 Sheet 并记录日志
+                        System.err.println("警告：无法唯一确定 Sheet [" + sheetName + "] 所属的报表系统上下文");
+                        continue;
                     }
                 }
                 if (table == null)
@@ -662,19 +678,22 @@ public class RegTableController {
                         .remove(new LambdaQueryWrapper<RegElement>().eq(RegElement::getTableId, table.getId()));
 
                 // 导入新字段
+                List<RegElement> elementsToSave = new ArrayList<>();
                 for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                     Row row = sheet.getRow(i);
                     if (row == null)
+                        continue;
+
+                    String elementName = getCellValue(row.getCell(2));
+                    if (StringUtils.isBlank(elementName))
                         continue;
 
                     RegElement el = new RegElement();
                     el.setTableId(table.getId());
                     el.setSortOrder(getIntValue(row.getCell(0)));
                     el.setType(getCellValue(row.getCell(1)));
-                    el.setName(getCellValue(row.getCell(2)));
+                    el.setName(elementName);
                     el.setCnName(getCellValue(row.getCell(3)));
-
-                    // Match RegElementImportExportDTO indices
                     el.setDataType(getCellValue(row.getCell(4)));
                     el.setLength(getIntValue(row.getCell(5)));
                     el.setIsPk(getIntValue(row.getCell(6)));
@@ -701,23 +720,26 @@ public class RegTableController {
                     el.setStatus(getIntValue(row.getCell(21)));
                     if (el.getStatus() == null)
                         el.setStatus(1);
-
                     el.setIsInit(getIntValue(row.getCell(22)));
                     el.setIsMergeFormula(getIntValue(row.getCell(23)));
                     el.setIsFillBusiness(getIntValue(row.getCell(24)));
 
                     if (el.getSortOrder() == null)
                         el.setSortOrder(0);
-
                     el.setCreateTime(LocalDateTime.now());
                     el.setUpdateTime(LocalDateTime.now());
 
-                    if (el.getName() != null && !el.getName().isEmpty()) {
-                        regElementService.save(el);
-                        elementCount++;
-                    }
+                    elementsToSave.add(el);
+                }
+
+                if (!elementsToSave.isEmpty()) {
+                    regElementService.saveBatch(elementsToSave);
+                    elementCount += elementsToSave.size();
                 }
             }
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException("导入报表数据失败：" + e.getMessage(), e);
         }
 
         result.put("success", true);
