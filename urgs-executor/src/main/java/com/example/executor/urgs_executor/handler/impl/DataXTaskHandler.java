@@ -10,6 +10,7 @@ import com.example.executor.urgs_executor.util.PlaceholderUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,6 +50,7 @@ public class DataXTaskHandler implements TaskHandler {
 
     @Override
     public String execute(ExecutorTaskInstance instance) throws Exception {
+        log.info(">>>> CODE VERSION: SQL-FIX-V5-FILE-VERIFY STARTING EXECUTION <<<<");
         log.info("开始执行 DataX 任务: {}", instance.getId());
 
         // 验证任务内容是否存在
@@ -188,7 +190,13 @@ public class DataXTaskHandler implements TaskHandler {
 
             // 1. 上传 JSON 配置文件
             log.info("不再本地生成文件，直接上传配置到远程: {}", remoteTempFile);
+            log.info("[Debug] Generated DataX Config (Remote): \n{}", jsonString);
             com.example.executor.urgs_executor.util.SshUtils.scpTo(session, jsonString, remoteTempFile);
+
+            // DEBUG: Read back the file to verify what was actually written
+            String verifyCmd = "cat " + remoteTempFile;
+            String fileContent = com.example.executor.urgs_executor.util.SshUtils.exec(session, verifyCmd);
+            log.info("[Debug] ACTUAL FILE CONTENT on remote server: \n{}", fileContent);
 
             // 2. 执行 DataX 命令
             String command = String.format("python3 %s/bin/datax.py %s", remoteDataxHome, remoteTempFile);
@@ -515,12 +523,23 @@ public class DataXTaskHandler implements TaskHandler {
 
             // 构建符合 DataX 规范的 JDBC URL
             String jdbcUrl = constructJdbcUrl(pluginName, connParams);
+            // WORKAROUND V4: User requested to use ArrayNode.
+            // "jdbcUrl" in DataX usually requires a List.
+            // Previous error "No suitable driver found for ['...']" might be due to
+            // implicit string conversion or logging artifact.
+            // We revert to explicit ArrayNode.
             connItem.putArray("jdbcUrl").add(jdbcUrl);
 
             // 处理 'table' 参数：如果顶级参数中有 table，则移动到 connection 内部
             if (parameter.has("table")) {
                 connItem.set("table", parameter.get("table"));
                 parameter.remove("table");
+            }
+
+            // 处理 'sql' 参数：如果顶级参数中有 sql，则移动到 connection 内部并重命名为 querySql
+            if (parameter.has("sql")) {
+                connItem.set("querySql", parameter.get("sql"));
+                parameter.remove("sql");
             }
         }
 
@@ -548,6 +567,19 @@ public class DataXTaskHandler implements TaskHandler {
         }
 
         // TODO: 根据需要添加其他特定数据源的映射逻辑
+    }
+
+    private ArrayNode ensureArray(JsonNode node) {
+        ArrayNode arr = JsonNodeFactory.instance.arrayNode();
+        if (node == null || node.isNull()) {
+            return arr;
+        }
+        if (node.isArray()) {
+            return (ArrayNode) node;
+        }
+        // 字符串、数字、对象都包成单元素数组
+        arr.add(node);
+        return arr;
     }
 
     /**
