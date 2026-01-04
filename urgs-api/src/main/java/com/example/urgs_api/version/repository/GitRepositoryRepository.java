@@ -17,5 +17,12 @@ public interface GitRepositoryRepository extends JpaRepository<GitRepository, Lo
 
     List<GitRepository> findByEnabled(Boolean enabled);
 
+    List<GitRepository> findByCreateBy(Long createBy);
+
+    List<GitRepository> findByCreateByAndSsoId(Long createBy, Long ssoId);
+
+    List<GitRepository> findByCreateByAndPlatform(Long createBy, String platform);
+
     boolean existsByCloneUrl(String cloneUrl);
+
 }

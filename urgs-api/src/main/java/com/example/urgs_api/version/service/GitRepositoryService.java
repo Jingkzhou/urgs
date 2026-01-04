@@ -21,22 +21,44 @@ public class GitRepositoryService {
     private final GitRepositoryRepository repository;
 
     /**
-     * 获取所有 Git 仓库
-     * 
+     * 按创建者过滤获取所有 Git 仓库
+     *
+     * @param userId 用户 ID
      * @return 仓库列表
      */
-    public List<GitRepository> findAll() {
-        return repository.findAll();
+    public List<GitRepository> findAll(Long userId) {
+        if (userId == null) {
+            return repository.findAll();
+        }
+        return repository.findByCreateBy(userId);
     }
 
     /**
-     * 根据 SSO ID 获取仓库列表
-     * 
-     * @param ssoId 系统 ID
+     * 按创建者和 SSO ID 过滤获取仓库列表
+     *
+     * @param userId 用户 ID
+     * @param ssoId  系统 ID
      * @return 仓库列表
      */
-    public List<GitRepository> findBySsoId(Long ssoId) {
-        return repository.findBySsoId(ssoId);
+    public List<GitRepository> findBySsoId(Long userId, Long ssoId) {
+        if (userId == null) {
+            return repository.findBySsoId(ssoId);
+        }
+        return repository.findByCreateByAndSsoId(userId, ssoId);
+    }
+
+    /**
+     * 按创建者和平台类型过滤记录获取仓库列表
+     *
+     * @param userId   用户 ID
+     * @param platform 平台类型
+     * @return 仓库列表
+     */
+    public List<GitRepository> findByPlatform(Long userId, String platform) {
+        if (userId == null) {
+            return repository.findByPlatform(platform);
+        }
+        return repository.findByCreateByAndPlatform(userId, platform);
     }
 
     /**
@@ -50,10 +72,21 @@ public class GitRepositoryService {
     }
 
     /**
-     * 根据平台类型获取仓库列表
-     * 
-     * @param platform 平台类型 (gitee, github, gitlab)
-     * @return 仓库列表
+     * 获取所有 Git 仓库 (管理视图)
+     */
+    public List<GitRepository> findAll() {
+        return repository.findAll();
+    }
+
+    /**
+     * 根据 SSO ID 获取仓库列表 (过时)
+     */
+    public List<GitRepository> findBySsoId(Long ssoId) {
+        return repository.findBySsoId(ssoId);
+    }
+
+    /**
+     * 根据平台类型获取仓库列表 (过时)
      */
     public List<GitRepository> findByPlatform(String platform) {
         return repository.findByPlatform(platform);
@@ -67,9 +100,13 @@ public class GitRepositoryService {
      * @throws IllegalArgumentException 如果仓库地址已存在
      */
     @Transactional
-    public GitRepository create(GitRepository repo) {
+    public GitRepository create(GitRepository repo, Long currentUserId) {
         if (repository.existsByCloneUrl(repo.getCloneUrl())) {
             throw new IllegalArgumentException("仓库地址已存在: " + repo.getCloneUrl());
+        }
+        // 设置创建人
+        if (currentUserId != null) {
+            repo.setCreateBy(currentUserId);
         }
         // 生成 webhook secret
         if (repo.getWebhookSecret() == null) {

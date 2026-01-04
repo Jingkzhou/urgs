@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Layout, Input, Button, message, Empty, Spin, Tag, Badge, Pagination, Tooltip, Space, Modal, Switch } from 'antd';
+import { Layout, Input, Button, message, Empty, Spin, Tag, Badge, Pagination, Tooltip, Space, Modal, Switch, Segmented } from 'antd';
 import {
     SearchOutlined,
     TableOutlined,
@@ -29,6 +29,7 @@ import LineageReportModal from './analysis/components/LineageReportModal';
 import { NodeData, LinkData, ViewportState } from './analysis/types';
 import { NODE_HEADER_HEIGHT, COLUMN_ROW_HEIGHT } from './analysis/constants';
 import EngineLogViewer from './analysis/components/EngineLogViewer';
+import LineageListView from './analysis/components/LineageListView';
 
 const { Sider, Content } = Layout;
 
@@ -87,6 +88,7 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
     const [engineLogsLoading, setEngineLogsLoading] = useState(false);
     const [engineMeta, setEngineMeta] = useState<{ lastStartedAt?: string; lastStoppedAt?: string; pid?: number }>({});
     const [autoRefresh, setAutoRefresh] = useState(true);
+    const [viewMode, setViewMode] = useState<'canvas' | 'list'>('list');
     const engineStatusMeta = {
         running: { badge: 'success' as const, label: '运行中' },
         stopped: { badge: 'default' as const, label: '未启动' },
@@ -784,68 +786,79 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                     </div>
                     {selectedTable && <Tag color="blue">{selectedTable}</Tag>}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', border: '1px solid #f0f0f0', borderRadius: 8, background: '#fafafa' }}>
-                        <span style={{ fontSize: 12, color: '#8c8c8c' }}>引擎控制</span>
-                        {canViewEngineStatus ? (
-                            <>
-                                <Badge status={engineStatusInfo.badge} text={engineStatusInfo.label} />
-                                {engineMeta.pid ? <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 4 }}>PID {engineMeta.pid}</span> : null}
-                                {engineMeta.lastStartedAt && engineStatus === 'running' ? (
-                                    <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8 }} title={engineMeta.lastStartedAt}>
-                                        启动于 {new Date(engineMeta.lastStartedAt).toLocaleString('zh-CN', { hour12: false })}
-                                        <span style={{ margin: '0 4px' }}>·</span>
-                                        已运行 <RunDuration startTime={engineMeta.lastStartedAt} />
-                                    </span>
-                                ) : null}
-                            </>
-                        ) : (
-                            <Badge status="default" text="无权限" />
-                        )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <Segmented
+                        options={[
+                            { label: '流程图', value: 'canvas', icon: <TableOutlined /> },
+                            { label: '列表', value: 'list', icon: <FileTextOutlined /> },
+                        ]}
+                        value={viewMode}
+                        onChange={(val: any) => setViewMode(val)}
+                    />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', border: '1px solid #f0f0f0', borderRadius: 8, background: '#fafafa' }}>
+                            <span style={{ fontSize: 12, color: '#8c8c8c' }}>引擎控制</span>
+                            {canViewEngineStatus ? (
+                                <>
+                                    <Badge status={engineStatusInfo.badge} text={engineStatusInfo.label} />
+                                    {engineMeta.pid ? <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 4 }}>PID {engineMeta.pid}</span> : null}
+                                    {engineMeta.lastStartedAt && engineStatus === 'running' ? (
+                                        <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8 }} title={engineMeta.lastStartedAt}>
+                                            启动于 {new Date(engineMeta.lastStartedAt).toLocaleString('zh-CN', { hour12: false })}
+                                            <span style={{ margin: '0 4px' }}>·</span>
+                                            已运行 <RunDuration startTime={engineMeta.lastStartedAt} />
+                                        </span>
+                                    ) : null}
+                                </>
+                            ) : (
+                                <Badge status="default" text="无权限" />
+                            )}
+                        </div>
+                        <Space>
+                            {canStartEngine ? (
+                                <Button
+                                    type="primary"
+                                    icon={<PlayCircleOutlined />}
+                                    loading={engineActionLoading === 'start'}
+                                    disabled={engineStatus === 'running' || engineStatus === 'starting'}
+                                    onClick={handleStartEngine}
+                                >
+                                    启动引擎
+                                </Button>
+                            ) : null}
+                            {canRestartEngine ? (
+                                <Button
+                                    icon={<ReloadOutlined />}
+                                    loading={engineActionLoading === 'restart'}
+                                    disabled={engineStatus !== 'running'}
+                                    onClick={handleRestartEngine}
+                                >
+                                    重启
+                                </Button>
+                            ) : null}
+                            {canStopEngine ? (
+                                <Button
+                                    danger
+                                    icon={<PoweroffOutlined />}
+                                    loading={engineActionLoading === 'stop'}
+                                    disabled={engineStatus !== 'running'}
+                                    onClick={handleStopEngine}
+                                >
+                                    停止
+                                </Button>
+                            ) : null}
+                            {canViewEngineLogs ? (
+                                <Button icon={<FileTextOutlined />} onClick={handleOpenLogs}>
+                                    查看日志
+                                </Button>
+                            ) : null}
+                        </Space>
                     </div>
-                    <Space>
-                        {canStartEngine ? (
-                            <Button
-                                type="primary"
-                                icon={<PlayCircleOutlined />}
-                                loading={engineActionLoading === 'start'}
-                                disabled={engineStatus === 'running' || engineStatus === 'starting'}
-                                onClick={handleStartEngine}
-                            >
-                                启动引擎
-                            </Button>
-                        ) : null}
-                        {canRestartEngine ? (
-                            <Button
-                                icon={<ReloadOutlined />}
-                                loading={engineActionLoading === 'restart'}
-                                disabled={engineStatus !== 'running'}
-                                onClick={handleRestartEngine}
-                            >
-                                重启
-                            </Button>
-                        ) : null}
-                        {canStopEngine ? (
-                            <Button
-                                danger
-                                icon={<PoweroffOutlined />}
-                                loading={engineActionLoading === 'stop'}
-                                disabled={engineStatus !== 'running'}
-                                onClick={handleStopEngine}
-                            >
-                                停止
-                            </Button>
-                        ) : null}
-                        {canViewEngineLogs ? (
-                            <Button icon={<FileTextOutlined />} onClick={handleOpenLogs}>
-                                查看日志
-                            </Button>
-                        ) : null}
-                    </Space>
                 </div>
             </div>
             <Layout style={{ flex: 1, minHeight: 0 }}>
                 <Sider width={300} theme="light" style={{ borderRight: '1px solid #f0f0f0' }}>
+
                     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                         <div style={{ padding: '16px', borderBottom: '1px solid #f0f0f0' }}>
                             <div style={{ marginBottom: 16 }}>
@@ -969,28 +982,37 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                     <Spin spinning={graphLoading} tip="加载血缘关系...">
                         <div style={{ height: '100%', width: '100%' }}>
                             {nodes.length > 0 ? (
-                                mode === 'impact' ? (
-                                    <LineageDiagramImpact
-                                        viewport={viewport}
-                                        setViewport={setViewport}
-                                        nodes={nodes}
-                                        setNodes={setNodes}
-                                        links={links}
-                                        selectedTable={selectedTable}
-                                        selectedField={selectedField}
-                                        onFieldSelect={setSelectedField}
-                                        onGenerateReport={() => setShowReportModal(true)}
-                                    />
+                                viewMode === 'canvas' ? (
+                                    mode === 'impact' ? (
+                                        <LineageDiagramImpact
+                                            viewport={viewport}
+                                            setViewport={setViewport}
+                                            nodes={nodes}
+                                            setNodes={setNodes}
+                                            links={links}
+                                            selectedTable={selectedTable}
+                                            selectedField={selectedField}
+                                            onFieldSelect={setSelectedField}
+                                            onGenerateReport={() => setShowReportModal(true)}
+                                        />
+                                    ) : (
+                                        <LineageDiagramTrace
+                                            viewport={viewport}
+                                            setViewport={setViewport}
+                                            nodes={nodes}
+                                            setNodes={setNodes}
+                                            links={links}
+                                            selectedTable={selectedTable}
+                                            selectedField={selectedField}
+                                            onFieldSelect={setSelectedField}
+                                        />
+                                    )
                                 ) : (
-                                    <LineageDiagramTrace
-                                        viewport={viewport}
-                                        setViewport={setViewport}
+                                    <LineageListView
                                         nodes={nodes}
-                                        setNodes={setNodes}
                                         links={links}
                                         selectedTable={selectedTable}
                                         selectedField={selectedField}
-                                        onFieldSelect={setSelectedField}
                                     />
                                 )
                             ) : (
@@ -1031,3 +1053,4 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
 };
 
 export default LineagePage;
+

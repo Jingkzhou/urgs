@@ -209,7 +209,12 @@ public class GitBrowserController {
      */
     @PostMapping("/import")
     public ResponseEntity<Void> importRepositories(
-            @RequestBody com.example.urgs_api.version.dto.GitImportRequest request) {
+            @RequestBody com.example.urgs_api.version.dto.GitImportRequest request,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+        if (userId == null) {
+            userId = 1L;
+        }
+
         if (request.getSystemId() == null) {
             throw new IllegalArgumentException("System ID is required");
         }
@@ -229,8 +234,9 @@ public class GitBrowserController {
             repo.setEnabled(true);
 
             try {
-                gitRepositoryService.create(repo);
+                gitRepositoryService.create(repo, userId);
             } catch (Exception e) {
+
                 // Ignore duplicates or log
                 System.err.println("Skipping duplicate or failed repo: " + project.getName() + " " + e.getMessage());
             }

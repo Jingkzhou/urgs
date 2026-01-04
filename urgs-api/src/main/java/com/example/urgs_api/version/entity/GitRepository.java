@@ -64,7 +64,12 @@ public class GitRepository {
     @Column(name = "last_synced_at")
     private LocalDateTime lastSyncedAt;
 
+    /** 创建人 ID */
+    @Column(name = "create_by")
+    private Long createBy;
+
     @Column(name = "created_at")
+
     private LocalDateTime createdAt;
 
     @Column(name = "updated_at")

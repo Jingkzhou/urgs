@@ -4,16 +4,11 @@ import com.example.urgs_api.version.entity.AppSystem;
 import com.example.urgs_api.version.entity.GitRepository;
 import com.example.urgs_api.version.service.AppSystemService;
 import com.example.urgs_api.version.service.GitRepositoryService;
-import com.example.urgs_api.user.service.UserService;
 import com.example.urgs_api.version.service.GitPlatformService;
-import com.example.urgs_api.version.dto.GitProjectVO;
-import com.example.urgs_api.user.model.User;
 import lombok.RequiredArgsConstructor;
-import java.util.Set;
-import java.util.Collections;
-import java.util.stream.Collectors;
 
 import org.springframework.http.ResponseEntity;
+
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
@@ -25,7 +20,6 @@ public class VersionController {
 
     private final AppSystemService appSystemService;
     private final GitRepositoryService gitRepositoryService;
-    private final UserService userService;
     private final GitPlatformService gitPlatformService;
 
     // ===== 应用系统 API =====
@@ -70,25 +64,18 @@ public class VersionController {
             @RequestParam(required = false) String platform,
             @RequestAttribute(value = "userId", required = false) Long userId) {
 
-        // 1. Fetch raw list from DB
-        List<GitRepository> dbRepos;
-        if (ssoId != null) {
-            dbRepos = gitRepositoryService.findBySsoId(ssoId);
-        } else if (platform != null) {
-            dbRepos = gitRepositoryService.findByPlatform(platform);
-        } else {
-            dbRepos = gitRepositoryService.findAll();
-        }
-
-        // 2. Filter by User Permissions (Strict Visibility)
-        // Only show repositories that execute "Sync" logic would see.
         if (userId == null) {
             userId = 1L; // Fallback for dev environment or default user
         }
 
-        User user = userService.getById(userId);
-        if (user == null) {
-            return Collections.emptyList();
+        // 1. Fetch filtered list from DB
+        List<GitRepository> dbRepos;
+        if (ssoId != null) {
+            dbRepos = gitRepositoryService.findBySsoId(userId, ssoId);
+        } else if (platform != null) {
+            dbRepos = gitRepositoryService.findByPlatform(userId, platform);
+        } else {
+            dbRepos = gitRepositoryService.findAll(userId);
         }
 
         return dbRepos;
@@ -102,8 +89,9 @@ public class VersionController {
     }
 
     @PostMapping("/repos")
-    public GitRepository createRepo(@RequestBody GitRepository repo) {
-        return gitRepositoryService.create(repo);
+    public GitRepository createRepo(@RequestBody GitRepository repo,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+        return gitRepositoryService.create(repo, userId != null ? userId : 1L);
     }
 
     @PutMapping("/repos/{id}")
