@@ -58,24 +58,35 @@ class Neo4jClient:
     # 版本管理相关方法
     # ================================
     
-    def create_lineage_version(self, version_id: str, source_directory: str = None, description: str = None):
+    def create_lineage_version(self, version_id: str, repo_id: str = None, 
+                             commit_sha: str = None, ref: str = None,
+                             source_directory: str = None, description: str = None):
         """
         创建血缘版本节点。
         
         Args:
-            version_id: 版本标识 (如 v20241209_153000_abc123)
-            source_directory: 来源 SQL 文件目录
-            description: 版本描述
+            version_id: 版本标识
+            repo_id: 仓库 ID
+            commit_sha: 提交 SHA
+            ref: Git 引用
+            source_directory: 来源目录
+            description: 描述
         """
         with self.driver.session() as session:
             session.run(
                 """
                 MERGE (v:LineageVersion {id: $version_id})
                 SET v.createdAt = datetime(),
+                    v.repoId = $repo_id,
+                    v.commitSha = $commit_sha,
+                    v.ref = $ref,
                     v.sourceDirectory = $source_directory,
                     v.description = $description
                 """,
                 version_id=version_id,
+                repo_id=repo_id,
+                commit_sha=commit_sha,
+                ref=ref,
                 source_directory=source_directory,
                 description=description
             )
@@ -143,6 +154,35 @@ class Neo4jClient:
             print("  - LineageVersion 节点已清除")
             
             print("✓ 血缘数据清除完成")
+
+    def clear_lineage_by_repo_files(self, repo_id: str, files: list):
+        """
+        清除指定仓库和文件列表相关的旧血缘关系。
+        仅删除该仓库下，sourceFiles 包含在 files 列表中的关系。
+        """
+        if not repo_id or not files:
+            return
+
+        print(f"正在清除仓库 {repo_id} 中 {len(files)} 个文件的旧血缘数据...")
+        with self.driver.session() as session:
+            # 批量删除关系
+            # 逻辑：查找具有指定 repoId 且 sourceFiles 与当前文件列表有交集的关系
+            # 注意：这里假设关系上的 sourceFiles 是相对路径，files 传入的也必须是相对路径
+            
+            # 由于 Cypher 列表操作性能，分批处理文件列表
+            batch_size = 1000
+            for i in range(0, len(files), batch_size):
+                file_batch = files[i:i + batch_size]
+                
+                # 删除 Column 级别的关系
+                session.run("""
+                    MATCH ()-[r]->()
+                    WHERE r.repoId = $repoId
+                    AND ANY(f IN r.sourceFiles WHERE f IN $files)
+                    DELETE r
+                """, repoId=repo_id, files=file_batch)
+                
+            print(f"  - 相关血缘关系已清除")
 
     def create_lineage(self, source_table: str, target_table: str):
         """
@@ -262,9 +302,13 @@ class Neo4jClient:
         )
         tx.run(query, batch=normalized_deps)
     
-    def create_column_lineage_v2(self, dependencies: list, version: str):
+    def create_column_lineage_v2(self, dependencies: list, version: str, repo_id: str = None):
         """
         创建带版本的字段级血缘关系 (Batch Optimized).
+        Args:
+            dependencies: 依赖列表
+            version: 版本ID
+            repo_id: 仓库ID (用于隔离和清除)
         """
         if not dependencies:
             return
@@ -291,7 +335,8 @@ class Neo4jClient:
                 "source_file": dep.get("source_file"),
                 "dependency_type": dep.get("dependency_type", "fdd"),
                 "snippet": dep.get("snippet"),
-                "version": version
+                "version": version,
+                "repo_id": repo_id
             }
             
             # Neo4j Relation Type lookup
@@ -359,6 +404,7 @@ class Neo4jClient:
         MERGE (tc)-[:BELONGS_TO]->(tt)
         MERGE (sc)-[r:{rel_type}]->(tc)
         SET r.version = item.version,
+            r.repoId = item.repo_id,
             r.type = item.dependency_type,
             r.isIndirect = false,
             r.snippet = CASE WHEN item.snippet IS NOT NULL THEN item.snippet ELSE r.snippet END,
@@ -382,6 +428,7 @@ class Neo4jClient:
         MERGE (sc)-[:BELONGS_TO]->(st)
         MERGE (sc)-[r:{rel_type}]->(tt)
         SET r.version = item.version,
+            r.repoId = item.repo_id,
             r.type = item.dependency_type,
             r.isIndirect = true,
             r.snippet = CASE WHEN item.snippet IS NOT NULL THEN item.snippet ELSE r.snippet END,

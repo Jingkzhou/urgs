@@ -8,8 +8,9 @@ import logging
 logging.getLogger("sqlglot").setLevel(logging.ERROR)
 
 class LineageParser:
-    def __init__(self, dialect: str = "mysql"):
+    def __init__(self, dialect: str = "mysql", default_schema: str = None):
         self.dialect = dialect
+        self.default_schema = default_schema
         self.parser = GSPParser()
         self.indirect_parser = IndirectFlowParser(dialect)  # sqlglot 补充解析器
 
@@ -36,7 +37,6 @@ class LineageParser:
         
         if current_dialect == "mysql" and detected_dialect:
             import logging
-            logging.info(f"Auto-detected {detected_dialect.upper()} content override for MySQL default.")
             current_dialect = detected_dialect
             detected_switch = True
 
@@ -175,15 +175,18 @@ class LineageParser:
             # 1. 尝试获取父目录 (Level 1)
             # 2. 如果父目录名是通用类型 (sql, ddl 等)，则向上取一级 (Level 2)
             try:
-                parent_dir = os.path.dirname(source_file)
-                dir_name = os.path.basename(parent_dir)
-                
-                default_schema = dir_name
-                # User rule: "向上 2 级是用户名 ... 上一级用来区分sql还是 DD"
-                # If parent dir looks like a type indicator, go up
-                if dir_name.lower() in ["sql", "ddl", "dml", "scripts", "bin"]:
-                    grandparent_dir = os.path.dirname(parent_dir)
-                    default_schema = os.path.basename(grandparent_dir)
+                if self.default_schema:
+                    default_schema = self.default_schema
+                else:
+                    parent_dir = os.path.dirname(source_file)
+                    dir_name = os.path.basename(parent_dir)
+                    
+                    default_schema = dir_name
+                    # User rule: "向上 2 级是用户名 ... 上一级用来区分sql还是 DD"
+                    # If parent dir looks like a type indicator, go up
+                    if dir_name.lower() in ["sql", "ddl", "dml", "scripts", "bin"]:
+                        grandparent_dir = os.path.dirname(parent_dir)
+                        default_schema = os.path.basename(grandparent_dir)
                 
                 # Avoid using common directory names as schema (like 'mysql', 'tests')
                 # Add more exclusions as needed
@@ -289,7 +292,6 @@ class LineageParser:
         
         if current_dialect == "mysql" and detected_dialect:
             import logging
-            logging.info(f"Auto-detected {detected_dialect.upper()} content override for MySQL default (column lineage).")
             current_dialect = detected_dialect
             detected_switch = True
 
@@ -394,14 +396,17 @@ class LineageParser:
         import os
         if source_file:
              try:
-                parent_dir = os.path.dirname(source_file)
-                dir_name = os.path.basename(parent_dir)
-                
-                default_schema = dir_name
-                # User rule: If parent is type folder, go up one more
-                if dir_name.lower() in ["sql", "ddl", "dml", "scripts", "bin"]:
-                    grandparent_dir = os.path.dirname(parent_dir)
-                    default_schema = os.path.basename(grandparent_dir)
+                if self.default_schema:
+                    default_schema = self.default_schema
+                else:
+                    parent_dir = os.path.dirname(source_file)
+                    dir_name = os.path.basename(parent_dir)
+                    
+                    default_schema = dir_name
+                    # User rule: If parent is type folder, go up one more
+                    if dir_name.lower() in ["sql", "ddl", "dml", "scripts", "bin"]:
+                        grandparent_dir = os.path.dirname(parent_dir)
+                        default_schema = os.path.basename(grandparent_dir)
                 
                 if default_schema.lower() not in ["mysql", "hive", "oracle", "tests", "bin", ".", "test"]:
                      def apply_schema(table_name):

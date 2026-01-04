@@ -41,8 +41,9 @@ public class LineageEngineController {
 
     @GetMapping("/logs")
     @RequirePermission("metadata:lineage:engine:logs")
-    public Map<String, Object> logs(@RequestParam(defaultValue = "200") int lines) {
-        return lineageEngineService.logs(lines);
+    public Map<String, Object> logs(@RequestParam(defaultValue = "200") int lines,
+            @RequestParam(required = false) String recordId) {
+        return lineageEngineService.logs(lines, recordId);
     }
 
     @GetMapping("/version-check")

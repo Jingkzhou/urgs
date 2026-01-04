@@ -56,6 +56,7 @@ public class LineageEngineService {
     private Integer lastExitCode;
     private String lastError;
     private StartEngineRequest lastRequest;
+    private String lastRecordId;
 
     public Map<String, Object> start(StartEngineRequest request) {
         synchronized (lock) {
@@ -73,13 +74,27 @@ public class LineageEngineService {
 
                 // Prepare Input Paths (Git Source)
                 String inputPath;
+                String repoRoot = null;
+
                 if (request != null && request.getRepoId() != null) {
-                    inputPath = prepareGitInput(request);
+                    GitInputResult result = prepareGitInput(request);
+                    inputPath = result.inputPath();
+                    repoRoot = result.repoRoot();
                 } else {
                     inputPath = resolveEngineArgsPath(engineArgs);
                 }
 
-                Path logPath = resolveLogPath(workingDir);
+                // Create record first to get ID and SHA
+                String recordId = null;
+                LineageAnalysisRecord record = null;
+                if (request != null && request.getRepoId() != null) {
+                    record = createAnalysisRecord(request, Instant.now());
+                    recordId = record.getId();
+                    this.lastRequest = request;
+                    this.lastRecordId = recordId;
+                }
+
+                Path logPath = resolveLogPath(workingDir, recordId);
                 Files.createDirectories(logPath.getParent());
 
                 List<String> command = new ArrayList<>();
@@ -90,6 +105,31 @@ public class LineageEngineService {
                 command.add("parse-sql");
                 command.add("--file");
                 command.add(inputPath);
+
+                // Pass metadata arguments if available
+                if (request != null && request.getRepoId() != null) {
+                    if (recordId != null) {
+                        command.add("--version-id");
+                        command.add(recordId);
+                    }
+                    command.add("--repo-id");
+                    command.add(String.valueOf(request.getRepoId()));
+
+                    if (StringUtils.hasText(request.getRef())) {
+                        command.add("--ref");
+                        command.add(request.getRef());
+                    }
+
+                    if (record != null && StringUtils.hasText(record.getCommitSha())) {
+                        command.add("--commit-sha");
+                        command.add(record.getCommitSha());
+                    }
+                } // SHA.
+
+                if (repoRoot != null) {
+                    command.add("--repo-root");
+                    command.add(repoRoot);
+                }
 
                 if (request != null && StringUtils.hasText(request.getUser())) {
                     command.add("--default-user");
@@ -115,13 +155,6 @@ public class LineageEngineService {
                 lastExitCode = null;
                 lastError = null;
 
-                // Create initial record
-                String recordId = null;
-                if (request != null && request.getRepoId() != null) {
-                    recordId = createAnalysisRecord(request, lastStartedAt);
-                    this.lastRequest = request;
-                }
-
                 watchProcess(process, recordId, logPath);
                 return buildStatus(true, "引擎已启动");
             } catch (Exception e) {
@@ -132,7 +165,10 @@ public class LineageEngineService {
         }
     }
 
-    private String prepareGitInput(StartEngineRequest request) throws Exception {
+    private record GitInputResult(String inputPath, String repoRoot) {
+    }
+
+    private GitInputResult prepareGitInput(StartEngineRequest request) throws Exception {
         Path tempDir = Files.createTempDirectory("lineage-git-");
         log.info("下载代码归档到临时目录: {}", tempDir);
 
@@ -155,28 +191,26 @@ public class LineageEngineService {
                 zis.closeEntry();
             }
 
-            // If multiple paths selected, we need to pass a list or process them
-            // For now, simplify: use the root of extracted or the specific paths
             Path realBase = rootDir != null ? tempDir.resolve(rootDir) : tempDir;
 
-            // If paths are specified, we filter or just pass them
-            // Python engine --file can take multiple or a directory
-            // Here we assume paths are relative to the repo root
             if (request.getPaths() != null && !request.getPaths().isEmpty()) {
-                // If only one path, use it. If multiple, we might need to copy them to a
-                // specific subdir
-                // or the engine needs to support multiple --file.
-                // Currently lineage-cli --file takes ONE path.
-                // So we create a temp collection dir if multiple paths.
                 if (request.getPaths().size() == 1) {
-                    return realBase.resolve(request.getPaths().get(0)).toAbsolutePath().toString();
+                    // Single path: use it directly, repoRoot is realBase
+                    return new GitInputResult(
+                            realBase.resolve(request.getPaths().get(0)).toAbsolutePath().toString(),
+                            realBase.toAbsolutePath().toString());
                 } else {
+                    // Multiple paths: copy to collection dir preserving structure
                     Path collectionDir = tempDir.resolve("collect");
                     Files.createDirectories(collectionDir);
                     for (String p : request.getPaths()) {
                         Path src = realBase.resolve(p);
                         if (Files.exists(src)) {
-                            Path dest = collectionDir.resolve(src.getFileName());
+                            // Use full relative path to preserve structure (e.g. src/main/A.sql)
+                            // Note: p is already relative to repo root
+                            Path dest = collectionDir.resolve(p);
+                            Files.createDirectories(dest.getParent());
+
                             if (Files.isDirectory(src)) {
                                 copyDirectory(src, dest);
                             } else {
@@ -184,11 +218,17 @@ public class LineageEngineService {
                             }
                         }
                     }
-                    return collectionDir.toAbsolutePath().toString();
+                    // For collection dir, the root is the collection dir itself
+                    // because we reconstructed the structure inside it.
+                    return new GitInputResult(
+                            collectionDir.toAbsolutePath().toString(),
+                            collectionDir.toAbsolutePath().toString());
                 }
             }
 
-            return realBase.toAbsolutePath().toString();
+            return new GitInputResult(
+                    realBase.toAbsolutePath().toString(),
+                    realBase.toAbsolutePath().toString());
         }
     }
 
@@ -217,7 +257,7 @@ public class LineageEngineService {
         return "./tests/sql";
     }
 
-    private String createAnalysisRecord(StartEngineRequest request, Instant startTime) {
+    private LineageAnalysisRecord createAnalysisRecord(StartEngineRequest request, Instant startTime) {
         LineageAnalysisRecord record = new LineageAnalysisRecord();
         record.setRepoId(request.getRepoId());
         record.setRef(request.getRef());
@@ -240,7 +280,7 @@ public class LineageEngineService {
         }
 
         analysisRecordMapper.insert(record);
-        return record.getId();
+        return record;
     }
 
     public Map<String, Object> stop() {
@@ -313,16 +353,19 @@ public class LineageEngineService {
         }
     }
 
-    public Map<String, Object> logs(int lines) {
+    public Map<String, Object> logs(int lines, String recordId) {
         synchronized (lock) {
             Map<String, Object> result = new HashMap<>();
             try {
-                log.info("读取血缘引擎日志: lines={}", lines);
-                Path logPath = resolveLogPath(resolveWorkDir());
+                String targetId = StringUtils.hasText(recordId) ? recordId : this.lastRecordId;
+                log.info("读取血缘引擎日志: lines={}, recordId={}", lines, targetId);
+
+                Path logPath = resolveLogPath(resolveWorkDir(), targetId);
                 if (!Files.exists(logPath)) {
                     result.put("success", true);
                     result.put("lines", List.of());
                     result.put("lineCount", 0);
+                    result.put("logPath", logPath.toString());
                     return result;
                 }
                 List<String> allLines = Files.readAllLines(logPath, StandardCharsets.UTF_8);
@@ -496,10 +539,16 @@ public class LineageEngineService {
         return script.toAbsolutePath().normalize();
     }
 
-    private Path resolveLogPath(Path workingDir) {
+    private Path resolveLogPath(Path workingDir, String recordId) {
         if (StringUtils.hasText(logFile)) {
+            // If explicit log file configured, use it (legacy mode or override)
             return Paths.get(logFile).toAbsolutePath().normalize();
         }
+        if (StringUtils.hasText(recordId)) {
+            return workingDir.resolve("logs").resolve("lineage-engine-" + recordId + ".log").toAbsolutePath()
+                    .normalize();
+        }
+        // Fallback for no record ID (e.g. manual CLI check?)
         return workingDir.resolve("logs").resolve("lineage-engine.log").toAbsolutePath().normalize();
     }
 

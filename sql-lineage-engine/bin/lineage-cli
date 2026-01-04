@@ -110,6 +110,14 @@ def main():
     sql_parser_cmd.add_argument("--output-file", help="Path to write output to (CSV or JSON)")
     sql_parser_cmd.add_argument("--no-clear", action="store_true", help="Do not clear existing lineage data before parsing (default: clear all data)")
     
+    # Metadata arguments
+    sql_parser_cmd.add_argument("--version-id", help="Explicit version ID")
+    sql_parser_cmd.add_argument("--repo-id", help="Git Repository ID")
+    sql_parser_cmd.add_argument("--commit-sha", help="Git Commit SHA")
+    sql_parser_cmd.add_argument("--ref", help="Git Ref")
+    sql_parser_cmd.add_argument("--repo-root", help="Root directory of the repo (for calculating relative paths)")
+    sql_parser_cmd.add_argument("--default-user", help="Default user/schema name for unqualified tables")
+    
     args = parser.parse_args()
 
     if args.command == "parse-sql":
@@ -131,17 +139,46 @@ def main():
         import csv
         
         # 自动生成版本号
-        version_id = f"v{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
-        logger.info(f"Generated lineage version record: {version_id}")
+        if args.version_id:
+            version_id = args.version_id
+            logger.info(f"Using provided version ID: {version_id}")
+        else:
+            version_id = f"v{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+            logger.info(f"Generated lineage version record: {version_id}")
         
-        # 清除现有数据（仅在 neo4j 模式且未指定 --no-clear 时）
+        # Prepare list of relative file paths for clearing
+        relative_files = []
+        if args.file and args.repo_root:
+            abs_repo_root = os.path.abspath(args.repo_root)
+            if os.path.isfile(args.file):
+                 abs_file = os.path.abspath(args.file)
+                 if abs_file.startswith(abs_repo_root):
+                     relative_files.append(os.path.relpath(abs_file, abs_repo_root))
+            elif os.path.isdir(args.file):
+                 for root, dirs, files in os.walk(args.file):
+                     for file in files:
+                         if file.lower().endswith(".sql"):
+                             abs_file = os.path.abspath(os.path.join(root, file))
+                             if abs_file.startswith(abs_repo_root):
+                                 relative_files.append(os.path.relpath(abs_file, abs_repo_root))
+        
+        # Clear data logic
         if args.output == "neo4j" and neo4j and not args.no_clear:
-            logger.info("Clearing existing lineage data from Neo4j...")
-            try:
-                neo4j.clear_all_lineage_data()
-                logger.info("Clearance completed.")
-            except Exception as e:
-                logger.error(f"Failed to clear Neo4j data: {e}")
+             if args.repo_id and relative_files:
+                 logger.info(f"Clearing lineage for repo {args.repo_id} and specific files...")
+                 try:
+                     neo4j.clear_lineage_by_repo_files(args.repo_id, relative_files)
+                 except Exception as e:
+                     logger.error(f"Failed to clear repo lineage data: {e}")
+             else:
+                 logger.warning("No repo-id or files provided, skipping specific clear. Use --no-clear to suppress this if intended.")
+                 # Fallback to old behavior if needed, or just do nothing safely
+                 # logger.info("Clearing existing lineage data from Neo4j...")
+                 # try:
+                 #     neo4j.clear_all_lineage_data()
+                 #     logger.info("Clearance completed.")
+                 # except Exception as e:
+                 #     logger.error(f"Failed to clear Neo4j data: {e}")
 
         # Determine output stream
         output_stream = sys.stdout
@@ -232,7 +269,7 @@ def main():
                     
                     # Batch insert column lineage with version
                     try:
-                        neo4j.create_column_lineage_v2(col_dependencies, version=version_id)
+                        neo4j.create_column_lineage_v2(col_dependencies, version=version_id, repo_id=args.repo_id)
                     except Exception as e:
                         logger.error(f"Error storing column lineage: {e}")
 
@@ -247,12 +284,16 @@ def main():
                 )
                 neo4j.create_lineage_version(
                     version_id=version_id,
+                    repo_id=args.repo_id,
+                    commit_sha=args.commit_sha,
+                    ref=args.ref,
                     source_directory=source_dir,
                     description=f"Parsed from {args.file or 'inline SQL'}"
                 )
             
             if args.sql:
-                lineage_parser = LineageParser(dialect=args.dialect)
+
+                lineage_parser = LineageParser(dialect=args.dialect, default_schema=args.default_user)
                 process_sql_content(args.sql, parser=lineage_parser, file_path=None)
             elif args.file:
                 if os.path.isdir(args.file):
@@ -273,7 +314,7 @@ def main():
                         logger.warning("No SQL files found in the specified directory.")
                     else:
                         # 准备任务参数
-                        tasks = prepare_file_tasks(sql_files, args.dialect)
+                        tasks = prepare_file_tasks(sql_files, args.dialect, default_schema=args.default_user)
                         
                         # 确定进程数
                         env_workers = os.environ.get("LINEAGE_MAX_WORKERS")
@@ -324,7 +365,7 @@ def main():
                             try:
                                 start_sync = time.time()
                                 neo4j.create_lineage_batch(all_relationships)
-                                neo4j.create_column_lineage_v2(all_column_deps, version=version_id)
+                                neo4j.create_column_lineage_v2(all_column_deps, version=version_id, repo_id=args.repo_id)
                                 logger.info(f"Sync completed in {time.time() - start_sync:.2f}s")
                             except Exception as e:
                                 logger.error(f"Sync failed: {e}")
@@ -354,8 +395,9 @@ def main():
                     # Single file mode
                     start_single = time.time()
                     try:
+
                         logger.info(f"Processing single file: {args.file}")
-                        lineage_parser = LineageParser(dialect=args.dialect)
+                        lineage_parser = LineageParser(dialect=args.dialect, default_schema=args.default_user)
                         with open(args.file, 'r', encoding='utf-8') as f:
                             sql_content = f.read()
                         process_sql_content(sql_content, parser=lineage_parser, file_path=args.file)
