@@ -239,6 +239,7 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
                 })
                 .collect(java.util.stream.Collectors.groupingBy(s -> s,
                         java.util.stream.Collectors.counting()));
+
         List<IssueStatsDTO.StatItem> statusStats = statusMap.entrySet().stream()
                 .map(e -> new IssueStatsDTO.StatItem(e.getKey(), e.getValue()))
                 .collect(java.util.stream.Collectors.toList());

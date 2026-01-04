@@ -62,6 +62,35 @@ const IssueStats: React.FC<IssueStatsProps> = ({ frequency }) => {
             });
             if (res.ok) {
                 const data = await res.json();
+                console.log('IssueStats data:', data); // Debug logging
+
+                // Ensure values are numbers
+                if (data) {
+                    data.totalCount = Number(data.totalCount);
+                    data.newCount = Number(data.newCount);
+                    data.inProgressCount = Number(data.inProgressCount);
+                    data.completedCount = Number(data.completedCount);
+
+                    if (data.statusStats) {
+                        data.statusStats = data.statusStats.map((item: any) => ({
+                            ...item,
+                            value: Number(item.value)
+                        }));
+                    }
+                    if (data.typeStats) {
+                        data.typeStats = data.typeStats.map((item: any) => ({
+                            ...item,
+                            value: Number(item.value)
+                        }));
+                    }
+                    if (data.systemStats) {
+                        data.systemStats = data.systemStats.map((item: any) => ({
+                            ...item,
+                            value: Number(item.value)
+                        }));
+                    }
+                }
+
                 setStats(data);
             }
         } catch (error) {
@@ -158,7 +187,7 @@ const IssueStats: React.FC<IssueStatsProps> = ({ frequency }) => {
                                 cy="50%"
                                 innerRadius={40}
                                 outerRadius={70}
-                                paddingAngle={2}
+                                // paddingAngle={2} // Temporarily removed for debugging
                                 dataKey="value"
                                 nameKey="name"
                                 label={({ name, value }) => `${name}: ${value}`}
