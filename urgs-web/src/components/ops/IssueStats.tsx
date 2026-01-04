@@ -187,7 +187,7 @@ const IssueStats: React.FC<IssueStatsProps> = ({ frequency }) => {
                                 cy="50%"
                                 innerRadius={40}
                                 outerRadius={70}
-                                // paddingAngle={2} // Temporarily removed for debugging
+                                paddingAngle={2}
                                 dataKey="value"
                                 nameKey="name"
                                 label={({ name, value }) => `${name}: ${value}`}
@@ -218,10 +218,15 @@ const IssueStats: React.FC<IssueStatsProps> = ({ frequency }) => {
                 {/* 归属系统分布柱状图 */}
                 <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
                     <h3 className="text-sm font-semibold text-slate-700 mb-4">归属系统分布</h3>
-                    <ResponsiveContainer width="100%" height={200} minWidth={0}>
-                        <BarChart data={stats.systemStats}>
+                    <ResponsiveContainer width="100%" height={250} minWidth={0}>
+                        <BarChart data={stats.systemStats} margin={{ bottom: 60 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                            <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                            <XAxis
+                                dataKey="name"
+                                tick={{ fontSize: 10, angle: -45, textAnchor: 'end' } as any}
+                                interval={0}
+                                height={60}
+                            />
                             <YAxis tick={{ fontSize: 12 }} />
                             <Tooltip />
                             <Bar dataKey="value" fill="#ec4899" radius={[4, 4, 0, 0]} />
