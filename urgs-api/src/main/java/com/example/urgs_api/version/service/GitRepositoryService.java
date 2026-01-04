@@ -101,7 +101,9 @@ public class GitRepositoryService {
      */
     @Transactional
     public GitRepository create(GitRepository repo, Long currentUserId) {
-        if (repository.existsByCloneUrl(repo.getCloneUrl())) {
+        if (currentUserId != null && repository.existsByCloneUrlAndCreateBy(repo.getCloneUrl(), currentUserId)) {
+            throw new IllegalArgumentException("仓库地址已存在: " + repo.getCloneUrl());
+        } else if (currentUserId == null && repository.existsByCloneUrl(repo.getCloneUrl())) {
             throw new IllegalArgumentException("仓库地址已存在: " + repo.getCloneUrl());
         }
         // 设置创建人
@@ -135,6 +137,8 @@ public class GitRepositoryService {
         existing.setDefaultBranch(repo.getDefaultBranch());
         existing.setAccessToken(repo.getAccessToken());
         existing.setEnabled(repo.getEnabled());
+        existing.setPlatform(repo.getPlatform());
+        existing.setSsoId(repo.getSsoId());
 
         return repository.save(existing);
     }

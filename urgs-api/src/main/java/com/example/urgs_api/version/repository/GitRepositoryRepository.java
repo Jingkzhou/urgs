@@ -25,4 +25,6 @@ public interface GitRepositoryRepository extends JpaRepository<GitRepository, Lo
 
     boolean existsByCloneUrl(String cloneUrl);
 
+    boolean existsByCloneUrlAndCreateBy(String cloneUrl, Long createBy);
+
 }
