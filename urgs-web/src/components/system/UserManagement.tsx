@@ -91,6 +91,21 @@ const MultiSelect: React.FC<{
 
             {isOpen && (
                 <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-fade-in">
+                    {options.length > 0 && (
+                        <div
+                            className="px-3 py-2.5 text-sm cursor-pointer flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100 font-bold text-slate-600"
+                            onClick={() => {
+                                if (value.length === options.length) {
+                                    onChange([]);
+                                } else {
+                                    onChange([...options]);
+                                }
+                            }}
+                        >
+                            {value.length === options.length ? '取消全选' : '全选'}
+                            {value.length === options.length && <CheckSquare className="w-4 h-4 text-red-600" />}
+                        </div>
+                    )}
                     {options.length === 0 ? (
                         <div className="p-3 text-center text-slate-400 text-xs">暂无选项</div>
                     ) : (
@@ -907,11 +922,32 @@ const UserManagement: React.FC = () => {
                                         </td>
                                         <td className="px-4 py-4 text-slate-500 font-mono text-xs">{user.phone}</td>
                                         <td className="px-4 py-4 text-slate-500 text-xs">
-                                            {user.system ? user.system.split(',').filter(Boolean).map((sso, idx) => (
-                                                <span key={sso + idx} className="inline-flex items-center px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-100 mr-1 mb-1">
-                                                    {sso}
-                                                </span>
-                                            )) : <span className="text-slate-400">未关联</span>}
+                                            {user.system ? (() => {
+                                                const systems = user.system.split(',').filter(Boolean);
+                                                if (systems.length === 0) return <span className="text-slate-400">未关联</span>;
+
+                                                const displayLimit = 2;
+                                                const visibleSystems = systems.slice(0, displayLimit);
+                                                const remainingCount = systems.length - displayLimit;
+
+                                                return (
+                                                    <div className="flex flex-wrap items-center gap-1">
+                                                        {visibleSystems.map((sso, idx) => (
+                                                            <span key={sso + idx} className="inline-flex items-center px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-100">
+                                                                {sso}
+                                                            </span>
+                                                        ))}
+                                                        {remainingCount > 0 && (
+                                                            <span
+                                                                className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-600 border border-slate-200 cursor-help font-medium hover:bg-slate-200 transition-colors"
+                                                                title={systems.join('\n')}
+                                                            >
+                                                                +{remainingCount}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })() : <span className="text-slate-400">未关联</span>}
                                         </td>
                                         <td className="px-4 py-4 text-slate-400 text-xs font-mono">{user.lastLogin}</td>
                                         <td className="px-4 py-4">

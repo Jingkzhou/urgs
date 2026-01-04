@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import dayjs from 'dayjs';
 import { Search, Plus, Play, Edit, Trash2, MoreHorizontal, Power, Copy, Clock, History, Maximize2, Minimize2, Upload, Download } from 'lucide-react';
 import { Modal, Form, Input, message, Select } from 'antd';
@@ -244,7 +245,7 @@ const WorkflowDefinition: React.FC = () => {
                 else if (data.tasks && Array.isArray(data.tasks)) {
                     // Convert tasks to nodes
                     nodes = data.tasks.map((task: any, index: number) => ({
-                        id: task.id || crypto.randomUUID(),
+                        id: task.id || uuidv4(),
                         type: 'taskNode',
                         position: { x: 0, y: 0 }, // Position will be handled by auto-layout in Canvas
                         data: {
@@ -252,7 +253,7 @@ const WorkflowDefinition: React.FC = () => {
                             ...task,
                             label: task.name, // Ensure label exists
                             taskType: task.type || 'SHELL',
-                            id: task.id || crypto.randomUUID(), // Ensure internal ID
+                            id: task.id || uuidv4(), // Ensure internal ID
                             cronExpression: task.cron, // Map cron to cronExpression
                             description: task.description || '', // Map description
                             offset: task.offset || 0 // Map offset

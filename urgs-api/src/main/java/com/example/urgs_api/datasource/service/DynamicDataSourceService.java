@@ -271,7 +271,13 @@ public class DynamicDataSourceService {
         if (password != null && !password.isBlank()) {
             session.setPassword(password);
         }
-        session.setConfig("StrictHostKeyChecking", "no");
+
+        // Fix for "Auth fail": Explicitly allow keyboard-interactive and password
+        // Some servers behave differently or default to one over the other
+        java.util.Properties config = new java.util.Properties();
+        config.put("StrictHostKeyChecking", "no");
+        config.put("PreferredAuthentications", "publickey,keyboard-interactive,password");
+        session.setConfig(config);
 
         try {
             session.connect(10000);
@@ -298,7 +304,16 @@ public class DynamicDataSourceService {
         if (password != null && !password.isBlank()) {
             session.setPassword(password);
         }
-        session.setConfig("StrictHostKeyChecking", "no");
+        if (password != null && !password.isBlank()) {
+            session.setPassword(password);
+        }
+
+        // Fix for "Auth fail": Explicitly allow keyboard-interactive and password
+        java.util.Properties config = new java.util.Properties();
+        config.put("StrictHostKeyChecking", "no");
+        config.put("PreferredAuthentications", "publickey,keyboard-interactive,password");
+        session.setConfig(config);
+
         ChannelSftp channel = null;
 
         try {
