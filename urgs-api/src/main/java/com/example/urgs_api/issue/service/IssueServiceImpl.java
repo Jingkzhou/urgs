@@ -232,11 +232,16 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
         stats.setTotalWorkHours(totalHours);
 
         // 按状态统计
-        List<IssueStatsDTO.StatItem> statusStats = new ArrayList<>();
-        statusStats.add(new IssueStatsDTO.StatItem("新建", stats.getNewCount()));
-        statusStats.add(new IssueStatsDTO.StatItem("处理中", stats.getInProgressCount()));
-        statusStats.add(new IssueStatsDTO.StatItem("完成", stats.getCompletedCount()));
-        statusStats.add(new IssueStatsDTO.StatItem("遗留", stats.getLeftoverCount()));
+        Map<String, Long> statusMap = allIssues.stream()
+                .map(i -> {
+                    String s = i.getStatus();
+                    return (s == null || s.trim().isEmpty()) ? "未知" : s;
+                })
+                .collect(java.util.stream.Collectors.groupingBy(s -> s,
+                        java.util.stream.Collectors.counting()));
+        List<IssueStatsDTO.StatItem> statusStats = statusMap.entrySet().stream()
+                .map(e -> new IssueStatsDTO.StatItem(e.getKey(), e.getValue()))
+                .collect(java.util.stream.Collectors.toList());
         stats.setStatusStats(statusStats);
 
         // 按问题类型统计
@@ -248,6 +253,16 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
                 .map(e -> new IssueStatsDTO.StatItem(e.getKey(), e.getValue()))
                 .collect(java.util.stream.Collectors.toList());
         stats.setTypeStats(typeStats);
+
+        // 按归属系统统计
+        Map<String, Long> systemMap = allIssues.stream()
+                .filter(i -> i.getSystem() != null)
+                .collect(java.util.stream.Collectors.groupingBy(Issue::getSystem,
+                        java.util.stream.Collectors.counting()));
+        List<IssueStatsDTO.StatItem> systemStats = systemMap.entrySet().stream()
+                .map(e -> new IssueStatsDTO.StatItem(e.getKey(), e.getValue()))
+                .collect(java.util.stream.Collectors.toList());
+        stats.setSystemStats(systemStats);
 
         // 按处理人统计
         Map<String, List<Issue>> handlerMap = allIssues.stream()

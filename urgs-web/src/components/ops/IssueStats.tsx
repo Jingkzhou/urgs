@@ -26,6 +26,7 @@ interface TrendItem {
 interface IssueStats {
     statusStats: StatItem[];
     typeStats: StatItem[];
+    systemStats: StatItem[]; // Added systemStats
     handlerStats: HandlerStats[];
     trend: TrendItem[]; // Updated from monthlyTrend
     totalCount: number;
@@ -181,6 +182,20 @@ const IssueStats: React.FC<IssueStatsProps> = ({ frequency }) => {
                             <YAxis tick={{ fontSize: 12 }} />
                             <Tooltip />
                             <Bar dataKey="value" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+
+                {/* 归属系统分布柱状图 */}
+                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+                    <h3 className="text-sm font-semibold text-slate-700 mb-4">归属系统分布</h3>
+                    <ResponsiveContainer width="100%" height={200} minWidth={0}>
+                        <BarChart data={stats.systemStats}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                            <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                            <YAxis tick={{ fontSize: 12 }} />
+                            <Tooltip />
+                            <Bar dataKey="value" fill="#ec4899" radius={[4, 4, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
