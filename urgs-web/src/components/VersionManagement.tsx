@@ -3,7 +3,7 @@ import { GitBranch, ShieldCheck, Megaphone, BarChart3, Folder, Terminal, Gauge, 
 import { motion, AnimatePresence } from 'framer-motion';
 import { hasPermission } from '../utils/permission';
 import AppSystemList from './version/AppSystemList';
-import AICodeAudit from './version/AICodeAudit';
+import AICodeReport from './version/AICodeReport';
 import NoticeManagement from './version/NoticeManagement';
 import ReleaseStats from './version/ReleaseStats';
 import VersionOverview from './version/VersionOverview';
@@ -15,8 +15,7 @@ const VersionManagement: React.FC = () => {
     const TABS = [
         { id: 'app', label: '应用系统', subLabel: 'Applications', icon: LayoutGrid, code: 'version:app:list', component: AppSystemList },
         { id: 'repos', label: '仓库管理', subLabel: 'Repositories', icon: GitBranch, code: 'version:repo:list', component: GitRepoManagement },
-        { id: 'code_audit', label: '智能走查', subLabel: 'AI Audit', icon: ShieldCheck, code: 'version:ai:audit', component: AICodeAudit },
-        { id: 'notice', label: '公告配置', subLabel: 'Broadcast', icon: Megaphone, code: 'version:notice:config', component: NoticeManagement },
+        { id: 'code_report', label: '智查报告', subLabel: 'AI Reports', icon: ShieldCheck, code: 'version:ai:audit', component: AICodeReport },
         { id: 'stats', label: '绩效统计', subLabel: 'Metrics', icon: BarChart3, code: 'version:stats', component: ReleaseStats },
     ];
 
@@ -50,8 +49,8 @@ const VersionManagement: React.FC = () => {
                         <GitBranch className="w-5 h-5 text-white" />
                     </div>
                     <div>
-                        <h2 className="text-slate-800 font-bold tracking-tight text-sm">版本控制台</h2>
-                        <p className="text-[10px] text-slate-400 font-mono tracking-wider">Release Center</p>
+                        <h2 className="text-slate-800 font-bold tracking-tight text-sm">AI走查报告</h2>
+                        <p className="text-[10px] text-slate-400 font-mono tracking-wider">Diagnostic Center</p>
                     </div>
                 </div>
 

@@ -114,10 +114,9 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '4-2', name: '版本发布台账', code: 'version:release:list', type: 'menu', path: '/version/release', level: 1, parentId: '4' },
 
     // 3. 专门展示 AI 扫描出的风险报告、代码 Diff 分析
-    { id: '4-3', name: 'AI 代码智查', code: 'version:ai:audit', type: 'menu', path: '/version/ai-audit', level: 1, parentId: '4' },
+    { id: '4-3', name: 'AI 智查报告', code: 'version:ai:audit', type: 'menu', path: '/version/ai-audit', level: 1, parentId: '4' },
 
     // 4. 将技术日志转译为业务公告，并配置弹窗策略
-    { id: '4-4', name: '业务公告管理', code: 'version:notice:config', type: 'menu', path: '/version/notice', level: 1, parentId: '4' },
 
     // 5. 统计看板：本月发布次数、各系统版本更新热度
     { id: '4-5', name: '发布数据统计', code: 'version:stats', type: 'menu', path: '/version/stats', level: 1, parentId: '4' },
