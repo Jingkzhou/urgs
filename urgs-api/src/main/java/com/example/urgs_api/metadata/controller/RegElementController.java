@@ -63,6 +63,9 @@ public class RegElementController {
             @RequestParam Long tableId,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String type,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) String autoFetchStatus,
+            @RequestParam(required = false) String dataType,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size) {
 
@@ -73,11 +76,22 @@ public class RegElementController {
             query.eq("type", type);
         }
 
+        if (status != null) {
+            query.eq("status", status);
+        }
+
+        if (autoFetchStatus != null && !autoFetchStatus.isEmpty()) {
+            query.eq("auto_fetch_status", autoFetchStatus);
+        }
+
+        if (dataType != null && !dataType.isEmpty()) {
+            query.eq("data_type", dataType);
+        }
+
         if (keyword != null && !keyword.isEmpty()) {
             String kw = keyword.toLowerCase();
             query.and(w -> w.like("LOWER(name)", kw)
-                    .or().like("LOWER(cn_name)", kw)
-                    .or().like("LOWER(code)", kw));
+                    .or().like("LOWER(cn_name)", kw));
         }
 
         query.orderByAsc("sort_order", "id");
