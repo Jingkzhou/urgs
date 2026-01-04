@@ -27,4 +27,5 @@ python-multipart
 rapidocr_onnxruntime>=1.4.0
 opencv-python-headless
 Pillow
-
+ragas
+datasets

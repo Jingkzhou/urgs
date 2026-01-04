@@ -1,6 +1,7 @@
 import os
 import shutil
 import logging
+import uuid
 from typing import List, Optional
 from app.config import settings
 from app.loaders.doc_loader import DocLoader
@@ -11,9 +12,20 @@ from app.services.vector_store import vector_store_service
 logger = logging.getLogger(__name__)
 
 class IngestionService:
+    """
+    数据摄入服务类。
+    
+    负责管理本地文档存储、处理上传文件以及执行完整的 RAG 摄入流程。
+    """
     def list_files(self, collection_name: str) -> List[dict]:
         """
-        List files in the collection's directory.
+        列出指定集合目录下的所有文件。
+
+        Args:
+            collection_name (str): 集合名称（对应文件夹名）。
+
+        Returns:
+            List[dict]: 包含文件名、大小和修改时间的文件列表。
         """
         base_path = os.path.join(settings.DOC_STORAGE_PATH, collection_name)
         if not os.path.exists(base_path):
@@ -32,7 +44,15 @@ class IngestionService:
 
     async def save_file(self, collection_name: str, filename: str, content: bytes) -> str:
         """
-        Save an uploaded file to the collection's directory.
+        将上传的文件保存到对应集合的目录中。
+
+        Args:
+            collection_name (str): 目标集合名称。
+            filename (str): 文件名。
+            content (bytes): 文件二进制内容。
+
+        Returns:
+            str: 保存后的本地文件路径。
         """
         base_path = os.path.join(settings.DOC_STORAGE_PATH, collection_name)
         os.makedirs(base_path, exist_ok=True)
@@ -45,7 +65,7 @@ class IngestionService:
 
     def delete_file(self, collection_name: str, filename: str) -> bool:
         """
-        Delete a file from the collection's directory.
+        从存储目录中删除文件。
         """
         file_path = os.path.join(settings.DOC_STORAGE_PATH, collection_name, filename)
         if os.path.exists(file_path):
@@ -55,17 +75,31 @@ class IngestionService:
 
     def run_ingestion(self, collection_name: str, filenames: Optional[str] = None, enable_qa: bool = False) -> dict:
         """
-        Run the ingestion process for a specific collection or a list of files within it.
-        filenames: comma separated list of filenames.
+        为指定集合或集合中的特定文件执行摄入流程。
+
+        流程包括：
+        1. 路径检测
+        2. 文档加载（自动区分 SQL 和常规文档）
+        3. 元数据注入
+        4. 知识精炼（可选，生成 QA 对）
+        5. 写入向量数据库
+
+        Args:
+            collection_name (str): 目标集合名称。
+            filenames (str, optional): 以逗号分隔的文件名列表。若为空，则处理目录下所有文件。
+            enable_qa (bool): 是否启用全息知识增强（调用 LLM 生成 QA 等）。
+
+        Returns:
+            dict: 摄入结果统计。
         """
         source_path = os.path.join(settings.DOC_STORAGE_PATH, collection_name)
         
         if not os.path.exists(source_path):
-             return {"status": "error", "message": f"Directory {source_path} does not exist."}
+             return {"status": "error", "message": f"目录 {source_path} 不存在。"}
 
-        # Determine target file(s)
+        # 确定待处理的目标文件
         if filenames:
-            # Handle comma separated filenames
+            # 处理逗号分隔的文件名
             fn_list = [f.strip() for f in filenames.split(",") if f.strip()]
             target_files = []
             for fn in fn_list:
@@ -73,69 +107,75 @@ class IngestionService:
                 if os.path.exists(fp):
                     target_files.append(fp)
                 else:
-                    logger.warning(f"File {fn} not found in {collection_name}, skipping.")
+                    logger.warning(f"在 {collection_name} 中未找到文件 {fn}，已跳过。")
             
             if not target_files:
-                return {"status": "error", "message": f"None of the requested files found in {collection_name}."}
-            logger.info(f"Targeting {len(target_files)} files for ingestion in {collection_name}")
+                return {"status": "error", "message": f"在 {collection_name} 中未找到请求的任何文件。"}
+            logger.info(f"正在为集合 {collection_name} 中的 {len(target_files)} 个文件执行摄入...")
         else:
-            logger.info(f"Starting legacy full ingestion for collection '{collection_name}'...")
+            logger.info(f"正在对集合 '{collection_name}' 进行全量摄入...")
             target_files = [os.path.join(source_path, f) for f in os.listdir(source_path) if os.path.isfile(os.path.join(source_path, f))]
 
         all_docs = []
         file_stats = {}
 
+        # 遍历并处理每个文件
         for fp in target_files:
             ext = os.path.splitext(fp)[1].lower()
             fname = os.path.basename(fp)
             try:
+                # 区分 SQL 和其他文档，使用不同的加载器配置
                 if ext == ".sql":
-                    loader = SqlLoader(storage_path=os.path.dirname(fp))
+                    loader = SqlLoader(storage_path=os.path.dirname(fp), split_documents=False)
                     docs = loader.load()
+                    # 过滤出当前正在处理的文件内容
                     docs = [d for d in docs if os.path.basename(d.metadata.get("file_path", "")) == fname]
                 else:
-                    loader = DocLoader(storage_path=fp, use_llm_clean=True)
+                    loader = DocLoader(storage_path=fp, use_llm_clean=settings.ENABLE_LLM_CLEAN, split_documents=False)
                     docs = loader.load()
                 
-                # Inject collection name for future pruning/filtering
+                # 为文档片段注入全息检索所需的元数据
                 for doc in docs:
                     doc.metadata["collection_name"] = collection_name
+                    # 分配唯一的父 ID，用于后续追溯原始内容
+                    if not doc.metadata.get("parent_id"):
+                        doc.metadata["parent_id"] = uuid.uuid4().hex
                 
                 all_docs.extend(docs)
                 file_stats[fname] = len(docs)
-                logger.info(f"Loaded {len(docs)} chunks from {fname}")
+                logger.info(f"从 {fname} 加载了 {len(docs)} 个片段")
             except Exception as e:
-                logger.error(f"Error loading {fp}: {e}")
+                logger.error(f"加载 {fp} 出错: {e}")
 
         if not all_docs:
-            return {"status": "warning", "message": "No documents found to ingest."}
+            return {"status": "warning", "message": "未找到需要摄入的文档内容。"}
 
-        # 3. Knowledge Refinement
+        # 3. 知识精炼与增强
         if enable_qa:
-            logger.info("Starting holographic enrichment...")
+            logger.info("正在启动全息知识增强...")
             all_docs = knowledge_refiner.refine_documents(all_docs)
 
-        # 4. Vector Store Ingestion
-        logger.info(f"Ingesting {len(all_docs)} chunks into vector store '{collection_name}'...")
+        # 4. 写入向量存储
+        logger.info(f"正在将 {len(all_docs)} 个片段写入向量数据库 '{collection_name}'...")
         vector_store_service.add_documents(all_docs, collection_name=collection_name)
         
         return {
             "status": "success", 
-            "message": f"Successfully ingested {len(all_docs)} chunks into '{collection_name}'.",
+            "message": f"成功将 {len(all_docs)} 个片段摄入到 '{collection_name}'。",
             "chunk_count": len(all_docs),
             "file_stats": file_stats
         }
 
-# Singleton
+# 导出单例对象
 ingestion_service = IngestionService()
 
 def reset_collection(collection_name: str) -> dict:
     """
-    Shortcut for clearing a collection's data.
+    重置集合：清空对应向量数据库中的所有数据。
     """
     from app.services.vector_store import vector_store_service
     success = vector_store_service.clear_collection(collection_name)
     if success:
-        return {"status": "success", "message": f"Knowledge base '{collection_name}' has been reset."}
+        return {"status": "success", "message": f"知识库 '{collection_name}' 已成功重置。"}
     else:
-        return {"status": "error", "message": f"Failed to reset knowledge base '{collection_name}'."}
+        return {"status": "error", "message": f"重置知识库 '{collection_name}' 失败。"}

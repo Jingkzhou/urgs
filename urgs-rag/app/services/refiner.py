@@ -4,29 +4,42 @@ from app.services.llm_chain import llm_service
 
 class KnowledgeRefiner:
     """
-    Refines knowledge by generating holographic data (QA, Reasoning, Tags).
-    Separates content into 'semantic' and 'logic' paths.
+    知识精炼器。
+    
+    核心作用是将厚重的原始文档“处理薄、处理透”。
+    通过调用 LLM 生成合成数据，将单一的文档片段转化为三条特征路径的全息数据：
+    1. 语义路径 (Semantic): 原始文本内容。
+    2. 逻辑路径 (Logic): 模拟问题和逻辑推导核。
+    3. 摘要路径 (Summary): 核心内容摘要。
     """
     def refine_documents(self, documents: List[Document]) -> List[Document]:
         """
-        Enhance documents with holographic data.
+        对输入的文档列表进行全息增强。
+
+        Args:
+            documents (List[Document]): 原始文档片段列表。
+
+        Returns:
+            List[Document]: 包含原始片段及大量合成衍生片段的全息文档列表。
         """
         holographic_docs = []
         total = len(documents)
-        print(f"Refining {total} documents with holographic data generation...")
+        print(f"正在启动全息数据生成，共需精炼 {total} 个原始片段...")
         
         for i, doc in enumerate(documents):
-            # 1. Semantic Path: Original Document
+            # 1. 语义路径 (Semantic Path): 保留原始文档片段
             doc.metadata["path_type"] = "semantic"
             holographic_docs.append(doc)
             
-            # Enrich substantial chunks
+            # 仅对内容充足的片段进行增强（过滤过短的噪声）
             text = doc.page_content
             if len(text) > 100:
-                print(f"Enriching doc {i+1}/{total}...")
+                print(f"正在精炼文档片段 {i+1}/{total}...")
+                # 调用 LLM 进行全息深加工
                 enriched = llm_service.enrich_knowledge(text)
                 
-                # 2. Logic Path - Questions
+                # 2. 逻辑路径 (Logic Path) - 模拟问题
+                # 将“问题-答案”对存入逻辑路径，实现“以问搜问”，极大提升短句搜索准确率
                 for q in enriched.get("questions", []):
                     q_doc = Document(
                         page_content=f"问题: {q}\n相关知识: {text[:200]}...",
@@ -34,13 +47,15 @@ class KnowledgeRefiner:
                             **doc.metadata,
                             "path_type": "logic",
                             "logic_type": "question",
-                            "original_content": text, # Link to full context
+                            "original_content": text, # 链接回完整上下文
+                            "origin_parent_id": doc.metadata.get("parent_id"),
                             "is_synthetic": True
                         }
                     )
                     holographic_docs.append(q_doc)
                 
-                # 3. Logic Path - Reasoning Kernel
+                # 3. 逻辑路径 (Logic Path) - 逻辑/策略核
+                # 提取文档背后的流程或逻辑模版，作为高级推理的依据
                 reasoning = enriched.get("reasoning")
                 if reasoning:
                     r_doc = Document(
@@ -50,15 +65,37 @@ class KnowledgeRefiner:
                             "path_type": "logic",
                             "logic_type": "reasoning",
                             "tags": enriched.get("tags", []),
+                            "keywords": enriched.get("keywords", []),
+                            "origin_parent_id": doc.metadata.get("parent_id"),
                             "is_synthetic": True
                         }
                     )
                     holographic_docs.append(r_doc)
                     
-                    # Also update primary doc with tags
-                    doc.metadata["tags"] = enriched.get("tags", [])
+                    # 同时更新原始文档的标签和关键词，便于后续过滤
+                    doc.metadata["tags"] = enriched.get("tags", []),
+                    doc.metadata["keywords"] = enriched.get("keywords", [])
+
+                # 4. 摘要路径 (Summary Path)
+                # 提供极高浓缩度的语义信息，适合快速概览检索
+                summary = enriched.get("summary")
+                if summary:
+                    s_doc = Document(
+                        page_content=f"摘要: {summary}",
+                        metadata={
+                            **doc.metadata,
+                            "path_type": "summary",
+                            "summary_type": "auto",
+                            "origin_parent_id": doc.metadata.get("parent_id"),
+                            "tags": enriched.get("tags", []),
+                            "keywords": enriched.get("keywords", []),
+                            "is_synthetic": True
+                        }
+                    )
+                    holographic_docs.append(s_doc)
         
-        print(f"Refinement complete. {total} docs -> {len(holographic_docs)} holographic pieces.")
+        print(f"精炼完成！原始 {total} 个片段已扩展为 {len(holographic_docs)} 个全息数据单元。")
         return holographic_docs
 
+# 导出精炼服务单例
 knowledge_refiner = KnowledgeRefiner()
