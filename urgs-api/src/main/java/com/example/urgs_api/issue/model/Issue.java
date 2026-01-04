@@ -29,5 +29,7 @@ public class Issue {
     private BigDecimal workHours;
     private LocalDateTime createTime;
     private String createBy;
+    private String attachmentPath;
+    private String attachmentName;
     private LocalDateTime updateTime;
 }

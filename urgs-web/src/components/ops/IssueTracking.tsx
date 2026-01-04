@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AlertCircle, CheckCircle, Clock, Filter, Plus, Search, ArrowRight, FileText, Hourglass, Download, Upload, Edit, Eye, X, RefreshCw, LayoutList, BarChart3, Trash2, Sparkles } from 'lucide-react';
+import { AlertCircle, CheckCircle, Clock, Filter, Plus, Search, ArrowRight, FileText, Hourglass, Download, Upload, Edit, Eye, X, RefreshCw, LayoutList, BarChart3, Trash2, Sparkles, Paperclip } from 'lucide-react';
 import Auth from '../Auth';
 import IssueStats from './IssueStats';
 import UserSelect from './UserSelect';
@@ -18,6 +18,8 @@ interface Issue {
     issueType: '批量任务处理' | '报送支持' | '数据查询';
     status: '新建' | '处理中' | '完成' | '遗留';
     workHours: number;
+    attachmentPath?: string;
+    attachmentName?: string;
 }
 
 interface IssueTrackingProps {
@@ -47,6 +49,7 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
     const [saving, setSaving] = useState(false);
     const [systems, setSystems] = useState<any[]>([]);
     const [aiGenerating, setAiGenerating] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
 
     useEffect(() => {
         fetchSystems();
@@ -399,6 +402,70 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
         input.click();
     };
 
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (file.size > 200 * 1024 * 1024) {
+            alert('文件大小不能超过 200MB');
+            return;
+        }
+
+        setIsUploading(true);
+        const uploadData = new FormData();
+        uploadData.append('file', file);
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch('/api/issue/upload', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: uploadData
+            });
+
+            if (res.ok) {
+                const path = await res.text();
+                setFormData(prev => ({
+                    ...prev,
+                    attachmentPath: path,
+                    attachmentName: file.name
+                }));
+            } else {
+                alert('上传失败');
+            }
+        } catch (error) {
+            console.error(error);
+            alert('上传出错');
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    const handleAttachmentDownload = async (id: string, fileName: string) => {
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch(`/api/issue/download/${id}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            } else {
+                alert('下载失败');
+            }
+        } catch (e) {
+            console.error(e);
+            alert('下载出错');
+        }
+    };
+
     return (
         <div className="space-y-6 animate-fade-in">
             {/* View Switcher & Title */}
@@ -447,7 +514,10 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                         <button
                             className="flex items-center gap-1 bg-red-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-red-700 transition-colors shadow-sm"
                             onClick={() => {
-                                setFormData({});
+                                setFormData({
+                                    issueType: '批量任务处理',
+                                    status: '新建'
+                                });
                                 setShowModal(true);
                             }}
                         >
@@ -588,6 +658,7 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                         <th className="px-4 py-3 whitespace-nowrap">解决时间</th>
                                         <th className="px-4 py-3 whitespace-nowrap">处理人</th>
                                         <th className="px-4 py-3 whitespace-nowrap">问题类型</th>
+                                        <th className="px-4 py-3 whitespace-nowrap">附件</th>
                                         <th className="px-4 py-3 whitespace-nowrap">状态</th>
                                         <th className="px-4 py-3 whitespace-nowrap">工时(h)</th>
                                         <th className="px-4 py-3 text-right whitespace-nowrap">操作</th>
@@ -623,6 +694,17 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                                     <FileText size={12} />
                                                     {issue.issueType}
                                                 </span>
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap">
+                                                {issue.attachmentPath && (
+                                                    <button
+                                                        onClick={() => handleAttachmentDownload(issue.id, issue.attachmentName || 'attachment')}
+                                                        className="text-blue-600 hover:text-blue-800"
+                                                        title={issue.attachmentName}
+                                                    >
+                                                        <Paperclip size={16} />
+                                                    </button>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap">
                                                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${getStatusStyle(issue.status)}`}>
@@ -836,6 +918,35 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                     />
                                 </div>
                             </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">附件</label>
+                                <div className="flex items-center gap-2">
+                                    <label className={`flex items-center gap-2 px-3 py-2 border border-slate-300 rounded-md text-sm text-slate-600 cursor-pointer hover:bg-slate-50 transition-colors ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                        <Upload size={16} />
+                                        <span>{isUploading ? '上传中...' : '上传附件'}</span>
+                                        <input
+                                            type="file"
+                                            className="hidden"
+                                            onChange={handleFileUpload}
+                                            disabled={isUploading}
+                                        />
+                                    </label>
+                                    {formData.attachmentName && (
+                                        <span className="text-sm text-slate-600 flex items-center gap-1">
+                                            <Paperclip size={14} />
+                                            {formData.attachmentName}
+                                            <button
+                                                className="text-slate-400 hover:text-red-500 ml-1"
+                                                onClick={() => setFormData({ ...formData, attachmentPath: undefined, attachmentName: undefined })}
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-xs text-slate-400 mt-1">支持最大 200MB 的文件上传</p>
+                            </div>
                         </div>
 
                         <div className="p-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50 rounded-b-lg">
@@ -889,6 +1000,19 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                 <label className="block text-sm font-medium text-slate-500 mb-2">解决方案</label>
                                 <p className="text-slate-700 whitespace-pre-wrap">{selectedIssue.solution || '暂无解决方案'}</p>
                             </div>
+
+                            {selectedIssue.attachmentPath && (
+                                <div className="bg-slate-50 rounded-lg p-3">
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">附件</label>
+                                    <button
+                                        onClick={() => handleAttachmentDownload(selectedIssue.id, selectedIssue.attachmentName || 'attachment')}
+                                        className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
+                                    >
+                                        <Paperclip size={14} />
+                                        {selectedIssue.attachmentName || '点击下载附件'}
+                                    </button>
+                                </div>
+                            )}
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="bg-slate-50 rounded-lg p-3">

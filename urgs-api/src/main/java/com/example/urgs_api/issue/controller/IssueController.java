@@ -11,6 +11,19 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.UUID;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import java.net.MalformedURLException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 @RestController
 @RequestMapping("/api/issue")
@@ -117,5 +130,68 @@ public class IssueController {
     public ResponseEntity<com.example.urgs_api.issue.dto.IssueStatsDTO> getStats(
             @RequestParam(defaultValue = "month") String frequency) {
         return ResponseEntity.ok(issueService.getStats(frequency));
+    }
+
+    private static final String UPLOAD_DIR = "/Users/work/Documents/JLbankGit/URGS/attachments";
+
+    @PostMapping("/upload")
+    public ResponseEntity<String> uploadAttachment(@RequestParam("file") MultipartFile file) {
+        if (file.isEmpty()) {
+            return ResponseEntity.badRequest().body("文件为空");
+        }
+
+        try {
+            File uploadDir = new File(UPLOAD_DIR);
+            if (!uploadDir.exists()) {
+                uploadDir.mkdirs();
+            }
+
+            String originalFilename = file.getOriginalFilename();
+            String extension = "";
+            if (originalFilename != null && originalFilename.contains(".")) {
+                extension = originalFilename.substring(originalFilename.lastIndexOf("."));
+            }
+            String newFilename = UUID.randomUUID().toString() + extension;
+            Path path = Paths.get(UPLOAD_DIR, newFilename);
+
+            Files.write(path, file.getBytes());
+
+            return ResponseEntity.ok(path.toString());
+        } catch (IOException e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body("上传失败: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/download/{id}")
+    public ResponseEntity<Resource> downloadAttachment(@PathVariable String id) {
+        Issue issue = issueService.getById(id);
+        if (issue == null || issue.getAttachmentPath() == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        try {
+            Path filePath = Paths.get(issue.getAttachmentPath());
+            Resource resource = new UrlResource(filePath.toUri());
+
+            if (resource.exists() || resource.isReadable()) {
+                String filename = issue.getAttachmentName();
+                if (filename == null || filename.isEmpty()) {
+                    filename = resource.getFilename();
+                }
+
+                String encodedFilename = URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20");
+
+                return ResponseEntity.ok()
+                        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                        .header(HttpHeaders.CONTENT_DISPOSITION,
+                                "attachment; filename=\"" + encodedFilename + "\"; filename*=UTF-8''" + encodedFilename)
+                        .body(resource);
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (MalformedURLException e) {
+            return ResponseEntity.internalServerError().build();
+        }
     }
 }
