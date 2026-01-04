@@ -192,8 +192,8 @@ export const getLineageEngineStatus = () => {
     return get('/api/metadata/lineage/engine/status');
 };
 
-export const startLineageEngine = () => {
-    return post('/api/metadata/lineage/engine/start', {});
+export const startLineageEngine = (params: any = {}) => {
+    return post('/api/metadata/lineage/engine/start', params);
 };
 
 export const restartLineageEngine = () => {
@@ -206,4 +206,8 @@ export const stopLineageEngine = () => {
 
 export const getLineageEngineLogs = (lines: number = 200) => {
     return get('/api/metadata/lineage/engine/logs', { lines: String(lines) });
+};
+
+export const checkLineageVersionConsistency = (repoId: number, ref?: string) => {
+    return get('/api/metadata/lineage/engine/version-check', { repoId: String(repoId), ref: ref || '' });
 };

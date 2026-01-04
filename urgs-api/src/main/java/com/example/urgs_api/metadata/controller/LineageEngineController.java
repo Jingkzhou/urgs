@@ -1,6 +1,7 @@
 package com.example.urgs_api.metadata.controller;
 
 import com.example.urgs_api.auth.annotation.RequirePermission;
+import com.example.urgs_api.metadata.dto.StartEngineRequest;
 import com.example.urgs_api.metadata.service.LineageEngineService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -22,8 +23,8 @@ public class LineageEngineController {
 
     @PostMapping("/start")
     @RequirePermission("metadata:lineage:engine:start")
-    public Map<String, Object> start() {
-        return lineageEngineService.start();
+    public Map<String, Object> start(@RequestBody(required = false) StartEngineRequest request) {
+        return lineageEngineService.start(request);
     }
 
     @PostMapping("/stop")
@@ -42,5 +43,11 @@ public class LineageEngineController {
     @RequirePermission("metadata:lineage:engine:logs")
     public Map<String, Object> logs(@RequestParam(defaultValue = "200") int lines) {
         return lineageEngineService.logs(lines);
+    }
+
+    @GetMapping("/version-check")
+    @RequirePermission("metadata:lineage:engine:logs")
+    public Map<String, Object> checkVersion(@RequestParam Long repoId, @RequestParam(required = false) String ref) {
+        return lineageEngineService.checkVersionConsistency(repoId, ref);
     }
 }

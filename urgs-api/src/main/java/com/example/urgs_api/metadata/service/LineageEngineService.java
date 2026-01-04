@@ -1,16 +1,25 @@
 package com.example.urgs_api.metadata.service;
 
+import com.example.urgs_api.metadata.dto.StartEngineRequest;
+import com.example.urgs_api.metadata.mapper.LineageAnalysisRecordMapper;
+import com.example.urgs_api.metadata.model.LineageAnalysisRecord;
+import com.example.urgs_api.version.service.GitPlatformService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.io.File;
+import java.io.InputStream;
+import java.nio.file.StandardCopyOption;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -19,7 +28,11 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class LineageEngineService {
+
+    private final GitPlatformService gitPlatformService;
+    private final LineageAnalysisRecordMapper analysisRecordMapper;
 
     @Value("${lineage.engine.workdir:${user.dir}/../sql-lineage-engine}")
     private String workDir;
@@ -42,8 +55,9 @@ public class LineageEngineService {
     private Instant lastStoppedAt;
     private Integer lastExitCode;
     private String lastError;
+    private StartEngineRequest lastRequest;
 
-    public Map<String, Object> start() {
+    public Map<String, Object> start(StartEngineRequest request) {
         synchronized (lock) {
             if (isRunning()) {
                 return buildStatus(false, "引擎已在运行中");
@@ -57,13 +71,37 @@ public class LineageEngineService {
                     return buildStatus(false, lastError);
                 }
 
+                // Prepare Input Paths (Git Source)
+                String inputPath;
+                if (request != null && request.getRepoId() != null) {
+                    inputPath = prepareGitInput(request);
+                } else {
+                    inputPath = resolveEngineArgsPath(engineArgs);
+                }
+
                 Path logPath = resolveLogPath(workingDir);
                 Files.createDirectories(logPath.getParent());
 
                 List<String> command = new ArrayList<>();
                 command.add("bash");
                 command.add(script.toString());
-                command.addAll(parseArgs(engineArgs));
+
+                // Construct command line arguments
+                command.add("parse-sql");
+                command.add("--file");
+                command.add(inputPath);
+
+                if (request != null && StringUtils.hasText(request.getUser())) {
+                    command.add("--default-user");
+                    command.add(request.getUser());
+                }
+                if (request != null && StringUtils.hasText(request.getLanguage())) {
+                    command.add("--dialect");
+                    command.add(request.getLanguage());
+                }
+
+                command.add("--output");
+                command.add("neo4j");
 
                 ProcessBuilder builder = new ProcessBuilder(command);
                 builder.directory(workingDir.toFile());
@@ -77,7 +115,14 @@ public class LineageEngineService {
                 lastExitCode = null;
                 lastError = null;
 
-                watchProcess(process);
+                // Create initial record
+                String recordId = null;
+                if (request != null && request.getRepoId() != null) {
+                    recordId = createAnalysisRecord(request, lastStartedAt);
+                    this.lastRequest = request;
+                }
+
+                watchProcess(process, recordId, logPath);
                 return buildStatus(true, "引擎已启动");
             } catch (Exception e) {
                 lastError = e.getMessage();
@@ -85,6 +130,117 @@ public class LineageEngineService {
                 return buildStatus(false, "启动失败: " + e.getMessage());
             }
         }
+    }
+
+    private String prepareGitInput(StartEngineRequest request) throws Exception {
+        Path tempDir = Files.createTempDirectory("lineage-git-");
+        log.info("下载代码归档到临时目录: {}", tempDir);
+
+        try (InputStream is = gitPlatformService.downloadArchive(request.getRepoId(), request.getRef());
+                ZipInputStream zis = new ZipInputStream(is)) {
+
+            ZipEntry entry;
+            String rootDir = null;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (rootDir == null && entry.isDirectory()) {
+                    rootDir = entry.getName();
+                }
+                Path outPath = tempDir.resolve(entry.getName());
+                if (entry.isDirectory()) {
+                    Files.createDirectories(outPath);
+                } else {
+                    Files.createDirectories(outPath.getParent());
+                    Files.copy(zis, outPath, StandardCopyOption.REPLACE_EXISTING);
+                }
+                zis.closeEntry();
+            }
+
+            // If multiple paths selected, we need to pass a list or process them
+            // For now, simplify: use the root of extracted or the specific paths
+            Path realBase = rootDir != null ? tempDir.resolve(rootDir) : tempDir;
+
+            // If paths are specified, we filter or just pass them
+            // Python engine --file can take multiple or a directory
+            // Here we assume paths are relative to the repo root
+            if (request.getPaths() != null && !request.getPaths().isEmpty()) {
+                // If only one path, use it. If multiple, we might need to copy them to a
+                // specific subdir
+                // or the engine needs to support multiple --file.
+                // Currently lineage-cli --file takes ONE path.
+                // So we create a temp collection dir if multiple paths.
+                if (request.getPaths().size() == 1) {
+                    return realBase.resolve(request.getPaths().get(0)).toAbsolutePath().toString();
+                } else {
+                    Path collectionDir = tempDir.resolve("collect");
+                    Files.createDirectories(collectionDir);
+                    for (String p : request.getPaths()) {
+                        Path src = realBase.resolve(p);
+                        if (Files.exists(src)) {
+                            Path dest = collectionDir.resolve(src.getFileName());
+                            if (Files.isDirectory(src)) {
+                                copyDirectory(src, dest);
+                            } else {
+                                Files.copy(src, dest, StandardCopyOption.REPLACE_EXISTING);
+                            }
+                        }
+                    }
+                    return collectionDir.toAbsolutePath().toString();
+                }
+            }
+
+            return realBase.toAbsolutePath().toString();
+        }
+    }
+
+    private void copyDirectory(Path source, Path target) throws Exception {
+        Files.walk(source).forEach(path -> {
+            try {
+                Path destPath = target.resolve(source.relativize(path));
+                if (Files.isDirectory(path)) {
+                    Files.createDirectories(destPath);
+                } else {
+                    Files.copy(path, destPath, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    private String resolveEngineArgsPath(String argsStr) {
+        List<String> args = parseArgs(argsStr);
+        for (int i = 0; i < args.size(); i++) {
+            if ("--file".equals(args.get(i)) && i + 1 < args.size()) {
+                return args.get(i + 1);
+            }
+        }
+        return "./tests/sql";
+    }
+
+    private String createAnalysisRecord(StartEngineRequest request, Instant startTime) {
+        LineageAnalysisRecord record = new LineageAnalysisRecord();
+        record.setRepoId(request.getRepoId());
+        record.setRef(request.getRef());
+        record.setPaths(request.getPaths());
+        record.setDefaultUser(request.getUser());
+        record.setLanguage(request.getLanguage());
+        record.setStatus("RUNNING");
+        record.setStartTime(LocalDateTime.now());
+        record.setCreateTime(LocalDateTime.now());
+        record.setUpdateTime(LocalDateTime.now());
+
+        // Try to fetch current commit SHA for the ref
+        try {
+            var latestCommit = gitPlatformService.getLatestCommit(request.getRepoId(), request.getRef());
+            if (latestCommit != null) {
+                record.setCommitSha(latestCommit.getSha());
+            }
+        } catch (Exception e) {
+            log.warn("无法获取 Git 最新提交 SHA: {}", e.getMessage());
+        }
+
+        analysisRecordMapper.insert(record);
+        return record.getId();
     }
 
     public Map<String, Object> stop() {
@@ -147,7 +303,7 @@ public class LineageEngineService {
         synchronized (lock) {
             log.info("重启血缘引擎");
             stop();
-            return start();
+            return start(this.lastRequest);
         }
     }
 
@@ -217,7 +373,7 @@ public class LineageEngineService {
         }
     }
 
-    private void watchProcess(Process running) {
+    private void watchProcess(Process running, String recordId, Path logPath) {
         Thread watcher = new Thread(() -> {
             try {
                 int exitCode = running.waitFor();
@@ -228,12 +384,60 @@ public class LineageEngineService {
                         process = null;
                     }
                 }
+
+                // Update record on completion
+                if (recordId != null) {
+                    updateAnalysisRecordOnCompletion(recordId, exitCode, logPath);
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
         }, "lineage-engine-watcher");
         watcher.setDaemon(true);
         watcher.start();
+    }
+
+    private void updateAnalysisRecordOnCompletion(String recordId, int exitCode, Path logPath) {
+        try {
+            LineageAnalysisRecord record = analysisRecordMapper.selectById(recordId);
+            if (record != null) {
+                record.setEndTime(LocalDateTime.now());
+                record.setStatus(exitCode == 0 ? "SUCCESS" : "FAILED");
+                if (exitCode != 0) {
+                    record.setError("引擎退出码: " + exitCode);
+                }
+
+                // Parse Version ID from log
+                String versionId = parseVersionIdFromLog(logPath);
+                if (StringUtils.hasText(versionId)) {
+                    record.setVersionId(versionId);
+                }
+
+                record.setUpdateTime(LocalDateTime.now());
+                analysisRecordMapper.updateById(record);
+            }
+        } catch (Exception e) {
+            log.error("更新分析记录失败", e);
+        }
+    }
+
+    private String parseVersionIdFromLog(Path logPath) {
+        if (logPath == null || !Files.exists(logPath))
+            return null;
+        try {
+            List<String> lines = Files.readAllLines(logPath);
+            // Search from bottom for "Generated version ID: "
+            for (int i = lines.size() - 1; i >= 0; i--) {
+                String line = lines.get(i);
+                if (line.contains("Generated version ID:")) {
+                    return line.substring(line.indexOf("Generated version ID:") + "Generated version ID:".length())
+                            .trim();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("无法解析日志中的版本 ID: {}", e.getMessage());
+        }
+        return null;
     }
 
     private Map<String, Object> buildStatus(boolean success, String message) {
@@ -258,6 +462,22 @@ public class LineageEngineService {
         if (StringUtils.hasText(message)) {
             status.put("message", message);
         }
+
+        // Add Version Consistency Info
+        try {
+            var wrapper = new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<LineageAnalysisRecord>()
+                    .eq("status", "SUCCESS")
+                    .orderByDesc("start_time")
+                    .last("LIMIT 1");
+            LineageAnalysisRecord lastRecord = analysisRecordMapper.selectOne(wrapper);
+            if (lastRecord != null) {
+                var checkResult = checkVersionConsistency(lastRecord.getRepoId(), lastRecord.getRef());
+                status.put("versionStatus", checkResult);
+            }
+        } catch (Exception e) {
+            log.warn("构建状态时版本校验失败: {}", e.getMessage());
+        }
+
         return status;
     }
 
@@ -281,6 +501,47 @@ public class LineageEngineService {
             return Paths.get(logFile).toAbsolutePath().normalize();
         }
         return workingDir.resolve("logs").resolve("lineage-engine.log").toAbsolutePath().normalize();
+    }
+
+    public Map<String, Object> checkVersionConsistency(Long repoId, String ref) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            // 1. Get the latest successful analysis record for this repo
+            var wrapper = new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<LineageAnalysisRecord>()
+                    .eq("repo_id", repoId)
+                    .eq("status", "SUCCESS")
+                    .orderByDesc("start_time")
+                    .last("LIMIT 1");
+            LineageAnalysisRecord lastRecord = analysisRecordMapper.selectOne(wrapper);
+
+            if (lastRecord == null) {
+                result.put("consistent", true);
+                result.put("message", "尚未进行过分析");
+                return result;
+            }
+
+            // 2. Get current latest commit
+            var latestCommit = gitPlatformService.getLatestCommit(repoId, ref);
+            if (latestCommit == null) {
+                result.put("consistent", true);
+                result.put("message", "无法获取当前仓库版本");
+                return result;
+            }
+
+            boolean consistent = latestCommit.getSha().equalsIgnoreCase(lastRecord.getCommitSha());
+            result.put("consistent", consistent);
+            result.put("lastAnalysisTime", lastRecord.getEndTime());
+            result.put("lastCommitSha", lastRecord.getCommitSha());
+            result.put("currentCommitSha", latestCommit.getSha());
+            if (!consistent) {
+                result.put("message", "Git 仓库已有新提交，当前分析结果可能已过时");
+            }
+        } catch (Exception e) {
+            log.warn("版本一致性校验失败: {}", e.getMessage());
+            result.put("consistent", true); // Default to true on error to avoid false positives
+            result.put("error", e.getMessage());
+        }
+        return result;
     }
 
     private List<String> parseArgs(String args) {

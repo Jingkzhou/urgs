@@ -26,6 +26,7 @@ import { hasPermission } from '@/utils/permission';
 import LineageDiagramImpact from './analysis/components/LineageDiagram';
 import LineageDiagramTrace from './origin/components/LineageDiagram';
 import LineageReportModal from './analysis/components/LineageReportModal';
+import LineageEngineStartModal, { LineageEngineStartParams } from './analysis/components/LineageEngineStartModal';
 import { NodeData, LinkData, ViewportState } from './analysis/types';
 import { NODE_HEADER_HEIGHT, COLUMN_ROW_HEIGHT } from './analysis/constants';
 import EngineLogViewer from './analysis/components/EngineLogViewer';
@@ -82,11 +83,23 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
     const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
     const [showReportModal, setShowReportModal] = useState(false);
     const [showLogModal, setShowLogModal] = useState(false);
+    const [showStartModal, setShowStartModal] = useState(false);
     const [engineStatus, setEngineStatus] = useState<'running' | 'stopped' | 'starting'>('stopped');
     const [engineActionLoading, setEngineActionLoading] = useState<'start' | 'stop' | 'restart' | null>(null);
     const [engineLogs, setEngineLogs] = useState<string[]>([]);
     const [engineLogsLoading, setEngineLogsLoading] = useState(false);
-    const [engineMeta, setEngineMeta] = useState<{ lastStartedAt?: string; lastStoppedAt?: string; pid?: number }>({});
+    const [engineMeta, setEngineMeta] = useState<{
+        lastStartedAt?: string;
+        lastStoppedAt?: string;
+        pid?: number;
+        versionStatus?: {
+            consistent: boolean;
+            message: string;
+            lastAnalysisTime: string;
+            lastCommitSha: string;
+            currentCommitSha: string;
+        }
+    }>({});
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [viewMode, setViewMode] = useState<'canvas' | 'list'>('list');
     const engineStatusMeta = {
@@ -130,6 +143,7 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                     lastStartedAt: res.lastStartedAt,
                     lastStoppedAt: res.lastStoppedAt,
                     pid: res.pid,
+                    versionStatus: res.versionStatus,
                 });
             }
         } catch (error) {
@@ -185,26 +199,29 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
 
 
 
-    const handleStartEngine = async () => {
+    const handleStartEngine = () => {
         if (!canStartEngine) {
             message.error('无权限启动引擎');
             return;
         }
+        setShowStartModal(true);
+    };
+
+    const handleConfirmStartEngine = async (params: LineageEngineStartParams) => {
         setEngineActionLoading('start');
         setEngineStatus('starting');
         try {
-            const res = await startLineageEngine();
+            const res = await startLineageEngine(params);
             if (res?.success === false) {
                 message.error(res.message || '引擎启动失败');
-            } else if (res?.message) {
-                message.success(res.message);
             } else {
-                message.success('引擎启动中');
+                message.success('解析引擎启动指令已下发');
+                setShowStartModal(false);
+                fetchEngineStatus();
+                fetchEngineLogs();
             }
-            await fetchEngineStatus();
         } catch (error) {
-            message.error('引擎启动失败');
-            await fetchEngineStatus();
+            message.error('启动引擎出错');
         } finally {
             setEngineActionLoading(null);
         }
@@ -801,6 +818,17 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                             {canViewEngineStatus ? (
                                 <>
                                     <Badge status={engineStatusInfo.badge} text={engineStatusInfo.label} />
+                                    {engineMeta.versionStatus && !engineMeta.versionStatus.consistent && (
+                                        <Tooltip title={
+                                            <div>
+                                                <p>{engineMeta.versionStatus.message}</p>
+                                                <p style={{ fontSize: 11, opacity: 0.8 }}>最近分析 SHA: {engineMeta.versionStatus.lastCommitSha?.substring(0, 8)}</p>
+                                                <p style={{ fontSize: 11, opacity: 0.8 }}>Git 最新 SHA: {engineMeta.versionStatus.currentCommitSha?.substring(0, 8)}</p>
+                                            </div>
+                                        }>
+                                            <Tag color="warning" icon={<ReloadOutlined spin />} style={{ marginLeft: 8, cursor: 'help', borderRadius: 10 }}>数据过时</Tag>
+                                        </Tooltip>
+                                    )}
                                     {engineMeta.pid ? <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 4 }}>PID {engineMeta.pid}</span> : null}
                                     {engineMeta.lastStartedAt && engineStatus === 'running' ? (
                                         <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8 }} title={engineMeta.lastStartedAt}>
@@ -1045,12 +1073,17 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                         onRefresh={() => fetchEngineLogs(false)}
                     />
                 </Modal>
-
-
+                <LineageEngineStartModal
+                    open={showStartModal}
+                    onCancel={() => setShowStartModal(false)}
+                    onOk={handleConfirmStartEngine}
+                    loading={engineActionLoading === 'start'}
+                />
             </Layout>
         </div>
     );
 };
 
 export default LineagePage;
+
 
