@@ -235,7 +235,7 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
         Map<String, Long> statusMap = allIssues.stream()
                 .map(i -> {
                     String s = i.getStatus();
-                    return (s == null || s.trim().isEmpty()) ? "未知" : s;
+                    return (s == null || s.trim().isEmpty()) ? "新建" : s;
                 })
                 .collect(java.util.stream.Collectors.groupingBy(s -> s,
                         java.util.stream.Collectors.counting()));
