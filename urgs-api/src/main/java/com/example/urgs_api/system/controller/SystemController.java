@@ -28,8 +28,11 @@ public class SystemController {
     }
 
     @GetMapping
-    public List<SystemDTO> list() {
-        return sysSystemService.list().stream().map(SystemDTO::fromEntity).collect(Collectors.toList());
+    public List<SystemDTO> list(jakarta.servlet.http.HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("userId");
+        return sysSystemService.list(userId != null ? userId : 1L).stream()
+                .map(SystemDTO::fromEntity)
+                .collect(Collectors.toList());
     }
 
     @PostMapping

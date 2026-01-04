@@ -25,8 +25,10 @@ public class VersionController {
     // ===== 应用系统 API =====
 
     @GetMapping("/apps")
-    public List<AppSystem> listApps(@RequestParam(required = false) String keyword) {
-        return appSystemService.search(keyword);
+    public List<AppSystem> listApps(
+            @RequestParam(required = false) String keyword,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+        return appSystemService.search(userId != null ? userId : 1L, keyword);
     }
 
     @GetMapping("/apps/{id}")
