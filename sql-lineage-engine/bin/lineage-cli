@@ -6,6 +6,7 @@ import uuid
 import logging
 import signal
 from datetime import datetime
+import time
 # Updated imports for new structure
 from parsers.sql_parser import LineageParser
 from exporters.neo4j import Neo4jClient
@@ -330,7 +331,7 @@ def main():
                         success_count = 0
                         error_count = 0
                         
-                        import time
+                        
                         _executor = ProcessPoolExecutor(max_workers=max_workers)
                         with _executor as executor:
                             # 提交所有任务
