@@ -253,7 +253,7 @@ const IssueStats: React.FC<IssueStatsProps> = ({ frequency }) => {
                 {/* 处理人工时统计 */}
                 <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
                     <h3 className="text-sm font-semibold text-slate-700 mb-4">处理人工时统计</h3>
-                    <ResponsiveContainer width="100%" height={200} minWidth={0}>
+                    <ResponsiveContainer width="100%" height={Math.max(200, (stats.handlerStats?.length || 0) * 40)} minWidth={0}>
                         <BarChart data={stats.handlerStats} layout="vertical">
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                             <XAxis type="number" tick={{ fontSize: 12 }} />

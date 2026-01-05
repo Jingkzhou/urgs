@@ -96,6 +96,8 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
                             issue.setHandler(dto.getHandler());
                             issue.setIssueType(dto.getIssueType());
                             issue.setStatus(dto.getStatus() != null ? dto.getStatus() : "新建");
+                            issue.setAttachmentPath(dto.getAttachmentPath());
+                            issue.setAttachmentName(dto.getAttachmentName());
 
                             // Parse dates
                             if (StringUtils.hasText(dto.getOccurTime())) {
@@ -199,6 +201,8 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
                 if (issue.getWorkHours() != null) {
                     dto.setWorkHours(issue.getWorkHours().toString());
                 }
+                dto.setAttachmentPath(issue.getAttachmentPath());
+                dto.setAttachmentName(issue.getAttachmentName());
 
                 exportList.add(dto);
             }
