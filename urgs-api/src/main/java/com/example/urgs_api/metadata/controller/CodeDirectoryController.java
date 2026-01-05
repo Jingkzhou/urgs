@@ -25,6 +25,9 @@ public class CodeDirectoryController {
     private com.example.urgs_api.metadata.component.MaintenanceLogManager maintenanceLogManager;
 
     @Autowired
+    private com.example.urgs_api.system.service.SysSystemService sysSystemService;
+
+    @Autowired
     private com.example.urgs_api.user.service.UserService userService;
 
     @Autowired
@@ -62,6 +65,32 @@ public class CodeDirectoryController {
 
         if (tableCode != null && !tableCode.isEmpty()) {
             wrapper.eq("table_code", tableCode);
+        } else {
+            // 前端未指定 TableCode（即 "All Codes"），检查用户权限进行过滤
+            Object userIdObj = request.getAttribute("userId");
+            if (userIdObj != null) {
+                Long userId = (Long) userIdObj;
+                com.example.urgs_api.user.model.User user = userService.getById(userId);
+                // 判断是否受限：非空且 system 字段不为 NULL/Empty/"ALL"
+                boolean isRestricted = true;
+                if (user == null || user.getSystem() == null || user.getSystem().isBlank()
+                        || "ALL".equalsIgnoreCase(user.getSystem())) {
+                    isRestricted = false;
+                }
+
+                if (isRestricted) {
+                    java.util.List<com.example.urgs_api.system.model.SysSystem> systems = sysSystemService.list(userId);
+                    java.util.List<String> clientIds = systems.stream()
+                            .map(com.example.urgs_api.system.model.SysSystem::getClientId)
+                            .collect(java.util.stream.Collectors.toList());
+
+                    if (clientIds.isEmpty()) {
+                        wrapper.apply("1=0"); // 无权限，查空
+                    } else {
+                        wrapper.in("system_code", clientIds);
+                    }
+                }
+            }
         }
 
         if (keyword != null && !keyword.isEmpty()) {
@@ -88,6 +117,33 @@ public class CodeDirectoryController {
         QueryWrapper<CodeDirectory> wrapper = new QueryWrapper<>();
         wrapper.select("DISTINCT table_code, table_name, system_code")
                 .orderByAsc("table_code");
+
+        // 检查用户权限进行过滤
+        Object userIdObj = request.getAttribute("userId");
+        if (userIdObj != null) {
+            Long userId = (Long) userIdObj;
+            com.example.urgs_api.user.model.User user = userService.getById(userId);
+            // 判断是否受限：非空且 system 字段不为 NULL/Empty/"ALL"
+            boolean isRestricted = true;
+            if (user == null || user.getSystem() == null || user.getSystem().isBlank()
+                    || "ALL".equalsIgnoreCase(user.getSystem())) {
+                isRestricted = false;
+            }
+
+            if (isRestricted) {
+                java.util.List<com.example.urgs_api.system.model.SysSystem> systems = sysSystemService.list(userId);
+                java.util.List<String> clientIds = systems.stream()
+                        .map(com.example.urgs_api.system.model.SysSystem::getClientId)
+                        .collect(java.util.stream.Collectors.toList());
+
+                if (clientIds.isEmpty()) {
+                    wrapper.apply("1=0"); // 无权限，查空
+                } else {
+                    wrapper.in("system_code", clientIds);
+                }
+            }
+        }
+
         return codeDirectoryService.list(wrapper);
     }
 

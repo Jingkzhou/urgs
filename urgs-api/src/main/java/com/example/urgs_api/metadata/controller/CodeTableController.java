@@ -20,6 +20,15 @@ public class CodeTableController {
     @Autowired
     private CodeTableService codeTableService;
 
+    @Autowired
+    private com.example.urgs_api.user.service.UserService userService;
+
+    @Autowired
+    private com.example.urgs_api.system.service.SysSystemService sysSystemService;
+
+    @Autowired
+    private jakarta.servlet.http.HttpServletRequest request;
+
     /**
      * 获取所有码表列表
      *
@@ -29,6 +38,33 @@ public class CodeTableController {
     public List<CodeTable> list() {
         QueryWrapper<CodeTable> wrapper = new QueryWrapper<>();
         wrapper.orderByAsc("table_code");
+
+        Long userId = (Long) request.getAttribute("userId");
+        // 如果 userId 为 null，视作拥有全部权限 (兼容非 Filter 调用)
+        if (userId != null) {
+            com.example.urgs_api.user.model.User user = userService.getById(userId);
+            // 判断是否受限：非空且 system 字段不为 NULL/Empty/"ALL"
+            boolean isRestricted = true;
+            if (user == null || user.getSystem() == null || user.getSystem().isBlank()
+                    || "ALL".equalsIgnoreCase(user.getSystem())) {
+                isRestricted = false;
+            }
+
+            if (isRestricted) {
+                List<com.example.urgs_api.system.model.SysSystem> systems = sysSystemService.list(userId);
+                List<String> clientIds = systems.stream()
+                        .map(com.example.urgs_api.system.model.SysSystem::getClientId)
+                        .collect(java.util.stream.Collectors.toList());
+
+                if (clientIds.isEmpty()) {
+                    // 无任何系统权限，返回空或不查任何数据的条件
+                    wrapper.apply("1=0");
+                } else {
+                    wrapper.in("system_code", clientIds);
+                }
+            }
+        }
+
         return codeTableService.list(wrapper);
     }
 

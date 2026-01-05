@@ -51,6 +51,9 @@ public class RegTableController {
     private com.example.urgs_api.user.service.UserService userService;
 
     @Autowired
+    private com.example.urgs_api.system.service.SysSystemService sysSystemService;
+
+    @Autowired
     private jakarta.servlet.http.HttpServletRequest request;
 
     private String getCurrentOperator() {
@@ -76,6 +79,31 @@ public class RegTableController {
         LambdaQueryWrapper<RegTable> tableWrapper = new LambdaQueryWrapper<>();
         if (StringUtils.isNotBlank(systemCode)) {
             tableWrapper.eq(RegTable::getSystemCode, systemCode);
+        } else {
+            // 前端未指定系统（即 "All Systems"），检查用户权限进行过滤
+            Object userIdObj = request.getAttribute("userId");
+            if (userIdObj != null) {
+                Long userId = (Long) userIdObj;
+                com.example.urgs_api.user.model.User user = userService.getById(userId);
+                boolean isRestricted = true;
+                if (user == null || user.getSystem() == null || user.getSystem().isBlank()
+                        || "ALL".equalsIgnoreCase(user.getSystem())) {
+                    isRestricted = false;
+                }
+
+                if (isRestricted) {
+                    List<com.example.urgs_api.system.model.SysSystem> systems = sysSystemService.list(userId);
+                    List<String> clientIds = systems.stream()
+                            .map(com.example.urgs_api.system.model.SysSystem::getClientId)
+                            .collect(Collectors.toList());
+
+                    if (clientIds.isEmpty()) {
+                        tableWrapper.apply("1=0");
+                    } else {
+                        tableWrapper.in(RegTable::getSystemCode, clientIds);
+                    }
+                }
+            }
         }
 
         long tableCount = regTableService.count(tableWrapper);
@@ -125,8 +153,36 @@ public class RegTableController {
 
         QueryWrapper<RegTable> query = new QueryWrapper<>();
 
+        // 1. 处理系统筛选逻辑
         if (systemCode != null && !systemCode.isEmpty()) {
+            // 前端显式指定系统时，按指定系统查
             query.eq("system_code", systemCode);
+        } else {
+            // 前端未指定系统（即 "All Systems"），检查用户权限进行过滤
+            Object userIdObj = request.getAttribute("userId");
+            if (userIdObj != null) {
+                Long userId = (Long) userIdObj;
+                com.example.urgs_api.user.model.User user = userService.getById(userId);
+                // 判断是否受限：非空且 system 字段不为 NULL/Empty/"ALL"
+                boolean isRestricted = true;
+                if (user == null || user.getSystem() == null || user.getSystem().isBlank()
+                        || "ALL".equalsIgnoreCase(user.getSystem())) {
+                    isRestricted = false;
+                }
+
+                if (isRestricted) {
+                    List<com.example.urgs_api.system.model.SysSystem> systems = sysSystemService.list(userId);
+                    List<String> clientIds = systems.stream()
+                            .map(com.example.urgs_api.system.model.SysSystem::getClientId)
+                            .collect(Collectors.toList());
+
+                    if (clientIds.isEmpty()) {
+                        query.apply("1=0"); // 无权限，查空
+                    } else {
+                        query.in("system_code", clientIds);
+                    }
+                }
+            }
         }
 
         if (keyword != null && !keyword.isEmpty()) {
@@ -580,6 +636,7 @@ public class RegTableController {
                     dto.setIsInit(el.getIsInit());
                     dto.setIsMergeFormula(el.getIsMergeFormula());
                     dto.setIsFillBusiness(el.getIsFillBusiness());
+                    dto.setCodeSnippet(safeTruncate(el.getCodeSnippet()));
                     return dto;
                 }).collect(Collectors.toList());
 
@@ -742,6 +799,7 @@ public class RegTableController {
                     el.setIsInit(getIntValue(row.getCell(22)));
                     el.setIsMergeFormula(getIntValue(row.getCell(23)));
                     el.setIsFillBusiness(getIntValue(row.getCell(24)));
+                    el.setCodeSnippet(getCellValue(row.getCell(25)));
 
                     if (el.getSortOrder() == null)
                         el.setSortOrder(0);
