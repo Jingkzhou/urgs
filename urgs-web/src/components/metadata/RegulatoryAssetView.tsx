@@ -11,6 +11,8 @@ import { ElementModal } from './reg-asset/components/ElementModal';
 import { DetailModal } from './reg-asset/components/DetailModal';
 import { CodeValuesModal } from './reg-asset/components/CodeValuesModal';
 import { getAutoFetchStatusBadge, StatsCard, TableSkeleton, CardSkeleton } from './reg-asset/components/RegAssetHelper';
+import DeleteWithReasonModal from './DeleteWithReasonModal';
+import { ReqInfo } from './ReqInfoFormGroup';
 
 const RegulatoryAssetView: React.FC = () => {
     // Systems
@@ -73,6 +75,15 @@ const RegulatoryAssetView: React.FC = () => {
 
     // Loading for Import
     const [isImporting, setIsImporting] = useState(false);
+
+    // Delete Modal State
+    const [deleteModal, setDeleteModal] = useState<{
+        show: boolean;
+        title: string;
+        warning: string;
+        type: 'TABLE' | 'TABLE_BATCH' | 'ELEMENT' | 'ELEMENT_BATCH';
+        targetId?: number | string;
+    }>({ show: false, title: '', warning: '', type: 'TABLE' });
 
     // History Modal State
     const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -286,48 +297,24 @@ const RegulatoryAssetView: React.FC = () => {
         setShowTableModal(true);
     };
 
-    const handleDeleteTable = async (id: number | string) => {
-        if (window.confirm('确定要删除该表吗？关联的字段/指标也将被删除。')) {
-            const token = localStorage.getItem('auth_token');
-            await fetch(`/api/reg/table/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            fetchTables();
-            // Remove from selection if selected
-            if (selectedTableIds.has(id)) {
-                const newSet = new Set(selectedTableIds);
-                newSet.delete(id);
-                setSelectedTableIds(newSet);
-            }
-        }
+    const handleDeleteTable = (id: number | string) => {
+        setDeleteModal({
+            show: true,
+            title: '删除报表',
+            warning: '确定要删除该报表吗？关联的字段/指标也将被删除，且此操作不可恢复。',
+            type: 'TABLE',
+            targetId: id
+        });
     };
 
-    const handleBatchDeleteTables = async () => {
+    const handleBatchDeleteTables = () => {
         if (selectedTableIds.size === 0) return;
-        if (!window.confirm(`确定要批量删除选中的 ${selectedTableIds.size} 张表吗？\n此操作不可恢复，关联的字段/指标也将被删除。`)) {
-            return;
-        }
-
-        try {
-            const token = localStorage.getItem('auth_token');
-            // Parallel delete requests
-            const promises = Array.from(selectedTableIds).map(id =>
-                fetch(`/api/reg/table/${id}`, {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                })
-            );
-
-            await Promise.all(promises);
-            setSelectedTableIds(new Set()); // Clear selection
-            fetchTables();
-            alert('批量删除成功');
-        } catch (error) {
-            console.error('Batch delete failed', error);
-            alert('批量删除部分或全部失败，请重试');
-            fetchTables(); // Refresh to see what's left
-        }
+        setDeleteModal({
+            show: true,
+            title: '批量删除报表',
+            warning: `确定要批量删除选中的 ${selectedTableIds.size} 张报表吗？此操作不可恢复，关联的字段/指标也将被删除。`,
+            type: 'TABLE_BATCH'
+        });
     };
 
     const handleAddElement = (type: 'FIELD' | 'INDICATOR') => {
@@ -341,57 +328,24 @@ const RegulatoryAssetView: React.FC = () => {
         setShowElementModal(true);
     };
 
-    const handleDeleteElement = async (id: number | string) => {
-        if (!confirm('确定要删除该字段/指标吗？')) return;
-        try {
-            const token = localStorage.getItem('auth_token');
-            const res = await fetch(`/api/reg/element/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                if (currentTable) fetchElements(currentTable.id!);
-                // Remove from selection if exists
-                if (selectedElementIds.has(id)) {
-                    const newSet = new Set(selectedElementIds);
-                    newSet.delete(id);
-                    setSelectedElementIds(newSet);
-                }
-            }
-        } catch (e) {
-            console.error('Failed to delete element', e);
-        }
+    const handleDeleteElement = (id: number | string) => {
+        setDeleteModal({
+            show: true,
+            title: '删除字段/指标',
+            warning: '确定要删除该字段/指标吗？此操作不可恢复。',
+            type: 'ELEMENT',
+            targetId: id
+        });
     };
 
-    const handleBatchDeleteElements = async () => {
+    const handleBatchDeleteElements = () => {
         if (selectedElementIds.size === 0) return;
-        if (!window.confirm(`确定要批量删除选中的 ${selectedElementIds.size} 个字段/指标吗？\n此操作不可恢复。`)) {
-            return;
-        }
-
-        try {
-            const token = localStorage.getItem('auth_token');
-            const res = await fetch('/api/reg/element/batch', {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(Array.from(selectedElementIds))
-            });
-
-            if (res.ok) {
-                setSelectedElementIds(new Set()); // Clear selection
-                if (currentTable) fetchElements(currentTable.id!);
-                alert('批量删除成功');
-            } else {
-                throw new Error('Batch delete failed on server');
-            }
-        } catch (error) {
-            console.error('Batch delete elements failed', error);
-            alert('批量删除失败，请重试');
-            if (currentTable) fetchElements(currentTable.id!);
-        }
+        setDeleteModal({
+            show: true,
+            title: '批量删除字段/指标',
+            warning: `确定要批量删除选中的 ${selectedElementIds.size} 个字段/指标吗？此操作不可恢复。`,
+            type: 'ELEMENT_BATCH'
+        });
     };
 
     // Import / Export for Tables (报表级批量导入导出)
@@ -640,8 +594,105 @@ const RegulatoryAssetView: React.FC = () => {
 
 
 
+
+    // Delete Confirm Handler
+    const handleDeleteConfirm = async (reqInfo: ReqInfo) => {
+        const token = localStorage.getItem('auth_token');
+        const headers = {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        };
+
+        try {
+            if (deleteModal.type === 'TABLE') {
+                const res = await fetch('/api/reg/table/delete', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        id: deleteModal.targetId,
+                        ...reqInfo
+                    })
+                });
+                if (res.ok) {
+                    fetchTables();
+                    if (selectedTableIds.has(deleteModal.targetId as string)) {
+                        const newSet = new Set(selectedTableIds);
+                        newSet.delete(deleteModal.targetId as string);
+                        setSelectedTableIds(newSet);
+                    }
+                } else {
+                    alert('删除失败');
+                }
+            } else if (deleteModal.type === 'TABLE_BATCH') {
+                const res = await fetch('/api/reg/table/delete/batch', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        ids: Array.from(selectedTableIds),
+                        ...reqInfo
+                    })
+                });
+                if (res.ok) {
+                    setSelectedTableIds(new Set());
+                    fetchTables();
+                    alert('批量删除成功');
+                } else {
+                    alert('部分或全部删除失败');
+                }
+            } else if (deleteModal.type === 'ELEMENT') {
+                const res = await fetch('/api/reg/element/delete', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        id: deleteModal.targetId,
+                        ...reqInfo
+                    })
+                });
+                if (res.ok) {
+                    if (currentTable) fetchElements(currentTable.id!);
+                    if (selectedElementIds.has(deleteModal.targetId as string)) {
+                        const newSet = new Set(selectedElementIds);
+                        newSet.delete(deleteModal.targetId as string);
+                        setSelectedElementIds(newSet);
+                    }
+                } else {
+                    alert('删除失败');
+                }
+            } else if (deleteModal.type === 'ELEMENT_BATCH') {
+                const res = await fetch('/api/reg/element/delete/batch', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        ids: Array.from(selectedElementIds),
+                        ...reqInfo
+                    })
+                });
+                if (res.ok) {
+                    setSelectedElementIds(new Set());
+                    if (currentTable) fetchElements(currentTable.id!);
+                    alert('批量删除成功');
+                } else {
+                    alert('批量删除失败');
+                }
+            }
+        } catch (error) {
+            console.error('Delete failed', error);
+            alert('删除操作失败');
+        }
+    };
+
     return (
-        <div className="flex h-full bg-white rounded-lg overflow-hidden">
+        <div className="flex h-full bg-white rounded-lg overflow-hidden relative">
+            {/* Delete Modal */}
+            {deleteModal.show && (
+                <DeleteWithReasonModal
+                    title={deleteModal.title}
+                    warningMessage={deleteModal.warning}
+                    onClose={() => setDeleteModal({ ...deleteModal, show: false })}
+                    onConfirm={handleDeleteConfirm}
+                />
+            )}
+
             {/* Left Sidebar: Systems - Always visible or hidden in drill-down? Usually distinct filters stay. */}
             <div className="w-56 border-r border-slate-200 bg-slate-50 flex flex-col flex-shrink-0">
                 <div className="p-3 border-b border-slate-200">

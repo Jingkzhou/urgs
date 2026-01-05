@@ -253,7 +253,73 @@ public class RegTableController {
             maintenanceLogManager.logChange(com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.TABLE,
                     oldTable, regTable, getCurrentOperator());
         }
+        return result;
+    }
 
+    /**
+     * Delete table with requirement reason
+     */
+    @PostMapping("/delete")
+    public boolean deleteWithReason(@RequestBody com.example.urgs_api.metadata.dto.DeleteReqDTO req) {
+        if (req.getId() == null)
+            return false;
+
+        RegTable oldTable = regTableService.getById(req.getId());
+        boolean result = regTableService.removeById(req.getId());
+
+        if (result && oldTable != null) {
+            com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext context = new com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext();
+            context.setReqId(req.getReqId());
+            context.setPlannedDate(req.getPlannedDate());
+            context.setChangeDescription(req.getChangeDescription());
+
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.TABLE,
+                    oldTable,
+                    null,
+                    getCurrentOperator(),
+                    context);
+        }
+        return result;
+    }
+
+    /**
+     * Batch delete tables with requirement reason
+     */
+    @PostMapping("/delete/batch")
+    public boolean deleteBatchWithReason(@RequestBody com.example.urgs_api.metadata.dto.DeleteReqDTO req) {
+        if (req.getIds() == null || req.getIds().isEmpty())
+            return false;
+
+        List<RegTable> oldTables = regTableService.listByIds(req.getIds());
+
+        // Cascade delete elements first (optional, logical delete of table implies
+        // elements gone usually, but good to be explicit or let DB cascade)
+        // Here we rely on removeByIds but we might want to log deletions for elements
+        // too or just Table deletion implies it.
+        // The existing delete() method does: regElementService.remove(...)
+        // So we should do the same for batch.
+
+        // Remove elements for all tables
+        regElementService.remove(new LambdaQueryWrapper<RegElement>().in(RegElement::getTableId, req.getIds()));
+
+        boolean result = regTableService.removeByIds(req.getIds());
+
+        if (result && oldTables != null) {
+            com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext context = new com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext();
+            context.setReqId(req.getReqId());
+            context.setPlannedDate(req.getPlannedDate());
+            context.setChangeDescription(req.getChangeDescription());
+
+            for (RegTable oldTable : oldTables) {
+                maintenanceLogManager.logChange(
+                        com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.TABLE,
+                        oldTable,
+                        null,
+                        getCurrentOperator(),
+                        context);
+            }
+        }
         return result;
     }
 

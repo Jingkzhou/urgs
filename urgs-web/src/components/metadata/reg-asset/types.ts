@@ -29,6 +29,7 @@ export interface RegTable {
     status?: number;
     reqId?: string;
     plannedDate?: string;
+    changeDescription?: string;
     fieldCount?: number;
     indicatorCount?: number;
 }
@@ -72,4 +73,5 @@ export interface RegElement {
     isFillBusiness?: number;
     reqId?: string;
     plannedDate?: string;
+    changeDescription?: string;
 }

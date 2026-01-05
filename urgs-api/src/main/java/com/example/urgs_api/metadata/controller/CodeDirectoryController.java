@@ -194,6 +194,37 @@ public class CodeDirectoryController {
      * @param id ID
      * @return 是否成功
      */
+    /**
+     * Delete code with reason
+     */
+    @PostMapping("/delete")
+    public boolean deleteWithReason(@RequestBody com.example.urgs_api.metadata.dto.DeleteReqDTO req) {
+        if (req.getIdStr() == null)
+            return false;
+
+        CodeDirectory oldCode = codeDirectoryService.getById(req.getIdStr()); // Verify getById takes String? Yes, ID is
+                                                                              // String.
+        boolean result = codeDirectoryService.removeById(req.getIdStr());
+
+        if (result && oldCode != null) {
+            com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext context = new com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext();
+            context.setReqId(req.getReqId());
+            context.setPlannedDate(req.getPlannedDate());
+            context.setChangeDescription(req.getChangeDescription());
+
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.CODE_DIR,
+                    oldCode,
+                    null,
+                    getCurrentOperator(),
+                    context);
+        }
+        return result;
+    }
+
+    /**
+     * 删除代码目录
+     */
     @DeleteMapping("/{id}")
     public boolean delete(@PathVariable String id) {
         CodeDirectory oldDir = codeDirectoryService.getById(id);

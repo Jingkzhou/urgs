@@ -146,6 +146,68 @@ public class RegElementController {
      * @param id 元素ID
      * @return 是否成功
      */
+    /**
+     * Delete element with reason
+     */
+    @PostMapping("/delete")
+    public boolean deleteWithReason(@RequestBody com.example.urgs_api.metadata.dto.DeleteReqDTO req) {
+        if (req.getId() == null)
+            return false;
+
+        RegElement oldElement = regElementService.getById(req.getId());
+        boolean result = regElementService.removeById(req.getId());
+
+        if (result && oldElement != null) {
+            com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext context = new com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext();
+            context.setReqId(req.getReqId());
+            context.setPlannedDate(req.getPlannedDate());
+            context.setChangeDescription(req.getChangeDescription());
+
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.ELEMENT,
+                    oldElement,
+                    null,
+                    getCurrentOperator(),
+                    context);
+        }
+        return result;
+    }
+
+    /**
+     * Batch delete elements with reason
+     */
+    @PostMapping("/delete/batch")
+    public boolean deleteBatchWithReason(@RequestBody com.example.urgs_api.metadata.dto.DeleteReqDTO req) {
+        if (req.getIds() == null || req.getIds().isEmpty())
+            return false;
+
+        List<RegElement> oldElements = regElementService.listByIds(req.getIds());
+        boolean result = regElementService.removeByIds(req.getIds());
+
+        if (result && oldElements != null) {
+            com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext context = new com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext();
+            context.setReqId(req.getReqId());
+            context.setPlannedDate(req.getPlannedDate());
+            context.setChangeDescription(req.getChangeDescription()); // Note: Same reason for all? Yes per requirement.
+
+            for (RegElement oldElement : oldElements) {
+                maintenanceLogManager.logChange(
+                        com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.ELEMENT,
+                        oldElement,
+                        null,
+                        getCurrentOperator(),
+                        context);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 删除元素
+     *
+     * @param id 元素ID
+     * @return 是否成功
+     */
     @DeleteMapping("/{id}")
     public boolean delete(@PathVariable Long id) {
         RegElement oldElement = regElementService.getById(id);

@@ -23,4 +23,14 @@ public class CodeTable {
     private String standard;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private String reqId;
+
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    @com.fasterxml.jackson.annotation.JsonFormat(pattern = "yyyy-MM-dd")
+    private java.time.LocalDate plannedDate;
+
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private String changeDescription;
 }

@@ -92,38 +92,32 @@ const MaintenanceDetailPanel: React.FC<MaintenanceDetailPanelProps> = ({ record,
                     </div>
                 </div>
 
-                {/* 变更描述 */}
-                <div>
-                    <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-                        <FileText size={12} /> 变更内容与原因
+
+                {/* 需求与变更详情 */}
+                <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 space-y-4">
+                    <div className="flex items-center gap-2 mb-1">
+                        <Tag size={16} className="text-amber-600" />
+                        <h4 className="text-sm font-bold text-amber-800">需求变更详情</h4>
                     </div>
-                    <div className="text-sm text-slate-700 leading-relaxed bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
-                        {record.description || '暂无描述'}
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-white/60 p-2.5 rounded-lg border border-amber-200/50">
+                            <div className="text-xs text-amber-600/70 mb-0.5">需求编号</div>
+                            <div className="text-sm font-medium text-amber-800">{record.reqId || '-'}</div>
+                        </div>
+                        <div className="bg-white/60 p-2.5 rounded-lg border border-amber-200/50">
+                            <div className="text-xs text-amber-600/70 mb-0.5">计划上线</div>
+                            <div className="text-sm font-medium text-amber-800">{record.plannedDate || '-'}</div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="text-xs font-medium text-amber-800/70 mb-1.5">变更描述</div>
+                        <div className="text-sm text-amber-900 leading-relaxed bg-white/60 p-3 rounded-lg border border-amber-200/50 min-h-[60px]">
+                            {record.description || '暂无描述'}
+                        </div>
                     </div>
                 </div>
-
-                {/* 需求关联 */}
-                {(record.reqId || record.plannedDate) && (
-                    <div>
-                        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-                            <Tag size={12} /> 项目信息
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            {record.reqId && (
-                                <div className="bg-amber-50 p-2.5 rounded-lg border border-amber-100">
-                                    <div className="text-xs text-amber-600/70 mb-0.5">需求编号</div>
-                                    <div className="text-sm font-medium text-amber-800">{record.reqId}</div>
-                                </div>
-                            )}
-                            {record.plannedDate && (
-                                <div className="bg-purple-50 p-2.5 rounded-lg border border-purple-100">
-                                    <div className="text-xs text-purple-600/70 mb-0.5">计划上线</div>
-                                    <div className="text-sm font-medium text-purple-800">{record.plannedDate}</div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
 
                 {/* DDL 脚本 */}
                 {record.script && (

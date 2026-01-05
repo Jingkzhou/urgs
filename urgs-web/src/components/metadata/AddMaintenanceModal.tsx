@@ -187,6 +187,63 @@ const AddMaintenanceModal: React.FC<AddMaintenanceModalProps> = ({ onClose, onSu
                         </div>
                     </div>
 
+                    {/* 需求变更管理 */}
+                    <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 space-y-3">
+                        <div className="flex items-center gap-2 mb-1">
+                            <Tag size={16} className="text-amber-600" />
+                            <h4 className="text-sm font-bold text-amber-800">需求变更管理</h4>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            {/* 需求编号 */}
+                            <div>
+                                <label className="block text-xs font-medium text-amber-800/80 mb-1.5">
+                                    需求编号
+                                </label>
+                                <div className="relative">
+                                    <Tag size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="REQ-2024001"
+                                        className="w-full pl-9 pr-3 py-2 text-sm border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-200 bg-white"
+                                        value={form.reqId}
+                                        onChange={(e) => setForm({ ...form, reqId: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* 计划上线时间 */}
+                            <div>
+                                <label className="block text-xs font-medium text-amber-800/80 mb-1.5">
+                                    计划上线日期
+                                </label>
+                                <div className="relative">
+                                    <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <input
+                                        type="date"
+                                        className="w-full pl-9 pr-3 py-2 text-sm border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-200 bg-white"
+                                        value={form.plannedDate}
+                                        onChange={(e) => setForm({ ...form, plannedDate: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 需求变更描述 (Description) */}
+                        <div>
+                            <label className="block text-xs font-medium text-amber-800/80 mb-1.5">
+                                需求变更描述
+                            </label>
+                            <textarea
+                                rows={3}
+                                placeholder="如: 因业务调整，需增加XXX字段以支持YYY功能..."
+                                className="w-full px-3 py-2.5 text-sm border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-200 resize-none bg-white"
+                                value={form.description}
+                                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                            />
+                        </div>
+                    </div>
+
                     {/* 变更类型 */}
                     <div>
                         <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-2">
@@ -210,34 +267,7 @@ const AddMaintenanceModal: React.FC<AddMaintenanceModalProps> = ({ onClose, onSu
                         </div>
                     </div>
 
-                    {/* 需求信息 */}
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-                                <Tag size={14} className="text-slate-400" />
-                                需求编号
-                            </label>
-                            <input
-                                type="text"
-                                placeholder="如: REQ-2024-001"
-                                className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all"
-                                value={form.reqId}
-                                onChange={(e) => setForm({ ...form, reqId: e.target.value })}
-                            />
-                        </div>
-                        <div>
-                            <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-                                <Calendar size={14} className="text-slate-400" />
-                                计划上线日期
-                            </label>
-                            <input
-                                type="date"
-                                className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all"
-                                value={form.plannedDate}
-                                onChange={(e) => setForm({ ...form, plannedDate: e.target.value })}
-                            />
-                        </div>
-                    </div>
+
 
                     {/* 操作人 */}
                     <div>
@@ -254,20 +284,7 @@ const AddMaintenanceModal: React.FC<AddMaintenanceModalProps> = ({ onClose, onSu
                         />
                     </div>
 
-                    {/* 变更描述 */}
-                    <div>
-                        <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-                            <FileText size={14} className="text-slate-400" />
-                            变更描述 <span className="text-red-500">*</span>
-                        </label>
-                        <textarea
-                            rows={3}
-                            placeholder="请描述本次变更的内容和原因..."
-                            className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all resize-none"
-                            value={form.description}
-                            onChange={(e) => setForm({ ...form, description: e.target.value })}
-                        />
-                    </div>
+
 
                     {/* DDL 脚本 */}
                     <div>

@@ -88,4 +88,7 @@ public class RegTable {
     @TableField(exist = false)
     @JsonFormat(pattern = "yyyy-MM-dd")
     private LocalDate plannedDate;
+
+    @TableField(exist = false)
+    private String changeDescription;
 }

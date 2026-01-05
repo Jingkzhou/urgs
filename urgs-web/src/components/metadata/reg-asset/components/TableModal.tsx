@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Clock } from 'lucide-react';
 import { RegTable } from '../types';
 import { FormField } from './RegAssetHelper';
+import ReqInfoFormGroup from '../../ReqInfoFormGroup';
 
 // Define the system interface locally if needed, or pass only what's necessary
 interface SsoConfig {
@@ -90,21 +91,14 @@ export const TableModal: React.FC<TableModalProps> = ({ table, systems, defaultS
                     </div>
 
                     <div className="col-span-2 border-t border-slate-100 pt-4 mt-2">
-                        <h4 className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-1">
-                            <Clock size={12} /> 变更登记
-                        </h4>
-                        <div className="grid grid-cols-2 gap-4">
-                            <FormField label="需求编号" value={form.reqId} onChange={v => setForm({ ...form, reqId: v })} />
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">计划上线日期</label>
-                                <input
-                                    type="date"
-                                    className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none"
-                                    value={form.plannedDate || ''}
-                                    onChange={e => setForm({ ...form, plannedDate: e.target.value })}
-                                />
-                            </div>
-                        </div>
+                        <ReqInfoFormGroup
+                            data={{
+                                reqId: form.reqId || '',
+                                plannedDate: form.plannedDate || '',
+                                changeDescription: form.changeDescription || ''
+                            }}
+                            onChange={(info) => setForm({ ...form, ...info })}
+                        />
                     </div>
                 </div>
                 <div className="p-4 border-t border-slate-200 flex justify-end gap-2 bg-slate-50 rounded-b-xl">

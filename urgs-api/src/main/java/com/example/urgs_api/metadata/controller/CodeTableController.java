@@ -27,6 +27,9 @@ public class CodeTableController {
     private com.example.urgs_api.system.service.SysSystemService sysSystemService;
 
     @Autowired
+    private com.example.urgs_api.metadata.component.MaintenanceLogManager maintenanceLogManager;
+
+    @Autowired
     private jakarta.servlet.http.HttpServletRequest request;
 
     /**
@@ -119,6 +122,45 @@ public class CodeTableController {
         return codeTableService.saveOrUpdate(codeTable);
     }
 
+    private String getCurrentOperator() {
+        Object userIdObj = request.getAttribute("userId");
+        if (userIdObj != null) {
+            Long userId = (Long) userIdObj;
+            com.example.urgs_api.user.model.User user = userService.getById(userId);
+            if (user != null) {
+                return user.getName();
+            }
+        }
+        return "admin";
+    }
+
+    /**
+     * Delete code table with requirement reason
+     */
+    @PostMapping("/delete")
+    public boolean deleteWithReason(@RequestBody com.example.urgs_api.metadata.dto.DeleteReqDTO req) {
+        if (req.getIdStr() == null)
+            return false;
+
+        CodeTable oldTable = codeTableService.getById(req.getIdStr());
+        boolean result = codeTableService.removeById(req.getIdStr());
+
+        if (result && oldTable != null) {
+            com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext context = new com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext();
+            context.setReqId(req.getReqId());
+            context.setPlannedDate(req.getPlannedDate());
+            context.setChangeDescription(req.getChangeDescription());
+
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.CODE_TABLE,
+                    oldTable,
+                    null,
+                    getCurrentOperator(),
+                    context);
+        }
+        return result;
+    }
+
     /**
      * 删除码表
      *
@@ -127,6 +169,16 @@ public class CodeTableController {
      */
     @DeleteMapping("/{id}")
     public boolean delete(@PathVariable String id) {
-        return codeTableService.removeById(id);
+        CodeTable oldTable = codeTableService.getById(id);
+        boolean result = codeTableService.removeById(id);
+
+        if (result && oldTable != null) {
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.CODE_TABLE,
+                    oldTable,
+                    null,
+                    getCurrentOperator());
+        }
+        return result;
     }
 }
