@@ -34,9 +34,14 @@ public class GitPlatformService {
     private final GitRepositoryService gitRepositoryService;
     private final ObjectMapper objectMapper;
 
-    private static final HttpClient httpClient = HttpClient.newBuilder()
+    private HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
+
+    // For testing
+    public void setHttpClient(HttpClient httpClient) {
+        this.httpClient = httpClient;
+    }
 
     /**
      * 获取文件树
@@ -359,6 +364,79 @@ public class GitPlatformService {
         }
     }
 
+    /**
+     * 获取 Pull Request 列表
+     */
+    public List<com.example.urgs_api.version.dto.GitPullRequest> getPullRequests(Long repoId, String state,
+            Integer page, Integer perPage) {
+        GitRepository repo = gitRepositoryService.findById(repoId)
+                .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
+
+        if (page == null || page < 1)
+            page = 1;
+        if (perPage == null || perPage < 1)
+            perPage = 20;
+        if (state == null)
+            state = "all";
+
+        try {
+            return switch (repo.getPlatform().toLowerCase()) {
+                case "gitee" -> getGiteePullRequests(repo, state, page, perPage);
+                case "github" -> getGitHubPullRequests(repo, state, page, perPage);
+                case "gitlab" -> getGitLabPullRequests(repo, state, page, perPage);
+                default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
+            };
+        } catch (Exception e) {
+            log.error("获取 PR 列表失败: repoId={}", repoId, e);
+            throw new RuntimeException("获取 PR 列表失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取 Pull Request 详情
+     */
+    public com.example.urgs_api.version.dto.GitPullRequest getPullRequest(Long repoId, Long number) {
+        GitRepository repo = gitRepositoryService.findById(repoId)
+                .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
+
+        try {
+            return switch (repo.getPlatform().toLowerCase()) {
+                case "gitee" -> getGiteePullRequest(repo, number);
+                case "github" -> getGitHubPullRequest(repo, number);
+                case "gitlab" -> getGitLabPullRequest(repo, number);
+                default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
+            };
+        } catch (Exception e) {
+            log.error("获取 PR 详情失败: repoId={}, number={}", repoId, number, e);
+            throw new RuntimeException("获取 PR 详情失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 创建 Pull Request
+     */
+    public void createPullRequest(Long repoId, String title, String body, String head, String base, String userToken) {
+        GitRepository repo = gitRepositoryService.findById(repoId)
+                .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
+
+        String effectiveToken = (userToken != null && !userToken.isEmpty()) ? userToken : repo.getAccessToken();
+        if (effectiveToken == null || effectiveToken.isEmpty()) {
+            throw new RuntimeException("No access token available");
+        }
+
+        try {
+            switch (repo.getPlatform().toLowerCase()) {
+                case "gitee" -> createGiteePullRequest(repo, title, body, head, base, effectiveToken);
+                case "github" -> createGitHubPullRequest(repo, title, body, head, base, effectiveToken);
+                case "gitlab" -> createGitLabPullRequest(repo, title, body, head, base, effectiveToken);
+                default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
+            }
+        } catch (Exception e) {
+            log.error("创建 PR 失败: repoId={}, title={}", repoId, title, e);
+            throw new RuntimeException("创建 PR 失败: " + e.getMessage());
+        }
+    }
+
     // ==================== Gitee ====================
 
     private List<GitFileEntry> getGiteeFileTree(GitRepository repo, String ref, String path) throws Exception {
@@ -634,6 +712,92 @@ public class GitPlatformService {
         return allTags;
     }
 
+    private List<com.example.urgs_api.version.dto.GitPullRequest> getGiteePullRequests(GitRepository repo, String state,
+            Integer page, Integer perPage) throws Exception {
+        // Gitee: GET /repos/{owner}/{repo}/pulls
+        String url = String.format(
+                "https://gitee.com/api/v5/repos/%s/pulls?state=%s&sort=created&direction=desc&page=%d&per_page=%d",
+                repo.getFullName(), state, page, perPage);
+
+        if (repo.getAccessToken() != null && !repo.getAccessToken().isEmpty()) {
+            url += "&access_token=" + repo.getAccessToken();
+        }
+
+        JsonNode response = httpGet(url);
+        List<com.example.urgs_api.version.dto.GitPullRequest> prs = new ArrayList<>();
+
+        if (response.isArray()) {
+            for (JsonNode node : response) {
+                prs.add(mapGiteeToGitPullRequest(node));
+            }
+        }
+        return prs;
+    }
+
+    private com.example.urgs_api.version.dto.GitPullRequest getGiteePullRequest(GitRepository repo, Long number)
+            throws Exception {
+        // Gitee: GET /repos/{owner}/{repo}/pulls/{number}
+        String url = String.format("https://gitee.com/api/v5/repos/%s/pulls/%s", repo.getFullName(), number);
+        if (repo.getAccessToken() != null && !repo.getAccessToken().isEmpty()) {
+            url += "&access_token=" + repo.getAccessToken();
+        }
+
+        JsonNode response = httpGet(url);
+        return mapGiteeToGitPullRequest(response);
+    }
+
+    private void createGiteePullRequest(GitRepository repo, String title, String body, String head, String base,
+            String token) throws Exception {
+        // Gitee: POST /repos/{owner}/{repo}/pulls
+        String url = String.format("https://gitee.com/api/v5/repos/%s/pulls", repo.getFullName());
+        String payload = String.format(
+                "{\"access_token\":\"%s\",\"title\":\"%s\",\"body\":\"%s\",\"head\":\"%s\",\"base\":\"%s\"}",
+                token, title, body != null ? body : "", head, base);
+
+        httpPost(url, payload, null, null);
+    }
+
+    private com.example.urgs_api.version.dto.GitPullRequest mapGiteeToGitPullRequest(JsonNode node) {
+        JsonNode user = node.path("user");
+        JsonNode head = node.path("head");
+        JsonNode base = node.path("base");
+
+        List<com.example.urgs_api.version.dto.GitPullRequest.Label> labels = new ArrayList<>();
+        if (node.path("labels").isArray()) {
+            for (JsonNode l : node.path("labels")) {
+                labels.add(com.example.urgs_api.version.dto.GitPullRequest.Label.builder()
+                        .name(l.path("name").asText())
+                        .color(l.path("color").asText())
+                        .build());
+            }
+        }
+
+        return com.example.urgs_api.version.dto.GitPullRequest.builder()
+                .id(node.path("id").asText())
+                .number(node.path("number").asLong())
+                .title(node.path("title").asText())
+                .state(node.path("state").asText())
+                .body(node.path("body").asText())
+                .htmlUrl(node.path("html_url").asText())
+                .headRef(head.path("ref").asText())
+                .headSha(head.path("sha").asText())
+                .baseRef(base.path("ref").asText())
+                .baseSha(base.path("sha").asText())
+                .authorName(user.path("name").asText())
+                .authorAvatar(user.path("avatar_url").asText())
+                .createdAt(node.path("created_at").asText())
+                .updatedAt(node.path("updated_at").asText())
+                .closedAt(node.path("closed_at").asText())
+                .mergedAt(node.path("merged_at").asText())
+                .comments(node.path("comments").asInt(0))
+                .commits(node.path("commits").asInt(0))
+                .additions(node.path("additions").asInt(0))
+                .deletions(node.path("deletions").asInt(0))
+                .changedFiles(node.path("changed_files").asInt(0))
+                .labels(labels)
+                .build();
+    }
+
     // ==================== GitHub ====================
 
     private List<GitFileEntry> getGitHubFileTree(GitRepository repo, String ref, String path) throws Exception {
@@ -850,6 +1014,87 @@ public class GitPlatformService {
         }
 
         return allTags;
+    }
+
+    private List<com.example.urgs_api.version.dto.GitPullRequest> getGitHubPullRequests(GitRepository repo,
+            String state, Integer page, Integer perPage) throws Exception {
+        // GitHub: https://api.github.com/repos/{owner}/{repo}/pulls
+        // state: open, closed, all
+        String url = String.format("https://api.github.com/repos/%s/pulls?state=%s&page=%d&per_page=%d",
+                repo.getFullName(), state, page, perPage);
+
+        JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "Bearer");
+        List<com.example.urgs_api.version.dto.GitPullRequest> prs = new ArrayList<>();
+
+        if (response.isArray()) {
+            for (JsonNode node : response) {
+                prs.add(mapGitHubToGitPullRequest(node));
+            }
+        }
+        return prs;
+    }
+
+    private com.example.urgs_api.version.dto.GitPullRequest getGitHubPullRequest(GitRepository repo, Long number)
+            throws Exception {
+        // GitHub: GET /repos/{owner}/{repo}/pulls/{number}
+        String url = String.format("https://api.github.com/repos/%s/pulls/%s", repo.getFullName(), number);
+        JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "Bearer");
+        return mapGitHubToGitPullRequest(response);
+    }
+
+    private void createGitHubPullRequest(GitRepository repo, String title, String body, String head, String base,
+            String token) throws Exception {
+        // GitHub: POST /repos/{owner}/{repo}/pulls
+        String url = String.format("https://api.github.com/repos/%s/pulls", repo.getFullName());
+        String payload = String.format("{\"title\":\"%s\",\"body\":\"%s\",\"head\":\"%s\",\"base\":\"%s\"}",
+                title, body != null ? body : "", head, base);
+
+        httpPost(url, payload, token, "Bearer");
+    }
+
+    private com.example.urgs_api.version.dto.GitPullRequest mapGitHubToGitPullRequest(JsonNode node) {
+        JsonNode user = node.path("user");
+        JsonNode head = node.path("head");
+        JsonNode base = node.path("base");
+
+        List<com.example.urgs_api.version.dto.GitPullRequest.Label> labels = new ArrayList<>();
+        if (node.path("labels").isArray()) {
+            for (JsonNode l : node.path("labels")) {
+                labels.add(com.example.urgs_api.version.dto.GitPullRequest.Label.builder()
+                        .name(l.path("name").asText())
+                        .color(l.path("color").asText())
+                        .description(l.path("description").asText())
+                        .build());
+            }
+        }
+
+        return com.example.urgs_api.version.dto.GitPullRequest.builder()
+                .id(node.path("id").asText())
+                .number(node.path("number").asLong())
+                .title(node.path("title").asText())
+                .state(node.path("state").asText())
+                .body(node.path("body").asText())
+                .htmlUrl(node.path("html_url").asText())
+                .headRef(head.path("ref").asText())
+                .headSha(head.path("sha").asText())
+                .baseRef(base.path("ref").asText())
+                .baseSha(base.path("sha").asText())
+                .authorName(user.path("login").asText())
+                .authorAvatar(user.path("avatar_url").asText())
+                .createdAt(node.path("created_at").asText())
+                .updatedAt(node.path("updated_at").asText())
+                .closedAt(node.path("closed_at").asText())
+                .mergedAt(node.path("merged_at").asText())
+                // GitHub PR list response usually doesn't include details like comments count,
+                // additions, deletions
+                // These are available in detail response. We map safely.
+                .comments(node.path("comments").asInt(0))
+                .commits(node.path("commits").asInt(0))
+                .additions(node.path("additions").asInt(0))
+                .deletions(node.path("deletions").asInt(0))
+                .changedFiles(node.path("changed_files").asInt(0))
+                .labels(labels)
+                .build();
     }
 
     // ==================== GitLab ====================
@@ -1136,6 +1381,95 @@ public class GitPlatformService {
         }
 
         return allTags;
+    }
+
+    private List<com.example.urgs_api.version.dto.GitPullRequest> getGitLabPullRequests(GitRepository repo,
+            String state, Integer page, Integer perPage) throws Exception {
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
+        // GitLab: GET /projects/:id/merge_requests
+        // state: opened, closed, locked, merged
+        if ("open".equals(state))
+            state = "opened"; // Map 'open' to 'opened' for GitLab
+
+        String url = String.format("%s/projects/%s/merge_requests?state=%s&page=%d&per_page=%d",
+                apiBase, projectId, state, page, perPage);
+
+        JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
+        List<com.example.urgs_api.version.dto.GitPullRequest> prs = new ArrayList<>();
+
+        if (response.isArray()) {
+            for (JsonNode node : response) {
+                prs.add(mapGitLabToGitPullRequest(node));
+            }
+        }
+        return prs;
+    }
+
+    private com.example.urgs_api.version.dto.GitPullRequest getGitLabPullRequest(GitRepository repo, Long number)
+            throws Exception {
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
+        // GitLab: GET /projects/:id/merge_requests/:merge_request_iid
+        String url = String.format("%s/projects/%s/merge_requests/%s",
+                apiBase, projectId, number);
+
+        JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
+        return mapGitLabToGitPullRequest(response);
+    }
+
+    private void createGitLabPullRequest(GitRepository repo, String title, String body, String head, String base,
+            String token) throws Exception {
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
+        // GitLab: POST /projects/:id/merge_requests
+        String url = String.format("%s/projects/%s/merge_requests", apiBase, projectId);
+
+        // GitLab requires source_branch and target_branch
+        String payload = String.format(
+                "{\"source_branch\":\"%s\",\"target_branch\":\"%s\",\"title\":\"%s\",\"description\":\"%s\"}",
+                head, base, title, body != null ? body : "");
+
+        httpPost(url, payload, token, "PRIVATE-TOKEN");
+    }
+
+    private com.example.urgs_api.version.dto.GitPullRequest mapGitLabToGitPullRequest(JsonNode node) {
+        JsonNode author = node.path("author");
+
+        List<com.example.urgs_api.version.dto.GitPullRequest.Label> labels = new ArrayList<>();
+        if (node.path("labels").isArray()) {
+            for (JsonNode l : node.path("labels")) {
+                // GitLab labels in list response are strings
+                labels.add(com.example.urgs_api.version.dto.GitPullRequest.Label.builder()
+                        .name(l.asText())
+                        .build());
+            }
+        }
+
+        return com.example.urgs_api.version.dto.GitPullRequest.builder()
+                .id(node.path("id").asText())
+                .number(node.path("iid").asLong())
+                .title(node.path("title").asText())
+                .state(node.path("state").asText()) // opened, closed, merged, locked
+                .body(node.path("description").asText())
+                .htmlUrl(node.path("web_url").asText())
+                .headRef(node.path("source_branch").asText())
+                .headSha(node.path("sha").asText()) // Logic might differ for head SHA access in MR
+                .baseRef(node.path("target_branch").asText())
+                // .baseSha(...)
+                .authorName(author.path("name").asText())
+                .authorAvatar(author.path("avatar_url").asText())
+                .createdAt(node.path("created_at").asText())
+                .updatedAt(node.path("updated_at").asText())
+                .closedAt(node.path("closed_at").asText())
+                .mergedAt(node.path("merged_at").asText())
+                .comments(node.path("user_notes_count").asInt(0))
+                // .commits(...)
+                // .additions(...)
+                // .deletions(...)
+                // .changedFiles(...)
+                .labels(labels)
+                .build();
     }
 
     private String getGitLabProjectId(GitRepository repo) throws Exception {

@@ -155,6 +155,51 @@ export const getRepoCommits = (repoId: number, params?: { ref?: string; page?: n
 export const getRepoCommitDetail = (repoId: number, sha: string) =>
     get<GitCommit>(`/api/version/repos/${repoId}/commits/${sha}`);
 
+// ===== Git Pull Request API =====
+
+export interface GitPullRequest {
+    id: string;
+    number: number;
+    title: string;
+    state: string; // open, closed, merged, locked
+    body: string;
+    htmlUrl: string;
+
+    headRef: string; // source branch
+    headSha: string;
+    baseRef: string; // target branch
+    baseSha: string;
+
+    authorName: string;
+    authorAvatar?: string;
+
+    createdAt: string;
+    updatedAt: string;
+    closedAt?: string;
+    mergedAt?: string;
+
+    comments?: number;
+    commits?: number;
+    additions?: number;
+    deletions?: number;
+    changedFiles?: number;
+
+    labels?: {
+        name: string;
+        color?: string;
+        description?: string;
+    }[];
+}
+
+export const getPullRequests = (repoId: number, params?: { state?: string; page?: number; perPage?: number }) =>
+    get<GitPullRequest[]>(`/api/version/repos/${repoId}/pulls`, params || {});
+
+export const getPullRequest = (repoId: number, number: number) =>
+    get<GitPullRequest>(`/api/version/repos/${repoId}/pulls/${number}`);
+
+export const createPullRequest = (repoId: number, data: { title: string; body?: string; head: string; base: string }) =>
+    post<void>(`/api/version/repos/${repoId}/pulls`, data);
+
 // ===== GitLab Sync API =====
 
 export interface GitProjectVO {

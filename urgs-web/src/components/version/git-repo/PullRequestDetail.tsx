@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button, Tabs, Input, Avatar, Tag, Dropdown } from 'antd';
 import { ArrowLeft, GitPullRequest, GitMerge, Check, X, Clock, MessageSquare, ChevronDown, MonitorCheck, ExternalLink } from 'lucide-react';
 import PRStatusBadge, { PRStatus } from './components/PRStatusBadge';
 import PRTimeline, { TimelineEvent } from './components/PRTimeline';
 import PRDiffView from './components/PRDiffView';
+import ReactMarkdown from 'react-markdown';
+import { getPullRequest, GitPullRequest as APIGitPullRequest } from '@/api/version';
 
 interface PullRequestDetailProps {
     repoId: number;
@@ -43,7 +45,34 @@ const mockFiles = [
 
 const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onBack }) => {
     const [activeTab, setActiveTab] = useState('conversation');
-    const [status] = useState<PRStatus>('open');
+    const [pr, setPr] = useState<APIGitPullRequest | null>(null);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        const fetchPR = async () => {
+            setLoading(true);
+            try {
+                const res = await getPullRequest(repoId, prId);
+                if (res) {
+                    setPr(res);
+                }
+            } catch (error) {
+                console.error(error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchPR();
+    }, [repoId, prId]);
+
+    if (loading) return <div className="p-10 text-center">Loading...</div>;
+    if (!pr) return <div className="p-10 text-center">Pull Request not found</div>;
+
+    // Map status
+    let status: PRStatus = 'open';
+    const state = pr.state === 'opened' ? 'open' : pr.state;
+    if (state === 'closed') status = 'closed';
+    if (state === 'merged') status = 'merged';
 
     return (
         <div className="bg-white min-h-screen">
@@ -58,13 +87,13 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                     <div className="flex justify-between items-start">
                         <div>
                             <div className="flex items-center gap-3 mb-2">
-                                <h1 className="text-2xl font-semibold text-slate-900 m-0">feat: implement user authentication flow <span className="text-slate-400 font-normal">#{prId}</span></h1>
+                                <h1 className="text-2xl font-semibold text-slate-900 m-0">{pr.title} <span className="text-slate-400 font-normal">#{pr.number}</span></h1>
                                 <PRStatusBadge status={status} className="text-sm" />
                             </div>
                             <div className="flex items-center gap-2 text-slate-600 text-sm">
-                                <span className="font-semibold text-slate-800">zhangsan</span>
-                                <span>想合并 3 个提交到 <span className="font-mono bg-slate-100 rounded px-1 text-slate-700">main</span></span>
-                                <span>从 <span className="font-mono bg-slate-100 rounded px-1 text-slate-700">feat/auth</span></span>
+                                <span className="font-semibold text-slate-800">{pr.authorName}</span>
+                                <span>想合并 commits 到 <span className="font-mono bg-slate-100 rounded px-1 text-slate-700">{pr.baseRef}</span></span>
+                                <span>从 <span className="font-mono bg-slate-100 rounded px-1 text-slate-700">{pr.headRef}</span></span>
                             </div>
                         </div>
                         <div className="flex gap-2">
@@ -104,12 +133,9 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                                     <Button type="text" size="small" className="text-slate-500">Edit</Button>
                                 </div>
                                 <div className="p-4 text-slate-800 prose prose-sm max-w-none">
-                                    <p>Depending on ticket #123.</p>
-                                    <h3>Changes:</h3>
-                                    <ul>
-                                        <li>Added login page</li>
-                                        <li>Implemented JWT handling</li>
-                                    </ul>
+                                    {/* Using description from PR */}
+                                    <ReactMarkdown>{pr.body || 'No description provided.'}</ReactMarkdown>
+
                                 </div>
                             </div>
 

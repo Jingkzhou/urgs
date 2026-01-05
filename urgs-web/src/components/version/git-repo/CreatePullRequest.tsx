@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button, Input, Select, Form, message, Alert } from 'antd';
 import { ArrowLeft, GitMerge, ArrowRight, Info } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { getRepoBranches } from '@/api/version';
+import { getRepoBranches, createPullRequest } from '@/api/version';
 
 interface CreatePullRequestProps {
     repoId: number;
@@ -30,18 +30,27 @@ const CreatePullRequest: React.FC<CreatePullRequestProps> = ({ repoId, onCancel,
         });
     }, [repoId]);
 
-    const handleCreate = (isDraft: boolean) => {
+    const handleCreate = async (isDraft: boolean) => {
         if (!title) {
             message.error('请输入标题');
             return;
         }
         setLoading(true);
-        // Mock creation delay
-        setTimeout(() => {
-            setLoading(false);
+        try {
+            await createPullRequest(repoId, {
+                title,
+                body: description,
+                head: compareBranch,
+                base: baseBranch
+            });
             message.success('Pull Request 创建成功');
-            onSuccess(123); // Mock ID
-        }, 1000);
+            onSuccess(0); // ID not returned by void API or use 0 to trigger reload list
+        } catch (error) {
+            console.error(error);
+            message.error('创建失败');
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
