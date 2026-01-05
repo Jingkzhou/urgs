@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { X, FileText, Hash, Calendar, Tag, User, Code, Save } from 'lucide-react';
 
+import { MaintenanceRecordItem } from './MaintenanceDetailPanel';
+
 interface AddMaintenanceModalProps {
     onClose: () => void;
     onSuccess: () => void;
+    initialData?: MaintenanceRecordItem | null;
 }
 
 const modTypeOptions = [
@@ -15,7 +18,7 @@ const modTypeOptions = [
     { value: '删除表', label: '删除表', color: 'bg-red-100 text-red-700' },
 ];
 
-const AddMaintenanceModal: React.FC<AddMaintenanceModalProps> = ({ onClose, onSuccess }) => {
+const AddMaintenanceModal: React.FC<AddMaintenanceModalProps> = ({ onClose, onSuccess, initialData }) => {
     const [form, setForm] = useState({
         tableName: '',
         tableCnName: '',
@@ -32,18 +35,34 @@ const AddMaintenanceModal: React.FC<AddMaintenanceModalProps> = ({ onClose, onSu
     const [currentUser, setCurrentUser] = useState('');
 
     useEffect(() => {
-        // Get current user from localStorage or context
-        const userStr = localStorage.getItem('user');
-        if (userStr) {
-            try {
-                const user = JSON.parse(userStr);
-                setCurrentUser(user.nickName || user.username || '');
-                setForm(prev => ({ ...prev, operator: user.nickName || user.username || '' }));
-            } catch (e) {
-                console.error('Failed to parse user', e);
+        // Initial Data for Edit
+        if (initialData) {
+            setForm({
+                tableName: initialData.tableName || '',
+                tableCnName: initialData.tableCnName || '',
+                fieldName: initialData.fieldName || '',
+                fieldCnName: initialData.fieldCnName || '',
+                modType: initialData.modType || '新增字段',
+                description: initialData.description || '',
+                reqId: initialData.reqId || '',
+                plannedDate: initialData.plannedDate || '',
+                script: initialData.script || '',
+                operator: initialData.operator || ''
+            });
+        } else {
+            // New Record Defaults
+            const userStr = localStorage.getItem('user');
+            if (userStr) {
+                try {
+                    const user = JSON.parse(userStr);
+                    setCurrentUser(user.nickName || user.username || '');
+                    setForm(prev => ({ ...prev, operator: user.nickName || user.username || '' }));
+                } catch (e) {
+                    console.error('Failed to parse user', e);
+                }
             }
         }
-    }, []);
+    }, [initialData]);
 
     const handleSubmit = async () => {
         if (!form.tableName || !form.modType || !form.description) {
@@ -54,16 +73,21 @@ const AddMaintenanceModal: React.FC<AddMaintenanceModalProps> = ({ onClose, onSu
         setSubmitting(true);
         try {
             const token = localStorage.getItem('auth_token');
-            const res = await fetch('/api/metadata/maintenance-record', {
-                method: 'POST',
+            const url = '/api/metadata/maintenance-record';
+            const method = initialData ? 'PUT' : 'POST';
+            const body = {
+                ...form,
+                id: initialData?.id, // Include ID for update
+                time: initialData?.time || new Date().toISOString() // Preserve time or set new
+            };
+
+            const res = await fetch(url, {
+                method: method,
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({
-                    ...form,
-                    time: new Date().toISOString()
-                })
+                body: JSON.stringify(body)
             });
 
             if (res.ok) {
@@ -89,8 +113,8 @@ const AddMaintenanceModal: React.FC<AddMaintenanceModalProps> = ({ onClose, onSu
                             <FileText className="w-5 h-5 text-indigo-600" />
                         </div>
                         <div>
-                            <h2 className="text-lg font-bold text-slate-800">新增维护记录</h2>
-                            <p className="text-sm text-slate-500">手动登记元数据变更</p>
+                            <h2 className="text-lg font-bold text-slate-800">{initialData ? '编辑维护记录' : '新增维护记录'}</h2>
+                            <p className="text-sm text-slate-500">{initialData ? '修改维护记录信息' : '手动登记元数据变更'}</p>
                         </div>
                     </div>
                     <button
@@ -176,8 +200,8 @@ const AddMaintenanceModal: React.FC<AddMaintenanceModalProps> = ({ onClose, onSu
                                     type="button"
                                     onClick={() => setForm({ ...form, modType: opt.value })}
                                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all border-2 ${form.modType === opt.value
-                                            ? `${opt.color} border-current`
-                                            : 'bg-slate-50 text-slate-600 border-transparent hover:bg-slate-100'
+                                        ? `${opt.color} border-current`
+                                        : 'bg-slate-50 text-slate-600 border-transparent hover:bg-slate-100'
                                         }`}
                                 >
                                     {opt.label}

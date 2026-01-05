@@ -100,6 +100,33 @@ public class MaintenanceRecordController {
     }
 
     /**
+     * 新增维护记录
+     */
+    @PostMapping
+    public boolean save(@RequestBody MaintenanceRecord maintenanceRecord) {
+        if (maintenanceRecord.getTime() == null) {
+            maintenanceRecord.setTime(java.time.LocalDateTime.now());
+        }
+        return maintenanceRecordService.save(maintenanceRecord);
+    }
+
+    /**
+     * 更新维护记录
+     */
+    @PutMapping
+    public boolean update(@RequestBody MaintenanceRecord maintenanceRecord) {
+        return maintenanceRecordService.updateById(maintenanceRecord);
+    }
+
+    /**
+     * 删除维护记录
+     */
+    @DeleteMapping("/{id}")
+    public boolean delete(@PathVariable Long id) {
+        return maintenanceRecordService.removeById(id);
+    }
+
+    /**
      * 获取统计数据
      */
     @GetMapping("/stats")

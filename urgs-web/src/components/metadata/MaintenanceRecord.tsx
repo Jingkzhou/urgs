@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Filter, Database, MoreHorizontal, ChevronRight, LayoutList, List, RefreshCw, Calendar, ArrowUpRight, ArrowDownRight, User, X, Tag, BarChart3, TrendingUp, ChevronDown, Download, Check } from 'lucide-react';
+import { Search, Plus, Filter, Database, MoreHorizontal, ChevronRight, LayoutList, List, RefreshCw, Calendar, ArrowUpRight, ArrowDownRight, User, X, Tag, BarChart3, TrendingUp, ChevronDown, Download, Check, Edit, Trash2 } from 'lucide-react';
 import Pagination from '../common/Pagination';
 import AddMaintenanceModal from './AddMaintenanceModal';
 import MaintenanceDetailPanel, { MaintenanceRecordItem } from './MaintenanceDetailPanel';
@@ -53,6 +53,7 @@ const MaintenanceRecord: React.FC = () => {
     // 交互状态
     const [selectedRecord, setSelectedRecord] = useState<MaintenanceRecordItem | null>(null);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [editingRecord, setEditingRecord] = useState<MaintenanceRecordItem | null>(null);
 
     // Fetch Stats
     const fetchStats = async () => {
@@ -146,8 +147,42 @@ const MaintenanceRecord: React.FC = () => {
     // Handlers
     const handleAddSuccess = () => {
         setShowAddModal(false);
+        setEditingRecord(null);
         fetchRecords(1);
         fetchStats();
+    };
+
+    const handleEdit = (record: MaintenanceRecordItem, e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent row click
+        setEditingRecord(record);
+        setShowAddModal(true);
+    };
+
+    const handleDelete = async (id: string, e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent row click
+        if (!window.confirm('确定要删除这条维护记录吗？此操作不可恢复。')) return;
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch(`/api/metadata/maintenance-record/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                fetchRecords(page);
+                fetchStats();
+            } else {
+                alert('删除失败，请重试');
+            }
+        } catch (error) {
+            console.error('Delete failed:', error);
+            alert('删除失败，可能由于网络原因');
+        }
+    };
+
+    const handleOpenAddModal = () => {
+        setEditingRecord(null);
+        setShowAddModal(true);
     };
 
     const handleExport = () => {
@@ -246,7 +281,7 @@ const MaintenanceRecord: React.FC = () => {
                             </Auth>
                             <Auth code="metadata:maintenance:add">
                                 <button
-                                    onClick={() => setShowAddModal(true)}
+                                    onClick={handleOpenAddModal}
                                     className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium text-sm flex items-center gap-2 shadow-sm transition-colors"
                                 >
                                     <Plus size={16} />
@@ -390,6 +425,7 @@ const MaintenanceRecord: React.FC = () => {
                                         <th className="px-4 py-3">需求/计划</th>
                                         <th className="px-4 py-3">操作人</th>
                                         <th className="px-4 py-3 text-right">时间</th>
+                                        <th className="px-4 py-3 text-right">操作</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
@@ -451,6 +487,28 @@ const MaintenanceRecord: React.FC = () => {
                                             <td className="px-4 py-4 text-right whitespace-nowrap text-slate-400 font-mono text-xs">
                                                 {record.time.split('T')[0]}<br />
                                                 {record.time.split('T')[1]?.split('.')[0]}
+                                            </td>
+                                            <td className="px-4 py-4 text-right whitespace-nowrap">
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <Auth code="metadata:maintenance:edit">
+                                                        <button
+                                                            onClick={(e) => handleEdit(record, e)}
+                                                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                                            title="编辑"
+                                                        >
+                                                            <Edit size={14} />
+                                                        </button>
+                                                    </Auth>
+                                                    <Auth code="metadata:maintenance:delete">
+                                                        <button
+                                                            onClick={(e) => handleDelete(record.id, e)}
+                                                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                            title="删除"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </Auth>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
@@ -578,7 +636,7 @@ const MaintenanceRecord: React.FC = () => {
             </div>
 
             {/* Modals */}
-            {showAddModal && <AddMaintenanceModal onClose={() => setShowAddModal(false)} onSuccess={handleAddSuccess} />}
+            {showAddModal && <AddMaintenanceModal onClose={() => setShowAddModal(false)} onSuccess={handleAddSuccess} initialData={editingRecord} />}
         </div>
     );
 };

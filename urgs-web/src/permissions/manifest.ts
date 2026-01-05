@@ -165,6 +165,8 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '5-4-3', name: '维护记录', code: 'metadata:record', type: 'menu', path: '/metadata/record', level: 2, parentId: '5-4' },
     { id: '5-4-3-1', name: '导出记录', code: 'metadata:maintenance:export', type: 'button', path: '-', level: 3, parentId: '5-4-3' },
     { id: '5-4-3-2', name: '新增记录', code: 'metadata:maintenance:add', type: 'button', path: '-', level: 3, parentId: '5-4-3' },
+    { id: '5-4-3-3', name: '编辑记录', code: 'metadata:maintenance:edit', type: 'button', path: '-', level: 3, parentId: '5-4-3' },
+    { id: '5-4-3-4', name: '删除记录', code: 'metadata:maintenance:delete', type: 'button', path: '-', level: 3, parentId: '5-4-3' },
     { id: '5-5', name: '血缘管理', code: 'metadata:lineage', type: 'menu', path: '/metadata/lineage', level: 1, parentId: '5' },
     { id: '5-5-1', name: '血缘溯源', code: 'metadata:lineage:origin', type: 'menu', path: '/metadata/lineage/origin', level: 2, parentId: '5-5' },
     { id: '5-5-2', name: '影响分析', code: 'metadata:lineage:analysis', type: 'menu', path: '/metadata/lineage/analysis', level: 2, parentId: '5-5' },
