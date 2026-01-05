@@ -10,6 +10,7 @@ import { Copy, Check, Sparkles, SearchX, Quote, ChevronDown, ChevronRight } from
 import { motion, AnimatePresence } from 'framer-motion';
 import { Message } from '../../api/chat';
 import 'katex/dist/katex.min.css';
+import { copyToClipboard } from '../../utils/clipboard';
 
 interface ChatMessageProps {
     message: Message;
@@ -193,10 +194,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
 
 const CodeBlock = ({ language, value }: { language: string, value: string }) => {
     const [copied, setCopied] = React.useState(false);
-    const handleCopy = () => {
-        navigator.clipboard.writeText(value);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+    const handleCopy = async () => {
+        const success = await copyToClipboard(value);
+        if (success) {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }
     };
 
     return (
