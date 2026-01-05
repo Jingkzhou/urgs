@@ -138,7 +138,26 @@ public class RegTableController {
 
         com.baomidou.mybatisplus.extension.plugins.pagination.Page<RegTable> pageParam = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(
                 page, size);
-        return PageResult.of(regTableService.page(pageParam, query));
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<RegTable> pageResult = regTableService
+                .page(pageParam, query);
+        List<RegTable> records = pageResult.getRecords();
+        if (records != null && !records.isEmpty()) {
+            List<Long> tableIds = records.stream().map(RegTable::getId).collect(Collectors.toList());
+            // Fetch all elements for these tables
+            List<RegElement> elements = regElementService.list(new LambdaQueryWrapper<RegElement>()
+                    .in(RegElement::getTableId, tableIds));
+
+            Map<Long, Map<String, Long>> countMap = elements.stream()
+                    .collect(Collectors.groupingBy(RegElement::getTableId,
+                            Collectors.groupingBy(RegElement::getType, Collectors.counting())));
+
+            for (RegTable table : records) {
+                Map<String, Long> counts = countMap.getOrDefault(table.getId(), Collections.emptyMap());
+                table.setFieldCount(counts.getOrDefault("FIELD", 0L));
+                table.setIndicatorCount(counts.getOrDefault("INDICATOR", 0L));
+            }
+        }
+        return PageResult.of(pageResult);
     }
 
     /**

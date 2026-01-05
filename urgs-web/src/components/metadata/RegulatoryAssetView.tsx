@@ -881,7 +881,9 @@ const RegulatoryAssetView: React.FC = () => {
                                             <div className="w-64">中文名/表代码</div>
                                             <div className="w-24">报送频度</div>
                                             <div className="w-24">取数来源</div>
-                                            <div className="w-32">状态</div>
+                                            <div className="w-28">状态</div>
+                                            <div className="w-20 text-center">字段数</div>
+                                            <div className="w-20 text-center">指标数</div>
                                             <div className="flex-1">业务口径</div>
                                             <div className="w-40 text-right pr-4">操作</div>
                                         </div>
@@ -921,7 +923,13 @@ const RegulatoryAssetView: React.FC = () => {
                                                 </div>
                                                 <div className="w-24 text-xs font-semibold text-slate-600">{table.frequency || '-'}</div>
                                                 <div className="w-24 text-xs font-medium text-slate-500">{table.sourceType || '-'}</div>
-                                                <div className="w-32">{getAutoFetchStatusBadge(table.autoFetchStatus)}</div>
+                                                <div className="w-28">{getAutoFetchStatusBadge(table.autoFetchStatus)}</div>
+                                                <div className="w-20 text-center text-xs font-mono text-slate-500">
+                                                    {table.fieldCount !== undefined ? table.fieldCount : '-'}
+                                                </div>
+                                                <div className="w-20 text-center text-xs font-mono text-indigo-600 font-medium">
+                                                    {table.indicatorCount !== undefined ? table.indicatorCount : '-'}
+                                                </div>
                                                 <div className="flex-1 text-xs text-slate-400 line-clamp-1 pr-4" title={table.businessCaliber}>{table.businessCaliber || '-'}</div>
                                                 <div className="w-40 flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                                                     <button

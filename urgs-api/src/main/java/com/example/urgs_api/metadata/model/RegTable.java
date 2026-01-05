@@ -77,6 +77,12 @@ public class RegTable {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime updateTime;
     @TableField(exist = false)
+    private Long fieldCount;
+
+    @TableField(exist = false)
+    private Long indicatorCount;
+
+    @TableField(exist = false)
     private String reqId;
 
     @TableField(exist = false)

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Table2, Calendar, Database, Info, Edit, Clock, Trash2 } from 'lucide-react';
+import { Table2, Calendar, Database, Info, Edit, Clock, Trash2, Hash, Target } from 'lucide-react';
 import { RegTable } from '../types';
 import { getAutoFetchStatusBadge } from './RegAssetHelper';
 
@@ -61,6 +61,12 @@ export const ReportCard: React.FC<ReportCardProps> = ({
                 </div>
                 <div className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-50 text-slate-600 text-[10px] font-bold border border-slate-100">
                     <Database size={10} className="text-slate-400" /> {table.sourceType || '未知来源'}
+                </div>
+                <div className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-50 text-slate-600 text-[10px] font-bold border border-slate-100">
+                    <Hash size={10} className="text-slate-400" /> {table.fieldCount || 0}
+                </div>
+                <div className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-50 text-slate-600 text-[10px] font-bold border border-slate-100">
+                    <Target size={10} className="text-slate-400" /> {table.indicatorCount || 0}
                 </div>
             </div>
         </div>

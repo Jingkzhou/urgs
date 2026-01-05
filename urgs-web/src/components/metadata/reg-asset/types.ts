@@ -29,6 +29,8 @@ export interface RegTable {
     status?: number;
     reqId?: string;
     plannedDate?: string;
+    fieldCount?: number;
+    indicatorCount?: number;
 }
 
 export interface CodeTable {
