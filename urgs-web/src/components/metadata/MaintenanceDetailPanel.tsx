@@ -15,6 +15,8 @@ export interface MaintenanceRecordItem {
     reqId?: string;
     plannedDate?: string;
     script?: string;
+    systemCode?: string;
+    assetType?: string;
 }
 
 interface MaintenanceDetailPanelProps {
@@ -68,8 +70,8 @@ const MaintenanceDetailPanel: React.FC<MaintenanceDetailPanelProps> = ({ record,
                         <div className="flex justify-between items-center">
                             <span className="text-sm text-slate-500">变更类型</span>
                             <span className={`px-2 py-1 rounded-md text-xs font-bold ${record.modType.includes('新增') ? 'bg-emerald-100 text-emerald-700' :
-                                    record.modType.includes('删除') ? 'bg-red-100 text-red-700' :
-                                        'bg-blue-100 text-blue-700'
+                                record.modType.includes('删除') ? 'bg-red-100 text-red-700' :
+                                    'bg-blue-100 text-blue-700'
                                 }`}>
                                 {record.modType}
                             </span>

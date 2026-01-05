@@ -3,6 +3,7 @@ import { Search, Plus, Filter, Database, MoreHorizontal, ChevronRight, LayoutLis
 import Pagination from '../common/Pagination';
 import AddMaintenanceModal from './AddMaintenanceModal';
 import MaintenanceDetailPanel, { MaintenanceRecordItem } from './MaintenanceDetailPanel';
+import Auth from '../Auth';
 
 // 模拟统计数据（后续对接API）
 const MOCK_STATS = {
@@ -114,7 +115,9 @@ const MaintenanceRecord: React.FC = () => {
                     time: r.time || new Date().toISOString(),
                     reqId: r.reqId,
                     plannedDate: r.plannedDate,
-                    script: r.script
+                    script: r.script,
+                    systemCode: r.systemCode,
+                    assetType: r.assetType
                 };
             }).sort((a: any, b: any) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
@@ -236,16 +239,20 @@ const MaintenanceRecord: React.FC = () => {
                             <button onClick={() => fetchRecords()} className="p-2.5 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="刷新">
                                 <RefreshCw size={18} />
                             </button>
-                            <button onClick={handleExport} className="p-2.5 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="导出">
-                                <Download size={18} />
-                            </button>
-                            <button
-                                onClick={() => setShowAddModal(true)}
-                                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium text-sm flex items-center gap-2 shadow-sm transition-colors"
-                            >
-                                <Plus size={16} />
-                                新增记录
-                            </button>
+                            <Auth code="metadata:maintenance:export">
+                                <button onClick={handleExport} className="p-2.5 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="导出">
+                                    <Download size={18} />
+                                </button>
+                            </Auth>
+                            <Auth code="metadata:maintenance:add">
+                                <button
+                                    onClick={() => setShowAddModal(true)}
+                                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium text-sm flex items-center gap-2 shadow-sm transition-colors"
+                                >
+                                    <Plus size={16} />
+                                    新增记录
+                                </button>
+                            </Auth>
                         </div>
                     </div>
 
@@ -377,6 +384,8 @@ const MaintenanceRecord: React.FC = () => {
                                         <th className="px-4 py-3">表名/中文名</th>
                                         <th className="px-4 py-3">字段/中文名</th>
                                         <th className="px-4 py-3">变更类型</th>
+                                        <th className="px-4 py-3">所属系统</th>
+                                        <th className="px-4 py-3">资产类型</th>
                                         <th className="px-4 py-3">变更描述</th>
                                         <th className="px-4 py-3">需求/计划</th>
                                         <th className="px-4 py-3">操作人</th>
@@ -408,6 +417,14 @@ const MaintenanceRecord: React.FC = () => {
                                             <td className="px-4 py-4 whitespace-nowrap">
                                                 <span className={`px-2 py-1 rounded-md text-xs font-semibold border ${getModTypeColor(record.modType)}`}>
                                                     {record.modType}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-4 whitespace-nowrap text-slate-600 text-xs font-medium">
+                                                {record.systemCode || '-'}
+                                            </td>
+                                            <td className="px-4 py-4 whitespace-nowrap">
+                                                <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs font-medium border border-slate-200">
+                                                    {record.assetType === 'REG_ASSET' ? '监管资产' : (record.assetType === 'CODE_VAL' ? '值域代码' : record.assetType) || '-'}
                                                 </span>
                                             </td>
                                             <td className="px-4 py-4 text-slate-600 max-w-[300px] truncate" title={record.description}>

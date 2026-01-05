@@ -28,6 +28,8 @@ public class MaintenanceRecord {
     private String reqId;
     private String description;
     private String script;
+    private String systemCode;
+    private String assetType;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 

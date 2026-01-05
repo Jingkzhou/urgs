@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, Plus, X, Edit, Trash2, Upload, Download, Database, Layers, ChevronRight, ChevronDown, Folder } from 'lucide-react';
 import Pagination from '../common/Pagination';
 import { systemService, SsoConfig } from '../../services/systemService';
+import Auth from '../Auth';
 
 const CodeDirectory: React.FC = () => {
     // Code List State
@@ -380,13 +381,15 @@ const CodeDirectory: React.FC = () => {
                             className="w-full pl-9 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white"
                         />
                     </div>
-                    <button
-                        onClick={handleAddTable}
-                        className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 text-sm font-medium rounded-lg transition-colors border border-blue-200 border-dashed"
-                    >
-                        <Plus size={14} />
-                        新增值域
-                    </button>
+                    <Auth code="metadata:code:table:add">
+                        <button
+                            onClick={handleAddTable}
+                            className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 text-sm font-medium rounded-lg transition-colors border border-blue-200 border-dashed"
+                        >
+                            <Plus size={14} />
+                            新增值域
+                        </button>
+                    </Auth>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-1">
                     <div
@@ -438,9 +441,16 @@ const CodeDirectory: React.FC = () => {
                                                     <span className="text-[10px] opacity-70 font-mono">{table.tableCode}</span>
                                                 </div>
                                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button onClick={(e) => handleEditTable(e, table)} className="p-1 hover:bg-blue-100 rounded text-blue-600">
-                                                        <Edit size={12} />
-                                                    </button>
+                                                    <Auth code="metadata:code:table:edit">
+                                                        <button onClick={(e) => handleEditTable(e, table)} className="p-1 hover:bg-blue-100 rounded text-blue-600">
+                                                            <Edit size={12} />
+                                                        </button>
+                                                    </Auth>
+                                                    <Auth code="metadata:code:table:delete">
+                                                        <button onClick={(e) => handleDeleteTable(e, table.id)} className="p-1 hover:bg-red-100 rounded text-red-600">
+                                                            <Trash2 size={12} />
+                                                        </button>
+                                                    </Auth>
                                                 </div>
                                             </div>
                                         ))}
@@ -533,29 +543,35 @@ const CodeDirectory: React.FC = () => {
                             accept=".xlsx,.xls"
                             onChange={handleFileChange}
                         />
-                        <button
-                            className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors shadow-sm disabled:opacity-50"
-                            onClick={handleImportClick}
-                            disabled={isImporting}
-                        >
-                            {isImporting ? <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div> : <Upload size={16} />}
-                            导入
-                        </button>
-                        <button
-                            className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors shadow-sm"
-                            onClick={handleExport}
-                        >
-                            <Download size={16} />
-                            导出
-                        </button>
-                        {selectedTable && (
+                        <Auth code="metadata:code:import">
                             <button
-                                className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg transition-colors shadow-sm animate-in fade-in zoom-in duration-200"
-                                onClick={handleAddCode}
+                                className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors shadow-sm disabled:opacity-50"
+                                onClick={handleImportClick}
+                                disabled={isImporting}
                             >
-                                <Plus size={16} />
-                                新增代码
+                                {isImporting ? <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div> : <Upload size={16} />}
+                                导入
                             </button>
+                        </Auth>
+                        <Auth code="metadata:code:export">
+                            <button
+                                className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors shadow-sm"
+                                onClick={handleExport}
+                            >
+                                <Download size={16} />
+                                导出
+                            </button>
+                        </Auth>
+                        {selectedTable && (
+                            <Auth code="metadata:code:add">
+                                <button
+                                    className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg transition-colors shadow-sm animate-in fade-in zoom-in duration-200"
+                                    onClick={handleAddCode}
+                                >
+                                    <Plus size={16} />
+                                    新增代码
+                                </button>
+                            </Auth>
                         )}
                     </div>
                 </div>
@@ -595,12 +611,16 @@ const CodeDirectory: React.FC = () => {
                                     <td className="px-6 py-4 text-slate-500 whitespace-nowrap">{row.level}</td>
                                     <td className="px-6 py-4 text-slate-500 max-w-[200px] truncate" title={row.description}>{row.description}</td>
                                     <td className="px-6 py-4 text-right whitespace-nowrap">
-                                        <button className="text-blue-600 hover:text-blue-800 font-medium mr-3" onClick={() => handleEditCode(row)}>
-                                            <Edit size={16} />
-                                        </button>
-                                        <button className="text-red-600 hover:text-red-800 font-medium" onClick={() => handleDeleteCode(row.id)}>
-                                            <Trash2 size={16} />
-                                        </button>
+                                        <Auth code="metadata:code:edit">
+                                            <button className="text-blue-600 hover:text-blue-800 font-medium mr-3" onClick={() => handleEditCode(row)}>
+                                                <Edit size={16} />
+                                            </button>
+                                        </Auth>
+                                        <Auth code="metadata:code:delete">
+                                            <button className="text-red-600 hover:text-red-800 font-medium" onClick={() => handleDeleteCode(row.id)}>
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </Auth>
                                     </td>
                                 </tr>
                             ))}

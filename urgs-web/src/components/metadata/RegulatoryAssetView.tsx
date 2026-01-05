@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, Plus, Edit, Trash2, Server, Database, Layers, ArrowLeft, Table2, Hash, Target, Info, Download, Upload, RefreshCw, Clock, LayoutGrid, List, Filter, TrendingUp, CheckCircle, BarChart3, ChevronDown, ChevronUp } from 'lucide-react';
 import { systemService, SsoConfig } from '../../services/systemService';
 import Pagination from '../common/Pagination';
+import Auth from '../Auth';
 import MaintenanceHistoryModal from './MaintenanceHistoryModal';
 import { Stats, RegTable, CodeTable, RegElement } from './reg-asset/types';
 import { ReportCard } from './reg-asset/components/ReportCard';
@@ -760,20 +761,38 @@ const RegulatoryAssetView: React.FC = () => {
                                         accept=".xlsx, .xls"
                                         onChange={handleTableImport}
                                     />
-                                    <button onClick={() => tableFileInputRef.current?.click()} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="导入报表">
-                                        <Upload size={14} className="text-emerald-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">导入</span>
-                                    </button>
-                                    <button onClick={handleTableExport} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="导出报表">
-                                        <Download size={14} className="text-blue-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">导出{selectedTableIds.size > 0 ? `(${selectedTableIds.size})` : '全部'}</span>
-                                    </button>
-                                    {selectedTableIds.size > 0 && (
-                                        <button onClick={handleBatchDeleteTables} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-red-300 hover:text-red-700 hover:bg-red-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="批量删除">
-                                            <Trash2 size={14} className="text-red-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">删除({selectedTableIds.size})</span>
+                                    <Auth code="metadata:asset:import">
+                                        <button onClick={() => tableFileInputRef.current?.click()} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="导入报表">
+                                            <Upload size={14} className="text-emerald-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">导入</span>
                                         </button>
+                                    </Auth>
+                                    <Auth code="metadata:asset:export">
+                                        <button onClick={handleTableExport} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="导出报表">
+                                            <Download size={14} className="text-blue-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">导出{selectedTableIds.size > 0 ? `(${selectedTableIds.size})` : '全部'}</span>
+                                        </button>
+                                    </Auth>
+                                    {selectedTableIds.size > 0 && (
+                                        <Auth code="metadata:asset:delete">
+                                            <button onClick={handleBatchDeleteTables} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-red-300 hover:text-red-700 hover:bg-red-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="批量删除">
+                                                <Trash2 size={14} className="text-red-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">删除({selectedTableIds.size})</span>
+                                            </button>
+                                        </Auth>
                                     )}
-                                    <button onClick={handleAddTable} className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 hover:shadow-lg hover:shadow-indigo-200 flex items-center gap-1 px-3 transition-all">
-                                        <Plus size={16} /> <span className="text-sm font-medium">新增报表</span>
-                                    </button>
+                                    <Auth code="metadata:asset:sync">
+                                        <button onClick={handleSyncCodeSnippets} disabled={isSyncing} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-orange-300 hover:text-orange-700 hover:bg-orange-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="同步逻辑">
+                                            <RefreshCw size={14} className={`text-orange-500 group-hover:scale-110 transition-transform ${isSyncing ? 'animate-spin' : ''}`} /> <span className="text-sm">同步</span>
+                                        </button>
+                                    </Auth>
+                                    <Auth code="metadata:asset:script">
+                                        <button onClick={handleGenerateHiveSql} disabled={isGeneratingHiveSql} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-purple-300 hover:text-purple-700 hover:bg-purple-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="生成脚本">
+                                            <Database size={14} className="text-purple-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">脚本</span>
+                                        </button>
+                                    </Auth>
+                                    <Auth code="metadata:asset:add">
+                                        <button onClick={handleAddTable} className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 hover:shadow-lg hover:shadow-indigo-200 flex items-center gap-1 px-3 transition-all">
+                                            <Plus size={16} /> <span className="text-sm font-medium">新增报表</span>
+                                        </button>
+                                    </Auth>
                                 </div>
                             </div>
 
@@ -1297,8 +1316,12 @@ const RegulatoryAssetView: React.FC = () => {
                                             <Clock size={14} />
                                         </button>
                                         <button onClick={() => handleShowDetail('ELEMENT', el)} className="p-1.5 hover:bg-indigo-100 text-indigo-600 rounded" title="详情"><Info size={14} /></button>
-                                        <button onClick={() => handleEditElement(el)} className="p-1.5 hover:bg-slate-200 text-slate-600 rounded" title="编辑"><Edit size={14} /></button>
-                                        <button onClick={() => handleDeleteElement(el.id!)} className="p-1.5 hover:bg-red-50 text-red-500 rounded" title="删除"><Trash2 size={14} /></button>
+                                        <Auth code="metadata:asset:element:edit">
+                                            <button onClick={() => handleEditElement(el)} className="p-1.5 hover:bg-slate-200 text-slate-600 rounded" title="编辑"><Edit size={14} /></button>
+                                        </Auth>
+                                        <Auth code="metadata:asset:element:edit">
+                                            <button onClick={() => handleDeleteElement(el.id!)} className="p-1.5 hover:bg-red-50 text-red-500 rounded" title="删除"><Trash2 size={14} /></button>
+                                        </Auth>
                                     </div>
                                 </div>
                             ))}
@@ -1309,8 +1332,12 @@ const RegulatoryAssetView: React.FC = () => {
                                     </div>
                                     <p className="text-sm">该表暂无字段或指标</p>
                                     <div className="flex gap-3 mt-4">
-                                        <button onClick={() => handleAddElement('FIELD')} className="text-xs text-indigo-600 hover:underline">立即添加字段</button>
-                                        <button onClick={() => handleAddElement('INDICATOR')} className="text-xs text-purple-600 hover:underline">立即添加指标</button>
+                                        <Auth code="metadata:asset:element:edit">
+                                            <button onClick={() => handleAddElement('FIELD')} className="text-xs text-indigo-600 hover:underline">立即添加字段</button>
+                                        </Auth>
+                                        <Auth code="metadata:asset:element:edit">
+                                            <button onClick={() => handleAddElement('INDICATOR')} className="text-xs text-purple-600 hover:underline">立即添加指标</button>
+                                        </Auth>
                                     </div>
                                 </div>
                             )}

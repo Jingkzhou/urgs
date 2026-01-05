@@ -157,6 +157,8 @@ public class MaintenanceLogManager {
         if (entity instanceof RegTable table) {
             record.setTableName(table.getName());
             record.setTableCnName(table.getCnName());
+            record.setSystemCode(table.getSystemCode());
+            record.setAssetType("REG_ASSET");
             // Extract transient fields
             if (table.getReqId() != null)
                 record.setReqId(table.getReqId());
@@ -169,12 +171,14 @@ public class MaintenanceLogManager {
                 if (table != null) {
                     record.setTableName(table.getName());
                     record.setTableCnName(table.getCnName());
+                    record.setSystemCode(table.getSystemCode());
                 } else {
                     record.setTableName("Unknown Table (ID:" + element.getTableId() + ")");
                 }
             } catch (Exception e) {
                 record.setTableName("TableID:" + element.getTableId());
             }
+            record.setAssetType("REG_ASSET");
             record.setFieldName(element.getName());
             record.setFieldCnName(element.getCnName());
             // Extract transient fields
@@ -186,6 +190,8 @@ public class MaintenanceLogManager {
             record.setTableName("CodeTable:" + codeDir.getTableName());
             record.setFieldName(codeDir.getCode());
             record.setFieldCnName(codeDir.getName());
+            record.setAssetType("CODE_VAL");
+            record.setSystemCode(codeDir.getSystemCode());
         }
     }
 
