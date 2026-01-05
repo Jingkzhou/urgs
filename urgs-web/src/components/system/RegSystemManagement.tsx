@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Edit, Trash2, Save, X } from 'lucide-react';
 import { SsoConfig } from './types';
 import { ActionToolbar } from './Shared';
 import { IconRegistry, getIcon } from '../../utils/icons';
 import Auth from '../Auth';
+import Pagination from '../common/Pagination';
 
 const SsoForm: React.FC<{
     initialData?: SsoConfig | null;
@@ -162,6 +163,34 @@ const RegSystemManagement: React.FC = () => {
     const [showForm, setShowForm] = useState(false);
     const [editing, setEditing] = useState<SsoConfig | null>(null);
 
+    // Pagination & Search State
+    const [searchTerm, setSearchTerm] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
+
+    // Filter Items
+    const filteredItems = useMemo(() => {
+        return items.filter(item => {
+            const lowerTerm = searchTerm.toLowerCase();
+            return (
+                item.name.toLowerCase().includes(lowerTerm) ||
+                item.clientId.toLowerCase().includes(lowerTerm) ||
+                (item.network && item.network.toLowerCase().includes(lowerTerm))
+            );
+        });
+    }, [items, searchTerm]);
+
+    // Paginate Items
+    const paginatedItems = useMemo(() => {
+        const start = (currentPage - 1) * pageSize;
+        return filteredItems.slice(start, start + pageSize);
+    }, [filteredItems, currentPage, pageSize]);
+
+    // Reset page when search changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm]);
+
     const fetchItems = async () => {
         setLoading(true);
         setError(null);
@@ -264,7 +293,13 @@ const RegSystemManagement: React.FC = () => {
 
     return (
         <div className="space-y-4 animate-fade-in">
-            <ActionToolbar title="监管系统配置 (System)" placeholder="搜索系统名称或AppID..." codePrefix="sys:system" onAdd={() => openForm(null)} />
+            <ActionToolbar
+                title="监管系统配置 (System)"
+                placeholder="搜索系统名称或AppID..."
+                codePrefix="sys:system"
+                onAdd={() => openForm(null)}
+                onSearch={setSearchTerm}
+            />
             {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{error}</div>}
             {loading && <div className="text-sm text-slate-500 bg-slate-50 border border-slate-200 px-3 py-2 rounded">加载中...</div>}
 
@@ -283,7 +318,7 @@ const RegSystemManagement: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {items.map((item) => (
+                        {paginatedItems.map((item) => (
                             <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                                 <td className="px-4 py-3 font-medium text-slate-900 flex items-center gap-2">
                                     {(() => {
@@ -323,13 +358,26 @@ const RegSystemManagement: React.FC = () => {
                                 </td>
                             </tr>
                         ))}
-                        {items.length === 0 && !loading && (
+
+                        {filteredItems.length === 0 && !loading && (
                             <tr>
                                 <td colSpan={8} className="px-4 py-6 text-center text-slate-400">暂无数据，可点击新增</td>
                             </tr>
                         )}
                     </tbody>
                 </table>
+                <div className="px-4 border-t border-slate-200">
+                    <Pagination
+                        current={currentPage}
+                        total={filteredItems.length}
+                        pageSize={pageSize}
+                        onChange={(page, size) => {
+                            setCurrentPage(page);
+                            setPageSize(size);
+                        }}
+                        showSizeChanger
+                    />
+                </div>
             </div>
 
             {showForm && (
