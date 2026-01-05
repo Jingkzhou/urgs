@@ -1,5 +1,6 @@
 import React from 'react';
 import { Tag, Calendar, FileText } from 'lucide-react';
+import { AiOptimizeButton } from '../common/AiOptimizeButton';
 
 export interface ReqInfo {
     reqId: string;
@@ -64,8 +65,14 @@ const ReqInfoFormGroup: React.FC<ReqInfoFormGroupProps> = ({ data, onChange, tit
 
             {/* 需求变更描述 */}
             <div>
-                <label className="block text-xs font-medium text-amber-800/80 mb-1.5">
+                <label className="block text-xs font-medium text-amber-800/80 mb-1.5 flex justify-between items-center">
                     需求变更描述
+                    <AiOptimizeButton
+                        value={data.changeDescription || ''}
+                        onApply={(val) => handleChange('changeDescription', val)}
+                        promptGenerator={(val) => `你是一个项目经理。请优化以下【需求变更描述】，清晰阐述变更背景、变更内容及影响分析，格式规范。内容：${val}`}
+                        className="scale-90 origin-right"
+                    />
                 </label>
                 <div className="relative">
                     <FileText size={14} className="absolute left-3 top-3 text-slate-400" />

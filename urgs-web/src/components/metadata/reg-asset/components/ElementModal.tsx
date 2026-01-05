@@ -4,6 +4,7 @@ import Editor from '@monaco-editor/react';
 import { RegElement } from '../types';
 import { FormField } from './RegAssetHelper';
 import ReqInfoFormGroup from '../../ReqInfoFormGroup';
+import { AiOptimizeButton } from '../../../common/AiOptimizeButton';
 
 interface ElementModalProps {
     element: RegElement;
@@ -177,15 +178,36 @@ export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode,
                     <FormField label="发文标题" value={form.documentTitle} onChange={v => setForm({ ...form, documentTitle: v })} />
                     <FormField label="责任人" value={form.owner} onChange={v => setForm({ ...form, owner: v })} />
                     <div className="col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">业务口径</label>
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="block text-sm font-medium text-slate-700">业务口径</label>
+                            <AiOptimizeButton
+                                value={form.businessCaliber || ''}
+                                onApply={(val) => setForm({ ...form, businessCaliber: val })}
+                                promptGenerator={(val) => `你是一个金融监管报送专家。请优化以下【业务口径】描述，使其更加专业、准确，符合监管规范。保持语义不变，语言精炼。内容：${val}`}
+                            />
+                        </div>
                         <textarea className="w-full border border-slate-200 rounded-lg p-2 text-sm h-16 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.businessCaliber || ''} onChange={e => setForm({ ...form, businessCaliber: e.target.value })} />
                     </div>
                     <div className="col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">填报说明</label>
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="block text-sm font-medium text-slate-700">填报说明</label>
+                            <AiOptimizeButton
+                                value={form.fillInstruction || ''}
+                                onApply={(val) => setForm({ ...form, fillInstruction: val })}
+                                promptGenerator={(val) => `你是一个银行监管报送业务专家。请优化以下【填报说明】，语气亲切且权威，清晰指导业务人员如何填报，包含注意事项。内容：${val}`}
+                            />
+                        </div>
                         <textarea className="w-full border border-slate-200 rounded-lg p-2 text-sm h-16 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.fillInstruction || ''} onChange={e => setForm({ ...form, fillInstruction: e.target.value })} />
                     </div>
                     <div className="col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">开发备注</label>
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="block text-sm font-medium text-slate-700">开发备注</label>
+                            <AiOptimizeButton
+                                value={form.devNotes || ''}
+                                onApply={(val) => setForm({ ...form, devNotes: val })}
+                                promptGenerator={(val) => `你是一个资深数据工程师。请优化以下【开发备注】，使其技术表述更清晰、逻辑更严密，便于开发人员理解。内容：${val}`}
+                            />
+                        </div>
                         <textarea className="w-full border border-slate-200 rounded-lg p-2 text-sm h-16 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.devNotes || ''} onChange={e => setForm({ ...form, devNotes: e.target.value })} />
                     </div>
 
