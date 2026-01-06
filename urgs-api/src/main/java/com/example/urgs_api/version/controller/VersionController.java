@@ -58,6 +58,20 @@ public class VersionController {
         return ResponseEntity.ok().build();
     }
 
+    // ===== 扩展 API =====
+    @GetMapping("/repos/pr-counts")
+    public Map<Long, Integer> getRepoPrCounts(@RequestAttribute(value = "userId", required = false) Long userId) {
+        if (userId == null)
+            userId = 1L;
+        List<GitRepository> repos = gitRepositoryService.findAll(userId);
+
+        // Parallel stream for faster fetching
+        return repos.parallelStream()
+                .collect(java.util.stream.Collectors.toMap(
+                        GitRepository::getId,
+                        repo -> gitPlatformService.getOpenPrCount(repo.getId())));
+    }
+
     // ===== Git 仓库 API =====
 
     @GetMapping("/repos")

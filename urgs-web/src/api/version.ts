@@ -34,10 +34,14 @@ export interface GitRepository {
     lastSyncedAt?: string;
     createdAt?: string;
     updatedAt?: string;
+    pendingPrCount?: number;
 }
 
 export const getGitRepositories = (params?: { ssoId?: number; platform?: string }) =>
     get<GitRepository[]>('/api/version/repos', params || {});
+
+export const getRepoPrCounts = () =>
+    get<Record<string, number>>('/api/version/repos/pr-counts');
 
 export const getGitRepository = (id: number) =>
     get<GitRepository>(`/api/version/repos/${id}`);

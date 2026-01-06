@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Switch } from 'antd';
-import { Plus, GitBranch, Trash2, Edit, ExternalLink, RefreshCw, LayoutList, LayoutGrid, MoreHorizontal } from 'lucide-react';
-import { getGitRepositories, createGitRepository, updateGitRepository, deleteGitRepository, getSsoList, GitRepository, SsoConfig } from '@/api/version';
+import { Plus, GitBranch, Trash2, Edit, ExternalLink, RefreshCw, LayoutList, LayoutGrid, MoreHorizontal, GitPullRequest } from 'lucide-react';
+import { getGitRepositories, createGitRepository, updateGitRepository, deleteGitRepository, getSsoList, GitRepository, SsoConfig, getRepoPrCounts } from '@/api/version';
 import GitRepoDetail from './GitRepoDetail';
 import PageHeader from '../../common/PageHeader';
 import StatusTag from '../../common/StatusTag';
@@ -59,8 +59,17 @@ const GitRepoManagement: React.FC = () => {
     const fetchRepos = async () => {
         setLoading(true);
         try {
-            const data = await getGitRepositories();
-            setRepos(data || []);
+            const [data, prCounts] = await Promise.all([
+                getGitRepositories(),
+                getRepoPrCounts().catch(() => ({}))
+            ]);
+
+            const reposWithCounts = (data || []).map(repo => ({
+                ...repo,
+                pendingPrCount: prCounts ? prCounts[repo.id!] : 0
+            }));
+
+            setRepos(reposWithCounts);
         } catch (error) {
             message.error('获取仓库列表失败');
         } finally {
@@ -168,7 +177,6 @@ const GitRepoManagement: React.FC = () => {
     };
 
     const columns = [
-        // ... existing columns
         {
             title: '仓库名称',
             dataIndex: 'name',
@@ -179,6 +187,17 @@ const GitRepoManagement: React.FC = () => {
                     <span className="font-medium">{text}</span>
                 </div>
             ),
+        },
+        {
+            title: '待合并 PR',
+            dataIndex: 'pendingPrCount',
+            key: 'pendingPrCount',
+            width: 120,
+            render: (count: number) => count > 0 ? (
+                <Tag color="orange" className="flex items-center gap-1 w-fit rounded-full px-2">
+                    <GitPullRequest size={12} /> {count} 待合并
+                </Tag>
+            ) : <span className="text-slate-400 text-xs">-</span>,
         },
         {
             title: '平台',
@@ -227,6 +246,7 @@ const GitRepoManagement: React.FC = () => {
             ),
         },
     ];
+
 
     if (selectedRepo) {
         return (
@@ -298,6 +318,11 @@ const GitRepoManagement: React.FC = () => {
                                             <div className="flex items-center gap-2 mt-0.5">
                                                 <StatusTag status={repo.enabled ? 'enabled' : 'disabled'} />
                                                 <span className="text-xs text-slate-400 px-1.5 py-0.5 bg-slate-50 rounded border border-slate-100">{platform?.label}</span>
+                                                {(repo.pendingPrCount || 0) > 0 && (
+                                                    <span className="flex items-center gap-1 text-[10px] text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full border border-orange-100 font-medium">
+                                                        <GitPullRequest size={10} /> {repo.pendingPrCount}
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     </div>

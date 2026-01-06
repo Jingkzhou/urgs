@@ -437,6 +437,19 @@ public class GitPlatformService {
         }
     }
 
+    /**
+     * 获取开启状态的 PR 数量 (上限 100)
+     */
+    public int getOpenPrCount(Long repoId) {
+        try {
+            List<com.example.urgs_api.version.dto.GitPullRequest> prs = getPullRequests(repoId, "open", 1, 100);
+            return prs.size();
+        } catch (Exception e) {
+            log.warn("Failed to get open PR count for repo {}: {}", repoId, e.getMessage());
+            return 0;
+        }
+    }
+
     // ==================== Gitee ====================
 
     private List<GitFileEntry> getGiteeFileTree(GitRepository repo, String ref, String path) throws Exception {

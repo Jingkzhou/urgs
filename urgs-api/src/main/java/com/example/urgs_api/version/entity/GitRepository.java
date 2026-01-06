@@ -75,6 +75,10 @@ public class GitRepository {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    /** 待合并 PR 数量 (非持久化字段) */
+    @Transient
+    private Integer pendingPrCount;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
