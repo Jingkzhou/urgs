@@ -450,7 +450,91 @@ public class GitPlatformService {
         }
     }
 
-    // ==================== Gitee ====================
+    // ==================== PR Extended Operations ====================
+
+    /**
+     * 获取 PR 提交列表
+     */
+    public List<GitCommit> getPullRequestCommits(Long repoId, Long number) {
+        GitRepository repo = gitRepositoryService.findById(repoId)
+                .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
+
+        try {
+            return switch (repo.getPlatform().toLowerCase()) {
+                case "gitee" -> getGiteePullRequestCommits(repo, number);
+                // GitHub/GitLab placeholders
+                default -> new ArrayList<>();
+            };
+        } catch (Exception e) {
+            log.error("获取 PR 提交列表失败: repoId={}, number={}", repoId, number, e);
+            throw new RuntimeException("获取 PR 提交列表失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取 PR 文件变更
+     */
+    public List<GitCommitDiff> getPullRequestFiles(Long repoId, Long number) {
+        GitRepository repo = gitRepositoryService.findById(repoId)
+                .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
+
+        try {
+            return switch (repo.getPlatform().toLowerCase()) {
+                case "gitee" -> getGiteePullRequestFiles(repo, number);
+                // GitHub/GitLab placeholders
+                default -> new ArrayList<>();
+            };
+        } catch (Exception e) {
+            log.error("获取 PR 文件变更失败: repoId={}, number={}", repoId, number, e);
+            throw new RuntimeException("获取 PR 文件变更失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 合并 PR
+     */
+    public void mergePullRequest(Long repoId, Long number, String mergeMethod) {
+        GitRepository repo = gitRepositoryService.findById(repoId)
+                .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
+
+        String token = repo.getAccessToken(); // Use repo token
+        if (token == null || token.isEmpty()) {
+            throw new RuntimeException("Repo token required for merge");
+        }
+
+        try {
+            switch (repo.getPlatform().toLowerCase()) {
+                case "gitee" -> mergeGiteePullRequest(repo, number, mergeMethod, token);
+                default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
+            }
+        } catch (Exception e) {
+            log.error("合并 PR 失败: repoId={}, number={}", repoId, number, e);
+            throw new RuntimeException("合并 PR 失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 关闭 PR
+     */
+    public void closePullRequest(Long repoId, Long number) {
+        GitRepository repo = gitRepositoryService.findById(repoId)
+                .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
+
+        String token = repo.getAccessToken(); // Use repo token
+        if (token == null || token.isEmpty()) {
+            throw new RuntimeException("Repo token required for close");
+        }
+
+        try {
+            switch (repo.getPlatform().toLowerCase()) {
+                case "gitee" -> closeGiteePullRequest(repo, number, token);
+                default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
+            }
+        } catch (Exception e) {
+            log.error("关闭 PR 失败: repoId={}, number={}", repoId, number, e);
+            throw new RuntimeException("关闭 PR 失败: " + e.getMessage());
+        }
+    }
 
     private List<GitFileEntry> getGiteeFileTree(GitRepository repo, String ref, String path) throws Exception {
         // Gitee API: 获取仓库内容
@@ -768,6 +852,71 @@ public class GitPlatformService {
                 token, title, body != null ? body : "", head, base);
 
         httpPost(url, payload, null, null);
+    }
+
+    private List<GitCommit> getGiteePullRequestCommits(GitRepository repo, Long number) throws Exception {
+        String url = String.format("https://gitee.com/api/v5/repos/%s/pulls/%d/commits", repo.getFullName(), number);
+        if (repo.getAccessToken() != null && !repo.getAccessToken().isEmpty()) {
+            url += "?access_token=" + repo.getAccessToken();
+        }
+
+        log.info("Fetching PR commits from: {}", url);
+        JsonNode response = httpGet(url);
+        log.info("PR commits response size: {}", response.size());
+
+        List<GitCommit> commits = new ArrayList<>();
+        if (response.isArray()) {
+            for (JsonNode commit : response) {
+                JsonNode commitData = commit.path("commit");
+                JsonNode author = commitData.path("author");
+                commits.add(GitCommit.builder()
+                        .sha(commit.path("sha").asText().substring(0, 7))
+                        .fullSha(commit.path("sha").asText())
+                        .message(commitData.path("message").asText())
+                        .authorName(author.path("name").asText())
+                        .authorEmail(author.path("email").asText())
+                        .authorAvatar(commit.path("author").path("avatar_url").asText())
+                        .committedAt(author.path("date").asText())
+                        .build());
+            }
+        }
+        return commits;
+    }
+
+    private List<GitCommitDiff> getGiteePullRequestFiles(GitRepository repo, Long number) throws Exception {
+        String url = String.format("https://gitee.com/api/v5/repos/%s/pulls/%d/files", repo.getFullName(), number);
+        if (repo.getAccessToken() != null && !repo.getAccessToken().isEmpty()) {
+            url += "?access_token=" + repo.getAccessToken();
+        }
+        JsonNode response = httpGet(url);
+        List<GitCommitDiff> files = new ArrayList<>();
+        if (response.isArray()) {
+            for (JsonNode file : response) {
+                files.add(GitCommitDiff.builder()
+                        .newPath(file.path("filename").asText())
+                        .oldPath(file.path("filename").asText())
+                        .status(file.path("status").asText())
+                        .additions(file.path("additions").asInt())
+                        .deletions(file.path("deletions").asInt())
+                        .diff(file.path("patch").asText())
+                        .build());
+            }
+        }
+        return files;
+    }
+
+    private void mergeGiteePullRequest(GitRepository repo, Long number, String mergeMethod, String token)
+            throws Exception {
+        String url = String.format("https://gitee.com/api/v5/repos/%s/pulls/%d/merge", repo.getFullName(), number);
+        // Gitee properties: access_token, merge_method (merge, squash, rebase)
+        String body = String.format("{\"access_token\":\"%s\",\"merge_method\":\"%s\"}", token, mergeMethod);
+        httpPut(url, body, null, null);
+    }
+
+    private void closeGiteePullRequest(GitRepository repo, Long number, String token) throws Exception {
+        String url = String.format("https://gitee.com/api/v5/repos/%s/pulls/%d", repo.getFullName(), number);
+        String body = String.format("{\"access_token\":\"%s\",\"state\":\"closed\"}", token);
+        httpPatch(url, body, null, null);
     }
 
     private com.example.urgs_api.version.dto.GitPullRequest mapGiteeToGitPullRequest(JsonNode node) {
@@ -1714,9 +1863,50 @@ public class GitPlatformService {
         }
     }
 
-    /**
-     * 根据文件路径获取语言类型（用于语法高亮）
-     */
+    private void httpPut(String url, String body, String token, String authType) throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(30));
+
+        if (token != null && !token.isEmpty()) {
+            if ("PRIVATE-TOKEN".equals(authType)) {
+                builder.header("PRIVATE-TOKEN", token);
+            } else {
+                builder.header("Authorization", authType + " " + token);
+            }
+        }
+
+        builder.PUT(HttpRequest.BodyPublishers.ofString(body));
+
+        HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() >= 400) {
+            throw new RuntimeException("HTTP PUT " + response.statusCode() + ": " + response.body());
+        }
+    }
+
+    private void httpPatch(String url, String body, String token, String authType) throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(30));
+
+        if (token != null && !token.isEmpty()) {
+            if ("PRIVATE-TOKEN".equals(authType)) {
+                builder.header("PRIVATE-TOKEN", token);
+            } else {
+                builder.header("Authorization", authType + " " + token);
+            }
+        }
+
+        builder.method("PATCH", HttpRequest.BodyPublishers.ofString(body));
+
+        HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() >= 400) {
+            throw new RuntimeException("HTTP PATCH " + response.statusCode() + ": " + response.body());
+        }
+    }
+
     private String getLanguageFromPath(String path) {
         if (path == null || path.isEmpty())
             return "text";

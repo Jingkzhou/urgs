@@ -1,11 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Tabs, Input, Avatar, Tag, Dropdown } from 'antd';
 import { ArrowLeft, GitPullRequest, GitMerge, Check, X, Clock, MessageSquare, ChevronDown, MonitorCheck, ExternalLink } from 'lucide-react';
+import { message, Modal } from 'antd';
 import PRStatusBadge, { PRStatus } from './components/PRStatusBadge';
 import PRTimeline, { TimelineEvent } from './components/PRTimeline';
 import PRDiffView from './components/PRDiffView';
 import ReactMarkdown from 'react-markdown';
-import { getPullRequest, GitPullRequest as APIGitPullRequest } from '@/api/version';
+import {
+    getPullRequest,
+    getPullRequestCommits,
+    getPullRequestFiles,
+    mergePullRequest,
+    closePullRequest,
+    GitPullRequest as APIGitPullRequest,
+    GitCommit,
+    GitCommitDiff
+} from '@/api/version';
 
 interface PullRequestDetailProps {
     repoId: number;
@@ -13,57 +23,77 @@ interface PullRequestDetailProps {
     onBack: () => void;
 }
 
-const mockTimeline: TimelineEvent[] = [
-    {
-        id: '1',
-        type: 'comment',
-        user: { name: 'zhangsan', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=zhangsan' },
-        time: '2 天前',
-        content: 'There seems to be a conflict in `package.json`, please resolve it.',
-    },
-    {
-        id: '2',
-        type: 'commit',
-        user: { name: 'lisi' },
-        time: '1 天前',
-        sha: 'a1b2c3d',
-        content: 'fix: resolve merge conflicts',
-    },
-    {
-        id: '3',
-        type: 'review',
-        user: { name: 'wangwu', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=wangwu' },
-        time: '5 小时前',
-        status: 'approved',
-    }
-];
-
-const mockFiles = [
-    { name: 'src/components/Login.tsx', status: 'modified' as const, additions: 24, deletions: 12, diff: '@@ -12,7 +12,7 @@\n- const Login = () => {\n+ const Login = ({ onLogin }) => {\n     const [user, setUser] = useState(null);\n...' },
-    { name: 'src/utils/auth.ts', status: 'added' as const, additions: 45, deletions: 0, diff: '@@ -0,0 +1,45 @@\n+ export const checkAuth = () => {\n+     // ... implementation\n+ }' },
-];
 
 const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onBack }) => {
     const [activeTab, setActiveTab] = useState('conversation');
     const [pr, setPr] = useState<APIGitPullRequest | null>(null);
+    const [commits, setCommits] = useState<GitCommit[]>([]);
+    const [files, setFiles] = useState<GitCommitDiff[]>([]);
     const [loading, setLoading] = useState(false);
+    const [actionLoading, setActionLoading] = useState(false);
+
+    const fetchData = async () => {
+        setLoading(true);
+        try {
+            const [prRes, commitsRes, filesRes] = await Promise.all([
+                getPullRequest(repoId, prId),
+                getPullRequestCommits(repoId, prId),
+                getPullRequestFiles(repoId, prId)
+            ]);
+
+            if (prRes) setPr(prRes);
+            if (commitsRes) setCommits(commitsRes);
+            if (filesRes) setFiles(filesRes);
+        } catch (error) {
+            console.error(error);
+            message.error('加载 Pull Request 详情失败');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        const fetchPR = async () => {
-            setLoading(true);
-            try {
-                const res = await getPullRequest(repoId, prId);
-                if (res) {
-                    setPr(res);
-                }
-            } catch (error) {
-                console.error(error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchPR();
+        fetchData();
     }, [repoId, prId]);
+
+    const handleMerge = async () => {
+        Modal.confirm({
+            title: '确认合并',
+            content: '确定要合并此 Pull Request 吗？',
+            onOk: async () => {
+                setActionLoading(true);
+                try {
+                    await mergePullRequest(repoId, prId);
+                    message.success('合并成功');
+                    fetchData(); // Refresh status
+                } catch (error) {
+                    message.error('合并失败');
+                } finally {
+                    setActionLoading(false);
+                }
+            }
+        });
+    };
+
+    const handleClose = async () => {
+        Modal.confirm({
+            title: '确认关闭',
+            content: '确定要关闭此 Pull Request 吗？',
+            okType: 'danger',
+            onOk: async () => {
+                setActionLoading(true);
+                try {
+                    await closePullRequest(repoId, prId);
+                    message.success('已关闭 PR');
+                    fetchData(); // Refresh status
+                } catch (error) {
+                    message.error('关闭失败');
+                } finally {
+                    setActionLoading(false);
+                }
+            }
+        });
+    };
 
     if (loading) return <div className="p-10 text-center">Loading...</div>;
     if (!pr) return <div className="p-10 text-center">Pull Request not found</div>;
@@ -98,8 +128,17 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                         </div>
                         <div className="flex gap-2">
                             <Button>编辑</Button>
-                            <Button danger>关闭 PR</Button>
-                            <Button type="primary" className="bg-[#1a7f37] hover:bg-[#156d2e]" icon={<GitMerge size={16} />}>
+                            <Button danger onClick={handleClose} loading={actionLoading} disabled={status !== 'open'}>
+                                关闭 PR
+                            </Button>
+                            <Button
+                                type="primary"
+                                className="bg-[#1a7f37] hover:bg-[#156d2e]"
+                                icon={<GitMerge size={16} />}
+                                onClick={handleMerge}
+                                loading={actionLoading}
+                                disabled={status !== 'open'}
+                            >
                                 合并 Pull Request
                             </Button>
                         </div>
@@ -113,9 +152,9 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                         onChange={setActiveTab}
                         className="custom-tabs"
                         items={[
-                            { label: '对话 (3)', key: 'conversation' },
-                            { label: '提交 (2)', key: 'commits' },
-                            { label: '文件变更 (5)', key: 'files' },
+                            { label: '对话', key: 'conversation' },
+                            { label: `提交 (${commits.length})`, key: 'commits' },
+                            { label: `文件变更 (${files.length})`, key: 'files' },
                         ]}
                     />
                 </div>
@@ -140,7 +179,17 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                             </div>
 
                             {/* Timeline */}
-                            <PRTimeline events={mockTimeline} />
+                            {/* Timeline */}
+                            <PRTimeline events={
+                                commits.map(c => ({
+                                    id: c.sha,
+                                    type: 'commit',
+                                    user: { name: c.authorName, avatar: c.authorAvatar },
+                                    time: c.committedAt,
+                                    sha: c.sha,
+                                    content: c.message
+                                } as TimelineEvent))
+                            } />
 
                             {/* Comment Input */}
                             <div className="flex gap-4 mt-8 pt-6 border-t border-slate-200">
@@ -167,23 +216,29 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                     )}
 
                     {activeTab === 'files' && (
-                        <PRDiffView files={mockFiles} />
+                        <PRDiffView files={files.map(f => ({
+                            name: f.newPath || f.oldPath,
+                            status: f.status as any, // 'added' | 'modified' | 'deleted'
+                            additions: f.additions || 0,
+                            deletions: f.deletions || 0,
+                            diff: f.diff
+                        }))} />
                     )}
 
                     {activeTab === 'commits' && (
                         <div className="border border-slate-200 rounded-lg overflow-hidden divide-y divide-slate-100">
                             {/* Mock Commits Table */}
-                            {[1, 2].map(i => (
-                                <div key={i} className="p-4 hover:bg-slate-50 flex justify-between items-center group">
+                            {commits.map((commit, i) => (
+                                <div key={commit.sha} className="p-4 hover:bg-slate-50 flex justify-between items-center group">
                                     <div className="flex items-center gap-3">
                                         <GitPullRequest className="text-slate-400" size={16} />
                                         <div>
-                                            <div className="font-medium text-slate-700">feat: update auth logic</div>
-                                            <div className="text-xs text-slate-500">zhangsan committed 2 days ago</div>
+                                            <div className="font-medium text-slate-700">{commit.message}</div>
+                                            <div className="text-xs text-slate-500">{commit.authorName} committed on {commit.committedAt}</div>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2 font-mono text-sm text-slate-500">
-                                        <span>a1b2c3d</span>
+                                        <span>{commit.sha?.substring(0, 7)}</span>
                                         <Button size="small" type="text" icon={<ExternalLink size={14} />} className="opacity-0 group-hover:opacity-100" />
                                     </div>
                                 </div>

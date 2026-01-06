@@ -204,6 +204,18 @@ export const getPullRequest = (repoId: number, number: number) =>
 export const createPullRequest = (repoId: number, data: { title: string; body?: string; head: string; base: string }) =>
     post<void>(`/api/version/repos/${repoId}/pulls`, data);
 
+export const getPullRequestCommits = (repoId: number, number: number) =>
+    get<GitCommit[]>(`/api/version/repos/${repoId}/pulls/${number}/commits`);
+
+export const getPullRequestFiles = (repoId: number, number: number) =>
+    get<GitCommitDiff[]>(`/api/version/repos/${repoId}/pulls/${number}/files`);
+
+export const mergePullRequest = (repoId: number, number: number, mergeMethod: string = 'merge') =>
+    put<void>(`/api/version/repos/${repoId}/pulls/${number}/merge`, { mergeMethod });
+
+export const closePullRequest = (repoId: number, number: number) =>
+    put<void>(`/api/version/repos/${repoId}/pulls/${number}/close`, {});
+
 // ===== GitLab Sync API =====
 
 export interface GitProjectVO {

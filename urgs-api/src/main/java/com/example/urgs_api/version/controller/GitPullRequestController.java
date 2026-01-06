@@ -64,11 +64,60 @@ public class GitPullRequestController {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * 获取 PR 提交列表
+     */
+    @GetMapping("/{repoId}/pulls/{number}/commits")
+    public ResponseEntity<List<com.example.urgs_api.version.dto.GitCommit>> getPullRequestCommits(
+            @PathVariable Long repoId,
+            @PathVariable Long number) {
+        return ResponseEntity.ok(gitPlatformService.getPullRequestCommits(repoId, number));
+    }
+
+    /**
+     * 获取 PR 文件变更
+     */
+    @GetMapping("/{repoId}/pulls/{number}/files")
+    public ResponseEntity<List<com.example.urgs_api.version.dto.GitCommitDiff>> getPullRequestFiles(
+            @PathVariable Long repoId,
+            @PathVariable Long number) {
+        return ResponseEntity.ok(gitPlatformService.getPullRequestFiles(repoId, number));
+    }
+
+    /**
+     * 合并 PR
+     */
+    @PutMapping("/{repoId}/pulls/{number}/merge")
+    public ResponseEntity<Void> mergePullRequest(
+            @PathVariable Long repoId,
+            @PathVariable Long number,
+            @RequestBody(required = false) MergeRequest request) {
+        String method = request != null && request.getMergeMethod() != null ? request.getMergeMethod() : "merge";
+        gitPlatformService.mergePullRequest(repoId, number, method);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * 关闭 PR
+     */
+    @PutMapping("/{repoId}/pulls/{number}/close")
+    public ResponseEntity<Void> closePullRequest(
+            @PathVariable Long repoId,
+            @PathVariable Long number) {
+        gitPlatformService.closePullRequest(repoId, number);
+        return ResponseEntity.ok().build();
+    }
+
     @Data
     public static class CreatePullRequestRequest {
         private String title;
         private String body;
         private String head; // source branch
         private String base; // target branch
+    }
+
+    @Data
+    public static class MergeRequest {
+        private String mergeMethod;
     }
 }
