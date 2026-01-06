@@ -457,7 +457,16 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                     <GitPullRequest size={14} /> Pull Requests <Tag className="ml-1 bg-gradient-to-tr from-indigo-500 to-purple-600 text-white border-none text-xs px-1.5 py-0 rounded-full">0</Tag>
                 </span>
             ),
-            children: <div className="p-4 text-center text-slate-500">点击查看 Pull Request 列表</div>
+            children: (
+                <div
+                    className="p-8 text-center cursor-pointer hover:bg-slate-50 transition-colors rounded-lg border-2 border-dashed border-slate-200 hover:border-indigo-300"
+                    onClick={() => setViewingPullRequests(true)}
+                >
+                    <GitPullRequest size={48} className="mx-auto mb-4 text-indigo-400" />
+                    <div className="text-lg font-medium text-slate-600 mb-2">Pull Request 列表</div>
+                    <div className="text-slate-400">点击此区域查看所有 Pull Request</div>
+                </div>
+            )
         },
         {
             key: 'pipeline',
