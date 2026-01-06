@@ -96,7 +96,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
         if (viewingPullRequests) return;
 
         const crumbs = [
-            { id: 'root', label: 'DevOps' },
+            { id: 'root', label: '版本管理中心' },
             { id: 'list', label: '仓库管理', onClick: onBack },
             { id: 'repo', label: repo.name, onClick: backToCodeView }
         ];

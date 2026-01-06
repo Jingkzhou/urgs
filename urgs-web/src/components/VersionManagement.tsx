@@ -41,7 +41,7 @@ const VersionManagementContent: React.FC = () => {
         const currentTab = allTabs.find(tab => tab.id === activeTab);
         if (currentTab) {
             setBreadcrumbs([
-                { id: 'root', label: 'DevOps' },
+                { id: 'root', label: '版本管理中心' },
                 { id: currentTab.id, label: currentTab.label }
             ]);
         }
@@ -142,8 +142,8 @@ const VersionManagementContent: React.FC = () => {
                                     <span
                                         onClick={item.onClick}
                                         className={`text-xs font-bold uppercase tracking-wider ${index === items.length - 1
-                                                ? 'text-indigo-600'
-                                                : item.onClick ? 'text-slate-500 cursor-pointer hover:text-slate-700' : 'text-slate-500'
+                                            ? 'text-indigo-600'
+                                            : item.onClick ? 'text-slate-500 cursor-pointer hover:text-slate-700' : 'text-slate-500'
                                             }`}
                                     >
                                         {item.label}

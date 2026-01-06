@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Input, Button, Select, Avatar } from 'antd';
-import { Search, Filter, Plus, GitPullRequest, GitMerge, Clock, ArrowLeft } from 'lucide-react';
+import { Search, Filter, Plus, GitPullRequest, GitMerge, Clock, ArrowLeft, RefreshCw } from 'lucide-react';
 import PRStatusBadge, { PRStatus } from './components/PRStatusBadge';
 import { GitPullRequest as APIGitPullRequest, getPullRequests } from '@/api/version';
 import Pagination from '../../common/Pagination';
@@ -115,24 +115,7 @@ const PullRequestList: React.FC<PullRequestListProps> = ({ repoId, onBack, onCre
     return (
         <div className="bg-slate-50 min-h-screen -m-6 p-6">
             {/* Header */}
-            <div className="border-b border-slate-200 px-6 py-4 flex items-center justify-between bg-white -mx-6 -mt-6 mb-6">
-                <div className="flex items-center gap-3">
-                    <Button
-                        icon={<ArrowLeft size={16} />}
-                        onClick={onBack}
-                        className="flex items-center"
-                    >
-                        返回
-                    </Button>
-                    <h2 className="text-lg font-bold m-0 flex items-center gap-2">
-                        <GitPullRequest size={20} className="text-indigo-500" />
-                        Pull Request 列表 ({data.length})
-                    </h2>
-                </div>
-                <div className="flex items-center gap-2">
-                    <Button onClick={() => fetchData()} icon={<Clock size={14} />}>刷新</Button>
-                </div>
-            </div>
+
 
             {/* Top Stats Area */}
             <div className="grid grid-cols-4 gap-4 mb-6">
@@ -184,6 +167,13 @@ const PullRequestList: React.FC<PullRequestListProps> = ({ repoId, onBack, onCre
                         <Button icon={<Filter size={14} />} className="text-slate-600 border-slate-200 rounded-lg">高级筛选</Button>
                     </div>
                     <div className="flex items-center gap-3">
+                        <Button
+                            icon={<RefreshCw size={14} />}
+                            onClick={() => fetchData()}
+                            className="bg-white hover:bg-slate-50 border-slate-200 text-slate-600 rounded-lg shadow-sm"
+                        >
+                            刷新
+                        </Button>
                         <Select
                             defaultValue="newest"
                             style={{ width: 120 }}

@@ -20,7 +20,7 @@ const PullRequestModule: React.FC<PullRequestModuleProps> = ({ repoId, ssoId, re
 
     useEffect(() => {
         const crumbs = [
-            { id: 'root', label: 'DevOps' },
+            { id: 'root', label: '版本管理中心' },
             { id: 'list', label: '仓库管理', onClick: onBackToRepoList },
             { id: 'repo', label: repoName || 'Repository', onClick: onBack },
             { id: 'pr-list', label: 'Pull Request', onClick: () => handleBackToList() }
