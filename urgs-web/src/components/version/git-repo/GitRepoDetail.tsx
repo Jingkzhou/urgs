@@ -485,7 +485,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                     className="flex items-center gap-1 text-indigo-600"
                     onClick={() => setViewingPullRequests(true)}
                 >
-                    <GitPullRequest size={14} /> Pull Requests <Tag className="ml-1 bg-gradient-to-tr from-indigo-500 to-purple-600 text-white border-none text-xs px-1.5 py-0 rounded-full">0</Tag>
+                    <GitPullRequest size={14} /> Pull Requests <Tag className="ml-1 bg-gradient-to-tr from-indigo-500 to-purple-600 text-white border-none text-xs px-1.5 py-0 rounded-full">{repo.pendingPrCount || 0}</Tag>
                 </span>
             ),
             children: (
