@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Switch } from 'antd';
-import { Plus, GitBranch, Trash2, Edit, ExternalLink, RefreshCw } from 'lucide-react';
+import { Plus, GitBranch, Trash2, Edit, ExternalLink, RefreshCw, LayoutList, LayoutGrid, MoreHorizontal } from 'lucide-react';
 import { getGitRepositories, createGitRepository, updateGitRepository, deleteGitRepository, getSsoList, GitRepository, SsoConfig } from '@/api/version';
 import GitRepoDetail from './GitRepoDetail';
 import PageHeader from '../../common/PageHeader';
@@ -45,8 +45,10 @@ const GitRepoManagement: React.FC = () => {
     const [ssoList, setSsoList] = useState<SsoConfig[]>([]);
     const [loading, setLoading] = useState(false);
     const [modalVisible, setModalVisible] = useState(false);
+
     const [editingRepo, setEditingRepo] = useState<GitRepository | null>(null);
     const [selectedRepo, setSelectedRepo] = useState<GitRepository | null>(null);
+    const [viewMode, setViewMode] = useState<'list' | 'card'>('card');
     const [form] = Form.useForm();
 
     useEffect(() => {
@@ -242,6 +244,20 @@ const GitRepoManagement: React.FC = () => {
                 title="Git 仓库管理"
                 extra={
                     <Space>
+                        <div className="flex bg-slate-100 p-1 rounded-lg mr-2">
+                            <button
+                                onClick={() => setViewMode('card')}
+                                className={`p-1.5 rounded-md transition-all ${viewMode === 'card' ? 'bg-white shadow text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                <LayoutGrid size={16} />
+                            </button>
+                            <button
+                                onClick={() => setViewMode('list')}
+                                className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-white shadow text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                <LayoutList size={16} />
+                            </button>
+                        </div>
                         <Button icon={<RefreshCw className="w-4 h-4" />} onClick={fetchRepos}>刷新</Button>
                         <Button icon={<GitBranch className="w-4 h-4" />} onClick={handleOpenSync}>同步 GitLab 项目</Button>
                         <Button type="primary" icon={<Plus className="w-4 h-4" />} onClick={handleAdd}>
@@ -251,13 +267,85 @@ const GitRepoManagement: React.FC = () => {
                 }
             />
 
-            <Table
-                columns={columns}
-                dataSource={repos}
-                rowKey="id"
-                loading={loading}
-                pagination={{ pageSize: 10 }}
-            />
+            {viewMode === 'list' ? (
+                <Table
+                    columns={columns}
+                    dataSource={repos}
+                    rowKey="id"
+                    loading={loading}
+                    pagination={{ pageSize: 10 }}
+                />
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {repos.map(repo => {
+                        const platform = platformConfig[repo.platform as keyof typeof platformConfig];
+                        const ssoName = ssoList.find(s => s.id === repo.ssoId)?.name;
+
+                        return (
+                            <div key={repo.id} className="group bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md transition-all hover:border-indigo-200 flex flex-col h-full">
+                                <div className="flex justify-between items-start mb-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl bg-slate-50 border border-slate-100`}>
+                                            {platform?.icon || '⚫'}
+                                        </div>
+                                        <div>
+                                            <h3
+                                                className="font-bold text-slate-800 cursor-pointer hover:text-indigo-600 transition-colors line-clamp-1"
+                                                onClick={() => setSelectedRepo(repo)}
+                                            >
+                                                {repo.name}
+                                            </h3>
+                                            <div className="flex items-center gap-2 mt-0.5">
+                                                <StatusTag status={repo.enabled ? 'enabled' : 'disabled'} />
+                                                <span className="text-xs text-slate-400 px-1.5 py-0.5 bg-slate-50 rounded border border-slate-100">{platform?.label}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <Popconfirm title="确定删除？" onConfirm={() => handleDelete(repo.id!)}>
+                                        <button className="text-slate-300 hover:text-red-500 transition-colors p-1">
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </Popconfirm>
+                                </div>
+
+                                <div className="flex-1 space-y-3 mb-4">
+                                    <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 p-2 rounded border border-slate-100 font-mono break-all cursor-pointer hover:bg-slate-100" onClick={() => window.open(repo.cloneUrl, '_blank')}>
+                                        <ExternalLink size={12} className="shrink-0" />
+                                        <span className="truncate">{repo.cloneUrl?.replace(/^https?:\/\//, '')}</span>
+                                    </div>
+
+                                    <div className="flex items-center justify-between text-xs">
+                                        <div className="flex items-center gap-1.5 text-slate-500">
+                                            <GitBranch size={14} />
+                                            <span>{repo.defaultBranch || 'master'}</span>
+                                        </div>
+                                        {ssoName && (
+                                            <Tag className="mr-0 border-transparent bg-indigo-50 text-indigo-600">{ssoName}</Tag>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 pt-3 border-t border-slate-100 mt-auto">
+                                    <Button
+                                        type="primary"
+                                        ghost
+                                        size="small"
+                                        className="flex-1"
+                                        onClick={() => setSelectedRepo(repo)}
+                                    >
+                                        进入仓库
+                                    </Button>
+                                    <Button
+                                        icon={<Edit size={14} />}
+                                        size="small"
+                                        onClick={() => handleEdit(repo)}
+                                    />
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
 
             <Modal
                 title={editingRepo ? '编辑仓库' : '添加仓库'}
