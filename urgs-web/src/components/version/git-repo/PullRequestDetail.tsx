@@ -14,7 +14,8 @@ import {
     closePullRequest,
     GitPullRequest as APIGitPullRequest,
     GitCommit,
-    GitCommitDiff
+    GitCommitDiff,
+    getRepoCommits
 } from '@/api/version';
 
 interface PullRequestDetailProps {
@@ -35,15 +36,21 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [prRes, commitsRes, filesRes] = await Promise.all([
-                getPullRequest(repoId, prId),
+            // 1. Fetch PR details first to get info
+            const prRes = await getPullRequest(repoId, prId);
+            if (!prRes) return;
+
+            setPr(prRes);
+
+            // 2. Fetch Commits (using PR specific API to show only source branch commits) and Files in parallel
+            const [commitsRes, filesRes] = await Promise.all([
                 getPullRequestCommits(repoId, prId),
                 getPullRequestFiles(repoId, prId)
             ]);
 
-            if (prRes) setPr(prRes);
             if (commitsRes) setCommits(commitsRes);
             if (filesRes) setFiles(filesRes);
+
         } catch (error) {
             console.error(error);
             message.error('加载 Pull Request 详情失败');
@@ -203,7 +210,7 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                                         <Input.TextArea
                                             rows={4}
                                             placeholder="留下评论..."
-                                            bordered={false}
+                                            variant="borderless"
                                             className="p-3"
                                         />
                                         <div className="flex justify-end p-2 bg-slate-50 border-t border-slate-200">

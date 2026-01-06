@@ -123,7 +123,7 @@ const CreatePullRequest: React.FC<CreatePullRequestProps> = ({ repoId, onCancel,
                             <Input.TextArea
                                 rows={10}
                                 placeholder="详细描述您的更改..."
-                                bordered={false}
+                                variant="borderless"
                                 className="p-4"
                                 value={description}
                                 onChange={e => setDescription(e.target.value)}

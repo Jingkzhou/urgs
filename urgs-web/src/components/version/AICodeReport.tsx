@@ -416,7 +416,7 @@ const AICodeReport: React.FC = () => {
                 onCancel={() => setSelectedIssue(null)}
                 width={700}
                 centered
-                bodyStyle={{ backgroundColor: '#fff', padding: '0px' }}
+                styles={{ body: { backgroundColor: '#fff', padding: '0px' } }}
                 closeIcon={<span className="text-slate-400 hover:text-slate-600">×</span>}
                 className="light-diagnostic-modal"
             >

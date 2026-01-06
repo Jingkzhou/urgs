@@ -23,7 +23,7 @@ const PullRequestModule: React.FC<PullRequestModuleProps> = ({ repoId, ssoId, re
             { id: 'root', label: '版本管理中心' },
             { id: 'list', label: '仓库管理', onClick: onBackToRepoList },
             { id: 'repo', label: repoName || 'Repository', onClick: onBack },
-            { id: 'pr-list', label: 'Pull Request', onClick: () => handleBackToList() }
+            { id: 'pr-list', label: 'Pull Request', onClick: () => setView('list') } // Use internal handler for PR List
         ];
 
         if (view === 'create') {
@@ -33,7 +33,7 @@ const PullRequestModule: React.FC<PullRequestModuleProps> = ({ repoId, ssoId, re
         }
 
         setBreadcrumbs(crumbs);
-    }, [view, selectedPRId, repoName, onBack, onBackToRepoList]);
+    }, [view, selectedPRId, repoName]); // Removed functions from dependency array to prevent loops
 
     const handleCreateClick = () => {
         setView('create');

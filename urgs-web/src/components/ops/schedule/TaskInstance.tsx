@@ -81,7 +81,7 @@ const InstanceDetailDrawer: React.FC<{
             width={560}
             closeIcon={<X size={20} className="text-slate-400 hover:text-slate-600" />}
             headerStyle={{ borderBottom: '1px solid #f1f5f9', padding: '20px 24px' }}
-            bodyStyle={{ padding: '0' }}
+            styles={{ body: { padding: '0' } }}
         >
             <div className="h-full flex flex-col bg-slate-50/30">
                 <div className="p-6 space-y-6">
@@ -1248,8 +1248,8 @@ const LogViewer: React.FC<{ content: string }> = ({ content }) => {
                 <div key={sIdx} className="mb-6 last:mb-0 animate-in fade-in slide-in-from-bottom-2 duration-500">
                     {/* Session Header */}
                     <div className={`flex items-center gap-2 px-3 py-2 rounded-lg mb-2 border-l-4 ${session.status === 'SUCCESS' ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400' :
-                            session.status === 'FAIL' ? 'bg-red-500/10 border-red-500 text-red-400' :
-                                'bg-blue-500/10 border-blue-500 text-blue-400'
+                        session.status === 'FAIL' ? 'bg-red-500/10 border-red-500 text-red-400' :
+                            'bg-blue-500/10 border-blue-500 text-blue-400'
                         }`}>
                         <div className="font-bold flex-1 truncate">{session.title.replace(/.*Executing task instance: \d+/, 'Start Execution')}</div>
                         <div className="text-[10px] opacity-70 uppercase tracking-wider">{session.status || 'INFO'}</div>
