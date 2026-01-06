@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { GitBranch, ShieldCheck, Megaphone, BarChart3, Folder, Terminal, Gauge, ChevronRight, LayoutGrid, Timer, GitPullRequest, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { hasPermission } from '../utils/permission';
+import { BreadcrumbProvider, useBreadcrumbs } from '../context/BreadcrumbContext';
 import AppSystemList from './version/AppSystemList';
 import AICodeReport from './version/AICodeReport';
 import NoticeManagement from './version/NoticeManagement';
@@ -9,7 +10,7 @@ import ReleaseStats from './version/ReleaseStats';
 import VersionOverview from './version/VersionOverview';
 import GitRepoManagement from './version/git-repo/GitRepoManagement';
 
-const VersionManagement: React.FC = () => {
+const VersionManagementContent: React.FC = () => {
     const [activeTab, setActiveTab] = useState<string>('');
 
     const TABS = [
@@ -33,6 +34,18 @@ const VersionManagement: React.FC = () => {
     ];
 
     const ActiveComponent = allTabs.find(tab => tab.id === activeTab)?.component;
+
+    const { items, setBreadcrumbs } = useBreadcrumbs();
+
+    useEffect(() => {
+        const currentTab = allTabs.find(tab => tab.id === activeTab);
+        if (currentTab) {
+            setBreadcrumbs([
+                { id: 'root', label: 'DevOps' },
+                { id: currentTab.id, label: currentTab.label }
+            ]);
+        }
+    }, [activeTab, setBreadcrumbs]);
 
     return (
         <div className="flex h-[calc(100vh-120px)] bg-slate-50 rounded-2xl overflow-hidden border border-slate-200 shadow-xl shadow-slate-200/50 font-sans">
@@ -123,11 +136,20 @@ const VersionManagement: React.FC = () => {
                         <div className="flex items-center gap-2 text-slate-400">
                             <Folder size={16} />
                             <span className="text-xs font-mono">/</span >
-                            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">DevOps</span>
-                            <span className="text-xs font-mono">/</span>
-                            <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">
-                                {allTabs.find(t => t.id === activeTab)?.label || '未知模块'}
-                            </span>
+                            {items.map((item, index) => (
+                                <React.Fragment key={item.id}>
+                                    {index > 0 && <span className="text-xs font-mono">/</span>}
+                                    <span
+                                        onClick={item.onClick}
+                                        className={`text-xs font-bold uppercase tracking-wider ${index === items.length - 1
+                                                ? 'text-indigo-600'
+                                                : item.onClick ? 'text-slate-500 cursor-pointer hover:text-slate-700' : 'text-slate-500'
+                                            }`}
+                                    >
+                                        {item.label}
+                                    </span>
+                                </React.Fragment>
+                            ))}
                         </div>
                     </div>
 
@@ -170,6 +192,14 @@ const VersionManagement: React.FC = () => {
                 </div>
             </main>
         </div>
+    );
+};
+
+const VersionManagement: React.FC = () => {
+    return (
+        <BreadcrumbProvider>
+            <VersionManagementContent />
+        </BreadcrumbProvider>
     );
 };
 

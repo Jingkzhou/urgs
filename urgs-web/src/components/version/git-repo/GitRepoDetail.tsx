@@ -4,6 +4,7 @@ import { ArrowLeft, GitBranch, Copy, ExternalLink, Settings, ShieldCheck, Play, 
 
 const { Option } = Select;
 import { GitRepository, SsoConfig, GitFileEntry, GitBranch as GitBranchType, GitCommit, GitFileContent, GitCommitDiff, getRepoFileTree, getRepoBranches, getRepoLatestCommit, getRepoFileContent, getRepoCommitDetail } from '@/api/version';
+import { useBreadcrumbs } from '../../../context/BreadcrumbContext';
 import CommitList from './CommitList';
 import CommitDetail from './CommitDetail';
 import BranchList from './BranchList';
@@ -75,6 +76,8 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
     const [viewingFile, setViewingFile] = useState<GitFileContent | null>(null);
     const [fileLoading, setFileLoading] = useState(false);
 
+
+
     // Commit History & Diff
     // Commit History & Diff
     const [viewingCommitList, setViewingCommitList] = useState(false);
@@ -85,6 +88,33 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
     const [commitsLoading, setCommitsLoading] = useState(false); // Used for detail loading now
 
     const ssoName = ssoList.find(s => s.id === repo.ssoId)?.name || '未知系统';
+
+    const { setBreadcrumbs } = useBreadcrumbs();
+
+    // Context-based Breadcrumbs
+    useEffect(() => {
+        if (viewingPullRequests) return;
+
+        const crumbs = [
+            { id: 'root', label: 'DevOps' },
+            { id: 'list', label: '仓库管理', onClick: onBack },
+            { id: 'repo', label: repo.name, onClick: backToCodeView }
+        ];
+
+        // Add sub-view crumbs if needed
+        if (viewingCommitList) {
+            crumbs.push({ id: 'commits', label: '提交记录' });
+        } else if (viewingBranchList) {
+            crumbs.push({ id: 'branches', label: '分支列表' });
+        } else if (viewingTagList) {
+            crumbs.push({ id: 'tags', label: '标签列表' });
+        } else if (viewingFile) {
+            // Optional: Add file name as crumb
+            crumbs.push({ id: 'file', label: viewingFile.name });
+        }
+
+        setBreadcrumbs(crumbs);
+    }, [repo.name, onBack, viewingPullRequests, viewingCommitList, viewingBranchList, viewingTagList, viewingFile]);
 
     // 加载分支
     useEffect(() => {
@@ -166,6 +196,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
         setViewingBranchList(false);
         setViewingTagList(false);
         setViewingCommitList(false);
+        // Explicitly set breadcrumbs for code view will happen via effect
     };
 
 
@@ -532,7 +563,9 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
             <PullRequestModule
                 repoId={repo.id!}
                 ssoId={repo.ssoId}
+                repoName={repo.name}
                 onBack={backToCodeView}
+                onBackToRepoList={onBack}
             />
         );
     }
