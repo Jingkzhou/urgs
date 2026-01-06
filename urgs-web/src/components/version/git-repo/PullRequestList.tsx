@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Input, Button, Select, Avatar, Pagination } from 'antd';
-import { Search, Filter, Plus, GitPullRequest, GitMerge, Clock } from 'lucide-react';
+import { Input, Button, Select, Avatar } from 'antd';
+import { Search, Filter, Plus, GitPullRequest, GitMerge, Clock, ArrowLeft } from 'lucide-react';
 import PRStatusBadge, { PRStatus } from './components/PRStatusBadge';
 import { GitPullRequest as APIGitPullRequest, getPullRequests } from '@/api/version';
+import Pagination from '../../common/Pagination';
 
 interface PullRequestListProps {
     repoId: number;
@@ -16,7 +17,18 @@ const PullRequestList: React.FC<PullRequestListProps> = ({ repoId, onBack, onCre
     const [searchText, setSearchText] = useState('');
     const [loading, setLoading] = useState(false);
     const [data, setData] = useState<APIGitPullRequest[]>([]);
-    const [stats, setStats] = useState({ open: 0, merged: 0, closed: 0 });
+    const [stats, setStats] = useState({
+        open: 0,
+        merged: 0,
+        todayMerged: 0,
+        pending: 0,
+        avgDays: 0,
+        closed: 0
+    });
+
+    // 分页状态
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
 
     const fetchData = async () => {
         setLoading(true);
@@ -25,10 +37,33 @@ const PullRequestList: React.FC<PullRequestListProps> = ({ repoId, onBack, onCre
             if (res) {
                 setData(res);
 
+                // 基础状态统计
                 const open = res.filter(p => p.state === 'open' || p.state === 'opened').length;
                 const merged = res.filter(p => p.state === 'merged').length;
                 const closed = res.filter(p => p.state === 'closed').length;
-                setStats({ open, merged, closed });
+
+                // 今日合并数
+                const today = new Date().toDateString();
+                const todayMerged = res.filter(p =>
+                    p.state === 'merged' && p.mergedAt && new Date(p.mergedAt).toDateString() === today
+                ).length;
+
+                // 待审核 = 开启中的 PR
+                const pending = open;
+
+                // 平均周期（天）
+                const mergedPRs = res.filter(p => p.state === 'merged' && p.mergedAt && p.createdAt);
+                let avgDays = 0;
+                if (mergedPRs.length > 0) {
+                    const totalDays = mergedPRs.reduce((sum, p) => {
+                        const created = new Date(p.createdAt).getTime();
+                        const mergedTime = new Date(p.mergedAt!).getTime();
+                        return sum + (mergedTime - created) / (1000 * 60 * 60 * 24);
+                    }, 0);
+                    avgDays = Math.round(totalDays / mergedPRs.length * 10) / 10;
+                }
+
+                setStats({ open, merged, todayMerged, pending, avgDays, closed });
             }
         } catch (error) {
             console.error(error);
@@ -56,6 +91,14 @@ const PullRequestList: React.FC<PullRequestListProps> = ({ repoId, onBack, onCre
         return true;
     });
 
+    // 分页后的数据
+    const paginatedPRs = filteredPRs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+    // 当筛选条件变化时重置页码
+    React.useEffect(() => {
+        setCurrentPage(1);
+    }, [filterStatus, searchText]);
+
     const StatusFilterButton = ({ status, label, count, active }: any) => (
         <button
             onClick={() => setFilterStatus(status)}
@@ -71,6 +114,26 @@ const PullRequestList: React.FC<PullRequestListProps> = ({ repoId, onBack, onCre
 
     return (
         <div className="bg-slate-50 min-h-screen -m-6 p-6">
+            {/* Header */}
+            <div className="border-b border-slate-200 px-6 py-4 flex items-center justify-between bg-white -mx-6 -mt-6 mb-6">
+                <div className="flex items-center gap-3">
+                    <Button
+                        icon={<ArrowLeft size={16} />}
+                        onClick={onBack}
+                        className="flex items-center"
+                    >
+                        返回
+                    </Button>
+                    <h2 className="text-lg font-bold m-0 flex items-center gap-2">
+                        <GitPullRequest size={20} className="text-indigo-500" />
+                        Pull Request 列表 ({data.length})
+                    </h2>
+                </div>
+                <div className="flex items-center gap-2">
+                    <Button onClick={() => fetchData()} icon={<Clock size={14} />}>刷新</Button>
+                </div>
+            </div>
+
             {/* Top Stats Area */}
             <div className="grid grid-cols-4 gap-4 mb-6">
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
@@ -82,19 +145,19 @@ const PullRequestList: React.FC<PullRequestListProps> = ({ repoId, onBack, onCre
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                     <div className="text-slate-500 text-sm font-medium mb-1">今日合并</div>
                     <div className="text-2xl font-bold text-green-600 flex items-end gap-2">
-                        {stats.merged} <span className="text-slate-400 text-sm font-normal mb-1">Merged</span>
+                        {stats.todayMerged} <span className="text-slate-400 text-sm font-normal mb-1">Merged</span>
                     </div>
                 </div>
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                     <div className="text-slate-500 text-sm font-medium mb-1">待审核</div>
                     <div className="text-2xl font-bold text-orange-500 flex items-end gap-2">
-                        - <span className="text-slate-400 text-sm font-normal mb-1">Pending</span>
+                        {stats.pending} <span className="text-slate-400 text-sm font-normal mb-1">Pending</span>
                     </div>
                 </div>
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                     <div className="text-slate-500 text-sm font-medium mb-1">平均周期</div>
                     <div className="text-2xl font-bold text-blue-600 flex items-end gap-2">
-                        - <span className="text-slate-400 text-sm font-normal mb-1">天</span>
+                        {stats.avgDays > 0 ? stats.avgDays : '-'} <span className="text-slate-400 text-sm font-normal mb-1">天</span>
                     </div>
                 </div>
             </div>
@@ -154,7 +217,7 @@ const PullRequestList: React.FC<PullRequestListProps> = ({ repoId, onBack, onCre
                             <p className="text-slate-400 mt-1">尝试调整筛选条件或创建一个新的 PR</p>
                         </div>
                     ) : (
-                        filteredPRs.map(pr => {
+                        paginatedPRs.map(pr => {
                             let status: PRStatus = 'open';
                             const state = pr.state === 'opened' ? 'open' : pr.state;
                             if (state === 'closed') status = 'closed';
@@ -216,9 +279,21 @@ const PullRequestList: React.FC<PullRequestListProps> = ({ repoId, onBack, onCre
                 </div>
 
                 {/* Pagination */}
-                <div className="p-4 border-t border-slate-200 flex justify-center">
-                    <Pagination defaultCurrent={1} total={50} size="small" />
-                </div>
+                {filteredPRs.length > 0 && (
+                    <div className="p-4 border-t border-slate-200">
+                        <Pagination
+                            current={currentPage}
+                            total={filteredPRs.length}
+                            pageSize={pageSize}
+                            showSizeChanger
+                            pageSizeOptions={[10, 20, 50, 100]}
+                            onChange={(page, size) => {
+                                setCurrentPage(page);
+                                setPageSize(size);
+                            }}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );

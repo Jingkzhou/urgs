@@ -49,7 +49,7 @@ const VersionManagement: React.FC = () => {
                         <GitBranch className="w-5 h-5 text-white" />
                     </div>
                     <div>
-                        <h2 className="text-slate-800 font-bold tracking-tight text-sm">AI走查报告</h2>
+                        <h2 className="text-slate-800 font-bold tracking-tight text-sm">版本管理中心</h2>
                         <p className="text-[10px] text-slate-400 font-mono tracking-wider">Diagnostic Center</p>
                     </div>
                 </div>
