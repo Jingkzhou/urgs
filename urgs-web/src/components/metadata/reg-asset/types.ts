@@ -21,7 +21,7 @@ export interface RegTable {
     sourceType?: string;
     autoFetchStatus?: string;
     documentNo?: string;
-    documentTitle?: string;
+
     effectiveDate?: string;
     businessCaliber?: string;
     devNotes?: string;
@@ -59,7 +59,7 @@ export interface RegElement {
     valueRange?: string;
     validationRule?: string;
     documentNo?: string;
-    documentTitle?: string;
+
     effectiveDate?: string;
     businessCaliber?: string;
     fillInstruction?: string;

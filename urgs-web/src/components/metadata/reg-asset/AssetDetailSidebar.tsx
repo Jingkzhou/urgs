@@ -173,7 +173,7 @@ export const AssetDetailSidebar: React.FC<AssetDetailSidebarProps> = ({ isOpen, 
                         </div>
 
                         <DetailRow label="发文号" icon={<FileText size={14} />} value={data.documentNo} fullWidth />
-                        <DetailRow label="发文标题" value={data.documentTitle} fullWidth />
+
                     </AccordionSection>
 
                     {/* Section 3: Technical Attributes */}

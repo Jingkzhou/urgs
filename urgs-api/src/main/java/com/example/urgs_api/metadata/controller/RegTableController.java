@@ -639,7 +639,7 @@ public class RegTableController {
                 dto.setSourceType(table.getSourceType());
                 dto.setAutoFetchStatus(table.getAutoFetchStatus());
                 dto.setDocumentNo(table.getDocumentNo());
-                dto.setDocumentTitle(table.getDocumentTitle());
+
                 dto.setEffectiveDate(
                         table.getEffectiveDate() != null ? table.getEffectiveDate().format(dateFormatter) : null);
                 dto.setBusinessCaliber(safeTruncate(table.getBusinessCaliber()));
@@ -690,7 +690,7 @@ public class RegTableController {
                     dto.setValueRange(el.getValueRange());
                     dto.setValidationRule(el.getValidationRule());
                     dto.setDocumentNo(el.getDocumentNo());
-                    dto.setDocumentTitle(el.getDocumentTitle());
+
                     dto.setEffectiveDate(
                             el.getEffectiveDate() != null ? el.getEffectiveDate().format(dateFormatter) : null);
                     dto.setBusinessCaliber(safeTruncate(el.getBusinessCaliber()));
@@ -774,7 +774,6 @@ public class RegTableController {
                 table.setSourceType(getCellValue(row.getCell(8)));
                 table.setAutoFetchStatus(getCellValue(row.getCell(9)));
                 table.setDocumentNo(getCellValue(row.getCell(10)));
-                table.setDocumentTitle(getCellValue(row.getCell(11)));
                 String effDate = getCellValue(row.getCell(12));
                 if (effDate != null && !effDate.isEmpty()) {
                     try {

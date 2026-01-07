@@ -24,7 +24,8 @@ export const TableModal: React.FC<TableModalProps> = ({ table, systems, defaultS
     const [form, setForm] = useState<RegTable>(table || {
         name: '', cnName: '', sortOrder: 0, systemCode: defaultSystemCode || '',
         subjectCode: '', subjectName: '', theme: '', frequency: '',
-        sourceType: '', autoFetchStatus: '', documentNo: '', documentTitle: '',
+        sourceType: '', autoFetchStatus: '', documentNo: '',
+
         businessCaliber: '', devNotes: '', owner: '', status: 1,
         reqId: '', plannedDate: ''
     });
@@ -80,7 +81,7 @@ export const TableModal: React.FC<TableModalProps> = ({ table, systems, defaultS
                         </select>
                     </div>
                     <FormField label="发文号" value={form.documentNo} onChange={v => setForm({ ...form, documentNo: v })} />
-                    <FormField label="发文标题" value={form.documentTitle} onChange={v => setForm({ ...form, documentTitle: v })} />
+
                     <FormField label="责任人" value={form.owner} onChange={v => setForm({ ...form, owner: v })} />
                     <div className="col-span-2">
                         <div className="flex justify-between items-center mb-1">

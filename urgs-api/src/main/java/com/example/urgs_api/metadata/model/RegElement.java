@@ -13,7 +13,7 @@ import com.alibaba.excel.annotation.ExcelProperty;
 import com.alibaba.excel.annotation.ExcelIgnore;
 
 @Data
-@TableName("sys_reg_element")
+@TableName("reg_element")
 /**
  * 监管元素实体（指标/字段）
  * 对应表: sys_reg_element
@@ -88,10 +88,6 @@ public class RegElement {
     @TableField("document_no")
     @ExcelProperty(value = "文档编号", index = 14)
     private String documentNo;
-
-    @TableField("document_title")
-    @ExcelProperty(value = "文档标题", index = 15)
-    private String documentTitle;
 
     @TableField("effective_date")
     @ExcelProperty(value = "生效日期", index = 16)

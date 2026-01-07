@@ -11,7 +11,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("sys_reg_table")
+@TableName("reg_table")
 /**
  * 监管报表实体
  * 对应表: sys_reg_table
@@ -52,9 +52,6 @@ public class RegTable {
 
     @TableField("document_no")
     private String documentNo;
-
-    @TableField("document_title")
-    private String documentTitle;
 
     @TableField("effective_date")
     private LocalDate effectiveDate;
