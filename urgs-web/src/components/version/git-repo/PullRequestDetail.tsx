@@ -114,7 +114,7 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
     return (
         <div className="bg-white min-h-screen">
             {/* Header */}
-            <div className="border-b border-slate-200 bg-slate-50/50 sticky top-0 z-10 backdrop-blur-sm">
+            <div className="border-b border-slate-200 bg-slate-50/50 z-10 backdrop-blur-sm">
                 <div className="max-w-7xl mx-auto px-6 py-4">
 
                     <div className="flex justify-between items-start">
