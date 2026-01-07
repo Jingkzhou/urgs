@@ -167,8 +167,10 @@ export const searchUsers = (keyword: string) =>
 
 // ===== System API =====
 
-export const getSystemList = () =>
-    get<any[]>('/api/sys/system/list');
+// ===== System API =====
+
+export const getSystemList = (params?: { showAll?: boolean }) =>
+    get<any[]>('/api/sys/system/list', params);
 
 // ===== Task Scheduling API =====
 

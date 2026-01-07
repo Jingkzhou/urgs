@@ -4,6 +4,7 @@ import com.example.urgs_api.system.model.SysSystem;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -19,8 +20,8 @@ public class SysSystemController {
     private jakarta.servlet.http.HttpServletRequest request;
 
     @GetMapping("/list")
-    public List<SysSystem> list() {
+    public List<SysSystem> list(@RequestParam(required = false, defaultValue = "false") boolean showAll) {
         Long userId = (Long) request.getAttribute("userId");
-        return sysSystemService.list(userId);
+        return sysSystemService.getSystems(userId, showAll);
     }
 }

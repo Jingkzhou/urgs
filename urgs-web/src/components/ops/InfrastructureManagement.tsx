@@ -54,7 +54,7 @@ const InfrastructureManagement: React.FC = () => {
 
     const fetchSsoList = async () => {
         try {
-            const data = await getSsoList();
+            const data = await getSsoList({ showAll: true });
             setSsoList(data || []);
         } catch (error) {
             console.error(error);
