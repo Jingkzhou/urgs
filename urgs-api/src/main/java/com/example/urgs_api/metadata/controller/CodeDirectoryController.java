@@ -247,9 +247,9 @@ public class CodeDirectoryController {
      * @return 是否成功
      */
     @PostMapping("/import")
-    public boolean importData(@RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
-        codeDirectoryService.importData(file);
-        return true;
+    public com.example.urgs_api.metadata.dto.ImportResultDTO importData(
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
+        return codeDirectoryService.importData(file);
     }
 
     /**

@@ -14,7 +14,7 @@ public interface CodeDirectoryService extends IService<CodeDirectory> {
      * 
      * @param file Excel文件
      */
-    void importData(MultipartFile file);
+    com.example.urgs_api.metadata.dto.ImportResultDTO importData(MultipartFile file);
 
     /**
      * 导出代码目录数据

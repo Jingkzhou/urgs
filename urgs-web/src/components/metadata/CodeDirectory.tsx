@@ -326,7 +326,14 @@ const CodeDirectory: React.FC = () => {
                 body: formData
             });
             if (res.ok) {
-                alert('导入成功');
+                const data = await res.json();
+                if (data && typeof data === 'object') {
+                    // Display detailed stats
+                    alert(`导入成功！\n\n删除旧数据: ${data.deleted} 条\n成功插入: ${data.inserted} 条\n失败: ${data.failed} 条`);
+                } else {
+                    // Fallback for unexpected response
+                    alert('导入成功');
+                }
                 fetchCodes(page, size, keyword, selectedTable?.tableCode);
                 fetchTables();
             } else {
