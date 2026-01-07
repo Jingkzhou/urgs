@@ -49,8 +49,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ type, data, onClose })
                                 <DetailItem label="取数来源" value={table.sourceType} />
                                 <DetailItem label="自动取数状态" value={getAutoFetchStatusBadge(table.autoFetchStatus)} />
                                 <DetailItem icon={<Calendar size={14} />} label="生效日期" value={table.effectiveDate} />
-                                <DetailItem icon={<FileText size={14} />} label="发文号" value={table.documentNo} fullWidth />
-                                <DetailItem label="发文标题" value={table.documentTitle} fullWidth />
+                                <DetailItem icon={<FileText size={14} />} label="发文号" value={table.dispatchNo} fullWidth />
                                 <DetailItem icon={<BookOpen size={14} />} label="业务口径" value={table.businessCaliber} fullWidth />
                                 <DetailItem label="开发备注" value={table.devNotes} fullWidth />
                             </>
@@ -97,8 +96,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ type, data, onClose })
                                 <DetailItem label="取值范围" value={element.valueRange} />
                                 <DetailItem label="自动取数状态" value={getAutoFetchStatusBadge(element.autoFetchStatus)} />
                                 <DetailItem icon={<Calendar size={14} />} label="生效日期" value={element.effectiveDate} />
-                                <DetailItem icon={<FileText size={14} />} label="发文号" value={element.documentNo} fullWidth />
-                                <DetailItem label="发文标题" value={element.documentTitle} fullWidth />
+                                <DetailItem icon={<FileText size={14} />} label="发文号" value={element.dispatchNo} fullWidth />
                                 <DetailItem icon={<BookOpen size={14} />} label="业务口径" value={element.businessCaliber} fullWidth />
                                 <DetailItem label="填报说明" value={element.fillInstruction} fullWidth />
                                 <DetailItem label="开发备注" value={element.devNotes} fullWidth />

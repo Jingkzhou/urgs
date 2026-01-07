@@ -638,11 +638,12 @@ public class RegTableController {
                 dto.setFrequency(table.getFrequency());
                 dto.setSourceType(table.getSourceType());
                 dto.setAutoFetchStatus(table.getAutoFetchStatus());
-                dto.setDocumentNo(table.getDocumentNo());
+                dto.setDispatchNo(table.getDispatchNo());
 
                 dto.setEffectiveDate(
                         table.getEffectiveDate() != null ? table.getEffectiveDate().format(dateFormatter) : null);
                 dto.setBusinessCaliber(safeTruncate(table.getBusinessCaliber()));
+                dto.setFillInstruction(safeTruncate(table.getFillInstruction()));
                 dto.setDevNotes(safeTruncate(table.getDevNotes()));
                 dto.setOwner(table.getOwner());
                 return dto;
@@ -689,7 +690,7 @@ public class RegTableController {
                     dto.setCodeTableCode(el.getCodeTableCode());
                     dto.setValueRange(el.getValueRange());
                     dto.setValidationRule(el.getValidationRule());
-                    dto.setDocumentNo(el.getDocumentNo());
+                    dto.setDispatchNo(el.getDispatchNo());
 
                     dto.setEffectiveDate(
                             el.getEffectiveDate() != null ? el.getEffectiveDate().format(dateFormatter) : null);
@@ -773,7 +774,7 @@ public class RegTableController {
                 table.setFrequency(getCellValue(row.getCell(7)));
                 table.setSourceType(getCellValue(row.getCell(8)));
                 table.setAutoFetchStatus(getCellValue(row.getCell(9)));
-                table.setDocumentNo(getCellValue(row.getCell(10)));
+                table.setDispatchNo(getCellValue(row.getCell(10)));
                 String effDate = getCellValue(row.getCell(12));
                 if (effDate != null && !effDate.isEmpty()) {
                     try {
@@ -782,6 +783,7 @@ public class RegTableController {
                     }
                 }
                 table.setBusinessCaliber(getCellValue(row.getCell(13)));
+                table.setFillInstruction(getCellValue(row.getCell(11))); // Index 11 recycled
                 table.setDevNotes(getCellValue(row.getCell(14)));
                 table.setOwner(getCellValue(row.getCell(15)));
                 table.setUpdateTime(LocalDateTime.now());
@@ -844,8 +846,8 @@ public class RegTableController {
                     el.setCodeTableCode(getCellValue(row.getCell(10)));
                     el.setValueRange(getCellValue(row.getCell(11)));
                     el.setValidationRule(getCellValue(row.getCell(12)));
-                    el.setDocumentNo(getCellValue(row.getCell(13)));
-                    el.setDocumentTitle(getCellValue(row.getCell(14)));
+                    el.setDispatchNo(getCellValue(row.getCell(13)));
+
                     String effDate = getCellValue(row.getCell(15));
                     if (effDate != null && !effDate.isEmpty()) {
                         try {

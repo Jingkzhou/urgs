@@ -174,7 +174,7 @@ export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode,
                             <option value="已上线">已上线</option>
                         </select>
                     </div>
-                    <FormField label="发文号" value={form.documentNo} onChange={v => setForm({ ...form, documentNo: v })} />
+                    <FormField label="发文号" value={form.dispatchNo} onChange={v => setForm({ ...form, dispatchNo: v })} />
 
                     <FormField label="责任人" value={form.owner} onChange={v => setForm({ ...form, owner: v })} />
                     <div className="col-span-2">

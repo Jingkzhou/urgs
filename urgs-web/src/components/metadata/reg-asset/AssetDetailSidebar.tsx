@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
     X, ChevronDown, ChevronRight, Table2, Target, Hash,
     Calendar, FileText, BookOpen, Code, Zap, Info,
@@ -89,7 +90,7 @@ export const AssetDetailSidebar: React.FC<AssetDetailSidebarProps> = ({ isOpen, 
     const HeaderIcon = isTable ? Table2 : (element.type === 'FIELD' ? Hash : Target);
     const headerColorClass = isTable ? 'text-blue-600 bg-blue-50' : (element.type === 'FIELD' ? 'text-slate-600 bg-slate-100' : 'text-purple-600 bg-purple-50');
 
-    return (
+    return createPortal(
         <>
             {/* Backdrop */}
             <div
@@ -141,7 +142,6 @@ export const AssetDetailSidebar: React.FC<AssetDetailSidebarProps> = ({ isOpen, 
                     <AccordionSection title="基础信息" icon={<Info size={18} />}>
                         <DetailRow label="中文名称" value={data.cnName} fullWidth />
                         <DetailRow label="英文名称" value={data.name} fullWidth />
-                        <DetailRow label="代码/编号" value={isTable ? table.name : '-'} />
                         <DetailRow label="排序序号" value={data.sortOrder} />
                         <DetailRow label="状态" value={
                             data.status === 1 ?
@@ -163,6 +163,12 @@ export const AssetDetailSidebar: React.FC<AssetDetailSidebarProps> = ({ isOpen, 
 
                         <DetailRow label="业务口径" value={data.businessCaliber} fullWidth className="bg-amber-50/50 p-3 rounded-lg border border-amber-100/50" />
 
+                        <DetailRow label="发文号" icon={<FileText size={14} />} value={data.dispatchNo} fullWidth />
+
+                        {isTable && (
+                            <DetailRow label="填报说明" value={table.fillInstruction} fullWidth className="bg-blue-50/50 p-3 rounded-lg border border-blue-100/50" />
+                        )}
+
                         {!isTable && element.type === 'INDICATOR' && (
                             <DetailRow label="填报说明" value={element.fillInstruction} fullWidth className="bg-blue-50/50 p-3 rounded-lg border border-blue-100/50" />
                         )}
@@ -171,8 +177,6 @@ export const AssetDetailSidebar: React.FC<AssetDetailSidebarProps> = ({ isOpen, 
                             <DetailRow label="生效日期" icon={<Calendar size={14} />} value={data.effectiveDate} />
                             <DetailRow label="自动取数" value={getAutoFetchStatusBadge(data.autoFetchStatus)} />
                         </div>
-
-                        <DetailRow label="发文号" icon={<FileText size={14} />} value={data.documentNo} fullWidth />
 
                     </AccordionSection>
 
@@ -238,6 +242,7 @@ export const AssetDetailSidebar: React.FC<AssetDetailSidebarProps> = ({ isOpen, 
                     </AccordionSection>
                 </div>
             </div>
-        </>
+        </>,
+        document.body
     );
 };

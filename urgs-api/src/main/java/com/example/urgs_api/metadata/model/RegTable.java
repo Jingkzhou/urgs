@@ -50,8 +50,8 @@ public class RegTable {
     @TableField("auto_fetch_status")
     private String autoFetchStatus;
 
-    @TableField("document_no")
-    private String documentNo;
+    @TableField("dispatch_no")
+    private String dispatchNo;
 
     @TableField("effective_date")
     private LocalDate effectiveDate;
@@ -61,6 +61,9 @@ public class RegTable {
 
     @TableField("dev_notes")
     private String devNotes;
+
+    @TableField("fill_instruction")
+    private String fillInstruction;
 
     private String owner;
 

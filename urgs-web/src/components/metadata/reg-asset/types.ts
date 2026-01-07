@@ -20,10 +20,11 @@ export interface RegTable {
     frequency?: string;
     sourceType?: string;
     autoFetchStatus?: string;
-    documentNo?: string;
+    dispatchNo?: string;
 
     effectiveDate?: string;
     businessCaliber?: string;
+    fillInstruction?: string;
     devNotes?: string;
     owner?: string;
     status?: number;
@@ -58,7 +59,7 @@ export interface RegElement {
     codeTableCode?: string;
     valueRange?: string;
     validationRule?: string;
-    documentNo?: string;
+    dispatchNo?: string;
 
     effectiveDate?: string;
     businessCaliber?: string;

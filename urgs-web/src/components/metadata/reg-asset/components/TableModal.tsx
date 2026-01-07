@@ -24,9 +24,8 @@ export const TableModal: React.FC<TableModalProps> = ({ table, systems, defaultS
     const [form, setForm] = useState<RegTable>(table || {
         name: '', cnName: '', sortOrder: 0, systemCode: defaultSystemCode || '',
         subjectCode: '', subjectName: '', theme: '', frequency: '',
-        sourceType: '', autoFetchStatus: '', documentNo: '',
-
-        businessCaliber: '', devNotes: '', owner: '', status: 1,
+        sourceType: '', autoFetchStatus: '', dispatchNo: '',
+        businessCaliber: '', fillInstruction: '', devNotes: '', owner: '', status: 1,
         reqId: '', plannedDate: ''
     });
 
@@ -80,7 +79,7 @@ export const TableModal: React.FC<TableModalProps> = ({ table, systems, defaultS
                             <option value="已上线">已上线</option>
                         </select>
                     </div>
-                    <FormField label="发文号" value={form.documentNo} onChange={v => setForm({ ...form, documentNo: v })} />
+                    <FormField label="发文号" value={form.dispatchNo} onChange={v => setForm({ ...form, dispatchNo: v })} />
 
                     <FormField label="责任人" value={form.owner} onChange={v => setForm({ ...form, owner: v })} />
                     <div className="col-span-2">
@@ -93,6 +92,17 @@ export const TableModal: React.FC<TableModalProps> = ({ table, systems, defaultS
                             />
                         </div>
                         <textarea className="w-full border border-slate-200 rounded-lg p-2 text-sm h-20 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.businessCaliber || ''} onChange={e => setForm({ ...form, businessCaliber: e.target.value })} />
+                    </div>
+                    <div className="col-span-2">
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="block text-sm font-medium text-slate-700">填报说明</label>
+                            <AiOptimizeButton
+                                value={form.fillInstruction || ''}
+                                onApply={(val) => setForm({ ...form, fillInstruction: val })}
+                                promptGenerator={(val) => `你是一个银行监管报送业务专家。请优化以下【填报说明】，语气亲切且权威，清晰指导业务人员如何填报，包含注意事项。内容：${val}`}
+                            />
+                        </div>
+                        <textarea className="w-full border border-slate-200 rounded-lg p-2 text-sm h-20 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.fillInstruction || ''} onChange={e => setForm({ ...form, fillInstruction: e.target.value })} />
                     </div>
                     <div className="col-span-2">
                         <div className="flex justify-between items-center mb-1">

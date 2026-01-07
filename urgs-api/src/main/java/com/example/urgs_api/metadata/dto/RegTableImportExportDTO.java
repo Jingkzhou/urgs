@@ -40,11 +40,11 @@ public class RegTableImportExportDTO {
     @ExcelProperty(value = "自动取数状态", index = 9)
     private String autoFetchStatus;
 
-    @ExcelProperty(value = "文档编号", index = 10)
-    private String documentNo;
+    @ExcelProperty(value = "发文号", index = 10)
+    private String dispatchNo;
 
-    @ExcelProperty(value = "文档标题", index = 11)
-    private String documentTitle;
+    @ExcelProperty(value = "填报说明", index = 11)
+    private String fillInstruction;
 
     @ExcelProperty(value = "生效日期", index = 12)
     private String effectiveDate;

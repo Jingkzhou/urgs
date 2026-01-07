@@ -85,9 +85,9 @@ public class RegElement {
     @ExcelProperty(value = "校验规则", index = 13)
     private String validationRule;
 
-    @TableField("document_no")
-    @ExcelProperty(value = "文档编号", index = 14)
-    private String documentNo;
+    @ExcelProperty(value = "发文号", index = 14)
+    @TableField("dispatch_no")
+    private String dispatchNo;
 
     @TableField("effective_date")
     @ExcelProperty(value = "生效日期", index = 16)

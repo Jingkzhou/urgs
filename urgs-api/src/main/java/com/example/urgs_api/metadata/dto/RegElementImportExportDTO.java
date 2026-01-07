@@ -49,8 +49,8 @@ public class RegElementImportExportDTO {
     @ExcelProperty(value = "校验规则", index = 12)
     private String validationRule;
 
-    @ExcelProperty(value = "文档编号", index = 13)
-    private String documentNo;
+    @ExcelProperty(value = "发文号", index = 13)
+    private String dispatchNo;
 
     @ExcelProperty(value = "文档标题", index = 14)
     private String documentTitle;
