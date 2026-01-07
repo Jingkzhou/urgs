@@ -507,6 +507,8 @@ public class GitPlatformService {
         try {
             switch (repo.getPlatform().toLowerCase()) {
                 case "gitee" -> mergeGiteePullRequest(repo, number, mergeMethod, token);
+                case "gitlab" -> mergeGitLabPullRequest(repo, number, mergeMethod, token);
+                case "github" -> mergeGitHubPullRequest(repo, number, mergeMethod, token);
                 default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
             }
         } catch (Exception e) {
@@ -530,6 +532,8 @@ public class GitPlatformService {
         try {
             switch (repo.getPlatform().toLowerCase()) {
                 case "gitee" -> closeGiteePullRequest(repo, number, token);
+                case "gitlab" -> closeGitLabPullRequest(repo, number, token);
+                case "github" -> closeGitHubPullRequest(repo, number, token);
                 default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
             }
         } catch (Exception e) {
@@ -941,13 +945,29 @@ public class GitPlatformService {
         List<GitCommitDiff> files = new ArrayList<>();
         if (changes.isArray()) {
             for (JsonNode change : changes) {
+                String diff = change.path("diff").asText();
+                int additions = 0;
+                int deletions = 0;
+                if (diff != null && !diff.isEmpty()) {
+                    String[] lines = diff.split("\n");
+                    for (String line : lines) {
+                        if (line.startsWith("+") && !line.startsWith("+++")) {
+                            additions++;
+                        } else if (line.startsWith("-") && !line.startsWith("---")) {
+                            deletions++;
+                        }
+                    }
+                }
+
                 files.add(GitCommitDiff.builder()
                         .newPath(change.path("new_path").asText())
                         .oldPath(change.path("old_path").asText())
                         .newFile(change.path("new_file").asBoolean())
                         .renamedFile(change.path("renamed_file").asBoolean())
                         .deletedFile(change.path("deleted_file").asBoolean())
-                        .diff(change.path("diff").asText())
+                        .diff(diff)
+                        .additions(additions)
+                        .deletions(deletions)
                         .build());
             }
         }
@@ -1015,6 +1035,59 @@ public class GitPlatformService {
         String url = String.format("https://gitee.com/api/v5/repos/%s/pulls/%d", repo.getFullName(), number);
         String body = String.format("{\"access_token\":\"%s\",\"state\":\"closed\"}", token);
         httpPatch(url, body, null, null);
+    }
+
+    private void mergeGitLabPullRequest(GitRepository repo, Long number, String mergeMethod, String token)
+            throws Exception {
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
+        // GitLab: PUT /projects/:id/merge_requests/:merge_request_iid/merge
+        String url = String.format("%s/projects/%s/merge_requests/%s/merge", apiBase, projectId, number);
+
+        // Optional: merge_commit_message
+        String body = "";
+        if (mergeMethod != null && !mergeMethod.isEmpty()) {
+            // GitLab supports: should_remove_source_branch, merge_when_pipeline_succeeds,
+            // etc.
+            // Mapping standard mergeMethod to commit message note or similar if needed.
+            // For now, sending empty body or essential params.
+            // GitLab API usually accepts empty body for default merge.
+        }
+
+        httpPut(url, "{}", token, "PRIVATE-TOKEN");
+    }
+
+    private void closeGitLabPullRequest(GitRepository repo, Long number, String token) throws Exception {
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
+        // GitLab: PUT /projects/:id/merge_requests/:merge_request_iid
+        String url = String.format("%s/projects/%s/merge_requests/%s", apiBase, projectId, number);
+
+        // to close: state_event=close
+        String body = "{\"state_event\":\"close\"}";
+
+        httpPut(url, body, token, "PRIVATE-TOKEN");
+    }
+
+    private void mergeGitHubPullRequest(GitRepository repo, Long number, String mergeMethod, String token)
+            throws Exception {
+        // GitHub: PUT /repos/{owner}/{repo}/pulls/{number}/merge
+        String url = String.format("https://api.github.com/repos/%s/pulls/%s/merge", repo.getFullName(), number);
+
+        // mergeMethod: merge, squash, rebase
+        String method = (mergeMethod == null || mergeMethod.isEmpty()) ? "merge" : mergeMethod;
+        String body = String.format("{\"merge_method\":\"%s\"}", method);
+
+        httpPut(url, body, token, "Bearer");
+    }
+
+    private void closeGitHubPullRequest(GitRepository repo, Long number, String token) throws Exception {
+        // GitHub: PATCH /repos/{owner}/{repo}/pulls/{number}
+        String url = String.format("https://api.github.com/repos/%s/pulls/%s", repo.getFullName(), number);
+
+        String body = "{\"state\":\"closed\"}";
+
+        httpPatch(url, body, token, "Bearer");
     }
 
     private com.example.urgs_api.version.dto.GitPullRequest mapGiteeToGitPullRequest(JsonNode node) {
