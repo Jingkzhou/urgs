@@ -254,35 +254,57 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                 <div className="space-y-6 text-sm">
                     <div className="pb-4 border-b border-slate-100">
                         <div className="text-slate-500 font-medium mb-2 flex justify-between items-center group">
-                            Reviewers
-                            <span className="text-blue-600 opacity-0 group-hover:opacity-100 cursor-pointer text-xs">Edit</span>
+                            审核人 (Reviewers)
+                            <span className="text-blue-600 opacity-0 group-hover:opacity-100 cursor-pointer text-xs">编辑</span>
                         </div>
-                        <div className="flex items-center gap-2 mb-2">
-                            <span className="w-2 h-2 rounded-full bg-orange-400"></span>
-                            <span className="font-medium">wangwu</span>
-                            <span className="text-slate-400 ml-auto flex items-center gap-1"><MonitorCheck size={12} /> Pending</span>
-                        </div>
+                        {pr.reviewers && pr.reviewers.length > 0 ? (
+                            pr.reviewers.map((reviewer, idx) => (
+                                <div key={idx} className="flex items-center gap-2 mb-2">
+                                    <span className={`w-2 h-2 rounded-full ${reviewer.status === 'approved' ? 'bg-green-500' : 'bg-orange-400'}`}></span>
+                                    <span className="font-medium">{reviewer.name}</span>
+                                    <span className="text-slate-400 ml-auto flex items-center gap-1">
+                                        {reviewer.status === 'approved' ? <Check size={12} /> : <MonitorCheck size={12} />}
+                                        {reviewer.status === 'approved' ? 'Approved' : 'Pending'}
+                                    </span>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="text-slate-400 italic text-xs">暂无审核人</div>
+                        )}
                     </div>
 
                     <div className="pb-4 border-b border-slate-100">
                         <div className="text-slate-500 font-medium mb-2 flex justify-between items-center group">
-                            Assignees
-                            <span className="text-blue-600 opacity-0 group-hover:opacity-100 cursor-pointer text-xs">Edit</span>
+                            负责人 (Assignees)
+                            <span className="text-blue-600 opacity-0 group-hover:opacity-100 cursor-pointer text-xs">编辑</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <Avatar size={20}>ZS</Avatar>
-                            <span>zhangsan</span>
-                        </div>
+                        {pr.assignees && pr.assignees.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                                {pr.assignees.map((assignee, idx) => (
+                                    <div key={idx} className="flex items-center gap-2">
+                                        <Avatar size="small" src={assignee.avatar}>{assignee.name.substring(0, 2).toUpperCase()}</Avatar>
+                                        <span>{assignee.name}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-slate-400 italic text-xs">暂无负责人</div>
+                        )}
                     </div>
 
                     <div className="pb-4 border-b border-slate-100">
                         <div className="text-slate-500 font-medium mb-2 flex justify-between items-center group">
-                            Labels
-                            <span className="text-blue-600 opacity-0 group-hover:opacity-100 cursor-pointer text-xs">Edit</span>
+                            标签 (Labels)
+                            <span className="text-blue-600 opacity-0 group-hover:opacity-100 cursor-pointer text-xs">编辑</span>
                         </div>
                         <div className="flex flex-wrap gap-1">
-                            <Tag color="blue">backend</Tag>
-                            <Tag color="cyan">feature</Tag>
+                            {pr.labels && pr.labels.length > 0 ? (
+                                pr.labels.map((label, idx) => (
+                                    <Tag key={idx} color={label.color || 'blue'}>{label.name}</Tag>
+                                ))
+                            ) : (
+                                <div className="text-slate-400 italic text-xs">暂无标签</div>
+                            )}
                         </div>
                     </div>
                 </div>

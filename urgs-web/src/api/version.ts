@@ -193,6 +193,19 @@ export interface GitPullRequest {
         color?: string;
         description?: string;
     }[];
+
+    reviewers?: {
+        id: number | string;
+        name: string;
+        avatar?: string;
+        status?: string; // e.g., 'pending', 'approved'
+    }[];
+
+    assignees?: {
+        id: number | string;
+        name: string;
+        avatar?: string;
+    }[];
 }
 
 export const getPullRequests = (repoId: number, params?: { state?: string; page?: number; perPage?: number }) =>
