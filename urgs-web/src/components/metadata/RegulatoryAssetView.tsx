@@ -8,7 +8,12 @@ import { Stats, RegTable, CodeTable, RegElement } from './reg-asset/types';
 import { ReportCard } from './reg-asset/components/ReportCard';
 import { TableModal } from './reg-asset/components/TableModal';
 import { ElementModal } from './reg-asset/components/ElementModal';
-import { DetailModal } from './reg-asset/components/DetailModal';
+import { AssetDetailSidebar } from './reg-asset/AssetDetailSidebar';
+
+// ... (rest of imports)
+
+
+
 import { CodeValuesModal } from './reg-asset/components/CodeValuesModal';
 import { getAutoFetchStatusBadge, StatsCard, TableSkeleton, CardSkeleton } from './reg-asset/components/RegAssetHelper';
 import DeleteWithReasonModal from './DeleteWithReasonModal';
@@ -1432,14 +1437,13 @@ const RegulatoryAssetView: React.FC = () => {
                 />
             )}
 
-            {/* Detail Modal (View Only) */}
-            {showDetailModal && detailItem && (
-                <DetailModal
-                    type={detailItem.type}
-                    data={detailItem.data}
-                    onClose={() => setShowDetailModal(false)}
-                />
-            )}
+            {/* Detail Sidebar (Replaces DetailModal) */}
+            <AssetDetailSidebar
+                isOpen={showDetailModal}
+                onClose={() => setShowDetailModal(false)}
+                type={detailItem?.type || 'TABLE'}
+                data={detailItem?.data || null}
+            />
 
             {/* Global Loading Overlay for Import */}
             {isImporting && (
