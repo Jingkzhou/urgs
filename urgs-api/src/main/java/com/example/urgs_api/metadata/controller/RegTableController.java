@@ -166,7 +166,11 @@ public class RegTableController {
      */
     @GetMapping("/list")
     public PageResult<RegTable> list(@RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String systemCode, @RequestParam(defaultValue = "1") int page,
+            @RequestParam(required = false) String systemCode,
+            @RequestParam(required = false) String autoFetchStatus,
+            @RequestParam(required = false) String frequency,
+            @RequestParam(required = false) String sourceType,
+            @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size) {
 
         QueryWrapper<RegTable> query = new QueryWrapper<>();
@@ -201,6 +205,16 @@ public class RegTableController {
                     }
                 }
             }
+        }
+
+        if (StringUtils.isNotBlank(autoFetchStatus)) {
+            query.eq("auto_fetch_status", autoFetchStatus);
+        }
+        if (StringUtils.isNotBlank(frequency)) {
+            query.eq("frequency", frequency);
+        }
+        if (StringUtils.isNotBlank(sourceType)) {
+            query.eq("source_type", sourceType);
         }
 
         if (keyword != null && !keyword.isEmpty()) {
