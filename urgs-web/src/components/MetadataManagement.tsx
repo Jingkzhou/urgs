@@ -34,8 +34,6 @@ const MetadataManagement: React.FC = () => {
         { id: 'model', label: '物理模型', icon: Database, code: 'metadata:model', component: <MetadataModel /> },
         { id: 'lineage-origin', label: '血缘溯源', icon: GitMerge, code: 'metadata:lineage:origin', component: <LineageOriginPage mode="trace" /> },
         { id: 'lineage-analysis', label: '影响分析', icon: GitBranch, code: 'metadata:lineage:analysis', component: <LineageAnalysisPage mode="impact" /> },
-        { id: 'code', label: '代码目录', icon: FileText, code: 'metadata:code', component: <CodeDirectory /> },
-        { id: 'maintenance', label: '维护记录', icon: History, code: 'metadata:maintenance', component: <MaintenanceRecord /> },
         { id: 'query', label: '数据查询', icon: Search, code: 'metadata:query', component: <SqlConsole /> },
     ];
 

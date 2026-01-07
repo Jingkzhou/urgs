@@ -221,7 +221,7 @@ const TaskInstance: React.FC = () => {
                 const [taskRes, workflowList, systemList] = await Promise.all([
                     get<any>('/api/task/list?size=10000'), // Fetch all tasks for mapping
                     get<Workflow[]>('/api/workflow/list'),
-                    get<any[]>('/api/sys/system/list')
+                    get<any[]>('/api/sys/system/list?showAll=true')
                 ]);
 
                 setSystems(systemList || []);

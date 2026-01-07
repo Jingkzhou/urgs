@@ -138,7 +138,7 @@ const TaskDefinition: React.FC = () => {
     const fetchSystems = async () => {
         try {
             const token = localStorage.getItem('auth_token');
-            const res = await fetch('/api/sys/system/list', {
+            const res = await fetch('/api/sys/system/list?showAll=true', {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
