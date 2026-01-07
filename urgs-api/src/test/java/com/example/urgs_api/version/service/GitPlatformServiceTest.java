@@ -156,4 +156,51 @@ class GitPlatformServiceTest {
         assertEquals("test commit", commits.get(0).getMessage());
         assertEquals("dev", commits.get(0).getAuthorName());
     }
+
+    @Test
+    void getPullRequestFiles_GitHub() throws Exception {
+        Long repoId = 2L;
+        GitRepository repo = new GitRepository();
+        repo.setId(repoId);
+        repo.setPlatform("github");
+        repo.setFullName("owner/repo");
+        repo.setAccessToken("token");
+
+        when(gitRepositoryService.findById(repoId)).thenReturn(Optional.of(repo));
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
+        when(httpResponse.statusCode()).thenReturn(200);
+        String jsonResponse = "[{\"filename\": \"test.txt\", \"status\": \"added\", \"additions\": 10, \"deletions\": 0, \"patch\": \"+content\"}]";
+        when(httpResponse.body()).thenReturn(jsonResponse);
+
+        List<com.example.urgs_api.version.dto.GitCommitDiff> files = gitPlatformService.getPullRequestFiles(repoId, 1L);
+
+        assertNotNull(files);
+        assertEquals(1, files.size());
+        assertEquals("test.txt", files.get(0).getNewPath());
+        assertEquals("added", files.get(0).getStatus());
+        assertEquals(10, files.get(0).getAdditions());
+    }
+
+    @Test
+    void getPullRequestFiles_GitLab() throws Exception {
+        Long repoId = 3L;
+        GitRepository repo = new GitRepository();
+        repo.setId(repoId);
+        repo.setPlatform("gitlab");
+        repo.setCloneUrl("https://gitlab.example.com/owner/repo.git");
+        repo.setAccessToken("token");
+
+        when(gitRepositoryService.findById(repoId)).thenReturn(Optional.of(repo));
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
+        when(httpResponse.statusCode()).thenReturn(200);
+        String jsonResponse = "{\"changes\": [{\"new_path\": \"test.txt\", \"old_path\": \"test.txt\", \"new_file\": true, \"renamed_file\": false, \"deleted_file\": false, \"diff\": \"+content\"}]}";
+        when(httpResponse.body()).thenReturn(jsonResponse);
+
+        List<com.example.urgs_api.version.dto.GitCommitDiff> files = gitPlatformService.getPullRequestFiles(repoId, 1L);
+
+        assertNotNull(files);
+        assertEquals(1, files.size());
+        assertEquals("test.txt", files.get(0).getNewPath());
+        assertEquals("+content", files.get(0).getDiff());
+    }
 }

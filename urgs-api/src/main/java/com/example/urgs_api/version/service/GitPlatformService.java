@@ -482,7 +482,8 @@ public class GitPlatformService {
         try {
             return switch (repo.getPlatform().toLowerCase()) {
                 case "gitee" -> getGiteePullRequestFiles(repo, number);
-                // GitHub/GitLab placeholders
+                case "github" -> getGitHubPullRequestFiles(repo, number);
+                case "gitlab" -> getGitLabPullRequestFiles(repo, number);
                 default -> new ArrayList<>();
             };
         } catch (Exception e) {
@@ -900,6 +901,53 @@ public class GitPlatformService {
                         .additions(file.path("additions").asInt())
                         .deletions(file.path("deletions").asInt())
                         .diff(file.path("patch").asText())
+                        .build());
+            }
+        }
+        return files;
+    }
+
+    private List<GitCommitDiff> getGitHubPullRequestFiles(GitRepository repo, Long number) throws Exception {
+        // GitHub: GET /repos/{owner}/{repo}/pulls/{number}/files
+        String url = String.format("https://api.github.com/repos/%s/pulls/%s/files", repo.getFullName(), number);
+        JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "Bearer");
+
+        List<GitCommitDiff> files = new ArrayList<>();
+        if (response.isArray()) {
+            for (JsonNode file : response) {
+                files.add(GitCommitDiff.builder()
+                        .newPath(file.path("filename").asText())
+                        .oldPath(file.path("filename").asText()) // GitHub doesn't always provide old path easily in
+                                                                 // this view, assuming same unless renamed
+                        .status(file.path("status").asText())
+                        .additions(file.path("additions").asInt())
+                        .deletions(file.path("deletions").asInt())
+                        .diff(file.path("patch").asText())
+                        .build());
+            }
+        }
+        return files;
+    }
+
+    private List<GitCommitDiff> getGitLabPullRequestFiles(GitRepository repo, Long number) throws Exception {
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
+        // GitLab: GET /projects/:id/merge_requests/:merge_request_iid/changes
+        String url = String.format("%s/projects/%s/merge_requests/%s/changes", apiBase, projectId, number);
+
+        JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
+        JsonNode changes = response.path("changes");
+
+        List<GitCommitDiff> files = new ArrayList<>();
+        if (changes.isArray()) {
+            for (JsonNode change : changes) {
+                files.add(GitCommitDiff.builder()
+                        .newPath(change.path("new_path").asText())
+                        .oldPath(change.path("old_path").asText())
+                        .newFile(change.path("new_file").asBoolean())
+                        .renamedFile(change.path("renamed_file").asBoolean())
+                        .deletedFile(change.path("deleted_file").asBoolean())
+                        .diff(change.path("diff").asText())
                         .build());
             }
         }
