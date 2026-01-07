@@ -138,6 +138,24 @@ public class RegTableController {
     }
 
     /**
+     * 获取指定系统的最大序号+1
+     */
+    @GetMapping("/max-sort-order")
+    public Integer getMaxSortOrder(@RequestParam String systemCode) {
+        if (StringUtils.isBlank(systemCode)) {
+            return 1;
+        }
+        QueryWrapper<RegTable> queryWrapper = new QueryWrapper<>();
+        queryWrapper.select("IFNULL(MAX(sort_order), 0) as max_order")
+                .eq("system_code", systemCode);
+        Map<String, Object> result = regTableService.getMap(queryWrapper);
+        if (result != null && result.get("max_order") != null) {
+            return Integer.parseInt(result.get("max_order").toString()) + 1;
+        }
+        return 1;
+    }
+
+    /**
      * 分页查询报表列表
      *
      * @param keyword    搜索关键词（匹配名称、中文名、代码）

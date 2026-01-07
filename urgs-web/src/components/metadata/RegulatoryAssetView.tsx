@@ -834,21 +834,25 @@ const RegulatoryAssetView: React.FC = () => {
                                             </button>
                                         </Auth>
                                     )}
-                                    <Auth code="metadata:asset:sync">
-                                        <button onClick={handleSyncCodeSnippets} disabled={isSyncing} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-orange-300 hover:text-orange-700 hover:bg-orange-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="同步逻辑">
-                                            <RefreshCw size={14} className={`text-orange-500 group-hover:scale-110 transition-transform ${isSyncing ? 'animate-spin' : ''}`} /> <span className="text-sm">同步</span>
-                                        </button>
-                                    </Auth>
-                                    <Auth code="metadata:asset:script">
-                                        <button onClick={handleGenerateHiveSql} disabled={isGeneratingHiveSql} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-purple-300 hover:text-purple-700 hover:bg-purple-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="生成脚本">
-                                            <Database size={14} className="text-purple-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">脚本</span>
-                                        </button>
-                                    </Auth>
-                                    <Auth code="metadata:asset:add">
-                                        <button onClick={handleAddTable} className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 hover:shadow-lg hover:shadow-indigo-200 flex items-center gap-1 px-3 transition-all">
-                                            <Plus size={16} /> <span className="text-sm font-medium">新增报表</span>
-                                        </button>
-                                    </Auth>
+                                    {selectedSystem && (
+                                        <>
+                                            <Auth code="metadata:asset:sync">
+                                                <button onClick={handleSyncCodeSnippets} disabled={isSyncing} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-orange-300 hover:text-orange-700 hover:bg-orange-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="同步逻辑">
+                                                    <RefreshCw size={14} className={`text-orange-500 group-hover:scale-110 transition-transform ${isSyncing ? 'animate-spin' : ''}`} /> <span className="text-sm">同步</span>
+                                                </button>
+                                            </Auth>
+                                            <Auth code="metadata:asset:script">
+                                                <button onClick={handleGenerateHiveSql} disabled={isGeneratingHiveSql} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-purple-300 hover:text-purple-700 hover:bg-purple-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="生成脚本">
+                                                    <Database size={14} className="text-purple-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">脚本</span>
+                                                </button>
+                                            </Auth>
+                                            <Auth code="metadata:asset:add">
+                                                <button onClick={handleAddTable} className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 hover:shadow-lg hover:shadow-indigo-200 flex items-center gap-1 px-3 transition-all">
+                                                    <Plus size={16} /> <span className="text-sm font-medium">新增报表</span>
+                                                </button>
+                                            </Auth>
+                                        </>
+                                    )}
                                 </div>
                             </div>
 

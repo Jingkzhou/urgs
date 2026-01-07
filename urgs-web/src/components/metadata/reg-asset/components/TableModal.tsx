@@ -29,6 +29,45 @@ export const TableModal: React.FC<TableModalProps> = ({ table, systems, defaultS
         reqId: '', plannedDate: ''
     });
 
+    // Auto-fetch sort order on mount if defaultSystemCode is present
+    React.useEffect(() => {
+        if (!table && defaultSystemCode) {
+            handleSystemChange(defaultSystemCode);
+        }
+    }, []);
+
+    const handleSystemChange = async (newSystemCode: string) => {
+        setForm(prev => ({ ...prev, systemCode: newSystemCode }));
+
+        // Only auto-fetch for new tables
+        if (!table && newSystemCode) {
+            try {
+                const token = localStorage.getItem('auth_token');
+                const res = await fetch(`/api/reg/table/max-sort-order?systemCode=${newSystemCode}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const maxOrder = await res.json();
+                    setForm(prev => ({ ...prev, systemCode: newSystemCode, sortOrder: maxOrder }));
+                }
+            } catch (error) {
+                console.error("Failed to fetch max sort order", error);
+            }
+        }
+    };
+
+    const handleSave = () => {
+        if (!form.name) {
+            alert('请输入表名');
+            return;
+        }
+        if (!form.systemCode) {
+            alert('请选择所属系统');
+            return;
+        }
+        onSave(form);
+    };
+
     return (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
             <div className="bg-white rounded-xl shadow-2xl w-[700px] max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-5 duration-200">
@@ -41,8 +80,8 @@ export const TableModal: React.FC<TableModalProps> = ({ table, systems, defaultS
                     <FormField label="中文名" value={form.cnName} onChange={v => setForm({ ...form, cnName: v })} />
                     <FormField label="序号" value={String(form.sortOrder)} onChange={v => setForm({ ...form, sortOrder: Number(v) })} />
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">所属系统</label>
-                        <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.systemCode || ''} onChange={e => setForm({ ...form, systemCode: e.target.value })}>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">所属系统 <span className="text-red-500">*</span></label>
+                        <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.systemCode || ''} onChange={e => handleSystemChange(e.target.value)}>
                             <option value="">-- 请选择 --</option>
                             {systems.map(s => <option key={s.id} value={s.clientId}>{s.name}</option>)}
                         </select>
@@ -129,7 +168,7 @@ export const TableModal: React.FC<TableModalProps> = ({ table, systems, defaultS
                 </div>
                 <div className="p-4 border-t border-slate-200 flex justify-end gap-2 bg-slate-50 rounded-b-xl">
                     <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg">取消</button>
-                    <button onClick={() => onSave(form)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200">保存</button>
+                    <button onClick={() => handleSave()} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200">保存</button>
                 </div>
             </div>
         </div>
