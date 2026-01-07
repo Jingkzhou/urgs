@@ -556,7 +556,7 @@ const UserManagement: React.FC = () => {
             const [orgRes, roleRes, ssoRes] = await Promise.all([
                 fetch(`/api/orgs${orgKeyword ? `?keyword=${encodeURIComponent(orgKeyword)}` : ''}`, { headers }),
                 fetch('/api/roles', { headers }),
-                fetch('/api/system', { headers })
+                fetch('/api/system?showAll=true', { headers })
             ]);
             if (orgRes.ok) {
                 const orgs = await orgRes.json();

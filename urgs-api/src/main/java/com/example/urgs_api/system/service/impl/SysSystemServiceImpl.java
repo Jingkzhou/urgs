@@ -13,8 +13,8 @@ public class SysSystemServiceImpl extends ServiceImpl<SysSystemMapper, SysSystem
     private final com.example.urgs_api.user.service.UserService userService;
 
     @Override
-    public java.util.List<SysSystem> list(Long userId) {
-        if (userId == null) {
+    public java.util.List<SysSystem> getSystems(Long userId, boolean showAll) {
+        if (showAll || userId == null) {
             return this.list();
         }
         com.example.urgs_api.user.model.User user = userService.getById(userId);

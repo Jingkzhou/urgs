@@ -28,9 +28,10 @@ public class SystemController {
     }
 
     @GetMapping
-    public List<SystemDTO> list(jakarta.servlet.http.HttpServletRequest request) {
+    public List<SystemDTO> list(jakarta.servlet.http.HttpServletRequest request,
+            @RequestParam(required = false, defaultValue = "false") boolean showAll) {
         Long userId = (Long) request.getAttribute("userId");
-        return sysSystemService.list(userId != null ? userId : 1L).stream()
+        return sysSystemService.getSystems(userId != null ? userId : 1L, showAll).stream()
                 .map(SystemDTO::fromEntity)
                 .collect(Collectors.toList());
     }

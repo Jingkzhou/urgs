@@ -196,7 +196,7 @@ const RegSystemManagement: React.FC = () => {
         setError(null);
         try {
             const token = localStorage.getItem('auth_token');
-            const res = await fetch('/api/system', {
+            const res = await fetch('/api/system?showAll=true', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (!res.ok) throw new Error(`load sso failed ${res.status}`);
