@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ChevronDown, ChevronRight, FileCode, Copy, Check } from 'lucide-react';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 interface PRDiffViewProps {
     files: {
@@ -17,6 +19,42 @@ interface DiffLine {
     oldLineNo?: number;
     newLineNo?: number;
 }
+
+const getLanguage = (filename: string): string => {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    switch (ext) {
+        case 'ts':
+        case 'tsx':
+            return 'typescript';
+        case 'js':
+        case 'jsx':
+            return 'javascript';
+        case 'java':
+            return 'java';
+        case 'py':
+            return 'python';
+        case 'sql':
+            return 'sql';
+        case 'html':
+            return 'html';
+        case 'css':
+            return 'css';
+        case 'json':
+            return 'json';
+        case 'md':
+            return 'markdown';
+        case 'yml':
+        case 'yaml':
+            return 'yaml';
+        case 'xml':
+            return 'xml';
+        case 'sh':
+        case 'bash':
+            return 'bash';
+        default:
+            return 'text';
+    }
+};
 
 // Utility to parse unified diff string into lines with line numbers
 const parseDiff = (diff: string): DiffLine[] => {
@@ -54,9 +92,113 @@ const parseDiff = (diff: string): DiffLine[] => {
     return result;
 };
 
+const computeLineDiff = (oldLine: string, newLine: string) => {
+    let prefixLen = 0;
+    while (prefixLen < oldLine.length && prefixLen < newLine.length && oldLine[prefixLen] === newLine[prefixLen]) {
+        prefixLen++;
+    }
+
+    let suffixLen = 0;
+    while (
+        suffixLen < oldLine.length - prefixLen &&
+        suffixLen < newLine.length - prefixLen &&
+        oldLine[oldLine.length - 1 - suffixLen] === newLine[newLine.length - 1 - suffixLen]
+    ) {
+        suffixLen++;
+    }
+
+    return {
+        prefix: oldLine.substring(0, prefixLen),
+        diff: oldLine.substring(prefixLen, oldLine.length - suffixLen),
+        suffix: oldLine.substring(oldLine.length - suffixLen),
+        newDiff: newLine.substring(prefixLen, newLine.length - suffixLen)
+    };
+};
+
 const FileDiffCard: React.FC<{ file: PRDiffViewProps['files'][0] }> = ({ file }) => {
     const [expanded, setExpanded] = useState(true);
-    const lines = useMemo(() => parseDiff(file.diff || ''), [file.diff]);
+    // Parse lines and compute pairings for character diffs
+    const { lines, pairings } = useMemo(() => {
+        const parsedLines = parseDiff(file.diff || '');
+        const pairMap = new Map<number, number>(); // delIdx -> addIdx
+
+        for (let i = 0; i < parsedLines.length - 1; i++) {
+            if (parsedLines[i].type === 'del' && parsedLines[i + 1].type === 'add') {
+                // Found a potential pair (modification)
+                pairMap.set(i, i + 1);
+                pairMap.set(i + 1, i);
+                i++; // Skip the next line as it's part of this pair
+            }
+        }
+        return { lines: parsedLines, pairings: pairMap };
+    }, [file.diff]);
+
+    const language = useMemo(() => getLanguage(file.name), [file.name]);
+
+    const renderCodeContent = (line: DiffLine, idx: number) => {
+        const pairIdx = pairings.get(idx);
+        let prefix = '', diffPart = '', suffix = '';
+
+        // If this is part of a modified pair, compute character diff
+        if (pairIdx !== undefined) {
+            const otherLine = lines[pairIdx];
+            // We need to re-compute diff on render because we need access to both lines. 
+            // Ideally we'd optimize this but for UI purpose it's fast enough.
+            if (line.type === 'del') {
+                const diff = computeLineDiff(line.content, otherLine.content);
+                prefix = diff.prefix;
+                diffPart = diff.diff;
+                suffix = diff.suffix;
+            } else {
+                const diff = computeLineDiff(otherLine.content, line.content);
+                prefix = diff.prefix;
+                diffPart = diff.newDiff;
+                suffix = diff.suffix;
+            }
+        } else {
+            // No pairing, treat whole line as content
+            diffPart = line.content;
+        }
+
+        const commonStyle = {
+            margin: 0,
+            padding: 0,
+            background: 'transparent',
+            fontSize: 'inherit',
+            lineHeight: 'inherit'
+        };
+
+        // If no diff part (empty line), render a space so line has height
+        if (!prefix && !diffPart && !suffix) diffPart = ' ';
+
+        return (
+            <div className={line.type === 'hunk' ? 'text-blue-600/70 font-medium' : ''}>
+                {line.type === 'hunk' ? (
+                    line.content
+                ) : (
+                    <>
+                        {prefix && (
+                            <SyntaxHighlighter language={language} style={oneLight} customStyle={commonStyle} PreTag="span" codeTagProps={{ style: { background: 'transparent' } }}>
+                                {prefix}
+                            </SyntaxHighlighter>
+                        )}
+                        {diffPart && (
+                            <span className={line.type === 'add' ? 'bg-green-200/60' : line.type === 'del' ? 'bg-red-200/60' : ''}>
+                                <SyntaxHighlighter language={language} style={oneLight} customStyle={commonStyle} PreTag="span" codeTagProps={{ style: { background: 'transparent' } }}>
+                                    {diffPart}
+                                </SyntaxHighlighter>
+                            </span>
+                        )}
+                        {suffix && (
+                            <SyntaxHighlighter language={language} style={oneLight} customStyle={commonStyle} PreTag="span" codeTagProps={{ style: { background: 'transparent' } }}>
+                                {suffix}
+                            </SyntaxHighlighter>
+                        )}
+                    </>
+                )}
+            </div>
+        );
+    };
 
     return (
         <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm mb-4">
@@ -108,12 +250,10 @@ const FileDiffCard: React.FC<{ file: PRDiffViewProps['files'][0] }> = ({ file })
                                             {line.type !== 'del' && line.type !== 'hunk' && line.newLineNo}
                                         </td>
                                         {/* Code Content */}
-                                        <td className="px-4 py-0.5 whitespace-pre break-all relative group">
+                                        <td className="px-4 py-0.5 whitespace-pre break-all relative group text-left">
                                             {line.type === 'add' && <span className="absolute left-1 text-green-600 select-none">+</span>}
                                             {line.type === 'del' && <span className="absolute left-1 text-red-600 select-none">-</span>}
-                                            <span className={line.type === 'hunk' ? 'text-blue-600/70 font-medium' : 'text-slate-800'}>
-                                                {line.content}
-                                            </span>
+                                            {renderCodeContent(line, idx)}
                                         </td>
                                     </tr>
                                 ))}
