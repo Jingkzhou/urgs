@@ -116,11 +116,7 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
             {/* Header */}
             <div className="border-b border-slate-200 bg-slate-50/50 sticky top-0 z-10 backdrop-blur-sm">
                 <div className="max-w-7xl mx-auto px-6 py-4">
-                    <div className="mb-2">
-                        <Button type="text" icon={<ArrowLeft size={16} />} onClick={onBack} size="small" className="text-slate-500 hover:text-slate-800 p-0">
-                            返回列表
-                        </Button>
-                    </div>
+
                     <div className="flex justify-between items-start">
                         <div>
                             <div className="flex items-center gap-3 mb-2">

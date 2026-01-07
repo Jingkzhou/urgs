@@ -462,7 +462,8 @@ public class GitPlatformService {
         try {
             return switch (repo.getPlatform().toLowerCase()) {
                 case "gitee" -> getGiteePullRequestCommits(repo, number);
-                // GitHub/GitLab placeholders
+                case "github" -> getGitHubPullRequestCommits(repo, number);
+                case "gitlab" -> getGitLabPullRequestCommits(repo, number);
                 default -> new ArrayList<>();
             };
         } catch (Exception e) {
@@ -903,6 +904,55 @@ public class GitPlatformService {
             }
         }
         return files;
+    }
+
+    private List<GitCommit> getGitHubPullRequestCommits(GitRepository repo, Long number) throws Exception {
+        // GitHub: GET /repos/{owner}/{repo}/pulls/{number}/commits
+        String url = String.format("https://api.github.com/repos/%s/pulls/%s/commits", repo.getFullName(), number);
+        JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "Bearer");
+
+        List<GitCommit> commits = new ArrayList<>();
+        if (response.isArray()) {
+            for (JsonNode commit : response) {
+                JsonNode commitData = commit.path("commit");
+                JsonNode author = commitData.path("author");
+                commits.add(GitCommit.builder()
+                        .sha(commit.path("sha").asText().substring(0, 7))
+                        .fullSha(commit.path("sha").asText())
+                        .message(commitData.path("message").asText())
+                        .authorName(author.path("name").asText())
+                        .authorEmail(author.path("email").asText())
+                        .authorAvatar(commit.path("author").path("avatar_url").asText()) // GitHub commit author info
+                                                                                         // usually has this
+                        .committedAt(author.path("date").asText())
+                        .build());
+            }
+        }
+        return commits;
+    }
+
+    private List<GitCommit> getGitLabPullRequestCommits(GitRepository repo, Long number) throws Exception {
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
+        // GitLab: GET /projects/:id/merge_requests/:merge_request_iid/commits
+        String url = String.format("%s/projects/%s/merge_requests/%s/commits", apiBase, projectId, number);
+
+        JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
+        List<GitCommit> commits = new ArrayList<>();
+
+        if (response.isArray()) {
+            for (JsonNode commit : response) {
+                commits.add(GitCommit.builder()
+                        .sha(commit.path("short_id").asText())
+                        .fullSha(commit.path("id").asText())
+                        .message(commit.path("message").asText())
+                        .authorName(commit.path("author_name").asText())
+                        .authorEmail(commit.path("author_email").asText())
+                        .committedAt(commit.path("committed_date").asText())
+                        .build());
+            }
+        }
+        return commits;
     }
 
     private void mergeGiteePullRequest(GitRepository repo, Long number, String mergeMethod, String token)

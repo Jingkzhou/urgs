@@ -108,4 +108,52 @@ class GitPlatformServiceTest {
         assertEquals("GitLab PR", prs.get(0).getTitle());
         assertEquals(3, prs.get(0).getNumber()); // Use iid for number
     }
+
+    @Test
+    void getPullRequestCommits_GitHub() throws Exception {
+        Long repoId = 2L;
+        GitRepository repo = new GitRepository();
+        repo.setId(repoId);
+        repo.setPlatform("github");
+        repo.setFullName("owner/repo");
+        repo.setAccessToken("token");
+
+        when(gitRepositoryService.findById(repoId)).thenReturn(Optional.of(repo));
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
+        when(httpResponse.statusCode()).thenReturn(200);
+        String jsonResponse = "[{\"sha\": \"shasha123\", \"commit\": {\"message\": \"test commit\", \"author\": {\"name\": \"dev\", \"email\": \"dev@example.com\", \"date\": \"2023-01-01T00:00:00Z\"}}, \"author\": {\"avatar_url\": \"avatar_url\"}}]";
+        when(httpResponse.body()).thenReturn(jsonResponse);
+
+        List<com.example.urgs_api.version.dto.GitCommit> commits = gitPlatformService.getPullRequestCommits(repoId, 1L);
+
+        assertNotNull(commits);
+        assertEquals(1, commits.size());
+        assertEquals("shasha1", commits.get(0).getSha());
+        assertEquals("test commit", commits.get(0).getMessage());
+        assertEquals("dev", commits.get(0).getAuthorName());
+    }
+
+    @Test
+    void getPullRequestCommits_GitLab() throws Exception {
+        Long repoId = 3L;
+        GitRepository repo = new GitRepository();
+        repo.setId(repoId);
+        repo.setPlatform("gitlab");
+        repo.setCloneUrl("https://gitlab.example.com/owner/repo.git");
+        repo.setAccessToken("token");
+
+        when(gitRepositoryService.findById(repoId)).thenReturn(Optional.of(repo));
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
+        when(httpResponse.statusCode()).thenReturn(200);
+        String jsonResponse = "[{\"id\": \"shasha123\", \"short_id\": \"shasha1\", \"message\": \"test commit\", \"author_name\": \"dev\", \"author_email\": \"dev@example.com\", \"committed_date\": \"2023-01-01T00:00:00Z\"}]";
+        when(httpResponse.body()).thenReturn(jsonResponse);
+
+        List<com.example.urgs_api.version.dto.GitCommit> commits = gitPlatformService.getPullRequestCommits(repoId, 1L);
+
+        assertNotNull(commits);
+        assertEquals(1, commits.size());
+        assertEquals("shasha1", commits.get(0).getSha());
+        assertEquals("test commit", commits.get(0).getMessage());
+        assertEquals("dev", commits.get(0).getAuthorName());
+    }
 }
