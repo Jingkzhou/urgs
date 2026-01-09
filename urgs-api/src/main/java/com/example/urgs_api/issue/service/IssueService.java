@@ -15,5 +15,5 @@ public interface IssueService extends IService<Issue> {
 
     void exportData(HttpServletResponse response, String keyword, String status, String issueType, String handler);
 
-    IssueStatsDTO getStats(String frequency);
+    IssueStatsDTO getStats(String frequency, String startDate, String endDate);
 }

@@ -216,10 +216,26 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
     }
 
     @Override
-    public IssueStatsDTO getStats(String frequency) {
+    public IssueStatsDTO getStats(String frequency, String startDate, String endDate) {
         IssueStatsDTO stats = new IssueStatsDTO();
 
-        List<Issue> allIssues = list();
+        LambdaQueryWrapper<Issue> wrapper = new LambdaQueryWrapper<>();
+        if (StringUtils.hasText(startDate)) {
+            try {
+                wrapper.ge(Issue::getOccurTime, LocalDateTime.parse(startDate + " 00:00:00", DATE_TIME_FORMATTER));
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+        if (StringUtils.hasText(endDate)) {
+            try {
+                wrapper.le(Issue::getOccurTime, LocalDateTime.parse(endDate + " 23:59:59", DATE_TIME_FORMATTER));
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+
+        List<Issue> allIssues = list(wrapper);
 
         // 总数统计
         stats.setTotalCount(allIssues.size());

@@ -141,8 +141,10 @@ public class IssueController {
 
     @GetMapping("/stats")
     public ResponseEntity<com.example.urgs_api.issue.dto.IssueStatsDTO> getStats(
-            @RequestParam(defaultValue = "month") String frequency) {
-        return ResponseEntity.ok(issueService.getStats(frequency));
+            @RequestParam(required = false, defaultValue = "month") String frequency,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        return ResponseEntity.ok(issueService.getStats(frequency, startDate, endDate));
     }
 
     private static final String UPLOAD_DIR = "/Users/work/Documents/JLbankGit/URGS/attachments";
