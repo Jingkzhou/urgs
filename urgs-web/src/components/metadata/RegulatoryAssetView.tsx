@@ -129,6 +129,9 @@ const RegulatoryAssetView: React.FC = () => {
             try {
                 const data = await systemService.list();
                 setSystems(data);
+                if (data.length > 0) {
+                    setSelectedSystem(data[0].clientId);
+                }
             } catch (e) {
                 console.error('Failed to fetch systems', e);
             }
@@ -174,6 +177,8 @@ const RegulatoryAssetView: React.FC = () => {
     };
 
     useEffect(() => {
+        if (!selectedSystem) return;
+
         if (activeView === 'TABLE_LIST') {
             fetchTables(tablePage, tableSize);
             fetchStats();
@@ -188,7 +193,7 @@ const RegulatoryAssetView: React.FC = () => {
     }, [selectedSystem]);
 
     useEffect(() => {
-        if (activeView === 'TABLE_LIST') {
+        if (activeView === 'TABLE_LIST' && selectedSystem) {
             fetchTables(tablePage, tableSize);
         }
     }, [tablePage, tableSize]);
@@ -706,9 +711,6 @@ const RegulatoryAssetView: React.FC = () => {
                     </h2>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                    <button onClick={() => setSelectedSystem(undefined)} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${!selectedSystem ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:bg-slate-200/50'}`}>
-                        <Layers size={14} /> 全部系统
-                    </button>
                     {systems.map(sys => (
                         <button key={sys.id} onClick={() => setSelectedSystem(sys.clientId)} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${selectedSystem === sys.clientId ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:bg-slate-200/50'}`}>
                             <Database size={14} className="text-slate-400" />
@@ -725,36 +727,7 @@ const RegulatoryAssetView: React.FC = () => {
                 {activeView === 'TABLE_LIST' && (
                     <div className="flex flex-col h-full animate-in fade-in slide-in-from-top-2 duration-300">
                         {/* Stats Panel */}
-                        <div className="p-4 grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50/50 border-b border-slate-100">
-                            <StatsCard
-                                title="总报表数"
-                                value={stats?.tableCount || 0}
-                                icon={<Table2 size={20} />}
-                                color="indigo"
-                                loading={loadingStats}
-                            />
-                            <StatsCard
-                                title="已上线报表"
-                                value={stats?.onlineCount || 0}
-                                icon={<CheckCircle size={20} />}
-                                color="emerald"
-                                loading={loadingStats}
-                            />
-                            <StatsCard
-                                title="开发中报表"
-                                value={stats?.developingCount || 0}
-                                icon={<TrendingUp size={20} />}
-                                color="amber"
-                                loading={loadingStats}
-                            />
-                            <StatsCard
-                                title="字段/指标总数"
-                                value={stats?.elementCount || 0}
-                                icon={<BarChart3 size={20} />}
-                                color="blue"
-                                loading={loadingStats}
-                            />
-                        </div>
+
 
                         {/* Toolbar */}
                         <div className="p-3 border-b border-slate-200 flex flex-col gap-3 bg-white/95 backdrop-blur sticky top-0 z-10 shadow-sm">
@@ -800,6 +773,46 @@ const RegulatoryAssetView: React.FC = () => {
                                     >
                                         <List size={16} />
                                     </button>
+                                </div>
+
+                                {/* Compact Stats */}
+                                <div className="hidden xl:flex items-center gap-4 px-4 border-l border-slate-200 mx-2">
+                                    <div className="flex items-center gap-1.5 text-xs text-slate-600" title="总报表数">
+                                        <div className="p-1 rounded bg-indigo-50 text-indigo-500">
+                                            <Table2 size={14} />
+                                        </div>
+                                        <div className="flex flex-col leading-none">
+                                            <span className="font-bold text-slate-700">{loadingStats ? '-' : stats?.tableCount || 0}</span>
+                                            <span className="text-[10px] scale-90 origin-left text-slate-400">总数</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-xs text-slate-600" title="已上线">
+                                        <div className="p-1 rounded bg-emerald-50 text-emerald-500">
+                                            <CheckCircle size={14} />
+                                        </div>
+                                        <div className="flex flex-col leading-none">
+                                            <span className="font-bold text-slate-700">{loadingStats ? '-' : stats?.onlineCount || 0}</span>
+                                            <span className="text-[10px] scale-90 origin-left text-slate-400">上线</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-xs text-slate-600" title="开发中">
+                                        <div className="p-1 rounded bg-amber-50 text-amber-500">
+                                            <TrendingUp size={14} />
+                                        </div>
+                                        <div className="flex flex-col leading-none">
+                                            <span className="font-bold text-slate-700">{loadingStats ? '-' : stats?.developingCount || 0}</span>
+                                            <span className="text-[10px] scale-90 origin-left text-slate-400">开发</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-xs text-slate-600" title="字段/指标">
+                                        <div className="p-1 rounded bg-blue-50 text-blue-500">
+                                            <BarChart3 size={14} />
+                                        </div>
+                                        <div className="flex flex-col leading-none">
+                                            <span className="font-bold text-slate-700">{loadingStats ? '-' : stats?.elementCount || 0}</span>
+                                            <span className="text-[10px] scale-90 origin-left text-slate-400">元素</span>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div className="flex-1" />
@@ -1123,6 +1136,26 @@ const RegulatoryAssetView: React.FC = () => {
                                         <span>{currentTable.name}</span>
                                         <span className="text-slate-300">|</span>
                                         <span className="bg-slate-100 px-1 py-0.5 rounded">Seq: {currentTable.sortOrder}</span>
+                                    </div>
+                                </div>
+                                <div className="hidden xl:flex items-center gap-4 px-4 border-l border-slate-200 mx-4 h-8" key="element-stats">
+                                    <div className="flex items-center gap-1.5 text-xs text-slate-600" title="字段总数">
+                                        <div className="p-1 rounded bg-indigo-50 text-indigo-500">
+                                            <Hash size={14} />
+                                        </div>
+                                        <div className="flex flex-col leading-none">
+                                            <span className="font-bold text-slate-700">{currentTable.fieldCount || 0}</span>
+                                            <span className="text-[10px] scale-90 origin-left text-slate-400">字段</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-xs text-slate-600" title="指标总数">
+                                        <div className="p-1 rounded bg-purple-50 text-purple-500">
+                                            <Target size={14} />
+                                        </div>
+                                        <div className="flex flex-col leading-none">
+                                            <span className="font-bold text-slate-700">{currentTable.indicatorCount || 0}</span>
+                                            <span className="text-[10px] scale-90 origin-left text-slate-400">指标</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
