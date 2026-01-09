@@ -281,7 +281,7 @@ const RegulatoryAssetElementView: React.FC<RegulatoryAssetElementViewProps> = ({
                 {elements.map((el, index) => (
                     <div
                         key={`${el.id}-${index}`}
-                        onDoubleClick={() => handleShowDetail('ELEMENT', el)}
+                        onClick={() => handleShowDetail('ELEMENT', el)}
                         className={`flex items-center px-4 py-2.5 bg-white border-b border-slate-100 hover:bg-slate-50 transition-colors group ${selectedElementIds.has(el.id!) ? 'bg-indigo-50/30' : ''}`}
                     >
                         <div className="w-8 flex items-center justify-center">
@@ -297,6 +297,7 @@ const RegulatoryAssetElementView: React.FC<RegulatoryAssetElementViewProps> = ({
                                     }
                                     setSelectedElementIds(newSet);
                                 }}
+                                onClick={(e) => e.stopPropagation()}
                                 className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
                             />
                         </div>
@@ -354,10 +355,9 @@ const RegulatoryAssetElementView: React.FC<RegulatoryAssetElementViewProps> = ({
                             </div>
                         </div>
                         <div className="flex-1 text-xs text-slate-500 truncate pr-4" title={el.devNotes || el.businessCaliber}>{el.devNotes || el.businessCaliber || '-'}</div>
-                        <div className="w-40 flex justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                        <div className="w-40 flex justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                             <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
+                                onClick={() => {
                                     onShowHistory(el);
                                 }}
                                 className="p-1.5 hover:bg-orange-100 text-orange-600 rounded"
