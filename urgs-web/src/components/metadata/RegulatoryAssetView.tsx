@@ -1,21 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Edit, Trash2, Server, Database, Layers, ArrowLeft, Table2, Hash, Target, Info, Download, Upload, RefreshCw, Clock, LayoutGrid, List, Filter, TrendingUp, CheckCircle, BarChart3, ChevronDown, ChevronUp } from 'lucide-react';
+import { Database, Server, Upload } from 'lucide-react';
 import { systemService, SsoConfig } from '../../services/systemService';
-import Pagination from '../common/Pagination';
-import Auth from '../Auth';
 import MaintenanceHistoryModal from './MaintenanceHistoryModal';
 import { Stats, RegTable, CodeTable, RegElement } from './reg-asset/types';
-import { ReportCard } from './reg-asset/components/ReportCard';
 import { TableModal } from './reg-asset/components/TableModal';
 import { ElementModal } from './reg-asset/components/ElementModal';
 import { AssetDetailSidebar } from './reg-asset/AssetDetailSidebar';
+import RegulatoryAssetTableView from './reg-asset/views/RegulatoryAssetTableView';
+import RegulatoryAssetElementView from './reg-asset/views/RegulatoryAssetElementView';
 
 // ... (rest of imports)
 
 
 
 import { CodeValuesModal } from './reg-asset/components/CodeValuesModal';
-import { getAutoFetchStatusBadge, StatsCard, TableSkeleton, CardSkeleton } from './reg-asset/components/RegAssetHelper';
 import DeleteWithReasonModal from './DeleteWithReasonModal';
 import { ReqInfo } from './ReqInfoFormGroup';
 
@@ -722,734 +720,102 @@ const RegulatoryAssetView: React.FC = () => {
 
             {/* Main Content Area */}
             <div className="flex-1 flex flex-col overflow-hidden bg-white relative">
-
-                {/* View 1: Table List */}
                 {activeView === 'TABLE_LIST' && (
-                    <div className="flex flex-col h-full animate-in fade-in slide-in-from-top-2 duration-300">
-                        {/* Stats Panel */}
-
-
-                        {/* Toolbar */}
-                        <div className="p-3 border-b border-slate-200 flex flex-col gap-3 bg-white/95 backdrop-blur sticky top-0 z-10 shadow-sm">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <div className="relative flex-1 min-w-[260px] max-w-xl">
-                                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                                    <input
-                                        type="text"
-                                        placeholder="搜索表..."
-                                        value={tableKeyword}
-                                        onChange={(e) => setTableKeyword(e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && handleTableSearch()}
-                                        className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all shadow-sm bg-white"
-                                    />
-                                </div>
-
-                                <button
-                                    onClick={() => setShowAdvancedFilter(!showAdvancedFilter)}
-                                    className={`h-10 rounded-lg border transition-all flex items-center gap-1.5 px-3 text-sm ${showAdvancedFilter ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-medium' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm'}`}
-                                >
-                                    <Filter size={14} className={showAdvancedFilter ? 'text-indigo-600' : 'text-slate-400'} />
-                                    筛选
-                                    {appliedFilterCount > 0 && (
-                                        <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[11px] font-semibold">
-                                            {appliedFilterCount}
-                                        </span>
-                                    )}
-                                    {showAdvancedFilter ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                                </button>
-
-                                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 shadow-inner">
-                                    <button
-                                        onClick={() => setViewMode('card')}
-                                        className={`p-2 rounded-md transition-all ${viewMode === 'card' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                        title="卡片视图"
-                                    >
-                                        <LayoutGrid size={16} />
-                                    </button>
-                                    <button
-                                        onClick={() => setViewMode('table')}
-                                        className={`p-2 rounded-md transition-all ${viewMode === 'table' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                        title="表格视图"
-                                    >
-                                        <List size={16} />
-                                    </button>
-                                </div>
-
-                                {/* Compact Stats */}
-                                <div className="hidden xl:flex items-center gap-4 px-4 border-l border-slate-200 mx-2">
-                                    <div className="flex items-center gap-1.5 text-xs text-slate-600" title="总报表数">
-                                        <div className="p-1 rounded bg-indigo-50 text-indigo-500">
-                                            <Table2 size={14} />
-                                        </div>
-                                        <div className="flex flex-col leading-none">
-                                            <span className="font-bold text-slate-700">{loadingStats ? '-' : stats?.tableCount || 0}</span>
-                                            <span className="text-[10px] scale-90 origin-left text-slate-400">总数</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 text-xs text-slate-600" title="已上线">
-                                        <div className="p-1 rounded bg-emerald-50 text-emerald-500">
-                                            <CheckCircle size={14} />
-                                        </div>
-                                        <div className="flex flex-col leading-none">
-                                            <span className="font-bold text-slate-700">{loadingStats ? '-' : stats?.onlineCount || 0}</span>
-                                            <span className="text-[10px] scale-90 origin-left text-slate-400">上线</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 text-xs text-slate-600" title="开发中">
-                                        <div className="p-1 rounded bg-amber-50 text-amber-500">
-                                            <TrendingUp size={14} />
-                                        </div>
-                                        <div className="flex flex-col leading-none">
-                                            <span className="font-bold text-slate-700">{loadingStats ? '-' : stats?.developingCount || 0}</span>
-                                            <span className="text-[10px] scale-90 origin-left text-slate-400">开发</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 text-xs text-slate-600" title="字段/指标">
-                                        <div className="p-1 rounded bg-blue-50 text-blue-500">
-                                            <BarChart3 size={14} />
-                                        </div>
-                                        <div className="flex flex-col leading-none">
-                                            <span className="font-bold text-slate-700">{loadingStats ? '-' : stats?.elementCount || 0}</span>
-                                            <span className="text-[10px] scale-90 origin-left text-slate-400">元素</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="flex-1" />
-
-                                <div className="flex gap-2 flex-wrap justify-end items-center">
-                                    {selectedTableIds.size > 0 && (
-                                        <span className="px-2 py-1 text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-md">
-                                            已选 {selectedTableIds.size} 张
-                                        </span>
-                                    )}
-                                    <input
-                                        type="file"
-                                        ref={tableFileInputRef}
-                                        className="hidden"
-                                        accept=".xlsx, .xls"
-                                        onChange={handleTableImport}
-                                    />
-                                    <Auth code="metadata:asset:import">
-                                        <button onClick={() => tableFileInputRef.current?.click()} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="导入报表">
-                                            <Upload size={14} className="text-emerald-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">导入</span>
-                                        </button>
-                                    </Auth>
-                                    <Auth code="metadata:asset:export">
-                                        <button onClick={handleTableExport} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="导出报表">
-                                            <Download size={14} className="text-blue-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">导出{selectedTableIds.size > 0 ? `(${selectedTableIds.size})` : '全部'}</span>
-                                        </button>
-                                    </Auth>
-                                    {selectedTableIds.size > 0 && (
-                                        <Auth code="metadata:asset:delete">
-                                            <button onClick={handleBatchDeleteTables} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-red-300 hover:text-red-700 hover:bg-red-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="批量删除">
-                                                <Trash2 size={14} className="text-red-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">删除({selectedTableIds.size})</span>
-                                            </button>
-                                        </Auth>
-                                    )}
-                                    {selectedSystem && (
-                                        <>
-                                            <Auth code="metadata:asset:sync">
-                                                <button onClick={handleSyncCodeSnippets} disabled={isSyncing} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-orange-300 hover:text-orange-700 hover:bg-orange-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="同步逻辑">
-                                                    <RefreshCw size={14} className={`text-orange-500 group-hover:scale-110 transition-transform ${isSyncing ? 'animate-spin' : ''}`} /> <span className="text-sm">同步</span>
-                                                </button>
-                                            </Auth>
-                                            <Auth code="metadata:asset:script">
-                                                <button onClick={handleGenerateHiveSql} disabled={isGeneratingHiveSql} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-purple-300 hover:text-purple-700 hover:bg-purple-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="生成脚本">
-                                                    <Database size={14} className="text-purple-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">脚本</span>
-                                                </button>
-                                            </Auth>
-                                            <Auth code="metadata:asset:add">
-                                                <button onClick={handleAddTable} className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 hover:shadow-lg hover:shadow-indigo-200 flex items-center gap-1 px-3 transition-all">
-                                                    <Plus size={16} /> <span className="text-sm font-medium">新增报表</span>
-                                                </button>
-                                            </Auth>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Advanced Filter Panel */}
-                            {showAdvancedFilter && (
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border border-indigo-100 bg-indigo-50/20 rounded-xl animate-in slide-in-from-top-2 duration-200">
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">报送状态</label>
-                                        <select
-                                            value={filterStatus}
-                                            onChange={(e) => {
-                                                setFilterStatus(e.target.value);
-                                                setTablePage(1);
-                                            }}
-                                            className="w-full border border-slate-200 rounded-lg p-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all outline-none"
-                                        >
-                                            <option value="">全部状态</option>
-                                            <option value="已上线">已上线</option>
-                                            <option value="开发中">开发中</option>
-                                            <option value="未开发">未开发</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">报送频度</label>
-                                        <select
-                                            value={filterFrequency}
-                                            onChange={(e) => {
-                                                setFilterFrequency(e.target.value);
-                                                setTablePage(1);
-                                            }}
-                                            className="w-full border border-slate-200 rounded-lg p-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all outline-none"
-                                        >
-                                            <option value="">全部频度</option>
-                                            <option value="日">日报</option>
-                                            <option value="周">周报</option>
-                                            <option value="月">月报</option>
-                                            <option value="季">季报</option>
-                                            <option value="年">年报</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">取数来源</label>
-                                        <select
-                                            value={filterSourceType}
-                                            onChange={(e) => {
-                                                setFilterSourceType(e.target.value);
-                                                setTablePage(1);
-                                            }}
-                                            className="w-full border border-slate-200 rounded-lg p-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all outline-none"
-                                        >
-                                            <option value="">全部来源</option>
-                                            <option value="手工">手工填报</option>
-                                            <option value="接口">系统接口</option>
-                                            <option value="SQL">SQL取数</option>
-                                        </select>
-                                    </div>
-                                    <div className="flex items-end gap-2">
-                                        <button
-                                            onClick={() => {
-                                                setFilterStatus('');
-                                                setFilterFrequency('');
-                                                setFilterSourceType('');
-                                                setTableKeyword('');
-                                                setTablePage(1);
-                                            }}
-                                            className="h-9 px-4 text-sm bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-all flex items-center justify-center gap-1.5 flex-1 shadow-sm"
-                                        >
-                                            <RefreshCw size={14} /> 重置
-                                        </button>
-                                        <button
-                                            onClick={() => fetchTables(1)}
-                                            className="h-9 px-4 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all flex items-center justify-center gap-1.5 flex-[1.5] shadow-md shadow-indigo-100"
-                                        >
-                                            应用筛选
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto overflow-x-auto min-h-0 bg-slate-50/30">
-                            {loading ? (
-                                viewMode === 'table' ? <TableSkeleton /> : <CardSkeleton />
-                            ) : tables.length > 0 ? (
-                                viewMode === 'table' ? (
-                                    <div className="bg-white min-w-[960px]">
-                                        {/* Table Header */}
-                                        <div className="flex items-center px-4 py-3 bg-slate-50/80 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-[5]">
-                                            <div className="w-8 flex items-center justify-center">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={tables.length > 0 && selectedTableIds.size === tables.length}
-                                                    onChange={(e) => {
-                                                        if (e.target.checked) {
-                                                            setSelectedTableIds(new Set(tables.map(t => t.id!)));
-                                                        } else {
-                                                            setSelectedTableIds(new Set());
-                                                        }
-                                                    }}
-                                                    className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
-                                                />
-                                            </div>
-                                            <div className="w-10"></div>
-                                            <div className="w-16 text-center">序号</div>
-                                            <div className="w-64">中文名/表代码</div>
-                                            <div className="w-24">报送频度</div>
-                                            <div className="w-24">取数来源</div>
-                                            <div className="w-28">状态</div>
-                                            <div className="w-20 text-center">字段数</div>
-                                            <div className="w-20 text-center">指标数</div>
-                                            <div className="flex-1">业务口径</div>
-                                            <div className="w-40 text-right pr-4">操作</div>
-                                        </div>
-                                        {tables.map((table, index) => (
-                                            <div
-                                                key={`${table.id}-${index}`}
-                                                onClick={() => handleTableClick(table)}
-                                                className={`flex items-center px-4 py-3.5 cursor-pointer border-b border-slate-50 transition-all hover:bg-indigo-50/30 group ${selectedTableIds.has(table.id!) ? 'bg-indigo-50/50' : ''}`}
-                                            >
-                                                <div className="w-8 flex items-center justify-center" onClick={e => e.stopPropagation()}>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={selectedTableIds.has(table.id!)}
-                                                        onChange={(e) => {
-                                                            const newSet = new Set(selectedTableIds);
-                                                            if (e.target.checked) {
-                                                                newSet.add(table.id!);
-                                                            } else {
-                                                                newSet.delete(table.id!);
-                                                            }
-                                                            setSelectedTableIds(newSet);
-                                                        }}
-                                                        className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
-                                                    />
-                                                </div>
-                                                <div className="w-10 text-center">
-                                                    <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-500 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors duration-300">
-                                                        <Table2 size={16} />
-                                                    </div>
-                                                </div>
-                                                <div className="w-16 text-center text-xs text-slate-400 font-mono font-bold tracking-tighter">{table.sortOrder || '-'}</div>
-                                                <div className="w-64 pr-4">
-                                                    <div className="font-bold text-sm text-slate-800 transition-colors group-hover:text-indigo-600 truncate" title={table.cnName}>{table.cnName || '-'}</div>
-                                                    <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex items-center gap-1">
-                                                        <span className="bg-slate-100 px-1 py-px rounded uppercase tracking-tighter">{table.name}</span>
-                                                    </div>
-                                                </div>
-                                                <div className="w-24 text-xs font-semibold text-slate-600">{table.frequency || '-'}</div>
-                                                <div className="w-24 text-xs font-medium text-slate-500">{table.sourceType || '-'}</div>
-                                                <div className="w-28">{getAutoFetchStatusBadge(table.autoFetchStatus)}</div>
-                                                <div className="w-20 text-center text-xs font-mono text-slate-500">
-                                                    {table.fieldCount !== undefined ? table.fieldCount : '-'}
-                                                </div>
-                                                <div className="w-20 text-center text-xs font-mono text-indigo-600 font-medium">
-                                                    {table.indicatorCount !== undefined ? table.indicatorCount : '-'}
-                                                </div>
-                                                <div className="flex-1 text-xs text-slate-400 line-clamp-1 pr-4" title={table.businessCaliber}>{table.businessCaliber || '-'}</div>
-                                                <div className="w-40 flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                                    <button
-                                                        onClick={() => {
-                                                            setHistoryTarget({
-                                                                tableName: table.name,
-                                                                tableId: table.id,
-                                                                tableCnName: table.cnName
-                                                            });
-                                                            setShowHistoryModal(true);
-                                                        }}
-                                                        className="p-1.5 hover:bg-white text-orange-600 rounded-lg shadow-sm border border-transparent hover:border-orange-100 transition-all"
-                                                        title="变更历史"
-                                                    >
-                                                        <Clock size={14} />
-                                                    </button>
-                                                    <button onClick={() => handleShowDetail('TABLE', table)} className="p-1.5 hover:bg-white text-indigo-600 rounded-lg shadow-sm border border-transparent hover:border-indigo-100 transition-all" title="详情"><Info size={14} /></button>
-                                                    <button onClick={() => handleEditTable(table)} className="p-1.5 hover:bg-white text-slate-600 rounded-lg shadow-sm border border-transparent hover:border-slate-200 transition-all" title="编辑"><Edit size={14} /></button>
-                                                    <button onClick={() => handleDeleteTable(table.id!)} className="p-1.5 hover:bg-white text-red-500 rounded-lg shadow-sm border border-transparent hover:border-red-100 transition-all" title="删除"><Trash2 size={14} /></button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6 p-4 lg:p-6 auto-rows-fr">
-                                        {tables.map((table) => (
-                                            <ReportCard
-                                                key={table.id}
-                                                table={table}
-                                                onClick={() => handleTableClick(table)}
-                                                isSelected={selectedTableIds.has(table.id!)}
-                                                onToggleSelect={(e) => {
-                                                    const newSet = new Set(selectedTableIds);
-                                                    if (e.target.checked) {
-                                                        newSet.add(table.id!);
-                                                    } else {
-                                                        newSet.delete(table.id!);
-                                                    }
-                                                    setSelectedTableIds(newSet);
-                                                }}
-                                                onShowDetail={() => handleShowDetail('TABLE', table)}
-                                                onEdit={() => handleEditTable(table)}
-                                                onDelete={() => handleDeleteTable(table.id!)}
-                                                onShowHistory={() => {
-                                                    setHistoryTarget({
-                                                        tableName: table.name,
-                                                        tableId: table.id,
-                                                        tableCnName: table.cnName
-                                                    });
-                                                    setShowHistoryModal(true);
-                                                }}
-                                            />
-                                        ))}
-                                    </div>
-                                )
-                            ) : (
-                                <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center h-full">
-                                    <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6 text-slate-300">
-                                        <BarChart3 size={40} />
-                                    </div>
-                                    <h3 className="text-lg font-bold text-slate-600 mb-2">未找到匹配的报表</h3>
-                                    <p className="text-sm text-slate-400 max-w-xs mx-auto leading-relaxed">
-                                        尝试调整您的搜索关键词或筛选条件，或者点击右上角的“新增报表”手动创建一个。
-                                    </p>
-                                    <button
-                                        onClick={() => {
-                                            setFilterStatus('');
-                                            setFilterFrequency('');
-                                            setFilterSourceType('');
-                                            setTableKeyword('');
-                                            setTablePage(1);
-                                        }}
-                                        className="mt-6 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-all shadow-sm"
-                                    >
-                                        清除所有筛选
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Pagination */}
-                        <div className="p-2 border-t border-slate-200 bg-slate-50">
-                            <Pagination
-                                current={tablePage}
-                                total={tableTotal}
-                                pageSize={tableSize}
-                                showSizeChanger={true}
-                                onChange={(p, s) => {
-                                    setTablePage(p);
-                                    setTableSize(s);
-                                }}
-                            />
-                        </div>
-                    </div>
+                    <RegulatoryAssetTableView
+                        stats={stats}
+                        loadingStats={loadingStats}
+                        showAdvancedFilter={showAdvancedFilter}
+                        setShowAdvancedFilter={setShowAdvancedFilter}
+                        appliedFilterCount={appliedFilterCount}
+                        tableKeyword={tableKeyword}
+                        setTableKeyword={setTableKeyword}
+                        handleTableSearch={handleTableSearch}
+                        viewMode={viewMode}
+                        setViewMode={setViewMode}
+                        selectedTableIds={selectedTableIds}
+                        setSelectedTableIds={setSelectedTableIds}
+                        tableFileInputRef={tableFileInputRef}
+                        handleTableImport={handleTableImport}
+                        handleTableExport={handleTableExport}
+                        handleBatchDeleteTables={handleBatchDeleteTables}
+                        selectedSystem={selectedSystem}
+                        isSyncing={isSyncing}
+                        isGeneratingHiveSql={isGeneratingHiveSql}
+                        handleSyncCodeSnippets={handleSyncCodeSnippets}
+                        handleGenerateHiveSql={handleGenerateHiveSql}
+                        handleAddTable={handleAddTable}
+                        filterStatus={filterStatus}
+                        setFilterStatus={setFilterStatus}
+                        filterFrequency={filterFrequency}
+                        setFilterFrequency={setFilterFrequency}
+                        filterSourceType={filterSourceType}
+                        setFilterSourceType={setFilterSourceType}
+                        setTablePage={setTablePage}
+                        fetchTables={fetchTables}
+                        tables={tables}
+                        loading={loading}
+                        tablePage={tablePage}
+                        tableSize={tableSize}
+                        setTableSize={setTableSize}
+                        tableTotal={tableTotal}
+                        handleTableClick={handleTableClick}
+                        onShowHistory={(table) => {
+                            setHistoryTarget({
+                                tableName: table.name,
+                                tableId: table.id,
+                                tableCnName: table.cnName
+                            });
+                            setShowHistoryModal(true);
+                        }}
+                        handleShowDetail={handleShowDetail}
+                        handleEditTable={handleEditTable}
+                        handleDeleteTable={handleDeleteTable}
+                    />
                 )}
 
-                {/* View 2: Element List (Drill-Down) */}
                 {activeView === 'ELEMENT_LIST' && currentTable && (
-                    <div className="flex flex-col h-full animate-in slide-in-from-right-10 duration-300">
-                        {/* Header with Back Button */}
-                        <div className="p-3 border-b border-slate-200 flex items-center justify-between bg-white shadow-sm z-10">
-                            <div className="flex items-center gap-3">
-                                <button onClick={handleBackToTables} className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded-full transition-colors">
-                                    <ArrowLeft size={20} />
-                                </button>
-                                <div>
-                                    <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                                        <Table2 size={18} className="text-blue-500" />
-                                        {currentTable.cnName || currentTable.name}
-                                    </h2>
-                                    <div className="text-xs text-slate-500 font-mono mt-0.5 flex gap-2">
-                                        <span>{currentTable.name}</span>
-                                        <span className="text-slate-300">|</span>
-                                        <span className="bg-slate-100 px-1 py-0.5 rounded">Seq: {currentTable.sortOrder}</span>
-                                    </div>
-                                </div>
-                                <div className="hidden xl:flex items-center gap-4 px-4 border-l border-slate-200 mx-4 h-8" key="element-stats">
-                                    <div className="flex items-center gap-1.5 text-xs text-slate-600" title="字段总数">
-                                        <div className="p-1 rounded bg-indigo-50 text-indigo-500">
-                                            <Hash size={14} />
-                                        </div>
-                                        <div className="flex flex-col leading-none">
-                                            <span className="font-bold text-slate-700">{currentTable.fieldCount || 0}</span>
-                                            <span className="text-[10px] scale-90 origin-left text-slate-400">字段</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 text-xs text-slate-600" title="指标总数">
-                                        <div className="p-1 rounded bg-purple-50 text-purple-500">
-                                            <Target size={14} />
-                                        </div>
-                                        <div className="flex flex-col leading-none">
-                                            <span className="font-bold text-slate-700">{currentTable.indicatorCount || 0}</span>
-                                            <span className="text-[10px] scale-90 origin-left text-slate-400">指标</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <div className="relative w-48">
-                                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                                    <input
-                                        type="text"
-                                        placeholder="搜索字段/指标..."
-                                        value={elementKeyword}
-                                        onChange={(e) => setElementKeyword(e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && fetchElements(currentTable.id!, 1, elementSize)}
-                                        className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-100"
-                                    />
-                                </div>
-                                <button
-                                    onClick={() => setShowElementFilter(!showElementFilter)}
-                                    className={`h-9 px-3 rounded-lg border transition-all flex items-center gap-1.5 text-xs ${showElementFilter ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-medium' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm'}`}
-                                >
-                                    <Filter size={14} className={showElementFilter ? 'text-indigo-600' : 'text-slate-400'} />
-                                    筛选
-                                    {appliedElementFilterCount > 0 && (
-                                        <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-semibold">
-                                            {appliedElementFilterCount}
-                                        </span>
-                                    )}
-                                </button>
-                                <button onClick={() => handleShowDetail('TABLE', currentTable)} className="p-1.5 hover:bg-indigo-50 text-indigo-600 rounded-lg border border-transparent hover:border-indigo-100" title="查看表详情">
-                                    <Info size={16} />
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Element Advanced Filter Panel */}
-                        {showElementFilter && (
-                            <div className="mx-4 mt-2 mb-2 p-4 border border-indigo-100 bg-indigo-50/20 rounded-xl animate-in slide-in-from-top-2 duration-200 grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">状态</label>
-                                    <select
-                                        value={elementFilterStatus}
-                                        onChange={(e) => {
-                                            setElementFilterStatus(e.target.value);
-                                            setElementPage(1);
-                                        }}
-                                        className="w-full border border-slate-200 rounded-lg p-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all outline-none"
-                                    >
-                                        <option value="">全部状态</option>
-                                        <option value="1">启用</option>
-                                        <option value="0">停用</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">自动取数状态</label>
-                                    <select
-                                        value={elementFilterAutoFetch}
-                                        onChange={(e) => {
-                                            setElementFilterAutoFetch(e.target.value);
-                                            setElementPage(1);
-                                        }}
-                                        className="w-full border border-slate-200 rounded-lg p-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all outline-none"
-                                    >
-                                        <option value="">全部状态</option>
-                                        <option value="已上线">已上线</option>
-                                        <option value="开发中">开发中</option>
-                                        <option value="未开发">未开发</option>
-                                    </select>
-                                </div>
-                                <div className="flex items-end gap-2">
-                                    <button
-                                        onClick={() => {
-                                            setElementFilterStatus('');
-                                            setElementFilterAutoFetch('');
-                                            setElementKeyword('');
-                                            setElementPage(1);
-                                        }}
-                                        className="h-9 px-4 text-sm bg-white border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-all flex items-center justify-center gap-1.5 flex-1 shadow-sm"
-                                    >
-                                        <RefreshCw size={14} /> 重置
-                                    </button>
-                                    <button
-                                        onClick={() => fetchElements(currentTable!.id!, 1, elementSize)}
-                                        className="h-9 px-4 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all flex items-center justify-center gap-1.5 flex-[1.5] shadow-md shadow-indigo-100"
-                                    >
-                                        应用筛选
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Toolbar */}
-                        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                            <span className="text-xs font-semibold text-slate-500">字段与指标列表 ({elementTotal})</span>
-                            <div className="flex gap-2">
-                                {selectedElementIds.size > 0 && (
-                                    <div className="flex items-center gap-2 mr-2">
-                                        <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-1 rounded border border-indigo-100 font-bold">
-                                            已选 {selectedElementIds.size}
-                                        </span>
-                                        <button
-                                            onClick={handleBatchDeleteElements}
-                                            className="text-xs bg-white border border-red-200 text-red-600 px-2 py-1.5 rounded flex items-center gap-1 hover:bg-red-50 shadow-sm transition-colors"
-                                        >
-                                            <Trash2 size={12} /> 批量删除
-                                        </button>
-                                    </div>
-                                )}
-                                <input
-                                    type="file"
-                                    ref={fileInputRef}
-                                    className="hidden"
-                                    accept=".xlsx, .xls"
-                                    onChange={handleFileChange}
-                                />
-                                <button onClick={handleImportClick} className="text-xs bg-white border border-slate-200 px-2 py-1.5 rounded flex items-center gap-1 hover:border-green-300 hover:text-green-600 shadow-sm transition-colors" title="导入">
-                                    <Upload size={12} className="text-green-500" /> 导入
-                                </button>
-                                <button onClick={handleExport} className="text-xs bg-white border border-slate-200 px-2 py-1.5 rounded flex items-center gap-1 hover:border-blue-300 hover:text-blue-600 shadow-sm transition-colors" title="导出">
-                                    <Download size={12} className="text-blue-500" /> 导出
-                                </button>
-                                <div className="w-px h-6 bg-slate-200 mx-1"></div>
-                                <button onClick={() => handleAddElement('FIELD')} className="text-xs bg-white border border-slate-200 px-2 py-1.5 rounded flex items-center gap-1 hover:border-indigo-300 hover:text-indigo-600 shadow-sm transition-colors">
-                                    <Hash size={12} className="text-indigo-500" /> 添加字段
-                                </button>
-                                <button onClick={() => handleAddElement('INDICATOR')} className="text-xs bg-white border border-slate-200 px-2 py-1.5 rounded flex items-center gap-1 hover:border-purple-300 hover:text-purple-600 shadow-sm transition-colors">
-                                    <Target size={12} className="text-purple-500" /> 添加指标
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Element Header */}
-                        <div className="flex items-center px-4 py-2 bg-white border-b border-slate-100 text-xs font-medium text-slate-500">
-                            <div className="w-8 flex items-center justify-center">
-                                <input
-                                    type="checkbox"
-                                    checked={elements.length > 0 && selectedElementIds.size === elements.length}
-                                    onChange={(e) => {
-                                        if (e.target.checked) {
-                                            setSelectedElementIds(new Set(elements.map(el => el.id!)));
-                                        } else {
-                                            setSelectedElementIds(new Set());
-                                        }
-                                    }}
-                                    className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
-                                />
-                            </div>
-                            <div className="w-10"></div> {/* Icon */}
-                            <div className="w-12 text-center">序号</div>
-                            <div className="w-48">名称</div>
-                            {/* <div className="w-32">编码</div> Removed */}
-                            <div className="w-24">数据类型</div>
-                            <div className="w-48">值域/计算公式</div>
-                            <div className="w-32">自动取数/状态</div>
-                            <div className="flex-1">业务口径/说明</div>
-                            <div className="w-32 text-right">操作</div>
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto bg-slate-50/30">
-                            {elements.map((el, index) => (
-                                <div
-                                    key={`${el.id}-${index}`}
-                                    onDoubleClick={() => handleShowDetail('ELEMENT', el)}
-                                    className={`flex items-center px-4 py-2.5 bg-white border-b border-slate-100 hover:bg-slate-50 transition-colors group ${selectedElementIds.has(el.id!) ? 'bg-indigo-50/30' : ''}`}
-                                >
-                                    <div className="w-8 flex items-center justify-center">
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedElementIds.has(el.id!)}
-                                            onChange={(e) => {
-                                                const newSet = new Set(selectedElementIds);
-                                                if (e.target.checked) {
-                                                    newSet.add(el.id!);
-                                                } else {
-                                                    newSet.delete(el.id!);
-                                                }
-                                                setSelectedElementIds(newSet);
-                                            }}
-                                            className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
-                                        />
-                                    </div>
-                                    <div className="w-10 flex justify-center">
-                                        {el.type === 'FIELD' ? <Hash size={16} className="text-slate-400" /> : <Target size={16} className="text-purple-500" />}
-                                    </div>
-                                    <div className="w-12 text-center text-xs text-slate-500 font-mono">
-                                        {el.sortOrder ?? '-'}
-                                    </div>
-                                    <div className="w-48 pr-2 truncate">
-                                        <div className="text-sm text-slate-700 font-medium">{el.cnName || el.name}</div>
-                                        {el.cnName && <div className="text-xs text-slate-400 font-mono">{el.name}</div>}
-                                    </div>
-                                    <div className="w-24 text-xs text-slate-600 px-1 font-mono flex flex-col">
-                                        <span>
-                                            {el.type === 'FIELD' ? ((el.dataType || '-') + (el.length ? `(${el.length})` : '')) : '-'}
-                                        </span>
-                                        {el.type === 'FIELD' && (
-                                            <div className="flex gap-1 mt-0.5">
-                                                {el.isPk === 1 && <span className="px-1 py-px rounded bg-yellow-100 text-yellow-700 text-[10px]">PK</span>}
-                                                {el.nullable === 0 && <span className="px-1 py-px rounded bg-red-50 text-red-500 text-[10px]">NN</span>}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="w-48 text-xs text-slate-500 px-1">
-                                        {el.type === 'FIELD' ? (
-                                            // 字段：显示值域
-                                            el.codeTableCode ? (
-                                                <div
-                                                    className="cursor-pointer hover:bg-amber-50 rounded p-1 -mx-1 group/code transition-colors"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setViewingCodeTable(el.codeTableCode!);
-                                                    }}
-                                                >
-                                                    <div className="font-medium text-amber-600 group-hover/code:text-amber-700">{getCodeTableName(el.codeTableCode)}</div>
-                                                    <div className="text-[10px] text-slate-400 font-mono group-hover/code:text-amber-600/70">{el.codeTableCode}</div>
-                                                </div>
-                                            ) : '-'
-                                        ) : (
-                                            // 指标：显示计算公式
-                                            el.formula ? (
-                                                <div className="text-purple-600 truncate" title={el.formula}>
-                                                    <code className="text-xs bg-purple-50 px-1.5 py-0.5 rounded">{el.formula}</code>
-                                                </div>
-                                            ) : '-'
-                                        )}
-                                    </div>
-                                    <div className="w-32 px-1 flex flex-col gap-0.5">
-                                        <div>{getAutoFetchStatusBadge(el.autoFetchStatus)}</div>
-                                        <div>
-                                            {el.status === 1 ? (
-                                                <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-green-600">启用</span>
-                                            ) : el.status === 0 ? (
-                                                <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-500">停用</span>
-                                            ) : null}
-                                        </div>
-                                    </div>
-                                    <div className="flex-1 text-xs text-slate-500 truncate pr-4" title={el.devNotes || el.businessCaliber}>{el.devNotes || el.businessCaliber || '-'}</div>
-                                    <div className="w-40 flex justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setHistoryTarget({
-                                                    tableName: currentTable.name,
-                                                    tableCnName: currentTable.cnName,
-                                                    fieldName: el.name,
-                                                    fieldCnName: el.cnName
-                                                });
-                                                setShowHistoryModal(true);
-                                            }}
-                                            className="p-1.5 hover:bg-orange-100 text-orange-600 rounded"
-                                            title="变更历史"
-                                        >
-                                            <Clock size={14} />
-                                        </button>
-                                        <button onClick={() => handleShowDetail('ELEMENT', el)} className="p-1.5 hover:bg-indigo-100 text-indigo-600 rounded" title="详情"><Info size={14} /></button>
-                                        <Auth code="metadata:asset:element:edit">
-                                            <button onClick={() => handleEditElement(el)} className="p-1.5 hover:bg-slate-200 text-slate-600 rounded" title="编辑"><Edit size={14} /></button>
-                                        </Auth>
-                                        <Auth code="metadata:asset:element:edit">
-                                            <button onClick={() => handleDeleteElement(el.id!)} className="p-1.5 hover:bg-red-50 text-red-500 rounded" title="删除"><Trash2 size={14} /></button>
-                                        </Auth>
-                                    </div>
-                                </div>
-                            ))}
-                            {elements.length === 0 && (
-                                <div className="p-12 text-center text-slate-400 flex flex-col items-center border-t border-slate-100">
-                                    <div className="bg-slate-100 p-3 rounded-full mb-3">
-                                        <Database size={24} className="text-slate-300" />
-                                    </div>
-                                    <p className="text-sm">该表暂无字段或指标</p>
-                                    <div className="flex gap-3 mt-4">
-                                        <Auth code="metadata:asset:element:edit">
-                                            <button onClick={() => handleAddElement('FIELD')} className="text-xs text-indigo-600 hover:underline">立即添加字段</button>
-                                        </Auth>
-                                        <Auth code="metadata:asset:element:edit">
-                                            <button onClick={() => handleAddElement('INDICATOR')} className="text-xs text-purple-600 hover:underline">立即添加指标</button>
-                                        </Auth>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Pagination */}
-                        <div className="p-2 border-t border-slate-200 bg-slate-50">
-                            <Pagination
-                                current={elementPage}
-                                total={elementTotal}
-                                pageSize={elementSize}
-                                showSizeChanger={true}
-                                onChange={(p, s) => {
-                                    setElementPage(p);
-                                    setElementSize(s);
-                                }}
-                            />
-                        </div>
-                    </div>
+                    <RegulatoryAssetElementView
+                        currentTable={currentTable}
+                        elementKeyword={elementKeyword}
+                        setElementKeyword={setElementKeyword}
+                        fetchElements={fetchElements}
+                        elementSize={elementSize}
+                        showElementFilter={showElementFilter}
+                        setShowElementFilter={setShowElementFilter}
+                        appliedElementFilterCount={appliedElementFilterCount}
+                        elementFilterStatus={elementFilterStatus}
+                        setElementFilterStatus={setElementFilterStatus}
+                        elementFilterAutoFetch={elementFilterAutoFetch}
+                        setElementFilterAutoFetch={setElementFilterAutoFetch}
+                        setElementPage={setElementPage}
+                        handleBackToTables={handleBackToTables}
+                        handleShowDetail={handleShowDetail}
+                        selectedElementIds={selectedElementIds}
+                        setSelectedElementIds={setSelectedElementIds}
+                        handleBatchDeleteElements={handleBatchDeleteElements}
+                        fileInputRef={fileInputRef}
+                        handleFileChange={handleFileChange}
+                        handleImportClick={handleImportClick}
+                        handleExport={handleExport}
+                        handleAddElement={handleAddElement}
+                        elements={elements}
+                        elementTotal={elementTotal}
+                        elementPage={elementPage}
+                        setElementSize={setElementSize}
+                        getCodeTableName={getCodeTableName}
+                        onViewCodeTable={(tableCode) => setViewingCodeTable(tableCode)}
+                        handleEditElement={handleEditElement}
+                        handleDeleteElement={handleDeleteElement}
+                        onShowHistory={(el) => {
+                            setHistoryTarget({
+                                tableName: currentTable.name,
+                                tableCnName: currentTable.cnName,
+                                fieldName: el.name,
+                                fieldCnName: el.cnName
+                            });
+                            setShowHistoryModal(true);
+                        }}
+                    />
                 )}
             </div>
 
