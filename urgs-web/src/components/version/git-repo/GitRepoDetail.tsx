@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Tabs, Button, Tag, Space, Avatar, Select, Input, Spin, message, Dropdown, MenuProps } from 'antd';
 import { ArrowLeft, GitBranch, Copy, ExternalLink, Settings, ShieldCheck, Play, Rocket, ClipboardList, Code, Folder, FileText, Clock, ChevronRight, X, Plus, GitPullRequest, CircleDot, FilePlus, FolderPlus, Upload } from 'lucide-react';
 
@@ -62,6 +62,10 @@ interface Props {
 }
 
 const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
+    const onBackRef = useRef(onBack);
+    useEffect(() => {
+        onBackRef.current = onBack;
+    }, [onBack]);
     const [activeTab, setActiveTab] = useState('code');
 
     // 代码浏览状态
@@ -97,7 +101,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
 
         const crumbs = [
             { id: 'root', label: '版本管理中心' },
-            { id: 'list', label: '仓库管理', onClick: onBack },
+            { id: 'list', label: '仓库管理', onClick: () => onBackRef.current() },
             { id: 'repo', label: repo.name, onClick: backToCodeView }
         ];
 
@@ -114,7 +118,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
         }
 
         setBreadcrumbs(crumbs);
-    }, [repo.name, onBack, viewingPullRequests, viewingCommitList, viewingBranchList, viewingTagList, viewingFile]);
+    }, [repo.name, viewingPullRequests, viewingCommitList, viewingBranchList, viewingTagList, viewingFile]);
 
     // 加载分支
     useEffect(() => {

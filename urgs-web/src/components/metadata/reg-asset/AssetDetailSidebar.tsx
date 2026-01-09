@@ -169,7 +169,7 @@ export const AssetDetailSidebar: React.FC<AssetDetailSidebarProps> = ({ isOpen, 
                             <DetailRow label="填报说明" value={table.fillInstruction} fullWidth className="bg-blue-50/50 p-3 rounded-lg border border-blue-100/50" />
                         )}
 
-                        {!isTable && element.type === 'INDICATOR' && (
+                        {!isTable && (
                             <DetailRow label="填报说明" value={element.fillInstruction} fullWidth className="bg-blue-50/50 p-3 rounded-lg border border-blue-100/50" />
                         )}
 
