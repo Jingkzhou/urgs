@@ -18,8 +18,8 @@ interface Issue {
     issueType: '批量任务处理' | '报送支持' | '数据查询';
     status: '新建' | '处理中' | '完成' | '遗留';
     workHours: number;
-    attachmentPath?: string;
-    attachmentName?: string;
+    attachmentPath?: string; // JSON array string
+    attachmentName?: string; // JSON array string
 }
 
 interface IssueTrackingProps {
@@ -50,6 +50,9 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
     const [systems, setSystems] = useState<any[]>([]);
     const [aiGenerating, setAiGenerating] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
+    const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+    const [uploadFiles, setUploadFiles] = useState<{ name: string, path: string }[]>([]);
+    const [showAdvanced, setShowAdvanced] = useState(false);
 
     useEffect(() => {
         fetchSystems();
@@ -115,6 +118,22 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
     useEffect(() => {
         if (initialData) {
             setFormData(initialData);
+            if (initialData.attachmentPath) {
+                try {
+                    const paths = JSON.parse(initialData.attachmentPath);
+                    const names = initialData.attachmentName ? JSON.parse(initialData.attachmentName) : [];
+                    const files = paths.map((path: string, index: number) => ({
+                        path,
+                        name: names[index] || 'attachment'
+                    }));
+                    setUploadFiles(files);
+                } catch (e) {
+                    // Legacy single file support
+                    setUploadFiles([{ name: initialData.attachmentName || 'attachment', path: initialData.attachmentPath }]);
+                }
+            } else {
+                setUploadFiles([]);
+            }
             setShowModal(true);
         }
     }, [initialData]);
@@ -144,7 +163,11 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify(formData)
+                body: JSON.stringify({
+                    ...formData,
+                    attachmentPath: uploadFiles.length > 0 ? JSON.stringify(uploadFiles.map(f => f.path)) : undefined,
+                    attachmentName: uploadFiles.length > 0 ? JSON.stringify(uploadFiles.map(f => f.name)) : undefined
+                })
             });
 
             if (res.ok) {
@@ -173,11 +196,54 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
             });
             if (res.ok) {
                 fetchIssues();
+                setSelectedRowKeys(prev => prev.filter(k => k !== id));
             } else {
                 alert('删除失败');
             }
         } catch (error) {
             console.error('Failed to delete issue:', error);
+        }
+    };
+
+    const handleBatchDelete = async () => {
+        if (selectedRowKeys.length === 0) return;
+        if (!confirm(`确定要删除选中的 ${selectedRowKeys.length} 个问题吗？`)) return;
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch('/api/issue/batch-delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(selectedRowKeys)
+            });
+            if (res.ok) {
+                fetchIssues();
+                setSelectedRowKeys([]);
+            } else {
+                alert('批量删除失败');
+            }
+        } catch (error) {
+            console.error('Failed to batch delete:', error);
+            alert('批量删除出错');
+        }
+    }
+
+    const toggleSelectAll = () => {
+        if (selectedRowKeys.length === issues.length) {
+            setSelectedRowKeys([]);
+        } else {
+            setSelectedRowKeys(issues.map(i => i.id));
+        }
+    };
+
+    const toggleSelectRow = (id: string) => {
+        if (selectedRowKeys.includes(id)) {
+            setSelectedRowKeys(prev => prev.filter(k => k !== id));
+        } else {
+            setSelectedRowKeys(prev => [...prev, id]);
         }
     };
 
@@ -403,48 +469,57 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
     };
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        if (file.size > 200 * 1024 * 1024) {
-            alert('文件大小不能超过 200MB');
-            return;
-        }
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
 
         setIsUploading(true);
-        const uploadData = new FormData();
-        uploadData.append('file', file);
+        const token = localStorage.getItem('auth_token');
 
         try {
-            const token = localStorage.getItem('auth_token');
-            const res = await fetch('/api/issue/upload', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: uploadData
-            });
+            const newFiles: { name: string, path: string }[] = [];
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                if (file.size > 200 * 1024 * 1024) {
+                    alert(`文件 ${file.name} 大小超过 200MB，已跳过`);
+                    continue;
+                }
 
-            if (res.ok) {
-                const path = await res.text();
-                setFormData(prev => ({
-                    ...prev,
-                    attachmentPath: path,
-                    attachmentName: file.name
-                }));
-            } else {
-                alert('上传失败');
+                const uploadData = new FormData();
+                uploadData.append('file', file);
+
+                const res = await fetch('/api/issue/upload', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: uploadData
+                });
+
+                if (res.ok) {
+                    const path = await res.text();
+                    newFiles.push({ name: file.name, path });
+                } else {
+                    alert(`文件 ${file.name} 上传失败`);
+                }
             }
+
+            setUploadFiles(prev => [...prev, ...newFiles]);
         } catch (error) {
             console.error(error);
             alert('上传出错');
         } finally {
             setIsUploading(false);
+            // Reset input
+            e.target.value = '';
         }
     };
 
-    const handleAttachmentDownload = async (id: string, fileName: string) => {
+    const handleRemoveAttachment = (index: number) => {
+        setUploadFiles(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleAttachmentDownload = async (id: string, fileName: string, index: number = 0) => {
         try {
             const token = localStorage.getItem('auth_token');
-            const res = await fetch(`/api/issue/download/${id}`, {
+            const res = await fetch(`/api/issue/download/${id}?index=${index}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
@@ -510,21 +585,35 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                 </div>
 
                 {viewMode === 'list' && (
-                    <Auth code="ops:issue:create">
-                        <button
-                            className="flex items-center gap-1 bg-red-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-red-700 transition-colors shadow-sm"
-                            onClick={() => {
-                                setFormData({
-                                    issueType: '批量任务处理',
-                                    status: '新建'
-                                });
-                                setShowModal(true);
-                            }}
-                        >
-                            <Plus size={16} />
-                            <span>登记问题</span>
-                        </button>
-                    </Auth>
+                    <div className="flex items-center gap-2">
+                        {selectedRowKeys.length > 0 && (
+                            <Auth code="ops:issue:batchDelete">
+                                <button
+                                    className="flex items-center gap-1 bg-white text-red-600 border border-red-200 px-3 py-1.5 rounded-md text-sm font-medium hover:bg-red-50 transition-colors shadow-sm"
+                                    onClick={handleBatchDelete}
+                                >
+                                    <Trash2 size={16} />
+                                    <span>批量删除 ({selectedRowKeys.length})</span>
+                                </button>
+                            </Auth>
+                        )}
+                        <Auth code="ops:issue:create">
+                            <button
+                                className="flex items-center gap-1 bg-red-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-red-700 transition-colors shadow-sm"
+                                onClick={() => {
+                                    setFormData({
+                                        issueType: '批量任务处理',
+                                        status: '新建'
+                                    });
+                                    setUploadFiles([]);
+                                    setShowModal(true);
+                                }}
+                            >
+                                <Plus size={16} />
+                                <span>登记问题</span>
+                            </button>
+                        </Auth>
+                    </div>
                 )}
             </div>
 
@@ -538,110 +627,141 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                 <>
                     {/* Header & Actions */}
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                            {/* System Filter */}
-                            <select
-                                className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none text-slate-600"
-                                value={filterSystem}
-                                onChange={(e) => setFilterSystem(e.target.value)}
-                            >
-                                <option value="">所有系统</option>
-                                {systems.map((sys: any) => (
-                                    <option key={sys.id} value={sys.name}>{sys.name}</option>
-                                ))}
-                            </select>
+                        <div className="flex flex-col gap-4">
+                            {/* Top Bar: Search & Actions */}
+                            <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+                                {/* Keyword Search */}
+                                <div className="relative flex-1 w-full sm:max-w-md">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="搜索问题标题/ID..."
+                                        className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-md text-sm focus:ring-2 focus:ring-red-500 outline-none shadow-sm"
+                                        value={keyword}
+                                        onChange={(e) => setKeyword(e.target.value)}
+                                    />
+                                </div>
 
-                            {/* Issue Type Filter */}
-                            <select
-                                className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none text-slate-600"
-                                value={filterType}
-                                onChange={(e) => setFilterType(e.target.value)}
-                            >
-                                <option value="all">所有类型</option>
-                                <option value="批量任务处理">批量任务处理</option>
-                                <option value="报送支持">报送支持</option>
-                                <option value="数据查询">数据查询</option>
-                            </select>
-
-                            {/* Status Filter */}
-                            <select
-                                className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none text-slate-600"
-                                value={filterStatus}
-                                onChange={(e) => setFilterStatus(e.target.value)}
-                            >
-                                <option value="all">所有状态</option>
-                                <option value="新建">新建</option>
-                                <option value="处理中">处理中</option>
-                                <option value="完成">完成</option>
-                                <option value="遗留">遗留</option>
-                            </select>
-
-                            {/* Reporter Filter */}
-                            <input
-                                type="text"
-                                placeholder="提出人姓名..."
-                                className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none"
-                                value={filterReporter}
-                                onChange={(e) => setFilterReporter(e.target.value)}
-                            />
-
-                            {/* Handler Filter */}
-                            <input
-                                type="text"
-                                placeholder="处理人姓名..."
-                                className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none"
-                                value={filterHandler}
-                                onChange={(e) => setFilterHandler(e.target.value)}
-                            />
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row gap-4 items-center">
-                            {/* Time Range */}
-                            <div className="flex items-center gap-2 text-sm text-slate-600 whitespace-nowrap">
-                                <Clock size={16} className="text-slate-400" />
-                                <span>发生时间:</span>
-                                <input
-                                    type="date"
-                                    className="border border-slate-200 rounded-md py-1.5 px-2 text-sm focus:ring-2 focus:ring-red-500 outline-none"
-                                    value={filterStartTime}
-                                    onChange={(e) => setFilterStartTime(e.target.value)}
-                                />
-                                <span>至</span>
-                                <input
-                                    type="date"
-                                    className="border border-slate-200 rounded-md py-1.5 px-2 text-sm focus:ring-2 focus:ring-red-500 outline-none"
-                                    value={filterEndTime}
-                                    onChange={(e) => setFilterEndTime(e.target.value)}
-                                />
+                                {/* Actions */}
+                                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                                    <button
+                                        className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium transition-colors border ${showAdvanced ? 'bg-slate-100 border-slate-300 text-slate-800' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                                        onClick={() => setShowAdvanced(!showAdvanced)}
+                                    >
+                                        <Filter size={16} />
+                                        <span>{showAdvanced ? '收起筛选' : '高级筛选'}</span>
+                                    </button>
+                                    <div className="h-4 w-[1px] bg-slate-200 mx-1"></div>
+                                    <button
+                                        className="flex items-center gap-1 border border-slate-300 text-slate-600 px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-100 transition-colors bg-white"
+                                        onClick={handleImport}
+                                    >
+                                        <Upload size={16} />
+                                        <span>导入</span>
+                                    </button>
+                                    <button
+                                        className="flex items-center gap-1 border border-slate-300 text-slate-600 px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-100 transition-colors bg-white"
+                                        onClick={handleExport}
+                                    >
+                                        <Download size={16} />
+                                        <span>导出</span>
+                                    </button>
+                                </div>
                             </div>
 
-                            {/* Keyword Search (Expanded) */}
-                            <div className="relative flex-1 w-full">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                <input
-                                    type="text"
-                                    placeholder="搜索问题标题/ID..."
-                                    className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-md text-sm focus:ring-2 focus:ring-red-500 outline-none"
-                                    value={keyword}
-                                    onChange={(e) => setKeyword(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <button
-                                className="flex items-center gap-1 border border-slate-300 text-slate-600 px-3 py-1.5 rounded-md text-sm font-medium hover:bg-slate-100 transition-colors"
-                                onClick={handleImport}
-                            >
-                                <Upload size={16} />
-                                <span>导入</span>
-                            </button>
-                            <button
-                                className="flex items-center gap-1 border border-slate-300 text-slate-600 px-3 py-1.5 rounded-md text-sm font-medium hover:bg-slate-100 transition-colors"
-                                onClick={handleExport}
-                            >
-                                <Download size={16} />
-                                <span>导出</span>
-                            </button>
+                            {/* Advanced Filters */}
+                            {showAdvanced && (
+                                <div className="p-4 bg-slate-50 rounded-lg border border-slate-100 animate-slide-in-down">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                                        {/* System Filter */}
+                                        <select
+                                            className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none text-slate-600 bg-white"
+                                            value={filterSystem}
+                                            onChange={(e) => setFilterSystem(e.target.value)}
+                                        >
+                                            <option value="">所有系统</option>
+                                            {systems.map((sys: any) => (
+                                                <option key={sys.id} value={sys.name}>{sys.name}</option>
+                                            ))}
+                                        </select>
+
+                                        {/* Issue Type Filter */}
+                                        <select
+                                            className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none text-slate-600 bg-white"
+                                            value={filterType}
+                                            onChange={(e) => setFilterType(e.target.value)}
+                                        >
+                                            <option value="all">所有类型</option>
+                                            <option value="批量任务处理">批量任务处理</option>
+                                            <option value="报送支持">报送支持</option>
+                                            <option value="数据查询">数据查询</option>
+                                        </select>
+
+                                        {/* Status Filter */}
+                                        <select
+                                            className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none text-slate-600 bg-white"
+                                            value={filterStatus}
+                                            onChange={(e) => setFilterStatus(e.target.value)}
+                                        >
+                                            <option value="all">所有状态</option>
+                                            <option value="新建">新建</option>
+                                            <option value="处理中">处理中</option>
+                                            <option value="完成">完成</option>
+                                            <option value="遗留">遗留</option>
+                                        </select>
+
+                                        {/* Reporter Filter */}
+                                        <input
+                                            type="text"
+                                            placeholder="提出人姓名..."
+                                            className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none bg-white"
+                                            value={filterReporter}
+                                            onChange={(e) => setFilterReporter(e.target.value)}
+                                        />
+
+                                        {/* Handler Filter */}
+                                        <input
+                                            type="text"
+                                            placeholder="处理人姓名..."
+                                            className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none bg-white"
+                                            value={filterHandler}
+                                            onChange={(e) => setFilterHandler(e.target.value)}
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center gap-2 text-sm text-slate-600 whitespace-nowrap pt-2 border-t border-slate-200">
+                                        <Clock size={16} className="text-slate-400" />
+                                        <span>发生时间:</span>
+                                        <input
+                                            type="date"
+                                            className="border border-slate-200 rounded-md py-1.5 px-2 text-sm focus:ring-2 focus:ring-red-500 outline-none bg-white"
+                                            value={filterStartTime}
+                                            onChange={(e) => setFilterStartTime(e.target.value)}
+                                        />
+                                        <span>至</span>
+                                        <input
+                                            type="date"
+                                            className="border border-slate-200 rounded-md py-1.5 px-2 text-sm focus:ring-2 focus:ring-red-500 outline-none bg-white"
+                                            value={filterEndTime}
+                                            onChange={(e) => setFilterEndTime(e.target.value)}
+                                        />
+                                        <button
+                                            className="ml-auto text-xs text-slate-400 hover:text-red-500"
+                                            onClick={() => {
+                                                setFilterSystem('');
+                                                setFilterType('all');
+                                                setFilterStatus('all');
+                                                setFilterReporter('');
+                                                setFilterHandler('');
+                                                setFilterStartTime('');
+                                                setFilterEndTime('');
+                                            }}
+                                        >
+                                            重置筛选
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -651,6 +771,14 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                                     <tr>
+                                        <th className="px-4 py-3 whitespace-nowrap w-4">
+                                            <input
+                                                type="checkbox"
+                                                checked={issues.length > 0 && selectedRowKeys.length === issues.length}
+                                                onChange={toggleSelectAll}
+                                                className="rounded border-slate-300 text-red-600 focus:ring-red-500"
+                                            />
+                                        </th>
                                         <th className="px-4 py-3 whitespace-nowrap">问题标题</th>
                                         <th className="px-4 py-3 whitespace-nowrap">涉及系统</th>
                                         <th className="px-4 py-3 whitespace-nowrap">发生时间</th>
@@ -658,7 +786,6 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                         <th className="px-4 py-3 whitespace-nowrap">解决时间</th>
                                         <th className="px-4 py-3 whitespace-nowrap">处理人</th>
                                         <th className="px-4 py-3 whitespace-nowrap">问题类型</th>
-                                        <th className="px-4 py-3 whitespace-nowrap">附件</th>
                                         <th className="px-4 py-3 whitespace-nowrap">状态</th>
                                         <th className="px-4 py-3 whitespace-nowrap">工时(h)</th>
                                         <th className="px-4 py-3 text-right whitespace-nowrap">操作</th>
@@ -679,7 +806,20 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                             </td>
                                         </tr>
                                     ) : issues.map((issue) => (
-                                        <tr key={issue.id} className="hover:bg-slate-50 transition-colors group">
+                                        <tr
+                                            key={issue.id}
+                                            className="hover:bg-slate-50 transition-colors group cursor-pointer"
+                                            onClick={() => handleViewDetail(issue)}
+                                        >
+                                            <td className="px-4 py-3">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedRowKeys.includes(issue.id)}
+                                                    onChange={() => toggleSelectRow(issue.id)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="rounded border-slate-300 text-red-600 focus:ring-red-500"
+                                                />
+                                            </td>
                                             <td className="px-4 py-3">
                                                 <div className="font-medium text-slate-800 max-w-[200px] truncate" title={issue.title}>{issue.title}</div>
                                                 <div className="text-xs text-slate-400 font-mono">{issue.id}</div>
@@ -696,17 +836,6 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap">
-                                                {issue.attachmentPath && (
-                                                    <button
-                                                        onClick={() => handleAttachmentDownload(issue.id, issue.attachmentName || 'attachment')}
-                                                        className="text-blue-600 hover:text-blue-800"
-                                                        title={issue.attachmentName}
-                                                    >
-                                                        <Paperclip size={16} />
-                                                    </button>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-3 whitespace-nowrap">
                                                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${getStatusStyle(issue.status)}`}>
                                                     {getStatusIcon(issue.status)}
                                                     {issue.status}
@@ -715,17 +844,13 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                             <td className="px-4 py-3 text-slate-600 text-center whitespace-nowrap">{issue.workHours > 0 ? issue.workHours : '-'}</td>
                                             <td className="px-4 py-3 text-right whitespace-nowrap">
                                                 <div className="flex items-center justify-end gap-2">
-                                                    <button
-                                                        className="text-blue-600 hover:text-blue-800 text-xs flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
-                                                        onClick={() => handleViewDetail(issue)}
-                                                    >
-                                                        <Eye size={14} />
-                                                        详情
-                                                    </button>
                                                     <Auth code="ops:issue:create">
                                                         <button
                                                             className="text-amber-600 hover:text-amber-800 text-xs flex items-center gap-1 px-2 py-1 rounded hover:bg-amber-50 transition-colors"
-                                                            onClick={() => handleEdit(issue)}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleEdit(issue);
+                                                            }}
                                                         >
                                                             <Edit size={14} />
                                                             修改
@@ -734,7 +859,10 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                                     <Auth code="ops:issue:delete">
                                                         <button
                                                             className="text-red-600 hover:text-red-800 text-xs flex items-center gap-1 px-2 py-1 rounded hover:bg-red-50 transition-colors"
-                                                            onClick={() => handleDelete(issue.id)}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDelete(issue.id);
+                                                            }}
                                                         >
                                                             <Trash2 size={14} />
                                                             删除
@@ -921,31 +1049,40 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
 
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">附件</label>
-                                <div className="flex items-center gap-2">
-                                    <label className={`flex items-center gap-2 px-3 py-2 border border-slate-300 rounded-md text-sm text-slate-600 cursor-pointer hover:bg-slate-50 transition-colors ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                        <Upload size={16} />
-                                        <span>{isUploading ? '上传中...' : '上传附件'}</span>
-                                        <input
-                                            type="file"
-                                            className="hidden"
-                                            onChange={handleFileUpload}
-                                            disabled={isUploading}
-                                        />
-                                    </label>
-                                    {formData.attachmentName && (
-                                        <span className="text-sm text-slate-600 flex items-center gap-1">
-                                            <Paperclip size={14} />
-                                            {formData.attachmentName}
-                                            <button
-                                                className="text-slate-400 hover:text-red-500 ml-1"
-                                                onClick={() => setFormData({ ...formData, attachmentPath: undefined, attachmentName: undefined })}
-                                            >
-                                                <X size={14} />
-                                            </button>
-                                        </span>
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <label className={`flex items-center gap-2 px-3 py-2 border border-slate-300 rounded-md text-sm text-slate-600 cursor-pointer hover:bg-slate-50 transition-colors ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                            <Upload size={16} />
+                                            <span>{isUploading ? '上传中...' : '上传附件 (支持多选)'}</span>
+                                            <input
+                                                type="file"
+                                                className="hidden"
+                                                multiple
+                                                onChange={handleFileUpload}
+                                                disabled={isUploading}
+                                            />
+                                        </label>
+                                    </div>
+                                    {uploadFiles.length > 0 && (
+                                        <div className="bg-slate-50 rounded p-2 flex flex-col gap-1">
+                                            {uploadFiles.map((f, i) => (
+                                                <div key={i} className="flex items-center justify-between text-sm text-slate-600 px-2 py-1 bg-white rounded border border-slate-200">
+                                                    <div className="flex items-center gap-2 overflow-hidden">
+                                                        <Paperclip size={12} className="shrink-0" />
+                                                        <span className="truncate">{f.name}</span>
+                                                    </div>
+                                                    <button
+                                                        className="text-slate-400 hover:text-red-500 shrink-0"
+                                                        onClick={() => handleRemoveAttachment(i)}
+                                                    >
+                                                        <X size={14} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
                                     )}
                                 </div>
-                                <p className="text-xs text-slate-400 mt-1">支持最大 200MB 的文件上传</p>
+                                <p className="text-xs text-slate-400 mt-1">支持最大 200MB 的文件上传，可同时选择多个文件</p>
                             </div>
                         </div>
 
@@ -968,14 +1105,21 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                 </div>
             )}
 
-            {/* Issue Detail Modal */}
+            {/* Issue Detail Sidebar */}
             {showDetailModal && selectedIssue && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fade-in">
-                    <div className="bg-white rounded-lg shadow-xl w-[700px] max-h-[90vh] flex flex-col">
-                        <div className="flex items-center justify-between p-4 border-b border-slate-100">
+                <div className="fixed inset-0 z-50 flex justify-end">
+                    {/* Backdrop */}
+                    <div
+                        className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity"
+                        onClick={() => setShowDetailModal(false)}
+                    />
+
+                    {/* Sidebar */}
+                    <div className="relative w-[500px] h-full bg-white shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out animate-slide-in-right">
+                        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/50">
                             <h3 className="text-lg font-bold text-slate-800">问题详情</h3>
-                            <button onClick={() => setShowDetailModal(false)} className="text-slate-400 hover:text-slate-600">
-                                <X size={24} />
+                            <button onClick={() => setShowDetailModal(false)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-100 rounded-full transition-colors">
+                                <X size={20} />
                             </button>
                         </div>
 
@@ -1003,14 +1147,39 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
 
                             {selectedIssue.attachmentPath && (
                                 <div className="bg-slate-50 rounded-lg p-3">
-                                    <label className="block text-xs font-medium text-slate-500 mb-1">附件</label>
-                                    <button
-                                        onClick={() => handleAttachmentDownload(selectedIssue.id, selectedIssue.attachmentName || 'attachment')}
-                                        className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
-                                    >
-                                        <Paperclip size={14} />
-                                        {selectedIssue.attachmentName || '点击下载附件'}
-                                    </button>
+                                    <label className="block text-xs font-medium text-slate-500 mb-2">附件列表</label>
+                                    <div className="flex flex-col gap-2">
+                                        {(() => {
+                                            try {
+                                                // Try parse JSON
+                                                const paths = JSON.parse(selectedIssue.attachmentPath);
+                                                const names = selectedIssue.attachmentName ? JSON.parse(selectedIssue.attachmentName) : [];
+                                                if (Array.isArray(paths)) {
+                                                    return paths.map((p, i) => (
+                                                        <button
+                                                            key={i}
+                                                            onClick={() => handleAttachmentDownload(selectedIssue.id, names[i] || `attachment_${i + 1}`, i)}
+                                                            className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1 w-fit"
+                                                        >
+                                                            <Paperclip size={14} />
+                                                            {names[i] || `附件 ${i + 1}`}
+                                                        </button>
+                                                    ));
+                                                }
+                                            } catch (e) {
+                                                // Fallback for single file
+                                                return (
+                                                    <button
+                                                        onClick={() => handleAttachmentDownload(selectedIssue.id, selectedIssue.attachmentName || 'attachment')}
+                                                        className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1 w-fit"
+                                                    >
+                                                        <Paperclip size={14} />
+                                                        {selectedIssue.attachmentName || '点击下载附件'}
+                                                    </button>
+                                                )
+                                            }
+                                        })()}
+                                    </div>
                                 </div>
                             )}
 

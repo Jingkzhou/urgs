@@ -30,11 +30,6 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '2-1-1', name: '发布公告', code: 'announcement:publish', type: 'button', path: '/announcement/publish', level: 2, parentId: '2-1' },
     { id: '2-1-2', name: '编辑公告', code: 'announcement:edit', type: 'button', path: '/announcement/edit', level: 2, parentId: '2-1' },
     { id: '2-1-3', name: '删除公告', code: 'announcement:del', type: 'button', path: '/announcement/del', level: 2, parentId: '2-1' },
-
-    { id: '2-2', name: '任务调度管理', code: 'schedule', type: 'menu', path: '/schedule', level: 0, parentId: 'root' },
-    { id: '2-2-1', name: '新建调度', code: 'schedule:create', type: 'button', path: '-', level: 1, parentId: '2-2' },
-    { id: '2-2-2', name: '刷新状态', code: 'schedule:refresh', type: 'button', path: '-', level: 1, parentId: '2-2' },
-
     { id: '3', name: '系统管理', code: 'sys', type: 'dir', path: '/admin', level: 0, parentId: 'root' },
 
     { id: '3-1', name: '机构管理', code: 'sys:org', type: 'menu', path: '/admin/org', level: 1, parentId: '3' },
@@ -188,6 +183,8 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '6-2-2', name: '删除问题', code: 'ops:issue:delete', type: 'button', path: '/ops/issue/delete', level: 2, parentId: '6-2' },
     { id: '6-2-3', name: '编辑问题', code: 'ops:issue:edit', type: 'button', path: '/ops/issue/edit', level: 2, parentId: '6-2' },
     { id: '6-2-4', name: '查看问题', code: 'ops:issue:view', type: 'button', path: '/ops/issue/view', level: 2, parentId: '6-2' },
+    { id: '6-2-5', name: '批量删除', code: 'ops:issue:batchDelete', type: 'button', path: '/ops/issue/batchDelete', level: 2, parentId: '6-2' },
+
     { id: '6-3', name: '基础设施管理', code: 'ops:infra:view', type: 'menu', path: '/ops/infra', level: 1, parentId: '6' },
 
     // ================= 知识中心 =================

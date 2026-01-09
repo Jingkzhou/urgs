@@ -106,6 +106,19 @@ public class IssueController {
         return ResponseEntity.ok(success);
     }
 
+    @PostMapping("/batch-delete")
+    public ResponseEntity<Boolean> deleteBatch(
+            @RequestBody java.util.List<String> ids,
+            @RequestHeader(value = "X-User-Id", defaultValue = "admin") String userId) {
+
+        if (ids == null || ids.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        boolean success = issueService.removeBatchByIds(ids);
+        return ResponseEntity.ok(success);
+    }
+
     @GetMapping("/export")
     public void exportData(
             HttpServletResponse response,
@@ -164,18 +177,59 @@ public class IssueController {
     }
 
     @GetMapping("/download/{id}")
-    public ResponseEntity<Resource> downloadAttachment(@PathVariable String id) {
+    public ResponseEntity<Resource> downloadAttachment(
+            @PathVariable String id,
+            @RequestParam(defaultValue = "0") int index) {
         Issue issue = issueService.getById(id);
         if (issue == null || issue.getAttachmentPath() == null) {
             return ResponseEntity.notFound().build();
         }
 
         try {
-            Path filePath = Paths.get(issue.getAttachmentPath());
+            String pathStr = issue.getAttachmentPath();
+            String nameStr = issue.getAttachmentName();
+
+            // Try parse as JSON array
+            String targetPath = pathStr;
+            String targetName = nameStr;
+
+            try {
+                if (pathStr.trim().startsWith("[")) {
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    java.util.List<String> paths = mapper.readValue(pathStr,
+                            new com.fasterxml.jackson.core.type.TypeReference<java.util.List<String>>() {
+                            });
+                    java.util.List<String> names = java.util.Collections.emptyList();
+                    if (nameStr != null && nameStr.trim().startsWith("[")) {
+                        names = mapper.readValue(nameStr,
+                                new com.fasterxml.jackson.core.type.TypeReference<java.util.List<String>>() {
+                                });
+                    }
+
+                    if (index >= 0 && index < paths.size()) {
+                        targetPath = paths.get(index);
+                        if (index < names.size()) {
+                            targetName = names.get(index);
+                        } else {
+                            // Fallback name if paths has more entries than names
+                            targetName = new File(targetPath).getName();
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Not a JSON array or parse error, treat as single string (backward
+                // compatibility)
+                // Log if needed, but safe to ignore and use original strings
+            }
+
+            if (targetPath == null)
+                return ResponseEntity.notFound().build();
+
+            Path filePath = Paths.get(targetPath);
             Resource resource = new UrlResource(filePath.toUri());
 
             if (resource.exists() || resource.isReadable()) {
-                String filename = issue.getAttachmentName();
+                String filename = targetName;
                 if (filename == null || filename.isEmpty()) {
                     filename = resource.getFilename();
                 }
