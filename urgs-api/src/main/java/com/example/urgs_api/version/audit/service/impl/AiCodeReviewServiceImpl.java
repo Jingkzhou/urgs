@@ -8,7 +8,6 @@ import com.example.urgs_api.version.audit.mapper.AiCodeReviewMapper;
 import com.example.urgs_api.version.audit.service.AiCodeReviewService;
 import com.example.urgs_api.version.dto.GitCommit;
 import com.example.urgs_api.version.dto.GitCommitDiff;
-import com.example.urgs_api.version.entity.GitRepository;
 import com.example.urgs_api.version.service.GitPlatformService;
 import com.example.urgs_api.version.service.GitRepositoryService;
 import org.springframework.scheduling.annotation.Async;
@@ -16,7 +15,13 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.stream.Collectors;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.example.urgs_api.version.audit.service.CodeChunker;
+import com.example.urgs_api.version.audit.service.ReviewPromptFactory;
 
 @Service
 public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiCodeReview>
@@ -26,24 +31,37 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
     private final GitRepositoryService gitRepositoryService;
     private final AiChatService aiChatService;
 
+    private final CodeChunker codeChunker;
+    private final ReviewPromptFactory reviewPromptFactory;
+    private final ObjectMapper objectMapper;
+
     public AiCodeReviewServiceImpl(GitPlatformService gitPlatformService,
             GitRepositoryService gitRepositoryService,
-            AiChatService aiChatService) {
+            AiChatService aiChatService,
+            CodeChunker codeChunker,
+            ReviewPromptFactory reviewPromptFactory,
+            ObjectMapper objectMapper) {
         this.gitPlatformService = gitPlatformService;
         this.gitRepositoryService = gitRepositoryService;
         this.aiChatService = aiChatService;
+        this.codeChunker = codeChunker;
+        this.reviewPromptFactory = reviewPromptFactory;
+        this.objectMapper = objectMapper;
     }
 
     @Async
     @Override
     public void triggerReview(Long repoId, String commitSha, String branch, String developerEmail) {
-        // 1. 检查是否已存在
+        System.out.println("DEBUG: Sending AI Code Review for commit: " + commitSha);
+
+        // 1. Check existing
         AiCodeReview existing = getByCommit(commitSha);
         if (existing != null) {
-            return;
+            System.out.println("DEBUG: Review already exists for " + commitSha + ". Deleting to force re-run.");
+            removeById(existing.getId());
         }
 
-        // 2. 创建待处理记录
+        // 2. Create pending record
         AiCodeReview review = new AiCodeReview();
         review.setRepoId(repoId);
         review.setCommitSha(commitSha);
@@ -52,92 +70,256 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
         review.setStatus("PENDING");
         review.setCreatedAt(LocalDateTime.now());
         save(review);
+        System.out.println("DEBUG: Created PENDING review record id: " + review.getId());
 
         try {
-            // 3. 获取差异
-            GitRepository repo = gitRepositoryService.findById(repoId).orElse(null);
-            if (repo == null) {
-                throw new RuntimeException("仓库不存在");
-            }
+            gitRepositoryService.findById(repoId).orElseThrow(() -> new RuntimeException("仓库不存在"));
 
-            // 理想情况下需要一个包含差异的提交详情接口
-            // GitPlatformService 需要暴露带差异的 getCommitDetail
-            // 查看 GitBrowserController 的调用：
-            // gitPlatformService.getCommitDetail(repoId, sha)
-            // 注意：GitPlatformService 的 getCommitDetail 是 (repoId, sha) 还是 (repo, sha)？
-            // 从现有调用看是 gitPlatformService.getCommitDetail(id, sha)
-
+            // 3. Get changed files
+            System.out.println("DEBUG: Fetching commit detail...");
             GitCommit commitDetail = gitPlatformService.getCommitDetail(repoId, commitSha);
             List<GitCommitDiff> diffs = commitDetail.getDiffs();
+            System.out.println("DEBUG: Commit detail fetched. Diffs count: " + (diffs != null ? diffs.size() : "null"));
 
             if (diffs == null || diffs.isEmpty()) {
-                review.setStatus("COMPLETED");
-                review.setSummary("未发现变更或差异。");
-                review.setContent("没有可供审查的内容。");
-                review.setScore(100);
-            } else {
-                // 4. 构造提示词
-                StringBuilder diffContent = new StringBuilder();
-                for (GitCommitDiff diff : diffs) {
-                    diffContent.append("文件: ").append(diff.getNewPath()).append("\n");
-                    diffContent.append(diff.getDiff()).append("\n\n");
-                }
-
-                String systemPrompt = "你是一名资深代码审查员。请审查以下代码变更，" +
-                        "检查是否存在缺陷、安全问题或不良实践。" +
-                        "给出 0-100 的评分。" +
-                        "请按 JSON 格式返回：{ \"score\": 85, \"summary\": \"...\", \"detail\": \"...\" }";
-
-                String userPrompt = "提交信息: " + commitDetail.getMessage() + "\n\n变更内容:\n"
-                        + diffContent.toString();
-
-                // 5. 调用 AI
-                String response;
-                try {
-                    response = aiChatService.chat(systemPrompt, userPrompt);
-                } catch (Exception aiError) {
-                    System.err.println("AI 服务调用失败，使用模拟响应: " + aiError.getMessage());
-                    // 模拟响应
-                    response = "{\n" +
-                            "  \"score\": 85,\n" +
-                            "  \"summary\": \"[模拟] AI 服务不可用，当前为模拟审查结果。\",\n" +
-                            "  \"content\": \"代码变更整体合理，流式处理使用得当。请确保异常处理足够健壮。\"\n"
-                            +
-                            "}";
-                }
-
-                // 6. 解析响应（当前为简单启发式，假设为 JSON 或直接存储原文）
-                // 作为模拟/最小可行版本，这里直接存储响应内容，并尝试解析评分
-
-                review.setContent(response);
-                review.setSummary("AI 审查完成。");
-                review.setScore(80); // 解析失败时的兜底分数，可进一步完善解析逻辑
-
-                // 如果响应是严格 JSON，则尝试做简单解析
-                if (response.contains("\"score\":")) {
-                    try {
-                        // 简单解析
-                        String scoreStr = response.substring(response.indexOf("\"score\":") + 8).split(",")[0].trim();
-                        review.setScore(Integer.parseInt(scoreStr));
-
-                        if (response.contains("\"summary\":")) {
-                            String summaryStr = response.substring(response.indexOf("\"summary\":") + 10)
-                                    .split("\",")[0].replace("\"", "").trim();
-                            review.setSummary(summaryStr);
-                        }
-                    } catch (Exception e) {
-                    }
-                }
-
-                review.setStatus("COMPLETED");
+                markAsCompleted(review, 100, "未发现变更或差异。", "没有可供审查的内容。", "{}");
+                return;
             }
 
+            // 4. Map-Reduce Analysis
+            List<String> fileSummaries = new ArrayList<>();
+            List<String> allFileIssuesJson = new ArrayList<>();
+
+            for (GitCommitDiff diff : diffs) {
+                // Skip deleted files or binaries
+                if ("deleted".equals(diff.getStatus()) || isBinary(diff.getNewPath())) {
+                    continue;
+                }
+
+                String path = diff.getNewPath();
+                System.out.println("DEBUG: Processing file: " + path);
+
+                try {
+                    // Fetch FULL content
+                    System.out.println("DEBUG: Fetching full content for " + path);
+                    String fullContent = gitPlatformService.getFileContent(repoId, commitSha, path).getContent();
+                    if (fullContent == null || fullContent.isEmpty()) {
+                        // Fallback to diff if full content fails (rare)
+                        System.out.println("DEBUG: Full content empty, using diff for " + path);
+                        fullContent = diff.getDiff();
+                    }
+
+                    // Smart Chunking
+                    System.out.println("DEBUG: Chunking content for " + path);
+                    List<String> chunks = codeChunker.chunkCode(fullContent, getLanguage(path));
+                    System.out.println("DEBUG: Chunks generated: " + chunks.size());
+
+                    List<String> chunkIssues = new ArrayList<>();
+
+                    // Map Phase: Analyze each chunk PARALLEL
+                    System.out.println("DEBUG: Map Phase - Analyze chunks in parallel: " + chunks.size());
+                    List<java.util.concurrent.CompletableFuture<String>> futures = new ArrayList<>();
+
+                    for (int i = 0; i < chunks.size(); i++) {
+                        String chunk = chunks.get(i);
+                        String lang = getLanguage(path);
+                        futures.add(java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                            String prompt = reviewPromptFactory.getMapPhasePrompt(lang, chunk);
+                            return callAiSafe(prompt);
+                        }));
+                    }
+
+                    // Wait for all
+                    java.util.concurrent.CompletableFuture
+                            .allOf(futures.toArray(new java.util.concurrent.CompletableFuture[0])).join();
+
+                    chunkIssues = futures.stream()
+                            .map(java.util.concurrent.CompletableFuture::join)
+                            .map(this::extractJson)
+                            .collect(Collectors.toList());
+
+                    // REDUCE Phase (File Level): Aggregate chunk results
+                    System.out.println("DEBUG: Reduce Phase for file " + path);
+                    String joinedIssues = "[" + String.join(",", chunkIssues) + "]";
+                    String fileReducePrompt = reviewPromptFactory.getReducePhasePrompt(getLanguage(path), joinedIssues);
+                    String fileAnalysisJson = callAiSafe(fileReducePrompt);
+
+                    allFileIssuesJson.add(fileAnalysisJson);
+                    fileSummaries.add(String.format("### %s\n%s", path, extractSummary(fileAnalysisJson)));
+                } catch (Exception e) {
+                    System.err.println("DEBUG: Failed to analyze file: " + path + " - " + e.getMessage());
+                    e.printStackTrace();
+                }
+            }
+
+            // 5. Final Aggregation
+            // Simple aggregation for now: Average score, combine issues
+            System.out.println("DEBUG: Final aggregation...");
+            // Ideally we could do one last AI Reduce pass here if needed.
+            int finalScore = calculateAverageScore(allFileIssuesJson);
+            String finalSummary = "AI 代码智能审查完成。包含 " + allFileIssuesJson.size() + " 个文件的深度分析。";
+            String finalContent = String.join("\n\n---\n\n", fileSummaries);
+
+            // Construct Client-Friendly JSON Structure
+            // Merging all "issues" arrays from files
+            String finalJson = mergeJsonResults(allFileIssuesJson, finalScore);
+
+            markAsCompleted(review, finalScore, finalSummary, finalContent, finalJson);
+            System.out.println("DEBUG: Review completed successfully for " + commitSha);
+
         } catch (Exception e) {
+            System.err.println("DEBUG: Top level error in triggerReview: " + e.getMessage());
+            e.printStackTrace();
             review.setStatus("FAILED");
-            review.setSummary("错误: " + e.getMessage());
+            review.setSummary("Error: " + e.getMessage());
         } finally {
             review.setUpdatedAt(LocalDateTime.now());
             updateById(review);
+        }
+    }
+
+    private void markAsCompleted(AiCodeReview review, int score, String summary, String content, String jsonContent) {
+        review.setStatus("COMPLETED");
+        review.setScore(score);
+        review.setSummary(summary);
+        review.setContent(jsonContent); // We store the JSON structure in 'content' now for frontend parsing
+    }
+
+    private String callAiSafe(String prompt) {
+        try {
+            return aiChatService.chat(
+                    "You are an automated code review engine. Output STRICT JSON only.",
+                    prompt);
+        } catch (Exception e) {
+            return "{ \"issues\": [] }"; // Safe fallback
+        }
+    }
+
+    private String getLanguage(String path) {
+        if (path.endsWith(".java"))
+            return "java";
+        if (path.endsWith(".py"))
+            return "python";
+        if (path.endsWith(".sql"))
+            return "sql";
+        if (path.endsWith(".js") || path.endsWith(".ts"))
+            return "javascript";
+        return "text";
+    }
+
+    private boolean isBinary(String path) {
+        if (path == null)
+            return false;
+        String p = path.toLowerCase();
+        return p.endsWith(".png") || p.endsWith(".jpg") || p.endsWith(".zip") || p.endsWith(".jar");
+    }
+
+    // Helper to extract clean JSON from potentially markdown-wrapped AI response
+    private String extractJson(String response) {
+        try {
+            if (response.contains("```json")) {
+                int start = response.indexOf("```json") + 7;
+                int end = response.lastIndexOf("```");
+                if (end > start)
+                    return response.substring(start, end).trim();
+            }
+            if (response.contains("```")) {
+                int start = response.indexOf("```") + 3;
+                int end = response.lastIndexOf("```");
+                if (end > start)
+                    return response.substring(start, end).trim();
+            }
+            int start = response.indexOf("{");
+            int end = response.lastIndexOf("}");
+            if (start >= 0 && end > start) {
+                return response.substring(start, end + 1);
+            }
+        } catch (Exception e) {
+        }
+        return "{\"issues\":[]}";
+    }
+
+    private String extractSummary(String json) {
+        try {
+            JsonNode node = objectMapper.readTree(json);
+            if (node.has("content"))
+                return node.get("content").asText();
+            if (node.has("summary"))
+                return node.get("summary").asText();
+        } catch (Exception e) {
+        }
+        return "Analysis available in details.";
+    }
+
+    private int calculateAverageScore(List<String> jsons) {
+        if (jsons.isEmpty())
+            return 100;
+        int total = 0;
+        int count = 0;
+        for (String json : jsons) {
+            try {
+                JsonNode node = objectMapper.readTree(json);
+                if (node.has("score")) {
+                    total += node.get("score").asInt();
+                    count++;
+                }
+            } catch (Exception e) {
+            }
+        }
+        return count == 0 ? 100 : total / count;
+    }
+
+    private String mergeJsonResults(List<String> jsons, int overallScore) {
+        try {
+            // Re-construct the full object
+            // This is a bit manual, but avoids creating DTOs for now.
+            StringBuilder combinedIssues = new StringBuilder();
+
+            // Calculate breakdown
+            int sec = 0, rel = 0, maint = 0, perf = 0;
+            int count = 0;
+
+            for (String json : jsons) {
+                JsonNode node = objectMapper.readTree(json);
+                if (node.has("issues")) {
+                    String issuesStr = node.get("issues").toString();
+                    // Remove [ and ] to concatenate
+                    if (issuesStr.length() > 2) {
+                        if (combinedIssues.length() > 0)
+                            combinedIssues.append(",");
+                        combinedIssues.append(issuesStr.substring(1, issuesStr.length() - 1));
+                    }
+                }
+                if (node.has("scoreBreakdown")) {
+                    JsonNode sb = node.get("scoreBreakdown");
+                    sec += sb.path("security").asInt(80);
+                    rel += sb.path("reliability").asInt(80);
+                    maint += sb.path("maintainability").asInt(80);
+                    perf += sb.path("performance").asInt(80);
+                    count++;
+                }
+            }
+
+            if (count == 0)
+                count = 1;
+
+            return String.format("""
+                    {
+                        "score": %d,
+                        "content": "AI Deep Scan completed across %d files.",
+                        "issues": [%s],
+                        "scoreBreakdown": {
+                            "security": %d,
+                            "reliability": %d,
+                            "maintainability": %d,
+                            "performance": %d
+                        }
+                    }
+                    """, overallScore, jsons.size(), combinedIssues.toString(),
+                    sec / count, rel / count, maint / count, perf / count);
+
+        } catch (Exception e) {
+            return "{}";
         }
     }
 

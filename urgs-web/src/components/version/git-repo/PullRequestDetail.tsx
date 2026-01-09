@@ -66,9 +66,31 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
     const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
 
     // 扩展审查结果接口
+    // 扩展审查结果接口
     const formatReviewData = (data: AICodeReview): ExtendedReview => {
         let extendedData: Partial<ExtendedReview> = {};
-        // 尝试解析 content 中的 JSON，如有需要
+        try {
+            if (data.content && (data.content.trim().startsWith('{') || data.content.trim().startsWith('```'))) {
+                let jsonStr = data.content;
+                // Clean up markdown code blocks if present
+                if (jsonStr.includes('```json')) {
+                    jsonStr = jsonStr.replace(/```json\n?|```/g, '');
+                } else if (jsonStr.includes('```')) {
+                    jsonStr = jsonStr.replace(/```\n?|```/g, '');
+                }
+
+                const parsed = JSON.parse(jsonStr);
+                extendedData = {
+                    scoreBreakdown: parsed.scoreBreakdown,
+                    issues: parsed.issues,
+                    // If the JSON has a summary/content field, prioritize it, otherwise keep original
+                    content: parsed.content || parsed.summary || data.content
+                };
+            }
+        } catch (e) {
+            console.warn('Failed to parse AI review content JSON', e);
+        }
+
         return {
             ...data,
             ...extendedData
