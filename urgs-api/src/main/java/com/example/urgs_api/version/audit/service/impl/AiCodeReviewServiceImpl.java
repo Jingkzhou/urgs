@@ -142,7 +142,7 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
                     System.out.println("DEBUG: Reduce Phase for file " + path);
                     String joinedIssues = "[" + String.join(",", chunkIssues) + "]";
                     String fileReducePrompt = reviewPromptFactory.getReducePhasePrompt(getLanguage(path), joinedIssues);
-                    String fileAnalysisJson = callAiSafe(fileReducePrompt);
+                    String fileAnalysisJson = extractJson(callAiSafe(fileReducePrompt));
 
                     allFileIssuesJson.add(fileAnalysisJson);
                     fileSummaries.add(String.format("### %s\n%s", path, extractSummary(fileAnalysisJson)));
@@ -158,11 +158,13 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
             // Ideally we could do one last AI Reduce pass here if needed.
             int finalScore = calculateAverageScore(allFileIssuesJson);
             String finalSummary = "AI 代码智能审查完成。包含 " + allFileIssuesJson.size() + " 个文件的深度分析。";
-            String finalContent = String.join("\n\n---\n\n", fileSummaries);
+            String finalContent = fileSummaries.isEmpty()
+                    ? "暂无详细分析内容。"
+                    : String.join("\n\n---\n\n", fileSummaries);
 
             // Construct Client-Friendly JSON Structure
             // Merging all "issues" arrays from files
-            String finalJson = mergeJsonResults(allFileIssuesJson, finalScore);
+            String finalJson = mergeJsonResults(allFileIssuesJson, finalScore, finalContent, finalSummary);
 
             markAsCompleted(review, finalScore, finalSummary, finalContent, finalJson);
             System.out.println("DEBUG: Review completed successfully for " + commitSha);
@@ -187,10 +189,13 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
 
     private String callAiSafe(String prompt) {
         try {
-            return aiChatService.chat(
+            String response = aiChatService.chat(
                     "You are an automated code review engine. Output STRICT JSON only.",
                     prompt);
+            System.out.println("DEBUG: Raw AI Response: " + response);
+            return response;
         } catch (Exception e) {
+            System.err.println("DEBUG: AI Call Failed: " + e.getMessage());
             return "{ \"issues\": [] }"; // Safe fallback
         }
     }
@@ -269,55 +274,57 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
         return count == 0 ? 100 : total / count;
     }
 
-    private String mergeJsonResults(List<String> jsons, int overallScore) {
+    private String mergeJsonResults(List<String> jsons, int overallScore, String overallContent,
+            String overallSummary) {
         try {
-            // Re-construct the full object
-            // This is a bit manual, but avoids creating DTOs for now.
-            StringBuilder combinedIssues = new StringBuilder();
+            com.fasterxml.jackson.databind.node.ObjectNode root = objectMapper.createObjectNode();
+            com.fasterxml.jackson.databind.node.ArrayNode combinedIssues = objectMapper.createArrayNode();
 
-            // Calculate breakdown
             int sec = 0, rel = 0, maint = 0, perf = 0;
             int count = 0;
 
             for (String json : jsons) {
-                JsonNode node = objectMapper.readTree(json);
-                if (node.has("issues")) {
-                    String issuesStr = node.get("issues").toString();
-                    // Remove [ and ] to concatenate
-                    if (issuesStr.length() > 2) {
-                        if (combinedIssues.length() > 0)
-                            combinedIssues.append(",");
-                        combinedIssues.append(issuesStr.substring(1, issuesStr.length() - 1));
+                if (json == null || json.isBlank())
+                    continue;
+                try {
+                    JsonNode node = objectMapper.readTree(json);
+                    JsonNode issuesNode = node.get("issues");
+                    if (issuesNode != null && issuesNode.isArray()) {
+                        issuesNode.forEach(combinedIssues::add);
                     }
-                }
-                if (node.has("scoreBreakdown")) {
                     JsonNode sb = node.get("scoreBreakdown");
-                    sec += sb.path("security").asInt(80);
-                    rel += sb.path("reliability").asInt(80);
-                    maint += sb.path("maintainability").asInt(80);
-                    perf += sb.path("performance").asInt(80);
-                    count++;
+                    if (sb != null && sb.isObject()) {
+                        sec += sb.path("security").asInt(80);
+                        rel += sb.path("reliability").asInt(80);
+                        maint += sb.path("maintainability").asInt(80);
+                        perf += sb.path("performance").asInt(80);
+                        count++;
+                    }
+                } catch (Exception e) {
+                    // Skip invalid JSON chunks instead of failing the whole response.
                 }
             }
 
-            if (count == 0)
+            if (count == 0) {
+                // If no breakdown found, assume consistent with overall score
+                sec = overallScore;
+                rel = overallScore;
+                maint = overallScore;
+                perf = overallScore;
                 count = 1;
+            }
 
-            return String.format("""
-                    {
-                        "score": %d,
-                        "content": "AI Deep Scan completed across %d files.",
-                        "issues": [%s],
-                        "scoreBreakdown": {
-                            "security": %d,
-                            "reliability": %d,
-                            "maintainability": %d,
-                            "performance": %d
-                        }
-                    }
-                    """, overallScore, jsons.size(), combinedIssues.toString(),
-                    sec / count, rel / count, maint / count, perf / count);
+            root.put("score", overallScore);
+            root.put("summary", overallSummary);
+            root.put("content", overallContent);
+            root.set("issues", combinedIssues);
+            com.fasterxml.jackson.databind.node.ObjectNode breakdown = root.putObject("scoreBreakdown");
+            breakdown.put("security", sec / count);
+            breakdown.put("reliability", rel / count);
+            breakdown.put("maintainability", maint / count);
+            breakdown.put("performance", perf / count);
 
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
         } catch (Exception e) {
             return "{}";
         }

@@ -115,17 +115,30 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
     };
 
     // 轮询状态
-    const pollStatus = (reviewId: number) => {
+    const pollStatus = (reviewId?: number, commitSha?: string) => {
+        if (!reviewId && !commitSha) {
+            return;
+        }
+        let resolvedReviewId = reviewId;
         const interval = setInterval(async () => {
             try {
-                const res = await getAICodeReviewDetail(reviewId);
-                if (res.status === 'COMPLETED') {
+                let res: AICodeReview | null = null;
+                if (resolvedReviewId) {
+                    res = await getAICodeReviewDetail(resolvedReviewId);
+                } else if (commitSha) {
+                    res = await getAICodeReviewByCommit(commitSha);
+                    if (res?.id) {
+                        resolvedReviewId = res.id;
+                    }
+                }
+
+                if (res?.status === 'COMPLETED') {
                     setAuditReview(formatReviewData(res));
                     setAuditStatus('completed');
                     clearInterval(interval);
                     message.success('AI 代码智查完成');
                     setAuditLoading(false);
-                } else if (res.status === 'FAILED') {
+                } else if (res?.status === 'FAILED') {
                     setAuditStatus('failed');
                     clearInterval(interval);
                     message.error('AI 代码智查失败');
@@ -138,7 +151,6 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
 
         // 60s 超时保护
         setTimeout(() => {
-            clearInterval(interval);
             setAuditLoading((loading) => {
                 if (loading) {
                     message.warning('分析时间较长，请稍后刷新页面查看结果');
@@ -166,10 +178,8 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                 branch: pr.headRef
             });
 
-            if (result) {
-                pollStatus(result.id);
-                message.loading('已触发 AI 分析，正在排队中...');
-            }
+            pollStatus(result?.id, pr.headSha);
+            message.loading('已触发 AI 分析，正在排队中...');
         } catch (error) {
             console.error('AI 智查触发失败:', error);
             setAuditStatus('failed');
