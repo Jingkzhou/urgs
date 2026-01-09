@@ -46,7 +46,10 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
         this.aiChatService = aiChatService;
         this.codeChunker = codeChunker;
         this.reviewPromptFactory = reviewPromptFactory;
-        this.objectMapper = objectMapper;
+        // Create a more lenient mapper for AI responses
+        this.objectMapper = objectMapper.copy()
+                .configure(com.fasterxml.jackson.core.JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS, true)
+                .configure(com.fasterxml.jackson.core.JsonParser.Feature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER, true);
     }
 
     @Async
@@ -200,48 +203,11 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
         }
     }
 
-    private String getLanguage(String path) {
-        if (path.endsWith(".java"))
-            return "java";
-        if (path.endsWith(".py"))
-            return "python";
-        if (path.endsWith(".sql"))
-            return "sql";
-        if (path.endsWith(".js") || path.endsWith(".ts"))
-            return "javascript";
-        return "text";
-    }
-
     private boolean isBinary(String path) {
         if (path == null)
             return false;
         String p = path.toLowerCase();
         return p.endsWith(".png") || p.endsWith(".jpg") || p.endsWith(".zip") || p.endsWith(".jar");
-    }
-
-    // Helper to extract clean JSON from potentially markdown-wrapped AI response
-    private String extractJson(String response) {
-        try {
-            if (response.contains("```json")) {
-                int start = response.indexOf("```json") + 7;
-                int end = response.lastIndexOf("```");
-                if (end > start)
-                    return response.substring(start, end).trim();
-            }
-            if (response.contains("```")) {
-                int start = response.indexOf("```") + 3;
-                int end = response.lastIndexOf("```");
-                if (end > start)
-                    return response.substring(start, end).trim();
-            }
-            int start = response.indexOf("{");
-            int end = response.lastIndexOf("}");
-            if (start >= 0 && end > start) {
-                return response.substring(start, end + 1);
-            }
-        } catch (Exception e) {
-        }
-        return "{\"issues\":[]}";
     }
 
     private String extractSummary(String json) {
@@ -263,15 +229,29 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
         int count = 0;
         for (String json : jsons) {
             try {
+                System.out.println("DEBUG: calculateAverageScore parsing: " + truncate(json, 100));
                 JsonNode node = objectMapper.readTree(json);
                 if (node.has("score")) {
-                    total += node.get("score").asInt();
+                    int s = node.get("score").asInt();
+                    System.out.println("DEBUG: Found score: " + s);
+                    total += s;
                     count++;
+                } else {
+                    System.out.println("DEBUG: No score field found in JSON");
                 }
             } catch (Exception e) {
+                System.err.println("DEBUG: calculateAverageScore parse failed: " + e.getMessage());
             }
         }
-        return count == 0 ? 100 : total / count;
+        int avg = (count == 0) ? 100 : total / count;
+        System.out.println("DEBUG: Average Score calculated: " + avg);
+        return avg;
+    }
+
+    private String truncate(String s, int len) {
+        if (s == null || s.length() <= len)
+            return s;
+        return s.substring(0, len) + "...";
     }
 
     private String mergeJsonResults(List<String> jsons, int overallScore, String overallContent,
@@ -301,12 +281,11 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
                         count++;
                     }
                 } catch (Exception e) {
-                    // Skip invalid JSON chunks instead of failing the whole response.
+                    System.err.println("DEBUG: mergeJsonResults parse failed for chunk: " + e.getMessage());
                 }
             }
 
             if (count == 0) {
-                // If no breakdown found, assume consistent with overall score
                 sec = overallScore;
                 rel = overallScore;
                 maint = overallScore;
@@ -326,6 +305,7 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
 
             return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
         } catch (Exception e) {
+            System.err.println("DEBUG: mergeJsonResults top level failed: " + e.getMessage());
             return "{}";
         }
     }
@@ -333,5 +313,63 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
     @Override
     public AiCodeReview getByCommit(String commitSha) {
         return getOne(new LambdaQueryWrapper<AiCodeReview>().eq(AiCodeReview::getCommitSha, commitSha));
+    }
+
+    private String getLanguage(String path) {
+        if (path == null)
+            return "text";
+        String p = path.toLowerCase();
+        if (p.endsWith(".java"))
+            return "java";
+        if (p.endsWith(".py"))
+            return "python";
+        if (p.endsWith(".sql") || p.endsWith(".prc") || p.endsWith(".pck") || p.endsWith(".fnc") || p.endsWith(".trg"))
+            return "sql";
+        if (p.endsWith(".js") || p.endsWith(".ts") || p.endsWith(".jsx") || p.endsWith(".tsx"))
+            return "javascript";
+        if (p.endsWith(".vue"))
+            return "javascript";
+        if (p.endsWith(".xml") || p.endsWith(".html"))
+            return "xml";
+        return "text";
+    }
+
+    private String extractJson(String response) {
+        if (response == null || response.isBlank())
+            return "{\"issues\":[]}";
+        try {
+            String clean = response.trim();
+            if (clean.contains("```")) {
+                int start = clean.indexOf("```");
+                if (clean.substring(start).startsWith("```json")) {
+                    start += 7;
+                } else {
+                    start += 3;
+                }
+                int end = clean.lastIndexOf("```");
+                if (end > start) {
+                    clean = clean.substring(start, end).trim();
+                }
+            }
+            int firstBrace = clean.indexOf("{");
+            int lastBrace = clean.lastIndexOf("}");
+            if (firstBrace >= 0 && lastBrace > firstBrace) {
+                return sanitizeJson(clean.substring(firstBrace, lastBrace + 1));
+            }
+            return sanitizeJson(clean);
+        } catch (Exception e) {
+            return "{\"issues\":[]}";
+        }
+    }
+
+    private String sanitizeJson(String json) {
+        if (json == null)
+            return "{}";
+        // Remove trailing commas before } or ]
+        String sanitized = json.replaceAll(",\\s*([}\\]])", "$1");
+        // AI sometimes produces unescaped quotes inside strings. Very hard to fix
+        // perfectly without a real parser,
+        // but let's hope Jackson's lenient mode handles most.
+        return sanitized;
     }
 }

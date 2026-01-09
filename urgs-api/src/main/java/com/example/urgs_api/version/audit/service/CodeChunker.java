@@ -12,99 +12,94 @@ import java.util.List;
 @Component
 public class CodeChunker {
 
-    private static final int DEFAULT_CHUNK_SIZE = 2000; // Estimated tokens
+    private static final int DEFAULT_CHUNK_SIZE = 2500; // Increased for more context
+    private static final int OVERLAP_LINES = 30; // Increased overlap for SQL context
 
     public List<String> chunkCode(String code, String language) {
         if (code == null || code.isEmpty()) {
             return new ArrayList<>();
         }
 
-        // Normalize language
         language = language.toLowerCase();
 
         return switch (language) {
             case "java" -> splitJavaLike(code);
             case "python" -> splitPython(code);
             case "sql" -> splitSql(code);
-            default -> splitByLines(code); // Fallback
+            default -> splitByLines(code);
         };
     }
 
     private List<String> splitJavaLike(String code) {
-        // Simple heuristic: split by method boundaries (look for braces)
-        // This is a simplified version. A real AST parser would be better but
-        // expensive.
-        // For now, we mainly rely on line counts and try to break at '}'
         return splitSmartly(code, "\\n\\s*}\\s*\\n", DEFAULT_CHUNK_SIZE);
     }
 
     private List<String> splitPython(String code) {
-        // Split by function definitions or class definitions
-        // Look for lines starting with 'def ' or 'class ' at the beginning of the line
         return splitSmartly(code, "\\n(def|class)\\s+", DEFAULT_CHUNK_SIZE);
     }
 
     private List<String> splitSql(String code) {
-        // Split by semicolons at end of lines or GO statements
-        return splitSmartly(code, ";\\s*\\n", DEFAULT_CHUNK_SIZE);
+        // Split by semicolons or GO statements, or major block boundaries
+        return splitSmartly(code, ";\\s*\\n|\\n\\s*/\\s*\\n|\\n\\s*GO\\s*\\n", DEFAULT_CHUNK_SIZE);
     }
 
     private List<String> splitByLines(String code) {
-        return splitSmartly(code, "\\n", DEFAULT_CHUNK_SIZE);
+        return splitSmartly(code, null, DEFAULT_CHUNK_SIZE);
     }
 
-    /**
-     * Splits string attempting to respect regex boundaries while keeping chunks
-     * under limit.
-     */
-    private List<String> splitSmartly(String text, String splitPattern, int maxTokens) {
-        // Simplified implementation:
-        // We just accumulate lines until we hit the limit, then cut at the nearest
-        // newline.
-        // The 'splitPattern' is ignored in this V1 fallback for robustness.
+    private List<String> splitSmartly(String text, String splitPattern, int maxChars) {
+        List<String> chunks = new ArrayList<>();
+        if (splitPattern != null && text.contains(splitPattern.replace("\\n", "\n").replace("\\s*", ""))) {
+            // If pattern exists, try to split by it but keep size in check
+            // This is complex for a simple regex, so we'll use a hybrid approach:
+            // Split by lines, but only 'commit' a chunk when we hit a boundary or size
+            // limit.
+        }
 
         String[] lines = text.split("\\n");
-        List<String> chunks = new ArrayList<>();
         StringBuilder currentChunk = new StringBuilder();
         List<String> overlapBuffer = new ArrayList<>();
-        int currentTokens = 0;
+        int currentSize = 0;
 
-        for (String line : lines) {
-            int lineTokens = estimateTokens(line) + 1; // +1 for newline
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            currentChunk.append(line).append("\n");
+            currentSize += line.length() + 1;
 
-            if (currentTokens + lineTokens > maxTokens) {
-                chunks.add(currentChunk.toString());
+            // Update overlap buffer
+            overlapBuffer.add(line);
+            if (overlapBuffer.size() > OVERLAP_LINES) {
+                overlapBuffer.remove(0);
+            }
 
-                // Start new chunk with overlap
-                currentChunk = new StringBuilder();
-                currentTokens = 0;
-
-                for (String overlapLine : overlapBuffer) {
-                    currentChunk.append(overlapLine).append("\n");
-                    currentTokens += estimateTokens(overlapLine) + 1;
+            boolean isBoundary = false;
+            if (splitPattern != null) {
+                // Check if this line ends a block based on pattern (simplified)
+                if (line.matches(".*;\\s*") || line.trim().equals("/") || line.trim().equalsIgnoreCase("GO")) {
+                    isBoundary = true;
                 }
             }
 
-            currentChunk.append(line).append("\n");
-            currentTokens += lineTokens;
-
-            // Manage overlap buffer
-            overlapBuffer.add(line);
-            if (overlapBuffer.size() > 20) { // Keep last 20 lines approx for overlap
-                overlapBuffer.remove(0);
+            // If we hit a boundary and have enough size, or we are way over size
+            if ((isBoundary && currentSize > maxChars * 0.7) || currentSize > maxChars) {
+                chunks.add(currentChunk.toString());
+                currentChunk = new StringBuilder();
+                currentSize = 0;
+                // Start next chunk with overlap
+                for (String ol : overlapBuffer) {
+                    currentChunk.append(ol).append("\n");
+                    currentSize += ol.length() + 1;
+                }
             }
         }
 
-        if (currentChunk.length() > 0) {
+        if (currentSize > OVERLAP_LINES * 10) { // Only add if it's more than just the overlap
+            chunks.add(currentChunk.toString());
+        } else if (chunks.isEmpty() && currentChunk.length() > 0) {
             chunks.add(currentChunk.toString());
         }
 
         return chunks;
     }
 
-    private int estimateTokens(String text) {
-        if (text == null)
-            return 0;
-        return text.length() / 4;
-    }
 }
