@@ -27,6 +27,7 @@ async def ingest_documents(
     """
     try:
         if collection_name:
+            print(f"\n[RAG-Ingest] >>> 收到摄入请求: 集合={collection_name}, 文件={filenames or '全部'}, 启用QA={enable_qa_generation}")
             # New Path: Trigger ingestion for a specific KB (optionally multiple files)
             return ingestion_service.run_ingestion(collection_name, filenames=filenames, enable_qa=enable_qa_generation)
         
@@ -51,6 +52,7 @@ async def reset_knowledge_base(collection_name: str):
     Clear all vector data and parent documents for a specific knowledge base.
     """
     try:
+        print(f"\n[RAG-Ingest] >>> 收到重置请求: 集合={collection_name}")
         from app.services.ingestion import reset_collection
         return reset_collection(collection_name)
     except Exception as e:

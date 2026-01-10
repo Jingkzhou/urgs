@@ -156,18 +156,19 @@ class IngestionService:
                 logger.error(f"加载 {fp} 出错: {e}")
 
         if not all_docs:
+            print("[RAG-Ingest] ! 警告: 未找到任何有效的文档内容。")
             return {"status": "warning", "message": "未找到需要摄入的文档内容。"}
 
         # 3. 知识精炼与增强
         if enable_qa:
-            logger.info("正在启动全息知识增强...")
+            print(f"[RAG-Ingest] 正在启动 AI 全息知识增强 (LLM 精炼)...")
             all_docs = knowledge_refiner.refine_documents(all_docs)
 
         # 4. 写入向量存储
-        logger.info(f"正在将 {len(all_docs)} 个片段写入向量数据库 '{collection_name}'...")
+        print(f"[RAG-Ingest] 正在将最终生成的 {len(all_docs)} 个全息数据单元写入向量数据库 '{collection_name}'...")
         vector_store_service.add_documents(all_docs, collection_name=collection_name)
         
-        return {
+        print(f"[RAG-Ingest] <<< 摄入任务成功完成。")
             "status": "success", 
             "message": f"成功将 {len(all_docs)} 个片段摄入到 '{collection_name}'。",
             "chunk_count": len(all_docs),

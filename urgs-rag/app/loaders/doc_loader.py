@@ -108,6 +108,7 @@ class DocLoader:
                         # 如果启用 LLM 清理，且不是压缩包内部文件（避免递归清理导致过慢），且符合清理启发式规则
                         is_from_archive = doc.metadata.get("is_from_archive", False)
                         if self.use_llm_clean and not is_from_archive and self._should_clean_text(doc.page_content, doc.metadata):
+                            print(f"[DocLoader] >>> 正在使用 AI 清理文档文本噪声: {file_name}")
                             raw_text = doc.page_content
                             # 调用 LLM 服务清理文本
                             doc.page_content = llm_service.clean_text_with_llm(doc.page_content)
@@ -115,6 +116,8 @@ class DocLoader:
                             self._log_clean_sample(file_name, raw_text, doc.page_content)
 
                     documents.extend(docs)
+                    if not is_from_archive:
+                         print(f"[DocLoader] 成功从 {file_name} 中提取了 {len(docs)} 个原始段落单元")
             except Exception as e:
                 print(f"加载文档出错 {file_path}: {e}")
 
@@ -275,12 +278,17 @@ class DocLoader:
         """
         文档切分：使用递归字符切分器。
         """
+        chunk_size = 1000
+        chunk_overlap = 200
+        print(f"[DocLoader] >>> 启动文件切片 (Chunking): Size={chunk_size}, Overlap={chunk_overlap}")
         splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
             separators=["\n\n", "\n", " ", ""],
         )
-        return splitter.split_documents(documents)
+        chunks = splitter.split_documents(documents)
+        print(f"[DocLoader] 切片完成: 原始 {len(documents)} 段 -> 切分后 {len(chunks)} 片")
+        return chunks
 
     def _should_clean_text(self, text: str, metadata: dict) -> bool:
         """
