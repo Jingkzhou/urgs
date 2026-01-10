@@ -127,6 +127,13 @@ class IngestionService:
         all_docs = []
         file_stats = {}
 
+        # --- 引入幂等性逻辑：摄入前先物理清理旧数据 ---
+        delete_list = [os.path.basename(f) for f in target_files]
+        if delete_list:
+            print(f"[RAG-Ingest] 正在清理旧版本向量以确保幂等性: {delete_list}")
+            vector_store_service.delete_by_files(delete_list, collection_name=collection_name)
+        # ----------------------------------------
+
         # 遍历并处理每个文件
         for fp in target_files:
             ext = os.path.splitext(fp)[1].lower()
@@ -139,12 +146,15 @@ class IngestionService:
                     # 过滤出当前正在处理的文件内容
                     docs = [d for d in docs if os.path.basename(d.metadata.get("file_path", "")) == fname]
                 else:
-                    loader = DocLoader(storage_path=fp, use_llm_clean=settings.ENABLE_LLM_CLEAN, split_documents=False)
+                    # 修正：开启 split_documents=True，将整份文档切分为逻辑上的“父片段”（约1000字符）
+                    # 这样在检索时，返回的是具体的相关段落，而不是整篇文档的开头。
+                    loader = DocLoader(storage_path=fp, use_llm_clean=settings.ENABLE_LLM_CLEAN, split_documents=True)
                     docs = loader.load()
                 
                 # 为文档片段注入全息检索所需的元数据
                 for doc in docs:
                     doc.metadata["collection_name"] = collection_name
+                    doc.metadata["file_name"] = fname
                     # 分配唯一的父 ID，用于后续追溯原始内容
                     if not doc.metadata.get("parent_id"):
                         doc.metadata["parent_id"] = uuid.uuid4().hex
@@ -169,6 +179,7 @@ class IngestionService:
         vector_store_service.add_documents(all_docs, collection_name=collection_name)
         
         print(f"[RAG-Ingest] <<< 摄入任务成功完成。")
+        return {
             "status": "success", 
             "message": f"成功将 {len(all_docs)} 个片段摄入到 '{collection_name}'。",
             "chunk_count": len(all_docs),

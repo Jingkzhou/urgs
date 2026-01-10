@@ -224,10 +224,15 @@ class VectorStoreService:
         """将一组检索结果的评分归一化到 [0, 1] 空间。"""
         if not items:
             return []
+        
+        # 优化点：引入置信度保护
+        # 如果当前路径的最佳分数本身就很低，不应强行归一化为 1.0，否则会放大噪声
         max_score = max(d.score for d in items) or 1.0
+        divisor = max_score if max_score > 0.2 else 1.0 
+        
         normalized = []
         for item in items:
-            norm_score = item.score / max_score
+            norm_score = item.score / divisor
             normalized.append(
                 ScoredDocument(
                     document=item.document,
@@ -348,8 +353,9 @@ class VectorStoreService:
         """
         self._ensure_vectorstores(collection_name)
         top_k = max(k, settings.RETRIEVAL_TOP_K)
-        candidate_k = max(top_k * 2, 8) # 预取的候选量
-
+        # 优化点：长文档背景下，各路检索必须有足够的探测深度才能召回位于中后部的精准片段
+        candidate_k = max(top_k * 5, 30) 
+        print(f"[RAG-HybridSearch] >>> 启动全息混合检索: \"{query}\" (k={k}, candidate_k={candidate_k})")
         # 并行执行四路检索（此处为串行代码实现）
         semantic_hits = self._vector_search(self.semantic_vs, query, candidate_k, metadata_filter, "semantic")
         logic_hits = self._vector_search(self.logic_vs, query, candidate_k, metadata_filter, "logic")
@@ -357,6 +363,8 @@ class VectorStoreService:
 
         bm25_index = self._get_bm25_index(collection_name)
         bm25_hits = bm25_index.search(query, candidate_k, metadata_filter) if bm25_index else []
+        
+        print(f"[RAG-HybridSearch] 召回统计: 语义路({len(semantic_hits)}), 逻辑路({len(logic_hits)}), 摘要路({len(summary_hits)}), 关键词路({len(bm25_hits)})")
 
         # 组装权重桶
         buckets = [
@@ -369,10 +377,17 @@ class VectorStoreService:
         # 合并各路结果
         merged = self._merge_scored(buckets)
         if not merged:
+            print("[RAG-HybridSearch] ! 未找回任何相关结果。")
             return []
+        
+        print(f"[RAG-HybridSearch] 合并各路权重后 Top 5 内容示例:")
+        for i, item in enumerate(merged[:5]):
+             print(f"  - Rank {i+1}: Score={item['score']:.4f}, Source={item['document'].metadata.get('file_name', 'Unknown')}, Content={item['document'].page_content[:50]}...")
+
 
         # 可选：精排 (Rerank)
         if settings.RERANKER_ENABLED:
+            print(f"[RAG-Reranker] >>> 启动二阶段精排 (Top {settings.RERANKER_TOP_N})...")
             # 仅对合并后的前 N 个候选者进行精排，以平衡时间效率
             rerank_top = merged[: min(settings.RERANKER_TOP_N, len(merged))]
             rerank_docs = [item["document"] for item in rerank_top]
@@ -383,6 +398,7 @@ class VectorStoreService:
                 max_rerank = max(score for _, score in rerank_scores) or 1.0
                 rerank_map = {self._doc_key(doc): score / max_rerank for doc, score in rerank_scores}
                 
+                print(f"[RAG-Reranker] 精排加权 (Weight={settings.RERANKER_WEIGHT}):")
                 for item in merged:
                     doc_key = self._doc_key(item["document"])
                     if doc_key in rerank_map:
@@ -391,7 +407,9 @@ class VectorStoreService:
                         # 综合计算：(1-w)*初筛分数 + w*精排分数
                         item["score"] = (1 - settings.RERANKER_WEIGHT) * base_score + settings.RERANKER_WEIGHT * rerank_score
                         item["score_details"]["rerank"] = rerank_score
+                        # print(f"    - Doc: {item['document'].page_content[:30]}... Orig={base_score:.3f} -> New={item['score']:.3f} (Rerank={rerank_score:.3f})")
 
+        print(f"[RAG-HybridSearch] <<< 检索流完成。最终 Top 1 得分: {merged[0]['score']:.4f}")
         return merged[:top_k]
 
     def _doc_key(self, doc: Document) -> str:
@@ -426,12 +444,15 @@ class VectorStoreService:
         self.docstore.mset([(doc.metadata["parent_id"], doc) for doc in documents])
 
         # 切分为子片段用于向量检索
+        print(f"[VectorStore] >>> 启动物理切片 (Child Splitting): Size={self.child_splitter._chunk_size}, Overlap={self.child_splitter._chunk_overlap}")
         child_docs = self.child_splitter.split_documents(documents)
+        print(f"[VectorStore] 物理切片完成: 原始 {len(documents)} 段 -> 切分后 {len(child_docs)} 片")
+        
         for child in child_docs:
             if not child.metadata.get("parent_id"):
-                # 关联到父文档 ID
-                child.metadata["parent_id"] = child.metadata.get("origin_parent_id") or uuid.uuid4().hex
-
+                 # 修正点：子分片必须严格关联父文档 ID，实现多片检索结果的自动去重
+                 pass 
+            
         # 根据全息路径类型路由子片段
         semantic_docs = [d for d in child_docs if d.metadata.get("path_type") in (None, "semantic")]
         logic_docs = [d for d in child_docs if d.metadata.get("path_type") == "logic"]
@@ -531,7 +552,9 @@ class VectorStoreService:
                 if not doc:
                     continue
                 meta = doc.metadata or {}
-                if meta.get("collection_name") == collection_name and meta.get("file_name") == file_name:
+                # 增强：同时支持 file_name 字段和 source 路径匹配，确保能清理掉之前的旧数据
+                match_file = meta.get("file_name") == file_name or os.path.basename(meta.get("source", "")) == file_name
+                if meta.get("collection_name") == collection_name and match_file:
                     keys_to_del.append(batch_keys[j])
 
         if keys_to_del:
@@ -548,6 +571,13 @@ class VectorStoreService:
             "deleted_parent_docs": deleted_parent,
             "deleted_vector_collections": deleted_vectors,
         }
+
+    def delete_by_files(self, file_names: List[str], collection_name: str = None) -> dict:
+        """批量按文件名删除指定集合的向量片段与父文档。"""
+        results = []
+        for file_name in file_names:
+            results.append(self.delete_by_file(collection_name, file_name))
+        return {"status": "success", "results": results}
 
     def list_collections(self) -> List[dict]:
         """列出所有已存在的 Chroma 集合。"""

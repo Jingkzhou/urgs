@@ -409,30 +409,52 @@ public class AiChatServiceImpl implements AiChatService {
         streamChat(messages, "chat",
                 chunk -> {
                     aiResponse.append(chunk);
+                    // Do NOT try-catch around emitter.send!
+                    // If client disconnected, this will throw an exception which will propagate to
+                    // executeCoreStream's while loop, safely terminating the background processing.
                     try {
                         emitter.send(
                                 SseEmitter.event().data(objectMapper.writeValueAsString(Map.of("content", chunk))));
-                    } catch (Exception e) {
-                        log.error("Failed to send SSE event", e);
+                    } catch (java.io.IOException | IllegalStateException e) {
+                        // Re-throw as RuntimeException to ensure it breaks out of the streaming reader
+                        // loop in executeCoreStream
+                        throw new RuntimeException("SSE connection broken", e);
                     }
                 },
                 () -> {
                     // 5. 聊天完成，保存 AI 回复 (Save AI Message on Complete)
                     try {
                         aiChatHistoryService.saveMessage(sessionId, "assistant", aiResponse.toString());
-                        emitter.send(SseEmitter.event().data("[DONE]"));
-                        emitter.complete();
+                        try {
+                            emitter.send(SseEmitter.event().data("[DONE]"));
+                            emitter.complete();
+                        } catch (Exception e) {
+                            log.warn("Failed to send terminal [DONE] or complete emitter (client likely closed): {}",
+                                    e.getMessage());
+                        }
                     } catch (Exception e) {
-                        log.error("Failed to complete SSE or save message", e);
+                        log.error("Failed to save message on completion", e);
                     }
                 },
                 e -> {
+                    // 6. Handle Error - Also save partial response if possible
                     try {
-                        emitter.send(SseEmitter.event()
-                                .data(objectMapper.writeValueAsString(Map.of("error", e.getMessage()))));
-                        emitter.completeWithError(e);
+                        if (aiResponse.length() > 0) {
+                            log.info("Saving partial AI response before error/disconnect: {} chars",
+                                    aiResponse.length());
+                            aiChatHistoryService.saveMessage(sessionId, "assistant", aiResponse.toString());
+                        }
+
+                        try {
+                            emitter.send(SseEmitter.event()
+                                    .data(objectMapper.writeValueAsString(Map.of("error", e.getMessage()))));
+                            emitter.completeWithError(e);
+                        } catch (Exception ex) {
+                            log.warn("Failed to send error event to emitter (client likely closed): {}",
+                                    ex.getMessage());
+                        }
                     } catch (Exception ex) {
-                        log.error("Failed to send error event", ex);
+                        log.error("Failed in error callback", ex);
                     }
                 });
     }

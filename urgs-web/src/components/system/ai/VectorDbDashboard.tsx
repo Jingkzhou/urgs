@@ -83,8 +83,9 @@ const VectorDbDashboard: React.FC<Props> = ({ initialCollection }) => {
             let data = await get<any>(`/api/ai/rag/collections/${name}/peek`, { limit: '100' });
             console.log(`[RAG-Dashboard] [1] 基础查询结果:`, data);
 
-            // 2. If base is empty and it's a standard KB name (no suffix), try _semantic
-            if ((!data || !data.results || data.results.length === 0) && !name.includes('_')) {
+            // 2. If base is empty and it's a standard KB name (doesn't end with RAG suffix), try _semantic
+            const isSuffix = name.endsWith('_semantic') || name.endsWith('_logic') || name.endsWith('_summary');
+            if ((!data || !data.results || data.results.length === 0) && !isSuffix) {
                 const semanticName = `${name}_semantic`;
                 console.log(`[RAG-Dashboard] [2] 基础集合为空，尝试探测全息路径: ${semanticName}`);
                 const semanticData = await get<any>(`/api/ai/rag/collections/${semanticName}/peek`, { limit: '100' });
@@ -134,7 +135,7 @@ const VectorDbDashboard: React.FC<Props> = ({ initialCollection }) => {
         try {
             const res = await post<any>('/api/ai/rag/query', {
                 query: queryText,
-                collectionNames: [selectedCollection],
+                collection_names: [selectedCollection],
                 k: 4
             });
 
@@ -388,7 +389,7 @@ const VectorDbDashboard: React.FC<Props> = ({ initialCollection }) => {
                                                     )}
                                                 </div>
                                                 <div className="text-xs text-slate-600 line-clamp-4 leading-relaxed font-mono bg-slate-50 p-2 rounded mb-2 border border-slate-100">
-                                                    {result.page_content}
+                                                    {result.snippet || result.page_content}
                                                 </div>
                                                 <div className="flex flex-wrap gap-1">
                                                     <Tag className="text-[10px] m-0 bg-transparent border-slate-200 text-slate-500">

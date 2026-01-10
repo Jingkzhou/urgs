@@ -53,6 +53,7 @@ async def query_knowledge_base(request: QueryRequest):
             raise HTTPException(status_code=500, detail=response["error"])
 
         # 封装并返回响应结果
+        print(f"[RAG-Query] <<< 问答流程结束. 置信度: {response.get('confidence', 0.0):.4f}, 回答字数: {len(response['answer'])}")
         return QueryResponse(
             answer=response["answer"],
             answer_structured=response["answer_structured"],

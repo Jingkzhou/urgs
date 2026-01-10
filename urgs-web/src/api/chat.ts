@@ -87,7 +87,7 @@ export const loadSessionMessages = async (sessionId: string): Promise<Message[]>
     }
 }
 
-export const createSession = async (agentId?: number): Promise<Session> => {
+export const createSession = async (agentId?: number | string): Promise<Session> => {
     try {
         const user = getUserInfo();
         // Use id or empId
@@ -95,7 +95,7 @@ export const createSession = async (agentId?: number): Promise<Session> => {
         console.log('[DEBUG] createSession: Creating for User ID:', userId);
 
         const payload: any = { userId: userId, title: 'New Chat' };
-        if (agentId) {
+        if (agentId !== undefined && agentId !== null) {
             payload.agentId = agentId;
         }
         const s = await post<any>(`${API_BASE}/chat/session`, payload);

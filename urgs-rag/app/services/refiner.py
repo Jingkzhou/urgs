@@ -38,6 +38,8 @@ class KnowledgeRefiner:
                 # 调用 LLM 进行全息深加工
                 enriched = llm_service.enrich_knowledge(text)
                 
+                print(f"[KnowledgeRefiner] - 片段 {i+1} 增强产出: {len(enriched.get('questions', []))} 个模拟问题, 逻辑核: {'有' if enriched.get('reasoning') else '无'}, 摘要: {'有' if enriched.get('summary') else '无'}")
+                
                 # 2. 逻辑路径 (Logic Path) - 模拟问题
                 # 将“问题-答案”对存入逻辑路径，实现“以问搜问”，极大提升短句搜索准确率
                 for q in enriched.get("questions", []):

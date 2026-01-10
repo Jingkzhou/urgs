@@ -44,6 +44,7 @@ class QAService:
         collections = route_info["collections"]
         route_filter = route_info.get("filters")
         intent = route_info.get("intent", "general")
+        print(f"\n[RAG-QA] >>> 意图识别: {intent}, 路由集合: {collections}")
 
         merged_results = []
         # 2. 对每个目标集合执行全息混合检索
@@ -81,6 +82,7 @@ class QAService:
         # 4. 回答能力评估 (Answerability check)
         # 如果检索到的文档太少或最高分太低，则认为证据不足
         top_score = docs_with_scores[0]["score"] if docs_with_scores else 0.0
+        print(f"[RAG-QA] 检索结果去重完成, 最终候选片段数: {len(docs_with_scores)}, 最高相似度: {top_score:.4f}")
         low_evidence = (
             len(docs_with_scores) < settings.ANSWERABILITY_MIN_DOCS
             or top_score < settings.ANSWERABILITY_MIN_SCORE
@@ -142,6 +144,7 @@ class QAService:
             }
         else:
             # 证据充足，调用 LLM 生成深度绑定的结构化回答
+            print(f"[RAG-QA] 证据充足 (TopScore={top_score:.4f})，正在注入提示词上下文 (Fact x {len(facts)}, Reasoning x {len(reasoning_templates)})...")
             answer_structured = llm_service.generate_structured_answer(
                 query=query,
                 facts=facts,

@@ -342,7 +342,7 @@ const ArkPage: React.FC = () => {
         });
     };
 
-    const handleSessionSelect = async (id: string, agentId?: number) => {
+    const handleSessionSelect = async (id: string, agentId?: number | string) => {
         if (currentSessionId === id && messages.length > 0) return;
         saveSessionState();
         isSwitchingSession.current = true;
@@ -351,24 +351,24 @@ const ArkPage: React.FC = () => {
         setMessages(msgs);
         setInputValue('');
         setMetrics(null);
-        if (agentId) {
-            setActiveAgent(agents.find(a => a.id === agentId) || null);
+        if (agentId !== undefined && agentId !== null) {
+            setActiveAgent(agents.find(a => String(a.id) === String(agentId)) || null);
         } else {
             setActiveAgent(null);
         }
         if (isGenerating) handleStop();
     };
 
-    const handleNewChat = async (agentId?: number | React.MouseEvent) => {
+    const handleNewChat = async (agentId?: number | string | React.MouseEvent) => {
         saveSessionState();
-        const searchId = typeof agentId === 'number' ? agentId : undefined;
-        if (searchId) {
+        const searchId = (typeof agentId === 'number' || typeof agentId === 'string') ? agentId : undefined;
+        if (searchId !== undefined && searchId !== null) {
             const newSession = await createSession(searchId);
             setCurrentSessionId(newSession.id);
             setMessages([]);
             setInputValue('');
             setMetrics(null);
-            setActiveAgent(agents.find(a => a.id === searchId) || null);
+            setActiveAgent(agents.find(a => String(a.id) === String(searchId)) || null);
         } else {
             if (agents.length === 0) {
                 const newSession = await createSession();
