@@ -501,6 +501,54 @@ class VectorStoreService:
         self.summary_vs = None
         return True
 
+    def delete_by_file(self, collection_name: str, file_name: str) -> dict:
+        """按文件名删除指定集合的向量片段与父文档。"""
+        self._ensure_vectorstores(collection_name)
+        if not collection_name or not file_name:
+            return {"status": "error", "message": "collection_name 和 file_name 均不能为空。"}
+
+        deleted_parent = 0
+        deleted_vectors = 0
+
+        # 删除向量库中的子片段
+        for suffix in ["semantic", "logic", "summary"]:
+            col_name = f"{collection_name}_{suffix}"
+            try:
+                col = self.client.get_collection(col_name)
+                col.delete(where={"collection_name": collection_name, "file_name": file_name})
+                deleted_vectors += 1
+            except Exception as e:
+                logger.warning(f"删除向量集合 {col_name} 中的 {file_name} 失败: {e}")
+
+        # 删除 DocStore 中的父文档
+        keys_to_del = []
+        all_keys = list(self.docstore.yield_keys())
+        batch_size = 500
+        for i in range(0, len(all_keys), batch_size):
+            batch_keys = all_keys[i:i + batch_size]
+            docs = self.docstore.mget(batch_keys)
+            for j, doc in enumerate(docs):
+                if not doc:
+                    continue
+                meta = doc.metadata or {}
+                if meta.get("collection_name") == collection_name and meta.get("file_name") == file_name:
+                    keys_to_del.append(batch_keys[j])
+
+        if keys_to_del:
+            for i in range(0, len(keys_to_del), batch_size):
+                self.docstore.mdelete(keys_to_del[i:i + batch_size])
+            deleted_parent = len(keys_to_del)
+
+        # 触发 BM25 索引重建
+        self._bm25_indexes.pop(collection_name, None)
+
+        return {
+            "status": "success",
+            "message": f"已删除 {file_name} 的向量片段与父文档。",
+            "deleted_parent_docs": deleted_parent,
+            "deleted_vector_collections": deleted_vectors,
+        }
+
     def list_collections(self) -> List[dict]:
         """列出所有已存在的 Chroma 集合。"""
         try:

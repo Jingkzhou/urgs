@@ -73,6 +73,14 @@ class IngestionService:
             return True
         return False
 
+    def delete_file_vectors(self, collection_name: str, filename: str) -> dict:
+        """
+        删除指定文件对应的向量切片与父文档。
+        """
+        if not collection_name or not filename:
+            return {"status": "error", "message": "collection_name 和 filename 不能为空。"}
+        return vector_store_service.delete_by_file(collection_name, filename)
+
     def run_ingestion(self, collection_name: str, filenames: Optional[str] = None, enable_qa: bool = False) -> dict:
         """
         为指定集合或集合中的特定文件执行摄入流程。

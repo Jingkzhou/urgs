@@ -35,6 +35,16 @@ async def ingest_documents(
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/delete-file")
+async def delete_file_vectors(collection_name: str, filename: str):
+    """
+    删除指定文件对应的向量切片与父文档。
+    """
+    try:
+        return ingestion_service.delete_file_vectors(collection_name, filename)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 @router.post("/reset")
 async def reset_knowledge_base(collection_name: str):
     """

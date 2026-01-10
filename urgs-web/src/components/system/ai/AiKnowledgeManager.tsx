@@ -286,7 +286,7 @@ const AiKnowledgeManager: React.FC = () => {
             content: (
                 <div>
                     <p>确定要清除知识库 <span className="font-bold text-red-500">{record.name}</span> 下的所有向量数据吗？</p>
-                    <p className="text-xs text-slate-500">此操作将清空向量库内容，并将所有文件状态恢复为“已上传”。该操作不可撤销。</p>
+                    <p className="text-xs text-slate-500">此操作将清空向量库内容并删除该知识库下的所有文件记录与物理文件，该操作不可撤销。</p>
                 </div>
             ),
             okText: '确认重置',
@@ -300,6 +300,11 @@ const AiKnowledgeManager: React.FC = () => {
                     });
                     if (res.status === 'success') {
                         message.success('知识库已重置');
+                        fetchKbs();
+                        if (isFileDrawerOpen && currentKb?.name === record.name) {
+                            setSelectedFileKeys([]);
+                            fetchFiles(record.name);
+                        }
                     } else {
                         message.error(res.message || '重置失败');
                     }
@@ -559,6 +564,13 @@ const AiKnowledgeManager: React.FC = () => {
                             onClick={handleTriggerIngestion}
                         >
                             全库向量化
+                        </Button>
+                        <Button
+                            danger
+                            icon={<ReloadOutlined />}
+                            onClick={() => currentKb && handleResetKB(currentKb)}
+                        >
+                            清空向量库
                         </Button>
                     </Space>
                 }

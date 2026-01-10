@@ -4,6 +4,7 @@ import com.example.urgs_api.ai.dto.RagQueryRequest;
 import com.example.urgs_api.ai.dto.RagQueryResponse;
 import com.example.urgs_api.ai.dto.SqlExplainRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.http.ResponseEntity;
 import java.util.List;
@@ -18,14 +19,15 @@ import org.springframework.scheduling.annotation.Async;
 @Service
 public class RagService {
 
-    private final String PYTHON_RAG_BASE_URL = "http://localhost:8001/api/rag";
+    @Value("${ai.rag.base-url}")
+    private String pythonRagBaseUrl;
     private final RestTemplate restTemplate = new RestTemplate();
 
     @Autowired
     private KnowledgeFileRepository fileRepository;
 
     public RagQueryResponse query(RagQueryRequest request) {
-        String url = PYTHON_RAG_BASE_URL + "/query";
+        String url = pythonRagBaseUrl + "/query";
         ResponseEntity<RagQueryResponse> response = restTemplate.postForEntity(url, request, RagQueryResponse.class);
         RagQueryResponse body = response.getBody();
         if (body != null && body.getResults() != null) {
@@ -57,20 +59,20 @@ public class RagService {
     }
 
     public Map<String, Object> explain(SqlExplainRequest request) {
-        String url = PYTHON_RAG_BASE_URL + "/sql2text/explain";
+        String url = pythonRagBaseUrl + "/sql2text/explain";
         // Assuming python returns dict like {"explanation": ...}
         ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
         return response.getBody();
     }
 
     public List<Map<String, Object>> listCollections() {
-        String url = "http://localhost:8001/api/rag/vector-db/collections";
+        String url = pythonRagBaseUrl + "/vector-db/collections";
         ResponseEntity<List> response = restTemplate.getForEntity(url, List.class);
         return response.getBody();
     }
 
     public Map<String, Object> peekCollection(String name, Integer limit) {
-        String url = "http://localhost:8001/api/rag/vector-db/collections/" + name + "/peek?limit="
+        String url = pythonRagBaseUrl + "/vector-db/collections/" + name + "/peek?limit="
                 + (limit != null ? limit : 20);
         ResponseEntity<Map> response = restTemplate.getForEntity(url, Map.class);
         return response.getBody();

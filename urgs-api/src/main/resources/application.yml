@@ -9,3 +9,8 @@ spring:
   flyway:
     out-of-order: true
     ignore-migration-patterns: "*:ignored"
+
+ai:
+  rag:
+    base-url: "${RAG_BASE_URL:http://localhost:8001/api/rag}"
+    doc-store-path: "${RAG_DOC_STORE_PATH:${user.dir}/../urgs-rag/doc_store}"
