@@ -87,9 +87,10 @@ public class ModelTableServiceImpl extends ServiceImpl<ModelTableMapper, ModelTa
             wrapper.eq(ModelTable::getOwner, owner);
         }
         if (keyword != null && !keyword.isBlank()) {
-            wrapper.and(qw -> qw.like(ModelTable::getName, keyword)
+            final String lowerKeyword = keyword.toLowerCase();
+            wrapper.and(qw -> qw.apply("LOWER(name) LIKE {0}", "%" + lowerKeyword + "%")
                     .or()
-                    .like(ModelTable::getCnName, keyword));
+                    .apply("LOWER(cn_name) LIKE {0}", "%" + lowerKeyword + "%"));
         }
         wrapper.orderByAsc(ModelTable::getName);
         return page(new Page<>(page, size), wrapper);
@@ -150,7 +151,17 @@ public class ModelTableServiceImpl extends ServiceImpl<ModelTableMapper, ModelTa
             DatabaseMetaData meta = connection.getMetaData();
             String product = meta.getDatabaseProductName() == null ? "" : meta.getDatabaseProductName().toLowerCase();
 
-            try (ResultSet tables = meta.getTables(connection.getCatalog(), null, "%", new String[] { "TABLE" })) {
+            String schemaPattern = ownerFilter;
+            if (product.contains("oracle") && (schemaPattern == null || schemaPattern.isBlank())) {
+                try {
+                    schemaPattern = meta.getUserName();
+                } catch (Exception e) {
+                    // Ignore, fallback to null (search all)
+                }
+            }
+
+            try (ResultSet tables = meta.getTables(connection.getCatalog(), schemaPattern, "%",
+                    new String[] { "TABLE" })) {
                 while (tables.next()) {
                     String tableName = tables.getString("TABLE_NAME");
                     String schema = tables.getString("TABLE_SCHEM");
@@ -265,7 +276,21 @@ public class ModelTableServiceImpl extends ServiceImpl<ModelTableMapper, ModelTa
             return true;
         }
         if (product.contains("oracle")) {
+            return lower.equals("sys") || lower.equals("system") || lower.equals("outln") || lower.equals("dbsnmp")
+                    || lower.startsWith("apex_") || lower.startsWith("flow_") || lower.equals("xdb")
+                    || lower.equals("wmsys") || lower.equals("ctxsys") || lower.equals("mdsys")
+                    || lower.equals("ordsys") || lower.equals("ordplugins") || lower.equals("olapsys")
+                    || lower.equals("si_informtn_schema");
+        }
+        if (product.contains("hive") || product.contains("impala")) {
+            // Hive system databases
             return lower.equals("sys") || lower.equals("system");
+        }
+        if (product.contains("gbase")) {
+            // GBase 8a/8s system schemas
+            return lower.equals("gbase") || lower.equals("gbasedbt") || lower.equals("sys")
+                    || lower.equals("sysuser") || lower.equals("information_schema")
+                    || lower.equals("performance_schema");
         }
         return false;
     }

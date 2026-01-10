@@ -113,6 +113,11 @@
 			<version>23.3.0.23.09</version>
 		</dependency>
 		<dependency>
+			<groupId>com.oracle.database.nls</groupId>
+			<artifactId>orai18n</artifactId>
+			<version>23.3.0.23.09</version>
+		</dependency>
+		<dependency>
 			<groupId>com.microsoft.sqlserver</groupId>
 			<artifactId>mssql-jdbc</artifactId>
 		</dependency>
@@ -239,6 +244,15 @@
 			<artifactId>kudu-client</artifactId>
 			<version>1.17.0</version>
 		</dependency>
+
+		<!-- GBase (General-Purpose Database) typically needs manual install or private repo -->
+		<!--
+		<dependency>
+			<groupId>cn.gbase</groupId>
+			<artifactId>gbase8s-jdbc</artifactId>
+			<version>3.5.1</version>
+		</dependency>
+		-->
 
 		<!-- File Systems / Others -->
 		<dependency>

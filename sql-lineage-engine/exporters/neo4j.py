@@ -158,31 +158,37 @@ class Neo4jClient:
     def clear_lineage_by_repo_files(self, repo_id: str, files: list):
         """
         清除指定仓库和文件列表相关的旧血缘关系。
-        仅删除该仓库下，sourceFiles 包含在 files 列表中的关系。
+        智能删除逻辑：
+        - 从关系的 sourceFiles 中移除当前文件
+        - 只有当 sourceFiles 为空时才删除整条关系
+        - 如果还有其他文件，则保留关系并更新 sourceFiles
         """
         if not repo_id or not files:
             return
 
         print(f"正在清除仓库 {repo_id} 中 {len(files)} 个文件的旧血缘数据...")
         with self.driver.session() as session:
-            # 批量删除关系
-            # 逻辑：查找具有指定 repoId 且 sourceFiles 与当前文件列表有交集的关系
-            # 注意：这里假设关系上的 sourceFiles 是相对路径，files 传入的也必须是相对路径
-            
             # 由于 Cypher 列表操作性能，分批处理文件列表
             batch_size = 1000
             for i in range(0, len(files), batch_size):
                 file_batch = files[i:i + batch_size]
                 
-                # 删除 Column 级别的关系
+                # 智能删除：先过滤 sourceFiles，再根据结果决定删除或更新
                 session.run("""
                     MATCH ()-[r]->()
                     WHERE r.repoId = $repoId
                     AND ANY(f IN r.sourceFiles WHERE f IN $files)
-                    DELETE r
+                    WITH r, [f IN r.sourceFiles WHERE NOT f IN $files] AS remainingFiles
+                    FOREACH (_ IN CASE WHEN size(remainingFiles) = 0 THEN [1] ELSE [] END |
+                        DELETE r
+                    )
+                    FOREACH (_ IN CASE WHEN size(remainingFiles) > 0 THEN [1] ELSE [] END |
+                        SET r.sourceFiles = remainingFiles
+                    )
                 """, repoId=repo_id, files=file_batch)
                 
-            print(f"  - 相关血缘关系已清除")
+            print(f"  - 相关血缘关系已智能清除（保留多文件关系）")
+
 
     def create_lineage(self, source_table: str, target_table: str):
         """
