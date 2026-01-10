@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -159,7 +160,11 @@ public class KnowledgeBaseService {
 
         // 删除对应的向量切片
         try {
-            String url = pythonRagUrl + "/delete-file?collection_name=" + kbName + "&filename=" + fileName;
+            String url = UriComponentsBuilder.fromHttpUrl(pythonRagUrl + "/delete-file")
+                    .queryParam("collection_name", kbName)
+                    .queryParam("filename", fileName)
+                    .build()
+                    .toUriString();
             restTemplate.postForEntity(url, null, Map.class);
         } catch (Exception e) {
             // 向量删除失败不阻断文件删除流程
@@ -230,7 +235,11 @@ public class KnowledgeBaseService {
         for (KnowledgeFile file : sortedFiles) {
             try {
                 // Call Python Backend for individual file to track progress more granularly
-                String url = pythonRagUrl + "/ingest?collection_name=" + kbName + "&filenames=" + file.getFileName();
+                String url = UriComponentsBuilder.fromHttpUrl(pythonRagUrl + "/ingest")
+                        .queryParam("collection_name", kbName)
+                        .queryParam("filenames", file.getFileName())
+                        .build()
+                        .toUriString();
                 @SuppressWarnings("rawtypes")
                 ResponseEntity<Map> response = restTemplate.postForEntity(url, null, Map.class);
                 @SuppressWarnings("unchecked")
@@ -266,7 +275,10 @@ public class KnowledgeBaseService {
     }
 
     public Map<String, Object> triggerIngestion(String kbName) {
-        String url = pythonRagUrl + "/ingest?collection_name=" + kbName;
+        String url = UriComponentsBuilder.fromHttpUrl(pythonRagUrl + "/ingest")
+                .queryParam("collection_name", kbName)
+                .build()
+                .toUriString();
         try {
             @SuppressWarnings("rawtypes")
             ResponseEntity<Map> response = restTemplate.postForEntity(url, null, Map.class);
@@ -285,7 +297,10 @@ public class KnowledgeBaseService {
             throw new RuntimeException("Knowledge Base not found");
 
         // 1. Call Python Reset
-        String url = pythonRagUrl + "/reset?collection_name=" + kbName;
+        String url = UriComponentsBuilder.fromHttpUrl(pythonRagUrl + "/reset")
+                .queryParam("collection_name", kbName)
+                .build()
+                .toUriString();
         try {
             @SuppressWarnings("rawtypes")
             ResponseEntity<Map> response = restTemplate.postForEntity(url, null, Map.class);
