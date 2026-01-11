@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { RobotOutlined } from '@ant-design/icons';
-import { Sparkles, Database, ChevronRight, User, Cpu, Layers, PenTool } from 'lucide-react';
+import { Sparkles, Database, ChevronRight, User, Cpu, Layers, PenTool, Settings, Sliders } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from './Sidebar';
 import ChatMessage from './ChatMessage';
@@ -35,6 +35,13 @@ const ArkPage: React.FC = () => {
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
     const [measurementVersion, setMeasurementVersion] = useState(0);
+
+    // RAG Config
+    const [showRagConfig, setShowRagConfig] = useState(false);
+    const [ragConfig, setRagConfig] = useState({
+        fusionStrategy: 'rrf', // rrf | weighted
+        topK: 4
+    });
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -496,7 +503,8 @@ const ArkPage: React.FC = () => {
                         next[index] = { ...prev[index], status };
                         return next;
                     });
-                }
+                },
+                ragConfig // Pass config here
             );
         } catch (e) {
             flushStreamingUpdate();
@@ -702,10 +710,71 @@ const ArkPage: React.FC = () => {
                             isGenerating={isGenerating}
                             onStop={handleStop}
                         />
-                        <div className="text-center mt-4">
+                        <div className="text-center mt-4 flex items-center justify-center gap-4 relative">
                             <span className="text-[11px] text-slate-400 font-medium tracking-tight">
                                 Qwen3 Powered · {activeAgent ? activeAgent.name : 'AI Assistant'}
                             </span>
+
+                            {/* RAG Config Toggle */}
+                            <button
+                                onClick={() => setShowRagConfig(!showRagConfig)}
+                                className={`flex items-center gap-1 text-[10px] uppercase font-bold tracking-widest px-2 py-1 rounded-full transition-all border ${showRagConfig ? 'bg-blue-50 text-blue-600 border-blue-200' : 'text-slate-400 border-transparent hover:bg-white hover:border-slate-200'
+                                    }`}
+                            >
+                                <Settings size={12} />
+                                {ragConfig.fusionStrategy === 'rrf' ? 'RRF Mode' : 'Weighted'}
+                            </button>
+
+                            {/* RAG Config Popup */}
+                            <AnimatePresence>
+                                {showRagConfig && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        className="absolute bottom-full mb-3 bg-white/90 backdrop-blur-xl border border-white/40 shadow-xl rounded-2xl p-4 w-64 text-left z-30"
+                                    >
+                                        <div className="flex items-center gap-2 mb-3 text-slate-800 font-bold text-xs uppercase tracking-widest border-b border-slate-100 pb-2">
+                                            <Sliders size={14} className="text-blue-500" />
+                                            RAG Optimization
+                                        </div>
+
+                                        <div className="mb-4">
+                                            <label className="block text-[10px] text-slate-500 font-bold mb-2 uppercase">Fusion Strategy</label>
+                                            <div className="flex bg-slate-100/50 p-1 rounded-lg">
+                                                <button
+                                                    onClick={() => setRagConfig(prev => ({ ...prev, fusionStrategy: 'rrf' }))}
+                                                    className={`flex-1 py-1.5 text-[10px] font-bold rounded-md transition-all ${ragConfig.fusionStrategy === 'rrf' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                                                        }`}
+                                                >
+                                                    RRF
+                                                </button>
+                                                <button
+                                                    onClick={() => setRagConfig(prev => ({ ...prev, fusionStrategy: 'weighted' }))}
+                                                    className={`flex-1 py-1.5 text-[10px] font-bold rounded-md transition-all ${ragConfig.fusionStrategy === 'weighted' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                                                        }`}
+                                                >
+                                                    Weighted
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <div className="flex justify-between mb-2">
+                                                <label className="text-[10px] text-slate-500 font-bold uppercase">Recall Top K</label>
+                                                <span className="text-[10px] font-mono font-bold text-blue-600">{ragConfig.topK}</span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="2" max="10" step="1"
+                                                value={ragConfig.topK}
+                                                onChange={(e) => setRagConfig(prev => ({ ...prev, topK: parseInt(e.target.value) }))}
+                                                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                            />
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </div>
                     </div>
                 </div>

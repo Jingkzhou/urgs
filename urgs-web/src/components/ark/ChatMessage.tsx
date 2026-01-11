@@ -17,6 +17,39 @@ interface ChatMessageProps {
     isStreaming?: boolean;
 }
 
+interface ScoreDetailProps {
+    details: Record<string, any>;
+}
+
+const ScoreTooltip: React.FC<ScoreDetailProps> = ({ details }) => {
+    if (!details || Object.keys(details).length === 0) return null;
+
+    // Check if RRF
+    const isRRF = Object.keys(details).some(k => k.includes('rrf'));
+
+    return (
+        <div className="absolute bottom-full mb-2 left-0 w-48 bg-slate-800 text-white text-[10px] p-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 flex flex-col gap-1">
+            <div className="font-bold border-b border-slate-700 pb-1 mb-1 text-slate-300">
+                {isRRF ? 'RRF Fusion Details' : 'Retrieval Details'}
+            </div>
+            {Object.entries(details).map(([key, val]) => {
+                if (typeof val === 'number') {
+                    // Filter out raw boolean flags or long strings
+                    return (
+                        <div key={key} className="flex justify-between">
+                            <span className="opacity-70 capitalize">{key.replace('_', ' ')}:</span>
+                            <span className="font-mono font-bold text-blue-300">
+                                {Number.isInteger(val) ? `#${val}` : val.toFixed(4)}
+                            </span>
+                        </div>
+                    );
+                }
+                return null;
+            })}
+        </div>
+    );
+};
+
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false }) => {
     const isUser = message.role === 'user';
     const [isSourcesExpanded, setIsSourcesExpanded] = useState(false);
@@ -165,11 +198,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                                                                 source.score >= 0.6 ? 'bg-blue-100 text-blue-700' :
                                                                     'bg-slate-200 text-slate-600'
                                                                 }`}>
-                                                                {source.score > 0 ? `${(source.score * 100).toFixed(0)}%` : '召回'}
+                                                                {source.score > 0 ? (source.score < 0.1 ? `RRF ${(source.score).toFixed(4)}` : `${(source.score * 100).toFixed(0)}%`) : '召回'}
                                                             </span>
                                                         </div>
-                                                        <div className="text-slate-500 line-clamp-2 text-[11px] leading-relaxed">
+                                                        <div className="text-slate-500 line-clamp-2 text-[11px] leading-relaxed relative">
                                                             {source.content}
+                                                            <ScoreTooltip details={(source as any).score_details} />
                                                         </div>
                                                     </motion.div>
                                                 ))}
