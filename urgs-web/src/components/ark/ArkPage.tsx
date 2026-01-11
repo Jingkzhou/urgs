@@ -484,7 +484,16 @@ const ArkPage: React.FC = () => {
                         const index = prev.findIndex(m => m.id === aiMsgId);
                         if (index === -1) return prev;
                         const next = prev.slice();
-                        next[index] = { ...prev[index], sources };
+                        next[index] = { ...prev[index], sources, status: null }; // Clear status when sources arrive
+                        return next;
+                    });
+                },
+                (status) => {
+                    setMessages(prev => {
+                        const index = prev.findIndex(m => m.id === aiMsgId);
+                        if (index === -1) return prev;
+                        const next = prev.slice();
+                        next[index] = { ...prev[index], status };
                         return next;
                     });
                 }

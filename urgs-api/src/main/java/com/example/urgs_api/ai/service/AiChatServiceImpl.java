@@ -170,6 +170,14 @@ public class AiChatServiceImpl implements AiChatService {
                         if (!collectionNames.isEmpty()) {
                             log.info("Performing RAG Query for Agent {} on Collections: {}", agent.getName(),
                                     collectionNames);
+
+                            // Send status update to frontend
+                            try {
+                                emitter.send(SseEmitter.event().name("status").data("searching"));
+                            } catch (Exception e) {
+                                log.warn("Failed to send searching status", e);
+                            }
+
                             com.example.urgs_api.ai.dto.RagQueryRequest ragReq = new com.example.urgs_api.ai.dto.RagQueryRequest();
                             ragReq.setQuery(userPrompt);
                             ragReq.setCollectionNames(collectionNames);
@@ -182,7 +190,7 @@ public class AiChatServiceImpl implements AiChatService {
                                     List<Map<String, Object>> sourceList = new java.util.ArrayList<>();
 
                                     // ===== [RELEVANCE THRESHOLD] Filter low-score results =====
-                                    final double SCORE_THRESHOLD = 0.5; // Minimum relevance score
+                                    final double SCORE_THRESHOLD = 0.2; // Minimum relevance score (Lowered from 0.5)
                                     List<Map<String, Object>> filteredResults = ragRes.getResults().stream()
                                             .filter(r -> {
                                                 Object scoreObj = r.get("score");

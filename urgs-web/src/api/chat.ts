@@ -7,6 +7,7 @@ export interface Message {
     content: string;
     timestamp: number;
     sources?: Array<{ fileName: string; content: string; score: number }>;
+    status?: string;
 }
 
 export interface Session {
@@ -185,7 +186,8 @@ export const streamChatResponse = async (
     signal?: AbortSignal,
     sessionId?: string,
     onMetrics?: (metrics: { used: number, limit: number }) => void,
-    onSources?: (sources: any[]) => void
+    onSources?: (sources: any[]) => void,
+    onStatus?: (status: string) => void
 ) => {
     try {
         const token = localStorage.getItem('auth_token');
@@ -227,7 +229,7 @@ export const streamChatResponse = async (
                 const { done, value } = await reader.read();
                 if (done) {
                     if (buffer.trim()) {
-                        processLines(buffer, onChunk, safeOnComplete, onMetrics, undefined, onSources);
+                        processLines(buffer, onChunk, safeOnComplete, onMetrics, onStatus, onSources);
                     }
                     safeOnComplete();
                     break;
@@ -240,7 +242,7 @@ export const streamChatResponse = async (
                 buffer = lines.pop() || '';
 
                 for (const line of lines) {
-                    processLine(line, onChunk, safeOnComplete, onMetrics, undefined, onSources);
+                    processLine(line, onChunk, safeOnComplete, onMetrics, onStatus, onSources);
                 }
             }
         }
@@ -291,10 +293,17 @@ const processLine = (line: string, onChunk: (c: string) => void, onComplete: () 
         return;
     }
 
+    if (data === 'searching') {
+        if (onStatus) onStatus('searching');
+        return;
+    }
+
     try {
         const parsed = JSON.parse(data);
         if (parsed.status === 'compressing') {
             if (onStatus) onStatus('compressing');
+        } else if (parsed.status === 'searching') {
+            if (onStatus) onStatus('searching');
         } else if (parsed.content) {
             onChunk(parsed.content);
         } else if (parsed.used !== undefined && parsed.limit !== undefined) {

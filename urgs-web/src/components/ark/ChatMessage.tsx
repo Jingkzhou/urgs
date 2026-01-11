@@ -52,7 +52,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                                     transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
                                     className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]"
                                 />
-                                <span className="text-slate-400 text-sm font-medium animate-pulse">思考中...</span>
+                                <span className="text-slate-400 text-sm font-medium animate-pulse">
+                                    {message.status === 'searching' ? '正在检索知识库...' :
+                                        message.status === 'compressing' ? '正在压缩对话历史...' :
+                                            '思考中...'}
+                                </span>
                             </div>
                         ) : !isUser && isStreaming ? (
                             <div className="whitespace-pre-wrap break-words text-[16px] leading-[1.8] text-slate-700">
