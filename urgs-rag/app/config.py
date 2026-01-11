@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     # 文本清洗配置
     ENABLE_LLM_CLEAN: bool = True
+    ENABLE_QUERY_EXPANSION: bool = True  # Enable multi-query expansion
     CLEAN_TEXT_MIN_LENGTH: int = 200
     CLEAN_OCR_ONLY: bool = False
     CLEAN_SAMPLE_LOG: bool = True

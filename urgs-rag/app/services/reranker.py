@@ -27,11 +27,13 @@ class RerankerService:
         if self._model is not None:
             return self._model
         try:
-            from sentence_transformers import CrossEncoder
-
-            logger.info(f"正在加载精排模型: {settings.RERANKER_MODEL} (Device: {settings.RERANKER_DEVICE})")
-            self._model = CrossEncoder(settings.RERANKER_MODEL, device=settings.RERANKER_DEVICE)
-            return self._model
+            try:
+                from sentence_transformers import CrossEncoder
+                self._model = CrossEncoder(settings.RERANKER_MODEL, device=settings.RERANKER_DEVICE)
+                return self._model
+            except ImportError:
+                logger.warning("sentence-transformers not installed, Reranker disabled.")
+                return None
         except Exception as e:
             logger.error(f"加载精排模型失败: {e}")
             self._model = None

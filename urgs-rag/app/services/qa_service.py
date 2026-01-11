@@ -9,6 +9,7 @@ from app.services.llm_chain import llm_service
 from app.services.vector_store import vector_store_service
 from app.services.intent_router import intent_router
 from app.services.metrics import metrics_service
+from app.services.query_expansion import query_expansion_service
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ class QAService:
         collection_names: Optional[List[str]] = None,
         k: int = 4,
         metadata_filter: Optional[dict] = None,
+        fusion_strategy: str = "rrf", # weighted | rrf
     ) -> dict:
         """
         核心 RAG 链路：混合检索 + 结构化回答。
@@ -46,37 +48,52 @@ class QAService:
         intent = route_info.get("intent", "general")
         print(f"\n[RAG-QA] >>> 意图识别: {intent}, 路由集合: {collections}")
 
-        merged_results = []
+        unique_docs_map = {}
+
+        # 确定搜索查询列表
+        search_queries = [query]
+        if settings.ENABLE_QUERY_EXPANSION:
+            logger.info(f"正在进行查询扩展: {query}")
+            expanded = query_expansion_service.expand_query(query, num_queries=2)
+            # 扩展查询包含原查询，这里取前3个以平衡性能
+            search_queries = expanded[:3]
+            logger.info(f"扩展后的查询列表: {search_queries}")
+        
         # 2. 对每个目标集合执行全息混合检索
         for name in collections:
-            try:
-                # 合并路由过滤器和外部传入的过滤器
-                if metadata_filter and route_filter:
-                    effective_filter = {**route_filter, **metadata_filter}
-                else:
-                    effective_filter = metadata_filter or route_filter
-                
-                # 调用混合检索（语义 + 逻辑 + 摘要 + 关键词）
-                col_docs = vector_store_service.hybrid_search(
-                    query,
-                    k=k,
-                    collection_name=name,
-                    metadata_filter=effective_filter,
-                )
-                merged_results.extend(col_docs)
-            except Exception as e:
-                logger.warning(f"集合 {name} 检索失败: {e}")
+            # 合并路由过滤器和外部传入的过滤器
+            if metadata_filter and route_filter:
+                effective_filter = {**route_filter, **metadata_filter}
+            else:
+                effective_filter = metadata_filter or route_filter
 
-        # 3. 结果去重：基于 parent_id 确保同一个文档片段不会因为多路径检索而重复出现
-        deduped = {}
-        for item in merged_results:
-            doc = item["document"]
-            key = doc.metadata.get("parent_id") or doc.metadata.get("origin_parent_id") or doc.metadata.get("file_name")
-            if not key or key not in deduped or item["score"] > deduped[key]["score"]:
-                deduped[key] = item
-        
-        docs_with_scores = list(deduped.values())
-        # 按综合评分降序排列
+            for q_str in search_queries:
+                try:
+                    col_docs = vector_store_service.hybrid_search(
+                        q_str,
+                        k=k,
+                        collection_name=name, # Use the current collection name
+                        metadata_filter=effective_filter, # Use the effective filter
+                        fusion_strategy=fusion_strategy,
+                    )
+                    
+                    # 结果去重合并 (保留最高分)
+                    for item in col_docs:
+                        doc = item["document"]
+                        # 使用 parent_id 作为去重键，确保同一文档不重复出现
+                        key = doc.metadata.get("parent_id") or doc.metadata.get("file_name") or str(id(doc))
+                        
+                        if key not in unique_docs_map:
+                            unique_docs_map[key] = item
+                        else:
+                            # 如果新结果分数更高，则更新
+                            if item["score"] > unique_docs_map[key]["score"]:
+                                unique_docs_map[key] = item
+                except Exception as e:
+                    logger.error(f"检索失败 (Collection: {name}, Query: {q_str}): {e}")
+
+        # 转换为列表并按分数排序
+        docs_with_scores = list(unique_docs_map.values())
         docs_with_scores.sort(key=lambda x: x["score"], reverse=True)
 
         # 4. 回答能力评估 (Answerability check)

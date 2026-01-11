@@ -187,7 +187,8 @@ export const streamChatResponse = async (
     sessionId?: string,
     onMetrics?: (metrics: { used: number, limit: number }) => void,
     onSources?: (sources: any[]) => void,
-    onStatus?: (status: string) => void
+    onStatus?: (status: string) => void,
+    ragConfig?: { fusionStrategy?: string; topK?: number }
 ) => {
     try {
         const token = localStorage.getItem('auth_token');
@@ -203,7 +204,8 @@ export const streamChatResponse = async (
             headers,
             body: JSON.stringify({
                 userPrompt: userMessage,
-                sessionId: sessionId
+                sessionId: sessionId,
+                ragConfig
             }),
             signal
         });

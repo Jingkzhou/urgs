@@ -4,14 +4,18 @@ import uuid
 import logging
 import re
 from dataclasses import dataclass
+import jieba
 from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 import chromadb
 import numpy as np
 from rank_bm25 import BM25Okapi
-from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.embeddings import OpenAIEmbeddings
+try:
+    from langchain_chroma import Chroma
+    from langchain_community.embeddings import OpenAIEmbeddings
+except ImportError:
+    pass  # Handle errors later or assume they exist
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
@@ -91,11 +95,12 @@ class BM25Index:
         self.bm25 = BM25Okapi(self.corpus_tokens) if self.corpus_tokens else None
 
     def _tokenize(self, text: str) -> List[str]:
-        """简单的中英文混合分词逻辑。"""
+        """使用 Jieba 进行中文分词，同时保留英文单词。"""
         if not text:
             return []
-        # 提取英文单词和单个中文字符
-        tokens = re.findall(r"[A-Za-z0-9]+|[\u4e00-\u9fff]", text)
+        # 使用 jieba 精确模式分词
+        tokens = jieba.lcut(text)
+        # 过滤掉纯空白字符，转小写
         return [t.lower() for t in tokens if t.strip()]
 
     def search(self, query: str, top_k: int, metadata_filter: Optional[dict] = None) -> List[ScoredDocument]:
@@ -137,16 +142,35 @@ class VectorStoreService:
 
         # 初始化 Embedding 模型
         if settings.EMBEDDING_PROVIDER == "huggingface":
-            self.embeddings = HuggingFaceEmbeddings(
-                model_name=settings.EMBEDDING_MODEL_NAME,
-                model_kwargs={"device": settings.EMBEDDING_DEVICE},
-            )
+            try:
+                from langchain_huggingface import HuggingFaceEmbeddings
+                self.embeddings = HuggingFaceEmbeddings(
+                    model_name=settings.EMBEDDING_MODEL_NAME,
+                    model_kwargs={"device": settings.EMBEDDING_DEVICE},
+                )
+            except ImportError:
+                logger.error("Failed to import HuggingFaceEmbeddings. Switching to Mock mode.")
+                self.embeddings = None
         elif settings.EMBEDDING_PROVIDER == "qwen3":
-            self.embeddings = OpenAIEmbeddings(
-                model=settings.EMBEDDING_MODEL_NAME,
-                openai_api_base=settings.LLM_API_BASE,
-                openai_api_key=settings.LLM_API_KEY,
-            )
+            try:
+                self.embeddings = OpenAIEmbeddings(
+                    model=settings.EMBEDDING_MODEL_NAME,
+                    openai_api_base=settings.LLM_API_BASE,
+                    openai_api_key=settings.LLM_API_KEY,
+                )
+            except Exception:
+                 self.embeddings = None
+        else:
+            self.embeddings = None
+        
+        # Fallback to Mock if failed
+        if not self.embeddings:
+            logger.warning("No embedding provider available. Using Mock Embeddings (Vector Search will be disabled).")
+            from langchain_core.embeddings import Embeddings
+            class MockEmbeddings(Embeddings):
+                def embed_documents(self, texts): return [[0.0]*384 for _ in texts]
+                def embed_query(self, text): return [0.0]*384
+            self.embeddings = MockEmbeddings()
 
         # 初始化向量库和父文档存储
         self.client = chromadb.PersistentClient(path=self.persist_directory)
@@ -341,9 +365,10 @@ class VectorStoreService:
         k: int = 4,
         collection_name: str = None,
         metadata_filter: Optional[dict] = None,
+        fusion_strategy: str = "rrf", # weighted | rrf
     ) -> List[Dict]:
         """
-        全息混合检索：四路搜索 + 动态权重 + 可选重排序。
+        全息混合检索：四路搜索 + RRF融合。
         
         搜索路径：
         1. BM25: 关键词匹配。
@@ -357,9 +382,81 @@ class VectorStoreService:
         candidate_k = max(top_k * 5, 30) 
         print(f"[RAG-HybridSearch] >>> 启动全息混合检索: \"{query}\" (k={k}, candidate_k={candidate_k})")
         # 并行执行四路检索（此处为串行代码实现）
-        semantic_hits = self._vector_search(self.semantic_vs, query, candidate_k, metadata_filter, "semantic")
-        logic_hits = self._vector_search(self.logic_vs, query, candidate_k, metadata_filter, "logic")
-        summary_hits = self._vector_search(self.summary_vs, query, candidate_k, metadata_filter, "summary")
+        semantic_hits = []
+        logic_hits = []
+        summary_hits = []
+        # 仅当真正的向量库存在且 embedding 可用（非 Mock）时才执行
+        if self.semantic_vs and not isinstance(self.embeddings, (type(None))): # Mock check logic could be better but let's rely on try-catch inside _vector_search
+             # Actually, even with Mock embeddings, Chroma might fail if collection doesn't exist or is empty.
+             # But let's try. If it's Mock, returns 0.0 scores likely.
+             # Better to skip if we know it's broken.
+             if "MockEmbeddings" in str(self.embeddings):
+                 print("[RAG-HybridSearch] Embedding is Mocked. Skipping vector search.")
+             else:
+                semantic_hits = self._vector_search(self.semantic_vs, query, candidate_k, metadata_filter, "semantic")
+                logic_hits = self._vector_search(self.logic_vs, query, candidate_k, metadata_filter, "logic")
+                summary_hits = self._vector_search(self.summary_vs, query, candidate_k, metadata_filter, "summary")
+
+    def _rrf_merge(self, buckets: List[Tuple[str, float, List[Dict]]], k: int = 60) -> List[Dict]:
+        """
+        RRF (Reciprocal Rank Fusion) 倒数排名融合算法。
+        Score = sum(1 / (k + rank_i))
+        """
+        merged: Dict[str, Dict] = {}
+        
+        for source, weight, docs in buckets:
+            # RRF 忽略权重 weight 参数，仅依赖排名
+            # 但为了兼容，我们可以选择性地让 weight 影响 k 值？通常不需要。
+            for rank, item in enumerate(docs):
+                doc = item.document if hasattr(item, "document") else item["document"]
+                doc_key = self._doc_key(doc)
+                
+                if doc_key not in merged:
+                    merged[doc_key] = {
+                        "document": doc,
+                        "score": 0.0,
+                        "score_details": {},
+                    }
+                
+                # RRF 核心公式
+                rrf_score = 1.0 / (k + rank + 1)
+                merged[doc_key]["score"] += rrf_score
+                # 记录每一路的贡献及排名
+                source_key = f"{source}_rrf"
+                merged[doc_key]["score_details"][source_key] = rrf_score
+                merged[doc_key]["score_details"][f"{source}_rank"] = rank + 1
+
+        # 按 RRF 得分排序
+        return sorted(merged.values(), key=lambda x: x["score"], reverse=True)
+
+    def hybrid_search(
+        self,
+        query: str,
+        k: int = 4,
+        collection_name: str = None,
+        metadata_filter: Optional[dict] = None,
+        fusion_strategy: str = "rrf", # weighted | rrf
+    ) -> List[Dict]:
+        """
+        全息混合检索：四路搜索 + RRF融合。
+        """
+        self._ensure_vectorstores(collection_name)
+        top_k = max(k, settings.RETRIEVAL_TOP_K)
+        # 优化点：长文档背景下，各路检索必须有足够的探测深度才能召回位于中后部的精准片段
+        candidate_k = max(top_k * 5, 60) 
+        print(f"[RAG-HybridSearch] >>> 启动全息混合检索 ({fusion_strategy}): \"{query}\" (k={k}, candidate_k={candidate_k})")
+        # 并行执行四路检索（此处为串行代码实现）
+        semantic_hits = []
+        logic_hits = []
+        summary_hits = []
+        # 仅当真正的向量库存在且 embedding 可用（非 Mock）时才执行
+        if self.semantic_vs and not isinstance(self.embeddings, (type(None))): 
+             if "MockEmbeddings" in str(self.embeddings):
+                 print("[RAG-HybridSearch] Embedding is Mocked. Skipping vector search.")
+             else:
+                semantic_hits = self._vector_search(self.semantic_vs, query, candidate_k, metadata_filter, "semantic")
+                logic_hits = self._vector_search(self.logic_vs, query, candidate_k, metadata_filter, "logic")
+                summary_hits = self._vector_search(self.summary_vs, query, candidate_k, metadata_filter, "summary")
 
         bm25_index = self._get_bm25_index(collection_name)
         bm25_hits = bm25_index.search(query, candidate_k, metadata_filter) if bm25_index else []
@@ -375,14 +472,19 @@ class VectorStoreService:
         ]
 
         # 合并各路结果
-        merged = self._merge_scored(buckets)
+        if fusion_strategy == "rrf":
+             merged = self._rrf_merge(buckets)
+        else:
+             merged = self._merge_scored(buckets) # Legacy weighted sum
+
         if not merged:
             print("[RAG-HybridSearch] ! 未找回任何相关结果。")
             return []
         
-        print(f"[RAG-HybridSearch] 合并各路权重后 Top 5 内容示例:")
+        print(f"[RAG-HybridSearch] 合并 ({fusion_strategy}) 后 Top 5 内容示例:")
         for i, item in enumerate(merged[:5]):
              print(f"  - Rank {i+1}: Score={item['score']:.4f}, Source={item['document'].metadata.get('file_name', 'Unknown')}, Content={item['document'].page_content[:50]}...")
+
 
 
         # 可选：精排 (Rerank)
