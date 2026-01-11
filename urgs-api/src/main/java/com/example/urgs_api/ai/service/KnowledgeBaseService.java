@@ -188,7 +188,7 @@ public class KnowledgeBaseService {
         kbRepository.deleteById(id);
     }
 
-    public Map<String, Object> ingestFiles(String kbName, List<String> fileNames) {
+    public Map<String, Object> ingestFiles(String kbName, List<String> fileNames, boolean enableQa) {
         KnowledgeBase kb = kbRepository.selectOne(new QueryWrapper<KnowledgeBase>().eq("name", kbName));
         if (kb == null)
             throw new RuntimeException("Knowledge Base not found");
@@ -207,7 +207,7 @@ public class KnowledgeBaseService {
         }
 
         // 2. Start Async process
-        performAsyncIngestion(kb, files, fileNames);
+        performAsyncIngestion(kb, files, fileNames, enableQa);
 
         Map<String, Object> result = new java.util.HashMap<>();
         result.put("status", "success");
@@ -216,7 +216,8 @@ public class KnowledgeBaseService {
     }
 
     @Async("aiTaskExecutor")
-    public void performAsyncIngestion(KnowledgeBase kb, List<KnowledgeFile> files, List<String> fileNames) {
+    public void performAsyncIngestion(KnowledgeBase kb, List<KnowledgeFile> files, List<String> fileNames,
+            boolean enableQa) {
         // Sort files by priority (desc) then hit_count (desc)
         List<KnowledgeFile> sortedFiles = files.stream()
                 .sorted((a, b) -> {
@@ -238,6 +239,7 @@ public class KnowledgeBaseService {
                 String url = UriComponentsBuilder.fromHttpUrl(pythonRagUrl + "/ingest")
                         .queryParam("collection_name", kbName)
                         .queryParam("filenames", file.getFileName())
+                        .queryParam("enable_qa_generation", enableQa)
                         .build()
                         .toUriString();
                 @SuppressWarnings("rawtypes")
@@ -270,13 +272,14 @@ public class KnowledgeBaseService {
         }
     }
 
-    public Map<String, Object> ingestFile(String kbName, String fileName) {
-        return ingestFiles(kbName, List.of(fileName));
+    public Map<String, Object> ingestFile(String kbName, String fileName, boolean enableQa) {
+        return ingestFiles(kbName, List.of(fileName), enableQa);
     }
 
-    public Map<String, Object> triggerIngestion(String kbName) {
+    public Map<String, Object> triggerIngestion(String kbName, boolean enableQa) {
         String url = UriComponentsBuilder.fromHttpUrl(pythonRagUrl + "/ingest")
                 .queryParam("collection_name", kbName)
+                .queryParam("enable_qa_generation", enableQa)
                 .build()
                 .toUriString();
         try {

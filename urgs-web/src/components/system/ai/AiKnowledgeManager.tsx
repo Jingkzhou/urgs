@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Card, Tag, Space, Modal, Form, Input, Select, message, Drawer, Upload, Tooltip } from 'antd';
+import { Table, Button, Card, Tag, Space, Modal, Form, Input, Select, message, Drawer, Upload, Tooltip, Switch } from 'antd';
 import { DatabaseOutlined, PlusOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined, FolderOpenOutlined, UploadOutlined, ThunderboltOutlined, FileOutlined } from '@ant-design/icons';
 import { get, post, del } from '../../../utils/request';
 import type { UploadFile } from 'antd/es/upload/interface';
@@ -44,6 +44,7 @@ const AiKnowledgeManager: React.FC = () => {
     const [fileLoading, setFileLoading] = useState(false);
     const [ingesting, setIngesting] = useState(false);
     const [selectedFileKeys, setSelectedFileKeys] = useState<React.Key[]>([]);
+    const [enableAI, setEnableAI] = useState(false);
 
     // Vector DB Modal
     const [vectorModalOpen, setVectorModalOpen] = useState(false);
@@ -136,7 +137,7 @@ const AiKnowledgeManager: React.FC = () => {
                 kbName: currentKb.name,
                 fileName: kf.fileName
             }, {
-                params: { kbName: currentKb.name, fileName: kf.fileName }
+                params: { kbName: currentKb.name, fileName: kf.fileName, enable_qa_generation: enableAI }
             });
             if (res.status === 'success') {
                 message.success(`${kf.fileName} 向量化成功`);
@@ -156,8 +157,8 @@ const AiKnowledgeManager: React.FC = () => {
         if (!currentKb) return;
         setIngesting(true);
         try {
-            const res = await post<any>(`/api/ai/knowledge/ingest?kbName=${currentKb.name}`, {}, {
-                params: { kbName: currentKb.name }
+            const res = await post<any>(`/api/ai/knowledge/ingest`, {}, {
+                params: { kbName: currentKb.name, enable_qa_generation: enableAI }
             });
             if (res.status === 'success') {
                 message.success(res.message);
@@ -182,7 +183,7 @@ const AiKnowledgeManager: React.FC = () => {
         setIngesting(true);
         try {
             const res = await post<any>(`/api/ai/knowledge/files/batch-ingest`, selectedFileNames, {
-                params: { kbName: currentKb.name }
+                params: { kbName: currentKb.name, enable_qa_generation: enableAI }
             });
             if (res.status === 'success') {
                 message.success(`成功触发 ${selectedFileNames.length} 个文件的向量化`);
@@ -542,6 +543,10 @@ const AiKnowledgeManager: React.FC = () => {
                 onClose={() => setIsFileDrawerOpen(false)}
                 extra={
                     <Space>
+                        <Space className="mr-4">
+                            <span className="text-sm text-slate-600">AI 知识增强(Simulated Q&A):</span>
+                            <Switch checked={enableAI} onChange={setEnableAI} />
+                        </Space>
                         <Upload
                             beforeUpload={(file) => handleUpload(file as any)}
                             showUploadList={false}

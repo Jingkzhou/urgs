@@ -8,8 +8,12 @@ import {
     ThunderboltOutlined,
     ExperimentOutlined,
     RobotOutlined,
-    ReadOutlined
+    ReadOutlined,
+    AppstoreOutlined,
+    ShareAltOutlined,
+    BulbOutlined
 } from '@ant-design/icons';
+import { Radio } from 'antd';
 import { get, post } from '../../../utils/request';
 
 const { Sider, Content } = Layout;
@@ -41,6 +45,7 @@ const VectorDbDashboard: React.FC<Props> = ({ initialCollection }) => {
     // Data States
     const [collections, setCollections] = useState<CollectionInfo[]>([]);
     const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
+    const [viewLayer, setViewLayer] = useState<'semantic' | 'logic' | 'summary'>('semantic');
     const [docs, setDocs] = useState<VectorDoc[]>([]);
     const [totalCount, setTotalCount] = useState(0);
 
@@ -79,21 +84,20 @@ const VectorDbDashboard: React.FC<Props> = ({ initialCollection }) => {
         console.log(`[RAG-Dashboard] 正在加载详情: ${name}`);
         setDocLoading(true);
         try {
-            // 1. First try the base name
-            let data = await get<any>(`/api/ai/rag/collections/${name}/peek`, { limit: '100' });
-            console.log(`[RAG-Dashboard] [1] 基础查询结果:`, data);
+            // Construct target collection name based on view layer
+            let targetCollection = name;
+            // If the name already has a suffix, strip it first to be safe, then add new one
+            const baseName = name.replace(/_(semantic|logic|summary)$/, '');
 
-            // 2. If base is empty and it's a standard KB name (doesn't end with RAG suffix), try _semantic
-            const isSuffix = name.endsWith('_semantic') || name.endsWith('_logic') || name.endsWith('_summary');
-            if ((!data || !data.results || data.results.length === 0) && !isSuffix) {
-                const semanticName = `${name}_semantic`;
-                console.log(`[RAG-Dashboard] [2] 基础集合为空，尝试探测全息路径: ${semanticName}`);
-                const semanticData = await get<any>(`/api/ai/rag/collections/${semanticName}/peek`, { limit: '100' });
-                if (semanticData && semanticData.results && semanticData.results.length > 0) {
-                    console.log(`[RAG-Dashboard] [3] 在全息路径命中数据:`, semanticData);
-                    data = semanticData;
-                }
+            if (viewLayer) {
+                targetCollection = `${baseName}_${viewLayer}`;
             }
+
+            let data = await get<any>(`/api/ai/rag/collections/${targetCollection}/peek`, { limit: '100' });
+            console.log(`[RAG-Dashboard] 查询结果 [${viewLayer}]:`, data);
+
+            // Fallback: If logic/summary is empty, maybe it doesn't exist? 
+            // But we should just show empty state so user knows.
 
             if (data) {
                 let parsedDocs: VectorDoc[] = [];
@@ -172,7 +176,7 @@ const VectorDbDashboard: React.FC<Props> = ({ initialCollection }) => {
             setQueryResults([]);
             setQueryText('');
         }
-    }, [selectedCollection]);
+    }, [selectedCollection, viewLayer]);
 
     // Derived states
     const uniqueFiles = Array.from(new Set(docs.map(d => d.metadata?.file_name).filter(Boolean))) as string[];
@@ -247,6 +251,25 @@ const VectorDbDashboard: React.FC<Props> = ({ initialCollection }) => {
                             ))}
                         </div>
                     )}
+                </div>
+
+                <div className="flex-1 flex justify-center">
+                    <Radio.Group
+                        value={viewLayer}
+                        onChange={e => setViewLayer(e.target.value)}
+                        buttonStyle="solid"
+                        size="small"
+                    >
+                        <Radio.Button value="semantic">
+                            <Space><FileTextOutlined /> 语义切片</Space>
+                        </Radio.Button>
+                        <Radio.Button value="logic">
+                            <Space><BulbOutlined /> 模拟问答 (Logic)</Space>
+                        </Radio.Button>
+                        <Radio.Button value="summary">
+                            <Space><AppstoreOutlined /> 摘要索引</Space>
+                        </Radio.Button>
+                    </Radio.Group>
                 </div>
 
                 <Space>
