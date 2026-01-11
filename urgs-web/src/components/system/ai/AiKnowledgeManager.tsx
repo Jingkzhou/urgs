@@ -357,7 +357,7 @@ const AiKnowledgeManager: React.FC = () => {
             dataIndex: 'fileName',
             key: 'fileName',
             render: (text: string, record: KBFile) => (
-                <Space direction="vertical" size={0}>
+                <div className="flex flex-col gap-0">
                     <Space>
                         <FileOutlined className="text-blue-500" />
                         <span className="font-medium">{text}</span>
@@ -367,7 +367,7 @@ const AiKnowledgeManager: React.FC = () => {
                             {record.errorMessage}
                         </span>
                     )}
-                </Space>
+                </div>
             )
         },
         {
@@ -601,7 +601,8 @@ const AiKnowledgeManager: React.FC = () => {
                 onCancel={() => setVectorModalOpen(false)}
                 width={1300}
                 footer={null}
-                destroyOnClose
+                // destroyOnClose is deprecated in some versions, use key to force re-render
+                key={vectorModalOpen ? 'open' : 'closed'}
                 styles={{ body: { padding: 0, height: '80vh', overflow: 'hidden' } }}
             >
                 <VectorDbDashboard initialCollection={currentVectorCollection} />
