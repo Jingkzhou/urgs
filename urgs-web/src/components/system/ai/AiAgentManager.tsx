@@ -266,9 +266,48 @@ const AiAgentManager: React.FC = () => {
                             <>
                                 <div className="flex justify-between items-center mb-2">
                                     <span className="text-sm font-medium">推荐提示词配置</span>
-                                    <Button type="dashed" onClick={() => add()} icon={<PlusOutlined />} size="small">
-                                        添加提示词
-                                    </Button>
+                                    <Space>
+                                        <Button
+                                            type="dashed"
+                                            size="small"
+                                            icon={<SearchOutlined />}
+                                            onClick={async () => {
+                                                const kbId = form.getFieldValue('knowledgeBase');
+                                                if (!kbId) {
+                                                    message.warning('请先选择关联知识库');
+                                                    return;
+                                                }
+                                                // 通过 kb id 找到对应的 collection_name
+                                                const kb = knowledgeBases.find(k => String(k.id) === kbId);
+                                                if (!kb?.collectionName) {
+                                                    message.warning('所选知识库未配置集合名称');
+                                                    return;
+                                                }
+                                                const currentPrompts = form.getFieldValue('prompts') || [];
+
+                                                try {
+                                                    const res = await get<{ questions: { title: string; content: string }[], message: string }>(
+                                                        `/api/rag/vector-db/collections/${kb.collectionName}/random-qa?count=4`
+                                                    );
+
+                                                    if (res?.questions?.length) {
+                                                        const newQuestions = res.questions;
+                                                        form.setFieldsValue({ prompts: [...currentPrompts, ...newQuestions] });
+                                                        message.success(`已添加 ${newQuestions.length} 个随机问题`);
+                                                    } else {
+                                                        message.info(res?.message || '该知识库暂无模拟问答数据');
+                                                    }
+                                                } catch (e: any) {
+                                                    message.error(e?.message || '获取随机问题失败');
+                                                }
+                                            }}
+                                        >
+                                            随机抽取问题
+                                        </Button>
+                                        <Button type="dashed" onClick={() => add()} icon={<PlusOutlined />} size="small">
+                                            添加提示词
+                                        </Button>
+                                    </Space>
                                 </div>
                                 <div className="max-h-60 overflow-y-auto pr-2">
                                     {fields.map(({ key, name, ...restField }) => (
@@ -311,7 +350,7 @@ const AiAgentManager: React.FC = () => {
                     </Form.List>
                 </Form>
             </Modal>
-        </div>
+        </div >
     );
 };
 

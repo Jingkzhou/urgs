@@ -64,3 +64,59 @@ async def rebuild_bm25(name: str):
         return {"status": "success", "message": f"成功为 '{name}' 重建 BM25 索引"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/collections/{collection_name}/random-qa")
+async def get_random_qa(collection_name: str, count: int = 4):
+    """
+    从指定知识库的逻辑路径 (Logic) 集合中随机抽取模拟问答。
+    
+    用于生成智能体的推荐提示词。
+    """
+    import random
+    
+    try:
+        logic_collection_name = f"{collection_name}_logic"
+        collection = vector_store_service.client.get_collection(name=logic_collection_name)
+        
+        # 获取所有 logic_type=question 的文档
+        results = collection.get(
+            where={"logic_type": {"$eq": "question"}},
+            include=["documents", "metadatas"]
+        )
+        
+        documents = results.get('documents', [])
+        
+        if not documents:
+            return {"questions": [], "message": "该知识库暂无模拟问答数据"}
+        
+        # 提取问题内容
+        qa_candidates = []
+        for doc in documents:
+            if doc.startswith("问题:"):
+                question = doc.split("\n")[0].replace("问题:", "").strip()
+                if question:
+                    qa_candidates.append(question)
+        
+        if not qa_candidates:
+            return {"questions": [], "message": "未提取到有效问题"}
+        
+        # 简单随机抽取
+        selected_contents = random.sample(qa_candidates, min(count, len(qa_candidates)))
+        
+        # 格式化返回
+        result_list = []
+        for content in selected_contents:
+            result_list.append({
+                "title": content[:20] + "..." if len(content) > 20 else content,
+                "content": content
+            })
+            
+        return {
+            "questions": result_list,
+            "total_available": len(qa_candidates),
+            "message": f"随机抽取了 {len(result_list)} 个问题"
+        }
+    except Exception as e:
+        if "does not exist" in str(e):
+            raise HTTPException(status_code=404, detail=f"逻辑集合 '{logic_collection_name}' 未找到，请确保知识库已完成向量化")
+        raise HTTPException(status_code=500, detail=str(e))
