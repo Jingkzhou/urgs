@@ -283,21 +283,30 @@ public class RegElementController {
      * @throws IOException IO异常
      */
     @PostMapping("/import")
-    public boolean importData(@RequestParam Long tableId, @RequestParam("file") MultipartFile file) throws IOException {
-        EasyExcel.read(file.getInputStream(), RegElement.class, new PageReadListener<RegElement>(dataList -> {
-            for (RegElement element : dataList) {
-                element.setTableId(tableId);
-                if (element.getSortOrder() == null) {
-                    element.setSortOrder(0);
+    public java.util.Map<String, Object> importData(@RequestParam Long tableId,
+            @RequestParam("file") MultipartFile file)
+            throws IOException {
+        java.util.Map<String, Object> result = new java.util.HashMap<>();
+        try {
+            EasyExcel.read(file.getInputStream(), RegElement.class, new PageReadListener<RegElement>(dataList -> {
+                for (RegElement element : dataList) {
+                    element.setTableId(tableId);
+                    if (element.getSortOrder() == null) {
+                        element.setSortOrder(0);
+                    }
+                    if (element.getStatus() == null) {
+                        element.setStatus(1);
+                    }
                 }
-                if (element.getStatus() == null) {
-                    element.setStatus(1);
-                }
-                // Optional: clear ID if you want to force insert, but keeping it allows update
-                // element.setId(null);
-            }
-            regElementService.saveOrUpdateBatch(dataList);
-        })).sheet().doRead();
-        return true;
+                regElementService.saveOrUpdateBatch(dataList);
+            })).sheet().doRead();
+            result.put("success", true);
+            result.put("message", "导入成功");
+        } catch (Exception e) {
+            e.printStackTrace();
+            result.put("success", false);
+            result.put("message", "导入失败：" + e.getMessage());
+        }
+        return result;
     }
 }

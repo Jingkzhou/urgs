@@ -915,7 +915,9 @@ public class RegTableController {
             }
         } catch (Exception e) {
             e.printStackTrace();
-            throw new RuntimeException("导入报表数据失败：" + e.getMessage(), e);
+            result.put("success", false);
+            result.put("message", "导入失败：" + e.getMessage());
+            return result;
         }
 
         result.put("success", true);

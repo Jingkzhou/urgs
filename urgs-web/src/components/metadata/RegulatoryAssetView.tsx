@@ -414,17 +414,18 @@ const RegulatoryAssetView: React.FC = () => {
                 headers: { 'Authorization': `Bearer ${token}` },
                 body: formData
             });
-            if (res.ok) {
-                const result = await res.json();
+
+            const result = await res.json();
+            if (res.ok && result.success) {
                 alert(`导入成功！\n报表：${result.tableCount} 个\n字段/指标：${result.elementCount} 个`);
                 fetchTables();
                 fetchStats();
             } else {
-                alert('导入失败');
+                alert(`导入失败：${result.message || '未知错误'}`);
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error('Import failed', e);
-            alert('导入失败');
+            alert('导入失败：' + (e.message || '网络或系统异常'));
         } finally {
             setIsImporting(false);
             if (tableFileInputRef.current) tableFileInputRef.current.value = '';
@@ -483,15 +484,16 @@ const RegulatoryAssetView: React.FC = () => {
                 headers: { 'Authorization': `Bearer ${token}` },
                 body: formData
             });
-            if (res.ok) {
+            const result = await res.json();
+            if (res.ok && result.success) {
                 alert('导入成功');
                 fetchElements(currentTable.id!);
             } else {
-                alert('导入失败');
+                alert('导入失败：' + (result.message || '未知错误'));
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error('Import failed', e);
-            alert('导入失败');
+            alert('导入失败：' + (e.message || '网络或系统异常'));
         } finally {
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
