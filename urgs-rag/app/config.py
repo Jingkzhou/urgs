@@ -1,22 +1,26 @@
 import os
+from pathlib import Path
 from pydantic_settings import BaseSettings
+
+# 基于当前文件位置计算项目根目录 (urgs-rag/)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 class Settings(BaseSettings):
     APP_NAME: str = "urgs-rag"
     API_V1_STR: str = "/api/v1"
     
-    # ChromaDB 配置
-    CHROMA_PERSIST_DIRECTORY: str = os.path.join(os.getcwd(), "data", "chroma_db")
+    # ChromaDB 配置 - 使用绝对路径，避免依赖 cwd
+    CHROMA_PERSIST_DIRECTORY: str = str(_PROJECT_ROOT / "data" / "chroma_db")
     COLLECTION_NAME: str = "urgs_knowledge_base"
     
-    # 存储路径
-    DOC_STORAGE_PATH: str = os.path.join(os.getcwd(), "doc_store")
-    PARENT_DOC_STORE_PATH: str = os.path.join(os.getcwd(), "data")
+    # 存储路径 - 使用绝对路径
+    DOC_STORAGE_PATH: str = str(_PROJECT_ROOT / "doc_store")
+    PARENT_DOC_STORE_PATH: str = str(_PROJECT_ROOT / "data")
 
     # 向量化（Embedding）配置
     # 选项: "openai", "huggingface", "qwen3"
     EMBEDDING_PROVIDER: str = "huggingface" 
-    EMBEDDING_MODEL_NAME: str = "shibing624/text2vec-base-chinese"
+    EMBEDDING_MODEL_NAME: str = "BAAI/bge-m3"
     EMBEDDING_DEVICE: str = "cpu"
 
     # 文本清洗配置
@@ -25,7 +29,7 @@ class Settings(BaseSettings):
     CLEAN_TEXT_MIN_LENGTH: int = 200
     CLEAN_OCR_ONLY: bool = False
     CLEAN_SAMPLE_LOG: bool = True
-    CLEAN_SAMPLE_DIR: str = os.path.join(os.getcwd(), "data", "clean_samples")
+    CLEAN_SAMPLE_DIR: str = str(_PROJECT_ROOT / "data" / "clean_samples")
     
     # LLM 配置（通过环境变量覆盖）
     LLM_API_BASE: str = "http://25.64.32.35:18085/v1"

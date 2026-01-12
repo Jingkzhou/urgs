@@ -484,7 +484,7 @@ const AiKnowledgeManager: React.FC = () => {
                             icon={<PlusOutlined />}
                             onClick={() => {
                                 form.resetFields();
-                                form.setFieldsValue({ embeddingModel: 'text-embedding-3-small' });
+                                form.setFieldsValue({ embeddingModel: 'bge-m3' });
                                 setIsModalOpen(true);
                             }}
                         >
@@ -525,10 +525,8 @@ const AiKnowledgeManager: React.FC = () => {
                         <Input placeholder="例如: finance_docs_v1" />
                     </Form.Item>
                     <Form.Item name="embeddingModel" label="Embedding 模型" rules={[{ required: true }]}>
-                        <Select placeholder="选择 Embedding 模型">
-                            <Select.Option value="text-embedding-3-small">text-embedding-3-small (OpenAI)</Select.Option>
-                            <Select.Option value="text-embedding-3-large">text-embedding-3-large (OpenAI)</Select.Option>
-                            <Select.Option value="bge-m3">BGE-M3 (Local)</Select.Option>
+                        <Select placeholder="选择 Embedding 模型" disabled>
+                            <Select.Option value="bge-m3">BGE-M3 (Local) - 默认</Select.Option>
                         </Select>
                     </Form.Item>
                     <Form.Item name="description" label="描述">
