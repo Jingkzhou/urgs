@@ -721,17 +721,17 @@ const ArkPage: React.FC = () => {
                         />
                         <div className="text-center mt-4 flex items-center justify-center gap-4 relative">
                             <span className="text-[11px] text-slate-400 font-medium tracking-tight">
-                                Qwen3 Powered · {activeAgent ? activeAgent.name : 'AI Assistant'}
+                                Qwen3 驱动 · {activeAgent ? activeAgent.name : 'AI 助手'}
                             </span>
 
                             {/* RAG Config Toggle */}
                             <button
                                 onClick={() => setShowRagConfig(!showRagConfig)}
-                                className={`flex items-center gap-1 text-[10px] uppercase font-bold tracking-widest px-2 py-1 rounded-full transition-all border ${showRagConfig ? 'bg-blue-50 text-blue-600 border-blue-200' : 'text-slate-400 border-transparent hover:bg-white hover:border-slate-200'
+                                className={`flex items-center gap-1 text-[10px] font-bold tracking-widest px-2 py-1 rounded-full transition-all border ${showRagConfig ? 'bg-blue-50 text-blue-600 border-blue-200' : 'text-slate-400 border-transparent hover:bg-white hover:border-slate-200'
                                     }`}
                             >
                                 <Settings size={12} />
-                                {ragConfig.fusionStrategy === 'rrf' ? 'RRF Mode' : 'Weighted'}
+                                {ragConfig.fusionStrategy === 'rrf' ? 'RRF 模式' : '加权模式'}
                             </button>
 
                             {/* RAG Config Popup */}
@@ -745,32 +745,32 @@ const ArkPage: React.FC = () => {
                                     >
                                         <div className="flex items-center gap-2 mb-3 text-slate-800 font-bold text-xs uppercase tracking-widest border-b border-slate-100 pb-2">
                                             <Sliders size={14} className="text-blue-500" />
-                                            RAG Optimization
+                                            RAG 检索优化
                                         </div>
 
                                         <div className="mb-4">
-                                            <label className="block text-[10px] text-slate-500 font-bold mb-2 uppercase">Fusion Strategy</label>
+                                            <label className="block text-[10px] text-slate-500 font-bold mb-2">融合策略</label>
                                             <div className="flex bg-slate-100/50 p-1 rounded-lg">
                                                 <button
                                                     onClick={() => setRagConfig(prev => ({ ...prev, fusionStrategy: 'rrf' }))}
                                                     className={`flex-1 py-1.5 text-[10px] font-bold rounded-md transition-all ${ragConfig.fusionStrategy === 'rrf' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
                                                         }`}
                                                 >
-                                                    RRF
+                                                    RRF 融合
                                                 </button>
                                                 <button
                                                     onClick={() => setRagConfig(prev => ({ ...prev, fusionStrategy: 'weighted' }))}
                                                     className={`flex-1 py-1.5 text-[10px] font-bold rounded-md transition-all ${ragConfig.fusionStrategy === 'weighted' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
                                                         }`}
                                                 >
-                                                    Weighted
+                                                    加权融合
                                                 </button>
                                             </div>
                                         </div>
 
                                         <div>
                                             <div className="flex justify-between mb-2">
-                                                <label className="text-[10px] text-slate-500 font-bold uppercase">Recall Top K</label>
+                                                <label className="text-[10px] text-slate-500 font-bold">召回数量 (Top K)</label>
                                                 <span className="text-[10px] font-mono font-bold text-blue-600">{ragConfig.topK}</span>
                                             </div>
                                             <input
