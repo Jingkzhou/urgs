@@ -15,6 +15,7 @@ import {
 } from '@ant-design/icons';
 import { Radio } from 'antd';
 import { get, post } from '../../../utils/request';
+import Pagination from '../../../components/common/Pagination';
 
 const { Sider, Content } = Layout;
 const { Search, TextArea } = Input;
@@ -52,6 +53,8 @@ const VectorDbDashboard: React.FC<Props> = ({ initialCollection }) => {
     // UI States
     const [loading, setLoading] = useState(false);
     const [docLoading, setDocLoading] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(24); // Assuming 3-4 columns, 24 is a good multiple
     const [selectedFile, setSelectedFile] = useState<string | null>(null);
     const [detailDoc, setDetailDoc] = useState<VectorDoc | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
@@ -80,8 +83,8 @@ const VectorDbDashboard: React.FC<Props> = ({ initialCollection }) => {
         }
     };
 
-    const fetchDocs = async (name: string) => {
-        console.log(`[RAG-Dashboard] 正在加载详情: ${name}`);
+    const fetchDocs = async (name: string, page: number = 1, size: number = 24) => {
+        console.log(`[RAG-Dashboard] 正在加载详情: ${name}, Page: ${page}, Size: ${size}`);
         setDocLoading(true);
         try {
             // Construct target collection name based on view layer
@@ -93,7 +96,11 @@ const VectorDbDashboard: React.FC<Props> = ({ initialCollection }) => {
                 targetCollection = `${baseName}_${viewLayer}`;
             }
 
-            let data = await get<any>(`/api/ai/rag/collections/${targetCollection}/peek`, { limit: '100' });
+            const offset = (page - 1) * size;
+            let data = await get<any>(`/api/ai/rag/collections/${targetCollection}/peek`, {
+                limit: size.toString(),
+                offset: offset.toString()
+            });
             console.log(`[RAG-Dashboard] 查询结果 [${viewLayer}]:`, data);
 
             // Fallback: If logic/summary is empty, maybe it doesn't exist? 
@@ -170,13 +177,21 @@ const VectorDbDashboard: React.FC<Props> = ({ initialCollection }) => {
 
     useEffect(() => {
         if (selectedCollection) {
-            fetchDocs(selectedCollection);
-            // Reset states when collection changes
-            setSelectedFile(null);
-            setQueryResults([]);
-            setQueryText('');
+            setCurrentPage(1); // Reset to first page when collection or layer changes
         }
     }, [selectedCollection, viewLayer]);
+
+    useEffect(() => {
+        if (selectedCollection) {
+            fetchDocs(selectedCollection, currentPage, pageSize);
+            // Reset filters if switching collections
+            if (currentPage === 1) {
+                setSelectedFile(null);
+                setQueryResults([]);
+                setQueryText('');
+            }
+        }
+    }, [selectedCollection, viewLayer, currentPage, pageSize]);
 
     // Derived states
     const uniqueFiles = Array.from(new Set(docs.map(d => d.metadata?.file_name).filter(Boolean))) as string[];
@@ -349,6 +364,27 @@ const VectorDbDashboard: React.FC<Props> = ({ initialCollection }) => {
                                     </div>
                                 </Card>
                             ))}
+                        </div>
+                    )}
+
+                    {/* Pagination Footer */}
+                    {totalCount > 0 && !selectedFile && (
+                        <div className="mt-8 mb-4">
+                            <Pagination
+                                current={currentPage}
+                                total={totalCount}
+                                pageSize={pageSize}
+                                onChange={(page, size) => {
+                                    setCurrentPage(page);
+                                    if (size !== pageSize) {
+                                        setPageSize(size);
+                                        setCurrentPage(1);
+                                    }
+                                }}
+                                showSizeChanger
+                                pageSizeOptions={[12, 24, 48, 96]}
+                                className="bg-white p-4 rounded-xl shadow-sm border border-slate-100"
+                            />
                         </div>
                     )}
                 </Content>

@@ -16,23 +16,29 @@ async def list_collections():
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/collections/{name}/peek")
-async def peek_collection(name: str, limit: int = 20):
+async def peek_collection(name: str, limit: int = 10, offset: int = 0):
     """
-    预览集合中的数据片段，用于调试和确认数据。
+    分页获取集合中的数据片段。
     """
     try:
         collection = vector_store_service.client.get_collection(name=name)
         count = collection.count()
         
-        # peek 返回包含 'ids', 'documents', 'metadatas' 的字典
-        results = collection.peek(limit=limit)
+        # 使用 get 方法支持分页 (limit, offset)
+        results = collection.get(
+            limit=limit,
+            offset=offset,
+            include=["documents", "metadatas"]
+        )
         
         formatted_results = []
         ids = results.get('ids', [])
         documents = results.get('documents', [])
         metadatas = results.get('metadatas', [])
         
-        # 格式化输出，方便前端/控制台展示
+        # ChromaDB get 返回的字段可能为 None (如果没有请求 include)
+        # 但这里我们在 include 中指定了，所以应该是列表
+        
         for i in range(len(ids)):
             formatted_results.append({
                 "id": ids[i],
@@ -43,9 +49,13 @@ async def peek_collection(name: str, limit: int = 20):
         return {
             "name": name,
             "total_count": count,
+            "limit": limit,
+            "offset": offset,
             "results": formatted_results
         }
     except Exception as e:
+        # ChromaDB 可能抛出不同的异常，这里捕获所有 Exception
+        # 如果是集合不存在，Chroma 通常会抛出 ValueError 或类似
         if "does not exist" in str(e):
              raise HTTPException(status_code=404, detail=f"集合 '{name}' 未找到")
         raise HTTPException(status_code=500, detail=str(e))

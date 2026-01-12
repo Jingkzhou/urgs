@@ -71,9 +71,9 @@ public class RagService {
         return response.getBody();
     }
 
-    public Map<String, Object> peekCollection(String name, Integer limit) {
+    public Map<String, Object> peekCollection(String name, Integer limit, Integer offset) {
         String url = pythonRagBaseUrl + "/vector-db/collections/" + name + "/peek?limit="
-                + (limit != null ? limit : 20);
+                + (limit != null ? limit : 10) + "&offset=" + (offset != null ? offset : 0);
         ResponseEntity<Map> response = restTemplate.getForEntity(url, Map.class);
         return response.getBody();
     }
