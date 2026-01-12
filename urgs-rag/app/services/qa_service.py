@@ -59,10 +59,11 @@ class QAService:
         search_queries = [rewritten_query]
         if settings.ENABLE_QUERY_EXPANSION:
             logger.info(f"正在进行查询扩展: {rewritten_query}")
-            expanded = query_expansion_service.expand_query(rewritten_query, num_queries=2)
-            # 扩展查询包含原查询，这里取前3个以平衡性能
-            search_queries = expanded[:3]
-            logger.info(f"扩展后的查询列表: {search_queries}")
+            expanded = query_expansion_service.expand_query(rewritten_query, num_queries=4)
+            # 提取 query 字符串，扩展查询包含原查询，取前5个以平衡性能
+            search_queries = [item["query"] for item in expanded if item.get("query")][:5]
+            logger.info(f"扩展后的查询列表 ({len(search_queries)}条): {search_queries}")
+
         
         # 2. 对每个目标集合执行全息混合检索
         for name in collections:
