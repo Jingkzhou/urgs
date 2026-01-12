@@ -20,6 +20,20 @@ class LLMChainService:
         self._last_config_check = 0  # 上次从后端同步配置的时间
         self._config_cache_ttl = 60  # 配置缓存有效期 (秒)
 
+    @property
+    def client(self):
+        """公开的 client 属性，确保在访问前已初始化。"""
+        if self._client is None:
+            self._get_api_config()  # 触发初始化
+        return self._client
+
+    @property
+    def model_name(self):
+        """公开的 model_name 属性，返回当前配置的模型名称。"""
+        if self._config is None:
+            self._get_api_config()  # 触发初始化
+        return self._config.get("model") if self._config else settings.LLM_MODEL
+
     def _get_api_config(self):
         """
         从 Java 后端网关动态获取推荐的 AI 配置。

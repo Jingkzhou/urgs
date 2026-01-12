@@ -200,13 +200,15 @@ public class AiChatServiceImpl implements AiChatService {
                                     }
                                 }
 
-                                if (ragRes != null && ragRes.getResults() != null && !ragRes.getResults().isEmpty()) {
+                                if (ragRes != null && ragRes.getEffectiveResults() != null
+                                        && !ragRes.getEffectiveResults().isEmpty()) {
                                     StringBuilder sourcesBuilder = new StringBuilder();
                                     List<Map<String, Object>> sourceList = new java.util.ArrayList<>();
 
                                     // ===== [RELEVANCE THRESHOLD] Filter low-score results =====
-                                    final double SCORE_THRESHOLD = 0.2; // Minimum relevance score (Lowered from 0.5)
-                                    List<Map<String, Object>> filteredResults = ragRes.getResults().stream()
+                                    // RRF scores typically range 0~0.1, so threshold must be low
+                                    final double SCORE_THRESHOLD = 0.02; // Minimum relevance score for RRF
+                                    List<Map<String, Object>> filteredResults = ragRes.getEffectiveResults().stream()
                                             .filter(r -> {
                                                 Object scoreObj = r.get("score");
                                                 if (scoreObj instanceof Number) {
@@ -217,7 +219,8 @@ public class AiChatServiceImpl implements AiChatService {
                                             .collect(java.util.stream.Collectors.toList());
 
                                     log.info("RAG Results: {} total, {} after threshold filter (>= {})",
-                                            ragRes.getResults().size(), filteredResults.size(), SCORE_THRESHOLD);
+                                            ragRes.getEffectiveResults().size(), filteredResults.size(),
+                                            SCORE_THRESHOLD);
 
                                     // ===== [DOCUMENT GROUPING] Group by source file =====
                                     Map<String, List<Map<String, Object>>> groupedByFile = new java.util.LinkedHashMap<>();

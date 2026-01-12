@@ -70,16 +70,15 @@ class IntentRouter:
         Returns:
             dict: 包含推荐集合、过滤器和意图标识。
         """
-        if collection_names:
-            return {"collections": collection_names, "filters": None, "intent": "manual"}
-
-        # 1. 获取意图分析结果 (包含 规则 + LLM)
+        # 1. 获取意图分析结果 (包含 规则 + LLM) - 无论是否手动指定集合都要执行
         analysis = self.analyze(query)
-        intent = analysis.get("intent", "general")
+        intent = analysis.get("intent", "GENERAL")
         
+        # 2. 确定使用的集合
+        collections = collection_names if collection_names else self.default_collections
+        
+        # 3. 为特定意图自动加上元数据过滤
         filters = None
-        
-        # 为特定意图自动加上元数据过滤，缩小检索范围，提高准确率
         if intent == "sql":
             filters = {"source_type": "sql_code"}
         elif intent == "lineage":
@@ -88,7 +87,7 @@ class IntentRouter:
             filters = {"source_type": "regulatory_asset"}
 
         return {
-            "collections": self.default_collections, 
+            "collections": collections, 
             "filters": filters, 
             "intent": intent,
             "analysis": analysis  # 透传完整分析结果给后续 QA Service

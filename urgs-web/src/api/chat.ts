@@ -227,13 +227,14 @@ export const streamChatResponse = async (
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let currentEventName = ''; // 跟踪当前 SSE 事件名称
 
         if (reader) {
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) {
                     if (buffer.trim()) {
-                        processLines(buffer, onChunk, safeOnComplete, onMetrics, onStatus, onSources, onIntent);
+                        processLines(buffer, onChunk, safeOnComplete, onMetrics, onStatus, onSources, onIntent, currentEventName);
                     }
                     safeOnComplete();
                     break;
@@ -246,7 +247,21 @@ export const streamChatResponse = async (
                 buffer = lines.pop() || '';
 
                 for (const line of lines) {
-                    processLine(line, onChunk, safeOnComplete, onMetrics, onStatus, onSources, onIntent);
+                    // 解析 event: 行，记住事件名称
+                    if (line.startsWith('event:')) {
+                        currentEventName = line.slice(6).trim();
+                        console.log('[SSE Debug] Event type:', currentEventName);
+                        if (currentEventName === 'done') {
+                            safeOnComplete();
+                        }
+                        continue;
+                    }
+                    // 处理 data: 行
+                    processLine(line, onChunk, safeOnComplete, onMetrics, onStatus, onSources, onIntent, currentEventName);
+                    // 空行表示事件结束，重置事件名称
+                    if (!line.trim()) {
+                        currentEventName = '';
+                    }
                 }
             }
         }
@@ -259,21 +274,18 @@ export const streamChatResponse = async (
     }
 };
 
-const processLines = (text: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void, onIntent?: (i: string) => void) => {
+const processLines = (text: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void, onIntent?: (i: string) => void, eventName?: string) => {
     const lines = text.split('\n');
     for (const line of lines) {
-        processLine(line, onChunk, onComplete, onMetrics, onStatus, onSources, onIntent);
+        processLine(line, onChunk, onComplete, onMetrics, onStatus, onSources, onIntent, eventName);
     }
 };
 
-const processLine = (line: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void, onIntent?: (i: string) => void) => {
+const processLine = (line: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void, onIntent?: (i: string) => void, eventName?: string) => {
     if (!line.trim()) return;
 
+    // event: 行已在主循环中处理，这里直接跳过
     if (line.startsWith('event:')) {
-        const eventType = line.slice(6).trim();
-        if (eventType === 'done') {
-            onComplete();
-        }
         return;
     }
 
@@ -303,6 +315,29 @@ const processLine = (line: string, onChunk: (c: string) => void, onComplete: () 
 
     try {
         const parsed = JSON.parse(data);
+
+        // 根据事件名称路由处理
+        if (eventName === 'sources') {
+            // sources 事件：数据是数组
+            console.log('[SSE Debug] Received sources event:', parsed);
+            if (onSources && Array.isArray(parsed)) {
+                console.log('[SSE Debug] Calling onSources with', parsed.length, 'items');
+                onSources(parsed);
+            }
+            return;
+        }
+
+        if (eventName === 'metrics') {
+            if (onMetrics) onMetrics(parsed);
+            return;
+        }
+
+        if (eventName === 'status') {
+            if (onStatus && parsed.status) onStatus(parsed.status);
+            return;
+        }
+
+        // 默认处理（无事件名称或 message 事件）
         if (parsed.status === 'compressing') {
             if (onStatus) onStatus('compressing');
         } else if (parsed.status === 'searching') {
@@ -313,7 +348,7 @@ const processLine = (line: string, onChunk: (c: string) => void, onComplete: () 
             // 处理指标数据
             if (onMetrics) onMetrics(parsed);
         } else if (Array.isArray(parsed)) {
-            // 处理来源数据
+            // 处理来源数据 (兼容无事件名称的情况)
             if (onSources) onSources(parsed);
         } else if (parsed.intent) {
             // 处理意图数据
