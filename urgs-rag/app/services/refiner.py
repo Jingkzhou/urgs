@@ -66,8 +66,8 @@ class KnowledgeRefiner:
                             **doc.metadata,
                             "path_type": "logic",
                             "logic_type": "reasoning",
-                            "tags": enriched.get("tags", []),
-                            "keywords": enriched.get("keywords", []),
+                            "tags": ",".join(enriched.get("tags", [])),
+                            "keywords": ",".join(enriched.get("keywords", [])),
                             "origin_parent_id": doc.metadata.get("parent_id"),
                             "is_synthetic": True
                         }
@@ -75,8 +75,8 @@ class KnowledgeRefiner:
                     holographic_docs.append(r_doc)
                     
                     # 同时更新原始文档的标签和关键词，便于后续过滤
-                    doc.metadata["tags"] = enriched.get("tags", []),
-                    doc.metadata["keywords"] = enriched.get("keywords", [])
+                    doc.metadata["tags"] = ",".join(enriched.get("tags", []))
+                    doc.metadata["keywords"] = ",".join(enriched.get("keywords", []))
 
                 # 4. 摘要路径 (Summary Path)
                 # 提供极高浓缩度的语义信息，适合快速概览检索
@@ -89,8 +89,8 @@ class KnowledgeRefiner:
                             "path_type": "summary",
                             "summary_type": "auto",
                             "origin_parent_id": doc.metadata.get("parent_id"),
-                            "tags": enriched.get("tags", []),
-                            "keywords": enriched.get("keywords", []),
+                            "tags": ",".join(enriched.get("tags", [])),
+                            "keywords": ",".join(enriched.get("keywords", [])),
                             "is_synthetic": True
                         }
                     )

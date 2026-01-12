@@ -45,7 +45,7 @@ const AiKnowledgeManager: React.FC = () => {
     const [fileLoading, setFileLoading] = useState(false);
     const [ingesting, setIngesting] = useState(false);
     const [selectedFileKeys, setSelectedFileKeys] = useState<React.Key[]>([]);
-    const [enableAI, setEnableAI] = useState(false);
+    const [enableAI, setEnableAI] = useState(true);
 
     // Vector DB Modal
     const [vectorModalOpen, setVectorModalOpen] = useState(false);
