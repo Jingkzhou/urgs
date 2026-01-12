@@ -6,7 +6,7 @@ class KnowledgeRefiner:
     """
     知识精炼器。
     
-    核心作用是将厚重的原始文档“处理薄、处理透”。
+    核心作用是将厚重的原始文档"处理薄、处理透"。
     通过调用 LLM 生成合成数据，将单一的文档片段转化为三条特征路径的全息数据：
     1. 语义路径 (Semantic): 原始文本内容。
     2. 逻辑路径 (Logic): 模拟问题和逻辑推导核。
@@ -31,70 +31,69 @@ class KnowledgeRefiner:
             doc.metadata["path_type"] = "semantic"
             holographic_docs.append(doc)
             
-            # 仅对内容充足的片段进行增强（过滤过短的噪声）
+            # 对所有片段进行 LLM 增强（移除了长度阈值限制）
             text = doc.page_content
-            if len(text) > 100:
-                print(f"正在精炼文档片段 {i+1}/{total}...")
-                # 调用 LLM 进行全息深加工
-                enriched = llm_service.enrich_knowledge(text)
+            print(f"正在精炼文档片段 {i+1}/{total} (长度: {len(text)} 字符)...")
+            # 调用 LLM 进行全息深加工
+            enriched = llm_service.enrich_knowledge(text)
+            
+            print(f"[KnowledgeRefiner] - 片段 {i+1} 增强产出: {len(enriched.get('questions', []))} 个模拟问题, 逻辑核: {'有' if enriched.get('reasoning') else '无'}, 摘要: {'有' if enriched.get('summary') else '无'}")
+            
+            # 2. 逻辑路径 (Logic Path) - 模拟问题
+            # 将"问题-答案"对存入逻辑路径，实现"以问搜问"，极大提升短句搜索准确率
+            for q in enriched.get("questions", []):
+                q_doc = Document(
+                    page_content=f"问题: {q}\n相关知识: {text[:200]}...",
+                    metadata={
+                        **doc.metadata,
+                        "path_type": "logic",
+                        "logic_type": "question",
+                        "original_content": text, # 链接回完整上下文
+                        "origin_parent_id": doc.metadata.get("parent_id"),
+                        "is_synthetic": True
+                    }
+                )
+                holographic_docs.append(q_doc)
+            
+            # 3. 逻辑路径 (Logic Path) - 逻辑/策略核
+            # 提取文档背后的流程或逻辑模版，作为高级推理的依据
+            reasoning = enriched.get("reasoning")
+            if reasoning:
+                r_doc = Document(
+                    page_content=f"逻辑核/推导过程: {reasoning}",
+                    metadata={
+                        **doc.metadata,
+                        "path_type": "logic",
+                        "logic_type": "reasoning",
+                        "tags": ",".join(enriched.get("tags", [])),
+                        "keywords": ",".join(enriched.get("keywords", [])),
+                        "origin_parent_id": doc.metadata.get("parent_id"),
+                        "is_synthetic": True
+                    }
+                )
+                holographic_docs.append(r_doc)
                 
-                print(f"[KnowledgeRefiner] - 片段 {i+1} 增强产出: {len(enriched.get('questions', []))} 个模拟问题, 逻辑核: {'有' if enriched.get('reasoning') else '无'}, 摘要: {'有' if enriched.get('summary') else '无'}")
-                
-                # 2. 逻辑路径 (Logic Path) - 模拟问题
-                # 将“问题-答案”对存入逻辑路径，实现“以问搜问”，极大提升短句搜索准确率
-                for q in enriched.get("questions", []):
-                    q_doc = Document(
-                        page_content=f"问题: {q}\n相关知识: {text[:200]}...",
-                        metadata={
-                            **doc.metadata,
-                            "path_type": "logic",
-                            "logic_type": "question",
-                            "original_content": text, # 链接回完整上下文
-                            "origin_parent_id": doc.metadata.get("parent_id"),
-                            "is_synthetic": True
-                        }
-                    )
-                    holographic_docs.append(q_doc)
-                
-                # 3. 逻辑路径 (Logic Path) - 逻辑/策略核
-                # 提取文档背后的流程或逻辑模版，作为高级推理的依据
-                reasoning = enriched.get("reasoning")
-                if reasoning:
-                    r_doc = Document(
-                        page_content=f"逻辑核/推导过程: {reasoning}",
-                        metadata={
-                            **doc.metadata,
-                            "path_type": "logic",
-                            "logic_type": "reasoning",
-                            "tags": ",".join(enriched.get("tags", [])),
-                            "keywords": ",".join(enriched.get("keywords", [])),
-                            "origin_parent_id": doc.metadata.get("parent_id"),
-                            "is_synthetic": True
-                        }
-                    )
-                    holographic_docs.append(r_doc)
-                    
-                    # 同时更新原始文档的标签和关键词，便于后续过滤
-                    doc.metadata["tags"] = ",".join(enriched.get("tags", []))
-                    doc.metadata["keywords"] = ",".join(enriched.get("keywords", []))
+                # 同时更新原始文档的标签和关键词，便于后续过滤
+                doc.metadata["tags"] = ",".join(enriched.get("tags", []))
+                doc.metadata["keywords"] = ",".join(enriched.get("keywords", []))
 
-                # 4. 摘要路径 (Summary Path)
-                # 提供极高浓缩度的语义信息，适合快速概览检索
-                summary = enriched.get("summary")
-                if summary:
-                    s_doc = Document(
-                        page_content=f"摘要: {summary}",
-                        metadata={
-                            **doc.metadata,
-                            "path_type": "summary",
-                            "summary_type": "auto",
-                            "origin_parent_id": doc.metadata.get("parent_id"),
-                            "tags": ",".join(enriched.get("tags", [])),
-                            "keywords": ",".join(enriched.get("keywords", [])),
-                            "is_synthetic": True
-                        }
-                    )
-                    holographic_docs.append(s_doc)
+            # 4. 摘要路径 (Summary Path)
+            # 提供极高浓缩度的语义信息，适合快速概览检索
+            summary = enriched.get("summary")
+            if summary:
+                s_doc = Document(
+                    page_content=f"摘要: {summary}",
+                    metadata={
+                        **doc.metadata,
+                        "path_type": "summary",
+                        "summary_type": "auto",
+                        "origin_parent_id": doc.metadata.get("parent_id"),
+                        "tags": ",".join(enriched.get("tags", [])),
+                        "keywords": ",".join(enriched.get("keywords", [])),
+                        "is_synthetic": True
+                    }
+                )
+                holographic_docs.append(s_doc)
         
         print(f"精炼完成！原始 {total} 个片段已扩展为 {len(holographic_docs)} 个全息数据单元。")
         return holographic_docs

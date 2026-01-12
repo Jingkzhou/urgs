@@ -638,7 +638,13 @@ class VectorStoreService:
             col_name = f"{collection_name}_{suffix}"
             try:
                 col = self.client.get_collection(col_name)
-                col.delete(where={"collection_name": collection_name, "file_name": file_name})
+                # ChromaDB 多条件需要使用 $and 运算符
+                col.delete(where={
+                    "$and": [
+                        {"collection_name": {"$eq": collection_name}},
+                        {"file_name": {"$eq": file_name}}
+                    ]
+                })
                 deleted_vectors += 1
             except Exception as e:
                 logger.warning(f"删除向量集合 {col_name} 中的 {file_name} 失败: {e}")
