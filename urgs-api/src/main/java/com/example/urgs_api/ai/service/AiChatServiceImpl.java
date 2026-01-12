@@ -274,6 +274,7 @@ public class AiChatServiceImpl implements AiChatService {
                                                 // Prepare structured source for frontend
                                                 Object metadata = res.get("metadata");
                                                 if (metadata instanceof Map) {
+                                                    @SuppressWarnings("unchecked")
                                                     Map<String, Object> metaMap = (Map<String, Object>) metadata;
                                                     sourceList.add(Map.of(
                                                             "fileName", metaMap.getOrDefault("file_name", "Unknown"),

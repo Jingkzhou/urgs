@@ -141,6 +141,7 @@ class QAService:
                     "score": item["score"],
                     "score_details": item.get("score_details", {}),
                     "metadata": doc.metadata,
+                    "content": doc.page_content,  # 完整内容用于构建 RAG 上下文
                     "snippet": doc.page_content[:200].replace("\n", " "),
                 }
             )

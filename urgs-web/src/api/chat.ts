@@ -250,7 +250,6 @@ export const streamChatResponse = async (
                     // 解析 event: 行，记住事件名称
                     if (line.startsWith('event:')) {
                         currentEventName = line.slice(6).trim();
-                        console.log('[SSE Debug] Event type:', currentEventName);
                         if (currentEventName === 'done') {
                             safeOnComplete();
                         }
@@ -319,9 +318,7 @@ const processLine = (line: string, onChunk: (c: string) => void, onComplete: () 
         // 根据事件名称路由处理
         if (eventName === 'sources') {
             // sources 事件：数据是数组
-            console.log('[SSE Debug] Received sources event:', parsed);
             if (onSources && Array.isArray(parsed)) {
-                console.log('[SSE Debug] Calling onSources with', parsed.length, 'items');
                 onSources(parsed);
             }
             return;
