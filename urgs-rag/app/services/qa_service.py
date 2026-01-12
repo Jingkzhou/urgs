@@ -46,15 +46,20 @@ class QAService:
         collections = route_info["collections"]
         route_filter = route_info.get("filters")
         intent = route_info.get("intent", "general")
-        print(f"\n[RAG-QA] >>> 意图识别: {intent}, 路由集合: {collections}")
+        intent = route_info.get("intent", "general")
+        analysis = route_info.get("analysis", {})
+        rewritten_query = analysis.get("rewritten_query", query)
+        
+        print(f"\n[RAG-QA] >>> 意图识别: {intent}, 改写查询: {rewritten_query}")
+        print(f"[RAG-QA] >>> 路由集合: {collections}")
 
         unique_docs_map = {}
 
         # 确定搜索查询列表
-        search_queries = [query]
+        search_queries = [rewritten_query]
         if settings.ENABLE_QUERY_EXPANSION:
-            logger.info(f"正在进行查询扩展: {query}")
-            expanded = query_expansion_service.expand_query(query, num_queries=2)
+            logger.info(f"正在进行查询扩展: {rewritten_query}")
+            expanded = query_expansion_service.expand_query(rewritten_query, num_queries=2)
             # 扩展查询包含原查询，这里取前3个以平衡性能
             search_queries = expanded[:3]
             logger.info(f"扩展后的查询列表: {search_queries}")
@@ -185,6 +190,7 @@ class QAService:
 
         return {
             "query": query,
+            "rewritten_query": rewritten_query,
             "answer": answer_structured.get("conclusion", ""),
             "answer_structured": answer_structured,
             "sources": sources,

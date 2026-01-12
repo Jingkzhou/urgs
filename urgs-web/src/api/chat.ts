@@ -8,6 +8,7 @@ export interface Message {
     timestamp: number;
     sources?: Array<{ fileName: string; content: string; score: number }>;
     status?: string;
+    intent?: string;
 }
 
 export interface Session {
@@ -21,7 +22,7 @@ export interface Session {
 
 const API_BASE = '/api/ai';
 
-// Helper to get current user from token or fall back
+// 获取当前用户信息，若失败则降级处理
 const getUserInfo = () => {
     try {
         const userStr = localStorage.getItem('auth_user');
@@ -29,14 +30,14 @@ const getUserInfo = () => {
             return JSON.parse(userStr);
         }
     } catch (e) { }
-    // Fallback or return null if strict
+    // 降级返回或在严格模式下返回 null
     return { id: '1' };
 };
 
 export const getSessions = async (): Promise<Session[]> => {
     try {
         const user = getUserInfo();
-        // Use id or empId. Only fallback to '1' if absolutely nothing identifies the user.
+        // 使用 id 或 empId。仅当完全无法识别用户时降级为 '1'
         const userId = (user.id || user.empId) ? String(user.id || user.empId) : '1';
         console.log('[DEBUG] getSessions: Resolved Current User ID (id/empId):', userId);
 
@@ -46,13 +47,13 @@ export const getSessions = async (): Promise<Session[]> => {
         });
         if (!sessions) return [];
 
-        // Filter sessions to ensure they belong to the current user
+        // 过滤会话以确保它们属于当前用户
         const filtered = sessions.filter((s: any) => {
-            // Do NOT default to '1'. If userId is missing, it's not a match.
+            // 不要默认为 '1'。如果缺少 userId，则不算匹配。
             const sessionUserId = (s.userId !== undefined && s.userId !== null) ? String(s.userId) : 'MISSING_IN_RESPONSE';
 
             const match = sessionUserId === userId;
-            // Debug log only on mismatch if it's not the common '1' case to avoid noise, or mismatch logic
+            // 仅在不匹配且非常见的 '1' 情况下记录调试日志，以避免噪音
             return match;
         });
 
@@ -91,7 +92,7 @@ export const loadSessionMessages = async (sessionId: string): Promise<Message[]>
 export const createSession = async (agentId?: number | string): Promise<Session> => {
     try {
         const user = getUserInfo();
-        // Use id or empId
+        // 使用 id 或 empId
         const userId = (user.id || user.empId) ? String(user.id || user.empId) : '1';
         console.log('[DEBUG] createSession: Creating for User ID:', userId);
 
@@ -122,7 +123,7 @@ export const deleteSession = async (id: string) => {
 };
 
 export const saveSession = (session: Session) => {
-    // Optional
+    // 可选
 };
 
 export const generateSessionTitle = async (sessionId: string): Promise<string> => {
@@ -188,6 +189,7 @@ export const streamChatResponse = async (
     onMetrics?: (metrics: { used: number, limit: number }) => void,
     onSources?: (sources: any[]) => void,
     onStatus?: (status: string) => void,
+    onIntent?: (intent: string) => void,
     ragConfig?: { fusionStrategy?: string; topK?: number }
 ) => {
     try {
@@ -231,7 +233,7 @@ export const streamChatResponse = async (
                 const { done, value } = await reader.read();
                 if (done) {
                     if (buffer.trim()) {
-                        processLines(buffer, onChunk, safeOnComplete, onMetrics, onStatus, onSources);
+                        processLines(buffer, onChunk, safeOnComplete, onMetrics, onStatus, onSources, onIntent);
                     }
                     safeOnComplete();
                     break;
@@ -244,7 +246,7 @@ export const streamChatResponse = async (
                 buffer = lines.pop() || '';
 
                 for (const line of lines) {
-                    processLine(line, onChunk, safeOnComplete, onMetrics, onStatus, onSources);
+                    processLine(line, onChunk, safeOnComplete, onMetrics, onStatus, onSources, onIntent);
                 }
             }
         }
@@ -257,17 +259,16 @@ export const streamChatResponse = async (
     }
 };
 
-const processLines = (text: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void) => {
+const processLines = (text: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void, onIntent?: (i: string) => void) => {
     const lines = text.split('\n');
     for (const line of lines) {
-        processLine(line, onChunk, onComplete, onMetrics, onStatus, onSources);
+        processLine(line, onChunk, onComplete, onMetrics, onStatus, onSources, onIntent);
     }
 };
 
-const processLine = (line: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void) => {
+const processLine = (line: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void, onIntent?: (i: string) => void) => {
     if (!line.trim()) return;
 
-    // Handle SSE event type
     if (line.startsWith('event:')) {
         const eventType = line.slice(6).trim();
         if (eventType === 'done') {
@@ -309,19 +310,18 @@ const processLine = (line: string, onChunk: (c: string) => void, onComplete: () 
         } else if (parsed.content) {
             onChunk(parsed.content);
         } else if (parsed.used !== undefined && parsed.limit !== undefined) {
-            // Handle metrics
+            // 处理指标数据
             if (onMetrics) onMetrics(parsed);
         } else if (Array.isArray(parsed)) {
-            // Handle sources
+            // 处理来源数据
             if (onSources) onSources(parsed);
+        } else if (parsed.intent) {
+            // 处理意图数据
+            if (onIntent) onIntent(parsed.intent);
         } else if (parsed.error) {
             console.error("Stream reported error:", parsed.error);
         }
     } catch (e) {
-        // Not JSON, assume plain text chunk if not special commands
-        // However, usually we expect JSON for content to differentiate from other types.
-        // If we want to support plain text streaming, we'd add it here.
-        // For now, let's assume content always comes as JSON { content: "..." }
-        // or ensure backend sends it that way.
+        // 非 JSON，如果是普通文本块则直接处理
     }
 };

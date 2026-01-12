@@ -185,6 +185,21 @@ public class AiChatServiceImpl implements AiChatService {
 
                             try {
                                 com.example.urgs_api.ai.dto.RagQueryResponse ragRes = ragService.query(ragReq);
+
+                                // [New] Send Intent
+                                if (ragRes != null && ragRes.getIntent() != null) {
+                                    try {
+                                        // Send as JSON object to be easily parsed by frontend (which ignores event
+                                        // names mostly)
+                                        String intentJson = objectMapper
+                                                .writeValueAsString(Map.of("intent", ragRes.getIntent()));
+                                        emitter.send(SseEmitter.event().data(intentJson));
+                                        log.info("Sent intent: {}", ragRes.getIntent());
+                                    } catch (Exception e) {
+                                        log.warn("Failed to send intent SSE", e);
+                                    }
+                                }
+
                                 if (ragRes != null && ragRes.getResults() != null && !ragRes.getResults().isEmpty()) {
                                     StringBuilder sourcesBuilder = new StringBuilder();
                                     List<Map<String, Object>> sourceList = new java.util.ArrayList<>();

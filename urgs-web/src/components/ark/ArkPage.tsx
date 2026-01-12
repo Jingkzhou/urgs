@@ -504,6 +504,15 @@ const ArkPage: React.FC = () => {
                         return next;
                     });
                 },
+                (intent) => {
+                    setMessages(prev => {
+                        const index = prev.findIndex(m => m.id === aiMsgId);
+                        if (index === -1) return prev;
+                        const next = prev.slice();
+                        next[index] = { ...prev[index], intent }; // Update intent
+                        return next;
+                    });
+                },
                 ragConfig // Pass config here
             );
         } catch (e) {

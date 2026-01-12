@@ -2,6 +2,7 @@ import re
 from typing import Dict, List, Optional
 
 from app.config import settings
+from app.services.llm_chain import llm_service
 
 
 class IntentRouter:
@@ -38,6 +39,26 @@ class IntentRouter:
             
         return "general"
 
+    def analyze(self, query: str) -> Dict:
+        """
+        [New] 使用 LLM 进行深度意图分析。
+        """
+        # 1. 先用规则快速过滤特殊业务意图 (SQL/血缘/资产)
+        fast_intent = self.detect_intent(query)
+        if fast_intent != "general":
+            return {
+                "intent": fast_intent, 
+                "entities": [], 
+                "rewritten_query": query, 
+                "is_fast_path": True
+            }
+
+        # 2. 如果是通用查询，则调用 LLM 进行深度分析
+        # (WHAT_IS, HOW_TO, COMPARE, TROUBLESHOOT)
+        llm_result = llm_service.analyze_query_intent(query)
+        llm_result["is_fast_path"] = False
+        return llm_result
+
     def route(self, query: str, collection_names: Optional[List[str]] = None) -> Dict:
         """
         根据意图进行路由决策，返回推荐的配置。
@@ -52,7 +73,10 @@ class IntentRouter:
         if collection_names:
             return {"collections": collection_names, "filters": None, "intent": "manual"}
 
-        intent = self.detect_intent(query)
+        # 1. 获取意图分析结果 (包含 规则 + LLM)
+        analysis = self.analyze(query)
+        intent = analysis.get("intent", "general")
+        
         filters = None
         
         # 为特定意图自动加上元数据过滤，缩小检索范围，提高准确率
@@ -63,7 +87,12 @@ class IntentRouter:
         elif intent == "asset":
             filters = {"source_type": "regulatory_asset"}
 
-        return {"collections": self.default_collections, "filters": filters, "intent": intent}
+        return {
+            "collections": self.default_collections, 
+            "filters": filters, 
+            "intent": intent,
+            "analysis": analysis  # 透传完整分析结果给后续 QA Service
+        }
 
 
 # 导出路由实例

@@ -227,6 +227,77 @@ class LLMChainService:
             self._record_usage(config_id, model, 0, 0, "enrich", False, str(e))
             return {"questions": [], "reasoning": "", "tags": [], "summary": "", "keywords": []}
 
+    def analyze_query_intent(self, query: str) -> dict:
+        """
+        分析用户查询意图，进行分类、实体提取和检索重写。
+        
+        Returns:
+            dict: {
+                "intent": "WHAT|HOW|COMPARE|TROUBLESHOOT|GENERAL",
+                "entities": ["entity1", ...],
+                "rewritten_query": "optimized search query",
+                "keywords": ["kw1", "kw2"]
+            }
+        """
+        if not query:
+            return {"intent": "GENERAL", "entities": [], "rewritten_query": "", "keywords": []}
+
+        config = self._get_api_config()
+        model = config.get("model") if config else settings.LLM_MODEL
+        config_id = config.get("id") if config else None
+
+        prompt = (
+            "你是一个即搜索意图分析专家。请分析用户的查询语句。\n"
+            "任务：\n"
+            "1. 判定意图类型 (Intent Type)：\n"
+            "   - WHAT_IS: 定义、概念解释 (e.g. '什么是RAG')\n"
+            "   - HOW_TO: 操作步骤、流程 (e.g. '怎么部署', '如何申请')\n"
+            "   - COMPARE: 对比、区别 (e.g. 'A和B的区别')\n"
+            "   - TROUBLESHOOT: 报错、故障排查 (e.g. '启动失败', '报错500')\n"
+            "   - GENERAL: 其他通用问题\n"
+            "2. 提取关键实体 (Entities)：产品名、技术术语、报错代码等。\n"
+            "3. 提取关键词 (Keywords)：用于倒排索引的关键词。\n"
+            "4. 改写查询 (Rewritten Query)：生成一个更适合搜索引擎的 Query，去除口语化词汇，突出实体和意图。\n"
+            "\n"
+            "输出仅 JSON 格式：\n"
+            "{\n"
+            "  \"intent\": \"类型\",\n"
+            "  \"entities\": [\"实体1\"],\n"
+            "  \"keywords\": [\"关键词1\"],\n"
+            "  \"rewritten_query\": \"改写后的Query\"\n"
+            "}\n\n"
+            f"用户查询：{query}"
+        )
+
+        try:
+            response = self._client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "You are a search intent analyzer. Output valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            import json
+            content = response.choices[0].message.content
+            result = json.loads(content)
+            
+            usage = getattr(response, 'usage', None)
+            if usage:
+                self._record_usage(config_id, model, usage.prompt_tokens, usage.completion_tokens, "intent", True)
+                
+            return {
+                "intent": result.get("intent", "GENERAL"),
+                "entities": result.get("entities", []),
+                "rewritten_query": result.get("rewritten_query", query),
+                "keywords": result.get("keywords", [])
+            }
+        except Exception as e:
+            logger.error(f"意图分析失败: {e}")
+            self._record_usage(config_id, model, 0, 0, "intent", False, str(e))
+            return {"intent": "GENERAL", "entities": [], "rewritten_query": query, "keywords": []}
+
     def generate_structured_answer(
         self,
         query: str,

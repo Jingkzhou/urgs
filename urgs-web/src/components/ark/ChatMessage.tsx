@@ -6,7 +6,7 @@ import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Copy, Check, Sparkles, SearchX, Quote, ChevronDown, ChevronRight } from 'lucide-react';
+import { Copy, Check, Sparkles, SearchX, Quote, ChevronDown, ChevronRight, HelpCircle, BookOpen, Scale, Wrench, MessageCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Message } from '../../api/chat';
 import 'katex/dist/katex.min.css';
@@ -19,6 +19,16 @@ interface ChatMessageProps {
 
 interface ScoreDetailProps {
     details: Record<string, any>;
+}
+
+const getIntentConfig = (intent: string) => {
+    switch (intent) {
+        case 'WHAT_IS': return { label: '概念解释', color: 'bg-blue-100/50 text-blue-700', icon: <HelpCircle size={12} /> };
+        case 'HOW_TO': return { label: '操作指南', color: 'bg-emerald-100/50 text-emerald-700', icon: <BookOpen size={12} /> };
+        case 'COMPARE': return { label: '对比分析', color: 'bg-purple-100/50 text-purple-700', icon: <Scale size={12} /> };
+        case 'TROUBLESHOOT': return { label: '故障排查', color: 'bg-orange-100/50 text-orange-700', icon: <Wrench size={12} /> };
+        default: return { label: '通用对话', color: 'bg-slate-100/50 text-slate-600', icon: <MessageCircle size={12} /> };
+    }
 }
 
 const ScoreTooltip: React.FC<ScoreDetailProps> = ({ details }) => {
@@ -97,6 +107,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                             </div>
                         ) : (
                             <div className={`markdown-body ${isUser ? 'text-[#041e49]' : ''}`}>
+                                {/* Intent Badge */}
+                                {!isUser && message.intent && message.intent !== 'GENERAL' && (
+                                    <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mb-4 border border-white/50 shadow-sm ${getIntentConfig(message.intent).color}`}>
+                                        {getIntentConfig(message.intent).icon}
+                                        {getIntentConfig(message.intent).label}
+                                    </div>
+                                )}
+
                                 <ReactMarkdown
                                     remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
                                     rehypePlugins={[rehypeKatex]}

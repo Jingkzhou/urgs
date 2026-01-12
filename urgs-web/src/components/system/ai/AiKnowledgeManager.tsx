@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Card, Tag, Space, Modal, Form, Input, Select, message, Drawer, Upload, Tooltip, Switch } from 'antd';
 import { DatabaseOutlined, PlusOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined, FolderOpenOutlined, UploadOutlined, ThunderboltOutlined, FileOutlined } from '@ant-design/icons';
+import { Sparkles } from 'lucide-react';
 import { get, post, del } from '../../../utils/request';
 import type { UploadFile } from 'antd/es/upload/interface';
 import VectorDbDashboard from './VectorDbDashboard';
@@ -543,10 +544,6 @@ const AiKnowledgeManager: React.FC = () => {
                 onClose={() => setIsFileDrawerOpen(false)}
                 extra={
                     <Space>
-                        <Space className="mr-4">
-                            <span className="text-sm text-slate-600">AI 知识增强(Simulated Q&A):</span>
-                            <Switch checked={enableAI} onChange={setEnableAI} />
-                        </Space>
                         <Upload
                             beforeUpload={(file) => handleUpload(file as any)}
                             showUploadList={false}
@@ -570,18 +567,41 @@ const AiKnowledgeManager: React.FC = () => {
                         >
                             全库向量化
                         </Button>
-                        <Button
-                            danger
-                            icon={<ReloadOutlined />}
-                            onClick={() => currentKb && handleResetKB(currentKb)}
-                        >
-                            清空向量库
-                        </Button>
+                        {/* More Actions Dropdown could govern Reset/Clean, but keeping button for now if space allows */}
+                        <Tooltip title="清空所有数据">
+                            <Button
+                                danger
+                                icon={<ReloadOutlined />}
+                                onClick={() => currentKb && handleResetKB(currentKb)}
+                            />
+                        </Tooltip>
                     </Space>
                 }
             >
-                <div className="mb-4 text-slate-500 text-sm">
-                    上传文件到该知识库空间，点击“开始向量化”将文件处理并存入向量数据库。
+                {/* Configuration Bar */}
+                <div className="mb-6 bg-blue-50/50 p-4 rounded-xl border border-blue-100 flex items-center justify-between">
+                    <div>
+                        <h4 className="font-bold text-slate-700 text-sm mb-1 flex items-center gap-2">
+                            <Sparkles className="text-blue-500" size={16} />
+                            智能增强配置
+                        </h4>
+                        <div className="text-slate-500 text-xs">
+                            开启后，向量化时将使用 LLM 生成模拟问答对(Q&A)与摘要，显著提升检索在自然语言提问下的准确率。
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-lg border border-blue-100 shadow-sm">
+                        <span className="text-sm font-bold text-slate-700">启用 AI 模拟问答生成</span>
+                        <Switch
+                            checked={enableAI}
+                            onChange={setEnableAI}
+                            checkedChildren="开启"
+                            unCheckedChildren="关闭"
+                        />
+                    </div>
+                </div>
+
+                <div className="mb-4 text-slate-500 text-sm flex justify-between items-end">
+                    <span>文件列表 ({files.length})</span>
                 </div>
                 <Table
                     rowSelection={{
