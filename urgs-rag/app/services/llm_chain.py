@@ -410,5 +410,47 @@ class LLMChainService:
                 "confidence": min_confidence
             }
 
+    def chat(self, prompt: str, system_message: str = None) -> str:
+        """
+        通用聊天接口，支持自定义提示词和系统消息。
+        用于那些不需要复杂特定处理的 LLM 调用场景，如文档结构检测、意图识别等。
+        """
+        import time # Added for time.time()
+        config = self._get_api_config()
+        client = self._client # Changed from self.client to self._client for consistency
+        model = config.get("model") if config else settings.LLM_MODEL
+        
+        messages = []
+        if system_message:
+            messages.append({"role": "system", "content": system_message})
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            start_time = time.time()
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.1, # 默认低温度，适合确定性任务
+                max_tokens=600   
+            )
+            content = response.choices[0].message.content
+            
+            # 记录 Token 使用
+            if config:
+                usage = response.usage
+                self._record_usage(
+                    config_id=config.get("id"),
+                    model=model,
+                    prompt_tokens=usage.prompt_tokens,
+                    completion_tokens=usage.completion_tokens,
+                    request_type="general_chat",
+                    success=True
+                )
+            
+            return content
+        except Exception as e:
+            logger.error(f"LLM Chat 调用失败: {e}")
+            raise e
+
 # 导出 LLM 服务实例
 llm_service = LLMChainService()

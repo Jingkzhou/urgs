@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     RERANKER_TOP_N: int = 20
     RERANKER_WEIGHT: float = 0.5
 
+    # 智能文档切片配置
+    SMART_SPLITTER_ENABLED: bool = True
+    SMART_SPLITTER_LLM_DETECT: bool = True
+    SMART_SPLITTER_MIN_CONFIDENCE: float = 0.6
+
     # Java 后端 API 配置
     URGS_API_BASE_URL: str = "http://localhost:8080"
 

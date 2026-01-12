@@ -276,11 +276,18 @@ class DocLoader:
 
     def split_documents_func(self, documents: List[Document]) -> List[Document]:
         """
-        文档切分：使用递归字符切分器。
+        文档切分：使用智能切片框架或递归字符切分器。
         """
+        if settings.SMART_SPLITTER_ENABLED:
+            from app.splitters.smart_splitter import smart_splitter
+            print(f"[DocLoader] >>> 启动智能文档切片 (Smart Splitter)")
+            chunks = smart_splitter.split_documents(documents)
+            print(f"[DocLoader] 智能切片完成: 原始 {len(documents)} 段 -> 切分后 {len(chunks)} 片")
+            return chunks
+        
         chunk_size = 1000
         chunk_overlap = 200
-        print(f"[DocLoader] >>> 启动文件切片 (Chunking): Size={chunk_size}, Overlap={chunk_overlap}")
+        print(f"[DocLoader] >>> 启动文件切片 (Recursive): Size={chunk_size}, Overlap={chunk_overlap}")
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
