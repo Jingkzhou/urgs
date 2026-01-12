@@ -185,7 +185,8 @@ class LLMChainService:
         - 场景标签 (Tags)
         - 关键词 (Keywords)
         """
-        if not text or len(text) < 50:
+        # 仅跳过完全空白的文本
+        if not text or not text.strip():
             return {"questions": [], "reasoning": "", "tags": [], "summary": "", "keywords": []}
 
         config = self._get_api_config()

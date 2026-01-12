@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = "sk-xxx"
 
     # 生成与检索配置
-    ANSWERABILITY_MIN_SCORE: float = 0.35
-    ANSWERABILITY_MIN_DOCS: int = 2
+    ANSWERABILITY_MIN_SCORE: float = 0.02  # RRF 分数通常在 0.01-0.1 范围
+    ANSWERABILITY_MIN_DOCS: int = 1  # 只要有 1 篇相关文档即可回答
     RETRIEVAL_TOP_K: int = 6
     WEIGHT_BM25: float = 0.4
     WEIGHT_SEMANTIC: float = 0.3
