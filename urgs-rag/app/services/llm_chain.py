@@ -45,7 +45,7 @@ class LLMChainService:
 
         try:
             # 访问管理后台暴露的默认配置接口
-            url = f"{settings.URGS_API_BASE_URL}/api/ai/config/default"
+            url = f"{settings.URGS_API_URL}/api/ai/config/default"
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
                 config = response.json()
@@ -74,7 +74,7 @@ class LLMChainService:
         将 Token 消耗情况上报至 Java 后端，用于审计、计费或统计。
         """
         try:
-            url = f"{settings.URGS_API_BASE_URL}/api/ai/usage/record"
+            url = f"{settings.URGS_API_URL}/api/ai/usage/record"
             payload = {
                 "configId": config_id,
                 "model": model,

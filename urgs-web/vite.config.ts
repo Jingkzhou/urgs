@@ -20,15 +20,15 @@ export default defineConfig(({ mode }) => {
         },
 
         '/api': {
-          target: env.VITE_API_URL || 'http://localhost:8080',
+          target: env.URGS_API_URL || 'http://localhost:8080',
           changeOrigin: true,
         },
         '/uploads': {
-          target: env.VITE_API_URL || 'http://localhost:8080',
+          target: env.URGS_API_URL || 'http://localhost:8080',
           changeOrigin: true,
         },
         '/profile': {
-          target: env.VITE_API_URL || 'http://localhost:8080',
+          target: env.URGS_API_URL || 'http://localhost:8080',
           changeOrigin: true,
         },
       },

@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     OPENAI_MODEL_NAME: str = "qwen-turbo"
     
     LOG_LEVEL: str = "INFO"
+    
+    URGS_API_URL: str = "http://localhost:8080"
 
     class Config:
         env_file = ".env"

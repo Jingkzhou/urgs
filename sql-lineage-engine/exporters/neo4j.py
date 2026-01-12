@@ -342,7 +342,10 @@ class Neo4jClient:
                 "dependency_type": dep.get("dependency_type", "fdd"),
                 "snippet": dep.get("snippet"),
                 "version": version,
-                "repo_id": repo_id
+                "repo_id": repo_id,
+                "confidence": dep.get("confidence", "MEDIUM"),
+                "validation_note": dep.get("validation_note"),
+                "is_expanded": dep.get("is_expanded", False)
             }
             
             # Neo4j Relation Type lookup
@@ -413,6 +416,9 @@ class Neo4jClient:
             r.repoId = item.repo_id,
             r.type = item.dependency_type,
             r.isIndirect = false,
+            r.confidence = item.confidence,
+            r.validationNote = item.validation_note,
+            r.isExpanded = item.is_expanded,
             r.snippet = CASE WHEN item.snippet IS NOT NULL THEN item.snippet ELSE r.snippet END,
             r.createdAt = CASE WHEN r.createdAt IS NULL THEN datetime() ELSE r.createdAt END,
             r.sourceFiles = CASE 
@@ -437,6 +443,9 @@ class Neo4jClient:
             r.repoId = item.repo_id,
             r.type = item.dependency_type,
             r.isIndirect = true,
+            r.confidence = item.confidence,
+            r.validationNote = item.validation_note,
+            r.isExpanded = item.is_expanded,
             r.snippet = CASE WHEN item.snippet IS NOT NULL THEN item.snippet ELSE r.snippet END,
             r.createdAt = CASE WHEN r.createdAt IS NULL THEN datetime() ELSE r.createdAt END,
             r.sourceFiles = CASE 

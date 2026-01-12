@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     SMART_SPLITTER_MIN_CONFIDENCE: float = 0.6
 
     # Java 后端 API 配置
-    URGS_API_BASE_URL: str = "http://localhost:8080"
+    URGS_API_URL: str = "http://localhost:8080"
 
 
     class Config:

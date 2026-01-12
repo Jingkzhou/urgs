@@ -78,7 +78,7 @@ services:
     image: urgs-web:latest
     environment:
       - VITE_WS_URL=${VITE_WS_URL}
-      - VITE_API_URL=${VITE_API_URL}
+      - VITE_API_URL=${URGS_API_URL}
       - API_PROXY_TARGET=http://urgs-api:8080
       - VITE_RAG_URL=${VITE_RAG_URL}
     ports:

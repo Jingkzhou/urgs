@@ -10,7 +10,7 @@ umask 022
 cat <<EOF > /usr/share/nginx/html/config.js
 window.__RUNTIME_CONFIG__ = {
   VITE_WS_URL: "${VITE_WS_URL:-ws://localhost:8080/ws/im}",
-  VITE_API_URL: "${VITE_API_URL:-http://localhost:8080}",
+  VITE_API_URL: "${URGS_API_URL:-${VITE_API_URL:-http://localhost:8080}}",
   VITE_RAG_URL: "${VITE_RAG_URL:-http://localhost:8001}"
 };
 EOF

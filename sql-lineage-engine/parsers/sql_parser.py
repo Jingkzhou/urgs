@@ -2,6 +2,7 @@ from typing import List, Dict, Any
 from .gsp import GSPParser
 from .indirect_flow_parser import IndirectFlowParser
 from utils.splitter import SqlSplitter
+from utils.metadata_resolver import MetadataResolver
 import logging
 
 # Suppress sqlglot warnings for unsupported syntax (like CALL)
@@ -13,6 +14,7 @@ class LineageParser:
         self.default_schema = default_schema
         self.parser = GSPParser()
         self.indirect_parser = IndirectFlowParser(dialect)  # sqlglot 补充解析器
+        self.resolver = MetadataResolver()
 
     def parse(self, sql: str, source_file: str = None) -> Dict[str, Any]:
         """
@@ -392,6 +394,52 @@ class LineageParser:
                                 "snippet": final_stmt           # 添加 SQL 片段
                             })
         
+        # ===== 3. Metadata Validation & Star Expansion =====
+        final_dependencies = []
+        for dep in dependencies:
+            src_table = dep["source_table"]
+            src_col = dep["source_column"]
+            tgt_table = dep["target_table"]
+            tgt_col = dep["target_column"]
+
+            # 3.1 Handle Star Expansion (Source Column is *)
+            if src_col == "*":
+                fields = self.resolver.get_table_fields(src_table)
+                if fields:
+                    for f_name in fields:
+                        # Create a new dependency for each field
+                        new_dep = dep.copy()
+                        new_dep["source_column"] = f_name
+                        new_dep["is_expanded"] = True
+                        
+                        # Validate the newly created source and target (if target is not unknown)
+                        # Confidence
+                        val_res = self.resolver.validate_column(src_table, f_name)
+                        new_dep["confidence"] = val_res.get("confidence", "MEDIUM")
+                        new_dep["validation_note"] = val_res.get("note")
+                        final_dependencies.append(new_dep)
+                    continue # Skip the original '*' dependency
+            
+            # 3.2 Regular Validation & Confidence Calculation
+            # Validate Source
+            src_val = self.resolver.validate_column(src_table, src_col)
+            # Validate Target (only if it's a real column, not UNKNOWN or *)
+            tgt_val = {"confidence": "HIGH"}
+            if tgt_col and tgt_col not in ["UNKNOWN", "*"]:
+                tgt_val = self.resolver.validate_column(tgt_table, tgt_col)
+            
+            # Final confidence is the minimum of src and tgt
+            conf_map = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
+            src_score = conf_map.get(src_val["confidence"], 2)
+            tgt_score = conf_map.get(tgt_val["confidence"], 2)
+            
+            min_score = min(src_score, tgt_score)
+            final_conf = "HIGH" if min_score == 3 else ("MEDIUM" if min_score == 2 else "LOW")
+            
+            dep["confidence"] = final_conf
+            dep["validation_note"] = f"Src: {src_val.get('note') or 'OK'}; Tgt: {tgt_val.get('note') or 'OK'}"
+            final_dependencies.append(dep)
+        
         # ===== Schema Fallback (Directory Based) =====
         import os
         if source_file:
@@ -421,7 +469,7 @@ class LineageParser:
              except Exception:
                  pass
                     
-        return dependencies
+        return final_dependencies
 
     def _extract_lineage_fallback(self, sql: str) -> Dict[str, Any]:
         """
