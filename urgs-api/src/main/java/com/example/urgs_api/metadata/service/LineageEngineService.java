@@ -169,7 +169,21 @@ public class LineageEngineService {
     }
 
     private GitInputResult prepareGitInput(StartEngineRequest request) throws Exception {
-        Path tempDir = Files.createTempDirectory("lineage-git-");
+        Path baseDir = Paths.get("/tmp/lineage-share");
+        if (!Files.exists(baseDir)) {
+            Files.createDirectories(baseDir);
+        }
+        Path tempDir = Files.createTempDirectory(baseDir, "lineage-git-");
+        // Ensure permissions are open so the other container can read/write if UID
+        // differs
+        try {
+            // Docker shared volume permissions can be tricky;
+            // Setting 777 is a simple fix for internal tmp sharing
+            Files.setPosixFilePermissions(tempDir,
+                    java.nio.file.attribute.PosixFilePermissions.fromString("rwxrwxrwx"));
+        } catch (Exception e) {
+            log.warn("Failed to set perms on temp dir (might be non-posix fs): {}", e.getMessage());
+        }
         log.info("下载代码归档到临时目录: {}", tempDir);
 
         try (InputStream is = gitPlatformService.downloadArchive(request.getRepoId(), request.getRef());
@@ -177,7 +191,13 @@ public class LineageEngineService {
 
             ZipEntry entry;
             String rootDir = null;
+            int totalEntries = 0;
             while ((entry = zis.getNextEntry()) != null) {
+                totalEntries++;
+                if (log.isDebugEnabled()) {
+                    log.debug("Git Archive Entry: {}", entry.getName());
+                }
+
                 if (rootDir == null && entry.isDirectory()) {
                     rootDir = entry.getName();
                 }
@@ -190,6 +210,7 @@ public class LineageEngineService {
                 }
                 zis.closeEntry();
             }
+            log.info("Extracted {} entries from Git archive. Root dir detected: {}", totalEntries, rootDir);
 
             Path realBase = rootDir != null ? tempDir.resolve(rootDir) : tempDir;
 
@@ -613,6 +634,33 @@ public class LineageEngineService {
             result.put("error", e.getMessage());
         }
         return result;
+    }
+
+    private void grantFullPermissions(Path path) {
+        try {
+            Files.walk(path).forEach(p -> {
+                try {
+                    Files.setPosixFilePermissions(p,
+                            java.nio.file.attribute.PosixFilePermissions.fromString("rwxrwxrwx"));
+                } catch (Exception e) {
+                    // Ignore non-posix or permission errors on specific files
+                }
+            });
+        } catch (Exception e) {
+            log.warn("Error setting permissions on {}: {}", path, e.getMessage());
+        }
+    }
+
+    private void logDirectoryContents(Path dir) {
+        try {
+            List<String> files = Files.walk(dir)
+                    .filter(Files::isRegularFile)
+                    .map(p -> dir.relativize(p).toString())
+                    .collect(java.util.stream.Collectors.toList());
+            log.info("Prepared {} files for lineage engine in {}: {}", files.size(), dir, files);
+        } catch (Exception e) {
+            log.warn("Failed to list directory contents: {}", e.getMessage());
+        }
     }
 
     private List<String> parseArgs(String args) {

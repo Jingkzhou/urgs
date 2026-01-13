@@ -54,9 +54,19 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
         dialect = detected_dialect if detected_dialect else default_dialect
         parser = LineageParser(dialect=dialect, default_schema=default_schema)
         
-        # 读取 SQL 文件
-        with open(file_path, 'r', encoding='utf-8') as f:
-            sql_content = f.read()
+        # 读取 SQL 文件 (尝试多种编码)
+        sql_content = None
+        encodings_to_try = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'latin-1']
+        for encoding in encodings_to_try:
+            try:
+                with open(file_path, 'r', encoding=encoding) as f:
+                    sql_content = f.read()
+                break  # Success, stop trying
+            except UnicodeDecodeError:
+                continue
+        
+        if sql_content is None:
+            raise ValueError(f"Failed to decode file with any of: {encodings_to_try}")
         
         # 解析表级别血缘
         parse_result = parser.parse(sql_content, source_file=file_path)

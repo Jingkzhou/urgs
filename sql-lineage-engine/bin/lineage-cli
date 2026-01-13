@@ -33,6 +33,13 @@ def setup_logging():
 setup_logging()
 logger = logging.getLogger("Engine")
 
+# Supported SQL file extensions (case-insensitive)
+SQL_EXTENSIONS = ('.sql', '.prc', '.pkb', '.pks', '.plb', '.pls', '.fnc', '.trg', '.vw', '.ddl')
+
+def is_sql_file(filename):
+    """Check if a file is a SQL or stored procedure file based on extension."""
+    return filename.lower().endswith(SQL_EXTENSIONS)
+
 # Helper function to get parser instance
 def get_parser():
     return LineageParser()
@@ -162,7 +169,7 @@ def main():
             elif os.path.isdir(args.file):
                  for root, dirs, files in os.walk(args.file):
                      for file in files:
-                         if file.lower().endswith(".sql"):
+                         if is_sql_file(file):
                              abs_file = os.path.abspath(os.path.join(root, file))
                              if abs_file.startswith(abs_repo_root):
                                  relative_files.append(os.path.relpath(abs_file, abs_repo_root))
@@ -309,7 +316,7 @@ def main():
                     sql_files = []
                     for root, dirs, files in os.walk(args.file):
                         for file in files:
-                            if file.lower().endswith(".sql"):
+                            if is_sql_file(file):
                                 sql_files.append(os.path.join(root, file))
                     
                     total_files = len(sql_files)
@@ -403,8 +410,19 @@ def main():
 
                         logger.info(f"Processing single file: {args.file}")
                         lineage_parser = LineageParser(dialect=args.dialect, default_schema=args.default_user)
-                        with open(args.file, 'r', encoding='utf-8') as f:
-                            sql_content = f.read()
+                        # 尝试多种编码读取文件
+                        sql_content = None
+                        encodings_to_try = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'latin-1']
+                        for encoding in encodings_to_try:
+                            try:
+                                with open(args.file, 'r', encoding=encoding) as f:
+                                    sql_content = f.read()
+                                break
+                            except UnicodeDecodeError:
+                                continue
+                        
+                        if sql_content is None:
+                            raise ValueError(f"Failed to decode file with any of: {encodings_to_try}")
                         process_sql_content(sql_content, parser=lineage_parser, file_path=args.file)
                         duration = time.time() - start_single
                         logger.info(f"Processing completed in {duration:.2f}s")
