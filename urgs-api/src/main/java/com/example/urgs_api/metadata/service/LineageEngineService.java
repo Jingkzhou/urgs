@@ -195,14 +195,22 @@ public class LineageEngineService {
 
             if (request.getPaths() != null && !request.getPaths().isEmpty()) {
                 if (request.getPaths().size() == 1) {
-                    // Single path: use it directly, repoRoot is realBase
+                    // Single path: use it directly, but verify it exists
+                    Path singlePath = realBase.resolve(request.getPaths().get(0));
+                    if (!Files.exists(singlePath)) {
+                        throw new IllegalArgumentException(
+                                "Requested path not found in repository: " + request.getPaths().get(0));
+                    }
                     return new GitInputResult(
-                            realBase.resolve(request.getPaths().get(0)).toAbsolutePath().toString(),
+                            singlePath.toAbsolutePath().toString(),
                             realBase.toAbsolutePath().toString());
                 } else {
                     // Multiple paths: copy to collection dir preserving structure
                     Path collectionDir = tempDir.resolve("collect");
                     Files.createDirectories(collectionDir);
+                    int fileCount = 0;
+                    List<String> missingPaths = new ArrayList<>();
+
                     for (String p : request.getPaths()) {
                         Path src = realBase.resolve(p);
                         if (Files.exists(src)) {
@@ -213,11 +221,25 @@ public class LineageEngineService {
 
                             if (Files.isDirectory(src)) {
                                 copyDirectory(src, dest);
+                                fileCount++; // Count directory as one entry found
                             } else {
                                 Files.copy(src, dest, StandardCopyOption.REPLACE_EXISTING);
+                                fileCount++;
                             }
+                        } else {
+                            missingPaths.add(p);
                         }
                     }
+
+                    if (fileCount == 0) {
+                        throw new IllegalArgumentException("No valid files found for requested paths: " +
+                                String.join(", ", request.getPaths()));
+                    }
+
+                    if (!missingPaths.isEmpty()) {
+                        log.warn("Some requested paths were not found in repository: {}", missingPaths);
+                    }
+
                     // For collection dir, the root is the collection dir itself
                     // because we reconstructed the structure inside it.
                     return new GitInputResult(

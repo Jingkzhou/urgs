@@ -147,6 +147,10 @@ def main():
             version_id = f"v{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
             logger.info(f"Generated lineage version record: {version_id}")
         
+        if args.file and not os.path.exists(args.file):
+            logger.error(f"Input file or directory not found: {args.file}")
+            return
+
         # Prepare list of relative file paths for clearing
         relative_files = []
         if args.file and args.repo_root:
