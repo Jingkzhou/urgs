@@ -10,6 +10,7 @@ from app.services.vector_store import vector_store_service
 from app.services.intent_router import intent_router
 from app.services.metrics import metrics_service
 from app.services.query_expansion import query_expansion_service
+from app.services.confidence_scorer import confidence_scorer
 
 logger = logging.getLogger(__name__)
 
@@ -102,14 +103,23 @@ class QAService:
         docs_with_scores = list(unique_docs_map.values())
         docs_with_scores.sort(key=lambda x: x["score"], reverse=True)
 
-        # 4. 回答能力评估 (Answerability check)
-        # 如果检索到的文档太少或最高分太低，则认为证据不足
-        top_score = docs_with_scores[0]["score"] if docs_with_scores else 0.0
-        print(f"[RAG-QA] 检索结果去重完成, 最终候选片段数: {len(docs_with_scores)}, 最高相似度: {top_score:.4f}")
-        low_evidence = (
-            len(docs_with_scores) < settings.ANSWERABILITY_MIN_DOCS
-            or top_score < settings.ANSWERABILITY_MIN_SCORE
+        # 4. 置信度计算（替代原来直接使用 RRF 分数）
+        top_rrf_score = docs_with_scores[0]["score"] if docs_with_scores else 0.0
+        
+        # 从意图分析中提取实体用于匹配
+        query_entities = analysis.get("entities", []) + analysis.get("keywords", [])
+        
+        # 计算多特征组合置信度
+        confidence_result = confidence_scorer.calculate(
+            query=query,
+            docs_with_scores=docs_with_scores,
+            query_entities=query_entities if query_entities else None
         )
+        
+        print(f"[RAG-QA] 检索结果去重完成, 最终候选片段数: {len(docs_with_scores)}, Top RRF: {top_rrf_score:.4f}")
+        print(f"[RAG-QA] 置信度评估: {confidence_result.score:.4f} ({confidence_result.reasoning})")
+        
+        low_evidence = not confidence_result.is_sufficient
 
         # 准备传送给 LLM 的上下文组件
         facts = []
@@ -164,19 +174,20 @@ class QAService:
                 "risks": ["证据不足可能导致回答偏差"],
                 "boundary": "仅基于当前检索结果",
                 "clarifying_questions": self._clarifying_questions(query, intent),
-                "confidence": top_score,
+                "confidence": confidence_result.score,
             }
         else:
             # 证据充足，调用 LLM 生成深度绑定的结构化回答
-            print(f"[RAG-QA] 证据充足 (TopScore={top_score:.4f})，正在注入提示词上下文 (Fact x {len(facts)}, Reasoning x {len(reasoning_templates)})...")
+            print(f"[RAG-QA] 证据充足 (Confidence={confidence_result.score:.4f})，正在注入提示词上下文 (Fact x {len(facts)}, Reasoning x {len(reasoning_templates)})...")
             answer_structured = llm_service.generate_structured_answer(
                 query=query,
                 facts=facts,
                 reasoning_templates=reasoning_templates,
                 tags=list(tags),
                 sources=sources,
-                min_confidence=top_score,
+                min_confidence=confidence_result.score,
             )
+
 
         # 记录查询指标
         latency_ms = int((time.time() - start_time) * 1000)
@@ -184,7 +195,7 @@ class QAService:
             query=query,
             intent=intent,
             success=True,
-            top_score=top_score,
+            top_score=top_rrf_score,
             docs_count=len(docs_with_scores),
             latency_ms=latency_ms,
             low_evidence=low_evidence,
@@ -197,7 +208,10 @@ class QAService:
             "answer_structured": answer_structured,
             "sources": sources,
             "tags": list(tags),
-            "confidence": top_score,
+            "rrf_score": top_rrf_score,  # RRF 排序分数（仅用于排序）
+            "confidence": confidence_result.score,  # 多特征置信度
+            "confidence_features": confidence_result.features,  # 各特征得分
+            "confidence_reasoning": confidence_result.reasoning,  # 判断说明
             "intent": intent,
         }
 
