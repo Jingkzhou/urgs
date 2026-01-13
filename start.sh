@@ -137,6 +137,17 @@ start_executor() {
 
 
 
+start_presentation() {
+  echo "Starting presentation platform..."
+  cd "$PRESENTATION_DIR"
+  kill_port_if_exists 3002
+  if [ ! -d node_modules ]; then
+    npm install
+  fi
+  npm run dev -- --host --port 3002 &
+  pids+=($!)
+}
+
 # --- Interactive Menu ---
 echo "Multiple services detected. Please select which ones to start:"
 echo "  [1] All Services (Backend, Executor, Frontend, RAG)"
