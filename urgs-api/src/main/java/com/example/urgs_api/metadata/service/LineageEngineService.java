@@ -198,9 +198,6 @@ public class LineageEngineService {
                     log.debug("Git Archive Entry: {}", entry.getName());
                 }
 
-                if (rootDir == null && entry.isDirectory()) {
-                    rootDir = entry.getName();
-                }
                 Path outPath = tempDir.resolve(entry.getName());
                 if (entry.isDirectory()) {
                     Files.createDirectories(outPath);
@@ -210,9 +207,22 @@ public class LineageEngineService {
                 }
                 zis.closeEntry();
             }
-            log.info("Extracted {} entries from Git archive. Root dir detected: {}", totalEntries, rootDir);
+            log.info("Extracted {} entries from Git archive.", totalEntries);
 
-            Path realBase = rootDir != null ? tempDir.resolve(rootDir) : tempDir;
+            // Robust root dir detection
+            Path detectedRoot = tempDir;
+            try (java.util.stream.Stream<Path> stream = Files.list(tempDir)) {
+                List<Path> topLevel = stream
+                        .filter(p -> !p.getFileName().toString().startsWith(".")) // Ignore hidden files like .DS_Store
+                        .filter(p -> !p.getFileName().toString().equals("__MACOSX"))
+                        .collect(java.util.stream.Collectors.toList());
+
+                if (topLevel.size() == 1 && Files.isDirectory(topLevel.get(0))) {
+                    detectedRoot = topLevel.get(0);
+                    log.info("Detected single root directory: {}", detectedRoot.getFileName());
+                }
+            }
+            Path realBase = detectedRoot;
 
             if (request.getPaths() != null && !request.getPaths().isEmpty()) {
                 if (request.getPaths().size() == 1) {
@@ -253,8 +263,23 @@ public class LineageEngineService {
                     }
 
                     if (fileCount == 0) {
-                        throw new IllegalArgumentException("No valid files found for requested paths: " +
-                                String.join(", ", request.getPaths()));
+                        try {
+                            List<String> validFiles = Files.walk(realBase)
+                                    .filter(Files::isRegularFile)
+                                    .map(p -> realBase.relativize(p).toString())
+                                    .limit(10)
+                                    .collect(java.util.stream.Collectors.toList());
+                            throw new IllegalArgumentException("No valid files found for requested paths: " +
+                                    String.join(", ", request.getPaths()) +
+                                    ". Checked base: " + realBase +
+                                    ". Detected root: " + rootDir +
+                                    ". Sample files in base: " + validFiles);
+                        } catch (Exception e) {
+                            throw new IllegalArgumentException("No valid files found for requested paths: " +
+                                    String.join(", ", request.getPaths()) +
+                                    ". Checked base: " + realBase +
+                                    ". Detected root: " + rootDir);
+                        }
                     }
 
                     if (!missingPaths.isEmpty()) {
