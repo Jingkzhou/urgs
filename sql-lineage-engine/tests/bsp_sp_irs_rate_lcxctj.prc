@@ -1,0 +1,661 @@
+CREATE OR REPLACE PROCEDURE BSP_SP_IRS_RATE_LCXCTJ(IS_DATE    IN VARCHAR2,
+                                                OI_RETCODE OUT INTEGER,
+                                               OI_RETCODE2 OUT VARCHAR2) AS
+  ------------------------------------------------------------------------------------------------------
+  -- 程序名
+  --    SP_IRS_RATE_LCXCTJ
+  -- 用途:生成人民币利差息差统计表
+  -- 参数
+  --    IS_DATE 输入变量，传入跑批日期
+  --    OI_RETCODE 输出变量，用来标识存储过程执行过程中是否出现异常
+  -- 版本
+  --    高铭言 20210802
+  -- 版权
+  --     中软融鑫
+  --需求编号：JLBA202504180011 上线日期：2025-05-27，修改人：蒿蕊，提出人：黄俊铭
+  --         修改原因：当月日均存款余额（原来取201107增加取2010，201105增加取2005、201106增加2008和2009）
+  --                   日均付息负债余额（原来取201107增加取2010，201105增加取2005、201106增加2008和2009）
+  --需求编号：JLBA202506230009 上线日期：2025-11-28，修改人：蒿蕊，提出人：双辽回迁从需求
+  ------------------------------------------------------------------------------------------------------
+  VI_ERRORCODE      NUMBER DEFAULT 0; --数值型  异常代码
+  VS_TEXT           VARCHAR2(500) DEFAULT NULL; --字符型  过程描述
+  VS_OWNER          VARCHAR2(32) DEFAULT NULL; --字符型  存储过程调用用户
+  VS_PROCEDURE_NAME VARCHAR2(40) DEFAULT NULL; --字符型  存储过程名称
+  VS_STEP           VARCHAR2(30); --存储过程执行步骤标志
+  ENDDATE           VARCHAR(10);--月末日期
+  STARTDATE         VARCHAR(10);--月初日期
+  STARTDATE2        VARCHAR(10);--上月末日期
+  --NUM               INTEGER;
+  --NEXTDATE          VARCHAR2(8);
+  --OLDDATE           VARCHAR2(8); --清除历史数据用  20161215 add
+  --NUM_OLD           INTEGER; --清除历史数据用  20161215 add
+BEGIN
+  VS_TEXT := IS_DATE;
+  -- 记录日志使用
+  SELECT T.USERNAME INTO VS_OWNER FROM SYS.USER_USERS T;
+  VS_PROCEDURE_NAME := 'SP_IRS_RATE_LCXCTJ';
+  -- 开始日志
+  VS_STEP := 'START';
+  SP_IRS_LOG(VS_PROCEDURE_NAME, VS_STEP, VI_ERRORCODE, VS_TEXT, IS_DATE);
+  ENDDATE := TO_CHAR(LAST_DAY(TO_DATE(IS_DATE, 'YYYYMMDD')), 'YYYYMMDD');  --月末日期
+  STARTDATE  := TO_CHAR(TRUNC(TO_DATE(IS_DATE, 'YYYYMMDD'), 'MM'), 'YYYYMMDD'); --月初第一天
+  STARTDATE2 := TO_CHAR(TRUNC(TO_DATE( IS_DATE, 'YYYYMMDD'), 'MM')-1, 'YYYYMMDD'); --上月末日期
+
+  --------------------------------------------------------------------------------------------------------------
+IF IS_DATE = ENDDATE THEN
+
+  EXECUTE IMMEDIATE 'TRUNCATE TABLE DATACORE_IE_RATE_LCXCTJ';
+  EXECUTE IMMEDIATE 'TRUNCATE TABLE DATACORE_IE_RATE_LCXCTJ_TMP';
+  EXECUTE IMMEDIATE 'TRUNCATE TABLE DATACORE_IE_RATE_LCXCTJ_TMP2';
+
+
+--贷款（借方）
+INSERT INTO DATACORE_IE_RATE_LCXCTJ_TMP
+  SELECT /*+ PARALLEL(8)*/
+   TO_CHAR(TO_DATE(IS_DATE, 'YYYYMMDD'), 'YYYY-MM-DD'), --数据日期
+   CASE WHEN  ORG_NUM LIKE '51%' THEN '912202016601010854'
+          WHEN  ORG_NUM LIKE '52%' THEN '91321000564261222Q'
+          WHEN  ORG_NUM LIKE '53%' THEN '91220201584622304Y'
+          WHEN  ORG_NUM LIKE '54%' THEN '91220101586213344F'
+          WHEN  ORG_NUM LIKE '55%' THEN '911309005881693407'
+          WHEN  ORG_NUM LIKE '56%' THEN '91131000589668889D'
+          WHEN  ORG_NUM LIKE '57%' THEN '91222404584629733N'
+          --WHEN  ORG_NUM LIKE '58%' THEN '912203005846084148'   --[2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]双辽回迁总行
+          --WHEN  ORG_NUM LIKE '59%' THEN '91220421660100250Y'   modify by hr 20241206 JLBA202409100011-东丰回迁总行
+           ELSE '9122010170255776XN' END,  --统一社会信用代码
+   --SUM(A.DEBIT_M_AMT) AS LOAN_INTEREST_INCOME, --各项贷款当月累计利息收入
+   --SUM(A.CREDIT_M_AMT) AS LOAN_INTEREST_INCOME, --各项贷款当月累计利息收入
+   CASE WHEN SUBSTR(IS_DATE,5,8) = '0131' THEN SUM(CASE WHEN A.DATA_DATE = ENDDATE THEN A.CREDIT_BAL END)
+        ELSE
+            SUM(CASE WHEN A.DATA_DATE = ENDDATE THEN A.CREDIT_BAL END)-SUM(CASE WHEN A.DATA_DATE = STARTDATE2 THEN A.CREDIT_BAL END)
+        END AS LOAN_INTEREST_INCOME, --各项贷款当月累计利息收入 1月份的利差息差日均值直接使用当年1月末年日均数值 202403
+   '0' AS DAILY_LOAN_BALANCE, --当月日均贷款余额
+   '0' AS DEPOSIT_INTEREST_PAY, --各项存款当月累计利息支出,
+   '0' AS DAILY_DEPOSIT_BALANCE, --当月日均存款余额,
+   '0' AS FXFZ_INTEREST_PAY, --付息负债当月累计利息支出,
+   '0' AS DAILY_FXFZ_BALANCE, --当月日均付息负债余额,
+   '0' AS SXZC_INTEREST_INCOME, --生息资产当月累计利息收入,
+   '0' AS DAILY_SXZC_BALANCE, --当月日均生息资产余额
+   A.ORG_NUM
+    FROM SMTMODS.L_FINA_GL A --总账表
+    INNER JOIN IRS_LCXC_LIST B
+    ON A.ITEM_CD = B.ITEM_CD_NEW
+  /*INNER JOIN L_PUBL_RATE@SUPER B --汇率表
+  ON A.CURR_CD = B.BASIC_CCY --账户币种
+  AND B.CCY_DATE = TO_DATE(A.DATA_DATE, 'yyyymmdd') --汇率日期
+  AND A.DATA_DATE = B.DATA_DATE
+  AND B.FORWARD_CCY = 'CNY' --折算币种*/
+   WHERE IS_DATE = ENDDATE --当输入日期为月末时，对数据进行提取
+     AND A.DATA_DATE IN (ENDDATE, STARTDATE2)
+     AND B.LCXC_FLAG = '3'--贷款利息收入科目
+     --AND A.ORG_NUM = '990000'
+     AND A.ORG_NUM IN ('990000','510000'
+    ,'520000'
+    ,'530000'
+    ,'540000'
+    ,'550000'
+    ,'560000'
+    ,'570000'
+    --,'580000' [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]双辽回迁总行
+    --,'590000' modify by hr 20241206 JLBA202409100011-东丰回迁总行
+  )
+     AND A.CURR_CD = 'CNY'
+     GROUP BY A.ORG_NUM;
+
+
+    COMMIT;
+
+
+INSERT INTO DATACORE_IE_RATE_LCXCTJ_TMP
+  SELECT /*+ PARALLEL(8)*/
+   TO_CHAR(TO_DATE(IS_DATE, 'YYYYMMDD'), 'YYYY-MM-DD'), --数据日期
+   CASE WHEN  ORG_NUM LIKE '51%' THEN '912202016601010854'
+          WHEN  ORG_NUM LIKE '52%' THEN '91321000564261222Q'
+          WHEN  ORG_NUM LIKE '53%' THEN '91220201584622304Y'
+          WHEN  ORG_NUM LIKE '54%' THEN '91220101586213344F'
+          WHEN  ORG_NUM LIKE '55%' THEN '911309005881693407'
+          WHEN  ORG_NUM LIKE '56%' THEN '91131000589668889D'
+          WHEN  ORG_NUM LIKE '57%' THEN '91222404584629733N'
+          --WHEN  ORG_NUM LIKE '58%' THEN '912203005846084148' [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+          --WHEN  ORG_NUM LIKE '59%' THEN '91220421660100250Y' modify by hr 20241206 JLBA202409100011-东丰回迁总行
+           ELSE '9122010170255776XN' END,  --统一社会信用代码
+   '0' AS LOAN_INTEREST_INCOME, --各项贷款当月累计利息收入
+   SUM(DEBIT_BAL) /
+   (FLOOR(LAST_DAY(TO_DATE(IS_DATE, 'YYYYMMDD')) -
+          ADD_MONTHS(LAST_DAY(TO_DATE(IS_DATE, 'YYYYMMDD')) + 1, -1)) + 1) AS DAILY_LOAN_BALANCE, --当月日均贷款余额
+   '0' AS DEPOSIT_INTEREST_PAY, --各项存款当月累计利息支出,
+   '0' AS DAILY_DEPOSIT_BALANCE, --当月日均存款余额,
+   '0' AS FXFZ_INTEREST_PAY, --付息负债当月累计利息支出,
+   '0' AS DAILY_FXFZ_BALANCE, --当月日均付息负债余额,
+   '0' AS SXZC_INTEREST_INCOME, --生息资产当月累计利息收入,
+   '0' AS DAILY_SXZC_BALANCE, --当月日均生息资产余额
+   A.ORG_NUM
+    FROM SMTMODS.L_FINA_GL A --总账表
+    INNER JOIN IRS_LCXC_LIST B
+    ON A.ITEM_CD = B.ITEM_CD_NEW
+  /*INNER JOIN L_PUBL_RATE@SUPER B --汇率表
+  ON A.CURR_CD = B.BASIC_CCY --账户币种
+  AND B.CCY_DATE = TO_DATE(A.DATA_DATE, 'yyyymmdd') --汇率日期
+  AND A.DATA_DATE = B.DATA_DATE
+  AND B.FORWARD_CCY = 'CNY' --折算币种*/
+   WHERE IS_DATE = ENDDATE --当输入日期为月末时，对数据进行提取
+     AND A.DATA_DATE BETWEEN STARTDATE AND ENDDATE
+     AND B.LCXC_FLAG = '4'--贷款余额科目
+     --AND A.ORG_NUM = '990000'
+     AND A.ORG_NUM IN ('990000','510000'
+    ,'520000'
+    ,'530000'
+    ,'540000'
+    ,'550000'
+    ,'560000'
+    ,'570000'
+    --,'580000' [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+    --,'590000' modify by hr 20241206 JLBA202409100011-东丰回迁总行
+  )
+     AND A.CURR_CD = 'CNY'
+     GROUP BY A.ORG_NUM;
+
+
+    COMMIT;
+
+
+--存款（贷方）
+INSERT INTO DATACORE_IE_RATE_LCXCTJ_TMP
+  SELECT /*+ PARALLEL(8)*/
+   TO_CHAR(TO_DATE(IS_DATE, 'YYYYMMDD'), 'YYYY-MM-DD'), --数据日期
+   CASE WHEN  ORG_NUM LIKE '51%' THEN '912202016601010854'
+          WHEN  ORG_NUM LIKE '52%' THEN '91321000564261222Q'
+          WHEN  ORG_NUM LIKE '53%' THEN '91220201584622304Y'
+          WHEN  ORG_NUM LIKE '54%' THEN '91220101586213344F'
+          WHEN  ORG_NUM LIKE '55%' THEN '911309005881693407'
+          WHEN  ORG_NUM LIKE '56%' THEN '91131000589668889D'
+          WHEN  ORG_NUM LIKE '57%' THEN '91222404584629733N'
+          --WHEN  ORG_NUM LIKE '58%' THEN '912203005846084148'  [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+          --WHEN  ORG_NUM LIKE '59%' THEN '91220421660100250Y'  modify by hr 20241206 JLBA202409100011-东丰回迁总行
+           ELSE '9122010170255776XN' END,  --统一社会信用代码
+   '0' AS LOAN_INTEREST_INCOME, --各项贷款当月累计利息收入
+   '0' AS DAILY_LOAN_BALANCE, --当月日均贷款余额
+   --SUM(A.CREDIT_M_AMT) AS DEPOSIT_INTEREST_PAY, --各项存款当月累计利息支出,
+   --SUM(A.DEBIT_M_AMT) AS DEPOSIT_INTEREST_PAY, --各项存款当月累计利息支出,
+    CASE WHEN SUBSTR(IS_DATE,5,8) = '0131' THEN SUM(CASE WHEN A.DATA_DATE = ENDDATE THEN A.DEBIT_BAL END)
+        ELSE
+         SUM(CASE WHEN A.DATA_DATE = ENDDATE THEN A.DEBIT_BAL END)-SUM(CASE WHEN A.DATA_DATE = STARTDATE2 THEN A.DEBIT_BAL END)
+        END AS DEPOSIT_INTEREST_PAY, --各项存款当月累计利息支出, 1月份的利差息差日均值直接使用当年1月末年日均数值 202403
+   '0' AS DAILY_DEPOSIT_BALANCE, --当月日均存款余额,
+   '0' AS FXFZ_INTEREST_PAY, --付息负债当月累计利息支出,
+   '0' AS DAILY_FXFZ_BALANCE, --当月日均付息负债余额,
+   '0' AS SXZC_INTEREST_INCOME, --生息资产当月累计利息收入,
+   '0' AS DAILY_SXZC_BALANCE, --当月日均生息资产余额
+   A.ORG_NUM
+    FROM SMTMODS.L_FINA_GL A --总账表
+    INNER JOIN IRS_LCXC_LIST B
+    ON A.ITEM_CD = B.ITEM_CD_NEW
+  /*INNER JOIN L_PUBL_RATE@SUPER B --汇率表
+  ON A.CURR_CD = B.BASIC_CCY --账户币种
+  AND B.CCY_DATE = TO_DATE(A.DATA_DATE, 'yyyymmdd') --汇率日期
+  AND A.DATA_DATE = B.DATA_DATE
+  AND B.FORWARD_CCY = 'CNY' --折算币种*/
+   WHERE IS_DATE = ENDDATE --当输入日期为月末时，对数据进行提取
+     AND A.DATA_DATE IN (ENDDATE, STARTDATE2)
+     AND B.LCXC_FLAG = '1' --存款利息支出科目
+     --AND A.ORG_NUM = '990000'
+     AND A.ORG_NUM IN ('990000','510000'
+    ,'520000'
+    ,'530000'
+    ,'540000'
+    ,'550000'
+    ,'560000'
+    ,'570000'
+    --,'580000'  [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+    --,'590000'  modify by hr 20241206 JLBA202409100011-东丰回迁总行
+  )
+     AND A.CURR_CD = 'CNY'
+     GROUP BY A.ORG_NUM;
+
+
+    COMMIT;
+
+
+
+
+INSERT INTO DATACORE_IE_RATE_LCXCTJ_TMP
+  SELECT /*+ PARALLEL(8)*/
+   TO_CHAR(TO_DATE(IS_DATE, 'YYYYMMDD'), 'YYYY-MM-DD'), --数据日期
+   CASE WHEN  ORG_NUM LIKE '51%' THEN '912202016601010854'
+          WHEN  ORG_NUM LIKE '52%' THEN '91321000564261222Q'
+          WHEN  ORG_NUM LIKE '53%' THEN '91220201584622304Y'
+          WHEN  ORG_NUM LIKE '54%' THEN '91220101586213344F'
+          WHEN  ORG_NUM LIKE '55%' THEN '911309005881693407'
+          WHEN  ORG_NUM LIKE '56%' THEN '91131000589668889D'
+          WHEN  ORG_NUM LIKE '57%' THEN '91222404584629733N'
+          --WHEN  ORG_NUM LIKE '58%' THEN '912203005846084148'  [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+          --WHEN  ORG_NUM LIKE '59%' THEN '91220421660100250Y'  modify by hr 20241206 JLBA202409100011-东丰回迁总行
+           ELSE '9122010170255776XN' END,  --统一社会信用代码
+   '0' AS LOAN_INTEREST_INCOME, --各项贷款当月累计利息收入
+   '0' AS DAILY_LOAN_BALANCE, --当月日均贷款余额
+   '0' AS DEPOSIT_INTEREST_PAY, --各项存款当月累计利息支出,
+   SUM(CREDIT_BAL) /
+   (FLOOR(LAST_DAY(TO_DATE(IS_DATE, 'YYYYMMDD')) -
+          ADD_MONTHS(LAST_DAY(TO_DATE(IS_DATE, 'YYYYMMDD')) + 1, -1)) + 1) AS DAILY_DEPOSIT_BALANCE, --当月日均存款余额,
+   '0' AS FXFZ_INTEREST_PAY, --付息负债当月累计利息支出,
+   '0' AS DAILY_FXFZ_BALANCE, --当月日均付息负债余额,
+   '0' AS SXZC_INTEREST_INCOME, --生息资产当月累计利息收入,
+   '0' AS DAILY_SXZC_BALANCE, --当月日均生息资产余额
+   A.ORG_NUM
+    FROM SMTMODS.L_FINA_GL A --总账表
+    INNER JOIN IRS_LCXC_LIST B
+    ON A.ITEM_CD = B.ITEM_CD_NEW
+  /*INNER JOIN L_PUBL_RATE@SUPER B --汇率表
+  ON A.CURR_CD = B.BASIC_CCY --账户币种
+  AND B.CCY_DATE = TO_DATE(A.DATA_DATE, 'yyyymmdd') --汇率日期
+  AND A.DATA_DATE = B.DATA_DATE
+  AND B.FORWARD_CCY = 'CNY' --折算币种*/
+   WHERE IS_DATE = ENDDATE --当输入日期为月末时，对数据进行提取
+     AND A.DATA_DATE BETWEEN STARTDATE AND ENDDATE
+     AND B.LCXC_FLAG = '2' --存款余额科目
+     --AND A.ORG_NUM = '990000'
+     AND A.ORG_NUM IN ('990000','510000'
+    ,'520000'
+    ,'530000'
+    ,'540000'
+    ,'550000'
+    ,'560000'
+    ,'570000'
+    --,'580000'   [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+    --,'590000'   modify by hr 20241206 JLBA202409100011-东丰回迁总行
+  )
+     AND A.CURR_CD = 'CNY'
+     GROUP BY A.ORG_NUM;
+
+
+    COMMIT;
+
+
+--付息负债（借方）
+INSERT INTO DATACORE_IE_RATE_LCXCTJ_TMP
+  SELECT /*+ PARALLEL(8)*/
+   TO_CHAR(TO_DATE(IS_DATE, 'YYYYMMDD'), 'YYYY-MM-DD'), --数据日期
+   CASE WHEN  ORG_NUM LIKE '51%' THEN '912202016601010854'
+          WHEN  ORG_NUM LIKE '52%' THEN '91321000564261222Q'
+          WHEN  ORG_NUM LIKE '53%' THEN '91220201584622304Y'
+          WHEN  ORG_NUM LIKE '54%' THEN '91220101586213344F'
+          WHEN  ORG_NUM LIKE '55%' THEN '911309005881693407'
+          WHEN  ORG_NUM LIKE '56%' THEN '91131000589668889D'
+          WHEN  ORG_NUM LIKE '57%' THEN '91222404584629733N'
+          --WHEN  ORG_NUM LIKE '58%' THEN '912203005846084148'   [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+          --WHEN  ORG_NUM LIKE '59%' THEN '91220421660100250Y'   modify by hr 20241206 JLBA202409100011-东丰回迁总行
+           ELSE '9122010170255776XN' END,  --统一社会信用代码
+   '0' AS LOAN_INTEREST_INCOME, --各项贷款当月累计利息收入
+   '0' AS DAILY_LOAN_BALANCE, --当月日均贷款余额
+   '0' AS DEPOSIT_INTEREST_PAY, --各项存款当月累计利息支出,
+   '0' AS DAILY_DEPOSIT_BALANCE, --当月日均存款余额,
+   --SUM(A.CREDIT_M_AMT) AS FXFZ_INTEREST_PAY, --付息负债当月累计利息支出,
+   --SUM(A.DEBIT_M_AMT) AS FXFZ_INTEREST_PAY, --付息负债当月累计利息支出,
+   CASE WHEN SUBSTR(IS_DATE,5,8) = '0131' THEN SUM(CASE WHEN A.DATA_DATE = ENDDATE THEN A.DEBIT_BAL END)
+        ELSE
+         SUM(CASE WHEN A.DATA_DATE = ENDDATE THEN A.DEBIT_BAL END)-SUM(CASE WHEN A.DATA_DATE = STARTDATE2 THEN A.DEBIT_BAL END)
+        END  AS FXFZ_INTEREST_PAY, --付息负债当月累计利息支出, 1月份的利差息差日均值直接使用当年1月末年日均数值 202403
+   '0' AS DAILY_FXFZ_BALANCE, --当月日均付息负债余额,
+   '0' AS SXZC_INTEREST_INCOME, --生息资产当月累计利息收入,
+   '0' AS DAILY_SXZC_BALANCE, --当月日均生息资产余额
+   A.ORG_NUM
+    FROM SMTMODS.L_FINA_GL A --总账表
+    INNER JOIN IRS_LCXC_LIST B
+    ON A.ITEM_CD = B.ITEM_CD_NEW
+    /*INNER JOIN L_PUBL_RATE@SUPER B --汇率表
+    ON A.CURR_CD = B.BASIC_CCY --账户币种
+    AND B.CCY_DATE = TO_DATE(A.DATA_DATE, 'yyyymmdd') --汇率日期
+    AND A.DATA_DATE = B.DATA_DATE
+    AND B.FORWARD_CCY = 'CNY' --折算币种*/
+   WHERE IS_DATE = ENDDATE --当输入日期为月末时，对数据进行提取
+     AND A.DATA_DATE IN (ENDDATE, STARTDATE2)
+     AND B.LCXC_FLAG = '5'--付息负债利息支出科目
+     --AND A.ORG_NUM = '990000'
+     AND A.ORG_NUM IN ('990000','510000'
+    ,'520000'
+    ,'530000'
+    ,'540000'
+    ,'550000'
+    ,'560000'
+    ,'570000'
+    --,'580000'  [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+    --,'590000'  modify by hr 20241206 JLBA202409100011-东丰回迁总行
+  )
+     AND A.CURR_CD = 'CNY'
+     GROUP BY A.ORG_NUM;
+
+
+    COMMIT;
+
+
+INSERT INTO DATACORE_IE_RATE_LCXCTJ_TMP
+  SELECT /*+ PARALLEL(8)*/
+   TO_CHAR(TO_DATE(IS_DATE, 'YYYYMMDD'), 'YYYY-MM-DD'), --数据日期
+   CASE WHEN  ORG_NUM LIKE '51%' THEN '912202016601010854'
+          WHEN  ORG_NUM LIKE '52%' THEN '91321000564261222Q'
+          WHEN  ORG_NUM LIKE '53%' THEN '91220201584622304Y'
+          WHEN  ORG_NUM LIKE '54%' THEN '91220101586213344F'
+          WHEN  ORG_NUM LIKE '55%' THEN '911309005881693407'
+          WHEN  ORG_NUM LIKE '56%' THEN '91131000589668889D'
+          WHEN  ORG_NUM LIKE '57%' THEN '91222404584629733N'
+          --WHEN  ORG_NUM LIKE '58%' THEN '912203005846084148' [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+          --WHEN  ORG_NUM LIKE '59%' THEN '91220421660100250Y' modify by hr 20241206 JLBA202409100011-东丰回迁总行
+           ELSE '9122010170255776XN' END,  --统一社会信用代码
+   '0' AS LOAN_INTEREST_INCOME, --各项贷款当月累计利息收入
+   '0' AS DAILY_LOAN_BALANCE, --当月日均贷款余额
+   '0' AS DEPOSIT_INTEREST_PAY, --各项存款当月累计利息支出,
+   '0' AS DAILY_DEPOSIT_BALANCE, --当月日均存款余额,
+   '0' AS FXFZ_INTEREST_PAY, --付息负债当月累计利息支出,
+   SUM(CREDIT_BAL) /
+   (FLOOR(LAST_DAY(TO_DATE(IS_DATE, 'YYYYMMDD')) -
+          ADD_MONTHS(LAST_DAY(TO_DATE(IS_DATE, 'YYYYMMDD')) + 1, -1)) + 1) AS DAILY_FXFZ_BALANCE, --当月日均付息负债余额,
+   '0' AS SXZC_INTEREST_INCOME, --生息资产当月累计利息收入,
+   '0' AS DAILY_SXZC_BALANCE, --当月日均生息资产余额
+   A.ORG_NUM
+    FROM SMTMODS.L_FINA_GL A --总账表
+    INNER JOIN IRS_LCXC_LIST B
+    ON A.ITEM_CD = B.ITEM_CD_NEW
+    /*INNER JOIN L_PUBL_RATE@SUPER B --汇率表
+    ON A.CURR_CD = B.BASIC_CCY --账户币种
+    AND B.CCY_DATE = TO_DATE(A.DATA_DATE, 'yyyymmdd') --汇率日期
+    AND A.DATA_DATE = B.DATA_DATE
+    AND B.FORWARD_CCY = 'CNY' --折算币种*/
+   WHERE IS_DATE = ENDDATE --当输入日期为月末时，对数据进行提取
+     AND A.DATA_DATE BETWEEN STARTDATE AND ENDDATE
+     AND B.LCXC_FLAG = '6'--付息负债余额科目
+     --AND A.ORG_NUM = '990000'
+     AND A.ORG_NUM IN ('990000','510000'
+    ,'520000'
+    ,'530000'
+    ,'540000'
+    ,'550000'
+    ,'560000'
+    ,'570000'
+    --,'580000'  [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+    --,'590000'  modify by hr 20241206 JLBA202409100011-东丰回迁总行
+  )
+     AND A.CURR_CD = 'CNY'
+     GROUP BY A.ORG_NUM;
+
+
+    COMMIT;
+
+
+--生息资产（贷方）
+INSERT INTO DATACORE_IE_RATE_LCXCTJ_TMP
+  SELECT /*+ PARALLEL(8)*/
+   TO_CHAR(TO_DATE(IS_DATE, 'YYYYMMDD'), 'YYYY-MM-DD'), --数据日期
+   CASE WHEN  ORG_NUM LIKE '51%' THEN '912202016601010854'
+          WHEN  ORG_NUM LIKE '52%' THEN '91321000564261222Q'
+          WHEN  ORG_NUM LIKE '53%' THEN '91220201584622304Y'
+          WHEN  ORG_NUM LIKE '54%' THEN '91220101586213344F'
+          WHEN  ORG_NUM LIKE '55%' THEN '911309005881693407'
+          WHEN  ORG_NUM LIKE '56%' THEN '91131000589668889D'
+          WHEN  ORG_NUM LIKE '57%' THEN '91222404584629733N'
+          --WHEN  ORG_NUM LIKE '58%' THEN '912203005846084148'  [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+          --WHEN  ORG_NUM LIKE '59%' THEN '91220421660100250Y'  modify by hr 20241206 JLBA202409100011-东丰回迁总行
+           ELSE '9122010170255776XN' END,  --统一社会信用代码
+   '0' AS LOAN_INTEREST_INCOME, --各项贷款当月累计利息收入
+   '0' AS DAILY_LOAN_BALANCE, --当月日均贷款余额
+   '0' AS DEPOSIT_INTEREST_PAY, --各项存款当月累计利息支出,
+   '0' AS DAILY_DEPOSIT_BALANCE, --当月日均存款余额,
+   '0' AS FXFZ_INTEREST_PAY, --付息负债当月累计利息支出,
+   '0' AS DAILY_FXFZ_BALANCE, --当月日均付息负债余额,
+   --SUM(A.DEBIT_M_AMT) AS SXZC_INTEREST_INCOME, --生息资产当月累计利息收入,
+   --SUM(A.CREDIT_M_AMT) AS SXZC_INTEREST_INCOME, --生息资产当月累计利息收入,
+   CASE WHEN SUBSTR(IS_DATE,5,8) = '0131' THEN SUM(CASE WHEN A.DATA_DATE = ENDDATE THEN A.CREDIT_BAL END)
+        ELSE
+          SUM(CASE WHEN A.DATA_DATE = ENDDATE THEN A.CREDIT_BAL END)-SUM(CASE WHEN A.DATA_DATE = STARTDATE2 THEN A.CREDIT_BAL END)
+        END AS SXZC_INTEREST_INCOME, --生息资产当月累计利息收入, 1月份的利差息差日均值直接使用当年1月末年日均数值 202403
+   '0' AS DAILY_SXZC_BALANCE, --当月日均生息资产余额
+   A.ORG_NUM
+    FROM SMTMODS.L_FINA_GL A --总账表
+    INNER JOIN IRS_LCXC_LIST B
+    ON A.ITEM_CD = B.ITEM_CD_NEW
+  /*INNER JOIN L_PUBL_RATE@SUPER B --汇率表
+  ON A.CURR_CD = B.BASIC_CCY --账户币种
+  AND B.CCY_DATE = TO_DATE(A.DATA_DATE, 'yyyymmdd') --汇率日期
+  AND A.DATA_DATE = B.DATA_DATE
+  AND B.FORWARD_CCY = 'CNY' --折算币种*/
+   WHERE IS_DATE = ENDDATE --当输入日期为月末时，对数据进行提取
+     AND A.DATA_DATE IN (ENDDATE, STARTDATE2)
+     AND B.LCXC_FLAG = '7' --生息资产收入科目
+     --AND A.ORG_NUM = '990000'
+     AND A.ORG_NUM IN ('990000','510000'
+    ,'520000'
+    ,'530000'
+    ,'540000'
+    ,'550000'
+    ,'560000'
+    ,'570000'
+    --,'580000'  [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+    --,'590000'  modify by hr 20241206 JLBA202409100011-东丰回迁总行
+  )
+     AND A.CURR_CD = 'CNY'
+     GROUP BY A.ORG_NUM;
+
+
+    COMMIT;
+
+
+INSERT INTO DATACORE_IE_RATE_LCXCTJ_TMP
+  SELECT /*+ PARALLEL(8)*/
+   TO_CHAR(TO_DATE(IS_DATE, 'YYYYMMDD'), 'YYYY-MM-DD'), --数据日期
+   CASE WHEN  ORG_NUM LIKE '51%' THEN '912202016601010854'
+          WHEN  ORG_NUM LIKE '52%' THEN '91321000564261222Q'
+          WHEN  ORG_NUM LIKE '53%' THEN '91220201584622304Y'
+          WHEN  ORG_NUM LIKE '54%' THEN '91220101586213344F'
+          WHEN  ORG_NUM LIKE '55%' THEN '911309005881693407'
+          WHEN  ORG_NUM LIKE '56%' THEN '91131000589668889D'
+          WHEN  ORG_NUM LIKE '57%' THEN '91222404584629733N'
+          --WHEN  ORG_NUM LIKE '58%' THEN '912203005846084148'  [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+          --WHEN  ORG_NUM LIKE '59%' THEN '91220421660100250Y'  modify by hr 20241206 JLBA202409100011-东丰回迁总行
+           ELSE '9122010170255776XN' END,  --统一社会信用代码
+   '0' AS LOAN_INTEREST_INCOME, --各项贷款当月累计利息收入
+   '0' AS DAILY_LOAN_BALANCE, --当月日均贷款余额
+   '0' AS DEPOSIT_INTEREST_PAY, --各项存款当月累计利息支出,
+   '0' AS DAILY_DEPOSIT_BALANCE, --当月日均存款余额,
+   '0' AS FXFZ_INTEREST_PAY, --付息负债当月累计利息支出,
+   '0' AS DAILY_FXFZ_BALANCE, --当月日均付息负债余额,
+   '0' AS SXZC_INTEREST_INCOME, --生息资产当月累计利息收入,
+   SUM(DEBIT_BAL) /
+   (FLOOR(LAST_DAY(TO_DATE(IS_DATE, 'YYYYMMDD')) -
+          ADD_MONTHS(LAST_DAY(TO_DATE(IS_DATE, 'YYYYMMDD')) + 1, -1)) + 1) AS DAILY_SXZC_BALANCE, --当月日均生息资产余额
+    A.ORG_NUM
+    FROM SMTMODS.L_FINA_GL A --总账表
+    INNER JOIN IRS_LCXC_LIST B
+    ON A.ITEM_CD = B.ITEM_CD_NEW
+    /*INNER JOIN L_PUBL_RATE@SUPER B --汇率表
+    ON A.CURR_CD = B.BASIC_CCY --账户币种
+    AND B.CCY_DATE = TO_DATE(A.DATA_DATE, 'yyyymmdd') --汇率日期
+    AND A.DATA_DATE = B.DATA_DATE
+    AND B.FORWARD_CCY = 'CNY' --折算币种*/
+   WHERE IS_DATE = ENDDATE --当输入日期为月末时，对数据进行提取
+     AND A.DATA_DATE BETWEEN STARTDATE AND ENDDATE
+     AND B.LCXC_FLAG = '8'--生息资产余额科目
+     --AND A.ORG_NUM = '990000'
+     AND A.ORG_NUM IN ('990000','510000'
+    ,'520000'
+    ,'530000'
+    ,'540000'
+    ,'550000'
+    ,'560000'
+    ,'570000'
+    --,'580000'  [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+    --,'590000'  modify by hr 20241206 JLBA202409100011-东丰回迁总行
+  )
+     AND A.CURR_CD = 'CNY'
+     GROUP BY A.ORG_NUM;
+
+
+    COMMIT;
+
+
+--对各金额进行汇总
+
+
+INSERT INTO DATACORE_IE_RATE_LCXCTJ_TMP2
+  SELECT DATADATE, --数据日期
+         SOLCRDCODE,  --统一社会信用代码
+         SUM(LOAN_INTEREST_INCOME), --各项贷款当月累计利息收入
+         SUM(DAILY_LOAN_BALANCE), --当月日均贷款余额
+         SUM(DEPOSIT_INTEREST_PAY), --各项存款当月累计利息支出
+         SUM(DAILY_DEPOSIT_BALANCE), --当月日均存款余额
+         SUM(FXFZ_INTEREST_PAY), --付息负债当月累计利息支出
+         SUM(DAILY_FXFZ_BALANCE), --当月日均付息负债余额
+         SUM(SXZC_INTEREST_INCOME), --生息资产当月累计利息收入
+         SUM(DAILY_SXZC_BALANCE), --当月日均生息资产余额
+         A.ORG_NUM
+    FROM DATACORE_IE_RATE_LCXCTJ_TMP A
+   GROUP BY DATADATE, SOLCRDCODE,A.ORG_NUM;
+
+COMMIT;
+--利率计算
+
+
+INSERT INTO DATACORE_IE_RATE_LCXCTJ
+  SELECT DATADATE --数据日期
+        ,
+         SOLCRDCODE --统一社会信用代码
+        ,
+         CASE
+           WHEN LOAN_INTEREST_INCOME = 0 THEN
+            0
+           ELSE
+            LOAN_INTEREST_INCOME / DAILY_LOAN_BALANCE * 12 --平均贷款利率
+         END,
+         CASE
+           WHEN DAILY_DEPOSIT_BALANCE = 0 THEN
+            0
+           ELSE
+            DEPOSIT_INTEREST_PAY / DAILY_DEPOSIT_BALANCE * 12 --平均存款利率
+         END,
+         CASE
+           WHEN DAILY_FXFZ_BALANCE = 0 THEN
+            0
+           ELSE
+            FXFZ_INTEREST_PAY / DAILY_FXFZ_BALANCE * 12 --付息负债利率
+         END,
+         CASE
+           WHEN DAILY_SXZC_BALANCE = 0 THEN
+            0
+           ELSE
+            SXZC_INTEREST_INCOME / DAILY_SXZC_BALANCE * 12 --生息资产利率
+         END,
+         CASE
+           WHEN DAILY_SXZC_BALANCE = 0 THEN
+            0
+           ELSE
+            (SXZC_INTEREST_INCOME - FXFZ_INTEREST_PAY) / DAILY_SXZC_BALANCE * 12 --净息差
+         END,
+         ORG_NUM
+    FROM DATACORE_IE_RATE_LCXCTJ_TMP2;
+
+
+  --为了增加查询速度，重建索引
+  --EXECUTE IMMEDIATE 'ALTER INDEX 索引名 REBUILD';
+
+
+  --清除目标表中分区数据
+  SP_IRS_PARTITIONS(IS_DATE, 'IE_RATE_LCXCTJ', OI_RETCODE);
+
+
+  --向目标表插入数据
+INSERT INTO IE_RATE_LCXCTJ
+  (DATADATE --数据日期
+  ,
+   SOLCRDCODE --统一社会信用代码
+  ,
+   LDINTMARGIN --存贷利差
+  ,
+   DEBTINTMARGIN --付息负债利率
+  ,
+   ASSETINTMARGIN --生息资产利率
+  ,
+   NETINTMARGIN --净利差
+  ,
+   NETINTSPREADS --净息差
+  ,
+   CJRQ --采集日期
+  ,
+   NBJGH --内部机构号
+  ,
+   BIZ_LINE_ID --业务条线
+  ,
+   IRS_CORP_ID --法人机构ID
+   )
+  SELECT DATADATE --数据日期
+        ,
+         SOLCRDCODE --统一社会信用代码
+        ,
+         (LOAN_RATE - DEPOSIT_RATE)*100 --存贷利差
+        ,
+         FXFZ_RATE*100 --付息负债利率
+        ,
+         SXZC_RATE*100 --生息资产利率
+        ,
+         (SXZC_RATE - FXFZ_RATE)*100 --净利差
+        ,
+         NETINTSPREADS*100 --净息差
+        ,
+         IS_DATE --采集日期
+        ,
+         CASE WHEN  ORG_NUM LIKE '51%' THEN '510000'
+          WHEN  ORG_NUM LIKE '52%' THEN '529801'
+          WHEN  ORG_NUM LIKE '53%' THEN '539801'
+          WHEN  ORG_NUM LIKE '54%' THEN '549801'
+          WHEN  ORG_NUM LIKE '55%' THEN '559801'
+          WHEN  ORG_NUM LIKE '56%' THEN '569801'
+          WHEN  ORG_NUM LIKE '57%' THEN '579801'
+          --WHEN  ORG_NUM LIKE '58%' THEN '589801' [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+          --WHEN  ORG_NUM LIKE '59%' THEN '599801' modify by hr 20241206 JLBA202409100011-东丰回迁总行
+           ELSE '009801' END --内部机构号
+        ,
+         '99' --业务条线
+        ,
+         CASE WHEN  ORG_NUM LIKE '51%' THEN '510000'
+          WHEN  ORG_NUM LIKE '52%' THEN '520000'
+          WHEN  ORG_NUM LIKE '53%' THEN '530000'
+          WHEN  ORG_NUM LIKE '54%' THEN '540000'
+          WHEN  ORG_NUM LIKE '55%' THEN '550000'
+          WHEN  ORG_NUM LIKE '56%' THEN '560000'
+          WHEN  ORG_NUM LIKE '57%' THEN '570000'
+          --WHEN  ORG_NUM LIKE '58%' THEN '580000' [2025-11-28] [蒿蕊] [JLBA202506230009] [从需求]注释双辽，回迁到总行了
+          --WHEN  ORG_NUM LIKE '59%' THEN '590000' modify by hr 20241206 JLBA202409100011-东丰回迁总行
+           ELSE '990000' END  --法人机构ID
+    FROM DATACORE_IE_RATE_LCXCTJ;
+     COMMIT;
+
+END IF;
+
+
+
+  ----------------------------------------------------------------------------------------------------------------
+  OI_RETCODE := 0; --设置异常状态为0 成功状态
+
+  --返回中文描述
+  OI_RETCODE2 := '成功!';
+
+  -- 结束日志
+  VS_STEP := 'END';
+  SP_IRS_LOG(VS_PROCEDURE_NAME, VS_STEP, VI_ERRORCODE, VS_TEXT, IS_DATE);
+
+
+EXCEPTION
+  WHEN OTHERS THEN
+    --如果出现异常
+    VI_ERRORCODE := SQLCODE; --设置异常代码
+    VS_TEXT      := VS_STEP || '|' || IS_DATE || '|' ||
+                    SUBSTR(SQLERRM, 1, 200); --设置异常描述
+    ROLLBACK; --数据回滚
+    OI_RETCODE := -1; --设置异常状态为-1
+
+    --返回中文描述
+
+    OI_RETCODE2 := SUBSTR(SQLERRM, 1, 200);
+
+    --插入日志表，记录错误
+    SP_IRS_LOG(VS_PROCEDURE_NAME, VS_STEP, VI_ERRORCODE, VS_TEXT, IS_DATE);
+END;
+/
+

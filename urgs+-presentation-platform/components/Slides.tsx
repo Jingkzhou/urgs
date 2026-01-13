@@ -391,60 +391,154 @@ const SlideLayout: React.FC<{ children: React.ReactNode, title?: string, subtitl
 // --- Individual Slides ---
 
 export const TitlePage = () => (
-  <div className="text-center relative">
-    <div className="absolute -top-32 -left-32 w-96 h-96 bg-indigo-50 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-pulse"></div>
-    <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-blue-50 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-pulse delay-700"></div>
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-radial from-indigo-100/20 to-transparent opacity-50 blur-3xl -z-10 animate-pulse duration-[5000ms]"></div>
+  <div className="relative w-screen h-screen overflow-hidden bg-slate-50 flex flex-col items-center justify-center text-center perspective-grid selection:bg-indigo-100">
 
-    <h1 className="text-8xl font-black text-indigo-900 mb-8 tracking-tighter anim-scale-in">
-      监管一体化系统
-      <span className="inline-block hover:scale-110 transition-transform duration-300 transform origin-bottom-left cursor-default">（URGS）</span>
-      <span className="text-indigo-500 font-light inline-block animate-bounce delay-1000">+</span>
-    </h1>
-    <h2 className="text-5xl md:text-6xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-slate-800 via-indigo-900 to-slate-800 mb-6 leading-tight anim-fade-up delay-200">
-      重塑智能时代的监管运营
-    </h2>
-    <p className="text-2xl md:text-3xl text-slate-500 max-w-3xl mx-auto font-light leading-relaxed anim-fade-up delay-300">
-      一体化、智能化、可视化的新一代协同办公与智能化监管资产管理平台
-    </p>
-    <div className="mt-12 flex justify-center gap-4 anim-scale-in delay-500">
-      <div className="h-1 w-32 bg-gradient-to-r from-indigo-600 to-teal-400 rounded-full shadow-lg shadow-indigo-200"></div>
+    {/* Background - Elegant Light Abstract */}
+    <div className="absolute inset-0 z-0 bg-slate-50">
+      {/* Soft Gradients */}
+      <div className="absolute top-[-20%] right-[-10%] w-[800px] h-[800px] bg-indigo-100/50 rounded-full blur-3xl opacity-60 animate-pulse duration-[8000ms]"></div>
+      <div className="absolute bottom-[-20%] left-[-10%] w-[600px] h-[600px] bg-teal-100/50 rounded-full blur-3xl opacity-60 animate-pulse duration-[6000ms] delay-1000"></div>
+
+      {/* Subtle Grid */}
+      <div className="absolute inset-0 opacity-[0.03]"
+        style={{ backgroundImage: 'linear-gradient(#4f46e5 1px, transparent 1px), linear-gradient(to right, #4f46e5 1px, transparent 1px)', backgroundSize: '40px 40px' }}>
+      </div>
     </div>
+
+    {/* Floating Elements (Glassmorphism) */}
+    <div className="absolute top-32 left-10 hidden md:block anim-fade-right">
+      <div className="glass-card px-4 py-3 rounded-xl flex flex-col gap-1 border border-white/50 shadow-lg shadow-indigo-100/50">
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">System Status</span>
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
+          <span className="text-xs font-bold text-slate-600">Online / Stable</span>
+        </div>
+      </div>
+    </div>
+
+    <div className="absolute bottom-32 right-10 hidden md:block anim-fade-right delay-200">
+      <div className="glass-card px-4 py-3 rounded-xl flex flex-col gap-1 border border-white/50 shadow-lg shadow-teal-100/50 text-right">
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">AI Core</span>
+        <div className="flex items-center gap-2 justify-end">
+          <span className="text-xs font-bold text-slate-600">RAG Engine Active</span>
+          <Bot className="w-3 h-3 text-indigo-500" />
+        </div>
+      </div>
+    </div>
+
+    {/* Central Visual */}
+    <div className="relative z-10 mb-12 scale-110 md:scale-125">
+      <div className="relative w-48 h-48 flex items-center justify-center">
+        {/* Spinning Rings - Light Theme */}
+        <div className="absolute inset-0 border border-indigo-200 rounded-full animate-spin-slow"></div>
+        <div className="absolute inset-4 border border-teal-200 rounded-full animate-spin-reverse-slower border-dashed"></div>
+        <div className="absolute inset-0 bg-white/40 backdrop-blur-sm rounded-full shadow-2xl shadow-indigo-200/50"></div>
+
+        {/* Center Icon */}
+        <div className="relative z-20 bg-white p-5 rounded-full border border-white shadow-[0_10px_40px_rgba(79,70,229,0.15)] animate-float">
+          <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 p-4 rounded-full text-white">
+            <Bot className="w-12 h-12" />
+          </div>
+        </div>
+
+        {/* Orbiting DOT */}
+        <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+          <div className="w-3 h-3 bg-indigo-500 rounded-full shadow-lg shadow-indigo-300 animate-bounce"></div>
+        </div>
+      </div>
+    </div>
+
+    {/* Main Title Group */}
+    <div className="relative z-20 space-y-4">
+      <h1 className="text-7xl md:text-9xl font-black text-slate-900 tracking-tighter relative inline-block">
+        URGS<span className="text-indigo-600">+</span>
+        {/* Subtle reflection/shadow */}
+        <span className="absolute -bottom-4 left-0 w-full h-8 bg-gradient-to-t from-white via-white/50 to-transparent blur-[2px] transform scale-y-[-0.3] opacity-20 origin-bottom pointer-events-none select-none">URGS+</span>
+      </h1>
+
+      <div className="h-1.5 w-24 mx-auto bg-gradient-to-r from-indigo-500 to-teal-400 rounded-full mt-2 mb-8 shadow-sm"></div>
+
+      <h2 className="text-3xl md:text-5xl font-extrabold text-slate-800 mb-6 anim-fade-up leading-tight" style={{ animationDelay: '0.2s' }}>
+        <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-indigo-500">智能</span>监管运营新范式
+      </h2>
+
+      <p className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto font-medium leading-relaxed anim-fade-up" style={{ animationDelay: '0.4s' }}>
+        一体化 · 智能化 · 可视化
+        <span className="block text-sm font-normal text-slate-400 mt-2">Enterprise Resource Governance System Plus</span>
+      </p>
+    </div>
+
+    {/* CTA Button */}
+    <div className="mt-16 z-20 anim-scale-in" style={{ animationDelay: '0.6s' }}>
+      <button className="group relative px-8 py-3 bg-white border border-indigo-100 rounded-full overflow-hidden transition-all hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-100/50 hover:-translate-y-1">
+        <span className="relative flex items-center gap-2 text-indigo-900 font-bold text-sm tracking-wide group-hover:gap-3 transition-all">
+          INITIALIZE SYSTEM <ChevronRight className="w-4 h-4 text-indigo-500" />
+        </span>
+      </button>
+    </div>
+
   </div>
 );
 
 export const TableOfContentsPage = ({ onNavigate }: { onNavigate: (index: number) => void }) => (
-  <SlideLayout title="目录" subtitle="URGS+ 智能监管平台介绍概览">
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mt-8 max-w-6xl mx-auto">
-      {[
-        { id: "01", title: "背景与挑战", sub: "监管运营的痛点", index: 2, color: "bg-rose-500", shadow: "shadow-rose-200", icon: <ShieldAlert className="w-6 h-6 text-white" /> },
-        { id: "02", title: "产品愿景", sub: "URGS+ 核心设计理念", index: 3, color: "bg-indigo-500", shadow: "shadow-indigo-200", icon: <Zap className="w-6 h-6 text-white" /> },
-        { id: "03", title: "技术架构", sub: "全链路技术体系", index: 4, color: "bg-slate-700", shadow: "shadow-slate-400", icon: <Cpu className="w-6 h-6 text-white" /> },
-        { id: "04", title: "四大支柱", sub: "核心能力矩阵", index: 5, color: "bg-teal-500", shadow: "shadow-teal-200", icon: <Boxes className="w-6 h-6 text-white" /> },
-        { id: "05", title: "AI 赋能", sub: "RAG & Agent 体系", index: 6, color: "bg-amber-500", shadow: "shadow-amber-200", icon: <Bot className="w-6 h-6 text-white" /> },
-        { id: "06", title: "自动化协同", sub: "调度与驾驶舱", index: 9, color: "bg-indigo-500", shadow: "shadow-indigo-200", icon: <LayoutDashboard className="w-6 h-6 text-white" /> },
-        { id: "07", title: "资产管理", sub: "血缘图谱与元数据", index: 11, color: "bg-cyan-600", shadow: "shadow-cyan-200", icon: <Network className="w-6 h-6 text-white" /> },
-        { id: "08", title: "风险防控与版本管理", sub: "变更事前阻断", index: 13, color: "bg-blue-500", shadow: "shadow-blue-200", icon: <ShieldCheck className="w-6 h-6 text-white" /> },
-        { id: "09", title: "生态价值", sub: "多角色协同效益", index: 14, color: "bg-violet-600", shadow: "shadow-violet-200", icon: <Users className="w-6 h-6 text-white" /> },
-      ].map((item, idx) => (
-        <div
-          key={idx}
-          onClick={() => onNavigate(item.index)}
-          className="group bg-white rounded-2xl p-6 shadow-sm border border-slate-100 hover:shadow-xl hover:shadow-indigo-100 hover:-translate-y-2 transition-all duration-300 cursor-pointer flex items-start gap-4 anim-fade-up"
-          style={{ animationDelay: `${idx * 100}ms` }}
-        >
-          <div className={`${item.color} w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-lg ${item.shadow} group-hover:scale-110 transition-transform duration-300 group-hover:rotate-6`}>
-            {item.icon}
-          </div>
-          <div>
-            <div className="text-xs font-bold text-slate-400 mb-1 group-hover:text-indigo-400 transition-colors">{item.id}</div>
-            <h3 className="text-xl font-bold text-slate-800 mb-1 group-hover:text-indigo-600 transition-colors">{item.title}</h3>
-            <p className="text-sm text-slate-500 group-hover:text-slate-600">{item.sub}</p>
-          </div>
-        </div>
-      ))}
+  <div className="relative w-screen h-screen overflow-hidden bg-slate-50 flex flex-col items-center justify-center text-slate-800">
+    {/* Clean, light background with subtle pattern */}
+    <div className="absolute inset-0 bg-slate-50 z-0"></div>
+    <div className="absolute inset-0 z-0 opacity-[0.03]"
+      style={{ backgroundImage: 'radial-gradient(circle at 50% 50%, #4f46e5 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
     </div>
-  </SlideLayout>
+
+    {/* Decoration Blobs */}
+    <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-indigo-100/40 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+    <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-teal-100/40 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
+
+    <div className="relative z-10 w-full max-w-7xl px-8 h-full flex flex-col pt-16 md:pt-24">
+      <div className="text-center mb-12 space-y-3">
+        <h2 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900">
+          SYSTEM MODULES
+        </h2>
+        <p className="text-slate-400 text-sm font-bold uppercase tracking-[0.2em]">
+          Select Activation Node
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {[
+          { id: "01", title: "背景与挑战", sub: "Operational Pain Points", index: 2, color: "text-rose-500", bg: "bg-rose-50 hover:bg-rose-100", border: "border-rose-100 hover:border-rose-200", icon: <ShieldAlert className="w-8 h-8" /> },
+          { id: "02", title: "产品愿景", sub: "Core Vision & Philosophy", index: 3, color: "text-indigo-500", bg: "bg-indigo-50 hover:bg-indigo-100", border: "border-indigo-100 hover:border-indigo-200", icon: <Zap className="w-8 h-8" /> },
+          { id: "03", title: "技术架构", sub: "System Architecture", index: 4, color: "text-slate-600", bg: "bg-slate-50 hover:bg-slate-100", border: "border-slate-200 hover:border-slate-300", icon: <Cpu className="w-8 h-8" /> },
+          { id: "04", title: "四大支柱", sub: "Core Capability Matrix", index: 5, color: "text-teal-600", bg: "bg-teal-50 hover:bg-teal-100", border: "border-teal-100 hover:border-teal-200", icon: <Boxes className="w-8 h-8" /> },
+          { id: "05", title: "AI 赋能", sub: "RAG & Agent System", index: 6, color: "text-amber-500", bg: "bg-amber-50 hover:bg-amber-100", border: "border-amber-100 hover:border-amber-200", icon: <Bot className="w-8 h-8" /> },
+          { id: "06", title: "自动化协同", sub: "Automation & Cockpit", index: 9, color: "text-indigo-600", bg: "bg-indigo-50 hover:bg-indigo-100", border: "border-indigo-100 hover:border-indigo-200", icon: <LayoutDashboard className="w-8 h-8" /> },
+          { id: "07", title: "资产管理", sub: "Data Assets & Lineage", index: 11, color: "text-cyan-600", bg: "bg-cyan-50 hover:bg-cyan-100", border: "border-cyan-100 hover:border-cyan-200", icon: <Network className="w-8 h-8" /> },
+          { id: "08", title: "风险防控", sub: "Risk Control & Versioning", index: 13, color: "text-blue-600", bg: "bg-blue-50 hover:bg-blue-100", border: "border-blue-100 hover:border-blue-200", icon: <ShieldCheck className="w-8 h-8" /> },
+          { id: "09", title: "生态价值", sub: "Ecosystem Value", index: 14, color: "text-violet-600", bg: "bg-violet-50 hover:bg-violet-100", border: "border-violet-100 hover:border-violet-200", icon: <Users className="w-8 h-8" /> },
+        ].map((item, idx) => (
+          <div
+            key={idx}
+            onClick={() => onNavigate(item.index)}
+            className={`group relative ${item.bg} p-6 rounded-2xl border ${item.border} transition-all duration-300 cursor-pointer flex items-center gap-6 anim-fade-up shadow-sm hover:shadow-xl hover:-translate-y-1 overflow-hidden`}
+            style={{ animationDelay: `${idx * 50}ms` }}
+          >
+            {/* Icon Box */}
+            <div className={`${item.color} p-3 bg-white rounded-xl shadow-sm border border-white group-hover:scale-110 transition-transform duration-300`}>
+              {item.icon}
+            </div>
+
+            <div className="flex-1 z-10">
+              <div className="flex justify-between items-center mb-1">
+                <h3 className={`text-lg font-bold text-slate-800 transition-colors tracking-tight`}>{item.title}</h3>
+                <span className="text-[10px] font-bold opacity-40 text-slate-500 bg-white px-1.5 py-0.5 rounded-full shadow-sm">{item.id}</span>
+              </div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-tight truncate">{item.sub}</p>
+            </div>
+
+            <ChevronRight className={`w-5 h-5 text-slate-300 group-hover:text-slate-500 group-hover:translate-x-1 transition-all`} />
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
 );
 
 export const ChallengePage = () => (

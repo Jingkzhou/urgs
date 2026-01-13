@@ -63,7 +63,7 @@ logs/
 urgs-dist/
 urgs-dist/install.sh
 urgs-api/uploads/
-sql-lineage-engine/tests/
+sql-lineage-engine/tests/sql/
 attachments/
 urgs-rag/doc_store/urgs_knowledge_base/视觉型小学生高效英语单词记忆方法研究_副本.docx
 urgs-rag/data/
