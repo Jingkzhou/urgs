@@ -13,6 +13,7 @@ URGS 是一个企业级统一资源治理与调度系统。它集成了任务调
 | **Executor** | [urgs-executor](./urgs-executor) | 独立任务执行引擎，支持分布式部署 | Spring Boot 3, ProcessBuilder |
 | **AI / RAG** | [urgs-rag](./urgs-rag) | 智能知识库与检索服务，支持 SQL 解释与问答 | Python 3.10, LangChain, ChromaDB |
 | **Lineage** | [sql-lineage-engine](./sql-lineage-engine) | SQL 血缘分析引擎 | Python, Java (GSP) |
+| **Presentation** | [urgs+-presentation-platform](./urgs+-presentation-platform) | 演示交互平台 | React, Vite, Tailwind |
 
 ## 🚀 快速开始 (Docker 部署)
 
@@ -41,6 +42,7 @@ docker-compose up -d
 | **后端接口** | [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html) | API 文档 |
 | **RAG 文档** | [http://localhost:8001/doc](http://localhost:8001/doc) | AI 服务接口文档 |
 | **Neo4j** | [http://localhost:7474](http://localhost:7474) | neo4j / 12345678 |
+| **Presentation** | [http://localhost:3002](http://localhost:3002) | - |
 | **MySQL** | `localhost:3306` | root / a8548879 (库: urgs_dev) |
 
 > 💡 **提示**: 
@@ -173,7 +175,7 @@ chmod +x package.sh
 - `install.sh`: 针对本次打包模块的一键安装/更新脚本
 - `docker-compose.yml` & `.env`: 必要的配置文件
 
-> 💡 **支持的模块名**: `api`, `web`, `executor`, `lineage`, `neo4j`
+> 💡 **支持的模块名**: `api`, `web`, `executor`, `lineage`, `neo4j`, `presentation`
 
 #### 2. 传输文件到生产服务器
 将打包生成的 `urgs-dist` 目录传输到生产服务器即可。
