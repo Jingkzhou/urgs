@@ -17,6 +17,7 @@ from app.loaders.doc_loader import DocLoader
 from app.loaders.sql_loader import SqlLoader
 from app.services.refiner import knowledge_refiner
 from app.services.vector_store import vector_store_service
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 import uuid
 
 def main():
@@ -51,6 +52,13 @@ def main():
         return
 
     print(f"待精炼的文档总数: {len(all_docs)}")
+
+    # [Small-to-Big 策略优化]
+    # 对父文档进行粗粒度切分 (例如 2000 字符)，作为"Original Chunk"。
+    # 相比向量索引用的 400 字符子切片，这能提供更完整的上下文，同时避免整本书被回溯导致 Context 溢出。
+    parent_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
+    all_docs = parent_splitter.split_documents(all_docs)
+    print(f"应用父文档切分策略 (Size=2000) 后，处理单元总数: {len(all_docs)}")
 
     # 为文档注入集合名称和父 ID (用于追溯)
     for doc in all_docs:

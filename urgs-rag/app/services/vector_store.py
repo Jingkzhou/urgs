@@ -512,11 +512,60 @@ class VectorStoreService:
                         # print(f"    - Doc: {item['document'].page_content[:30]}... Orig={base_score:.3f} -> New={item['score']:.3f} (Rerank={rerank_score:.3f})")
 
         print(f"[RAG-HybridSearch] <<< 检索流完成。最终 Top 1 得分: {merged[0]['score']:.4f}")
-        return merged[:top_k]
+        final_results = merged[:top_k]
+        # [Source-Code Separation] 强制回溯到原始父文档
+        return self._resolve_original_documents(final_results)
+
+    def _resolve_original_documents(self, results: List[Dict]) -> List[Dict]:
+        """
+        [引用层分离] 强制回溯原始文档。
+        确保最终返回给 QA 环节的是原始的语义文档 (Semantic Document)，
+        而不是检索过程中命中的摘要 (Summary) 或 模拟问题 (QA)。
+        """
+        if not results:
+            return []
+
+        # 1. 提取所有结果的原始父文档 ID (Origin Parent ID)
+        keys_to_fetch = [self._doc_key(item["document"]) for item in results]
+        
+        # 诊断日志：检查是否有 origin_parent_id
+        for i, item in enumerate(results):
+            doc = item["document"]
+            has_origin = bool(doc.metadata.get("origin_parent_id"))
+            print(f"  [Diag] Doc[{i}] path_type={doc.metadata.get('path_type', 'N/A')}, has_origin_parent_id={has_origin}, key={keys_to_fetch[i][:16] if keys_to_fetch[i] else 'N/A'}...")
+        
+        # 2. 批量从 DocStore 获取原始父文档
+        parents = self.docstore.mget(keys_to_fetch)
+        
+        # 3. 替换文档对象
+        resolved_results = []
+        for i, item in enumerate(results):
+            original = parents[i]
+            if original:
+                # 记录一下命中的路径来源，便于调试
+                hit_source = list(item["score_details"].keys()) if item["score_details"] else []
+                print(f"  [Backtrack] {item['document'].metadata.get('path_type', 'unknown')} -> {original.metadata.get('path_type', 'unknown')} (Key: {keys_to_fetch[i][:16]}...)")
+                item["document"] = original
+                # 将召回路径信息注入 metadata，防止信息丢失
+                if not item["document"].metadata.get("hit_reasons"):
+                    item["document"].metadata["hit_reasons"] = hit_source
+            resolved_results.append(item)
+            
+        return resolved_results
 
     def _doc_key(self, doc: Document) -> str:
-        """从文档元数据中提取唯一标识 Key。"""
-        return doc.metadata.get("parent_id") or doc.metadata.get("origin_parent_id") or doc.metadata.get("file_name") or str(id(doc))
+        """
+        从文档元数据中提取唯一标识 Key，用于回溯原始父文档。
+        
+        核心逻辑：如果存在 origin_parent_id，说明这是衍生文档（摘要/QA/逻辑核），
+        应该回溯到原始语义文档。
+        """
+        # 优先使用 origin_parent_id 进行回溯（兼容新旧数据）
+        origin_id = doc.metadata.get("origin_parent_id")
+        if origin_id:
+            return origin_id
+        # 原始文档使用 parent_id
+        return doc.metadata.get("parent_id") or doc.metadata.get("file_name") or str(id(doc))
 
     def add_documents(self, documents: List[Document], collection_name: str = None):
         """
@@ -542,8 +591,15 @@ class VectorStoreService:
             if not doc.metadata.get("parent_id"):
                 doc.metadata["parent_id"] = uuid.uuid4().hex
 
-        # 存入父文档存储
-        self.docstore.mset([(doc.metadata["parent_id"], doc) for doc in documents])
+        # [关键修复] 只将非合成文档（语义文档）存入父文档存储
+        # 合成文档（Summary/QA/Logic）不应覆盖原始语义文档
+        semantic_docs_for_store = [
+            doc for doc in documents 
+            if not doc.metadata.get("is_synthetic") and doc.metadata.get("path_type") in (None, "semantic")
+        ]
+        if semantic_docs_for_store:
+            self.docstore.mset([(doc.metadata["parent_id"], doc) for doc in semantic_docs_for_store])
+            print(f"[VectorStore] 存入 DocStore: {len(semantic_docs_for_store)} 个语义父文档 (跳过 {len(documents) - len(semantic_docs_for_store)} 个合成文档)")
 
         # 切分为子片段用于向量检索
         print(f"[VectorStore] >>> 启动物理切片 (Child Splitting): Size={self.child_splitter._chunk_size}, Overlap={self.child_splitter._chunk_overlap}")

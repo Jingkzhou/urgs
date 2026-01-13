@@ -42,13 +42,15 @@ class KnowledgeRefiner:
             # 2. 逻辑路径 (Logic Path) - 模拟问题
             # 将"问题-答案"对存入逻辑路径，实现"以问搜问"，极大提升短句搜索准确率
             for q in enriched.get("questions", []):
+                # 构建合成文档的 metadata，显式删除 parent_id 以避免覆盖原始语义文档
+                synthetic_meta = {k: v for k, v in doc.metadata.items() if k != "parent_id"}
                 q_doc = Document(
                     page_content=f"问题: {q}\n相关知识: {text[:200]}...",
                     metadata={
-                        **doc.metadata,
+                        **synthetic_meta,
                         "path_type": "logic",
                         "logic_type": "question",
-                        "original_content": text, # 链接回完整上下文
+                        "original_content": text,
                         "origin_parent_id": doc.metadata.get("parent_id"),
                         "is_synthetic": True
                     }
@@ -59,14 +61,17 @@ class KnowledgeRefiner:
             # 提取文档背后的流程或逻辑模版，作为高级推理的依据
             reasoning = enriched.get("reasoning")
             if reasoning:
+                # 构建合成文档的 metadata，显式删除 parent_id
+                synthetic_meta = {k: v for k, v in doc.metadata.items() if k != "parent_id"}
                 r_doc = Document(
                     page_content=f"逻辑核/推导过程: {reasoning}",
                     metadata={
-                        **doc.metadata,
+                        **synthetic_meta,
                         "path_type": "logic",
                         "logic_type": "reasoning",
                         "tags": ",".join(enriched.get("tags", [])),
                         "keywords": ",".join(enriched.get("keywords", [])),
+                        "original_content": text,
                         "origin_parent_id": doc.metadata.get("parent_id"),
                         "is_synthetic": True
                     }
@@ -81,15 +86,18 @@ class KnowledgeRefiner:
             # 提供极高浓缩度的语义信息，适合快速概览检索
             summary = enriched.get("summary")
             if summary:
+                # 构建合成文档的 metadata，显式删除 parent_id
+                synthetic_meta = {k: v for k, v in doc.metadata.items() if k != "parent_id"}
                 s_doc = Document(
                     page_content=f"摘要: {summary}",
                     metadata={
-                        **doc.metadata,
+                        **synthetic_meta,
                         "path_type": "summary",
                         "summary_type": "auto",
                         "origin_parent_id": doc.metadata.get("parent_id"),
                         "tags": ",".join(enriched.get("tags", [])),
                         "keywords": ",".join(enriched.get("keywords", [])),
+                        "original_content": text,
                         "is_synthetic": True
                     }
                 )
