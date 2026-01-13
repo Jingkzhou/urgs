@@ -9,6 +9,7 @@ get_image() {
         executor) echo "urgs-executor:latest" ;;
         lineage) echo "sql-lineage-engine:latest" ;;
         neo4j) echo "neo4j:5.15.0" ;;
+        presentation) echo "urgs-presentation:latest" ;;
         *) echo "" ;;
     esac
 }
@@ -21,11 +22,12 @@ get_service_name() {
         executor) echo "urgs-executor" ;;
         lineage) echo "sql-lineage-engine" ;;
         neo4j) echo "neo4j" ;;
+        presentation) echo "urgs-presentation" ;;
         *) echo "" ;;
     esac
 }
 
-ALL_MODULES=("api" "web" "executor" "lineage" "neo4j")
+ALL_MODULES=("api" "web" "executor" "lineage" "neo4j" "presentation")
 
 # Parse requested modules
 SELECTED_MODULES=()

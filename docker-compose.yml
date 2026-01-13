@@ -88,6 +88,16 @@ services:
       - urgs-api
     networks:
       - urgs-net
+    
+  urgs-presentation:
+    build:
+      context: ./urgs+-presentation-platform
+      dockerfile: Dockerfile
+    image: urgs-presentation:latest
+    ports:
+      - "${HOST_PORT_PRESENTATION}:80"
+    networks:
+      - urgs-net
 
   sql-lineage-engine:
     build: ./sql-lineage-engine

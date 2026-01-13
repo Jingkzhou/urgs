@@ -22,6 +22,7 @@ API_DIR="$SCRIPT_DIR/urgs-api"
 EXECUTOR_DIR="$SCRIPT_DIR/urgs-executor"
 WEB_DIR="$SCRIPT_DIR/urgs-web"
 RAG_DIR="$SCRIPT_DIR/urgs-rag"
+PRESENTATION_DIR="$SCRIPT_DIR/urgs+-presentation-platform"
 
 pids=()
 
@@ -30,6 +31,7 @@ ENABLE_BACKEND=false
 ENABLE_EXECUTOR=false
 ENABLE_FRONTEND=false
 ENABLE_RAG=false
+ENABLE_PRESENTATION=false
 
 kill_port_if_exists() {
   local port="$1"
@@ -142,6 +144,7 @@ echo "  [2] Backend (urgs-api)"
 echo "  [3] Executor (urgs-executor)"
 echo "  [4] Frontend (urgs-web)"
 echo "  [5] RAG (urgs-rag)"
+echo "  [6] Presentation (urgs-presentation)"
 echo ""
 echo "Enter your choice (e.g., '1' for all, or '2 3' for Backend+Executor):"
 read -r -a choices
@@ -158,11 +161,13 @@ for choice in "${choices[@]}"; do
       ENABLE_EXECUTOR=true
       ENABLE_FRONTEND=true
       ENABLE_RAG=true
+      ENABLE_PRESENTATION=true
       ;;
     2) ENABLE_BACKEND=true ;;
     3) ENABLE_EXECUTOR=true ;;
     4) ENABLE_FRONTEND=true ;;
     5) ENABLE_RAG=true ;;
+    6) ENABLE_PRESENTATION=true ;;
     *) echo "Unknown option: $choice (ignored)" ;;
   esac
 done
@@ -171,6 +176,7 @@ if [ "$ENABLE_BACKEND" = true ]; then start_backend; fi
 if [ "$ENABLE_EXECUTOR" = true ]; then start_executor; fi
 if [ "$ENABLE_FRONTEND" = true ]; then start_frontend; fi
 if [ "$ENABLE_RAG" = true ]; then start_rag; fi
+if [ "$ENABLE_PRESENTATION" = true ]; then start_presentation; fi
 
 if [ ${#pids[@]} -eq 0 ]; then
   echo "No services selected. Exiting."
