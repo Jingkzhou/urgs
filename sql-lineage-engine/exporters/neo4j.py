@@ -187,9 +187,9 @@ class Neo4jClient:
                     )
                 """, repoId=repo_id, files=file_batch)
                 
-            # 2. Cleanup orphaned Column and Table nodes
-            # After deleting relationships, some nodes might be left without any connections.
-            # We only delete nodes that have NO relationships at all.
+            # 2. 清理孤立的 Column 和 Table 节点
+            # 删除关系后，某些节点可能不再有任何连接。
+            # 我们只删除完全没有任何关系的节点。
             print(f"  - 清理不再关联任何血缘的孤立节点...")
             session.run("""
                 MATCH (c:Column)
@@ -207,7 +207,7 @@ class Neo4jClient:
 
     def create_lineage(self, source_table: str, target_table: str):
         """
-        Create a lineage relationship between two tables.
+        创建两个表之间的血缘关系。
         """
         # 统一转换为大写
         source_table = (source_table or "").upper()
@@ -227,8 +227,8 @@ class Neo4jClient:
 
     def create_lineage_batch(self, relationships: list):
         """
-        Batch create table-level lineage.
-        relationships: list of dicts with keys: source, target
+        批量创建表级血缘。
+        relationships: 包含 source 和 target 键的字典列表
         """
         if not relationships:
             return
@@ -253,7 +253,7 @@ class Neo4jClient:
 
     @staticmethod
     def _create_tables_batch(tx, relationships):
-         # Normalize
+         # 归一化处理
          normalized = []
          for r in relationships:
              s = (r.get("source") or "").upper()
@@ -274,8 +274,8 @@ class Neo4jClient:
 
     def create_column_lineage(self, dependencies: list):
         """
-        Create lineage relationships between columns in batch.
-        dependencies: list of dicts with keys: source_table, source_column, target_table, target_column
+        批量创建字段级血缘关系。
+        dependencies: 包含 source_table, source_column, target_table, target_column 键的字典列表
         """
         if not dependencies:
             return
@@ -292,7 +292,7 @@ class Neo4jClient:
                 except Exception as e:
                     print(f"\n    Error in column lineage batch {i//batch_size}: {e}")
                 
-                # Progress Log
+                # 进度日志
                 processed = min(i + batch_size, total)
                 if processed % 5000 == 0 or processed == total:
                     sys.stdout.write(f"\r    Processed {processed}/{total} column dependencies...")
@@ -334,12 +334,12 @@ class Neo4jClient:
         if not dependencies:
             return
         
-        # Split into Direct and Indirect
+        # 分为直接血缘和间接血缘
         direct_items = []
         indirect_items = []
         
         for dep in dependencies:
-             # Normalize
+             # 归一化处理
             source_table = (dep.get("source_table") or "").upper()
             source_column = (dep.get("source_column") or "").upper()
             target_table = (dep.get("target_table") or "").upper()
@@ -363,7 +363,7 @@ class Neo4jClient:
                 "is_expanded": dep.get("is_expanded", False)
             }
             
-            # Neo4j Relation Type lookup
+            # 查找 Neo4j 关系类型
             item["neo4j_rel_type"] = RELATION_TYPE_MAP.get(item["dependency_type"], "DERIVES_TO")
 
             if target_column in ["*", "", None]:
@@ -405,19 +405,19 @@ class Neo4jClient:
                 
                 print(" Done.")
 
-        # 1. Process Direct Lineage
+        # 1. 直接处理直接血缘
         if direct_items:
-            print(f"Processing {len(direct_items)} direct column dependencies...", flush=True)
+            print(f"正在处理 {len(direct_items)} 条直接字段依赖...", flush=True)
             process_by_type(direct_items, self._create_direct_column_batch_safe)
 
-        # 2. Process Indirect Lineage
+        # 2. 处理间接血缘
         if indirect_items:
-            print(f"Processing {len(indirect_items)} indirect column dependencies...", flush=True)
+            print(f"正在处理 {len(indirect_items)} 条间接字段依赖...", flush=True)
             process_by_type(indirect_items, self._create_indirect_column_batch_safe)
 
     @staticmethod
     def _create_direct_column_batch_safe(tx, batch, rel_type):
-        # Safe version where rel_type is constant for the batch
+        # 安全版本，其中 rel_type 在批次中是常量
         query = f"""
         UNWIND $batch AS item
         MERGE (st:Table {{name: item.source_table}})
@@ -474,7 +474,7 @@ class Neo4jClient:
 
     def get_column_upstream(self, table: str, column: str):
         """
-        Trace upstream sources for a column.
+        追溯字段的上游来源。
         """
         with self.driver.session() as session:
             result = session.run(
@@ -486,7 +486,7 @@ class Neo4jClient:
 
     def get_column_downstream(self, table: str, column: str):
         """
-        Trace downstream impacts of a column.
+        追溯字段的下游影响。
         """
         with self.driver.session() as session:
             result = session.run(
@@ -498,7 +498,7 @@ class Neo4jClient:
 
     def create_report_lineage(self, item: dict):
         """
-        Create lineage for report/indicator.
+        为报表/指标创建血缘。
         """
         with self.driver.session() as session:
             if item["type"] == "indicator":
@@ -508,13 +508,13 @@ class Neo4jClient:
 
     @staticmethod
     def _create_indicator(tx, item):
-        # Create Indicator node
+        # 创建指标节点
         tx.run(
             "MERGE (i:Indicator {name: $name}) "
             "SET i.logic = $logic, i.report = $report",
             name=item["name"], logic=item.get("logic"), report=item["report"]
         )
-        # Link to Source Column
+        # 链接到源字段
         if item.get("source_table") and item.get("source_column"):
             tx.run(
                 "MATCH (c:Column {name: $col, table: $table}) "
@@ -525,10 +525,10 @@ class Neo4jClient:
 
     @staticmethod
     def _create_report_usage(tx, item):
-        # Create Report node
+        # 创建报表节点
         tx.run("MERGE (r:Report {name: $name})", name=item["report"])
         
-        # Link Source Column to Report
+        # 将源字段链接到报表
         if item.get("source_table") and item.get("source_column"):
             tx.run(
                 "MATCH (c:Column {name: $col, table: $table}) "
@@ -539,7 +539,7 @@ class Neo4jClient:
 
     def query_upstream(self, table_name: str):
         """
-        Find upstream tables for a given table.
+        查找给定表的上游表。
         """
         with self.driver.session() as session:
             result = session.run(
@@ -550,7 +550,7 @@ class Neo4jClient:
 
     def query_downstream(self, table_name: str):
         """
-        Find downstream tables for a given table.
+        查找给定表的下游表。
         """
         with self.driver.session() as session:
             result = session.run(
@@ -561,10 +561,10 @@ class Neo4jClient:
 
     def get_graph_data(self, start_node_name: str, depth: int = 2):
         """
-        Get graph data (nodes and edges) for visualization starting from a node.
+        获取起始于某个节点的图数据（节点和边），用于可视化。
         """
         with self.driver.session() as session:
-            # Query for both Table and Column nodes
+            # 同时查询 Table 和 Column 节点
             query = (
                 f"MATCH path = (n {{name: $name}})-[:DERIVES_TO|CASE_WHEN|BELONGS_TO*1..{depth}]-(m) "
                 "RETURN path"
