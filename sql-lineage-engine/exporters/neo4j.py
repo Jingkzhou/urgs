@@ -187,6 +187,21 @@ class Neo4jClient:
                     )
                 """, repoId=repo_id, files=file_batch)
                 
+            # 2. Cleanup orphaned Column and Table nodes
+            # After deleting relationships, some nodes might be left without any connections.
+            # We only delete nodes that have NO relationships at all.
+            print(f"  - 清理不再关联任何血缘的孤立节点...")
+            session.run("""
+                MATCH (c:Column)
+                WHERE NOT (c)-[]-()
+                DELETE c
+            """)
+            session.run("""
+                MATCH (t:Table)
+                WHERE NOT (t)-[]-()
+                DELETE t
+            """)
+                
             print(f"  - 相关血缘关系已智能清除（保留多文件关系）")
 
 
