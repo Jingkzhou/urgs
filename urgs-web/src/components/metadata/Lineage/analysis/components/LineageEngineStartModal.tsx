@@ -294,7 +294,7 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                         <div style={{ marginBottom: 12 }}>
                             <Text type="secondary">请在下方文件树中选择要解析的 SQL 文件或目录：</Text>
                             {selectedPaths.length > 0 && (
-                                <div style={{ marginTop: 8 }}>
+                                <div style={{ marginTop: 8, maxHeight: '100px', overflowY: 'auto' }}>
                                     <Text style={{ fontSize: '12px' }}>已选择: </Text>
                                     <Space wrap size={[4, 4]}>
                                         {selectedPaths.map(p => <Tag key={p} closable onClose={() => setSelectedPaths(selectedPaths.filter(val => val !== p))}>{p.split('/').pop()}</Tag>)}
