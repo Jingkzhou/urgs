@@ -46,7 +46,7 @@ public class MetadataInternalController {
             tableName = fullName;
         }
 
-        // 统一转大写查询，匹配数据库习惯
+        // 构建查询条件：始终使用 owner + tableName 组合查询（如果提供了 owner）
         LambdaQueryWrapper<ModelTable> tableWrapper = new LambdaQueryWrapper<ModelTable>()
                 .eq(ModelTable::getName, tableName.toUpperCase());
 
@@ -54,21 +54,13 @@ public class MetadataInternalController {
             tableWrapper.eq(ModelTable::getOwner, owner.toUpperCase());
         }
 
-        ModelTable table = modelTableService.getOne(tableWrapper);
+        ModelTable table = modelTableService.getOne(tableWrapper, false);
 
         Map<String, Object> result = new HashMap<>();
         if (table == null) {
-            // 如果带 Owner 没找到，尝试只按表名找（可能元数据中 Owner 记录不全）
-            if (owner != null) {
-                table = modelTableService.getOne(new LambdaQueryWrapper<ModelTable>()
-                        .eq(ModelTable::getName, tableName.toUpperCase()));
-            }
-
-            if (table == null) {
-                result.put("success", false);
-                result.put("message", "Table not found: " + fullName);
-                return result;
-            }
+            result.put("success", false);
+            result.put("message", "Table not found: " + fullName);
+            return result;
         }
 
         List<ModelField> fields = modelFieldService.getFieldsByTableId(table.getId());

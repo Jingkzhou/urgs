@@ -25,7 +25,7 @@ class MetadataResolver:
             url = f"{self.base_url}/table-fields"
             params = {"fullName": full_table_name}
             
-            response = requests.get(url, params=params, timeout=5)
+            response = requests.get(url, params=params, timeout=30)
             if response.status_code == 200:
                 data = response.json()
                 if data.get("success"):
