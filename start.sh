@@ -8,6 +8,11 @@ export HF_ENDPOINT=https://hf-mirror.com
 echo "Using JAVA_HOME: $JAVA_HOME"
 echo "Using HF_ENDPOINT: $HF_ENDPOINT"
 
+# Fix for macOS multiprocessing issues
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  export OBJC_FORBID_REENTRANT_INFO_BY_DEFAULT=NO
+fi
+
 ENVIRONMENT="${1:-dev}"
 case "$ENVIRONMENT" in
   dev|sit|prod) ;;
@@ -120,9 +125,9 @@ start_rag() {
   kill_port_if_exists 8001
   
   if [ "$ENVIRONMENT" = "dev" ]; then
-    .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload &
+    .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload --loop asyncio &
   else
-    .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001 &
+    .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001 --loop asyncio &
   fi
   pids+=($!)
 }

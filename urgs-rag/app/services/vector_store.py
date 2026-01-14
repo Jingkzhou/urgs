@@ -140,37 +140,8 @@ class VectorStoreService:
         self.persist_directory = settings.CHROMA_PERSIST_DIRECTORY
         self.doc_store_path = os.path.join(settings.PARENT_DOC_STORE_PATH, "holographic_store.db")
 
-        # 初始化 Embedding 模型
-        if settings.EMBEDDING_PROVIDER == "huggingface":
-            try:
-                from langchain_huggingface import HuggingFaceEmbeddings
-                self.embeddings = HuggingFaceEmbeddings(
-                    model_name=settings.EMBEDDING_MODEL_NAME,
-                    model_kwargs={"device": settings.EMBEDDING_DEVICE},
-                )
-            except ImportError:
-                logger.error("Failed to import HuggingFaceEmbeddings. Switching to Mock mode.")
-                self.embeddings = None
-        elif settings.EMBEDDING_PROVIDER == "qwen3":
-            try:
-                self.embeddings = OpenAIEmbeddings(
-                    model=settings.EMBEDDING_MODEL_NAME,
-                    openai_api_base=settings.LLM_API_BASE,
-                    openai_api_key=settings.LLM_API_KEY,
-                )
-            except Exception:
-                 self.embeddings = None
-        else:
-            self.embeddings = None
-        
-        # Fallback to Mock if failed
-        if not self.embeddings:
-            logger.warning("No embedding provider available. Using Mock Embeddings (Vector Search will be disabled).")
-            from langchain_core.embeddings import Embeddings
-            class MockEmbeddings(Embeddings):
-                def embed_documents(self, texts): return [[0.0]*384 for _ in texts]
-                def embed_query(self, text): return [0.0]*384
-            self.embeddings = MockEmbeddings()
+        # 延迟加载 Embedding 模型，避免启动时进程冲突
+        self._embeddings = None
 
         # 初始化向量库和父文档存储
         self.client = chromadb.PersistentClient(path=self.persist_directory)
@@ -183,6 +154,41 @@ class VectorStoreService:
         self.logic_vs = None
         self.summary_vs = None
         self._bm25_indexes: Dict[str, BM25Index] = {}
+
+    def get_embeddings(self):
+        """延迟初始化并返回 Embedding 模型。"""
+        if self._embeddings is not None:
+            return self._embeddings
+
+        logger.info(f"正在初始化 Embedding 模型: {settings.EMBEDDING_PROVIDER} ({settings.EMBEDDING_MODEL_NAME})...")
+        if settings.EMBEDDING_PROVIDER == "huggingface":
+            try:
+                from langchain_huggingface import HuggingFaceEmbeddings
+                self._embeddings = HuggingFaceEmbeddings(
+                    model_name=settings.EMBEDDING_MODEL_NAME,
+                    model_kwargs={"device": settings.EMBEDDING_DEVICE},
+                )
+            except ImportError:
+                logger.error("Failed to import HuggingFaceEmbeddings.")
+        elif settings.EMBEDDING_PROVIDER == "qwen3":
+            try:
+                self._embeddings = OpenAIEmbeddings(
+                    model=settings.EMBEDDING_MODEL_NAME,
+                    openai_api_base=settings.LLM_API_BASE,
+                    openai_api_key=settings.LLM_API_KEY,
+                )
+            except Exception as e:
+                logger.error(f"Failed to init Qwen3 embeddings: {e}")
+
+        if self._embeddings is None:
+            logger.warning("No embedding provider available. Using Mock Embeddings.")
+            from langchain_core.embeddings import Embeddings
+            class MockEmbeddings(Embeddings):
+                def embed_documents(self, texts): return [[0.0]*384 for _ in texts]
+                def embed_query(self, text): return [0.0]*384
+            self._embeddings = MockEmbeddings()
+        
+        return self._embeddings
 
     @staticmethod
     def match_filters(metadata: dict, metadata_filter: dict) -> bool:
@@ -220,20 +226,21 @@ class VectorStoreService:
 
         logger.info(f"正在连接知识库向量空间: {collection_name}")
         # 分别连接语义、逻辑、摘要三个 Chroma 集合
+        embeddings = self.get_embeddings()
         self.semantic_vs = Chroma(
             client=self.client,
             collection_name=f"{collection_name}_semantic",
-            embedding_function=self.embeddings,
+            embedding_function=embeddings,
         )
         self.logic_vs = Chroma(
             client=self.client,
             collection_name=f"{collection_name}_logic",
-            embedding_function=self.embeddings,
+            embedding_function=embeddings,
         )
         self.summary_vs = Chroma(
             client=self.client,
             collection_name=f"{collection_name}_summary",
-            embedding_function=self.embeddings,
+            embedding_function=embeddings,
         )
         self.current_collection = collection_name
 
@@ -386,11 +393,9 @@ class VectorStoreService:
         logic_hits = []
         summary_hits = []
         # 仅当真正的向量库存在且 embedding 可用（非 Mock）时才执行
-        if self.semantic_vs and not isinstance(self.embeddings, (type(None))): # Mock check logic could be better but let's rely on try-catch inside _vector_search
-             # Actually, even with Mock embeddings, Chroma might fail if collection doesn't exist or is empty.
-             # But let's try. If it's Mock, returns 0.0 scores likely.
-             # Better to skip if we know it's broken.
-             if "MockEmbeddings" in str(self.embeddings):
+        embeddings = self.get_embeddings()
+        if self.semantic_vs and not isinstance(embeddings, (type(None))): 
+             if "MockEmbeddings" in str(embeddings):
                  print("[RAG-HybridSearch] Embedding is Mocked. Skipping vector search.")
              else:
                 semantic_hits = self._vector_search(self.semantic_vs, query, candidate_k, metadata_filter, "semantic")
@@ -450,8 +455,9 @@ class VectorStoreService:
         logic_hits = []
         summary_hits = []
         # 仅当真正的向量库存在且 embedding 可用（非 Mock）时才执行
-        if self.semantic_vs and not isinstance(self.embeddings, (type(None))): 
-             if "MockEmbeddings" in str(self.embeddings):
+        embeddings = self.get_embeddings()
+        if self.semantic_vs and not isinstance(embeddings, (type(None))): 
+             if "MockEmbeddings" in str(embeddings):
                  print("[RAG-HybridSearch] Embedding is Mocked. Skipping vector search.")
              else:
                 semantic_hits = self._vector_search(self.semantic_vs, query, candidate_k, metadata_filter, "semantic")

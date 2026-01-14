@@ -190,7 +190,6 @@ public class LineageEngineService {
                 ZipInputStream zis = new ZipInputStream(is)) {
 
             ZipEntry entry;
-            String rootDir = null;
             int totalEntries = 0;
             while ((entry = zis.getNextEntry()) != null) {
                 totalEntries++;
@@ -208,6 +207,9 @@ public class LineageEngineService {
                 zis.closeEntry();
             }
             log.info("Extracted {} entries from Git archive.", totalEntries);
+            if (totalEntries > 0) {
+                logDirectoryContents(tempDir);
+            }
 
             // Robust root dir detection
             Path detectedRoot = tempDir;
@@ -267,18 +269,20 @@ public class LineageEngineService {
                             List<String> validFiles = Files.walk(realBase)
                                     .filter(Files::isRegularFile)
                                     .map(p -> realBase.relativize(p).toString())
-                                    .limit(10)
+                                    .limit(20)
                                     .collect(java.util.stream.Collectors.toList());
                             throw new IllegalArgumentException("No valid files found for requested paths: " +
                                     String.join(", ", request.getPaths()) +
                                     ". Checked base: " + realBase +
-                                    ". Detected root: " + rootDir +
+                                    ". Detected root: " + detectedRoot +
                                     ". Sample files in base: " + validFiles);
                         } catch (Exception e) {
+                            if (e instanceof IllegalArgumentException)
+                                throw e;
                             throw new IllegalArgumentException("No valid files found for requested paths: " +
                                     String.join(", ", request.getPaths()) +
                                     ". Checked base: " + realBase +
-                                    ". Detected root: " + rootDir);
+                                    ". Detected root: " + detectedRoot);
                         }
                     }
 
