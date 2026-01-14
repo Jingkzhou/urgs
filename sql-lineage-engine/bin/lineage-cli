@@ -304,7 +304,6 @@ def main():
                 )
             
             if args.sql:
-
                 lineage_parser = LineageParser(dialect=args.dialect, default_schema=args.default_user)
                 process_sql_content(args.sql, parser=lineage_parser, file_path=None)
             elif args.file:

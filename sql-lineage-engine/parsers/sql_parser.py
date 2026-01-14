@@ -169,56 +169,60 @@ class LineageParser:
             import logging
             logging.warning(f"Indirect flow parsing failed: {e}")
         
-        # ===== 3. Schema Fallback (Directory Based) =====
-        # If source_file provided, use parent directory as default schema
-        import os
-        if source_file:
-            # Logic:
-            # 1. 尝试获取父目录 (Level 1)
-            # 2. 如果父目录名是通用类型 (sql, ddl 等)，则向上取一级 (Level 2)
+        # ===== 3. Schema Fallback & Application =====
+        # Determine actual schema to apply
+        schema_to_apply = self.default_schema
+        is_explicit = bool(self.default_schema)
+        
+        if not schema_to_apply and source_file:
+            # Automatic directory-based fallback
             try:
-                if self.default_schema:
-                    default_schema = self.default_schema
-                else:
-                    parent_dir = os.path.dirname(source_file)
-                    dir_name = os.path.basename(parent_dir)
-                    
-                    default_schema = dir_name
-                    # User rule: "向上 2 级是用户名 ... 上一级用来区分sql还是 DD"
-                    # If parent dir looks like a type indicator, go up
-                    if dir_name.lower() in ["sql", "ddl", "dml", "scripts", "bin"]:
-                        grandparent_dir = os.path.dirname(parent_dir)
-                        default_schema = os.path.basename(grandparent_dir)
+                parent_dir = os.path.dirname(source_file)
+                dir_name = os.path.basename(parent_dir)
                 
-                # Avoid using common directory names as schema (like 'mysql', 'tests')
-                # Add more exclusions as needed
-                if default_schema.lower() not in ["mysql", "hive", "oracle", "tests", "bin", ".", "test"]:
-                     
-                     def apply_schema(table_name):
-                         if not table_name: return table_name
-                         # Skip if already has schema
-                         if "." in table_name: return table_name
-                         # Skip special tables
-                         if table_name.upper() in ["DUAL"]: return table_name
-                         
-                         return f"{default_schema}.{table_name}"
-                     
-                     # Update sources
-                     sources = {apply_schema(s) for s in sources}
-                     
-                     # Update targets
-                     targets = {apply_schema(t) for t in targets}
-                     
-                     # Update relationships
-                     for rel in relations:
-                         # Update simple fields
+                schema_to_apply = dir_name
+                # User rule: If parent dir looks like a type indicator, go up
+                if dir_name.lower() in ["sql", "ddl", "dml", "scripts", "bin"]:
+                    grandparent_dir = os.path.dirname(parent_dir)
+                    schema_to_apply = os.path.basename(grandparent_dir)
+                    
+                # For automatic fallback, apply exclusion list
+                if schema_to_apply.lower() in ["mysql", "hive", "oracle", "tests", "bin", ".", "test", ""]:
+                    schema_to_apply = None
+            except Exception:
+                schema_to_apply = None
+        
+        # Apply the schema if we have one (either explicit or valid fallback)
+        if schema_to_apply:
+            def apply_schema(table_name):
+                if not table_name or table_name == "UNKNOWN": return table_name
+                # Skip if already has schema
+                if "." in table_name: return table_name
+                # Skip special tables
+                if table_name.upper() in ["DUAL"]: return table_name
+                return f"{schema_to_apply}.{table_name}"
+            
+            # Apply to global sets
+            sources = {apply_schema(s) for s in sources}
+            targets = {apply_schema(t) for t in targets}
+            
+            # Apply to relationships
+            for rel in relations:
+                if "source" in rel: rel["source"] = apply_schema(rel["source"])
+                if "target" in rel: rel["target"] = apply_schema(rel["target"])
+                if "source_table" in rel: rel["source_table"] = apply_schema(rel["source_table"])
+                if "target_table" in rel: rel["target_table"] = apply_schema(rel["target_table"])
+            
+            # Apply to detailed statements (IMPORTANT: this was missing before)
+            for stmt in detailed_statements:
+                if "sources" in stmt:
+                    stmt["sources"] = [apply_schema(s) for s in stmt["sources"]]
+                if "targets" in stmt:
+                    stmt["targets"] = [apply_schema(t) for t in stmt["targets"]]
+                if "relationships" in stmt:
+                    for rel in stmt["relationships"]:
                          if "source" in rel: rel["source"] = apply_schema(rel["source"])
                          if "target" in rel: rel["target"] = apply_schema(rel["target"])
-                         if "source_table" in rel: rel["source_table"] = apply_schema(rel["source_table"])
-                         if "target_table" in rel: rel["target_table"] = apply_schema(rel["target_table"])
-            except Exception as e:
-                import logging
-                logging.warning(f"Schema fallback failed: {e}")
 
         return {
             "sources": list(sources), 
@@ -440,34 +444,37 @@ class LineageParser:
             dep["validation_note"] = f"Src: {src_val.get('note') or 'OK'}; Tgt: {tgt_val.get('note') or 'OK'}"
             final_dependencies.append(dep)
         
-        # ===== Schema Fallback (Directory Based) =====
-        import os
-        if source_file:
+        # ===== Schema Fallback & Application =====
+        schema_to_apply = self.default_schema
+        is_explicit = bool(self.default_schema)
+        
+        if not schema_to_apply and source_file:
              try:
-                if self.default_schema:
-                    default_schema = self.default_schema
-                else:
-                    parent_dir = os.path.dirname(source_file)
-                    dir_name = os.path.basename(parent_dir)
-                    
-                    default_schema = dir_name
-                    # User rule: If parent is type folder, go up one more
-                    if dir_name.lower() in ["sql", "ddl", "dml", "scripts", "bin"]:
-                        grandparent_dir = os.path.dirname(parent_dir)
-                        default_schema = os.path.basename(grandparent_dir)
+                parent_dir = os.path.dirname(source_file)
+                dir_name = os.path.basename(parent_dir)
                 
-                if default_schema.lower() not in ["mysql", "hive", "oracle", "tests", "bin", ".", "test"]:
-                     def apply_schema(table_name):
-                         if not table_name or table_name == "UNKNOWN": return table_name
-                         if "." in table_name: return table_name
-                         if table_name.upper() in ["DUAL"]: return table_name
-                         return f"{default_schema}.{table_name}"
-                     
-                     for dep in dependencies:
-                         dep["target_table"] = apply_schema(dep["target_table"])
-                         dep["source_table"] = apply_schema(dep["source_table"])
+                schema_to_apply = dir_name
+                # User rule: If parent is type folder, go up one more
+                if dir_name.lower() in ["sql", "ddl", "dml", "scripts", "bin"]:
+                    grandparent_dir = os.path.dirname(parent_dir)
+                    schema_to_apply = os.path.basename(grandparent_dir)
+                
+                # Exclusion check for automatic fallback
+                if schema_to_apply.lower() in ["mysql", "hive", "oracle", "tests", "bin", ".", "test", ""]:
+                    schema_to_apply = None
              except Exception:
-                 pass
+                schema_to_apply = None
+        
+        if schema_to_apply:
+            def apply_schema(table_name):
+                if not table_name or table_name == "UNKNOWN": return table_name
+                if "." in table_name: return table_name
+                if table_name.upper() in ["DUAL"]: return table_name
+                return f"{schema_to_apply}.{table_name}"
+            
+            for dep in final_dependencies:
+                dep["target_table"] = apply_schema(dep["target_table"])
+                dep["source_table"] = apply_schema(dep["source_table"])
                     
         return final_dependencies
 
