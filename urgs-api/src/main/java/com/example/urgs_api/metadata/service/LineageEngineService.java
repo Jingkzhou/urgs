@@ -290,6 +290,10 @@ public class LineageEngineService {
                         log.warn("Some requested paths were not found in repository: {}", missingPaths);
                     }
 
+                    log.info("用户选择的路径: {}", request.getPaths());
+                    log.info("筛选后准备分析的文件数量: {}", fileCount);
+                    logDirectoryContents(collectionDir);
+
                     // For collection dir, the root is the collection dir itself
                     // because we reconstructed the structure inside it.
                     return new GitInputResult(

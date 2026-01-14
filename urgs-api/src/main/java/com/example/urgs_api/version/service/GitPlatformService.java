@@ -36,6 +36,8 @@ public class GitPlatformService {
 
     private HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .version(HttpClient.Version.HTTP_1_1)
             .build();
 
     // For testing
@@ -1949,7 +1951,7 @@ public class GitPlatformService {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Accept", "application/json")
-                .timeout(Duration.ofSeconds(30))
+                .timeout(Duration.ofSeconds(60)) // Increase timeout
                 .GET()
                 .build();
 
@@ -1966,7 +1968,7 @@ public class GitPlatformService {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Accept", "application/json")
-                .timeout(Duration.ofSeconds(30));
+                .timeout(Duration.ofSeconds(60)); // Increase timeout
 
         if (token != null && !token.isEmpty()) {
             if ("PRIVATE-TOKEN".equals(authType)) {
@@ -1989,7 +1991,7 @@ public class GitPlatformService {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Content-Type", "application/json")
-                .timeout(Duration.ofSeconds(30));
+                .timeout(Duration.ofSeconds(60));
 
         if (token != null && !token.isEmpty()) {
             if (authType == null) {
@@ -2014,8 +2016,7 @@ public class GitPlatformService {
                 .uri(URI.create(url))
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/json;charset=UTF-8")
-                .timeout(Duration.ofSeconds(30))
-                .version(HttpClient.Version.HTTP_1_1); // Force HTTP 1.1 to avoid potential HTTP/2 issues with DELETE
+                .timeout(Duration.ofSeconds(60));
 
         if (token != null && !token.isEmpty()) {
             if ("PRIVATE-TOKEN".equals(authType)) {
@@ -2038,7 +2039,7 @@ public class GitPlatformService {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Content-Type", "application/json")
-                .timeout(Duration.ofSeconds(30));
+                .timeout(Duration.ofSeconds(60));
 
         if (token != null && !token.isEmpty()) {
             if ("PRIVATE-TOKEN".equals(authType)) {
@@ -2060,7 +2061,7 @@ public class GitPlatformService {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Content-Type", "application/json")
-                .timeout(Duration.ofSeconds(30));
+                .timeout(Duration.ofSeconds(60));
 
         if (token != null && !token.isEmpty()) {
             if ("PRIVATE-TOKEN".equals(authType)) {
