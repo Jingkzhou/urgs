@@ -17,7 +17,8 @@ import {
   ArkAssistantPage,
   AiWorkflowPage,
   RolesPage,
-  ConclusionPage
+  ConclusionPage,
+  AIExperiencePage
 } from './components/Slides';
 
 const App: React.FC = () => {
@@ -33,6 +34,7 @@ const App: React.FC = () => {
     <AiPillarPage key="ai" />,
     <ArkAssistantPage key="ark" />,
     <AiWorkflowPage key="workflow" />,
+    <AIExperiencePage key="aiexp" />,
     <OrchestrationPage key="orch" />, /* Capability 2: Automation/Collab */
     <DashboardPage key="dash" />,
     <AssetPillarPage key="asset" />,  /* Capability 3: Asset */
