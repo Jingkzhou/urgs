@@ -11,7 +11,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("sys_reg_table")
+@TableName("reg_table")
 /**
  * 监管报表实体
  * 对应表: sys_reg_table
@@ -23,12 +23,13 @@ public class RegTable {
     @com.fasterxml.jackson.databind.annotation.JsonSerialize(using = com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
     private Long id;
 
+    @TableField("sort_order")
+    private Integer sortOrder;
+
     private String name;
 
     @TableField("cn_name")
     private String cnName;
-
-    private String code;
 
     @TableField("system_code")
     private String systemCode;
@@ -49,11 +50,8 @@ public class RegTable {
     @TableField("auto_fetch_status")
     private String autoFetchStatus;
 
-    @TableField("document_no")
-    private String documentNo;
-
-    @TableField("document_title")
-    private String documentTitle;
+    @TableField("dispatch_no")
+    private String dispatchNo;
 
     @TableField("effective_date")
     private LocalDate effectiveDate;
@@ -63,6 +61,9 @@ public class RegTable {
 
     @TableField("dev_notes")
     private String devNotes;
+
+    @TableField("fill_instruction")
+    private String fillInstruction;
 
     private String owner;
 
@@ -75,4 +76,19 @@ public class RegTable {
     @TableField("update_time")
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime updateTime;
+    @TableField(exist = false)
+    private Long fieldCount;
+
+    @TableField(exist = false)
+    private Long indicatorCount;
+
+    @TableField(exist = false)
+    private String reqId;
+
+    @TableField(exist = false)
+    @JsonFormat(pattern = "yyyy-MM-dd")
+    private LocalDate plannedDate;
+
+    @TableField(exist = false)
+    private String changeDescription;
 }

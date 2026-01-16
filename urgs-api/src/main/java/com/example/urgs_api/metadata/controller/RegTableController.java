@@ -1,5 +1,7 @@
 package com.example.urgs_api.metadata.controller;
 
+import org.springframework.transaction.annotation.Transactional;
+
 import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.ExcelWriter;
 import com.alibaba.excel.write.metadata.WriteSheet;
@@ -12,6 +14,7 @@ import com.example.urgs_api.metadata.model.RegElement;
 import com.example.urgs_api.metadata.model.RegTable;
 import com.example.urgs_api.metadata.service.RegElementService;
 import com.example.urgs_api.metadata.service.RegTableService;
+import org.apache.commons.lang3.StringUtils;
 import jakarta.servlet.http.HttpServletResponse;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -25,6 +28,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/reg/table")
@@ -38,7 +42,118 @@ public class RegTableController {
     private RegTableService regTableService;
 
     @Autowired
+    private com.example.urgs_api.metadata.component.MaintenanceLogManager maintenanceLogManager;
+
+    @Autowired
     private RegElementService regElementService;
+
+    @Autowired
+    private com.example.urgs_api.user.service.UserService userService;
+
+    @Autowired
+    private com.example.urgs_api.system.service.SysSystemService sysSystemService;
+
+    @Autowired
+    private jakarta.servlet.http.HttpServletRequest request;
+
+    private String getCurrentOperator() {
+        Object userIdObj = request.getAttribute("userId");
+        if (userIdObj != null) {
+            Long userId = (Long) userIdObj;
+            com.example.urgs_api.user.model.User user = userService.getById(userId);
+            if (user != null) {
+                return user.getName();
+            }
+        }
+        return "admin";
+    }
+
+    /**
+     * 统计报表及元素数量（可按所属系统过滤）
+     *
+     * @param systemCode 系统代码（可选）
+     * @return 统计结果
+     */
+    @GetMapping("/stats")
+    public Map<String, Long> stats(@RequestParam(required = false) String systemCode) {
+        LambdaQueryWrapper<RegTable> tableWrapper = new LambdaQueryWrapper<>();
+        if (StringUtils.isNotBlank(systemCode)) {
+            tableWrapper.eq(RegTable::getSystemCode, systemCode);
+        } else {
+            // 前端未指定系统（即 "All Systems"），检查用户权限进行过滤
+            Object userIdObj = request.getAttribute("userId");
+            if (userIdObj != null) {
+                Long userId = (Long) userIdObj;
+                com.example.urgs_api.user.model.User user = userService.getById(userId);
+                boolean isRestricted = true;
+                if (user == null || user.getSystem() == null || user.getSystem().isBlank()
+                        || "ALL".equalsIgnoreCase(user.getSystem())) {
+                    isRestricted = false;
+                }
+
+                if (isRestricted) {
+                    List<com.example.urgs_api.system.model.SysSystem> systems = sysSystemService.list(userId);
+                    List<String> clientIds = systems.stream()
+                            .map(com.example.urgs_api.system.model.SysSystem::getClientId)
+                            .collect(Collectors.toList());
+
+                    if (clientIds.isEmpty()) {
+                        tableWrapper.apply("1=0");
+                    } else {
+                        tableWrapper.in(RegTable::getSystemCode, clientIds);
+                    }
+                }
+            }
+        }
+
+        long tableCount = regTableService.count(tableWrapper);
+        long onlineCount = regTableService.count(tableWrapper.clone().eq(RegTable::getAutoFetchStatus, "已上线"));
+        long developingCount = regTableService.count(tableWrapper.clone().eq(RegTable::getAutoFetchStatus, "开发中"));
+        long notStartedCount = regTableService.count(tableWrapper.clone().eq(RegTable::getAutoFetchStatus, "未开发"));
+
+        List<Long> tableIds = regTableService.list(tableWrapper).stream()
+                .map(RegTable::getId)
+                .collect(Collectors.toList());
+        LambdaQueryWrapper<RegElement> elementWrapper = new LambdaQueryWrapper<>();
+        if (!tableIds.isEmpty()) {
+            elementWrapper.in(RegElement::getTableId, tableIds);
+        } else if (StringUtils.isNotBlank(systemCode)) {
+            // 指定系统且无报表时直接返回零值
+            elementWrapper.eq(RegElement::getTableId, -1L);
+        }
+
+        long elementCount = regElementService.count(elementWrapper);
+        long fieldCount = regElementService.count(elementWrapper.clone().eq(RegElement::getType, "FIELD"));
+        long indicatorCount = regElementService.count(elementWrapper.clone().eq(RegElement::getType, "INDICATOR"));
+
+        Map<String, Long> result = new HashMap<>();
+        result.put("tableCount", tableCount);
+        result.put("onlineCount", onlineCount);
+        result.put("developingCount", developingCount);
+        result.put("notStartedCount", notStartedCount);
+        result.put("elementCount", elementCount);
+        result.put("fieldCount", fieldCount);
+        result.put("indicatorCount", indicatorCount);
+        return result;
+    }
+
+    /**
+     * 获取指定系统的最大序号+1
+     */
+    @GetMapping("/max-sort-order")
+    public Integer getMaxSortOrder(@RequestParam String systemCode) {
+        if (StringUtils.isBlank(systemCode)) {
+            return 1;
+        }
+        QueryWrapper<RegTable> queryWrapper = new QueryWrapper<>();
+        queryWrapper.select("IFNULL(MAX(sort_order), 0) as max_order")
+                .eq("system_code", systemCode);
+        Map<String, Object> result = regTableService.getMap(queryWrapper);
+        if (result != null && result.get("max_order") != null) {
+            return Integer.parseInt(result.get("max_order").toString()) + 1;
+        }
+        return 1;
+    }
 
     /**
      * 分页查询报表列表
@@ -50,30 +165,87 @@ public class RegTableController {
      * @return 报表分页结果
      */
     @GetMapping("/list")
-    public PageResult<RegTable> list(
-            @RequestParam(required = false) String keyword,
+    public PageResult<RegTable> list(@RequestParam(required = false) String keyword,
             @RequestParam(required = false) String systemCode,
+            @RequestParam(required = false) String autoFetchStatus,
+            @RequestParam(required = false) String frequency,
+            @RequestParam(required = false) String sourceType,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size) {
 
         QueryWrapper<RegTable> query = new QueryWrapper<>();
 
+        // 1. 处理系统筛选逻辑
         if (systemCode != null && !systemCode.isEmpty()) {
+            // 前端显式指定系统时，按指定系统查
             query.eq("system_code", systemCode);
+        } else {
+            // 前端未指定系统（即 "All Systems"），检查用户权限进行过滤
+            Object userIdObj = request.getAttribute("userId");
+            if (userIdObj != null) {
+                Long userId = (Long) userIdObj;
+                com.example.urgs_api.user.model.User user = userService.getById(userId);
+                // 判断是否受限：非空且 system 字段不为 NULL/Empty/"ALL"
+                boolean isRestricted = true;
+                if (user == null || user.getSystem() == null || user.getSystem().isBlank()
+                        || "ALL".equalsIgnoreCase(user.getSystem())) {
+                    isRestricted = false;
+                }
+
+                if (isRestricted) {
+                    List<com.example.urgs_api.system.model.SysSystem> systems = sysSystemService.list(userId);
+                    List<String> clientIds = systems.stream()
+                            .map(com.example.urgs_api.system.model.SysSystem::getClientId)
+                            .collect(Collectors.toList());
+
+                    if (clientIds.isEmpty()) {
+                        query.apply("1=0"); // 无权限，查空
+                    } else {
+                        query.in("system_code", clientIds);
+                    }
+                }
+            }
+        }
+
+        if (StringUtils.isNotBlank(autoFetchStatus)) {
+            query.eq("auto_fetch_status", autoFetchStatus);
+        }
+        if (StringUtils.isNotBlank(frequency)) {
+            query.eq("frequency", frequency);
+        }
+        if (StringUtils.isNotBlank(sourceType)) {
+            query.eq("source_type", sourceType);
         }
 
         if (keyword != null && !keyword.isEmpty()) {
             String kw = keyword.toLowerCase();
-            query.and(w -> w.like("LOWER(name)", kw)
-                    .or().like("LOWER(cn_name)", kw)
-                    .or().like("LOWER(code)", kw));
+            query.and(w -> w.like("LOWER(name)", kw).or().like("LOWER(cn_name)", kw));
         }
 
-        query.orderByAsc("name");
+        query.orderByAsc("sort_order");
 
         com.baomidou.mybatisplus.extension.plugins.pagination.Page<RegTable> pageParam = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(
                 page, size);
-        return PageResult.of(regTableService.page(pageParam, query));
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<RegTable> pageResult = regTableService
+                .page(pageParam, query);
+        List<RegTable> records = pageResult.getRecords();
+        if (records != null && !records.isEmpty()) {
+            List<Long> tableIds = records.stream().map(RegTable::getId).collect(Collectors.toList());
+            // Fetch all elements for these tables
+            List<RegElement> elements = regElementService.list(new LambdaQueryWrapper<RegElement>()
+                    .in(RegElement::getTableId, tableIds));
+
+            Map<Long, Map<String, Long>> countMap = elements.stream()
+                    .collect(Collectors.groupingBy(RegElement::getTableId,
+                            Collectors.groupingBy(RegElement::getType, Collectors.counting())));
+
+            for (RegTable table : records) {
+                Map<String, Long> counts = countMap.getOrDefault(table.getId(), Collections.emptyMap());
+                table.setFieldCount(counts.getOrDefault("FIELD", 0L));
+                table.setIndicatorCount(counts.getOrDefault("INDICATOR", 0L));
+            }
+        }
+        return PageResult.of(pageResult);
     }
 
     /**
@@ -95,14 +267,92 @@ public class RegTableController {
      */
     @PostMapping
     public boolean save(@RequestBody RegTable regTable) {
-        if (regTable.getId() == null) {
+        RegTable oldTable = null;
+        if (regTable.getId() != null) {
+            oldTable = regTableService.getById(regTable.getId());
+        } else {
             regTable.setCreateTime(LocalDateTime.now());
         }
+
         regTable.setUpdateTime(LocalDateTime.now());
         if (regTable.getStatus() == null) {
             regTable.setStatus(1);
         }
-        return regTableService.saveOrUpdate(regTable);
+
+        boolean result = regTableService.saveOrUpdate(regTable);
+
+        if (result) {
+            maintenanceLogManager.logChange(com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.TABLE,
+                    oldTable, regTable, getCurrentOperator());
+        }
+        return result;
+    }
+
+    /**
+     * Delete table with requirement reason
+     */
+    @PostMapping("/delete")
+    public boolean deleteWithReason(@RequestBody com.example.urgs_api.metadata.dto.DeleteReqDTO req) {
+        if (req.getId() == null)
+            return false;
+
+        RegTable oldTable = regTableService.getById(req.getId());
+        boolean result = regTableService.removeById(req.getId());
+
+        if (result && oldTable != null) {
+            com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext context = new com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext();
+            context.setReqId(req.getReqId());
+            context.setPlannedDate(req.getPlannedDate());
+            context.setChangeDescription(req.getChangeDescription());
+
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.TABLE,
+                    oldTable,
+                    null,
+                    getCurrentOperator(),
+                    context);
+        }
+        return result;
+    }
+
+    /**
+     * Batch delete tables with requirement reason
+     */
+    @PostMapping("/delete/batch")
+    public boolean deleteBatchWithReason(@RequestBody com.example.urgs_api.metadata.dto.DeleteReqDTO req) {
+        if (req.getIds() == null || req.getIds().isEmpty())
+            return false;
+
+        List<RegTable> oldTables = regTableService.listByIds(req.getIds());
+
+        // Cascade delete elements first (optional, logical delete of table implies
+        // elements gone usually, but good to be explicit or let DB cascade)
+        // Here we rely on removeByIds but we might want to log deletions for elements
+        // too or just Table deletion implies it.
+        // The existing delete() method does: regElementService.remove(...)
+        // So we should do the same for batch.
+
+        // Remove elements for all tables
+        regElementService.remove(new LambdaQueryWrapper<RegElement>().in(RegElement::getTableId, req.getIds()));
+
+        boolean result = regTableService.removeByIds(req.getIds());
+
+        if (result && oldTables != null) {
+            com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext context = new com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext();
+            context.setReqId(req.getReqId());
+            context.setPlannedDate(req.getPlannedDate());
+            context.setChangeDescription(req.getChangeDescription());
+
+            for (RegTable oldTable : oldTables) {
+                maintenanceLogManager.logChange(
+                        com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.TABLE,
+                        oldTable,
+                        null,
+                        getCurrentOperator(),
+                        context);
+            }
+        }
+        return result;
     }
 
     /**
@@ -113,99 +363,16 @@ public class RegTableController {
      */
     @DeleteMapping("/{id}")
     public boolean delete(@PathVariable Long id) {
-        return regTableService.removeById(id);
-    }
+        RegTable oldTable = regTableService.getById(id);
+        boolean result = regTableService.removeById(id);
 
-    /**
-     * 同步代码片段
-     * 从 docs/sql/{systemCode}/ 目录下读取 SQL 文件，
-     * 根据指标编号匹配提取对应的 SQL 语句作为代码片段
-     */
-    @PostMapping("/sync-code-snippets")
-    public Map<String, Object> syncCodeSnippets(@RequestParam String systemCode) {
-        Map<String, Object> result = new HashMap<>();
-        int matchedCount = 0;
-        int updatedCount = 0;
-        List<String> matchedIndicators = new ArrayList<>();
+        if (result && oldTable != null) {
+            // Cascade delete: remove all associated elements (fields/indicators)
+            regElementService.remove(new LambdaQueryWrapper<RegElement>().eq(RegElement::getTableId, id));
 
-        try {
-            // 1. 获取项目根目录下的 SQL 文件目录
-            String basePath = System.getProperty("user.dir");
-            java.nio.file.Path sqlDir = java.nio.file.Paths.get(basePath, "docs", "sql", systemCode);
-
-            if (!java.nio.file.Files.exists(sqlDir)) {
-                result.put("success", false);
-                result.put("message", "SQL 目录不存在: " + sqlDir.toString());
-                return result;
-            }
-
-            // 2. 读取所有 SQL 文件内容
-            Map<String, String> sqlFileContents = new HashMap<>();
-            try (java.nio.file.DirectoryStream<java.nio.file.Path> stream = java.nio.file.Files
-                    .newDirectoryStream(sqlDir, "*.sql")) {
-                for (java.nio.file.Path sqlFile : stream) {
-                    String content = java.nio.file.Files.readString(sqlFile);
-                    String fileName = sqlFile.getFileName().toString().toLowerCase();
-                    sqlFileContents.put(fileName, content);
-                }
-            }
-
-            if (sqlFileContents.isEmpty()) {
-                result.put("success", false);
-                result.put("message", "SQL 目录中没有找到 .sql 文件");
-                return result;
-            }
-
-            // 3. 查询该系统下所有表
-            List<RegTable> tables = regTableService.list(
-                    new LambdaQueryWrapper<RegTable>().eq(RegTable::getSystemCode, systemCode));
-
-            // 4. 遍历每个表的指标，查找匹配的代码片段
-            for (RegTable table : tables) {
-                List<RegElement> elements = regElementService.list(
-                        new LambdaQueryWrapper<RegElement>()
-                                .eq(RegElement::getTableId, table.getId())
-                                .eq(RegElement::getType, "INDICATOR"));
-
-                for (RegElement element : elements) {
-                    String indicatorCode = element.getCode();
-                    if (indicatorCode == null || indicatorCode.isEmpty()) {
-                        continue;
-                    }
-
-                    // 在所有 SQL 文件中查找包含该指标编号的语句
-                    for (Map.Entry<String, String> entry : sqlFileContents.entrySet()) {
-                        String sqlContent = entry.getValue();
-
-                        // 查找包含该指标编号的 SQL 语句
-                        String codeSnippet = extractCodeSnippet(sqlContent, indicatorCode);
-                        if (codeSnippet != null && !codeSnippet.isEmpty()) {
-                            // 更新元素的代码片段
-                            element.setCodeSnippet(codeSnippet);
-                            element.setUpdateTime(LocalDateTime.now());
-                            regElementService.updateById(element);
-
-                            matchedCount++;
-                            updatedCount++;
-                            matchedIndicators.add(indicatorCode);
-                            break; // 找到就停止，每个指标只匹配一次
-                        }
-                    }
-                }
-            }
-
-            result.put("success", true);
-            result.put("message", String.format("同步完成，共匹配 %d 个指标", matchedCount));
-            result.put("matchedCount", matchedCount);
-            result.put("updatedCount", updatedCount);
-            result.put("matchedIndicators", matchedIndicators);
-
-        } catch (Exception e) {
-            result.put("success", false);
-            result.put("message", "同步失败: " + e.getMessage());
-            e.printStackTrace();
+            maintenanceLogManager.logChange(com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.TABLE,
+                    oldTable, null, getCurrentOperator());
         }
-
         return result;
     }
 
@@ -223,17 +390,14 @@ public class RegTableController {
 
         try {
             // 1. 查询该系统下所有表
-            List<RegTable> tables = regTableService.list(
-                    new LambdaQueryWrapper<RegTable>().eq(RegTable::getSystemCode, systemCode));
+            List<RegTable> tables = regTableService
+                    .list(new LambdaQueryWrapper<RegTable>().eq(RegTable::getSystemCode, systemCode));
 
             for (RegTable table : tables) {
                 String tableName = table.getName();
-                List<RegElement> elements = regElementService.list(
-                        new LambdaQueryWrapper<RegElement>()
-                                .eq(RegElement::getTableId, table.getId())
-                                .eq(RegElement::getType, "INDICATOR")
-                                .isNotNull(RegElement::getCodeSnippet)
-                                .ne(RegElement::getCodeSnippet, ""));
+                List<RegElement> elements = regElementService.list(new LambdaQueryWrapper<RegElement>()
+                        .eq(RegElement::getTableId, table.getId()).eq(RegElement::getType, "INDICATOR")
+                        .isNotNull(RegElement::getCodeSnippet).ne(RegElement::getCodeSnippet, ""));
 
                 if (elements.isEmpty())
                     continue;
@@ -242,7 +406,8 @@ public class RegTableController {
                 // LogicKey -> List<IndicatorCode>
                 Map<String, List<String>> logicGroups = new LinkedHashMap<>();
                 for (RegElement element : elements) {
-                    String indicatorCode = element.getCode();
+                    String indicatorCode = "N/A"; // Code
+                                                  // removed
                     String codeSnippet = element.getCodeSnippet();
 
                     // 使用占位符替换表名，以此作为逻辑主键
@@ -270,8 +435,8 @@ public class RegTableController {
                         if (selectPart != null && indicatorCodes.size() > 1) {
                             fileContent.append("-- ========== 逻辑组 ").append(groupIdx).append(": 共 ")
                                     .append(indicatorCodes.size()).append(" 个指标 ==========\n");
-                            fileContent.append("FROM (\n")
-                                    .append(selectPart).append("\n) q_").append(groupIdx).append("\n");
+                            fileContent.append("FROM (\n").append(selectPart).append("\n) q_").append(groupIdx)
+                                    .append("\n");
                             for (int k = 0; k < indicatorCodes.size(); k++) {
                                 String code = indicatorCodes.get(k);
                                 // 尝试从本组的指标逻辑中找回原本的字段列表（如果有的话）
@@ -279,8 +444,7 @@ public class RegTableController {
                                 String columnList = extractColumnList(logicKey);
                                 // Ensure newline after column list to prevent potential comment issues
                                 fileContent.append("INSERT INTO `").append(code).append("` ")
-                                        .append(columnList != null ? "(" + columnList + ")\n" : "")
-                                        .append("SELECT *");
+                                        .append(columnList != null ? "(" + columnList + ")\n" : "").append("SELECT *");
                                 if (k == indicatorCodes.size() - 1) {
                                     fileContent.append(";");
                                 }
@@ -290,8 +454,7 @@ public class RegTableController {
                             // 退化模式：逐个输出（或者只有一个指标时也无需逻辑聚合）
                             for (String code : indicatorCodes) {
                                 String snippet = replaceInsertTableNameWithBackticks(logicKey, code);
-                                fileContent.append("-- 指标: ").append(code).append("\n")
-                                        .append(snippet);
+                                fileContent.append("-- 指标: ").append(code).append("\n").append(snippet);
                                 if (!snippet.trim().endsWith(";"))
                                     fileContent.append(";");
                                 fileContent.append("\n\n");
@@ -393,17 +556,15 @@ public class RegTableController {
 
     private void writeTableSqlFile(String fileName, String content) throws IOException {
         String basePath = System.getProperty("user.dir");
-        java.nio.file.Path targetDir = java.nio.file.Paths.get(basePath).getParent()
-                .resolve("urgs-agent").resolve("tests").resolve("sql").resolve("hive");
+        java.nio.file.Path targetDir = java.nio.file.Paths.get(basePath).getParent().resolve("urgs-agent")
+                .resolve("tests").resolve("sql").resolve("hive");
         java.nio.file.Files.createDirectories(targetDir);
 
         java.nio.file.Path sqlFile = targetDir.resolve(fileName + ".sql");
         String header = String.format(
-                "-- ============================================================\n" +
-                        "-- 文件名: %s.sql\n" +
-                        "-- 生成时间: %s\n" +
-                        "-- 说明: 采用 CTE (WITH) 聚合去重模式生成，大幅减小血缘解析压力\n" +
-                        "-- ============================================================\n\n",
+                "-- ============================================================\n" + "-- 文件名: %s.sql\n"
+                        + "-- 生成时间: %s\n" + "-- 说明: 采用 CTE (WITH) 聚合去重模式生成，大幅减小血缘解析压力\n"
+                        + "-- ============================================================\n\n",
                 fileName,
                 LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
 
@@ -437,48 +598,17 @@ public class RegTableController {
     // 已移除旧的 generateSqlFiles，由新的 writeTableSqlFile 替代
 
     /**
-     * 从 SQL 内容中提取包含指定指标编号的代码片段
-     */
-    private String extractCodeSnippet(String sqlContent, String indicatorCode) {
-        if (sqlContent == null || indicatorCode == null) {
-            return null;
-        }
-
-        // 将 SQL 内容按语句分割（以分号为分隔符）
-        String[] statements = sqlContent.split(";");
-        StringBuilder matchedSnippets = new StringBuilder();
-
-        for (String stmt : statements) {
-            String trimmedStmt = stmt.trim();
-            if (trimmedStmt.isEmpty()) {
-                continue;
-            }
-
-            // 检查该语句是否包含指标编号（精确匹配，考虑引号包围）
-            // 匹配 'G01_5..B' 或 "G01_5..B" 形式
-            if (trimmedStmt.contains("'" + indicatorCode + "'") ||
-                    trimmedStmt.contains("\"" + indicatorCode + "\"") ||
-                    trimmedStmt.contains("'" + indicatorCode.toUpperCase() + "'") ||
-                    trimmedStmt.contains("'" + indicatorCode.toLowerCase() + "'")) {
-
-                if (matchedSnippets.length() > 0) {
-                    matchedSnippets.append("\n\n");
-                }
-                matchedSnippets.append(trimmedStmt).append(";");
-            }
-        }
-
-        return matchedSnippets.length() > 0 ? matchedSnippets.toString() : null;
-    }
-
-    /**
      * 批量导出报表（多 Sheet Excel）
      * 第一个 Sheet：报表列表
-     * 后续 Sheet：每个报表的字段详情（以报表编码命名）
+     * 后续 Sheet：每个报表的字段详情（以报表名称命名）
      */
     @GetMapping("/export")
     public void exportTables(
             @RequestParam(required = false) String systemCode,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String autoFetchStatus,
+            @RequestParam(required = false) String frequency,
+            @RequestParam(required = false) String sourceType,
             @RequestParam(required = false) String tableIds,
             HttpServletResponse response) throws IOException {
 
@@ -487,36 +617,52 @@ public class RegTableController {
         String fileName = URLEncoder.encode("报表数据导出", "UTF-8").replaceAll("\\+", "%20");
         response.setHeader("Content-disposition", "attachment;filename*=utf-8''" + fileName + ".xlsx");
 
-        // 查询报表
-        List<RegTable> tables;
-        if (tableIds != null && !tableIds.isEmpty()) {
-            // 导出选中的报表
+        // 1. 构建过滤条件
+        QueryWrapper<RegTable> query = new QueryWrapper<>();
+        if (StringUtils.isNotBlank(tableIds)) {
             List<Long> ids = Arrays.stream(tableIds.split(","))
                     .map(String::trim)
-                    .filter(s -> !s.isEmpty())
+                    .filter(StringUtils::isNotBlank)
                     .map(Long::parseLong)
                     .toList();
-            tables = regTableService.listByIds(ids);
+            query.in("id", ids);
         } else {
-            // 导出全部（或按系统过滤）
-            LambdaQueryWrapper<RegTable> query = new LambdaQueryWrapper<>();
-            if (systemCode != null && !systemCode.isEmpty()) {
-                query.eq(RegTable::getSystemCode, systemCode);
+            if (StringUtils.isNotBlank(systemCode))
+                query.eq("system_code", systemCode);
+            if (StringUtils.isNotBlank(autoFetchStatus))
+                query.eq("auto_fetch_status", autoFetchStatus);
+            if (StringUtils.isNotBlank(frequency))
+                query.eq("frequency", frequency);
+            if (StringUtils.isNotBlank(sourceType))
+                query.eq("source_type", sourceType);
+            if (StringUtils.isNotBlank(keyword)) {
+                String kw = keyword.toLowerCase();
+                query.and(w -> w.like("LOWER(name)", kw).or().like("LOWER(cn_name)", kw));
             }
-            query.orderByAsc(RegTable::getName);
-            tables = regTableService.list(query);
+        }
+        query.orderByAsc("sort_order");
+        List<RegTable> tables = regTableService.list(query);
+
+        // 2. 预获取所有相关的指标字段（优化 N+1 查询）
+        Map<Long, List<RegElement>> elementMap = new HashMap<>();
+        if (!tables.isEmpty()) {
+            List<Long> tIds = tables.stream().map(RegTable::getId).collect(Collectors.toList());
+            List<RegElement> allElements = regElementService.list(new LambdaQueryWrapper<RegElement>()
+                    .in(RegElement::getTableId, tIds)
+                    .orderByAsc(RegElement::getSortOrder));
+            elementMap = allElements.stream().collect(Collectors.groupingBy(RegElement::getTableId));
         }
 
         DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        Set<String> usedSheetNames = new HashSet<>();
 
         try (ExcelWriter excelWriter = EasyExcel.write(response.getOutputStream()).build()) {
-            // 1. 写报表汇总 Sheet
-            List<RegTableImportExportDTO> tableDtos = new ArrayList<>();
-            for (RegTable table : tables) {
+            // 3. 写汇总 Sheet
+            List<RegTableImportExportDTO> tableDtos = tables.stream().map(table -> {
                 RegTableImportExportDTO dto = new RegTableImportExportDTO();
+                dto.setSortOrder(table.getSortOrder());
                 dto.setName(table.getName());
                 dto.setCnName(table.getCnName());
-                dto.setCode(table.getCode());
                 dto.setSystemCode(table.getSystemCode());
                 dto.setSubjectCode(table.getSubjectCode());
                 dto.setSubjectName(table.getSubjectName());
@@ -524,71 +670,77 @@ public class RegTableController {
                 dto.setFrequency(table.getFrequency());
                 dto.setSourceType(table.getSourceType());
                 dto.setAutoFetchStatus(table.getAutoFetchStatus());
-                dto.setDocumentNo(table.getDocumentNo());
-                dto.setDocumentTitle(table.getDocumentTitle());
+                dto.setDispatchNo(table.getDispatchNo());
+
                 dto.setEffectiveDate(
                         table.getEffectiveDate() != null ? table.getEffectiveDate().format(dateFormatter) : null);
-                dto.setBusinessCaliber(table.getBusinessCaliber());
-                dto.setDevNotes(table.getDevNotes());
+                dto.setBusinessCaliber(safeTruncate(table.getBusinessCaliber()));
+                dto.setFillInstruction(safeTruncate(table.getFillInstruction()));
+                dto.setDevNotes(safeTruncate(table.getDevNotes()));
                 dto.setOwner(table.getOwner());
-                tableDtos.add(dto);
-            }
+                return dto;
+            }).collect(Collectors.toList());
 
-            WriteSheet summarySheet = EasyExcel.writerSheet(0, "报表列表")
-                    .head(RegTableImportExportDTO.class)
-                    .build();
+            WriteSheet summarySheet = EasyExcel.writerSheet(0, "报表列表").head(RegTableImportExportDTO.class).build();
             excelWriter.write(tableDtos, summarySheet);
 
-            // 2. 每个报表一个详情 Sheet
+            // 4. 写字段详情 Sheet
             int sheetIndex = 1;
             for (RegTable table : tables) {
-                String sheetName = table.getCode();
-                if (sheetName == null || sheetName.isEmpty()) {
-                    sheetName = table.getName();
-                }
-                // Excel sheet 名称限制 31 字符
-                if (sheetName.length() > 31) {
-                    sheetName = sheetName.substring(0, 31);
-                }
+                // 清洗并处理重名页签
+                final int currentIdx = sheetIndex;
+                String rawName = StringUtils.getIfBlank(table.getName(), () -> "Sheet" + currentIdx);
+                String safeName = rawName.replaceAll("[\\\\/\\?\\*\\s\\[\\]\\:]", "_");
+                if (safeName.length() > 31)
+                    safeName = safeName.substring(0, 31);
 
-                List<RegElement> elements = regElementService.list(
-                        new LambdaQueryWrapper<RegElement>()
-                                .eq(RegElement::getTableId, table.getId())
-                                .orderByAsc(RegElement::getSortOrder));
+                String finalName = safeName;
+                int counter = 1;
+                while (usedSheetNames.contains(finalName.toLowerCase())) {
+                    String suffix = "_" + (counter++);
+                    if (safeName.length() + suffix.length() > 31) {
+                        finalName = safeName.substring(0, 31 - suffix.length()) + suffix;
+                    } else {
+                        finalName = safeName + suffix;
+                    }
+                }
+                usedSheetNames.add(finalName.toLowerCase());
 
-                List<RegElementImportExportDTO> elementDtos = new ArrayList<>();
-                for (RegElement el : elements) {
+                List<RegElement> elements = elementMap.getOrDefault(table.getId(), new ArrayList<>());
+                List<RegElementImportExportDTO> elementDtos = elements.stream().map(el -> {
                     RegElementImportExportDTO dto = new RegElementImportExportDTO();
                     dto.setSortOrder(el.getSortOrder());
                     dto.setType(el.getType());
                     dto.setName(el.getName());
                     dto.setCnName(el.getCnName());
-                    dto.setCode(el.getCode());
                     dto.setDataType(el.getDataType());
                     dto.setLength(el.getLength());
                     dto.setIsPk(el.getIsPk());
                     dto.setNullable(el.getNullable());
-                    dto.setFormula(el.getFormula());
-                    dto.setFetchSql(el.getFetchSql());
+                    dto.setFormula(safeTruncate(el.getFormula()));
+                    dto.setFetchSql(safeTruncate(el.getFetchSql()));
                     dto.setCodeTableCode(el.getCodeTableCode());
                     dto.setValueRange(el.getValueRange());
                     dto.setValidationRule(el.getValidationRule());
-                    dto.setDocumentNo(el.getDocumentNo());
-                    dto.setDocumentTitle(el.getDocumentTitle());
+                    dto.setDispatchNo(el.getDispatchNo());
+
                     dto.setEffectiveDate(
                             el.getEffectiveDate() != null ? el.getEffectiveDate().format(dateFormatter) : null);
-                    dto.setBusinessCaliber(el.getBusinessCaliber());
-                    dto.setFillInstruction(el.getFillInstruction());
-                    dto.setDevNotes(el.getDevNotes());
+                    dto.setBusinessCaliber(safeTruncate(el.getBusinessCaliber()));
+                    dto.setFillInstruction(safeTruncate(el.getFillInstruction()));
+                    dto.setDevNotes(safeTruncate(el.getDevNotes()));
                     dto.setAutoFetchStatus(el.getAutoFetchStatus());
                     dto.setOwner(el.getOwner());
                     dto.setStatus(el.getStatus());
-                    elementDtos.add(dto);
-                }
+                    dto.setIsInit(el.getIsInit());
+                    dto.setIsMergeFormula(el.getIsMergeFormula());
+                    dto.setIsFillBusiness(el.getIsFillBusiness());
+                    dto.setCodeSnippet(safeTruncate(el.getCodeSnippet()));
+                    return dto;
+                }).collect(Collectors.toList());
 
-                WriteSheet detailSheet = EasyExcel.writerSheet(sheetIndex++, sheetName)
-                        .head(RegElementImportExportDTO.class)
-                        .build();
+                WriteSheet detailSheet = EasyExcel.writerSheet(sheetIndex++, finalName)
+                        .head(RegElementImportExportDTO.class).build();
                 excelWriter.write(elementDtos, detailSheet);
             }
         }
@@ -596,10 +748,11 @@ public class RegTableController {
 
     /**
      * 批量导入报表（多 Sheet Excel）
-     * 第一个 Sheet：报表列表（按 code 匹配更新/新增）
-     * 后续 Sheet：字段详情（按 Sheet 名匹配报表 code）
+     * 第一个 Sheet：报表列表（按 systemCode + name 匹配更新/新增）
+     * 后续 Sheet：字段详情（按 Sheet 名匹配报表 code/name）
      */
     @PostMapping("/import")
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> importTables(@RequestParam("file") MultipartFile file) throws IOException {
         Map<String, Object> result = new HashMap<>();
         int tableCount = 0;
@@ -610,7 +763,7 @@ public class RegTableController {
         try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
             // 1. 读取第一个 Sheet（报表列表）
             Sheet summarySheet = workbook.getSheetAt(0);
-            Map<String, RegTable> codeToTable = new HashMap<>();
+            Map<String, RegTable> nameToTable = new HashMap<>();
 
             // 跳过表头
             for (int i = 1; i <= summarySheet.getLastRowNum(); i++) {
@@ -618,30 +771,42 @@ public class RegTableController {
                 if (row == null)
                     continue;
 
-                String code = getCellValue(row.getCell(2)); // 报表编码
-                if (code == null || code.isEmpty())
-                    continue;
+                // 序号仅用于排序，不再作为唯一标识
+                Integer sortOrder = getIntValue(row.getCell(0));
+                String cnName = getCellValue(row.getCell(1));
+                String name = getCellValue(row.getCell(2));
+                String systemCode = getCellValue(row.getCell(3));
 
-                // 查找或创建报表
-                RegTable table = regTableService.getOne(
-                        new LambdaQueryWrapper<RegTable>().eq(RegTable::getCode, code));
+                if (StringUtils.isBlank(name) || StringUtils.isBlank(systemCode)) {
+                    continue;
+                }
+
+                // 查找或创建报表 (按 系统代码 + 物理表名 匹配)
+                RegTable table = null;
+                try {
+                    table = regTableService.getOne(new LambdaQueryWrapper<RegTable>()
+                            .eq(RegTable::getName, name)
+                            .eq(RegTable::getSystemCode, systemCode));
+                } catch (Exception e) {
+                    throw new RuntimeException(String.format("匹配报表失败：系统[%s] 表名[%s] 存在重复记录", systemCode, name), e);
+                }
+
                 if (table == null) {
                     table = new RegTable();
                     table.setCreateTime(LocalDateTime.now());
                 }
 
-                table.setName(getCellValue(row.getCell(0)));
-                table.setCnName(getCellValue(row.getCell(1)));
-                table.setCode(code);
-                table.setSystemCode(getCellValue(row.getCell(3)));
+                table.setSortOrder(sortOrder);
+                table.setCnName(cnName);
+                table.setName(name);
+                table.setSystemCode(systemCode);
                 table.setSubjectCode(getCellValue(row.getCell(4)));
                 table.setSubjectName(getCellValue(row.getCell(5)));
                 table.setTheme(getCellValue(row.getCell(6)));
                 table.setFrequency(getCellValue(row.getCell(7)));
                 table.setSourceType(getCellValue(row.getCell(8)));
                 table.setAutoFetchStatus(getCellValue(row.getCell(9)));
-                table.setDocumentNo(getCellValue(row.getCell(10)));
-                table.setDocumentTitle(getCellValue(row.getCell(11)));
+                table.setDispatchNo(getCellValue(row.getCell(10)));
                 String effDate = getCellValue(row.getCell(12));
                 if (effDate != null && !effDate.isEmpty()) {
                     try {
@@ -650,13 +815,14 @@ public class RegTableController {
                     }
                 }
                 table.setBusinessCaliber(getCellValue(row.getCell(13)));
+                table.setFillInstruction(getCellValue(row.getCell(11))); // Index 11 recycled
                 table.setDevNotes(getCellValue(row.getCell(14)));
                 table.setOwner(getCellValue(row.getCell(15)));
                 table.setUpdateTime(LocalDateTime.now());
                 table.setStatus(1);
 
                 regTableService.saveOrUpdate(table);
-                codeToTable.put(code, table);
+                nameToTable.put(table.getName(), table);
                 tableCount++;
             }
 
@@ -665,71 +831,93 @@ public class RegTableController {
                 Sheet sheet = workbook.getSheetAt(sheetIdx);
                 String sheetName = sheet.getSheetName();
 
-                // 根据 sheet 名找到对应的报表
-                RegTable table = codeToTable.get(sheetName);
+                // 根据 sheet 名找到对应的报表 (使用物理表名匹配)
+                RegTable table = nameToTable.get(sheetName);
                 if (table == null) {
-                    // 可能是按名字匹配
-                    table = regTableService.getOne(
-                            new LambdaQueryWrapper<RegTable>().eq(RegTable::getCode, sheetName));
+                    // 尝试从数据库查找（仅限本次导入中未出现的表名，提高鲁棒性）
+                    try {
+                        // 这里的匹配由于没有 systemCode 上下文，可能存在风险，但在 Sheet 命名规范的情况下通常没问题
+                        table = regTableService
+                                .getOne(new LambdaQueryWrapper<RegTable>().eq(RegTable::getName, sheetName));
+                    } catch (Exception e) {
+                        // 如果有多个同名表存在于不同系统，此处无法简单定位，跳过该 Sheet 并记录日志
+                        System.err.println("警告：无法唯一确定 Sheet [" + sheetName + "] 所属的报表系统上下文");
+                        continue;
+                    }
                 }
                 if (table == null)
                     continue;
 
                 // 删除该表原有字段（覆盖更新）
-                regElementService.remove(
-                        new LambdaQueryWrapper<RegElement>().eq(RegElement::getTableId, table.getId()));
+                regElementService
+                        .remove(new LambdaQueryWrapper<RegElement>().eq(RegElement::getTableId, table.getId()));
 
                 // 导入新字段
+                List<RegElement> elementsToSave = new ArrayList<>();
                 for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                     Row row = sheet.getRow(i);
                     if (row == null)
+                        continue;
+
+                    String elementName = getCellValue(row.getCell(2));
+                    if (StringUtils.isBlank(elementName))
                         continue;
 
                     RegElement el = new RegElement();
                     el.setTableId(table.getId());
                     el.setSortOrder(getIntValue(row.getCell(0)));
                     el.setType(getCellValue(row.getCell(1)));
-                    el.setName(getCellValue(row.getCell(2)));
+                    el.setName(elementName);
                     el.setCnName(getCellValue(row.getCell(3)));
-                    el.setCode(getCellValue(row.getCell(4)));
-                    el.setDataType(getCellValue(row.getCell(5)));
-                    el.setLength(getIntValue(row.getCell(6)));
-                    el.setIsPk(getIntValue(row.getCell(7)));
-                    el.setNullable(getIntValue(row.getCell(8)));
-                    el.setFormula(getCellValue(row.getCell(9)));
-                    el.setFetchSql(getCellValue(row.getCell(10)));
-                    el.setCodeTableCode(getCellValue(row.getCell(11)));
-                    el.setValueRange(getCellValue(row.getCell(12)));
-                    el.setValidationRule(getCellValue(row.getCell(13)));
-                    el.setDocumentNo(getCellValue(row.getCell(14)));
-                    el.setDocumentTitle(getCellValue(row.getCell(15)));
-                    String effDate = getCellValue(row.getCell(16));
+                    el.setDataType(getCellValue(row.getCell(4)));
+                    el.setLength(getIntValue(row.getCell(5)));
+                    el.setIsPk(getIntValue(row.getCell(6)));
+                    el.setNullable(getIntValue(row.getCell(7)));
+                    el.setFormula(getCellValue(row.getCell(8)));
+                    el.setFetchSql(getCellValue(row.getCell(9)));
+                    el.setCodeTableCode(getCellValue(row.getCell(10)));
+                    el.setValueRange(getCellValue(row.getCell(11)));
+                    el.setValidationRule(getCellValue(row.getCell(12)));
+                    el.setDispatchNo(getCellValue(row.getCell(13)));
+
+                    String effDate = getCellValue(row.getCell(15));
                     if (effDate != null && !effDate.isEmpty()) {
                         try {
                             el.setEffectiveDate(LocalDate.parse(effDate, dateFormatter));
                         } catch (Exception ignored) {
                         }
                     }
-                    el.setBusinessCaliber(getCellValue(row.getCell(17)));
-                    el.setFillInstruction(getCellValue(row.getCell(18)));
-                    el.setDevNotes(getCellValue(row.getCell(19)));
-                    el.setAutoFetchStatus(getCellValue(row.getCell(20)));
-                    el.setOwner(getCellValue(row.getCell(21)));
-                    el.setStatus(getIntValue(row.getCell(22)));
+                    el.setBusinessCaliber(getCellValue(row.getCell(16)));
+                    el.setFillInstruction(getCellValue(row.getCell(17)));
+                    el.setDevNotes(getCellValue(row.getCell(18)));
+                    el.setAutoFetchStatus(getCellValue(row.getCell(19)));
+                    el.setOwner(getCellValue(row.getCell(20)));
+                    el.setStatus(getIntValue(row.getCell(21)));
                     if (el.getStatus() == null)
                         el.setStatus(1);
+                    el.setIsInit(getIntValue(row.getCell(22)));
+                    el.setIsMergeFormula(getIntValue(row.getCell(23)));
+                    el.setIsFillBusiness(getIntValue(row.getCell(24)));
+                    el.setCodeSnippet(getCellValue(row.getCell(25)));
+
                     if (el.getSortOrder() == null)
                         el.setSortOrder(0);
-
                     el.setCreateTime(LocalDateTime.now());
                     el.setUpdateTime(LocalDateTime.now());
 
-                    if (el.getName() != null && !el.getName().isEmpty()) {
-                        regElementService.save(el);
-                        elementCount++;
-                    }
+                    elementsToSave.add(el);
+                }
+
+                if (!elementsToSave.isEmpty()) {
+                    regElementService.saveBatch(elementsToSave);
+                    elementCount += elementsToSave.size();
                 }
             }
+        } catch (Exception e) {
+            e.printStackTrace();
+            result.put("success", false);
+            result.put("message", "导入失败：" + e.getMessage());
+            return result;
         }
 
         result.put("success", true);
@@ -774,5 +962,15 @@ public class RegTableController {
         } catch (Exception ignored) {
         }
         return null;
+    }
+
+    /**
+     * 安全截断字符串，防止 Excel 单元格超长 (32767) 报错
+     */
+    private String safeTruncate(String val) {
+        if (val == null || val.length() <= 32700) {
+            return val;
+        }
+        return val.substring(0, 32700) + "... [Truncated due to Excel Limit]";
     }
 }

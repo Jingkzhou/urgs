@@ -8,11 +8,12 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.multipart.MultipartFile;
 
 public interface IssueService extends IService<Issue> {
-    Page<Issue> getIssueList(Page<Issue> page, String keyword, String status, String issueType);
+    Page<Issue> getIssueList(Page<Issue> page, String keyword, String status, String issueType, String system,
+            String reporter, String handler, String startTime, String endTime);
 
     void importData(MultipartFile file);
 
-    void exportData(HttpServletResponse response, String keyword, String status, String issueType);
+    void exportData(HttpServletResponse response, String keyword, String status, String issueType, String handler);
 
-    IssueStatsDTO getStats(String frequency);
+    IssueStatsDTO getStats(String frequency, String startDate, String endDate);
 }

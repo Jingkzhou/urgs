@@ -2,10 +2,11 @@ package com.example.executor.urgs_executor.handler.impl;
 
 import com.example.executor.urgs_executor.entity.DataSourceConfig;
 import com.example.executor.urgs_executor.entity.DataSourceMeta;
-import com.example.executor.urgs_executor.entity.TaskInstance;
+import com.example.executor.urgs_executor.entity.ExecutorTaskInstance;
 import com.example.executor.urgs_executor.handler.TaskHandler;
 import com.example.executor.urgs_executor.mapper.DataSourceConfigMapper;
 import com.example.executor.urgs_executor.mapper.DataSourceMetaMapper;
+import com.example.executor.urgs_executor.util.PlaceholderUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -31,7 +32,7 @@ public class ProcedureTaskHandler implements TaskHandler {
     private DataSourceMetaMapper dataSourceMetaMapper;
 
     @Override
-    public String execute(TaskInstance instance) throws Exception {
+    public String execute(ExecutorTaskInstance instance) throws Exception {
         String script = "";
         String resourceId = null;
 
@@ -51,7 +52,7 @@ public class ProcedureTaskHandler implements TaskHandler {
         }
 
         // Replace $dataDate with actual date
-        script = script.replace("$dataDate", instance.getDataDate());
+        script = PlaceholderUtils.replaceDataDate(script, instance.getDataDate());
 
         if (resourceId == null || resourceId.isEmpty()) {
             throw new RuntimeException("Procedure task requires a valid resource ID");
@@ -62,7 +63,7 @@ public class ProcedureTaskHandler implements TaskHandler {
         return executeProcedure(instance, script, resourceId);
     }
 
-    private String executeProcedure(TaskInstance instance, String script, String resourceId) throws Exception {
+    private String executeProcedure(ExecutorTaskInstance instance, String script, String resourceId) throws Exception {
         DataSourceConfig config = dataSourceConfigMapper.selectById(resourceId);
         if (config == null) {
             throw new RuntimeException("Resource not found: " + resourceId);

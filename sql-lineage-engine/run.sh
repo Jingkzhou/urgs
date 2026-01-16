@@ -1,3 +1,3 @@
 #!/bin/bash
 export PYTHONPATH=$(pwd)
-python3 bin/lineage-cli "$@"
+exec python3 bin/lineage-cli "$@"

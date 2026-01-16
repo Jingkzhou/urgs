@@ -223,12 +223,6 @@ const OrgManagement: React.FC = () => {
             const res = await fetch('/api/orgs', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            if (res.status === 401) {
-                localStorage.removeItem('auth_token');
-                localStorage.removeItem('auth_user');
-                window.location.href = '/login';
-                return;
-            }
             if (!res.ok) throw new Error(`load orgs failed: ${res.status}`);
             const data = await res.json();
             setOrgs(data);

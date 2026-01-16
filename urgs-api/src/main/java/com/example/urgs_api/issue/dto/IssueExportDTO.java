@@ -53,4 +53,12 @@ public class IssueExportDTO {
     @ExcelProperty("工时(小时)")
     @ColumnWidth(12)
     private String workHours;
+
+    @ExcelProperty("附件路径")
+    @ColumnWidth(20)
+    private String attachmentPath;
+
+    @ExcelProperty("附件名称")
+    @ColumnWidth(20)
+    private String attachmentName;
 }

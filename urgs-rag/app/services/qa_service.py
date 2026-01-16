@@ -1,97 +1,247 @@
-from typing import List
+from typing import List, Optional
+import logging
+import time
+
 from langchain_core.documents import Document
+
+from app.config import settings
 from app.services.llm_chain import llm_service
 from app.services.vector_store import vector_store_service
-import logging
+from app.services.intent_router import intent_router
+from app.services.metrics import metrics_service
+from app.services.query_expansion import query_expansion_service
+from app.services.confidence_scorer import confidence_scorer
 
 logger = logging.getLogger(__name__)
 
+
 class QAService:
-    def answer_question(self, query: str, collection_names: List[str] = None) -> dict:
+    """
+    全息问答核心服务。
+    
+    协调意图路由、混合检索、结果去重、回答能力评估以及最终的 LLM 生成流程。
+    """
+    def answer_question(
+        self,
+        query: str,
+        collection_names: Optional[List[str]] = None,
+        k: int = 4,
+        metadata_filter: Optional[dict] = None,
+        fusion_strategy: str = "rrf", # weighted | rrf
+    ) -> dict:
         """
-        Full RAG Pipeline with CoT Prompting.
+        核心 RAG 链路：混合检索 + 结构化回答。
+
+        Args:
+            query (str): 用户提问。
+            collection_names (list, optional): 手动指定的检索集合。
+            k (int): 每个路径检索的 Top K 数量。
+            metadata_filter (dict, optional): 外部传入的元数据过滤器。
+
+        Returns:
+            dict: 包含回答、来源、标签、置信度和意图的字典。
         """
-        # 1. Multi-Path Retrieval
-        docs = []
-        if collection_names and len(collection_names) > 0:
-            for name in collection_names:
-                try:
-                    # Provide k=6 per collection to ensure coverage
-                    col_docs = vector_store_service.similarity_search(query, k=6, collection_name=name)
-                    docs.extend(col_docs)
-                except Exception as e:
-                    logger.warning(f"Search failed for collection {name}: {e}")
-        else:
-            # Fallback to default collection search
-            docs = vector_store_service.similarity_search(query, k=10)
+        start_time = time.time()
+        # 1. 意图路由：识别意图并确定要检索的集合及预置过滤器
+        route_info = intent_router.route(query, collection_names)
+        collections = route_info["collections"]
+        route_filter = route_info.get("filters")
+        intent = route_info.get("intent", "general")
+        intent = route_info.get("intent", "general")
+        analysis = route_info.get("analysis", {})
+        rewritten_query = analysis.get("rewritten_query", query)
         
-        # 2. Extract Components for CoT
+        print(f"\n[RAG-QA] >>> 意图识别: {intent}, 改写查询: {rewritten_query}")
+        print(f"[RAG-QA] >>> 路由集合: {collections}")
+
+        unique_docs_map = {}
+
+        # 确定搜索查询列表
+        search_queries = [rewritten_query]
+        if settings.ENABLE_QUERY_EXPANSION:
+            logger.info(f"正在进行查询扩展: {rewritten_query}")
+            expanded = query_expansion_service.expand_query(rewritten_query, num_queries=4)
+            # 提取 query 字符串，扩展查询包含原查询，取前5个以平衡性能
+            search_queries = [item["query"] for item in expanded if item.get("query")][:5]
+            logger.info(f"扩展后的查询列表 ({len(search_queries)}条): {search_queries}")
+
+        
+        # 2. 对每个目标集合执行全息混合检索
+        for name in collections:
+            # 合并路由过滤器和外部传入的过滤器
+            if metadata_filter and route_filter:
+                effective_filter = {**route_filter, **metadata_filter}
+            else:
+                effective_filter = metadata_filter or route_filter
+
+            for q_str in search_queries:
+                try:
+                    col_docs = vector_store_service.hybrid_search(
+                        q_str,
+                        k=k,
+                        collection_name=name, # Use the current collection name
+                        metadata_filter=effective_filter, # Use the effective filter
+                        fusion_strategy=fusion_strategy,
+                    )
+                    
+                    # 结果去重合并 (保留最高分)
+                    for item in col_docs:
+                        doc = item["document"]
+                        # 使用 parent_id 作为去重键，确保同一文档不重复出现
+                        key = doc.metadata.get("parent_id") or doc.metadata.get("file_name") or str(id(doc))
+                        
+                        if key not in unique_docs_map:
+                            unique_docs_map[key] = item
+                        else:
+                            # 如果新结果分数更高，则更新
+                            if item["score"] > unique_docs_map[key]["score"]:
+                                unique_docs_map[key] = item
+                except Exception as e:
+                    logger.error(f"检索失败 (Collection: {name}, Query: {q_str}): {e}")
+
+        # 转换为列表并按分数排序
+        docs_with_scores = list(unique_docs_map.values())
+        docs_with_scores.sort(key=lambda x: x["score"], reverse=True)
+
+        # 4. 置信度计算（替代原来直接使用 RRF 分数）
+        top_rrf_score = docs_with_scores[0]["score"] if docs_with_scores else 0.0
+        
+        # 从意图分析中提取实体用于匹配
+        query_entities = analysis.get("entities", []) + analysis.get("keywords", [])
+        
+        # 计算多特征组合置信度
+        confidence_result = confidence_scorer.calculate(
+            query=query,
+            docs_with_scores=docs_with_scores,
+            query_entities=query_entities if query_entities else None
+        )
+        
+        print(f"[RAG-QA] 检索结果去重完成, 最终候选片段数: {len(docs_with_scores)}, Top RRF: {top_rrf_score:.4f}")
+        print(f"[RAG-QA] 置信度评估: {confidence_result.score:.4f} ({confidence_result.reasoning})")
+        
+        low_evidence = not confidence_result.is_sufficient
+
+        # 准备传送给 LLM 的上下文组件
         facts = []
         reasoning_templates = []
         tags = set()
-        
-        for doc in docs:
+        sources = []
+
+        for item in docs_with_scores:
+            doc = item["document"]
             path_type = doc.metadata.get("path_type", "semantic")
+            
+            # 区分不同路径的内容，分别填入事实库或策略库
             if path_type == "semantic":
                 facts.append(doc.page_content)
             elif path_type == "logic":
                 reasoning_templates.append(doc.page_content)
-            
-            # Collect tags
+            elif path_type == "summary":
+                facts.append(doc.page_content)
+
+            # 汇总标签
             doc_tags = doc.metadata.get("tags", [])
             if isinstance(doc_tags, list):
                 tags.update(doc_tags)
 
-        # 3. Build CoT Prompt
-        facts_str = "\n".join([f"- {f}" for f in facts]) or "无直接事实参考"
-        templates_str = "\n".join([f"- {t}" for t in reasoning_templates]) or "无逻辑模板参考"
-        tags_str = ", ".join(tags) or "通用场景"
+            # 构造来源标识
+            source_id = self._build_source_id(doc)
+            sources.append(
+                {
+                    "source_id": source_id,
+                    "score": item["score"],
+                    "score_details": item.get("score_details", {}),
+                    "retrieval_method": doc.metadata.get("hit_reasons", []), # 展示召回路径
+                    "metadata": doc.metadata,
+                    "content": doc.page_content,  # 完整内容用于构建 RAG 上下文
+                    "snippet": doc.page_content[:200].replace("\n", " "),
+                }
+            )
 
-        system_prompt = (
-            "你是一个极其专业且逻辑严密的 AI 顾问。你的目标是结合已知的'事实记录'、'思考范式'和'背景常识'，"
-            "为用户提供深度、专业且具有推导性的回答。你需要严格遵循提供的思考范式，回答内容要丰满且具有可操作性。"
+        # 5. 生成结果
+        if low_evidence:
+            # 证据不足时，返回引导性建议和澄清问题，不强行生成可能存在幻觉的回答
+            answer_structured = {
+                "conclusion": "当前证据不足，建议补充关键信息后再检索。",
+                "evidence": [],
+                "suggestions": [
+                    {
+                        "action": "补充报表编号、口径版本或统计范围",
+                        "reason": "目前匹配证据不足",
+                        "source_id": "",
+                        "type": "experience",
+                    }
+                ],
+                "risks": ["证据不足可能导致回答偏差"],
+                "boundary": "仅基于当前检索结果",
+                "clarifying_questions": self._clarifying_questions(query, intent),
+                "confidence": confidence_result.score,
+            }
+        else:
+            # 证据充足，调用 LLM 生成深度绑定的结构化回答
+            print(f"[RAG-QA] 证据充足 (Confidence={confidence_result.score:.4f})，正在注入提示词上下文 (Fact x {len(facts)}, Reasoning x {len(reasoning_templates)})...")
+            answer_structured = llm_service.generate_structured_answer(
+                query=query,
+                facts=facts,
+                reasoning_templates=reasoning_templates,
+                tags=list(tags),
+                sources=sources,
+                min_confidence=confidence_result.score,
+            )
+
+
+        # 记录查询指标
+        latency_ms = int((time.time() - start_time) * 1000)
+        metrics_service.record_query(
+            query=query,
+            intent=intent,
+            success=True,
+            top_score=top_rrf_score,
+            docs_count=len(docs_with_scores),
+            latency_ms=latency_ms,
+            low_evidence=low_evidence,
         )
 
-        user_prompt = f"""
-【已知事实】（来源：知识库原文）
-{facts_str}
+        return {
+            "query": query,
+            "rewritten_query": rewritten_query,
+            "answer": answer_structured.get("conclusion", ""),
+            "answer_structured": answer_structured,
+            "sources": sources,
+            "tags": list(tags),
+            "rrf_score": top_rrf_score,  # RRF 排序分数（仅用于排序）
+            "confidence": confidence_result.score,  # 多特征置信度
+            "confidence_features": confidence_result.features,  # 各特征得分
+            "confidence_reasoning": confidence_result.reasoning,  # 判断说明
+            "intent": intent,
+        }
 
-【思考范式 / 逻辑核】（来源：专家模板/逻辑路径）
-{templates_str}
+    def _build_source_id(self, doc: Document) -> str:
+        """
+        构造源文档的唯一标识字符串（包含页码信息）。
+        """
+        file_name = doc.metadata.get("file_name") or doc.metadata.get("source") or "未知来源"
+        page = doc.metadata.get("page")
+        if page is not None:
+            return f"{file_name}#第{page}页"
+        return file_name
 
-【当前业务场景 / 标签】
-{tags_str}
+    def _clarifying_questions(self, query: str, intent: str) -> List[str]:
+        """
+        根据用户意图，生成针对性的引导提问。
+        """
+        if intent == "report":
+            return [
+                "请提供具体报表编号（如 Axxxx）或具体的制度名称",
+                "请说明您关注的统计范围或具体的时间维度",
+            ]
+        if intent == "sql":
+            return ["请提供更完整的 SQL 逻辑描述或相关的表结构信息"]
+        return [
+            "请补充更具体的业务背景或监管制度口径",
+            "建议提供对应的报表编号或标准文件名称进行精确匹配",
+        ]
 
-【任务指令】
-请根据上述信息，结合你的专业常识，回答以下用户问题：
-"{query}"
 
-要求：
-1. 回答要体现出推导过程（为什么这么建议）。
-2. 如果事实与范式存在冲突，以事实为准，但参考范式的思维结构。
-3. 如果信息不足以回答，请基于常识给出方向性建议并说明原因。
-"""
-
-
-        try:
-            # 4. Generate Answer
-            # OPTIMIZATION: Skipped redundant generation. Java backend handles it.
-            answer = "Retrieval Only" 
-            
-            return {
-                "query": query,
-                "answer": answer,
-                "sources": [
-                    {
-                        "content": doc.page_content, 
-                        "metadata": doc.metadata, 
-                        "score": max(0.6, 0.95 - (i * 0.05)) # Simulated score based on rank
-                    } for i, doc in enumerate(docs)
-                ],
-                "tags": list(tags)
-            }
-        except Exception as e:
-            logger.error(f"QA generation failed: {e}")
-            return {"error": str(e)}
-
+# 导出 QA 服务单例
 qa_service = QAService()

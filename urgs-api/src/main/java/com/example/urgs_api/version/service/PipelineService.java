@@ -17,6 +17,10 @@ import java.util.Optional;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+/**
+ * 流水线服务
+ * 管理流水线配置及其执行记录
+ */
 public class PipelineService {
 
     private final PipelineRepository pipelineRepository;
@@ -40,11 +44,25 @@ public class PipelineService {
         return pipelineRepository.findByRepoId(repoId);
     }
 
+    /**
+     * 创建流水线配置
+     * 
+     * @param pipeline 流水线实体
+     * @return 创建后的流水线实体
+     */
     @Transactional
     public Pipeline create(Pipeline pipeline) {
         return pipelineRepository.save(pipeline);
     }
 
+    /**
+     * 更新流水线配置
+     * 
+     * @param id       流水线 ID
+     * @param pipeline 更新的流水线信息
+     * @return 更新后的流水线实体
+     * @throws IllegalArgumentException 如果流水线不存在
+     */
     @Transactional
     public Pipeline update(Long id, Pipeline pipeline) {
         Pipeline existing = pipelineRepository.findById(id)
@@ -60,6 +78,11 @@ public class PipelineService {
         return pipelineRepository.save(existing);
     }
 
+    /**
+     * 删除流水线配置
+     * 
+     * @param id 流水线 ID
+     */
     @Transactional
     public void delete(Long id) {
         pipelineRepository.deleteById(id);

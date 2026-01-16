@@ -12,7 +12,7 @@ interface SsoSystem {
 }
 
 interface AuthUser {
-  ssoSystem?: string;
+  system?: string;
   roleName?: string;
   // other properties
 }
@@ -34,7 +34,7 @@ const SystemLinks: React.FC = () => {
         if (user && user.roleName === 'admin') {
           setIsAdmin(true);
         }
-        allowedSystems = user?.ssoSystem ? user.ssoSystem.split(',') : [];
+        allowedSystems = user?.system ? user.system.split(',') : [];
       } catch (e) {
         console.error("Failed to parse user info in SystemLinks", e);
         // If parsing fails, treat as no user or no allowed systems
@@ -47,12 +47,6 @@ const SystemLinks: React.FC = () => {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(async res => {
-        if (res.status === 401) {
-          localStorage.removeItem('auth_token');
-          localStorage.removeItem('auth_user');
-          window.location.href = '/login';
-          throw new Error('Unauthorized');
-        }
         if (!res.ok) {
           throw new Error(`Sso list failed: ${res.status}`);
         }
@@ -81,10 +75,6 @@ const SystemLinks: React.FC = () => {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (res.status === 401) {
-        window.location.href = '/login';
-        return;
-      }
       if (!res.ok) throw new Error('Jump failed');
       const data = await res.json();
       // Open in new tab
@@ -124,69 +114,80 @@ const SystemLinks: React.FC = () => {
         </span>
       </div>
 
-      {/* Apple-style Navigation Bar */}
-      <div className="w-full overflow-x-auto custom-scrollbar pb-2">
-        <div className="flex items-start justify-between min-w-max md:min-w-0 gap-8 px-4">
+      {/* Horizontal Scroll Layout */}
+      <div className="w-full overflow-x-auto custom-scrollbar pb-4 -mx-2 px-2">
+        <div className="flex flex-nowrap gap-3">
           {systems.map((link) => {
             const Icon = getIcon(link.icon);
             const isMaintenance = link.status === 'maintenance';
             const isInactive = link.status === 'inactive';
+            const isDisabled = isMaintenance || isInactive;
 
             return (
               <div
                 key={link.id}
-                onClick={() => !isMaintenance && !isInactive && handleJump(link.id, link.name)}
+                onClick={() => !isDisabled && handleJump(link.id, link.name)}
                 className={`
-                  group flex flex-col items-center gap-3 w-20 md:w-24 transition-all duration-300
-                  ${(isMaintenance || isInactive)
-                    ? 'cursor-not-allowed opacity-60 grayscale'
-                    : 'cursor-pointer hover:-translate-y-1'
+                  group relative flex flex-col p-3 rounded-xl border transition-all duration-300 min-w-[160px] w-40 shrink-0
+                  ${isDisabled
+                    ? 'bg-slate-50 border-slate-100 cursor-not-allowed grayscale'
+                    : 'bg-white border-slate-200 cursor-pointer hover:shadow-lg hover:shadow-red-500/5 hover:-translate-y-1 hover:border-red-100 active:scale-[0.97]'
                   }
                 `}
               >
-                {/* Icon Container */}
-                <div className={`
-                    relative flex items-center justify-center w-12 h-12 rounded-full transition-all duration-300
-                    ${(isMaintenance || isInactive) ? 'bg-slate-100' : 'group-hover:bg-slate-50'}
-                `}>
-                  <Icon
-                    strokeWidth={1.5} // Thinner stroke for elegant Apple look
-                    className={`
-                            w-8 h-8 transition-colors duration-300
-                            ${(isMaintenance || isInactive)
-                        ? 'text-slate-400'
-                        : 'text-slate-600 group-hover:text-red-600'
-                      }
-                        `}
-                  />
-                  {/* Status Dot */}
+                {/* Background Glow on Hover */}
+                {!isDisabled && (
+                  <div className="absolute inset-0 bg-gradient-to-br from-red-50/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-xl duration-500" />
+                )}
+
+                <div className="relative flex items-start justify-between mb-2">
+                  <div className={`
+                    flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-300
+                    ${isDisabled
+                      ? 'bg-slate-200 text-slate-400'
+                      : 'bg-red-50 text-red-600 group-hover:bg-red-600 group-hover:text-white shadow-sm'
+                    }
+                  `}>
+                    <Icon strokeWidth={2} className="w-5 h-5" />
+                  </div>
+
                   {link.status !== 'active' && (
                     <div className={`
-                            absolute top-0 right-0 w-3 h-3 rounded-full border-2 border-white flex items-center justify-center
-                            ${link.status === 'maintenance' ? 'bg-amber-400' : 'bg-slate-400'}
-                        `}>
+                      flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold
+                      ${link.status === 'maintenance'
+                        ? 'bg-amber-50 text-amber-600 border border-amber-100'
+                        : 'bg-slate-100 text-slate-500 border border-slate-200'
+                      }
+                    `}>
+                      <div className={`w-1 h-1 rounded-full ${link.status === 'maintenance' ? 'bg-amber-500 animate-pulse' : 'bg-slate-400'}`} />
+                      {link.status === 'maintenance' ? '维护' : '停用'}
                     </div>
                   )}
                 </div>
 
-                {/* Label */}
-                <div className="text-center">
+                <div className="relative">
                   <h3 className={`
-                        text-xs font-medium leading-tight transition-colors duration-300
-                        ${(isMaintenance || isInactive)
-                      ? 'text-slate-400'
-                      : 'text-slate-600 group-hover:text-slate-900'
-                    }
-                    `}>
+                    text-sm font-bold truncate transition-colors duration-300
+                    ${isDisabled ? 'text-slate-400' : 'text-slate-800 group-hover:text-red-700'}
+                  `}>
                     {link.name}
                   </h3>
-                  {/* Status Text */}
-                  {isMaintenance && (
-                    <span className="text-[10px] text-amber-600 block mt-1">维护中</span>
-                  )}
-                  {isInactive && (
-                    <span className="text-[10px] text-slate-400 block mt-1">已停用</span>
-                  )}
+                  <p className={`
+                    text-[10px] mt-0.5 line-clamp-1 transition-colors duration-300
+                    ${isDisabled ? 'text-slate-300' : 'text-slate-400'}
+                  `}>
+                    进入系统办理业务
+                  </p>
+                </div>
+
+                <div className={`
+                  flex items-center gap-0.5 mt-2.5 text-[9px] font-extrabold transition-all duration-300
+                  ${isDisabled ? 'hidden' : 'text-red-600 opacity-0 group-hover:opacity-100 translate-x-[-4px] group-hover:translate-x-0'}
+                `}>
+                  <span>进入</span>
+                  <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                  </svg>
                 </div>
               </div>
             );

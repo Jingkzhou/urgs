@@ -47,11 +47,14 @@ public class LineageService {
     public Map<String, Object> searchTables(String keyword, int page, int size) {
         int skip = (page - 1) * size;
 
-        // 1. Count query
-        String countQuery = "MATCH (n:Table) WHERE toLower(n.name) CONTAINS toLower($keyword) RETURN count(n) as total";
+        // 预处理关键词为大写，以匹配索引（数据导入时已统一转大写）
+        String normalizedKeyword = (keyword != null) ? keyword.toUpperCase() : "";
 
-        // 2. Data query
-        String dataQuery = "MATCH (n:Table) WHERE toLower(n.name) CONTAINS toLower($keyword) " +
+        // 1. Count query - 使用 CONTAINS 进行模糊匹配（索引仍可用于前缀匹配）
+        String countQuery = "MATCH (n:Table) WHERE n.name CONTAINS $keyword RETURN count(n) as total";
+
+        // 2. Data query - 优化后的查询，移除 toLower 函数
+        String dataQuery = "MATCH (n:Table) WHERE n.name CONTAINS $keyword " +
                 "OPTIONAL MATCH (c:Column)-[:BELONGS_TO]->(n) " +
                 "RETURN n.name AS name, collect(c.name) AS columns ORDER BY n.name SKIP $skip LIMIT $limit";
 
@@ -60,13 +63,13 @@ public class LineageService {
 
         try (Session session = driver.session()) {
             // Execute count
-            Result countResult = session.run(countQuery, Map.of("keyword", keyword));
+            Result countResult = session.run(countQuery, Map.of("keyword", normalizedKeyword));
             if (countResult.hasNext()) {
                 total = countResult.next().get("total").asLong();
             }
 
             // Execute data fetch
-            Result result = session.run(dataQuery, Map.of("keyword", keyword, "skip", skip, "limit", size));
+            Result result = session.run(dataQuery, Map.of("keyword", normalizedKeyword, "skip", skip, "limit", size));
             while (result.hasNext()) {
                 var record = result.next();
                 Map<String, Object> item = new HashMap<>();
@@ -90,36 +93,61 @@ public class LineageService {
      * @param depth      深度
      * @return 图节点和边数据
      */
+    /**
+     * 获取血缘图数据
+     * 
+     * @param tableName  表名
+     * @param columnName 列名（可选）
+     * @param depth      深度
+     * @return 图节点和边数据
+     */
     public Map<String, Object> getGraphData(String tableName, String columnName, int depth) {
         String baseStart;
         Map<String, Object> params = new HashMap<>();
-        params.put("tableName", tableName);
 
-        if (columnName != null && !columnName.isEmpty()) {
-            params.put("colName", columnName);
-            // Start from specific column.
-            baseStart = "MATCH (t:Table)<-[:BELONGS_TO]-(c:Column {name: $colName}) WHERE toLower(t.name) = toLower($tableName) WITH c as startNode ";
+        // 预处理表名和列名为大写，以匹配索引（数据导入时已统一转大写）
+        String normalizedTableName = (tableName != null) ? tableName.toUpperCase() : "";
+        String normalizedColumnName = (columnName != null && !columnName.isEmpty()) ? columnName.toUpperCase() : null;
+        params.put("tableName", normalizedTableName);
+
+        // Handle infinite depth request with a safe upper bound to prevent timeouts
+        int queryDepth = (depth == -1) ? 30 : depth;
+        // Ensure depth is at least 1
+        if (queryDepth < 1)
+            queryDepth = 1;
+
+        if (normalizedColumnName != null) {
+            params.put("colName", normalizedColumnName);
+            // Start from specific column - 优化：直接使用索引匹配
+            baseStart = "MATCH (t:Table {name: $tableName})<-[:BELONGS_TO]-(c:Column {name: $colName}) WITH c as startNode ";
         } else {
-            // Start from Table and all its Columns
-            baseStart = "MATCH (n:Table) WHERE toLower(n.name) = toLower($tableName) OPTIONAL MATCH (n)<-[:BELONGS_TO]-(c:Column) "
-                    +
+            // Start from Table and all its Columns - 优化：直接使用索引匹配
+            baseStart = "MATCH (n:Table {name: $tableName}) OPTIONAL MATCH (n)<-[:BELONGS_TO]-(c:Column) " +
                     "WITH n, collect(c) + n as startNodes UNWIND startNodes as startNode ";
         }
 
-        // 查询所有血缘关系类型 (DERIVES_TO, FILTERS, JOINS, GROUPS, ORDERS, CALLS, REFERENCES,
-        // CASE_WHEN)
+        // 查询所有血缘关系类型
         String allRelTypes = "DERIVES_TO|FILTERS|JOINS|GROUPS|ORDERS|CALLS|REFERENCES|CASE_WHEN";
 
+        // Optimized Query:
+        // 1. Use variable length path with specified depth
+        // 2. UNWIND relationships and return DISTINCT to avoid combinatorial explosion
+        // of paths
         String lineageQuery =
                 // Downstream
                 baseStart +
-                        "MATCH path = (startNode)-[:" + allRelTypes + "*0..15]->(m) " +
-                        "RETURN path " +
+                        "MATCH p = (startNode)-[:" + allRelTypes + "*0.." + queryDepth + "]->(m) " +
+                        "UNWIND relationships(p) as r " +
+                        "RETURN DISTINCT r, startNode(r) as source, endNode(r) as target " +
                         "UNION " +
                         // Upstream
                         baseStart +
-                        "MATCH path = (startNode)<-[:" + allRelTypes + "*0..15]-(m) " +
-                        "RETURN path";
+                        "MATCH p = (startNode)<-[:" + allRelTypes + "*0.." + queryDepth + "]-(m) " +
+                        "UNWIND relationships(p) as r " +
+                        "RETURN DISTINCT r, startNode(r) as target, endNode(r) as source"; // Note reverse for upstream
+                                                                                           // to maintain flow direction
+                                                                                           // if needed, but here we
+                                                                                           // just need nodes/edges
 
         Map<String, Object> graph = new HashMap<>();
         List<Map<String, Object>> nodes = new ArrayList<>();
@@ -131,40 +159,50 @@ public class LineageService {
         try (Session session = driver.session()) {
             Result result = session.run(lineageQuery, params);
             while (result.hasNext()) {
-                org.neo4j.driver.types.Path path = result.next().get("path").asPath();
-                path.nodes().forEach(node -> {
-                    addNode(node, nodes, seenNodes);
-                    if (node.hasLabel("Column")) {
-                        columnElementIds.add(node.elementId());
-                    }
-                });
-                path.relationships().forEach(rel -> addEdge(rel, edges, seenEdges));
+                var record = result.next();
+                Relationship rel = record.get("r").asRelationship();
+                Node source = record.get("source").asNode();
+                Node target = record.get("target").asNode();
+
+                addNode(source, nodes, seenNodes);
+                addNode(target, nodes, seenNodes);
+                addEdge(rel, edges, seenEdges);
+
+                if (source.hasLabel("Column"))
+                    columnElementIds.add(source.elementId());
+                if (target.hasLabel("Column"))
+                    columnElementIds.add(target.elementId());
             }
 
             // Enrichment: Fetch Tables for all found Columns
             if (!columnElementIds.isEmpty()) {
-                String enrichQuery = "MATCH (c:Column)-[r:BELONGS_TO]->(t:Table) WHERE elementId(c) IN $ids RETURN c, r, t";
-                Result enrichResult = session.run(enrichQuery, Map.of("ids", columnElementIds));
-                while (enrichResult.hasNext()) {
-                    var record = enrichResult.next();
-                    addNode(record.get("t").asNode(), nodes, seenNodes);
-                    addNode(record.get("c").asNode(), nodes, seenNodes);
-                    addEdge(record.get("r").asRelationship(), edges, seenEdges);
-                }
-            }
+                // Batch processing for enrichment if too many columns
+                List<String> allIds = new ArrayList<>(columnElementIds);
+                int batchSize = 1000;
+                for (int i = 0; i < allIds.size(); i += batchSize) {
+                    List<String> batchIds = allIds.subList(i, Math.min(i + batchSize, allIds.size()));
 
-            // 新增：查询列到表的间接依赖边 (FILTERS, JOINS, GROUPS, ORDERS)
-            // 这些边的目标是 Table 而非 Column，不会在路径查询中被返回
-            if (!columnElementIds.isEmpty()) {
-                String indirectRelTypes = "FILTERS|JOINS|GROUPS|ORDERS";
-                String indirectEdgesQuery = "MATCH (c:Column)-[r:" + indirectRelTypes + "]->(t:Table) " +
-                        "WHERE elementId(c) IN $ids RETURN c, r, t";
-                Result indirectResult = session.run(indirectEdgesQuery, Map.of("ids", columnElementIds));
-                while (indirectResult.hasNext()) {
-                    var record = indirectResult.next();
-                    addNode(record.get("c").asNode(), nodes, seenNodes);
-                    addNode(record.get("t").asNode(), nodes, seenNodes);
-                    addEdge(record.get("r").asRelationship(), edges, seenEdges);
+                    String enrichQuery = "MATCH (c:Column)-[r:BELONGS_TO]->(t:Table) WHERE elementId(c) IN $ids RETURN c, r, t";
+                    Result enrichResult = session.run(enrichQuery, Map.of("ids", batchIds));
+                    while (enrichResult.hasNext()) {
+                        var record = enrichResult.next();
+                        addNode(record.get("t").asNode(), nodes, seenNodes);
+                        // c is already added, but good to be safe
+                        addNode(record.get("c").asNode(), nodes, seenNodes);
+                        addEdge(record.get("r").asRelationship(), edges, seenEdges);
+                    }
+
+                    // Indirect edges
+                    String indirectRelTypes = "FILTERS|JOINS|GROUPS|ORDERS";
+                    String indirectEdgesQuery = "MATCH (c:Column)-[r:" + indirectRelTypes + "]->(t:Table) " +
+                            "WHERE elementId(c) IN $ids RETURN c, r, t";
+                    Result indirectResult = session.run(indirectEdgesQuery, Map.of("ids", batchIds));
+                    while (indirectResult.hasNext()) {
+                        var record = indirectResult.next();
+                        addNode(record.get("c").asNode(), nodes, seenNodes);
+                        addNode(record.get("t").asNode(), nodes, seenNodes);
+                        addEdge(record.get("r").asRelationship(), edges, seenEdges);
+                    }
                 }
             }
         }
@@ -189,9 +227,13 @@ public class LineageService {
         List<String> relationTypes = (types != null && !types.isEmpty()) ? types : ALL_LINEAGE_RELATION_TYPES;
         String relTypesStr = String.join("|", relationTypes);
 
+        // 预处理表名和列名为大写，以匹配索引
+        String normalizedTableName = (tableName != null) ? tableName.toUpperCase() : "";
+        String normalizedColumnName = (columnName != null) ? columnName.toUpperCase() : "";
+
         Map<String, Object> params = new HashMap<>();
-        params.put("tableName", tableName);
-        params.put("columnName", columnName);
+        params.put("tableName", normalizedTableName);
+        params.put("columnName", normalizedColumnName);
 
         // 构建版本过滤条件
         String versionFilter = "";
@@ -220,9 +262,13 @@ public class LineageService {
      */
     public Map<String, Object> getLineageTrace(String tableName, String columnName,
             String direction, String version, int depth) {
+        // 预处理表名和列名为大写，以匹配索引
+        String normalizedTableName = (tableName != null) ? tableName.toUpperCase() : "";
+        String normalizedColumnName = (columnName != null) ? columnName.toUpperCase() : "";
+
         Map<String, Object> params = new HashMap<>();
-        params.put("tableName", tableName);
-        params.put("columnName", columnName);
+        params.put("tableName", normalizedTableName);
+        params.put("columnName", normalizedColumnName);
 
         String versionFilter = "";
         if (version != null && !version.isEmpty()) {
@@ -332,12 +378,15 @@ public class LineageService {
      *
      * @param tableName  表名
      * @param columnName 字段名 (可选)
+     * @param depth      查询深度 (-1表示全部)
      * @param response   HttpServletResponse
      * @throws IOException
      */
-    public void exportLineage(String tableName, String columnName, HttpServletResponse response) throws IOException {
-        // 1. 获取血缘数据
-        Map<String, Object> graph = getGraphData(tableName, columnName, 15);
+    public void exportLineage(String tableName, String columnName, int depth, HttpServletResponse response)
+            throws IOException {
+        // 1. 获取血缘数据 (Use provided depth, or safe max if -1 is handled inside
+        // getGraphData)
+        Map<String, Object> graph = getGraphData(tableName, columnName, depth);
         List<Map<String, Object>> nodes = (List<Map<String, Object>>) graph.get("nodes");
         List<Map<String, Object>> edges = (List<Map<String, Object>>) graph.get("edges");
 

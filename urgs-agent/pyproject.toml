@@ -1,0 +1,27 @@
+[project]
+name = "urgs-agent"
+version = "0.1.0"
+description = "URGS 的智能编排服务，封装聊天、工具调用、审批与审计。"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "URGS Team" }]
+dependencies = [
+  "fastapi>=0.110.0",
+  "uvicorn[standard]>=0.23.0",
+  "langgraph>=0.2.14",
+  "langchain-openai>=0.1.17",
+  "langchain-mcp>=0.1.5",
+  "pydantic>=2.6.0",
+  "pydantic-settings>=2.2.0",
+  "sse-starlette>=2.0.0",
+  "structlog>=24.1.0",
+]
+
+[project.optional-dependencies]
+redis = ["redis>=5.0.1"]
+mysql = ["aiomysql>=0.2.0"]
+dev = ["pytest>=7.4.0", "pytest-asyncio>=0.21.0", "httpx>=0.25.0"]
+
+[build-system]
+requires = ["setuptools>=68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"

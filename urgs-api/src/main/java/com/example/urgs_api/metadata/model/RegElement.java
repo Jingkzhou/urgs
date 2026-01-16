@@ -13,7 +13,7 @@ import com.alibaba.excel.annotation.ExcelProperty;
 import com.alibaba.excel.annotation.ExcelIgnore;
 
 @Data
-@TableName("sys_reg_element")
+@TableName("reg_element")
 /**
  * 监管元素实体（指标/字段）
  * 对应表: sys_reg_element
@@ -44,9 +44,6 @@ public class RegElement {
     @TableField("cn_name")
     @ExcelProperty(value = "中文名", index = 3)
     private String cnName;
-
-    @ExcelProperty(value = "编码", index = 4)
-    private String code;
 
     @TableField("data_type")
     @ExcelProperty(value = "数据类型", index = 5)
@@ -88,13 +85,9 @@ public class RegElement {
     @ExcelProperty(value = "校验规则", index = 13)
     private String validationRule;
 
-    @TableField("document_no")
-    @ExcelProperty(value = "文档编号", index = 14)
-    private String documentNo;
-
-    @TableField("document_title")
-    @ExcelProperty(value = "文档标题", index = 15)
-    private String documentTitle;
+    @ExcelProperty(value = "发文号", index = 14)
+    @TableField("dispatch_no")
+    private String dispatchNo;
 
     @TableField("effective_date")
     @ExcelProperty(value = "生效日期", index = 16)
@@ -154,4 +147,13 @@ public class RegElement {
     @TableField("update_time")
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime updateTime;
+    @TableField(exist = false)
+    private String reqId;
+
+    @TableField(exist = false)
+    @JsonFormat(pattern = "yyyy-MM-dd")
+    private LocalDate plannedDate;
+
+    @TableField(exist = false)
+    private String changeDescription;
 }

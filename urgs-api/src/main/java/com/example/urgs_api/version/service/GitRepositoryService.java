@@ -12,30 +12,103 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+/**
+ * Git 仓库服务
+ * 管理 Git 仓库配置及其同步状态
+ */
 public class GitRepositoryService {
 
     private final GitRepositoryRepository repository;
 
-    public List<GitRepository> findAll() {
-        return repository.findAll();
+    /**
+     * 按创建者过滤获取所有 Git 仓库
+     *
+     * @param userId 用户 ID
+     * @return 仓库列表
+     */
+    public List<GitRepository> findAll(Long userId) {
+        if (userId == null) {
+            return repository.findAll();
+        }
+        return repository.findByCreateBy(userId);
     }
 
-    public List<GitRepository> findBySsoId(Long ssoId) {
-        return repository.findBySsoId(ssoId);
+    /**
+     * 按创建者和 SSO ID 过滤获取仓库列表
+     *
+     * @param userId 用户 ID
+     * @param ssoId  系统 ID
+     * @return 仓库列表
+     */
+    public List<GitRepository> findBySsoId(Long userId, Long ssoId) {
+        if (userId == null) {
+            return repository.findBySsoId(ssoId);
+        }
+        return repository.findByCreateByAndSsoId(userId, ssoId);
     }
 
+    /**
+     * 按创建者和平台类型过滤记录获取仓库列表
+     *
+     * @param userId   用户 ID
+     * @param platform 平台类型
+     * @return 仓库列表
+     */
+    public List<GitRepository> findByPlatform(Long userId, String platform) {
+        if (userId == null) {
+            return repository.findByPlatform(platform);
+        }
+        return repository.findByCreateByAndPlatform(userId, platform);
+    }
+
+    /**
+     * 根据 ID 获取仓库详情
+     * 
+     * @param id 仓库 ID
+     * @return Optional 包装的仓库对象
+     */
     public Optional<GitRepository> findById(Long id) {
         return repository.findById(id);
     }
 
+    /**
+     * 获取所有 Git 仓库 (管理视图)
+     */
+    public List<GitRepository> findAll() {
+        return repository.findAll();
+    }
+
+    /**
+     * 根据 SSO ID 获取仓库列表 (过时)
+     */
+    public List<GitRepository> findBySsoId(Long ssoId) {
+        return repository.findBySsoId(ssoId);
+    }
+
+    /**
+     * 根据平台类型获取仓库列表 (过时)
+     */
     public List<GitRepository> findByPlatform(String platform) {
         return repository.findByPlatform(platform);
     }
 
+    /**
+     * 创建 Git 仓库配置
+     * 
+     * @param repo 仓库实体
+     * @return 创建后的仓库实体
+     * @throws IllegalArgumentException 如果仓库地址已存在
+     */
     @Transactional
-    public GitRepository create(GitRepository repo) {
-        if (repository.existsByCloneUrl(repo.getCloneUrl())) {
+    public GitRepository create(GitRepository repo, Long currentUserId) {
+        if (currentUserId != null && repository.existsByCloneUrlAndCreateBy(repo.getCloneUrl(), currentUserId)) {
             throw new IllegalArgumentException("仓库地址已存在: " + repo.getCloneUrl());
+        } else if (currentUserId == null && repository.existsByCloneUrl(repo.getCloneUrl())) {
+            throw new IllegalArgumentException("仓库地址已存在: " + repo.getCloneUrl());
+        }
+        // 设置创建人
+        if (currentUserId != null) {
+            repo.setCreateBy(currentUserId);
         }
         // 生成 webhook secret
         if (repo.getWebhookSecret() == null) {
@@ -44,6 +117,14 @@ public class GitRepositoryService {
         return repository.save(repo);
     }
 
+    /**
+     * 更新 Git 仓库配置
+     * 
+     * @param id   仓库 ID
+     * @param repo 更新的仓库信息
+     * @return 更新后的仓库实体
+     * @throws IllegalArgumentException 如果仓库不存在
+     */
     @Transactional
     public GitRepository update(Long id, GitRepository repo) {
         GitRepository existing = repository.findById(id)
@@ -56,15 +137,27 @@ public class GitRepositoryService {
         existing.setDefaultBranch(repo.getDefaultBranch());
         existing.setAccessToken(repo.getAccessToken());
         existing.setEnabled(repo.getEnabled());
+        existing.setPlatform(repo.getPlatform());
+        existing.setSsoId(repo.getSsoId());
 
         return repository.save(existing);
     }
 
+    /**
+     * 删除 Git 仓库配置
+     * 
+     * @param id 仓库 ID
+     */
     @Transactional
     public void delete(Long id) {
         repository.deleteById(id);
     }
 
+    /**
+     * 更新最后同步时间
+     * 
+     * @param id 仓库 ID
+     */
     @Transactional
     public void updateLastSyncTime(Long id) {
         repository.findById(id).ifPresent(repo -> {

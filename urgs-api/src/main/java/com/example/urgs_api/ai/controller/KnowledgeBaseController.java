@@ -61,9 +61,10 @@ public class KnowledgeBaseController {
     }
 
     @PostMapping("/ingest")
-    public ResponseEntity<?> triggerIngestion(@RequestParam String kbName) {
+    public ResponseEntity<?> triggerIngestion(@RequestParam String kbName,
+            @RequestParam(required = false, defaultValue = "false", name = "enable_qa_generation") boolean enableQa) {
         try {
-            Map<String, Object> result = kbService.triggerIngestion(kbName);
+            Map<String, Object> result = kbService.triggerIngestion(kbName, enableQa);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("status", "error", "message", e.getMessage()));
@@ -71,9 +72,10 @@ public class KnowledgeBaseController {
     }
 
     @PostMapping("/files/ingest")
-    public ResponseEntity<?> ingestFile(@RequestParam String kbName, @RequestParam String fileName) {
+    public ResponseEntity<?> ingestFile(@RequestParam String kbName, @RequestParam String fileName,
+            @RequestParam(required = false, defaultValue = "false", name = "enable_qa_generation") boolean enableQa) {
         try {
-            Map<String, Object> result = kbService.ingestFile(kbName, fileName);
+            Map<String, Object> result = kbService.ingestFile(kbName, fileName, enableQa);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("status", "error", "message", e.getMessage()));
@@ -81,9 +83,10 @@ public class KnowledgeBaseController {
     }
 
     @PostMapping("/files/batch-ingest")
-    public ResponseEntity<?> batchIngestFiles(@RequestParam String kbName, @RequestBody List<String> fileNames) {
+    public ResponseEntity<?> batchIngestFiles(@RequestParam String kbName, @RequestBody List<String> fileNames,
+            @RequestParam(required = false, defaultValue = "false", name = "enable_qa_generation") boolean enableQa) {
         try {
-            Map<String, Object> result = kbService.ingestFiles(kbName, fileNames);
+            Map<String, Object> result = kbService.ingestFiles(kbName, fileNames, enableQa);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("status", "error", "message", e.getMessage()));

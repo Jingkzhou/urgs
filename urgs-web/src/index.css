@@ -1,19 +1,158 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* =========================================
+   Ark Page Design System
+   ========================================= */
+
+:root {
+  /* 主色调 */
+  --ark-bg-primary: #f4f7fb;
+  --ark-bg-secondary: #eef3fa;
+  --ark-text-primary: #1a1f36;
+  --ark-text-secondary: #5f6d7e;
+  --ark-accent: #2563eb;
+  --ark-accent-light: #dbeafe;
+  
+  /* Sidebar */
+  --ark-sidebar-bg: #f0f4f9;
+  --ark-sidebar-active: #d3e3fd;
+  --ark-sidebar-hover: #e1e5ea;
+  
+  /* 字体 */
+  --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-body: system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Mesh 渐变背景 */
+.ark-mesh-bg {
+  background: 
+    radial-gradient(ellipse at 20% 0%, rgba(99, 102, 241, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(59, 130, 246, 0.08) 0%, transparent 45%),
+    radial-gradient(ellipse at 40% 80%, rgba(139, 92, 246, 0.06) 0%, transparent 40%),
+    radial-gradient(ellipse at 90% 90%, rgba(236, 72, 153, 0.04) 0%, transparent 35%),
+    linear-gradient(180deg, #f8fbff 0%, #f0f4f9 100%);
+  background-attachment: fixed;
+}
+
+/* 噪点纹理叠加 */
+.ark-noise-overlay {
+  position: relative;
+}
+
+.ark-noise-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.02;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 标题排版 */
+.ark-heading {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+
+.ark-heading-gradient {
+  background: linear-gradient(135deg, #1e40af 0%, #7c3aed 50%, #4f46e5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Agent 卡片样式 */
+.ark-agent-card {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 
+    0 4px 6px -1px rgba(0, 0, 0, 0.03),
+    0 2px 4px -2px rgba(0, 0, 0, 0.02),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ark-agent-card:hover {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: 
+    0 20px 40px -15px rgba(59, 130, 246, 0.15),
+    0 8px 16px -8px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+  transform: translateY(-4px);
+}
+
+/* 通用助手特色卡片 */
+.ark-primary-card {
+  background: linear-gradient(135deg, #2563eb 0%, #4f46e5 50%, #7c3aed 100%);
+  border: none;
+  box-shadow: 
+    0 8px 30px -8px rgba(79, 70, 229, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.ark-primary-card:hover {
+  box-shadow: 
+    0 20px 50px -12px rgba(79, 70, 229, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transform: translateY(-6px) scale(1.02);
+}
+
+/* 输入框聚焦发光效果 */
+.ark-input-glow {
+  transition: all 0.3s ease;
+}
+
+.ark-input-glow:focus-within {
+  box-shadow: 
+    0 0 0 3px rgba(59, 130, 246, 0.15),
+    0 4px 20px -4px rgba(59, 130, 246, 0.2);
+  background: #ffffff !important;
+}
+
+/* 滚动渐隐效果 */
+.ark-scroll-fade {
+  mask-image: linear-gradient(to bottom, transparent 0%, black 5%, black 95%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 5%, black 95%, transparent 100%);
+}
+
+/* 头像光晕动画 */
+@keyframes ark-avatar-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(99, 102, 241, 0);
+  }
+}
+
+.ark-avatar-glow {
+  animation: ark-avatar-pulse 3s ease-in-out infinite;
+}
 
 /* Custom scrollbar for a cleaner look */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: #f1f5f9;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 3px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
@@ -23,32 +162,239 @@
   color: #c792ea;
   font-weight: 500;
 }
+
 .hljs-string {
   color: #c3e88d;
 }
+
 .hljs-number {
   color: #f78c6c;
 }
+
 .hljs-built_in,
 .hljs-type {
   color: #82aaff;
 }
+
 .hljs-comment {
   color: #636c83;
   font-style: italic;
 }
+
 .hljs-operator {
   color: #89ddff;
 }
+
 .hljs-variable {
   color: #f07178;
 }
+
 .hljs-function {
   color: #ffcb6b;
 }
+
 .hljs-title {
   color: #82aaff;
 }
+
 .hljs-params {
   color: #e2e8f0;
+}
+
+/* Animation Utilities */
+@keyframes scale-in {
+  0% {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out forwards;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out forwards;
+}
+
+/* =========================================
+   CodeValuesModal - Data Crystal Theme (Light)
+   ========================================= */
+
+/* Google Fonts - JetBrains Mono for code aesthetics */
+
+/* Backdrop with subtle overlay */
+.code-modal-backdrop {
+  background: radial-gradient(ellipse at top center, rgba(59, 130, 246, 0.05), transparent 60%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.6) 0%, rgba(241, 245, 249, 0.9) 100%);
+}
+
+/* Main modal container with elegant shadow */
+.code-modal-crystal {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  box-shadow:
+    0 0 80px rgba(59, 130, 246, 0.08),
+    0 25px 50px -12px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* Header section */
+.code-modal-header {
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.03) 0%, transparent 100%);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.1);
+}
+
+/* Icon glow container */
+.code-modal-icon {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.1);
+}
+
+/* Search input with focus effect */
+.code-modal-search {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  transition: all 0.3s ease;
+}
+
+.code-modal-search:focus {
+  background: #ffffff;
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Table styles */
+.code-modal-table-header {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  position: relative;
+}
+
+.code-modal-table-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.3), transparent);
+}
+
+/* Table row hover effect */
+.code-modal-row {
+  transition: all 0.2s ease;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.code-modal-row:hover {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.05), transparent 70%);
+}
+
+/* Code cell styling */
+.code-modal-code-cell {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  color: #3b82f6;
+}
+
+/* Close button */
+.code-modal-close {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+.code-modal-close:hover {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+}
+
+/* Footer button */
+.code-modal-btn {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border: none;
+  color: #ffffff;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.code-modal-btn:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
+}
+
+/* Entry animation */
+@keyframes crystal-appear {
+  0% {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-crystal-in {
+  animation: crystal-appear 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Loading pulse animation */
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+/* System tag badge */
+.code-modal-badge {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  color: #8b5cf6;
+}
+
+/* Scrollbar styling for modal */
+.code-modal-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.code-modal-scroll::-webkit-scrollbar-track {
+  background: #f8fafc;
+}
+
+.code-modal-scroll::-webkit-scrollbar-thumb {
+  background: rgba(59, 130, 246, 0.3);
+  border-radius: 3px;
+}
+
+.code-modal-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(59, 130, 246, 0.5);
 }

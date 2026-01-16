@@ -64,11 +64,20 @@ public class GitRepository {
     @Column(name = "last_synced_at")
     private LocalDateTime lastSyncedAt;
 
+    /** 创建人 ID */
+    @Column(name = "create_by")
+    private Long createBy;
+
     @Column(name = "created_at")
+
     private LocalDateTime createdAt;
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    /** 待合并 PR 数量 (非持久化字段) */
+    @Transient
+    private Integer pendingPrCount;
 
     @PrePersist
     protected void onCreate() {

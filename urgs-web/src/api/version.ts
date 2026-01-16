@@ -34,10 +34,14 @@ export interface GitRepository {
     lastSyncedAt?: string;
     createdAt?: string;
     updatedAt?: string;
+    pendingPrCount?: number;
 }
 
 export const getGitRepositories = (params?: { ssoId?: number; platform?: string }) =>
     get<GitRepository[]>('/api/version/repos', params || {});
+
+export const getRepoPrCounts = () =>
+    get<Record<string, number>>('/api/version/repos/pr-counts');
 
 export const getGitRepository = (id: number) =>
     get<GitRepository>(`/api/version/repos/${id}`);
@@ -121,6 +125,18 @@ export const createRepoBranch = (repoId: number, name: string, ref: string) =>
 export const deleteRepoBranch = (repoId: number, name: string) =>
     del<void>(`/api/version/repos/${repoId}/branches/${name}`);
 
+export const createRepoTag = (repoId: number, name: string, ref: string, message?: string) =>
+    post<void>(`/api/version/repos/${repoId}/tags`, null, { params: { name, ref, message } });
+
+export const deleteRepoTag = (repoId: number, name: string) =>
+    del<void>(`/api/version/repos/${repoId}/tags/${name}`);
+
+export const getDownloadArchiveUrl = (repoId: number, ref: string) =>
+    `/api/version/repos/${repoId}/archive?ref=${encodeURIComponent(ref)}`;
+
+export const downloadRepoArchive = (repoId: number, ref: string) =>
+    get<Blob>(`/api/version/repos/${repoId}/archive`, { ref }, { isBlob: true });
+
 export const getRepoLatestCommit = (repoId: number, ref?: string) =>
     get<GitCommit>(`/api/version/repos/${repoId}/commits/latest`, { ref: ref || '' });
 
@@ -142,6 +158,102 @@ export const getRepoCommits = (repoId: number, params?: { ref?: string; page?: n
 
 export const getRepoCommitDetail = (repoId: number, sha: string) =>
     get<GitCommit>(`/api/version/repos/${repoId}/commits/${sha}`);
+
+// ===== Git Pull Request API =====
+
+export interface GitPullRequest {
+    id: string;
+    number: number;
+    title: string;
+    state: string; // open, closed, merged, locked
+    body: string;
+    htmlUrl: string;
+
+    headRef: string; // source branch
+    headSha: string;
+    baseRef: string; // target branch
+    baseSha: string;
+
+    authorName: string;
+    authorAvatar?: string;
+
+    createdAt: string;
+    updatedAt: string;
+    closedAt?: string;
+    mergedAt?: string;
+
+    comments?: number;
+    commits?: number;
+    additions?: number;
+    deletions?: number;
+    changedFiles?: number;
+
+    labels?: {
+        name: string;
+        color?: string;
+        description?: string;
+    }[];
+
+    reviewers?: {
+        id: number | string;
+        name: string;
+        avatar?: string;
+        status?: string; // e.g., 'pending', 'approved'
+    }[];
+
+    assignees?: {
+        id: number | string;
+        name: string;
+        avatar?: string;
+    }[];
+}
+
+export const getPullRequests = (repoId: number, params?: { state?: string; page?: number; perPage?: number }) =>
+    get<GitPullRequest[]>(`/api/version/repos/${repoId}/pulls`, params || {});
+
+export const getPullRequest = (repoId: number, number: number) =>
+    get<GitPullRequest>(`/api/version/repos/${repoId}/pulls/${number}`);
+
+export const createPullRequest = (repoId: number, data: { title: string; body?: string; head: string; base: string }) =>
+    post<void>(`/api/version/repos/${repoId}/pulls`, data);
+
+export const getPullRequestCommits = (repoId: number, number: number) =>
+    get<GitCommit[]>(`/api/version/repos/${repoId}/pulls/${number}/commits`);
+
+export const getPullRequestFiles = (repoId: number, number: number) =>
+    get<GitCommitDiff[]>(`/api/version/repos/${repoId}/pulls/${number}/files`);
+
+export const mergePullRequest = (repoId: number, number: number, mergeMethod: string = 'merge') =>
+    put<void>(`/api/version/repos/${repoId}/pulls/${number}/merge`, { mergeMethod });
+
+export const closePullRequest = (repoId: number, number: number) =>
+    put<void>(`/api/version/repos/${repoId}/pulls/${number}/close`, {});
+
+// ===== GitLab Sync API =====
+
+export interface GitProjectVO {
+    id: string;
+    name: string;
+    pathWithNamespace: string;
+    description?: string;
+    webUrl: string;
+    cloneUrl: string;
+    sshUrl: string;
+    defaultBranch: string;
+    visibility: string;
+    lastActivityAt?: string;
+}
+
+export interface GitImportRequest {
+    systemId: number;
+    projects: GitProjectVO[];
+}
+
+export const syncGitLabProjects = () =>
+    get<GitProjectVO[]>('/api/version/repos/sync');
+
+export const importGitRepositories = (data: GitImportRequest) =>
+    post<void>('/api/version/repos/import', data);
 
 // ===== 概览 API =====
 
@@ -331,6 +443,9 @@ export const markAsReleased = (releaseId: number, deploymentId?: number) =>
 export const getApprovalHistory = (releaseId: number) =>
     get<ApprovalRecord[]>(`/api/version/releases/${releaseId}/approvals`);
 
+export const formatReleaseDescription = (description: string) =>
+    post<string>('/api/version/releases/ai/format-description', { description });
+
 // ===== 发布策略 API =====
 
 export interface ReleaseStrategy {
@@ -357,3 +472,65 @@ export const updateReleaseStrategy = (id: number, data: ReleaseStrategy) =>
 
 export const deleteReleaseStrategy = (id: number) =>
     del(`/api/version/strategies/${id}`);
+
+// ===== AI Code Review API =====
+
+export interface AICodeReview {
+    id: number;
+    repoId: number;
+    commitSha: string;
+    branch: string;
+    developerEmail?: string;
+    developerId?: number;
+    score?: number;
+    summary?: string;
+    content?: string;
+    status: 'PENDING' | 'COMPLETED' | 'FAILED';
+    createdAt?: string;
+    updatedAt?: string;
+}
+
+export const triggerAICodeReview = (data: { repoId: number; commitSha: string; branch?: string; email?: string }) =>
+    post<AICodeReview>('/api/version/audit/trigger', null, { params: data });
+
+export const getAICodeReviews = (params?: { repoId?: number; developerId?: number }) =>
+    get<AICodeReview[]>('/api/version/audit/list', params || {});
+
+export const getAICodeReviewDetail = (id: number) =>
+    get<AICodeReview>(`/api/version/audit/${id}`);
+
+export const getAICodeReviewByCommit = (commitSha: string) =>
+    get<AICodeReview>(`/api/version/audit/commit/${commitSha}`);
+
+
+// ===== Developer KPI API =====
+
+export interface DeveloperKpiVO {
+    userId: number;
+    name: string;
+    email: string;
+    gitlabUsername: string;
+    totalCommits: number;
+    totalReviews: number;
+    averageCodeScore: number;
+    activeDays: number;
+    bugCount: number;
+}
+
+export const getDeveloperKpis = (systemId?: number) =>
+    get<DeveloperKpiVO[]>('/api/version/stats/kpi', systemId ? { systemId } : {});
+
+export const getQualityTrend = (userId?: number) =>
+    get<any>('/api/version/stats/quality-trend', userId ? { userId } : {});
+
+export const getOverviewStats = () =>
+    get<any>('/api/version/stats/overview');
+
+export const getAppVersionMatrix = (systemId: string) =>
+    get<any[]>(`/api/version/app/${systemId}/matrix`);
+
+export const getAppActiveBranches = (systemId: string) =>
+    get<any[]>(`/api/version/app/${systemId}/branches`);
+
+
+

@@ -37,7 +37,8 @@ public class RagController {
     @GetMapping("/collections/{name}/peek")
     public ResponseEntity<Map<String, Object>> peekCollection(
             @PathVariable String name,
-            @RequestParam(required = false, defaultValue = "20") Integer limit) {
-        return ResponseEntity.ok(ragService.peekCollection(name, limit));
+            @RequestParam(required = false, defaultValue = "10") Integer limit,
+            @RequestParam(required = false, defaultValue = "0") Integer offset) {
+        return ResponseEntity.ok(ragService.peekCollection(name, limit, offset));
     }
 }

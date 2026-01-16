@@ -36,12 +36,6 @@ const MenuManagement: React.FC = () => {
                 },
                 body: JSON.stringify({ items: permissionManifest })
             });
-            if (res.status === 401) {
-                localStorage.removeItem('auth_token');
-                localStorage.removeItem('auth_user');
-                window.location.href = '/login';
-                return;
-            }
             if (res.ok) {
                 const data = await res.json();
                 const current = data.current ?? permissionManifest.filter((p: FunctionPoint) => p.level < 2);
@@ -93,12 +87,6 @@ const MenuManagement: React.FC = () => {
                 },
                 body: JSON.stringify({ items: permissionManifest, meta: manifestMeta }),
             });
-            if (res.status === 401) {
-                localStorage.removeItem('auth_token');
-                localStorage.removeItem('auth_user');
-                window.location.href = '/login';
-                return;
-            }
             if (!res.ok) {
                 throw new Error(`sync failed: ${res.status}`);
             }

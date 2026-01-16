@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MoreHorizontal, Paperclip, Mic, Send, Image, ZoomIn, ZoomOut, RotateCw, Download, X } from 'lucide-react';
+import { getAvatarUrl } from '../../utils/avatarUtils';
 
 interface Message {
     id: number;
@@ -131,48 +132,43 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
     };
 
     // Default Avatar
-    const defaultAvatar = 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix';
+    const defaultAvatar = getAvatarUrl(null, 'User');
 
     return (
-        <div className="flex-1 bg-[#F5F5F5] flex flex-col relative h-full"> {/* WeChat bg color closer to F5F5F5 */}
+        <div className="flex-1 bg-transparent flex flex-col relative h-full"> {/* Transparent to show blur */}
             {/* Header */}
-            <div className="h-14 border-b border-slate-200 flex items-center justify-between px-4 bg-[#F5F5F5] z-10">
-                <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-slate-700">{sessionName}</h3>
+            <div className="h-16 flex items-center justify-between px-6 z-10 border-b border-slate-100/50 bg-white/30 backdrop-blur-sm">
+                <div className="flex items-center gap-3">
+                    <h3 className="font-bold text-slate-800 text-lg tracking-tight">{sessionName}</h3>
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                 </div>
-                <button
-                    onClick={onShowDetails}
-                    className="p-2 hover:bg-slate-200 rounded-lg text-slate-600">
-                    <MoreHorizontal size={20} />
-                </button>
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+            <div className="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth">
                 {messages.map((msg) => (
-                    <div key={msg.id} className={`flex w-full ${msg.isSelf ? 'justify-end' : 'justify-start'}`}>
+                    <div key={msg.id} className={`flex w-full ${msg.isSelf ? 'justify-end' : 'justify-start'} group animate-in fade-in slide-in-from-bottom-2 duration-300`}>
                         {/* Left Side (Other) */}
                         {!msg.isSelf && (
                             <>
                                 <img
-                                    src={msg.senderAvatar || defaultAvatar}
-                                    className="w-10 h-10 rounded-md mr-3 flex-shrink-0 cursor-pointer hover:opacity-90"
+                                    src={getAvatarUrl(msg.senderAvatar, msg.senderName || `User ${msg.senderId}`)}
+                                    className="w-9 h-9 rounded-full mr-3 flex-shrink-0 cursor-pointer shadow-sm border border-white/50 hover:scale-105 transition-transform"
                                     alt="Avatar"
                                 />
                                 <div className="flex flex-col items-start max-w-[70%]">
-                                    <span className="text-xs text-slate-400 mb-1 ml-0.5">{msg.senderName || `User ${msg.senderId}`}</span>
+                                    <span className="text-[10px] text-slate-400 mb-1 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">{msg.senderName || `User ${msg.senderId}`} {msg.time && `· ${msg.time}`}</span>
                                     <div className={`
-                                        relative px-3 py-2.5 rounded-md text-sm shadow-sm
-                                        bg-white border border-slate-100 text-slate-800
-                                        before:content-[''] before:absolute before:top-3 before:-left-1.5 before:w-3 before:h-3 before:bg-white before:border-l before:border-b before:border-slate-100 before:rotate-45
+                                        relative px-4 py-2.5 rounded-2xl rounded-tl-sm text-sm shadow-sm
+                                        bg-white border border-slate-100 text-slate-700
                                     `}>
                                         {msg.type === 'text' ? (
-                                            <p className="whitespace-pre-wrap break-all leading-6">{msg.content}</p>
+                                            <p className="whitespace-pre-wrap break-all leading-6 font-medium">{msg.content}</p>
                                         ) : (
                                             <img
                                                 src={msg.content}
                                                 alt="Content"
-                                                className="rounded max-w-full cursor-pointer hover:opacity-90 max-h-64"
+                                                className="rounded-lg max-w-full cursor-pointer hover:opacity-95 shadow-sm max-h-64"
                                                 onDoubleClick={() => setPreviewImage(msg.content)}
                                             />
                                         )}
@@ -185,27 +181,27 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
                         {msg.isSelf && (
                             <>
                                 <div className="flex flex-col items-end max-w-[70%]">
-                                    {/* Name usually hidden for self */}
+                                    {/* Time hidden unless hovered */}
+                                    <span className="text-[10px] text-slate-400 mb-1 mr-1 opacity-0 group-hover:opacity-100 transition-opacity">{msg.time}</span>
                                     <div className={`
-                                        relative px-3 py-2.5 rounded-md text-sm shadow-sm
-                                        bg-[#95EC69] text-black
-                                        before:content-[''] before:absolute before:top-3 before:-right-1.5 before:w-3 before:h-3 before:bg-[#95EC69] before:rotate-45
+                                        relative px-4 py-2.5 rounded-2xl rounded-tr-sm text-sm shadow-md
+                                        bg-gradient-to-br from-indigo-500 to-purple-600 text-white
                                     `}>
                                         {msg.type === 'text' ? (
-                                            <p className="whitespace-pre-wrap break-all leading-6">{msg.content}</p>
+                                            <p className="whitespace-pre-wrap break-all leading-6 font-medium tracking-wide">{msg.content}</p>
                                         ) : (
                                             <img
                                                 src={msg.content}
                                                 alt="Content"
-                                                className="rounded max-w-full cursor-pointer hover:opacity-90 max-h-64"
+                                                className="rounded-lg max-w-full cursor-pointer hover:opacity-95 shadow-sm border-2 border-white/20 max-h-64"
                                                 onDoubleClick={() => setPreviewImage(msg.content)}
                                             />
                                         )}
                                     </div>
                                 </div>
                                 <img
-                                    src={msg.senderAvatar || defaultAvatar}
-                                    className="w-10 h-10 rounded-md ml-3 flex-shrink-0 cursor-pointer hover:opacity-90"
+                                    src={getAvatarUrl(msg.senderAvatar, msg.senderName || `User ${msg.senderId}`)}
+                                    className="w-9 h-9 rounded-full ml-3 flex-shrink-0 cursor-pointer shadow-sm border border-white/50 hover:scale-105 transition-transform"
                                     alt="Avatar"
                                 />
                             </>

@@ -16,7 +16,7 @@ public class SqlConsoleController {
     private SqlConsoleService sqlConsoleService;
 
     @PostMapping("/execute")
-    @RequirePermission("sql:execute")
+    @RequirePermission("metadata:query")
     public Map<String, Object> execute(@RequestBody SqlExecuteRequest request) {
         return sqlConsoleService.executeSql(request.getSql(), request.getDataSourceId());
     }

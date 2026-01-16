@@ -18,6 +18,8 @@ export interface ImMessage {
     msgType: number; // 1: Text
     content: string;
     sendTime?: string;
+    senderName?: string;
+    senderAvatar?: string;
 }
 
 export interface ImSession {

@@ -60,6 +60,54 @@ public class AnnouncementController {
         return ResponseEntity.ok(success);
     }
 
+    @PutMapping("/update")
+    public ResponseEntity<Boolean> update(@RequestBody AnnouncementRequest request,
+            @RequestHeader(value = "X-User-Id", defaultValue = "admin") String userId) {
+        if (request.getId() == null) {
+            return ResponseEntity.badRequest().body(false);
+        }
+        Announcement announcement = announcementService.getById(request.getId());
+        if (announcement == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String decodedUserId = userId;
+        try {
+            decodedUserId = java.net.URLDecoder.decode(userId, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            // ignore
+        }
+
+        if (!decodedUserId.equals(announcement.getCreateBy())) {
+            return ResponseEntity.status(403).body(false);
+        }
+
+        announcement.setTitle(request.getTitle());
+        announcement.setType(request.getType());
+        announcement.setCategory(request.getCategory());
+        announcement.setContent(request.getContent());
+        announcement.setUpdateTime(LocalDateTime.now());
+
+        try {
+            if (request.getAttachments() != null) {
+                announcement.setAttachments(objectMapper.writeValueAsString(request.getAttachments()));
+            } else {
+                announcement.setAttachments("[]");
+            }
+            if (request.getSystems() != null) {
+                announcement.setSystems(objectMapper.writeValueAsString(request.getSystems()));
+            } else {
+                announcement.setSystems("[]");
+            }
+        } catch (JsonProcessingException e) {
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body(false);
+        }
+
+        boolean success = announcementService.updateById(announcement);
+        return ResponseEntity.ok(success);
+    }
+
     @GetMapping("/list")
     public ResponseEntity<PageResult<Announcement>> list(@RequestParam(defaultValue = "1") long current,
             @RequestParam(defaultValue = "10") long size,

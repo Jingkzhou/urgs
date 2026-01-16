@@ -27,6 +27,27 @@ public class RegElementController {
     @Autowired
     private RegElementService regElementService;
 
+    @Autowired
+    private com.example.urgs_api.metadata.component.MaintenanceLogManager maintenanceLogManager;
+
+    @Autowired
+    private com.example.urgs_api.user.service.UserService userService;
+
+    @Autowired
+    private jakarta.servlet.http.HttpServletRequest request;
+
+    private String getCurrentOperator() {
+        Object userIdObj = request.getAttribute("userId");
+        if (userIdObj != null) {
+            Long userId = (Long) userIdObj;
+            com.example.urgs_api.user.model.User user = userService.getById(userId);
+            if (user != null) {
+                return user.getName();
+            }
+        }
+        return "admin";
+    }
+
     /**
      * 分页查询监管元素列表
      *
@@ -42,6 +63,9 @@ public class RegElementController {
             @RequestParam Long tableId,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String type,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) String autoFetchStatus,
+            @RequestParam(required = false) String dataType,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size) {
 
@@ -52,11 +76,22 @@ public class RegElementController {
             query.eq("type", type);
         }
 
+        if (status != null) {
+            query.eq("status", status);
+        }
+
+        if (autoFetchStatus != null && !autoFetchStatus.isEmpty()) {
+            query.eq("auto_fetch_status", autoFetchStatus);
+        }
+
+        if (dataType != null && !dataType.isEmpty()) {
+            query.eq("data_type", dataType);
+        }
+
         if (keyword != null && !keyword.isEmpty()) {
             String kw = keyword.toLowerCase();
             query.and(w -> w.like("LOWER(name)", kw)
-                    .or().like("LOWER(cn_name)", kw)
-                    .or().like("LOWER(code)", kw));
+                    .or().like("LOWER(cn_name)", kw));
         }
 
         query.orderByAsc("sort_order", "id");
@@ -85,17 +120,86 @@ public class RegElementController {
      */
     @PostMapping
     public boolean save(@RequestBody RegElement regElement) {
-        if (regElement.getId() == null) {
+        // Fetch old data if update
+        RegElement oldElement = null;
+        if (regElement.getId() != null) {
+            oldElement = regElementService.getById(regElement.getId());
+        } else {
             regElement.setCreateTime(LocalDateTime.now());
         }
-        regElement.setUpdateTime(LocalDateTime.now());
-        if (regElement.getStatus() == null) {
-            regElement.setStatus(1);
+
+        boolean result = regElementService.saveOrUpdate(regElement);
+
+        if (result) {
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.ELEMENT,
+                    oldElement,
+                    regElement,
+                    getCurrentOperator());
         }
-        if (regElement.getSortOrder() == null) {
-            regElement.setSortOrder(0);
+        return result;
+    }
+
+    /**
+     * 删除元素
+     *
+     * @param id 元素ID
+     * @return 是否成功
+     */
+    /**
+     * Delete element with reason
+     */
+    @PostMapping("/delete")
+    public boolean deleteWithReason(@RequestBody com.example.urgs_api.metadata.dto.DeleteReqDTO req) {
+        if (req.getId() == null)
+            return false;
+
+        RegElement oldElement = regElementService.getById(req.getId());
+        boolean result = regElementService.removeById(req.getId());
+
+        if (result && oldElement != null) {
+            com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext context = new com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext();
+            context.setReqId(req.getReqId());
+            context.setPlannedDate(req.getPlannedDate());
+            context.setChangeDescription(req.getChangeDescription());
+
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.ELEMENT,
+                    oldElement,
+                    null,
+                    getCurrentOperator(),
+                    context);
         }
-        return regElementService.saveOrUpdate(regElement);
+        return result;
+    }
+
+    /**
+     * Batch delete elements with reason
+     */
+    @PostMapping("/delete/batch")
+    public boolean deleteBatchWithReason(@RequestBody com.example.urgs_api.metadata.dto.DeleteReqDTO req) {
+        if (req.getIds() == null || req.getIds().isEmpty())
+            return false;
+
+        List<RegElement> oldElements = regElementService.listByIds(req.getIds());
+        boolean result = regElementService.removeByIds(req.getIds());
+
+        if (result && oldElements != null) {
+            com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext context = new com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext();
+            context.setReqId(req.getReqId());
+            context.setPlannedDate(req.getPlannedDate());
+            context.setChangeDescription(req.getChangeDescription()); // Note: Same reason for all? Yes per requirement.
+
+            for (RegElement oldElement : oldElements) {
+                maintenanceLogManager.logChange(
+                        com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.ELEMENT,
+                        oldElement,
+                        null,
+                        getCurrentOperator(),
+                        context);
+            }
+        }
+        return result;
     }
 
     /**
@@ -106,7 +210,44 @@ public class RegElementController {
      */
     @DeleteMapping("/{id}")
     public boolean delete(@PathVariable Long id) {
-        return regElementService.removeById(id);
+        RegElement oldElement = regElementService.getById(id);
+        boolean result = regElementService.removeById(id);
+
+        if (result && oldElement != null) {
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.ELEMENT,
+                    oldElement,
+                    null,
+                    getCurrentOperator());
+        }
+        return result;
+    }
+
+    /**
+     * 批量删除元素
+     *
+     * @param ids 元素ID列表
+     * @return 是否成功
+     */
+    @DeleteMapping("/batch")
+    public boolean deleteBatch(@RequestBody List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return false;
+        }
+
+        List<RegElement> oldElements = regElementService.listByIds(ids);
+        boolean result = regElementService.removeByIds(ids);
+
+        if (result && oldElements != null) {
+            for (RegElement oldElement : oldElements) {
+                maintenanceLogManager.logChange(
+                        com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.ELEMENT,
+                        oldElement,
+                        null,
+                        getCurrentOperator());
+            }
+        }
+        return result;
     }
 
     /**
@@ -142,21 +283,30 @@ public class RegElementController {
      * @throws IOException IO异常
      */
     @PostMapping("/import")
-    public boolean importData(@RequestParam Long tableId, @RequestParam("file") MultipartFile file) throws IOException {
-        EasyExcel.read(file.getInputStream(), RegElement.class, new PageReadListener<RegElement>(dataList -> {
-            for (RegElement element : dataList) {
-                element.setTableId(tableId);
-                if (element.getSortOrder() == null) {
-                    element.setSortOrder(0);
+    public java.util.Map<String, Object> importData(@RequestParam Long tableId,
+            @RequestParam("file") MultipartFile file)
+            throws IOException {
+        java.util.Map<String, Object> result = new java.util.HashMap<>();
+        try {
+            EasyExcel.read(file.getInputStream(), RegElement.class, new PageReadListener<RegElement>(dataList -> {
+                for (RegElement element : dataList) {
+                    element.setTableId(tableId);
+                    if (element.getSortOrder() == null) {
+                        element.setSortOrder(0);
+                    }
+                    if (element.getStatus() == null) {
+                        element.setStatus(1);
+                    }
                 }
-                if (element.getStatus() == null) {
-                    element.setStatus(1);
-                }
-                // Optional: clear ID if you want to force insert, but keeping it allows update
-                // element.setId(null);
-            }
-            regElementService.saveOrUpdateBatch(dataList);
-        })).sheet().doRead();
-        return true;
+                regElementService.saveOrUpdateBatch(dataList);
+            })).sheet().doRead();
+            result.put("success", true);
+            result.put("message", "导入成功");
+        } catch (Exception e) {
+            e.printStackTrace();
+            result.put("success", false);
+            result.put("message", "导入失败：" + e.getMessage());
+        }
+        return result;
     }
 }

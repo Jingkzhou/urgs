@@ -9,7 +9,9 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -33,8 +35,11 @@ public class KnowledgeBaseService {
     @Autowired
     private KnowledgeFileRepository fileRepository;
 
-    private final String DOC_STORE_PATH = "/Users/work/Documents/gitee/urgs/urgs-rag/doc_store";
-    private final String PYTHON_RAG_URL = "http://localhost:8001/api/rag";
+    @Value("${ai.rag.doc-store-path}")
+    private String docStorePath;
+
+    @Value("${ai.rag.base-url}")
+    private String pythonRagUrl;
     private final String DEFAULT_EMBEDDING_MODEL = "shibing624/text2vec-base-chinese";
 
     private final RestTemplate restTemplate = new RestTemplate();
@@ -45,7 +50,7 @@ public class KnowledgeBaseService {
     }
 
     private void syncExistingKBs() {
-        Path root = Paths.get(DOC_STORE_PATH);
+        Path root = Paths.get(docStorePath);
         if (!Files.exists(root))
             return;
 
@@ -74,7 +79,7 @@ public class KnowledgeBaseService {
     }
 
     private void syncFilesForKB(KnowledgeBase kb) {
-        Path dir = Paths.get(DOC_STORE_PATH, kb.getName());
+        Path dir = Paths.get(docStorePath, kb.getName());
         if (!Files.exists(dir))
             return;
 
@@ -106,7 +111,7 @@ public class KnowledgeBaseService {
         if (kb == null)
             throw new RuntimeException("Knowledge Base not found: " + kbName);
 
-        Path uploadDir = Paths.get(DOC_STORE_PATH, kbName);
+        Path uploadDir = Paths.get(docStorePath, kbName);
         if (!Files.exists(uploadDir)) {
             Files.createDirectories(uploadDir);
         }
@@ -150,8 +155,21 @@ public class KnowledgeBaseService {
             fileRepository.delete(new QueryWrapper<KnowledgeFile>()
                     .eq("kb_id", kb.getId()).eq("file_name", fileName));
         }
-        Path file = Paths.get(DOC_STORE_PATH, kbName, fileName);
+        Path file = Paths.get(docStorePath, kbName, fileName);
         Files.deleteIfExists(file);
+
+        // 删除对应的向量切片
+        try {
+            String url = UriComponentsBuilder.fromHttpUrl(pythonRagUrl + "/delete-file")
+                    .queryParam("collection_name", kbName)
+                    .queryParam("filename", fileName)
+                    .build()
+                    .toUriString();
+            restTemplate.postForEntity(url, null, Map.class);
+        } catch (Exception e) {
+            // 向量删除失败不阻断文件删除流程
+            e.printStackTrace();
+        }
     }
 
     public KnowledgeBase createKB(KnowledgeBase kb) {
@@ -170,7 +188,7 @@ public class KnowledgeBaseService {
         kbRepository.deleteById(id);
     }
 
-    public Map<String, Object> ingestFiles(String kbName, List<String> fileNames) {
+    public Map<String, Object> ingestFiles(String kbName, List<String> fileNames, boolean enableQa) {
         KnowledgeBase kb = kbRepository.selectOne(new QueryWrapper<KnowledgeBase>().eq("name", kbName));
         if (kb == null)
             throw new RuntimeException("Knowledge Base not found");
@@ -189,7 +207,7 @@ public class KnowledgeBaseService {
         }
 
         // 2. Start Async process
-        performAsyncIngestion(kb, files, fileNames);
+        performAsyncIngestion(kb, files, fileNames, enableQa);
 
         Map<String, Object> result = new java.util.HashMap<>();
         result.put("status", "success");
@@ -198,7 +216,8 @@ public class KnowledgeBaseService {
     }
 
     @Async("aiTaskExecutor")
-    public void performAsyncIngestion(KnowledgeBase kb, List<KnowledgeFile> files, List<String> fileNames) {
+    public void performAsyncIngestion(KnowledgeBase kb, List<KnowledgeFile> files, List<String> fileNames,
+            boolean enableQa) {
         // Sort files by priority (desc) then hit_count (desc)
         List<KnowledgeFile> sortedFiles = files.stream()
                 .sorted((a, b) -> {
@@ -217,7 +236,12 @@ public class KnowledgeBaseService {
         for (KnowledgeFile file : sortedFiles) {
             try {
                 // Call Python Backend for individual file to track progress more granularly
-                String url = PYTHON_RAG_URL + "/ingest?collection_name=" + kbName + "&filenames=" + file.getFileName();
+                String url = UriComponentsBuilder.fromHttpUrl(pythonRagUrl + "/ingest")
+                        .queryParam("collection_name", kbName)
+                        .queryParam("filenames", file.getFileName())
+                        .queryParam("enable_qa_generation", enableQa)
+                        .build()
+                        .toUriString();
                 @SuppressWarnings("rawtypes")
                 ResponseEntity<Map> response = restTemplate.postForEntity(url, null, Map.class);
                 @SuppressWarnings("unchecked")
@@ -248,12 +272,16 @@ public class KnowledgeBaseService {
         }
     }
 
-    public Map<String, Object> ingestFile(String kbName, String fileName) {
-        return ingestFiles(kbName, List.of(fileName));
+    public Map<String, Object> ingestFile(String kbName, String fileName, boolean enableQa) {
+        return ingestFiles(kbName, List.of(fileName), enableQa);
     }
 
-    public Map<String, Object> triggerIngestion(String kbName) {
-        String url = PYTHON_RAG_URL + "/ingest?collection_name=" + kbName;
+    public Map<String, Object> triggerIngestion(String kbName, boolean enableQa) {
+        String url = UriComponentsBuilder.fromHttpUrl(pythonRagUrl + "/ingest")
+                .queryParam("collection_name", kbName)
+                .queryParam("enable_qa_generation", enableQa)
+                .build()
+                .toUriString();
         try {
             @SuppressWarnings("rawtypes")
             ResponseEntity<Map> response = restTemplate.postForEntity(url, null, Map.class);
@@ -272,7 +300,10 @@ public class KnowledgeBaseService {
             throw new RuntimeException("Knowledge Base not found");
 
         // 1. Call Python Reset
-        String url = PYTHON_RAG_URL + "/reset?collection_name=" + kbName;
+        String url = UriComponentsBuilder.fromHttpUrl(pythonRagUrl + "/reset")
+                .queryParam("collection_name", kbName)
+                .build()
+                .toUriString();
         try {
             @SuppressWarnings("rawtypes")
             ResponseEntity<Map> response = restTemplate.postForEntity(url, null, Map.class);
@@ -280,15 +311,18 @@ public class KnowledgeBaseService {
             Map<String, Object> body = (Map<String, Object>) response.getBody();
 
             if (body != null && "success".equals(body.get("status"))) {
-                // 2. Clear File Status in DB
-                KnowledgeFile update = new KnowledgeFile();
-                update.setStatus("UPLOADED");
-                update.setChunkCount(0);
-                update.setTokenCount(0);
-                update.setVectorTime(null);
-                update.setErrorMessage(null);
-
-                fileRepository.update(update, new QueryWrapper<KnowledgeFile>().eq("kb_id", kb.getId()));
+                // 2. 删除知识库下的文件记录与物理文件
+                List<KnowledgeFile> files = fileRepository.selectList(
+                        new QueryWrapper<KnowledgeFile>().eq("kb_id", kb.getId()));
+                for (KnowledgeFile file : files) {
+                    try {
+                        Path filePath = Paths.get(docStorePath, kbName, file.getFileName());
+                        Files.deleteIfExists(filePath);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+                fileRepository.delete(new QueryWrapper<KnowledgeFile>().eq("kb_id", kb.getId()));
             }
             return body;
         } catch (Exception e) {

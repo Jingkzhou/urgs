@@ -27,7 +27,7 @@ export interface User {
     orgName: string;
     roleName: string;
     roleId?: number; // New: Added for role association
-    ssoSystem?: string;
+    system?: string;
     phone: string;
     lastLogin: string;
     status: 'active' | 'inactive';

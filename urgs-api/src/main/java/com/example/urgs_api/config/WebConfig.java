@@ -20,11 +20,12 @@ public class WebConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(authenticationInterceptor)
                 .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/auth/login", "/api/auth/register", "/profile/**", "/api/ai/**");
+                .excludePathPatterns("/api/auth/login", "/api/auth/register", "/profile/**", "/api/ai/**",
+                        "/api/internal/**");
 
         registry.addInterceptor(authorizationInterceptor)
                 .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/im/**");
+                .excludePathPatterns("/api/im/**", "/api/internal/**");
     }
 
     @org.springframework.beans.factory.annotation.Value("${urgs.profile:./uploads}")
@@ -33,7 +34,8 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addResourceHandlers(
             org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry registry) {
+        String absolutePath = new java.io.File(profile).getAbsolutePath();
         registry.addResourceHandler("/profile/**")
-                .addResourceLocations("file:" + profile + "/");
+                .addResourceLocations("file:" + absolutePath + "/");
     }
 }

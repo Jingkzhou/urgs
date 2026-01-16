@@ -14,10 +14,11 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
     解析单个 SQL 文件（Worker 函数，在子进程中执行）
     
     Args:
-        args: (file_path, dialect, default_dialect) 元组
+        args: (file_path, dialect, default_dialect, default_schema) 元组
               - file_path: SQL 文件路径
               - dialect: 路径自动检测到的方言 (可能为 None)
               - default_dialect: 默认方言
+              - default_schema: 默认 schema (default_user)
     
     Returns:
         解析结果字典:
@@ -29,7 +30,7 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
             "column_dependencies": list  # 列级别血缘
         }
     """
-    file_path, detected_dialect, default_dialect = args
+    file_path, detected_dialect, default_dialect, default_schema = args
     
     result = {
         "file_path": file_path,
@@ -40,15 +41,32 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
     }
     
     try:
+        import threading
+        import sys
+        pid = os.getpid()
+        tid = threading.get_ident()
+        f_name = os.path.basename(file_path)
+
         # 直接导入 LineageParser，避免触发 container.py 中的 Agent 初始化
         from parsers.sql_parser import LineageParser
         
         dialect = detected_dialect if detected_dialect else default_dialect
-        parser = LineageParser(dialect=dialect)
+        dialect = detected_dialect if detected_dialect else default_dialect
+        parser = LineageParser(dialect=dialect, default_schema=default_schema)
         
-        # 读取 SQL 文件
-        with open(file_path, 'r', encoding='utf-8') as f:
-            sql_content = f.read()
+        # 读取 SQL 文件 (尝试多种编码)
+        sql_content = None
+        encodings_to_try = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'latin-1']
+        for encoding in encodings_to_try:
+            try:
+                with open(file_path, 'r', encoding=encoding) as f:
+                    sql_content = f.read()
+                break  # Success, stop trying
+            except UnicodeDecodeError:
+                continue
+        
+        if sql_content is None:
+            raise ValueError(f"Failed to decode file with any of: {encodings_to_try}")
         
         # 解析表级别血缘
         parse_result = parser.parse(sql_content, source_file=file_path)
@@ -70,7 +88,9 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
                         "type": "fdd"
                     })
         
+        
     except Exception as e:
+        print(f"[DEBUG-THREAD] ERROR {f_name} (PID: {os.getpid()}) - {e}", file=sys.stderr)
         result["error"] = str(e)
     
     return result
@@ -104,13 +124,14 @@ def detect_dialect_from_path(file_path: str) -> str | None:
     return None
 
 
-def prepare_file_tasks(sql_files: List[str], default_dialect: str) -> List[Tuple[str, str, str]]:
+def prepare_file_tasks(sql_files: List[str], default_dialect: str, default_schema: str = None) -> List[Tuple[str, str, str, str]]:
     """
     准备并行任务参数
     
     Args:
         sql_files: SQL 文件路径列表
         default_dialect: 默认方言
+        default_schema: 默认 schema
     
     Returns:
         任务参数列表 [(file_path, detected_dialect, default_dialect), ...]
@@ -118,5 +139,5 @@ def prepare_file_tasks(sql_files: List[str], default_dialect: str) -> List[Tuple
     tasks = []
     for file_path in sql_files:
         detected = detect_dialect_from_path(file_path)
-        tasks.append((file_path, detected, default_dialect))
+        tasks.append((file_path, detected, default_dialect, default_schema))
     return tasks

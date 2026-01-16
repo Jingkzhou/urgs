@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { UserCircle, Edit, Trash2, Save, X, Filter, ChevronLeft, ChevronRight, Lock, Shield, Ban, CheckSquare, Square, Search } from 'lucide-react';
+import { UserCircle, Edit, Trash2, Save, X, Filter, ChevronLeft, ChevronRight, Lock, Shield, Ban, CheckSquare, Square, Search, Upload, Download } from 'lucide-react';
 import { User } from './types';
 import { ActionToolbar } from './Shared';
 import Auth from '../Auth';
@@ -91,6 +91,21 @@ const MultiSelect: React.FC<{
 
             {isOpen && (
                 <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-fade-in">
+                    {options.length > 0 && (
+                        <div
+                            className="px-3 py-2.5 text-sm cursor-pointer flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100 font-bold text-slate-600"
+                            onClick={() => {
+                                if (value.length === options.length) {
+                                    onChange([]);
+                                } else {
+                                    onChange([...options]);
+                                }
+                            }}
+                        >
+                            {value.length === options.length ? '取消全选' : '全选'}
+                            {value.length === options.length && <CheckSquare className="w-4 h-4 text-red-600" />}
+                        </div>
+                    )}
                     {options.length === 0 ? (
                         <div className="p-3 text-center text-slate-400 text-xs">暂无选项</div>
                     ) : (
@@ -235,16 +250,32 @@ const UserForm: React.FC<{
         name: initialData?.name || '',
         empId: initialData?.empId || '',
         orgName: initialData?.orgName || (safeOrgOptions[0] || ''),
-        roleId: initialData?.roleId || (safeRoleOptions[0]?.id || ''), // Use roleId
+        roleId: initialData?.roleId || (safeRoleOptions.find(r => r.name === initialData?.roleName)?.id || (safeRoleOptions[0]?.id || 0)),
         roleName: initialData?.roleName || (safeRoleOptions[0]?.name || ''),
-        ssoSystems: initialData?.ssoSystem ? initialData.ssoSystem.split(',').filter(Boolean) : [],
+        ssoSystems: initialData?.system ? initialData.system.split(',').filter(Boolean) : [],
         phone: initialData?.phone || '',
         status: initialData?.status || 'active',
     });
 
+    // Auto-sync roleId if roleOptions load after initialData or if initialData changes
+    useEffect(() => {
+        if (initialData && safeRoleOptions.length > 0) {
+            // If we have a roleName but roleId is 0 or mismatched, try to find the correct ID
+            const matchedRole = safeRoleOptions.find(r => r.name === initialData.roleName);
+            if (matchedRole && formData.roleId !== matchedRole.id) {
+                setFormData(prev => ({
+                    ...prev,
+                    roleId: matchedRole.id,
+                    roleName: matchedRole.name
+                }));
+            }
+        }
+    }, [safeRoleOptions, initialData]);
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSave({ ...formData, id: initialData?.id, ssoSystem: formData.ssoSystems.join(',') });
+        const { ssoSystems, ...dataToSave } = formData;
+        onSave({ ...dataToSave, id: initialData?.id, system: ssoSystems.join(',') });
     };
 
     return (
@@ -331,13 +362,17 @@ const UserForm: React.FC<{
                                     label="关联角色"
                                     value={formData.roleId}
                                     onChange={e => {
-                                        const selectedId = Number(e.target.value);
-                                        const selectedRole = safeRoleOptions.find(r => r.id === selectedId);
+                                        const selectedId = e.target.value; // Keep as string first
+                                        // Use loose comparison or string conversion to find role
+                                        const selectedRole = safeRoleOptions.find(r => String(r.id) === String(selectedId));
                                         setFormData({
                                             ...formData,
-                                            roleId: selectedId,
+                                            roleId: Number(selectedId), // Still save as number if backend expects number
                                             roleName: selectedRole?.name || ''
                                         });
+                                        if (!selectedRole && selectedId) {
+                                            console.warn("Role not found for ID:", selectedId, "Available:", safeRoleOptions);
+                                        }
                                     }}
                                     icon={<div className="w-4 h-4 flex items-center justify-center font-bold text-xs">👤</div>}
                                 >
@@ -385,6 +420,125 @@ const UserManagement: React.FC = () => {
 
     const [showForm, setShowForm] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    const handleExport = async () => {
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch('/api/users/export', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) throw new Error('Export failed');
+            const data = await res.json();
+
+            // Generate CSV
+            const headers = ['工号', '姓名', '所属机构', '关联角色', '手机号', '关联系统', '备注'];
+            const rows = data.map((u: User) => [
+                u.empId, u.name, u.orgName, u.roleName, u.phone, u.system || '', u.status === 'active' ? '正常' : '停用'
+            ]);
+
+            const csvContent = "\uFEFF" + [headers, ...rows].map(e => e.map(cell => `"${cell}"`).join(",")).join("\n");
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `用户列表_${new Date().toLocaleDateString()}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } catch (err) {
+            alert('导出失败，请重试');
+        }
+    };
+
+    const handleImportClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const text = event.target?.result as string;
+                let payload = [];
+
+                if (file.name.endsWith('.json')) {
+                    payload = JSON.parse(text);
+                } else if (file.name.endsWith('.csv')) {
+                    const lines = text.split(/\r?\n/).filter(Boolean);
+                    // Manual CSV parsing to correctly handle empty fields and quoted values
+                    const splitCSVLine = (line: string) => {
+                        const result: string[] = [];
+                        let currentField = '';
+                        let inQuotes = false;
+
+                        for (let i = 0; i < line.length; i++) {
+                            const char = line[i];
+                            if (char === '"') {
+                                inQuotes = !inQuotes;
+                            } else if (char === ',' && !inQuotes) {
+                                result.push(currentField.trim());
+                                currentField = '';
+                            } else {
+                                currentField += char;
+                            }
+                        }
+                        result.push(currentField.trim());
+
+                        // Clean up any remaining quotes
+                        return result.map(v => v.replace(/^"|"$/g, '').trim());
+                    };
+
+                    const headers = splitCSVLine(lines[0]);
+                    payload = lines.slice(1).map(line => {
+                        const values = splitCSVLine(line);
+                        const obj: any = {};
+                        headers.forEach((h, i) => {
+                            if (h === '工号') obj.empId = values[i];
+                            else if (h === '姓名') obj.name = values[i];
+                            else if (h === '所属机构') obj.orgName = values[i];
+                            else if (h === '关联角色') obj.roleName = values[i];
+                            else if (h === '手机号') obj.phone = values[i];
+                            else if (h === '关联系统') obj.system = values[i];
+                            else if (h === '状态') {
+                                obj.status = values[i] === '停用' ? 'inactive' : 'active';
+                            }
+                        });
+                        return obj;
+                    });
+                }
+
+                if (payload.length === 0) {
+                    alert('文件内容为空或格式不正确');
+                    return;
+                }
+
+                const token = localStorage.getItem('auth_token');
+                const res = await fetch('/api/users/batch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!res.ok) throw new Error('Batch import failed');
+                alert(`成功处理 ${payload.length} 条数据`);
+                fetchUsers();
+            } catch (err) {
+                console.error(err);
+                alert('解析或导入失败，请检查文件格式');
+            }
+            // Reset input
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        };
+        reader.readAsText(file);
+    };
 
     // Filter & Pagination State
     const [searchTerm, setSearchTerm] = useState('');
@@ -402,7 +556,7 @@ const UserManagement: React.FC = () => {
             const [orgRes, roleRes, ssoRes] = await Promise.all([
                 fetch(`/api/orgs${orgKeyword ? `?keyword=${encodeURIComponent(orgKeyword)}` : ''}`, { headers }),
                 fetch('/api/roles', { headers }),
-                fetch('/api/system', { headers })
+                fetch('/api/system?showAll=true', { headers })
             ]);
             if (orgRes.ok) {
                 const orgs = await orgRes.json();
@@ -429,12 +583,6 @@ const UserManagement: React.FC = () => {
             const res = await fetch('/api/users', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            if (res.status === 401) {
-                localStorage.removeItem('auth_token');
-                localStorage.removeItem('auth_user');
-                window.location.href = '/login';
-                return;
-            }
             if (!res.ok) throw new Error(`load users failed: ${res.status}`);
             const data = await res.json();
             setUsers(data);
@@ -617,6 +765,31 @@ const UserManagement: React.FC = () => {
                 onAdd={handleAdd}
                 className="mb-0"
             >
+                <div className="flex items-center gap-2 mr-2 border-r border-slate-200 pr-4">
+                    <button
+                        onClick={handleExport}
+                        className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold"
+                        title="导出全量数据"
+                    >
+                        <Download className="w-4 h-4" />
+                        导出
+                    </button>
+                    <button
+                        onClick={handleImportClick}
+                        className="p-2 text-slate-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold"
+                        title="批量导入 (支持 CSV/JSON)"
+                    >
+                        <Upload className="w-4 h-4" />
+                        导入
+                    </button>
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        accept=".csv,.json"
+                        className="hidden"
+                    />
+                </div>
                 {/* Custom Filters */}
                 <div className="flex items-center gap-2">
                     <div className="relative">
@@ -749,11 +922,32 @@ const UserManagement: React.FC = () => {
                                         </td>
                                         <td className="px-4 py-4 text-slate-500 font-mono text-xs">{user.phone}</td>
                                         <td className="px-4 py-4 text-slate-500 text-xs">
-                                            {user.ssoSystem ? user.ssoSystem.split(',').filter(Boolean).map((sso, idx) => (
-                                                <span key={sso + idx} className="inline-flex items-center px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-100 mr-1 mb-1">
-                                                    {sso}
-                                                </span>
-                                            )) : <span className="text-slate-400">未关联</span>}
+                                            {user.system ? (() => {
+                                                const systems = user.system.split(',').filter(Boolean);
+                                                if (systems.length === 0) return <span className="text-slate-400">未关联</span>;
+
+                                                const displayLimit = 2;
+                                                const visibleSystems = systems.slice(0, displayLimit);
+                                                const remainingCount = systems.length - displayLimit;
+
+                                                return (
+                                                    <div className="flex flex-wrap items-center gap-1">
+                                                        {visibleSystems.map((sso, idx) => (
+                                                            <span key={sso + idx} className="inline-flex items-center px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-100">
+                                                                {sso}
+                                                            </span>
+                                                        ))}
+                                                        {remainingCount > 0 && (
+                                                            <span
+                                                                className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-600 border border-slate-200 cursor-help font-medium hover:bg-slate-200 transition-colors"
+                                                                title={systems.join('\n')}
+                                                            >
+                                                                +{remainingCount}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })() : <span className="text-slate-400">未关联</span>}
                                         </td>
                                         <td className="px-4 py-4 text-slate-400 text-xs font-mono">{user.lastLogin}</td>
                                         <td className="px-4 py-4">

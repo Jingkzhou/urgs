@@ -363,8 +363,8 @@ const MetadataModel: React.FC = () => {
                                         key={owner}
                                         onClick={() => setSelectedOwner(owner)}
                                         className={`group flex w-full items-center justify-between rounded-xl px-4 py-2.5 text-left text-sm transition-all duration-200 ${selectedOwner === owner
-                                                ? 'bg-indigo-50 text-indigo-700 font-semibold ring-1 ring-inset ring-indigo-200 shadow-sm'
-                                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                            ? 'bg-indigo-50 text-indigo-700 font-semibold ring-1 ring-inset ring-indigo-200 shadow-sm'
+                                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                                             }`}
                                     >
                                         <div className="flex items-center gap-3">
@@ -685,7 +685,11 @@ const MetadataModel: React.FC = () => {
             {/* Custom Styles for Scrollbar and additional effects */}
             <style dangerouslySetInnerHTML={{
                 __html: `
-                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
+                .model-page-container {
+                    background: #f8fafc;
+                    min-height: 100vh;
+                    font-family: system-ui, -apple-system, sans-serif;
+                }
                 
                 .custom-scrollbar::-webkit-scrollbar {
                     width: 6px;

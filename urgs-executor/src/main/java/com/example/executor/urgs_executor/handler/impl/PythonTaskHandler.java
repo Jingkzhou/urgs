@@ -1,9 +1,10 @@
 package com.example.executor.urgs_executor.handler.impl;
 
 import com.example.executor.urgs_executor.entity.DataSourceConfig;
-import com.example.executor.urgs_executor.entity.TaskInstance;
+import com.example.executor.urgs_executor.entity.ExecutorTaskInstance;
 import com.example.executor.urgs_executor.handler.TaskHandler;
 import com.example.executor.urgs_executor.mapper.DataSourceConfigMapper;
+import com.example.executor.urgs_executor.util.PlaceholderUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jcraft.jsch.ChannelExec;
@@ -17,6 +18,8 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 @Slf4j
@@ -29,7 +32,7 @@ public class PythonTaskHandler implements TaskHandler {
     private DataSourceConfigMapper dataSourceConfigMapper;
 
     @Override
-    public String execute(TaskInstance instance) throws Exception {
+    public String execute(ExecutorTaskInstance instance) throws Exception {
         String script = "";
         String resourceId = null;
 
@@ -47,12 +50,11 @@ public class PythonTaskHandler implements TaskHandler {
         }
 
         if (script.isEmpty()) {
-            log.warn("Python task {} has no script content", instance.getId());
-            return "No script content";
+            throw new RuntimeException("Python task " + instance.getId() + " has no script content");
         }
 
         // Replace $dataDate with actual date
-        script = script.replace("$dataDate", instance.getDataDate());
+        script = PlaceholderUtils.replaceDataDate(script, instance.getDataDate());
 
         log.info("Executing Python Task {}: {}", instance.getId(), script);
 
@@ -63,7 +65,7 @@ public class PythonTaskHandler implements TaskHandler {
         }
     }
 
-    private String executeRemote(TaskInstance instance, String script, String resourceId) throws Exception {
+    private String executeRemote(ExecutorTaskInstance instance, String script, String resourceId) throws Exception {
         DataSourceConfig config = dataSourceConfigMapper.selectById(resourceId);
         if (config == null) {
             throw new RuntimeException("Resource not found: " + resourceId);
@@ -82,7 +84,9 @@ public class PythonTaskHandler implements TaskHandler {
             port = 22;
 
         StringBuilder logBuilder = new StringBuilder();
-        logBuilder.append("Executing Remote Python Task ").append(instance.getId()).append("\n");
+        String timeStart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        logBuilder.append("[").append(timeStart).append("] ").append("Executing Remote Python Task ")
+                .append(instance.getId()).append("\n");
         logBuilder.append("Target: ").append(username).append("@").append(host).append(":").append(port).append("\n");
         logBuilder.append("Script: ").append(script).append("\n\n");
 
@@ -151,10 +155,15 @@ public class PythonTaskHandler implements TaskHandler {
 
             int exitCode = channel.getExitStatus();
             if (exitCode != 0) {
-                logBuilder.append("\nRemote process exited with code ").append(exitCode);
+                String timeErr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                logBuilder.append("\n[").append(timeErr).append("] ").append("Remote process exited with code ")
+                        .append(exitCode);
                 throw new RuntimeException(
                         "Remote python script exited with code " + exitCode + "\nLogs:\n" + logBuilder.toString());
             }
+
+            String timeEnd = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            logBuilder.append("\n[").append(timeEnd).append("] ").append("Remote Python Task success.");
 
         } finally {
             if (channel != null)
@@ -166,13 +175,15 @@ public class PythonTaskHandler implements TaskHandler {
         return logBuilder.toString();
     }
 
-    private String executeLocal(TaskInstance instance, String script) throws Exception {
+    private String executeLocal(ExecutorTaskInstance instance, String script) throws Exception {
         ProcessBuilder pb = new ProcessBuilder("python3", "-c", script);
         pb.redirectErrorStream(true);
         Process process = pb.start();
 
         StringBuilder logBuilder = new StringBuilder();
-        logBuilder.append("Executing Local Python Task ").append(instance.getId()).append("\n");
+        String timeStart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        logBuilder.append("[").append(timeStart).append("] ").append("Executing Local Python Task ")
+                .append(instance.getId()).append("\n");
         logBuilder.append("Script: ").append(script).append("\n\n");
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
@@ -186,16 +197,22 @@ public class PythonTaskHandler implements TaskHandler {
         try {
             int exitCode = process.waitFor();
             if (exitCode != 0) {
-                logBuilder.append("\nProcess exited with code ").append(exitCode);
+                String timeErr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                logBuilder.append("\n[").append(timeErr).append("] ").append("Process exited with code ")
+                        .append(exitCode);
                 throw new RuntimeException(
                         "Python script exited with code " + exitCode + "\nLogs:\n" + logBuilder.toString());
             }
         } catch (InterruptedException e) {
             log.warn("Python task {} interrupted, killing process...", instance.getId());
             process.destroy();
-            logBuilder.append("\nProcess interrupted and killed.");
+            String timeErr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            logBuilder.append("\n[").append(timeErr).append("] ").append("Process interrupted and killed.");
             throw e;
         }
+
+        String timeEnd = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        logBuilder.append("\n[").append(timeEnd).append("] ").append("Local Python Task success.");
 
         return logBuilder.toString();
     }

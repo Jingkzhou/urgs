@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { getAvatarUrl } from '../../utils/avatarUtils';
 import { MessageCircle, X, Search, Plus, Minus } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import SessionList from '../im/SessionList';
 import ChatWindow from '../im/ChatWindow';
 import { imService } from '../../services/imService';
 import { userService } from '../../services/userService';
-
+import { WS_URL } from '../../config';
 const ChatWidget: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
@@ -94,10 +96,27 @@ const ChatWidget: React.FC = () => {
     const sessionsRef = useRef(sessions);
     const groupMembersRef = useRef(groupMembers);
     const availableUsersRef = useRef(availableUsers);
+    const activeSessionIdRef = useRef(activeSessionId);
+    const isOpenRef = useRef(isOpen);
 
     useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
     useEffect(() => { groupMembersRef.current = groupMembers; }, [groupMembers]);
     useEffect(() => { availableUsersRef.current = availableUsers; }, [availableUsers]);
+    useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
+    useEffect(() => { isOpenRef.current = isOpen; }, [isOpen]);
+
+    // Clear unread when opening widget if active session exists
+    useEffect(() => {
+        if (isOpen && activeSessionId) {
+            setSessions(prev => prev.map(s => {
+                if (s.id === activeSessionId) {
+                    return { ...s, unread: 0 };
+                }
+                return s;
+            }));
+            imService.clearUnread(activeSessionId).catch(e => console.error("Failed to clear unread", e));
+        }
+    }, [isOpen, activeSessionId]);
 
     // WebSocket Ref
     const ws = useRef<WebSocket | null>(null);
@@ -142,33 +161,8 @@ const ChatWidget: React.FC = () => {
                     time: m.sendTime ? new Date(m.sendTime).toLocaleTimeString() : '',
                     isSelf: m.senderId === currentUser.userId,
                     type: m.msgType === 2 ? 'image' : 'text',
-                    senderName: (() => {
-                        if (m.senderId === currentUser.userId) return currentUser.wxId || 'Me';
-                        if (isGroup) {
-                            // Use local variable currentMembers for immediate access
-                            const member = currentMembers.find(gm => gm.userId === m.senderId);
-                            // Fallback to state or refs if needed, but currentMembers is freshest
-                            const user = availableUsers.find(u => u.userId === m.senderId);
-                            return member?.wxId || user?.wxId || ('User ' + m.senderId);
-                        } else {
-                            // Private chat: use session name
-                            const s = sessions.find(s => s.id === sid);
-                            return s?.name || ('User ' + m.senderId);
-                        }
-                    })(),
-                    senderAvatar: (() => {
-                        // Logic for avatar key to generate consistent colors/shapes if not real URL
-                        const key = m.senderId;
-                        // Real avatar if available
-                        if (m.senderId === currentUser.userId) return currentUser.avatarUrl;
-                        if (isGroup) {
-                            const member = currentMembers.find(gm => gm.userId === m.senderId);
-                            return member?.avatarUrl;
-                        } else {
-                            const s = sessions.find(s => s.id === sid);
-                            return s?.avatar;
-                        }
-                    })()
+                    senderName: m.senderName || (m.senderId === currentUser.userId ? (currentUser.wxId || 'Me') : ('User ' + m.senderId)),
+                    senderAvatar: m.senderAvatar || (m.senderId === currentUser.userId ? currentUser.avatarUrl : null)
                 }));
                 setMessages(prev => ({
                     ...prev,
@@ -186,20 +180,20 @@ const ChatWidget: React.FC = () => {
         try {
             const data = await imService.getSessions();
 
-            // Helper to enrich data
+            // Helper to enrich data (Only for Avatar fallback or Group name if needed)
             const getMeta = (id: number, type: number) => {
-                if (type === 2) return { name: '群聊', avatar: null }; // Fallback
-                if (id === 102) return { name: '李经理', avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop' };
-                if (id === 103) return { name: '智能助手', avatar: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=100&h=100&fit=crop' };
-                return { name: '用户 ' + id, avatar: null };
+                if (type === 2) return { name: '群聊', avatar: null };
+                return { name: '', avatar: null }; // No hardcoding
             };
 
             const uiSessions = data.map(s => {
                 const meta = getMeta(s.peerId, s.chatType);
+                // Fallback to "User {ID}" to avoid "1" avatar, ensuring "U" or consistent letter
+                const finalName = s.name || meta.name || ('User ' + s.peerId);
                 return {
                     id: s.peerId,
-                    name: s.name || meta.name, // Use backend name if available (now fixed in Entity)
-                    avatar: s.avatar || meta.avatar,
+                    name: finalName,
+                    avatar: getAvatarUrl(s.avatar || meta.avatar, finalName),
                     message: s.lastMsgContent || '',
                     time: s.lastMsgTime ? new Date(s.lastMsgTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
                     unread: s.unreadCount,
@@ -208,6 +202,14 @@ const ChatWidget: React.FC = () => {
             });
 
             if (uiSessions.length > 0) {
+                // Fix: Ensure active session is marked as read in the fetched list to avoid race condition
+                // where fetchSessions overwrites the local clearUnread effect.
+                if (activeSessionIdRef.current) {
+                    const activeDetails = uiSessions.find(s => s.id === activeSessionIdRef.current);
+                    if (activeDetails) {
+                        activeDetails.unread = 0;
+                    }
+                }
                 setSessions(uiSessions);
             }
         } catch (e) {
@@ -221,7 +223,7 @@ const ChatWidget: React.FC = () => {
 
         // 2. Connect WebSocket
         if (currentUser.userId && currentUser.userId !== -1) {
-            const socket = new WebSocket('ws://localhost:8080/ws/im?userId=' + currentUser.userId);
+            const socket = new WebSocket(WS_URL + '?userId=' + currentUser.userId);
             socket.onopen = () => console.log('IM WS Connected');
             socket.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
@@ -236,28 +238,8 @@ const ChatWidget: React.FC = () => {
                     time: msg.sendTime ? new Date(msg.sendTime).toLocaleTimeString() : new Date().toLocaleTimeString(),
                     isSelf: msg.senderId === currentUser.userId,
                     type: msg.msgType === 2 ? 'image' : 'text',
-                    senderName: (() => {
-                        if (msg.senderId === currentUser.userId) return currentUser.wxId || 'Me';
-                        if (isGroup) {
-                            const member = groupMembersRef.current.find(gm => gm.userId === msg.senderId);
-                            const user = availableUsersRef.current.find(u => u.userId === msg.senderId);
-                            return member?.wxId || user?.wxId || ('User ' + msg.senderId);
-                        } else {
-                            const s = sessionsRef.current.find(s => s.id === (isGroup ? msg.groupId : msg.senderId));
-                            return s?.name || ('User ' + msg.senderId);
-                        }
-                    })(),
-                    senderAvatar: (() => {
-                        // Real avatar logic
-                        if (msg.senderId === currentUser.userId) return currentUser.avatarUrl;
-                        if (isGroup) {
-                            const member = groupMembersRef.current.find(gm => gm.userId === msg.senderId);
-                            return member?.avatarUrl;
-                        } else {
-                            const s = sessionsRef.current.find(s => s.id === (isGroup ? msg.groupId : msg.senderId));
-                            return s?.avatar;
-                        }
-                    })()
+                    senderName: msg.senderName || (msg.senderId === currentUser.userId ? (currentUser.wxId || 'Me') : ('User ' + msg.senderId)),
+                    senderAvatar: msg.senderAvatar || (msg.senderId === currentUser.userId ? currentUser.avatarUrl : null)
                 };
 
                 const conversationId = msg.conversationId || getConversationId(currentUser.userId, msg.senderId === currentUser.userId ? msg.receiverId : msg.senderId);
@@ -304,7 +286,8 @@ const ChatWidget: React.FC = () => {
                                 ...session,
                                 message: incomingMsg.type === 'image' ? '[Image]' : incomingMsg.content,
                                 time: incomingMsg.time,
-                                unread: (activeSessionId === peerId) ? 0 : (session.unread + 1)
+                                // Use Refs to check current state safely within closure
+                                unread: (isOpenRef.current && activeSessionIdRef.current === peerId) ? 0 : ((session.unread || 0) + 1)
                             };
                         }
                         return session;
@@ -336,7 +319,8 @@ const ChatWidget: React.FC = () => {
             type: type, // Frontend prop
             isSelf: true,
             time: new Date().toLocaleTimeString(),
-            senderAvatar: currentUser.avatarUrl
+            senderAvatar: currentUser.avatarUrl,
+            senderName: currentUser.name || currentUser.wxId || 'Me' // Ensure name is present for avatar generation
         };
 
         // UI Optimistic Update
@@ -357,9 +341,17 @@ const ChatWidget: React.FC = () => {
             return s;
         }));
 
-        // Send to Backend
+        // Send to Backend (Sanitized Payload)
+        const payload = {
+            receiverId: session.id,
+            groupId: session.type === 'group' ? session.id : undefined,
+            content,
+            msgType: type === 'image' ? 2 : 1,
+            conversationId: getConversationId(currentUser.userId, session.id)
+        };
+
         try {
-            await imService.sendMessage(newMessage);
+            await imService.sendMessage(payload as any);
         } catch (e) {
             console.error('Send failed', e);
         }
@@ -407,10 +399,10 @@ const ChatWidget: React.FC = () => {
             // Re-map (duplicated logic, should refactor)
             const getMeta = (id: number, type: number) => {
                 if (type === 2) return { name: 'Risk Dept Group', avatar: null };
-                if (id === 102) return { name: 'Li Manager', avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop' };
-                if (id === 103) return { name: 'Smart Assistant', avatar: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=100&h=100&fit=crop' };
+                if (id === 102) return { name: 'Li Manager', avatar: null };
+                if (id === 103) return { name: 'Smart Assistant', avatar: null };
                 const u = availableUsers.find(u => u.userId === id) || { wxId: 'User ' + id };
-                return { name: u.wxId || ('User ' + id), avatar: null };
+                return { name: u.wxId || ('User ' + id), avatar: getAvatarUrl(u.avatarUrl, u.userId) };
             };
 
             const uiSessions = newSessions.map(s => {
@@ -526,104 +518,141 @@ const ChatWidget: React.FC = () => {
         }
     };
 
+    const totalUnread = sessions.reduce((sum, s) => sum + (s.unread || 0), 0);
+
     return (
-        <div className="fixed bottom-8 right-8 z-50 flex flex-col items-end print:hidden">
+        <div className="fixed bottom-8 right-8 z-50 flex flex-col items-end print:hidden font-sans antialiased">
             {/* Chat Window */}
-            {isOpen && (
-                <div className="mb-4 bg-white rounded-lg shadow-2xl border border-slate-200 w-[800px] h-[600px] flex overflow-hidden animate-in slide-in-from-bottom-5 fade-in duration-300">
+            <AnimatePresence>
+                {isOpen && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                        className="mb-6 bg-white/85 backdrop-blur-2xl rounded-2xl shadow-2xl border border-white/50 w-[950px] h-[700px] flex overflow-hidden ring-1 ring-black/5"
+                    >
 
-                    {/* Sidebar */}
-                    <div className="w-80 bg-slate-50 border-r border-slate-200 flex flex-col flex-shrink-0">
-                        <div className="p-4 flex items-center justify-between border-b border-slate-100">
-                            <div className="flex items-center gap-3">
-                                <img
-                                    src={currentUser?.avatarUrl || "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop"}
-                                    className="w-8 h-8 rounded-full object-cover"
-                                    alt="My Profile"
-                                />
-                                <span className="font-bold text-slate-700">消息</span>
-                            </div>
-                            <div className="relative">
-                                <button
-                                    onClick={() => setShowMenu(!showMenu)}
-                                    className="p-1 hover:bg-slate-200 rounded text-slate-500"
-                                >
-                                    <Plus size={20} />
-                                </button>
-                                {/* Menu Backdrop */}
-                                {showMenu && (
-                                    <div
-                                        className="fixed inset-0 z-40"
-                                        onClick={() => setShowMenu(false)}
-                                    />
-                                )}
-
-                                {/* Dropdown Menu */}
-                                {showMenu && (
-                                    <div className="absolute right-0 top-12 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-200">
-                                        <button
-                                            className="w-full text-left px-4 py-2 hover:bg-slate-50 text-sm text-slate-700"
-                                            onClick={handleOpenAddFriend}
-                                        >
-                                            添加好友
-                                        </button>
-                                        <button
-                                            className="w-full text-left px-4 py-2 hover:bg-slate-50 text-sm text-slate-700"
-                                            onClick={handleOpenCreateGroup}
-                                        >
-                                            发起群聊
-                                        </button>
+                        {/* Sidebar */}
+                        <div className="w-80 bg-slate-50/50 backdrop-blur-md border-r border-slate-200/60 flex flex-col flex-shrink-0">
+                            {/* Header */}
+                            <div className="h-16 px-5 flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-slate-50/50 to-white/50">
+                                <div className="flex items-center gap-3">
+                                    <div className="relative">
+                                        <img
+                                            src={getAvatarUrl(currentUser?.avatarUrl, currentUser?.name || currentUser?.wxId || 'Me')}
+                                            className="w-9 h-9 rounded-full object-cover ring-2 ring-white shadow-sm"
+                                            alt="My Profile"
+                                        />
+                                        <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full"></div>
                                     </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="p-4">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                                <input
-                                    type="text"
-                                    placeholder="搜索"
-                                    className="w-full pl-9 pr-4 py-2 bg-slate-200/50 border-transparent rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-all"
-                                />
-                            </div>
-                        </div>
-
-                        <SessionList
-                            sessions={sessions}
-                            activeSessionId={activeSessionId || undefined}
-                            onSelectSession={handleSelectSession}
-                            onDeleteSession={handleDeleteSession}
-                        />
-
-                    </div>
-
-                    {/* Main Chat Area */}
-                    <div className="flex-1 bg-[#FDFDFC] flex flex-col relative w-full">
-
-
-                        {activeSessionId && activeSession ? (
-                            <ChatWindow
-                                key={activeSessionId}
-                                sessionName={activeSession.name}
-                                messages={messages[activeSessionId] || []}
-                                onSendMessage={handleSendMessage}
-                                onFileUpload={userService.uploadFile}
-                                onShowDetails={handleShowGroupDetails}
-                            />
-                        ) : (
-                            <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-                                <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6 text-slate-400">
-                                    <MessageCircle size={32} />
+                                    <div className="flex flex-col">
+                                        <span className="font-bold text-slate-800 text-sm tracking-tight">{currentUser?.name || currentUser?.wxId || '消息'}</span>
+                                        <span className="text-[10px] text-slate-500 font-medium">在线</span>
+                                    </div>
                                 </div>
-                                <h3 className="text-slate-400 text-sm font-medium">选择一个会话开始聊天</h3>
-                            </div>
-                        )}
-                    </div>
+                                <div className="relative">
+                                    <button
+                                        onClick={() => setShowMenu(!showMenu)}
+                                        className="w-8 h-8 flex items-center justify-center hover:bg-slate-200/80 rounded-full text-slate-600 transition-colors"
+                                    >
+                                        <Plus size={18} strokeWidth={2.5} />
+                                    </button>
 
-                </div>
-            )
-            }
+                                    {/* Backdrop */}
+                                    {showMenu && (
+                                        <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
+                                    )}
+
+                                    {/* Dropdown Menu */}
+                                    <AnimatePresence>
+                                        {showMenu && (
+                                            <motion.div
+                                                initial={{ opacity: 0, y: -10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0, y: -10 }}
+                                                className="absolute right-0 top-10 w-48 bg-white/90 backdrop-blur-xl rounded-xl shadow-xl border border-white/50 py-1.5 z-50 ring-1 ring-black/5"
+                                            >
+                                                <button
+                                                    className="w-full text-left px-4 py-2.5 hover:bg-slate-100/80 text-sm text-slate-700 font-medium transition-colors flex items-center gap-2"
+                                                    onClick={handleOpenAddFriend}
+                                                >
+                                                    <div className="w-6 h-6 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600"><Plus size={14} /></div>
+                                                    添加好友
+                                                </button>
+                                                <button
+                                                    className="w-full text-left px-4 py-2.5 hover:bg-slate-100/80 text-sm text-slate-700 font-medium transition-colors flex items-center gap-2"
+                                                    onClick={handleOpenCreateGroup}
+                                                >
+                                                    <div className="w-6 h-6 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600"><MessageCircle size={14} /></div>
+                                                    发起群聊
+                                                </button>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
+                            </div>
+
+                            {/* Search */}
+                            <div className="p-4">
+                                <div className="relative group">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 transition-colors group-focus-within:text-indigo-500" />
+                                    <input
+                                        type="text"
+                                        placeholder="搜索联系人、群组"
+                                        className="w-full pl-9 pr-4 py-2.5 bg-white/60 border border-slate-200/60 rounded-xl text-sm placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500/50 transition-all shadow-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            <SessionList
+                                sessions={sessions}
+                                activeSessionId={activeSessionId || undefined}
+                                onSelectSession={handleSelectSession}
+                                onDeleteSession={handleDeleteSession}
+                            />
+
+                        </div>
+
+                        {/* Main Chat Area */}
+                        <div className="flex-1 bg-white/40 flex flex-col relative w-full">
+                            {/* Global Close Button */}
+                            <div className="absolute top-0 right-0 h-16 flex items-center pr-6 z-20">
+                                <button
+                                    onClick={() => {
+                                        setIsOpen(false);
+                                        setActiveSessionId(null);
+                                    }}
+                                    className="p-2 hover:bg-white/50 rounded-xl text-slate-500 hover:text-red-600 transition-colors"
+                                    title="关闭"
+                                >
+                                    <X size={22} />
+                                </button>
+                            </div>
+
+                            {activeSessionId && activeSession ? (
+                                <ChatWindow
+                                    key={activeSessionId}
+                                    sessionName={activeSession.name}
+                                    messages={messages[activeSessionId] || []}
+                                    onSendMessage={handleSendMessage}
+                                    onFileUpload={userService.uploadFile}
+                                    onShowDetails={handleShowGroupDetails}
+                                />
+                            ) : (
+                                <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-slate-50/30">
+                                    <div className="w-24 h-24 bg-gradient-to-tr from-indigo-50 to-purple-50 rounded-3xl flex items-center justify-center mb-6 shadow-sm border border-white">
+                                        <MessageCircle size={40} className="text-indigo-200" />
+                                    </div>
+                                    <h3 className="text-slate-600 font-semibold text-lg mb-2">欢迎使用 URGS 消息</h3>
+                                    <p className="text-slate-400 text-sm max-w-xs leading-relaxed">选择左侧会话开始聊天，或点击 <span className="inline-flex items-center justify-center w-5 h-5 bg-slate-200 rounded-full text-xs text-slate-500 mx-1"><Plus size={10} /></span> 发起新的对话</p>
+                                </div>
+                            )}
+                        </div>
+
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Modals */}
             {
@@ -654,7 +683,7 @@ const ChatWidget: React.FC = () => {
                                                 }
                                             }}
                                         />
-                                        <img src={u.avatarUrl || ('https://api.dicebear.com/7.x/avataaars/svg?seed=' + u.userId)} className="w-8 h-8 rounded-full" />
+                                        <img src={getAvatarUrl(u.avatarUrl, u.userId)} className="w-8 h-8 rounded-full" />
                                         <span>{u.wxId} (ID: {u.userId})</span>
                                     </div>
                                 ))}
@@ -723,7 +752,7 @@ const ChatWidget: React.FC = () => {
                                                 </button>
                                             )}
                                             <img
-                                                src={m.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop'}
+                                                src={getAvatarUrl(m.avatarUrl, m.userId)}
                                                 className={`w-10 h-10 rounded-lg object-cover transition-all ${isDeleteMode ? 'shake-animation opacity-90' : ''}`}
                                                 alt={m.wxId}
                                             />
@@ -766,7 +795,7 @@ const ChatWidget: React.FC = () => {
                                         <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedUserIds.includes(u.userId) ? 'bg-[#07C160] border-[#07C160]' : 'border-slate-300'}`}>
                                             {selectedUserIds.includes(u.userId) && <div className="w-2 h-2 bg-white rounded-full" />}
                                         </div>
-                                        <img src={u.avatarUrl || ('https://api.dicebear.com/7.x/avataaars/svg?seed=' + u.userId)} className="w-8 h-8 rounded-full" />
+                                        <img src={getAvatarUrl(u.avatarUrl, u.userId)} className="w-8 h-8 rounded-full" />
                                         <span>{u.wxId || ('用户 ' + u.userId)}</span>
                                     </div>
                                 ))}
@@ -805,7 +834,7 @@ const ChatWidget: React.FC = () => {
                                         <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedUserIds.includes(u.userId) ? 'bg-[#07C160] border-[#07C160]' : 'border-slate-300'}`}>
                                             {selectedUserIds.includes(u.userId) && <div className="w-2 h-2 bg-white rounded-full" />}
                                         </div>
-                                        <img src={u.avatarUrl || ('https://api.dicebear.com/7.x/avataaars/svg?seed=' + u.userId)} className="w-8 h-8 rounded-full" />
+                                        <img src={getAvatarUrl(u.avatarUrl, u.userId)} className="w-8 h-8 rounded-full" />
                                         <span>{u.wxId || ('用户 ' + u.userId)}</span>
                                     </div>
                                 ))}
@@ -827,17 +856,43 @@ const ChatWidget: React.FC = () => {
             }
 
             {/* Floating Action Button */}
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className={`${isOpen ? 'bg-red-500 rotate-90' : 'bg-[#07C160] rotate-0'} text-white p-3.5 rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300 flex items-center justify-center relative group`}
+            <motion.button
+                layout
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => {
+                    const newState = !isOpen;
+                    setIsOpen(newState);
+                    if (!newState) {
+                        setActiveSessionId(null);
+                    }
+                }}
+                className={`
+                    ${isOpen ? 'bg-gradient-to-r from-red-500 to-red-600' : 'bg-gradient-to-r from-indigo-500 to-purple-600'} 
+                    ${!isOpen && totalUnread > 0 ? 'animate-pulse ring-4 ring-red-400/50' : ''}
+                    text-white p-4 rounded-full shadow-xl shadow-indigo-500/30 hover:shadow-2xl hover:shadow-indigo-500/40 
+                    transition-all duration-300 flex items-center justify-center relative group backdrop-blur-sm z-50
+                `}
             >
-                {isOpen ? <X size={24} /> : <MessageCircle size={24} />}
+                <div className="relative z-10">
+                    {isOpen ? <X size={26} /> : <MessageCircle size={26} fill="currentColor" className="text-white/20" strokeWidth={1.5} />}
+                    {!isOpen && <MessageCircle size={26} className="absolute inset-0 text-white" strokeWidth={2} />}
+                </div>
 
                 {/* Unread Indicator */}
-                {!isOpen && sessions.reduce((sum, s) => sum + (s.unread || 0), 0) > 0 && (
-                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full border-2 border-white"></span>
-                )}
-            </button>
+                <AnimatePresence>
+                    {!isOpen && totalUnread > 0 && (
+                        <motion.span
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            exit={{ scale: 0 }}
+                            className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white px-1 shadow-sm"
+                        >
+                            {totalUnread}
+                        </motion.span>
+                    )}
+                </AnimatePresence>
+            </motion.button>
         </div >
     );
 };

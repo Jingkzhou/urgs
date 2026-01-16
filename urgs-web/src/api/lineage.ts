@@ -185,3 +185,29 @@ export const getExportPdfUrl = (id: number) => `/api/lineage/report/export/pdf/$
  * 导出报告 Word URL
  */
 export const getExportWordUrl = (id: number) => `/api/lineage/report/export/word/${id}`;
+
+// ============= 血缘引擎控制 API =============
+
+export const getLineageEngineStatus = () => {
+    return get('/api/metadata/lineage/engine/status');
+};
+
+export const startLineageEngine = (params: any = {}) => {
+    return post('/api/metadata/lineage/engine/start', params);
+};
+
+export const restartLineageEngine = () => {
+    return post('/api/metadata/lineage/engine/restart', {});
+};
+
+export const stopLineageEngine = () => {
+    return post('/api/metadata/lineage/engine/stop', {});
+};
+
+export const getLineageEngineLogs = (lines: number = 200) => {
+    return get('/api/metadata/lineage/engine/logs', { lines: String(lines) });
+};
+
+export const checkLineageVersionConsistency = (repoId: number, ref?: string) => {
+    return get('/api/metadata/lineage/engine/version-check', { repoId: String(repoId), ref: ref || '' });
+};

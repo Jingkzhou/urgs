@@ -1,5 +1,6 @@
 export interface RequestOptions extends RequestInit {
     params?: Record<string, string | number | boolean | undefined | null>;
+    isBlob?: boolean;
 }
 
 export const request = async <T = any>(url: string, options: RequestOptions = {}): Promise<T> => {
@@ -32,10 +33,12 @@ export const request = async <T = any>(url: string, options: RequestOptions = {}
     });
 
     if (response.status === 401) {
-        // Handle 401 Unauthorized
-        // Optionally redirect to login or clear token
-        // localStorage.removeItem('auth_token');
-        // window.location.href = '/login';
+        // Handle 401 Unauthorized - Centralized logout logic
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
+        localStorage.removeItem('user_permissions');
+        // Use hash-friendly redirect or just reload to trigger App's re-render
+        window.location.href = '/';
         throw new Error('Unauthorized');
     }
 
@@ -49,6 +52,10 @@ export const request = async <T = any>(url: string, options: RequestOptions = {}
         return null as T;
     }
 
+    if (options.isBlob) {
+        return await response.blob() as unknown as T;
+    }
+
     try {
         return await response.json();
     } catch (e) {
@@ -57,18 +64,28 @@ export const request = async <T = any>(url: string, options: RequestOptions = {}
     }
 };
 
-export const get = <T = any>(url: string, params?: Record<string, string>, options?: RequestOptions) => {
+export const get = <T = any>(url: string, params?: RequestOptions['params'], options?: RequestOptions) => {
     return request<T>(url, { ...options, method: 'GET', params });
 };
 
 export const post = <T = any>(url: string, data?: any, options?: RequestOptions) => {
-    return request<T>(url, { ...options, method: 'POST', body: JSON.stringify(data) });
+    const isFormData = data instanceof FormData;
+    return request<T>(url, {
+        ...options,
+        method: 'POST',
+        body: isFormData ? data : JSON.stringify(data)
+    });
 };
 
 export const put = <T = any>(url: string, data?: any, options?: RequestOptions) => {
-    return request<T>(url, { ...options, method: 'PUT', body: JSON.stringify(data) });
+    const isFormData = data instanceof FormData;
+    return request<T>(url, {
+        ...options,
+        method: 'PUT',
+        body: isFormData ? data : JSON.stringify(data)
+    });
 };
 
-export const del = <T = any>(url: string, params?: Record<string, string>, options?: RequestOptions) => {
+export const del = <T = any>(url: string, params?: RequestOptions['params'], options?: RequestOptions) => {
     return request<T>(url, { ...options, method: 'DELETE', params });
 };

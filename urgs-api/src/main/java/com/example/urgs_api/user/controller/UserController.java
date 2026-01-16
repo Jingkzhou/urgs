@@ -61,6 +61,22 @@ public class UserController {
         return removed ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
     }
 
+    @PostMapping("/batch")
+    public ResponseEntity<Void> batch(@RequestBody List<UserRequest> requests) {
+        List<User> users = requests.stream()
+                .map(req -> toEntity(req, null))
+                .collect(Collectors.toList());
+        userService.batchUpsert(users);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/export")
+    public List<UserDTO> export() {
+        return userService.listAll().stream()
+                .map(UserDTO::fromEntity)
+                .collect(Collectors.toList());
+    }
+
     @GetMapping("/permissions")
     public ResponseEntity<java.util.Set<String>> getMyPermissions(
             @RequestAttribute(value = "userId", required = false) Long userId) {
@@ -98,12 +114,12 @@ public class UserController {
             return ResponseEntity.notFound().build();
         }
 
-        // Only update allowed fields (e.g., avatar)
+        // Only update allowed fields (e.g., avatar, git token)
         if (req.getAvatarUrl() != null) {
             user.setAvatarUrl(req.getAvatarUrl());
         }
-        // Add other profile fields here if needed later (phone, email etc)
 
+        user.setPassword(null);
         userService.updateById(user);
         return ResponseEntity.ok(UserDTO.fromEntity(user));
     }
@@ -116,7 +132,7 @@ public class UserController {
         u.setOrgName(req.getOrgName());
         u.setRoleName(req.getRoleName());
         u.setRoleId(req.getRoleId()); // New: Map roleId
-        u.setSsoSystem(req.getSsoSystem());
+        u.setSystem(req.getSystem());
         u.setPhone(req.getPhone());
         u.setLastLogin(req.getLastLogin());
         u.setStatus(req.getStatus());

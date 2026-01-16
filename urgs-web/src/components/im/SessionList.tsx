@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { MoreHorizontal, Trash2 } from 'lucide-react';
+import { getAvatarUrl } from '../../utils/avatarUtils';
 
 interface Session {
     id: number;
@@ -60,7 +62,7 @@ const SessionList: React.FC<SessionListProps> = ({ sessions, activeSessionId, on
                 >
                     <div className="relative">
                         {session.avatar ? (
-                            <img src={session.avatar} className="w-10 h-10 rounded-lg object-cover" alt={session.name} />
+                            <img src={getAvatarUrl(session.avatar, session.id)} className="w-10 h-10 rounded-lg object-cover" alt={session.name} />
                         ) : (
                             <div className="w-10 h-10 rounded-lg bg-slate-200 flex items-center justify-center text-slate-500">
                                 <MoreHorizontal size={20} />
@@ -86,12 +88,13 @@ const SessionList: React.FC<SessionListProps> = ({ sessions, activeSessionId, on
                 </div>
             ))}
 
-            {/* Context Menu */}
-            {contextMenu && (
+            {/* Context Menu - Portaled to body */}
+            {contextMenu && createPortal(
                 <div
                     ref={contextMenuRef}
-                    className="fixed bg-white shadow-xl border border-slate-100 rounded-lg z-[100] py-1 w-32 animate-in fade-in duration-200"
+                    className="fixed bg-white shadow-xl border border-slate-100 rounded-lg z-[9999] py-1 w-32 animate-in fade-in duration-200"
                     style={{ top: contextMenu.y, left: contextMenu.x }}
+                    onClick={(e) => e.stopPropagation()}
                 >
                     <button
                         onClick={handleDelete}
@@ -100,7 +103,8 @@ const SessionList: React.FC<SessionListProps> = ({ sessions, activeSessionId, on
                         <Trash2 size={14} />
                         <span>删除会话</span>
                     </button>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );

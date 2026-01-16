@@ -27,7 +27,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Override
     public boolean updateById(User entity) {
         if (entity.getPassword() != null && !entity.getPassword().isEmpty()) {
-            entity.setPassword(passwordEncoder.encode(entity.getPassword()));
+            // 防御性检查：如果是以 $2a$ 开头的字符串，则认为是已经加密过的 BCrypt 哈希值，不再加密
+            if (!entity.getPassword().startsWith("$2a$")) {
+                entity.setPassword(passwordEncoder.encode(entity.getPassword()));
+            }
         }
         return super.updateById(entity);
     }
@@ -80,14 +83,39 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     @Override
     public java.util.List<User> searchUsers(String keyword) {
-        if (keyword == null || keyword.trim().isEmpty()) {
-            return list();
+        return baseMapper.searchUsers(keyword);
+    }
+
+    @Override
+    public void batchUpsert(java.util.List<User> users) {
+        if (users == null || users.isEmpty())
+            return;
+
+        for (User user : users) {
+            if (user.getEmpId() == null || user.getEmpId().isEmpty())
+                continue;
+
+            // Check if user exists by empId
+            User existing = baseMapper.selectOne(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<User>()
+                            .eq(User::getEmpId, user.getEmpId()));
+
+            if (existing != null) {
+                // Update: carry over the database ID
+                user.setId(existing.getId());
+                this.updateById(user);
+            } else {
+                // Insert: ensure password is set (default 123456 if empty)
+                if (user.getPassword() == null || user.getPassword().isEmpty()) {
+                    user.setPassword("123456");
+                }
+                this.save(user);
+            }
         }
-        return list(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<User>()
-                .like("name", keyword)
-                .or()
-                .like("emp_id", keyword)
-                .or()
-                .like("role_name", keyword)); // Also search by role? Maybe useful.
+    }
+
+    @Override
+    public java.util.List<User> listAll() {
+        return this.list();
     }
 }

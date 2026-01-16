@@ -1,22 +1,34 @@
-FROM python:3.10-slim
+FROM python:3.10-slim-bullseye
 
-WORKDIR /app
+WORKDIR /sql-lineage-engine
 
-# Install Java 21
+# Install Java 11 (Standard in Bullseye) to avoid clone3/EPERM issues in restricted envs
+# Also install procps (kill, pkill, pgrep) and psmisc (killall) for process management
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    openjdk-21-jre-headless \
+    openjdk-11-jre-headless \
+    libjaxb-java \
+    libjaxb-api-java \
+    procps \
+    psmisc \
     && rm -rf /var/lib/apt/lists/*
 
-# Set JAVA_HOME
-ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+# Set JAVA_HOME (Multi-arch support)
+RUN ln -s /usr/lib/jvm/java-11-openjdk-$(dpkg --print-architecture) /usr/lib/jvm/default-java
+ENV JAVA_HOME=/usr/lib/jvm/default-java
 
 COPY requirements.txt .
 RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --no-cache-dir -r requirements.txt
 
 COPY . .
+RUN chmod +x run.sh
 
 # Add current directory to PYTHONPATH
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/sql-lineage-engine
+
+# Fix OpenBLAS issue in restricted Docker environments
+ENV OPENBLAS_NUM_THREADS=1
+ENV GOTO_NUM_THREADS=1
+ENV OMP_NUM_THREADS=1
 
 # This container seems to be a CLI tool, but for composition we might want it to stay alive or run a specific command.
 # For now, we set the entrypoint so arguments can be passed.

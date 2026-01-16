@@ -28,7 +28,8 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Override
-    public Page<Issue> getIssueList(Page<Issue> page, String keyword, String status, String issueType) {
+    public Page<Issue> getIssueList(Page<Issue> page, String keyword, String status, String issueType, String system,
+            String reporter, String handler, String startTime, String endTime) {
         LambdaQueryWrapper<Issue> wrapper = new LambdaQueryWrapper<>();
 
         if (StringUtils.hasText(keyword)) {
@@ -46,6 +47,34 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
 
         if (StringUtils.hasText(issueType) && !"all".equals(issueType)) {
             wrapper.eq(Issue::getIssueType, issueType);
+        }
+
+        if (StringUtils.hasText(system)) {
+            wrapper.eq(Issue::getSystem, system);
+        }
+
+        if (StringUtils.hasText(reporter)) {
+            wrapper.like(Issue::getReporter, reporter);
+        }
+
+        if (StringUtils.hasText(handler)) {
+            wrapper.like(Issue::getHandler, handler);
+        }
+
+        if (StringUtils.hasText(startTime)) {
+            try {
+                wrapper.ge(Issue::getOccurTime, LocalDateTime.parse(startTime + " 00:00:00", DATE_TIME_FORMATTER));
+            } catch (Exception e) {
+                // Ignore invalid date format
+            }
+        }
+
+        if (StringUtils.hasText(endTime)) {
+            try {
+                wrapper.le(Issue::getOccurTime, LocalDateTime.parse(endTime + " 23:59:59", DATE_TIME_FORMATTER));
+            } catch (Exception e) {
+                // Ignore invalid date format
+            }
         }
 
         wrapper.orderByDesc(Issue::getCreateTime);
@@ -67,6 +96,8 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
                             issue.setHandler(dto.getHandler());
                             issue.setIssueType(dto.getIssueType());
                             issue.setStatus(dto.getStatus() != null ? dto.getStatus() : "新建");
+                            issue.setAttachmentPath(dto.getAttachmentPath());
+                            issue.setAttachmentName(dto.getAttachmentName());
 
                             // Parse dates
                             if (StringUtils.hasText(dto.getOccurTime())) {
@@ -117,7 +148,8 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
     }
 
     @Override
-    public void exportData(HttpServletResponse response, String keyword, String status, String issueType) {
+    public void exportData(HttpServletResponse response, String keyword, String status, String issueType,
+            String handler) {
         try {
             response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             response.setCharacterEncoding("utf-8");
@@ -140,6 +172,9 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
             if (StringUtils.hasText(issueType) && !"all".equals(issueType)) {
                 wrapper.eq(Issue::getIssueType, issueType);
             }
+            if (StringUtils.hasText(handler)) {
+                wrapper.like(Issue::getHandler, handler);
+            }
             wrapper.orderByDesc(Issue::getCreateTime);
 
             List<Issue> list = list(wrapper);
@@ -153,6 +188,7 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
                 dto.setSystem(issue.getSystem());
                 dto.setReporter(issue.getReporter());
                 dto.setHandler(issue.getHandler());
+                dto.setSolution(issue.getSolution());
                 dto.setIssueType(issue.getIssueType());
                 dto.setStatus(issue.getStatus());
 
@@ -165,6 +201,8 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
                 if (issue.getWorkHours() != null) {
                     dto.setWorkHours(issue.getWorkHours().toString());
                 }
+                dto.setAttachmentPath(issue.getAttachmentPath());
+                dto.setAttachmentName(issue.getAttachmentName());
 
                 exportList.add(dto);
             }
@@ -178,10 +216,26 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
     }
 
     @Override
-    public IssueStatsDTO getStats(String frequency) {
+    public IssueStatsDTO getStats(String frequency, String startDate, String endDate) {
         IssueStatsDTO stats = new IssueStatsDTO();
 
-        List<Issue> allIssues = list();
+        LambdaQueryWrapper<Issue> wrapper = new LambdaQueryWrapper<>();
+        if (StringUtils.hasText(startDate)) {
+            try {
+                wrapper.ge(Issue::getOccurTime, LocalDateTime.parse(startDate + " 00:00:00", DATE_TIME_FORMATTER));
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+        if (StringUtils.hasText(endDate)) {
+            try {
+                wrapper.le(Issue::getOccurTime, LocalDateTime.parse(endDate + " 23:59:59", DATE_TIME_FORMATTER));
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+
+        List<Issue> allIssues = list(wrapper);
 
         // 总数统计
         stats.setTotalCount(allIssues.size());
@@ -198,11 +252,17 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
         stats.setTotalWorkHours(totalHours);
 
         // 按状态统计
-        List<IssueStatsDTO.StatItem> statusStats = new ArrayList<>();
-        statusStats.add(new IssueStatsDTO.StatItem("新建", stats.getNewCount()));
-        statusStats.add(new IssueStatsDTO.StatItem("处理中", stats.getInProgressCount()));
-        statusStats.add(new IssueStatsDTO.StatItem("完成", stats.getCompletedCount()));
-        statusStats.add(new IssueStatsDTO.StatItem("遗留", stats.getLeftoverCount()));
+        Map<String, Long> statusMap = allIssues.stream()
+                .map(i -> {
+                    String s = i.getStatus();
+                    return (s == null || s.trim().isEmpty()) ? "新建" : s;
+                })
+                .collect(java.util.stream.Collectors.groupingBy(s -> s,
+                        java.util.stream.Collectors.counting()));
+
+        List<IssueStatsDTO.StatItem> statusStats = statusMap.entrySet().stream()
+                .map(e -> new IssueStatsDTO.StatItem(e.getKey(), e.getValue()))
+                .collect(java.util.stream.Collectors.toList());
         stats.setStatusStats(statusStats);
 
         // 按问题类型统计
@@ -214,6 +274,16 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
                 .map(e -> new IssueStatsDTO.StatItem(e.getKey(), e.getValue()))
                 .collect(java.util.stream.Collectors.toList());
         stats.setTypeStats(typeStats);
+
+        // 按归属系统统计
+        Map<String, Long> systemMap = allIssues.stream()
+                .filter(i -> i.getSystem() != null)
+                .collect(java.util.stream.Collectors.groupingBy(Issue::getSystem,
+                        java.util.stream.Collectors.counting()));
+        List<IssueStatsDTO.StatItem> systemStats = systemMap.entrySet().stream()
+                .map(e -> new IssueStatsDTO.StatItem(e.getKey(), e.getValue()))
+                .collect(java.util.stream.Collectors.toList());
+        stats.setSystemStats(systemStats);
 
         // 按处理人统计
         Map<String, List<Issue>> handlerMap = allIssues.stream()

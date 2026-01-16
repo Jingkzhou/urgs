@@ -20,6 +20,18 @@ public class CodeTableController {
     @Autowired
     private CodeTableService codeTableService;
 
+    @Autowired
+    private com.example.urgs_api.user.service.UserService userService;
+
+    @Autowired
+    private com.example.urgs_api.system.service.SysSystemService sysSystemService;
+
+    @Autowired
+    private com.example.urgs_api.metadata.component.MaintenanceLogManager maintenanceLogManager;
+
+    @Autowired
+    private jakarta.servlet.http.HttpServletRequest request;
+
     /**
      * 获取所有码表列表
      *
@@ -29,6 +41,33 @@ public class CodeTableController {
     public List<CodeTable> list() {
         QueryWrapper<CodeTable> wrapper = new QueryWrapper<>();
         wrapper.orderByAsc("table_code");
+
+        Long userId = (Long) request.getAttribute("userId");
+        // 如果 userId 为 null，视作拥有全部权限 (兼容非 Filter 调用)
+        if (userId != null) {
+            com.example.urgs_api.user.model.User user = userService.getById(userId);
+            // 判断是否受限：非空且 system 字段不为 NULL/Empty/"ALL"
+            boolean isRestricted = true;
+            if (user == null || user.getSystem() == null || user.getSystem().isBlank()
+                    || "ALL".equalsIgnoreCase(user.getSystem())) {
+                isRestricted = false;
+            }
+
+            if (isRestricted) {
+                List<com.example.urgs_api.system.model.SysSystem> systems = sysSystemService.list(userId);
+                List<String> clientIds = systems.stream()
+                        .map(com.example.urgs_api.system.model.SysSystem::getClientId)
+                        .collect(java.util.stream.Collectors.toList());
+
+                if (clientIds.isEmpty()) {
+                    // 无任何系统权限，返回空或不查任何数据的条件
+                    wrapper.apply("1=0");
+                } else {
+                    wrapper.in("system_code", clientIds);
+                }
+            }
+        }
+
         return codeTableService.list(wrapper);
     }
 
@@ -83,6 +122,45 @@ public class CodeTableController {
         return codeTableService.saveOrUpdate(codeTable);
     }
 
+    private String getCurrentOperator() {
+        Object userIdObj = request.getAttribute("userId");
+        if (userIdObj != null) {
+            Long userId = (Long) userIdObj;
+            com.example.urgs_api.user.model.User user = userService.getById(userId);
+            if (user != null) {
+                return user.getName();
+            }
+        }
+        return "admin";
+    }
+
+    /**
+     * Delete code table with requirement reason
+     */
+    @PostMapping("/delete")
+    public boolean deleteWithReason(@RequestBody com.example.urgs_api.metadata.dto.DeleteReqDTO req) {
+        if (req.getIdStr() == null)
+            return false;
+
+        CodeTable oldTable = codeTableService.getById(req.getIdStr());
+        boolean result = codeTableService.removeById(req.getIdStr());
+
+        if (result && oldTable != null) {
+            com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext context = new com.example.urgs_api.metadata.component.MaintenanceLogManager.MaintenanceContext();
+            context.setReqId(req.getReqId());
+            context.setPlannedDate(req.getPlannedDate());
+            context.setChangeDescription(req.getChangeDescription());
+
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.CODE_TABLE,
+                    oldTable,
+                    null,
+                    getCurrentOperator(),
+                    context);
+        }
+        return result;
+    }
+
     /**
      * 删除码表
      *
@@ -91,6 +169,16 @@ public class CodeTableController {
      */
     @DeleteMapping("/{id}")
     public boolean delete(@PathVariable String id) {
-        return codeTableService.removeById(id);
+        CodeTable oldTable = codeTableService.getById(id);
+        boolean result = codeTableService.removeById(id);
+
+        if (result && oldTable != null) {
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.CODE_TABLE,
+                    oldTable,
+                    null,
+                    getCurrentOperator());
+        }
+        return result;
     }
 }

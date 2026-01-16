@@ -4,11 +4,12 @@ import RoleManagement from './system/RoleManagement';
 import UserManagement from './system/UserManagement';
 import MenuManagement from './system/MenuManagement';
 import RegSystemManagement from './system/RegSystemManagement';
-import DataSourceManager from './DataSourceManager';
 import AiManagement from './system/ai/AiManagement';
+import DockerLogManagement from './system/docker/log/DockerLogManagement';
+import DataSourceManager from './DataSourceManager';
 import Auth from './Auth';
 
-type SubModule = 'org' | 'role' | 'user' | 'menu' | 'sso' | 'datasource' | 'ai';
+type SubModule = 'org' | 'role' | 'user' | 'menu' | 'system' | 'sso' | 'datasource' | 'ai' | 'docker';
 
 const SystemManagement: React.FC = () => {
   const [activeModule, setActiveModule] = useState<SubModule>('org');
@@ -21,6 +22,7 @@ const SystemManagement: React.FC = () => {
     { id: 'system', label: '监管系统', permission: 'sys:system' },
     { id: 'datasource', label: '数据源配置', permission: 'sys:datasource' },
     { id: 'ai', label: 'AI 管理', permission: 'sys:ai' },
+    { id: 'docker', label: 'Docker管理', permission: 'sys:docker' },
   ];
 
   return (
@@ -86,6 +88,11 @@ const SystemManagement: React.FC = () => {
         {activeModule === 'ai' && (
           <Auth code="sys:ai">
             <AiManagement />
+          </Auth>
+        )}
+        {activeModule === 'docker' && (
+          <Auth code="sys:docker">
+            <DockerLogManagement />
           </Auth>
         )}
       </div>

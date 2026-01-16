@@ -16,11 +16,22 @@ public class User {
     @com.baomidou.mybatisplus.annotation.TableField("role_id")
     private Long roleId;
 
-    private String ssoSystem; // optional association to SSO system name
+    @com.baomidou.mybatisplus.annotation.TableField("`system`")
+    private String system; // optional association to SSO system name
     private String phone;
     private String lastLogin;
     private String status;
     private String avatarUrl;
+
+    private String email;
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
 
     public String getAvatarUrl() {
         return avatarUrl;
@@ -30,12 +41,12 @@ public class User {
         this.avatarUrl = avatarUrl;
     }
 
-    public String getSsoSystem() {
-        return ssoSystem;
+    public String getSystem() {
+        return system;
     }
 
-    public void setSsoSystem(String ssoSystem) {
-        this.ssoSystem = ssoSystem;
+    public void setSystem(String system) {
+        this.system = system;
     }
 
     public Long getId() {

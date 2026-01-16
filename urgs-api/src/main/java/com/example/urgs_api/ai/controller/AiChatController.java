@@ -28,11 +28,11 @@ public class AiChatController {
      * 发送聊天请求 (流式响应)
      */
     @PostMapping("/stream")
-    public org.springframework.http.ResponseEntity<SseEmitter> streamChat(@RequestBody Map<String, String> request) {
-        String systemPrompt = request.getOrDefault("systemPrompt", "You are a helpful assistant.");
-        String userPrompt = request.get("userPrompt");
+    public org.springframework.http.ResponseEntity<SseEmitter> streamChat(@RequestBody Map<String, Object> request) {
+        String systemPrompt = (String) request.getOrDefault("systemPrompt", "You are a helpful assistant.");
+        String userPrompt = (String) request.get("userPrompt");
         // 如果有 sessionId，则使用持久化逻辑；否则仅流式返回
-        String sessionId = request.get("sessionId");
+        String sessionId = (String) request.get("sessionId");
 
         SseEmitter emitter = new SseEmitter(300000L); // 5分钟超时
 

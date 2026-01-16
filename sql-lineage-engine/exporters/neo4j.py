@@ -27,28 +27,66 @@ class Neo4jClient:
     def close(self):
         self.driver.close()
     
+    def ensure_indexes(self):
+        """
+        确保所有必要的索引已创建。
+        应在首次连接或数据导入前调用。
+        索引会显著提升查询性能。
+        """
+        index_statements = [
+            # Table 节点唯一性约束（MERGE 操作会利用约束快速定位）
+            "CREATE CONSTRAINT constraint_table_name IF NOT EXISTS FOR (t:Table) REQUIRE t.name IS UNIQUE",
+            # Column 节点复合唯一性约束 (name + table)
+            "CREATE CONSTRAINT constraint_column_name_table IF NOT EXISTS FOR (c:Column) REQUIRE (c.name, c.table) IS UNIQUE",
+            # Column 单字段索引（用于按 table 查询）
+            "CREATE INDEX idx_column_table IF NOT EXISTS FOR (c:Column) ON (c.table)",
+            # LineageVersion 节点唯一性约束
+            "CREATE CONSTRAINT constraint_version_id IF NOT EXISTS FOR (v:LineageVersion) REQUIRE v.id IS UNIQUE",
+            "CREATE INDEX idx_version_created IF NOT EXISTS FOR (v:LineageVersion) ON (v.createdAt)",
+        ]
+        
+        with self.driver.session() as session:
+            for stmt in index_statements:
+                try:
+                    session.run(stmt)
+                except Exception as e:
+                    # 索引可能已存在，忽略错误
+                    print(f"  索引创建跳过 (可能已存在): {e}")
+            print("✓ Neo4j 索引检查完成")
+    
     # ================================
     # 版本管理相关方法
     # ================================
     
-    def create_lineage_version(self, version_id: str, source_directory: str = None, description: str = None):
+    def create_lineage_version(self, version_id: str, repo_id: str = None, 
+                             commit_sha: str = None, ref: str = None,
+                             source_directory: str = None, description: str = None):
         """
         创建血缘版本节点。
         
         Args:
-            version_id: 版本标识 (如 v20241209_153000_abc123)
-            source_directory: 来源 SQL 文件目录
-            description: 版本描述
+            version_id: 版本标识
+            repo_id: 仓库 ID
+            commit_sha: 提交 SHA
+            ref: Git 引用
+            source_directory: 来源目录
+            description: 描述
         """
         with self.driver.session() as session:
             session.run(
                 """
                 MERGE (v:LineageVersion {id: $version_id})
                 SET v.createdAt = datetime(),
+                    v.repoId = $repo_id,
+                    v.commitSha = $commit_sha,
+                    v.ref = $ref,
                     v.sourceDirectory = $source_directory,
                     v.description = $description
                 """,
                 version_id=version_id,
+                repo_id=repo_id,
+                commit_sha=commit_sha,
+                ref=ref,
                 source_directory=source_directory,
                 description=description
             )
@@ -75,31 +113,101 @@ class Neo4jClient:
         - Column 节点
         - LineageVersion 节点
         - 所有血缘关系边
+        
+        使用批量删除以避免大数据量时事务超时
         """
+        print("正在清除血缘数据...")
         with self.driver.session() as session:
-            # 删除所有关系和节点
-            # 先删除关系，再删除节点
+            # 使用 CALL IN TRANSACTIONS 批量删除，避免大数据量时内存溢出
+            # 每批删除 10000 个节点/关系
+            
+            # 1. 批量删除 Column 节点（会自动删除相关关系）
             session.run("""
-                MATCH ()-[r]->()
-                WHERE type(r) IN ['DERIVES_TO', 'FILTERS', 'JOINS', 'GROUPS', 'ORDERS', 
-                                  'CALLS', 'REFERENCES', 'BELONGS_TO']
-                DELETE r
+                CALL {
+                    MATCH (c:Column)
+                    RETURN c
+                    LIMIT 10000
+                }
+                CALL {
+                    WITH c
+                    DETACH DELETE c
+                } IN TRANSACTIONS OF 10000 ROWS
             """)
+            print("  - Column 节点已清除")
             
-            # 删除 Column 节点
-            session.run("MATCH (c:Column) DETACH DELETE c")
+            # 2. 批量删除 Table 节点
+            session.run("""
+                CALL {
+                    MATCH (t:Table)
+                    RETURN t
+                    LIMIT 10000
+                }
+                CALL {
+                    WITH t
+                    DETACH DELETE t
+                } IN TRANSACTIONS OF 10000 ROWS
+            """)
+            print("  - Table 节点已清除")
             
-            # 删除 Table 节点
-            session.run("MATCH (t:Table) DETACH DELETE t")
-            
-            # 删除 LineageVersion 节点
+            # 3. 删除 LineageVersion 节点
             session.run("MATCH (v:LineageVersion) DETACH DELETE v")
+            print("  - LineageVersion 节点已清除")
             
-            print("Cleared all lineage data from Neo4j.")
+            print("✓ 血缘数据清除完成")
+
+    def clear_lineage_by_repo_files(self, repo_id: str, files: list):
+        """
+        清除指定仓库和文件列表相关的旧血缘关系。
+        智能删除逻辑：
+        - 从关系的 sourceFiles 中移除当前文件
+        - 只有当 sourceFiles 为空时才删除整条关系
+        - 如果还有其他文件，则保留关系并更新 sourceFiles
+        """
+        if not repo_id or not files:
+            return
+
+        print(f"正在清除仓库 {repo_id} 中 {len(files)} 个文件的旧血缘数据...")
+        with self.driver.session() as session:
+            # 由于 Cypher 列表操作性能，分批处理文件列表
+            batch_size = 1000
+            for i in range(0, len(files), batch_size):
+                file_batch = files[i:i + batch_size]
+                
+                # 智能删除：先过滤 sourceFiles，再根据结果决定删除或更新
+                session.run("""
+                    MATCH ()-[r]->()
+                    WHERE r.repoId = $repoId
+                    AND ANY(f IN r.sourceFiles WHERE f IN $files)
+                    WITH r, [f IN r.sourceFiles WHERE NOT f IN $files] AS remainingFiles
+                    FOREACH (_ IN CASE WHEN size(remainingFiles) = 0 THEN [1] ELSE [] END |
+                        DELETE r
+                    )
+                    FOREACH (_ IN CASE WHEN size(remainingFiles) > 0 THEN [1] ELSE [] END |
+                        SET r.sourceFiles = remainingFiles
+                    )
+                """, repoId=repo_id, files=file_batch)
+                
+            # 2. 清理孤立的 Column 和 Table 节点
+            # 删除关系后，某些节点可能不再有任何连接。
+            # 我们只删除完全没有任何关系的节点。
+            print(f"  - 清理不再关联任何血缘的孤立节点...")
+            session.run("""
+                MATCH (c:Column)
+                WHERE NOT (c)-[]-()
+                DELETE c
+            """)
+            session.run("""
+                MATCH (t:Table)
+                WHERE NOT (t)-[]-()
+                DELETE t
+            """)
+                
+            print(f"  - 相关血缘关系已智能清除（保留多文件关系）")
+
 
     def create_lineage(self, source_table: str, target_table: str):
         """
-        Create a lineage relationship between two tables.
+        创建两个表之间的血缘关系。
         """
         # 统一转换为大写
         source_table = (source_table or "").upper()
@@ -119,15 +227,15 @@ class Neo4jClient:
 
     def create_lineage_batch(self, relationships: list):
         """
-        Batch create table-level lineage.
-        relationships: list of dicts with keys: source, target
+        批量创建表级血缘。
+        relationships: 包含 source 和 target 键的字典列表
         """
         if not relationships:
             return
             
         with self.driver.session() as session:
-            # Batch size of 500 for efficiency and stability
-            batch_size = 500
+            # 优化：增加批次大小到 2000
+            batch_size = 2000
             total = len(relationships)
             for i in range(0, total, batch_size):
                  chunk = relationships[i:i + batch_size]
@@ -136,16 +244,16 @@ class Neo4jClient:
                  except Exception as e:
                      print(f"\n    Error in table batch {i//batch_size}: {e}")
 
-                 # Progress Log
+                 # Progress Log - 每 5000 条或最后一批打印一次
                  processed = min(i + batch_size, total)
-                 sys.stdout.write(f"\r    Processed {processed}/{total} table relationships...")
-                 sys.stdout.flush()
-                 time.sleep(0.05)
+                 if processed % 5000 == 0 or processed == total:
+                     sys.stdout.write(f"\r    Processed {processed}/{total} table relationships...")
+                     sys.stdout.flush()
             print("") # Newline after done
 
     @staticmethod
     def _create_tables_batch(tx, relationships):
-         # Normalize
+         # 归一化处理
          normalized = []
          for r in relationships:
              s = (r.get("source") or "").upper()
@@ -166,14 +274,32 @@ class Neo4jClient:
 
     def create_column_lineage(self, dependencies: list):
         """
-        Create lineage relationships between columns in batch.
-        dependencies: list of dicts with keys: source_table, source_column, target_table, target_column
+        批量创建字段级血缘关系。
+        dependencies: 包含 source_table, source_column, target_table, target_column 键的字典列表
         """
         if not dependencies:
             return
-            
+        
+        # 分批处理以避免事务超时
+        batch_size = 2000
+        total = len(dependencies)
+        
         with self.driver.session() as session:
-            session.execute_write(self._create_and_link_columns_batch, dependencies)
+            for i in range(0, total, batch_size):
+                chunk = dependencies[i:i + batch_size]
+                try:
+                    session.execute_write(self._create_and_link_columns_batch, chunk)
+                except Exception as e:
+                    print(f"\n    Error in column lineage batch {i//batch_size}: {e}")
+                
+                # 进度日志
+                processed = min(i + batch_size, total)
+                if processed % 5000 == 0 or processed == total:
+                    sys.stdout.write(f"\r    Processed {processed}/{total} column dependencies...")
+                    sys.stdout.flush()
+            
+            if total > 0:
+                print("")
 
     @staticmethod
     def _create_and_link_columns_batch(tx, dependencies):
@@ -197,19 +323,23 @@ class Neo4jClient:
         )
         tx.run(query, batch=normalized_deps)
     
-    def create_column_lineage_v2(self, dependencies: list, version: str):
+    def create_column_lineage_v2(self, dependencies: list, version: str, repo_id: str = None):
         """
         创建带版本的字段级血缘关系 (Batch Optimized).
+        Args:
+            dependencies: 依赖列表
+            version: 版本ID
+            repo_id: 仓库ID (用于隔离和清除)
         """
         if not dependencies:
             return
         
-        # Split into Direct and Indirect
+        # 分为直接血缘和间接血缘
         direct_items = []
         indirect_items = []
         
         for dep in dependencies:
-             # Normalize
+             # 归一化处理
             source_table = (dep.get("source_table") or "").upper()
             source_column = (dep.get("source_column") or "").upper()
             target_table = (dep.get("target_table") or "").upper()
@@ -226,10 +356,14 @@ class Neo4jClient:
                 "source_file": dep.get("source_file"),
                 "dependency_type": dep.get("dependency_type", "fdd"),
                 "snippet": dep.get("snippet"),
-                "version": version
+                "version": version,
+                "repo_id": repo_id,
+                "confidence": dep.get("confidence", "MEDIUM"),
+                "validation_note": dep.get("validation_note"),
+                "is_expanded": dep.get("is_expanded", False)
             }
             
-            # Neo4j Relation Type lookup
+            # 查找 Neo4j 关系类型
             item["neo4j_rel_type"] = RELATION_TYPE_MAP.get(item["dependency_type"], "DERIVES_TO")
 
             if target_column in ["*", "", None]:
@@ -247,43 +381,43 @@ class Neo4jClient:
                     grouped[rtype] = []
                 grouped[rtype].append(item)
             
-            # Reduce batch size to 500 to avoid Transaction timeouts
-            batch_size = 500
+            # 增加批次大小到 2000 以提升性能
+            batch_size = 2000
             for rtype, group_items in grouped.items():
                 total = len(group_items)
                 print(f"  - Processing items of type {rtype} (Total: {total})...")
-                for i in range(0, total, batch_size):
-                    chunk = group_items[i:i + batch_size]
-                    # Execute with specific method
-                    try:
-                        with self.driver.session() as session:
-                             session.execute_write(batch_func, chunk, rtype)
-                    except Exception as e:
-                        print(f"\n    Error in batch {i//batch_size}: {e}")
-                        # Simple retry logic could go here, but for now just logging
-                    
-                    # Progress Log
-                    processed = min(i + batch_size, total)
-                    sys.stdout.write(f"\r    Processed {processed}/{total}...")
-                    sys.stdout.flush()
-                    
-                    # Short sleep to let server breathe
-                    time.sleep(0.1)
+                
+                # 复用同一个 session 以减少连接开销
+                with self.driver.session() as session:
+                    for i in range(0, total, batch_size):
+                        chunk = group_items[i:i + batch_size]
+                        # Execute with specific method
+                        try:
+                            session.execute_write(batch_func, chunk, rtype)
+                        except Exception as e:
+                            print(f"\n    Error in batch {i//batch_size}: {e}")
+                        
+                        # Progress Log - 每 5000 条或最后一批打印一次
+                        processed = min(i + batch_size, total)
+                        if processed % 5000 == 0 or processed == total:
+                            sys.stdout.write(f"\r    Processed {processed}/{total}...")
+                            sys.stdout.flush()
+                
                 print(" Done.")
 
-        # 1. Process Direct Lineage
+        # 1. 直接处理直接血缘
         if direct_items:
-            print(f"Processing {len(direct_items)} direct column dependencies...", flush=True)
+            print(f"正在处理 {len(direct_items)} 条直接字段依赖...", flush=True)
             process_by_type(direct_items, self._create_direct_column_batch_safe)
 
-        # 2. Process Indirect Lineage
+        # 2. 处理间接血缘
         if indirect_items:
-            print(f"Processing {len(indirect_items)} indirect column dependencies...", flush=True)
+            print(f"正在处理 {len(indirect_items)} 条间接字段依赖...", flush=True)
             process_by_type(indirect_items, self._create_indirect_column_batch_safe)
 
     @staticmethod
     def _create_direct_column_batch_safe(tx, batch, rel_type):
-        # Safe version where rel_type is constant for the batch
+        # 安全版本，其中 rel_type 在批次中是常量
         query = f"""
         UNWIND $batch AS item
         MERGE (st:Table {{name: item.source_table}})
@@ -294,8 +428,12 @@ class Neo4jClient:
         MERGE (tc)-[:BELONGS_TO]->(tt)
         MERGE (sc)-[r:{rel_type}]->(tc)
         SET r.version = item.version,
+            r.repoId = item.repo_id,
             r.type = item.dependency_type,
             r.isIndirect = false,
+            r.confidence = item.confidence,
+            r.validationNote = item.validation_note,
+            r.isExpanded = item.is_expanded,
             r.snippet = CASE WHEN item.snippet IS NOT NULL THEN item.snippet ELSE r.snippet END,
             r.createdAt = CASE WHEN r.createdAt IS NULL THEN datetime() ELSE r.createdAt END,
             r.sourceFiles = CASE 
@@ -317,8 +455,12 @@ class Neo4jClient:
         MERGE (sc)-[:BELONGS_TO]->(st)
         MERGE (sc)-[r:{rel_type}]->(tt)
         SET r.version = item.version,
+            r.repoId = item.repo_id,
             r.type = item.dependency_type,
             r.isIndirect = true,
+            r.confidence = item.confidence,
+            r.validationNote = item.validation_note,
+            r.isExpanded = item.is_expanded,
             r.snippet = CASE WHEN item.snippet IS NOT NULL THEN item.snippet ELSE r.snippet END,
             r.createdAt = CASE WHEN r.createdAt IS NULL THEN datetime() ELSE r.createdAt END,
             r.sourceFiles = CASE 
@@ -332,7 +474,7 @@ class Neo4jClient:
 
     def get_column_upstream(self, table: str, column: str):
         """
-        Trace upstream sources for a column.
+        追溯字段的上游来源。
         """
         with self.driver.session() as session:
             result = session.run(
@@ -344,7 +486,7 @@ class Neo4jClient:
 
     def get_column_downstream(self, table: str, column: str):
         """
-        Trace downstream impacts of a column.
+        追溯字段的下游影响。
         """
         with self.driver.session() as session:
             result = session.run(
@@ -356,7 +498,7 @@ class Neo4jClient:
 
     def create_report_lineage(self, item: dict):
         """
-        Create lineage for report/indicator.
+        为报表/指标创建血缘。
         """
         with self.driver.session() as session:
             if item["type"] == "indicator":
@@ -366,13 +508,13 @@ class Neo4jClient:
 
     @staticmethod
     def _create_indicator(tx, item):
-        # Create Indicator node
+        # 创建指标节点
         tx.run(
             "MERGE (i:Indicator {name: $name}) "
             "SET i.logic = $logic, i.report = $report",
             name=item["name"], logic=item.get("logic"), report=item["report"]
         )
-        # Link to Source Column
+        # 链接到源字段
         if item.get("source_table") and item.get("source_column"):
             tx.run(
                 "MATCH (c:Column {name: $col, table: $table}) "
@@ -383,10 +525,10 @@ class Neo4jClient:
 
     @staticmethod
     def _create_report_usage(tx, item):
-        # Create Report node
+        # 创建报表节点
         tx.run("MERGE (r:Report {name: $name})", name=item["report"])
         
-        # Link Source Column to Report
+        # 将源字段链接到报表
         if item.get("source_table") and item.get("source_column"):
             tx.run(
                 "MATCH (c:Column {name: $col, table: $table}) "
@@ -397,7 +539,7 @@ class Neo4jClient:
 
     def query_upstream(self, table_name: str):
         """
-        Find upstream tables for a given table.
+        查找给定表的上游表。
         """
         with self.driver.session() as session:
             result = session.run(
@@ -408,7 +550,7 @@ class Neo4jClient:
 
     def query_downstream(self, table_name: str):
         """
-        Find downstream tables for a given table.
+        查找给定表的下游表。
         """
         with self.driver.session() as session:
             result = session.run(
@@ -419,10 +561,10 @@ class Neo4jClient:
 
     def get_graph_data(self, start_node_name: str, depth: int = 2):
         """
-        Get graph data (nodes and edges) for visualization starting from a node.
+        获取起始于某个节点的图数据（节点和边），用于可视化。
         """
         with self.driver.session() as session:
-            # Query for both Table and Column nodes
+            # 同时查询 Table 和 Column 节点
             query = (
                 f"MATCH path = (n {{name: $name}})-[:DERIVES_TO|CASE_WHEN|BELONGS_TO*1..{depth}]-(m) "
                 "RETURN path"

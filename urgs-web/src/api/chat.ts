@@ -7,6 +7,8 @@ export interface Message {
     content: string;
     timestamp: number;
     sources?: Array<{ fileName: string; content: string; score: number }>;
+    status?: string;
+    intent?: string;
 }
 
 export interface Session {
@@ -15,35 +17,55 @@ export interface Session {
     messages: Message[];
     updatedAt: number;
     agentId?: number;
+    userId: string;
 }
 
 const API_BASE = '/api/ai';
 
-// Helper to get current user from token or fall back
+// 获取当前用户信息，若失败则降级处理
 const getUserInfo = () => {
     try {
-        const userStr = localStorage.getItem('user_info');
+        const userStr = localStorage.getItem('auth_user');
         if (userStr) {
             return JSON.parse(userStr);
         }
     } catch (e) { }
+    // 降级返回或在严格模式下返回 null
     return { id: '1' };
 };
 
 export const getSessions = async (): Promise<Session[]> => {
     try {
         const user = getUserInfo();
+        // 使用 id 或 empId。仅当完全无法识别用户时降级为 '1'
+        const userId = (user.id || user.empId) ? String(user.id || user.empId) : '1';
+        console.log('[DEBUG] getSessions: Resolved Current User ID (id/empId):', userId);
+
         const sessions = await get<any[]>(`${API_BASE}/chat/session`, {
-            userId: user.id,
+            userId: userId,
             _t: Date.now().toString()
         });
         if (!sessions) return [];
-        return sessions.map((s: any) => ({
+
+        // 过滤会话以确保它们属于当前用户
+        const filtered = sessions.filter((s: any) => {
+            // 不要默认为 '1'。如果缺少 userId，则不算匹配。
+            const sessionUserId = (s.userId !== undefined && s.userId !== null) ? String(s.userId) : 'MISSING_IN_RESPONSE';
+
+            const match = sessionUserId === userId;
+            // 仅在不匹配且非常见的 '1' 情况下记录调试日志，以避免噪音
+            return match;
+        });
+
+        // console.log(`[DEBUG] getSessions: Total ${sessions.length} -> Filtered ${filtered.length}`);
+
+        return filtered.map((s: any) => ({
             id: s.id,
             title: s.title,
             messages: [],
             updatedAt: new Date(s.updateTime).getTime(),
-            agentId: s.agentId
+            agentId: s.agentId,
+            userId: s.userId
         }));
     } catch (e) {
         console.error('Failed to fetch sessions', e);
@@ -67,11 +89,15 @@ export const loadSessionMessages = async (sessionId: string): Promise<Message[]>
     }
 }
 
-export const createSession = async (agentId?: number): Promise<Session> => {
+export const createSession = async (agentId?: number | string): Promise<Session> => {
     try {
         const user = getUserInfo();
-        const payload: any = { userId: user.id, title: 'New Chat' };
-        if (agentId) {
+        // 使用 id 或 empId
+        const userId = (user.id || user.empId) ? String(user.id || user.empId) : '1';
+        console.log('[DEBUG] createSession: Creating for User ID:', userId);
+
+        const payload: any = { userId: userId, title: 'New Chat' };
+        if (agentId !== undefined && agentId !== null) {
             payload.agentId = agentId;
         }
         const s = await post<any>(`${API_BASE}/chat/session`, payload);
@@ -81,21 +107,23 @@ export const createSession = async (agentId?: number): Promise<Session> => {
             title: s.title,
             messages: [],
             updatedAt: Date.now(),
-            agentId: s.agentId
+            agentId: s.agentId,
+            userId: s.userId || userId
         };
     } catch (e) {
         console.error("Create session failed", e);
-        return { id: uuidv4(), title: 'Error Session', messages: [], updatedAt: Date.now() };
+        return { id: uuidv4(), title: 'Error Session', messages: [], updatedAt: Date.now(), userId: '1' };
     }
 };
 
 export const deleteSession = async (id: string) => {
     const user = getUserInfo();
-    await del(`${API_BASE}/chat/session/${id}`, { userId: user.id });
+    const userId = (user.id || user.empId) ? String(user.id || user.empId) : '1';
+    await del(`${API_BASE}/chat/session/${id}`, { userId: userId });
 };
 
 export const saveSession = (session: Session) => {
-    // Optional
+    // 可选
 };
 
 export const generateSessionTitle = async (sessionId: string): Promise<string> => {
@@ -159,7 +187,10 @@ export const streamChatResponse = async (
     signal?: AbortSignal,
     sessionId?: string,
     onMetrics?: (metrics: { used: number, limit: number }) => void,
-    onSources?: (sources: any[]) => void
+    onSources?: (sources: any[]) => void,
+    onStatus?: (status: string) => void,
+    onIntent?: (intent: string) => void,
+    ragConfig?: { fusionStrategy?: string; topK?: number }
 ) => {
     try {
         const token = localStorage.getItem('auth_token');
@@ -175,7 +206,8 @@ export const streamChatResponse = async (
             headers,
             body: JSON.stringify({
                 userPrompt: userMessage,
-                sessionId: sessionId
+                sessionId: sessionId,
+                ragConfig
             }),
             signal
         });
@@ -195,13 +227,14 @@ export const streamChatResponse = async (
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let currentEventName = ''; // 跟踪当前 SSE 事件名称
 
         if (reader) {
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) {
                     if (buffer.trim()) {
-                        processLines(buffer, onChunk, safeOnComplete, onMetrics, undefined, onSources);
+                        processLines(buffer, onChunk, safeOnComplete, onMetrics, onStatus, onSources, onIntent, currentEventName);
                     }
                     safeOnComplete();
                     break;
@@ -214,7 +247,20 @@ export const streamChatResponse = async (
                 buffer = lines.pop() || '';
 
                 for (const line of lines) {
-                    processLine(line, onChunk, safeOnComplete, onMetrics, undefined, onSources);
+                    // 解析 event: 行，记住事件名称
+                    if (line.startsWith('event:')) {
+                        currentEventName = line.slice(6).trim();
+                        if (currentEventName === 'done') {
+                            safeOnComplete();
+                        }
+                        continue;
+                    }
+                    // 处理 data: 行
+                    processLine(line, onChunk, safeOnComplete, onMetrics, onStatus, onSources, onIntent, currentEventName);
+                    // 空行表示事件结束，重置事件名称
+                    if (!line.trim()) {
+                        currentEventName = '';
+                    }
                 }
             }
         }
@@ -227,22 +273,18 @@ export const streamChatResponse = async (
     }
 };
 
-const processLines = (text: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void) => {
+const processLines = (text: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void, onIntent?: (i: string) => void, eventName?: string) => {
     const lines = text.split('\n');
     for (const line of lines) {
-        processLine(line, onChunk, onComplete, onMetrics, onStatus, onSources);
+        processLine(line, onChunk, onComplete, onMetrics, onStatus, onSources, onIntent, eventName);
     }
 };
 
-const processLine = (line: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void) => {
+const processLine = (line: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void, onIntent?: (i: string) => void, eventName?: string) => {
     if (!line.trim()) return;
 
-    // Handle SSE event type
+    // event: 行已在主循环中处理，这里直接跳过
     if (line.startsWith('event:')) {
-        const eventType = line.slice(6).trim();
-        if (eventType === 'done') {
-            onComplete();
-        }
         return;
     }
 
@@ -265,26 +307,53 @@ const processLine = (line: string, onChunk: (c: string) => void, onComplete: () 
         return;
     }
 
+    if (data === 'searching') {
+        if (onStatus) onStatus('searching');
+        return;
+    }
+
     try {
         const parsed = JSON.parse(data);
+
+        // 根据事件名称路由处理
+        if (eventName === 'sources') {
+            // sources 事件：数据是数组
+            if (onSources && Array.isArray(parsed)) {
+                onSources(parsed);
+            }
+            return;
+        }
+
+        if (eventName === 'metrics') {
+            if (onMetrics) onMetrics(parsed);
+            return;
+        }
+
+        if (eventName === 'status') {
+            if (onStatus && parsed.status) onStatus(parsed.status);
+            return;
+        }
+
+        // 默认处理（无事件名称或 message 事件）
         if (parsed.status === 'compressing') {
             if (onStatus) onStatus('compressing');
+        } else if (parsed.status === 'searching') {
+            if (onStatus) onStatus('searching');
         } else if (parsed.content) {
             onChunk(parsed.content);
         } else if (parsed.used !== undefined && parsed.limit !== undefined) {
-            // Handle metrics
+            // 处理指标数据
             if (onMetrics) onMetrics(parsed);
         } else if (Array.isArray(parsed)) {
-            // Handle sources
+            // 处理来源数据 (兼容无事件名称的情况)
             if (onSources) onSources(parsed);
+        } else if (parsed.intent) {
+            // 处理意图数据
+            if (onIntent) onIntent(parsed.intent);
         } else if (parsed.error) {
             console.error("Stream reported error:", parsed.error);
         }
     } catch (e) {
-        // Not JSON, assume plain text chunk if not special commands
-        // However, usually we expect JSON for content to differentiate from other types.
-        // If we want to support plain text streaming, we'd add it here.
-        // For now, let's assume content always comes as JSON { content: "..." }
-        // or ensure backend sends it that way.
+        // 非 JSON，如果是普通文本块则直接处理
     }
 };

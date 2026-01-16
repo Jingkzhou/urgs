@@ -13,4 +13,13 @@ FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 EXPOSE 8080
+
+# Install docker-cli to allow calling sibling containers, and bash for java ProcessBuilder
+# Use Aliyun mirror for Alpine
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \
+    apk add --no-cache docker-cli bash
+
+COPY bridge.sh /app/bridge.sh
+RUN chmod +x /app/bridge.sh
+
 ENTRYPOINT ["java", "-jar", "app.jar"]

@@ -2,6 +2,7 @@ package com.example.urgs_api.im.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.urgs_api.im.entity.ImMessage;
+import com.example.urgs_api.im.vo.ImMessageVO;
 import com.example.urgs_api.im.mapper.ImMessageMapper;
 import com.example.urgs_api.im.service.ImChatService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +30,9 @@ public class ImChatServiceImpl implements ImChatService {
     @Autowired
     private com.example.urgs_api.im.mapper.ImGroupMemberMapper groupMemberMapper; // Added for Group Logic
 
+    @Autowired
+    private com.example.urgs_api.user.mapper.UserMapper sysUserMapper;
+
     @Override
     public void sendMessage(ImMessage message) {
 
@@ -54,7 +58,7 @@ public class ImChatServiceImpl implements ImChatService {
         updateConversation(message.getSenderId(), message.getReceiverId(), preview, false, 1);
         updateConversation(message.getReceiverId(), message.getSenderId(), preview, true, 1);
 
-        webSocketHandler.sendMessageToUser(message.getReceiverId(), message);
+        webSocketHandler.sendMessageToUser(message.getReceiverId(), convertToVO(message));
     }
 
     private void handleGroupMessage(ImMessage message) {
@@ -73,11 +77,14 @@ public class ImChatServiceImpl implements ImChatService {
         String content = message.getMsgType() == 2 ? "[Image]" : message.getContent();
         String preview = senderName + ": " + content;
 
+        // Convert to VO for push
+        ImMessageVO vo = convertToVO(message);
+
         // Broadcast
         members.parallelStream().forEach(member -> {
             Long memberId = member.getUserId();
             if (!memberId.equals(message.getSenderId())) {
-                webSocketHandler.sendMessageToUser(memberId, message);
+                webSocketHandler.sendMessageToUser(memberId, vo);
             }
         });
 
@@ -122,13 +129,36 @@ public class ImChatServiceImpl implements ImChatService {
     }
 
     @Override
-    public List<ImMessage> getHistory(String conversationId, Long lastMsgId, int limit) {
+    public List<ImMessageVO> getHistory(String conversationId, Long lastMsgId, int limit) {
         QueryWrapper<ImMessage> query = new QueryWrapper<>();
         query.eq("conversation_id", conversationId)
                 .lt(lastMsgId != null, "id", lastMsgId)
                 .orderByDesc("id")
                 .last("LIMIT " + limit);
-        return messageMapper.selectList(query);
+        List<ImMessage> messages = messageMapper.selectList(query);
+
+        List<ImMessageVO> vos = new java.util.ArrayList<>();
+        for (ImMessage msg : messages) {
+            ImMessageVO vo = new ImMessageVO();
+            org.springframework.beans.BeanUtils.copyProperties(msg, vo);
+
+            // Resolve Sender Name and Avatar
+            com.example.urgs_api.user.model.User sysUser = sysUserMapper.selectById(msg.getSenderId());
+            if (sysUser != null) {
+                vo.setSenderName(sysUser.getName());
+                vo.setSenderAvatar(sysUser.getAvatarUrl());
+            } else {
+                com.example.urgs_api.im.entity.ImUser imUser = userMapper.selectById(msg.getSenderId());
+                if (imUser != null) {
+                    vo.setSenderName(imUser.getWxId());
+                    vo.setSenderAvatar(imUser.getAvatarUrl());
+                } else {
+                    vo.setSenderName("User " + msg.getSenderId());
+                }
+            }
+            vos.add(vo);
+        }
+        return vos;
     }
 
     @Override
@@ -141,5 +171,24 @@ public class ImChatServiceImpl implements ImChatService {
         message.setSendTime(java.time.LocalDateTime.now());
 
         sendMessage(message);
+    }
+
+    private ImMessageVO convertToVO(ImMessage msg) {
+        ImMessageVO vo = new ImMessageVO();
+        org.springframework.beans.BeanUtils.copyProperties(msg, vo);
+        com.example.urgs_api.user.model.User sysUser = sysUserMapper.selectById(msg.getSenderId());
+        if (sysUser != null) {
+            vo.setSenderName(sysUser.getName());
+            vo.setSenderAvatar(sysUser.getAvatarUrl());
+        } else {
+            com.example.urgs_api.im.entity.ImUser imUser = userMapper.selectById(msg.getSenderId());
+            if (imUser != null) {
+                vo.setSenderName(imUser.getWxId());
+                vo.setSenderAvatar(imUser.getAvatarUrl());
+            } else {
+                vo.setSenderName("User " + msg.getSenderId());
+            }
+        }
+        return vo;
     }
 }

@@ -84,11 +84,52 @@ public class WebhookController {
     /**
      * 处理 Push 事件
      */
+    /**
+     * 处理 Push 事件
+     */
+    private final com.example.urgs_api.version.audit.service.AiCodeReviewService aiCodeReviewService;
+
+    /**
+     * 处理 Push 事件
+     */
     private void handlePushEvent(Long repoId, String platform, JsonNode payload) {
         String ref = payload.has("ref") ? payload.get("ref").asText() : "";
         String branch = ref.replace("refs/heads/", "");
 
-        log.info("Push to repo {} ({}) on branch: {}", repoId, platform, branch);
+        String commitSha = null;
+        String authorEmail = null;
+
+        // Try to identify commit info based on platform/payload structure
+        if (payload.has("head_commit") && !payload.get("head_commit").isNull()) {
+            JsonNode headCommit = payload.get("head_commit");
+            commitSha = headCommit.get("id").asText();
+            if (headCommit.has("author")) {
+                authorEmail = headCommit.get("author").get("email").asText();
+            }
+        } else if (payload.has("commits") && payload.get("commits").isArray() && payload.get("commits").size() > 0) {
+            JsonNode latest = payload.get("commits").get(0); // Simplistic fallback
+            commitSha = latest.get("id").asText();
+            if (latest.has("author")) {
+                authorEmail = latest.get("author").get("email").asText();
+            }
+        } else if (payload.has("after")) {
+            commitSha = payload.get("after").asText();
+            if (payload.has("user_email")) {
+                authorEmail = payload.get("user_email").asText();
+            }
+        }
+
+        log.info("Push to repo {} ({}) on branch: {}, sha: {}, email: {}", repoId, platform, branch, commitSha,
+                authorEmail);
+
+        if (commitSha != null && !commitSha.equals("0000000000000000000000000000000000000000")) {
+            // Trigger AI Code Review
+            try {
+                aiCodeReviewService.triggerReview(repoId, commitSha, branch, authorEmail);
+            } catch (Exception e) {
+                log.error("Failed to trigger AI review", e);
+            }
+        }
 
         // TODO: 触发流水线执行
         // pipelineService.triggerByWebhook(repoId, branch, payload);

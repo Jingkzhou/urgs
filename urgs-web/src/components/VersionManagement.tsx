@@ -1,127 +1,205 @@
 import React, { useState, useEffect } from 'react';
-import { GitBranch, Server, ClipboardList, ShieldCheck, Megaphone, BarChart3, Layers, MenuSquare, Settings, Folder, Workflow, Rocket } from 'lucide-react';
+import { GitBranch, ShieldCheck, Megaphone, BarChart3, Folder, Terminal, Gauge, ChevronRight, LayoutGrid, Timer, GitPullRequest, Calendar } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { hasPermission } from '../utils/permission';
+import { BreadcrumbProvider, useBreadcrumbs } from '../context/BreadcrumbContext';
 import AppSystemList from './version/AppSystemList';
-import ReleaseLedger from './version/ReleaseLedger';
-import AICodeAudit from './version/AICodeAudit';
+import AICodeReport from './version/AICodeReport';
 import NoticeManagement from './version/NoticeManagement';
 import ReleaseStats from './version/ReleaseStats';
 import VersionOverview from './version/VersionOverview';
-import GitRepoManagement from './version/GitRepoManagement';
-import PipelineManagement from './version/PipelineManagement';
-import DeploymentManagement from './version/DeploymentManagement';
+import GitRepoManagement from './version/git-repo/GitRepoManagement';
 
-const VersionManagement: React.FC = () => {
+const VersionManagementContent: React.FC = () => {
     const [activeTab, setActiveTab] = useState<string>('');
 
     const TABS = [
-        { id: 'app', label: '应用系统库', icon: Server, code: 'version:app:list', component: AppSystemList },
-        { id: 'repos', label: 'Git 仓库管理', icon: GitBranch, code: 'version:repo:list', component: GitRepoManagement },
-        { id: 'notice', label: '业务公告管理', icon: Megaphone, code: 'version:notice:config', component: NoticeManagement },
-        { id: 'stats', label: '发布数据统计', icon: BarChart3, code: 'version:stats', component: ReleaseStats },
+        { id: 'app', label: '应用系统', subLabel: 'Applications', icon: LayoutGrid, code: 'version:app:list', component: AppSystemList },
+        { id: 'repos', label: '仓库管理', subLabel: 'Repositories', icon: GitBranch, code: 'version:repo:list', component: GitRepoManagement },
+        { id: 'code_report', label: '智查报告', subLabel: 'AI Reports', icon: ShieldCheck, code: 'version:ai:audit', component: AICodeReport },
+        { id: 'stats', label: '绩效统计', subLabel: 'Metrics', icon: BarChart3, code: 'version:stats', component: ReleaseStats },
     ];
 
     const visibleTabs = TABS.filter(tab => hasPermission(tab.code));
 
     useEffect(() => {
         if (!activeTab) {
-            setActiveTab('overview'); // 默认显示版本概览
+            setActiveTab('overview');
         }
     }, [activeTab]);
 
-    // 合并所有可点击的菜单项
     const allTabs = [
-        { id: 'overview', label: '版本概览', icon: Folder, component: VersionOverview },
+        { id: 'overview', label: '版本概览', subLabel: 'Overview', icon: Gauge, component: VersionOverview },
         ...visibleTabs
     ];
 
     const ActiveComponent = allTabs.find(tab => tab.id === activeTab)?.component;
 
-    const sections = [
-        {
-            title: '项目概览',
-            items: [{ id: 'overview', label: '版本概览', icon: Folder, component: VersionOverview }],
-        },
-        {
-            title: '版本管理',
-            items: visibleTabs.map(tab => ({ id: tab.id, label: tab.label, icon: tab.icon, code: tab.code })),
-        },
-        {
-            title: 'RESOURCES',
-            items: [{ id: 'config', label: '配置中心', icon: Settings, disabled: true }],
-        },
-    ];
+    const { items, setBreadcrumbs } = useBreadcrumbs();
+
+    useEffect(() => {
+        const currentTab = allTabs.find(tab => tab.id === activeTab);
+        if (currentTab) {
+            setBreadcrumbs([
+                { id: 'root', label: '版本管理中心' },
+                { id: currentTab.id, label: currentTab.label }
+            ]);
+        }
+    }, [activeTab, setBreadcrumbs]);
 
     return (
-        <div className="flex gap-4 animate-fade-in">
-            {/* Left rail */}
-            <aside className="w-64 bg-white border border-slate-200 rounded-xl shadow-sm">
-                <div className="px-4 py-5 border-b border-slate-100 flex items-center gap-2">
-                    <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center">
-                        <GitBranch className="w-5 h-5 text-blue-600" />
+        <div className="flex h-[calc(100vh-120px)] bg-slate-50 rounded-2xl overflow-hidden border border-slate-200 shadow-xl shadow-slate-200/50 font-sans">
+            {/* Control Rail (Sidebar) - Light Theme "Lab" Style */}
+            <aside className="w-64 bg-white flex flex-col z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)] border-r border-slate-200 relative overflow-hidden">
+                {/* Decorative Grid Line */}
+                <div className="absolute inset-0 opacity-[0.03] pointer-events-none"
+                    style={{ backgroundImage: 'linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
+                </div>
+
+                {/* Header Brand */}
+                <div className="h-16 flex items-center px-6 border-b border-slate-100 bg-white/80 backdrop-blur">
+                    <div className="w-8 h-8 rounded bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 mr-3">
+                        <GitBranch className="w-5 h-5 text-white" />
                     </div>
                     <div>
-                        <p className="text-sm font-semibold text-slate-900">版本管理</p>
-                        <p className="text-xs text-slate-400">Version Console</p>
+                        <h2 className="text-slate-800 font-bold tracking-tight text-sm">版本管理中心</h2>
+                        <p className="text-[10px] text-slate-400 font-mono tracking-wider">Diagnostic Center</p>
                     </div>
                 </div>
-                <div className="p-4 space-y-6">
-                    {sections.map(section => (
-                        <div key={section.title} className="space-y-2">
-                            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{section.title}</p>
-                            <div className="space-y-1">
-                                {section.items.map(item => {
-                                    const Icon = item.icon || Layers;
-                                    const isActive = activeTab === item.id;
-                                    const isDisabled = item.disabled || (!item.code && !item.component);
-                                    const isAi = item.id === 'ai';
-                                    // Only render permission-guarded items the user can see
-                                    if (item.code && !hasPermission(item.code)) return null;
-                                    return (
-                                        <button
-                                            key={item.id}
-                                            disabled={isDisabled}
-                                            onClick={() => !isDisabled && setActiveTab(item.id)}
-                                            className={`
-                                                w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all
-                                                ${isActive
-                                                    ? isAi
-                                                        ? 'bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 text-indigo-700'
-                                                        : 'bg-blue-50 text-blue-700'
-                                                    : 'text-slate-700 hover:bg-slate-50'}
-                                                ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
-                                                ${isAi ? 'border border-indigo-100' : ''}
-                                            `}
-                                        >
-                                            <Icon size={16} className={`${isActive ? 'text-indigo-600' : isAi ? 'text-indigo-500' : 'text-slate-500'}`} />
-                                            <span>{item.label}</span>
-                                            {isAi && (
-                                                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-semibold shadow-sm">
-                                                    AI
-                                                </span>
-                                            )}
-                                        </button>
-                                    );
-                                })}
-                            </div>
+
+                {/* Navigation */}
+                <div className="flex-1 py-6 px-3 space-y-1 overflow-y-auto">
+                    <div className="px-3 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                        <Terminal size={10} />
+                        功能模块
+                    </div>
+
+                    {allTabs.map((tab) => {
+                        const isActive = activeTab === tab.id;
+                        return (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`
+                                    w-full group relative flex items-center justify-between px-3 py-3 rounded-lg transition-all duration-300 border border-transparent
+                                    ${isActive ? 'bg-indigo-50 border-indigo-100 text-indigo-700' : 'hover:bg-slate-50 text-slate-500 hover:text-slate-800'}
+                                `}
+                            >
+                                {/* Active Indicator Bar */}
+                                {isActive && (
+                                    <motion.div
+                                        layoutId="activeRail"
+                                        className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-600 rounded-l-lg"
+                                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                                    />
+                                )}
+
+                                <div className="flex items-center gap-3 pl-2">
+                                    <tab.icon size={18} className={`transition-colors ${isActive ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                                    <div className="text-left">
+                                        <div className={`text-sm font-bold leading-none mb-1 ${isActive ? 'text-indigo-900' : 'text-slate-700'}`}>
+                                            {tab.label}
+                                        </div>
+                                        <div className="text-[10px] opacity-60 font-mono tracking-wide uppercase">
+                                            {tab.subLabel}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {isActive && (
+                                    <ChevronRight size={14} className="text-indigo-400" />
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {/* Footer Status - Release Window */}
+                <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-white border border-slate-200 shadow-sm">
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50 text-emerald-600">
+                            <Calendar size={14} />
                         </div>
-                    ))}
+                        <div className="flex-1">
+                            <p className="text-[10px] uppercase text-slate-400 font-bold mb-0.5">当前窗口</p>
+                            <p className="text-xs font-mono text-slate-700 font-bold tracking-wider">每周四 20:00</p>
+                        </div>
+                    </div>
                 </div>
             </aside>
 
-            {/* Main content */}
-            <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-
-
-                <div className="min-h-[420px]">
-                    {ActiveComponent ? <ActiveComponent /> : (
-                        <div className="text-center py-16 text-slate-500">
-                            暂无权限或未选择模块
+            {/* Main Content Area */}
+            <main className="flex-1 flex flex-col min-w-0 bg-[#F8FAFC] relative overflow-hidden">
+                {/* Header Ticker */}
+                <header className="h-14 bg-white/60 backdrop-blur border-b border-slate-200/60 flex items-center justify-between px-8 z-10 sticky top-0">
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2 text-slate-400">
+                            <Folder size={16} />
+                            <span className="text-xs font-mono">/</span >
+                            {items.map((item, index) => (
+                                <React.Fragment key={item.id}>
+                                    {index > 0 && <span className="text-xs font-mono">/</span>}
+                                    <span
+                                        onClick={item.onClick}
+                                        className={`text-xs font-bold uppercase tracking-wider ${index === items.length - 1
+                                            ? 'text-indigo-600'
+                                            : item.onClick ? 'text-slate-500 cursor-pointer hover:text-slate-700' : 'text-slate-500'
+                                            }`}
+                                    >
+                                        {item.label}
+                                    </span>
+                                </React.Fragment>
+                            ))}
                         </div>
-                    )}
+                    </div>
+
+                    <div className="flex items-center gap-6">
+                        <div className="hidden md:flex items-center gap-4 text-[10px] font-mono text-slate-400">
+                            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-orange-50 border border-orange-100 text-orange-600 font-bold">
+                                <Timer size={12} />
+                                <span>待发布: 3</span>
+                            </div>
+                            <div className="w-px h-3 bg-slate-300"></div>
+                            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-blue-50 border border-blue-100 text-blue-600 font-bold">
+                                <GitPullRequest size={12} />
+                                <span>合并请求: 12</span>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+
+                {/* Content Stage */}
+                <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+                    <AnimatePresence mode="wait">
+                        <motion.div
+                            key={activeTab}
+                            initial={{ opacity: 0, y: 10, scale: 0.99 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -10, scale: 0.99 }}
+                            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                            className="h-full"
+                        >
+                            {ActiveComponent ? <ActiveComponent /> : (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                                    <div className="w-16 h-16 rounded-2xl bg-white flex items-center justify-center mb-4 border border-slate-200 border-dashed shadow-sm">
+                                        <ShieldCheck size={32} className="opacity-30" />
+                                    </div>
+                                    <p className="text-sm font-bold text-slate-500">该区域访问受限</p>
+                                </div>
+                            )}
+                        </motion.div>
+                    </AnimatePresence>
                 </div>
-            </div>
+            </main>
         </div>
+    );
+};
+
+const VersionManagement: React.FC = () => {
+    return (
+        <BreadcrumbProvider>
+            <VersionManagementContent />
+        </BreadcrumbProvider>
     );
 };
 

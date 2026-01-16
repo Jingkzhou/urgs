@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Drawer, Timeline } from 'antd';
-import { Plus, Trash2, Edit, RefreshCw, Send, CheckCircle, XCircle, Clock, FileText, Rocket } from 'lucide-react';
+import { Plus, Trash2, Edit, RefreshCw, Send, CheckCircle, XCircle, Clock, FileText, Rocket, Sparkles } from 'lucide-react';
 import {
     getReleaseRecords, createReleaseRecord, updateReleaseRecord, deleteReleaseRecord,
     submitForApproval, approveRelease, rejectRelease, markAsReleased, getApprovalHistory,
-    getSsoList,
+    getSsoList, formatReleaseDescription,
     ReleaseRecord, ApprovalRecord, SsoConfig
 } from '@/api/version';
 import PageHeader from '../common/PageHeader';
@@ -44,6 +44,9 @@ const ReleaseLedger: React.FC<Props> = ({ ssoId }) => {
     const [selectedRecord, setSelectedRecord] = useState<ReleaseRecord | null>(null);
     const [approvalHistory, setApprovalHistory] = useState<ApprovalRecord[]>([]);
     const [approvalComment, setApprovalComment] = useState('');
+
+    // AI 相关
+    const [aiLoading, setAiLoading] = useState(false);
 
     useEffect(() => {
         fetchRecords();
@@ -94,6 +97,26 @@ const ReleaseLedger: React.FC<Props> = ({ ssoId }) => {
             fetchRecords();
         } catch (error) {
             message.error('删除失败');
+        }
+    };
+
+    const handleAiFormat = async () => {
+        const description = form.getFieldValue('description');
+        if (!description || description.trim() === '') {
+            message.warning('请先输入一些变更内容');
+            return;
+        }
+
+        setAiLoading(true);
+        try {
+            const formatted = await formatReleaseDescription(description);
+            form.setFieldsValue({ description: formatted });
+            message.success('已通过 AI 智能格式化');
+        } catch (error: any) {
+            console.error('AI format error:', error);
+            message.error(error.message || 'AI 格式化失败');
+        } finally {
+            setAiLoading(false);
         }
     };
 
@@ -290,8 +313,25 @@ const ReleaseLedger: React.FC<Props> = ({ ssoId }) => {
                             <Option value="hotfix">紧急修复</Option>
                         </Select>
                     </Form.Item>
-                    <Form.Item name="description" label="变更说明">
-                        <TextArea rows={4} placeholder="描述本次发布的主要变更内容..." />
+                    <Form.Item
+                        name="description"
+                        label={
+                            <div className="flex items-center justify-between w-full">
+                                <span>变更说明</span>
+                                <Button
+                                    type="link"
+                                    size="small"
+                                    icon={<Sparkles size={14} className="text-purple-500" />}
+                                    loading={aiLoading}
+                                    onClick={handleAiFormat}
+                                    className="flex items-center gap-1"
+                                >
+                                    AI 智能格式化
+                                </Button>
+                            </div>
+                        }
+                    >
+                        <TextArea rows={6} placeholder="描述本次发布的主要变更内容..." />
                     </Form.Item>
                 </Form>
             </Modal>

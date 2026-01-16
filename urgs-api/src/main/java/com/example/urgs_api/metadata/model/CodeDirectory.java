@@ -152,4 +152,14 @@ public class CodeDirectory {
     public void setSystemCode(String systemCode) {
         this.systemCode = systemCode;
     }
+
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private String reqId;
+
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    @com.fasterxml.jackson.annotation.JsonFormat(pattern = "yyyy-MM-dd")
+    private LocalDate plannedDate;
+
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private String changeDescription;
 }

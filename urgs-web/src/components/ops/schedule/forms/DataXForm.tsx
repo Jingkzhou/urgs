@@ -63,6 +63,43 @@ const DataXForm: React.FC<DataXFormProps> = ({ formData, handleChange, isMaximiz
                         基础设置
                     </div>
                     <BasicSettings formData={formData} handleChange={handleChange} availableTasks={availableTasks} />
+
+                    {/* Execution Node Selector */}
+                    <div className="pt-4 border-t border-slate-100 grid grid-cols-2 gap-6">
+                        <div>
+                            <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                                执行节点 (可选)
+                            </label>
+                            <select
+                                value={formData.executionNodeId || 0}
+                                onChange={(e) => handleChange('executionNodeId', parseInt(e.target.value))}
+                                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white"
+                            >
+                                <option value={0}>本机 (Local)</option>
+                                {configList
+                                    .filter(c => {
+                                        const meta = metaList.find(m => m.id === c.metaId);
+                                        return meta && meta.code === 'ssh';
+                                    })
+                                    .map(node => {
+                                        const hasDataX = !!node.connectionParams?.dataxHome;
+                                        return (
+                                            <option
+                                                key={node.id}
+                                                value={node.id}
+                                                disabled={!hasDataX}
+                                                className={!hasDataX ? 'text-slate-400' : ''}
+                                            >
+                                                {node.name} ({node.connectionParams?.host}) {hasDataX ? '' : '[缺 DataXHome]'}
+                                            </option>
+                                        );
+                                    })}
+                            </select>
+                            <div className="text-[10px] text-slate-400 mt-1">
+                                选择远程节点以通过 SSH 执行 DataX 任务。需在"数据源配置"中配置 SSH (Others) 类型的数据源。
+                            </div>
+                        </div>
+                    </div>
                 </section>
 
                 {/* 2. Reader Config (Source) */}
@@ -83,10 +120,16 @@ const DataXForm: React.FC<DataXFormProps> = ({ formData, handleChange, isMaximiz
                             <select
                                 value={formData.sourceType || ''}
                                 onChange={(e) => {
-                                    handleChange({
-                                        sourceType: e.target.value,
+                                    const val = e.target.value;
+                                    const updates: any = {
+                                        sourceType: val,
                                         sourceId: '' // Reset instance when type changes
-                                    });
+                                    };
+                                    if (val === 'STREAM') {
+                                        updates.streamColumn = '[\n  {\n    "type": "string",\n    "value": "test"\n  }\n]';
+                                        updates.sliceRecordCount = 10;
+                                    }
+                                    handleChange(updates);
                                 }}
                                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white"
                             >
@@ -140,10 +183,15 @@ const DataXForm: React.FC<DataXFormProps> = ({ formData, handleChange, isMaximiz
                             <select
                                 value={formData.targetType || ''}
                                 onChange={(e) => {
-                                    handleChange({
-                                        targetType: e.target.value,
+                                    const val = e.target.value;
+                                    const updates: any = {
+                                        targetType: val,
                                         targetId: '' // Reset instance when type changes
-                                    });
+                                    };
+                                    if (val === 'STREAM') {
+                                        updates.print = false;
+                                    }
+                                    handleChange(updates);
                                 }}
                                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white"
                             >

@@ -13,16 +13,18 @@ import ChangePasswordModal from './components/ChangePasswordModal';
 import ChatWidget from './components/home/ChatWidget';
 import BasicInfo from './components/BasicInfo';
 import ArkPage from './components/ark/ArkPage';
+import KnowledgeCenter from './components/knowledge/KnowledgeCenter';
 import { LOGO_URL } from './constants';
 
 const NAV_ITEMS = [
-    { id: 'dashboard', label: '工作台', icon: LayoutDashboard },
-    { id: 'ark', label: 'Ark (方舟)', icon: Sparkles },
-    { id: 'announcement', label: '公告管理', icon: Megaphone },
-    { id: 'version', label: '版本管理', icon: GitBranch },
-    { id: 'metadata', label: '数据管理', icon: Database },
-    { id: 'ops', label: '运维管理', icon: Activity },
-    { id: 'sys', label: '系统管理', icon: Settings },
+    { id: 'dashboard', label: '工作台', icon: LayoutDashboard, permission: 'dashboard' },
+    { id: 'ark', label: 'Ark (方舟)', icon: Sparkles, permission: 'ark' },
+    { id: 'announcement', label: '公告管理', icon: Megaphone, permission: 'announcement' },
+    { id: 'version', label: '版本管理', icon: GitBranch, permission: 'version' },
+    { id: 'metadata', label: '数据管理', icon: Database, permission: 'metadata' },
+    { id: 'ops', label: '运维管理', icon: Activity, permission: 'ops' },
+    { id: 'knowledge', label: '知识中心', icon: Database, permission: 'knowledge' },
+    { id: 'sys', label: '系统管理', icon: Settings, permission: 'sys' },
 ];
 
 const App: React.FC = () => {
@@ -48,13 +50,34 @@ const App: React.FC = () => {
         roleName?: string;
         roleId?: number; // Added roleId
         avatarUrl?: string;
-        ssoSystem?: string;
+        system?: string;
     } | null>(initialUser);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [layoutMode, setLayoutMode] = useState<'sidebar' | 'topbar'>('topbar');
     const [activeTab, setActiveTab] = useState('dashboard');
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [changePasswordVisible, setChangePasswordVisible] = useState(false);
+
+    // Click outside handler for user menu
+    const userMenuRef = React.useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (showUserMenu && userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+                setShowUserMenu(false);
+            }
+        };
+        // Use mousedown to capture the event before click (optional, but robust)
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showUserMenu]);
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            setShowUserMenu(false);
+        }
+    }, [isAuthenticated]);
 
     useEffect(() => {
         if (initialToken) {
@@ -123,6 +146,7 @@ const App: React.FC = () => {
         localStorage.removeItem('auth_user');
         setIsAuthenticated(false);
         setUserInfo(null);
+        setShowUserMenu(false);
     };
 
     const handleMenuSettings = () => {
@@ -159,7 +183,7 @@ const App: React.FC = () => {
                     </div>
 
                     <nav className="flex-1 p-4 space-y-2">
-                        {NAV_ITEMS.filter(item => hasPermission(item.id)).map((item) => (
+                        {NAV_ITEMS.filter(item => hasPermission(item.permission)).map((item) => (
                             <NavItem
                                 key={item.id}
                                 icon={<item.icon size={20} />}
@@ -208,7 +232,7 @@ const App: React.FC = () => {
                                     <img src={LOGO_URL} alt="Bank of Jilin" className="h-8 object-contain" />
                                 </div>
                                 <nav className="hidden md:flex items-center gap-1">
-                                    {NAV_ITEMS.filter(item => hasPermission(item.id)).map((item) => (
+                                    {NAV_ITEMS.filter(item => hasPermission(item.permission)).map((item) => (
                                         <button
                                             key={item.id}
                                             onClick={() => setActiveTab(item.id)}
@@ -248,7 +272,7 @@ const App: React.FC = () => {
                                 <p className="text-xs text-slate-500">{userInfo?.roleName || '吉林银行总行'}</p>
                             </div>
                             {layoutMode === 'topbar' ? (
-                                <div className="relative">
+                                <div className="relative" ref={userMenuRef}>
                                     <button
                                         onClick={() => setShowUserMenu(!showUserMenu)}
                                         className="group relative focus:outline-none"
@@ -316,6 +340,7 @@ const App: React.FC = () => {
                         {activeTab === 'version' && <VersionManagement />}
                         {activeTab === 'metadata' && <MetadataManagement />}
                         {activeTab === 'ops' && <OpsManagement />}
+                        {activeTab === 'knowledge' && <KnowledgeCenter />}
                         {activeTab === 'basic_info' && <BasicInfo userInfo={userInfo} />}
                     </div>
                 </main>

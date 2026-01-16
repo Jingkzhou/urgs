@@ -7,29 +7,29 @@ public class AuthResponse {
     private String name;
     private String roleName;
     private Long roleId;
-    private String ssoSystem;
+    private String system;
 
     public AuthResponse() {
     }
 
-    public AuthResponse(String token, String id, String empId, String name, String roleName, String ssoSystem) {
+    public AuthResponse(String token, String id, String empId, String name, String roleName, String system) {
         this.token = token;
         this.id = id;
         this.empId = empId;
         this.name = name;
         this.roleName = roleName;
-        this.ssoSystem = ssoSystem;
+        this.system = system;
     }
 
     public AuthResponse(String token, String id, String empId, String name, String roleName, Long roleId,
-            String ssoSystem) {
+            String system) {
         this.token = token;
         this.id = id;
         this.empId = empId;
         this.name = name;
         this.roleName = roleName;
         this.roleId = roleId;
-        this.ssoSystem = ssoSystem;
+        this.system = system;
     }
 
     public Long getRoleId() {
@@ -72,11 +72,11 @@ public class AuthResponse {
         this.roleName = roleName;
     }
 
-    public String getSsoSystem() {
-        return ssoSystem;
+    public String getSystem() {
+        return system;
     }
 
-    public void setSsoSystem(String ssoSystem) {
-        this.ssoSystem = ssoSystem;
+    public void setSystem(String system) {
+        this.system = system;
     }
 }

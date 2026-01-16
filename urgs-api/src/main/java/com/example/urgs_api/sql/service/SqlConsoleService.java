@@ -5,6 +5,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import org.springframework.jdbc.core.ColumnMapRowMapper;
+import java.sql.PreparedStatement;
 import java.util.*;
 
 @Service
@@ -12,10 +14,6 @@ public class SqlConsoleService {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
-
-    private static final String[] FORBIDDEN_KEYWORDS = {
-            "DELETE", "UPDATE", "DROP", "INSERT", "TRUNCATE", "ALTER", "GRANT", "REVOKE", "CREATE"
-    };
 
     @Autowired
     private com.example.urgs_api.datasource.service.DynamicDataSourceService dynamicDataSourceService;
@@ -28,21 +26,25 @@ public class SqlConsoleService {
                 throw new IllegalArgumentException("SQL cannot be empty");
             }
 
-            String upperSql = sql.trim().toUpperCase();
-            for (String keyword : FORBIDDEN_KEYWORDS) {
-                if (upperSql.contains(keyword)) {
-                    throw new IllegalArgumentException("Operation not allowed: " + keyword);
-                }
-            }
+            String trimmedSql = sql.trim();
+            String upperSql = trimmedSql.toUpperCase();
 
+            // 1. Enforce SELECT
             if (!upperSql.startsWith("SELECT")) {
                 throw new IllegalArgumentException("Only SELECT statements are allowed");
             }
 
-            // 2. Force LIMIT
-            if (!upperSql.contains("LIMIT")) {
-                sql += " LIMIT 100";
+            // 2. Prevent Multiple Statements (SQL Injection / DDL after ;)
+            // Check if there is a semicolon followed by non-whitespace content
+            if (trimmedSql.matches("(?si).+;\\s*\\S.*")) {
+                throw new IllegalArgumentException("Multi-statement execution allowed");
             }
+
+            // 2. Force LIMIT (Removed: using setMaxRows instead for better compatibility
+            // and strict enforcement)
+            // if (!upperSql.contains("LIMIT")) {
+            // sql += " LIMIT 100";
+            // }
 
             // 3. Get JdbcTemplate (Dynamic or Default)
             JdbcTemplate templateToUse = jdbcTemplate;
@@ -50,8 +52,14 @@ public class SqlConsoleService {
                 templateToUse = dynamicDataSourceService.getJdbcTemplate(dataSourceId);
             }
 
-            // 4. Execute
-            List<Map<String, Object>> rows = templateToUse.queryForList(sql);
+            // 4. Execute with Max Rows Limit
+            List<Map<String, Object>> rows = templateToUse.query(
+                    con -> {
+                        PreparedStatement ps = con.prepareStatement(sql);
+                        ps.setMaxRows(10); // Strict limit as per requirement
+                        return ps;
+                    },
+                    new ColumnMapRowMapper());
 
             // 5. Extract Columns
             Set<String> columns = new LinkedHashSet<>();

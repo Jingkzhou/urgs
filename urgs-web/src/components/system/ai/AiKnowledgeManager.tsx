@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Card, Tag, Space, Modal, Form, Input, Select, message, Drawer, Upload, Tooltip } from 'antd';
+import { Table, Button, Card, Tag, Space, Modal, Form, Input, Select, message, Drawer, Upload, Tooltip, Switch } from 'antd';
 import { DatabaseOutlined, PlusOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined, FolderOpenOutlined, UploadOutlined, ThunderboltOutlined, FileOutlined } from '@ant-design/icons';
+import { Sparkles } from 'lucide-react';
 import { get, post, del } from '../../../utils/request';
 import type { UploadFile } from 'antd/es/upload/interface';
 import VectorDbDashboard from './VectorDbDashboard';
@@ -44,6 +45,7 @@ const AiKnowledgeManager: React.FC = () => {
     const [fileLoading, setFileLoading] = useState(false);
     const [ingesting, setIngesting] = useState(false);
     const [selectedFileKeys, setSelectedFileKeys] = useState<React.Key[]>([]);
+    const [enableAI, setEnableAI] = useState(true);
 
     // Vector DB Modal
     const [vectorModalOpen, setVectorModalOpen] = useState(false);
@@ -136,7 +138,7 @@ const AiKnowledgeManager: React.FC = () => {
                 kbName: currentKb.name,
                 fileName: kf.fileName
             }, {
-                params: { kbName: currentKb.name, fileName: kf.fileName }
+                params: { kbName: currentKb.name, fileName: kf.fileName, enable_qa_generation: enableAI }
             });
             if (res.status === 'success') {
                 message.success(`${kf.fileName} 向量化成功`);
@@ -156,8 +158,8 @@ const AiKnowledgeManager: React.FC = () => {
         if (!currentKb) return;
         setIngesting(true);
         try {
-            const res = await post<any>(`/api/ai/knowledge/ingest?kbName=${currentKb.name}`, {}, {
-                params: { kbName: currentKb.name }
+            const res = await post<any>(`/api/ai/knowledge/ingest`, {}, {
+                params: { kbName: currentKb.name, enable_qa_generation: enableAI }
             });
             if (res.status === 'success') {
                 message.success(res.message);
@@ -182,7 +184,7 @@ const AiKnowledgeManager: React.FC = () => {
         setIngesting(true);
         try {
             const res = await post<any>(`/api/ai/knowledge/files/batch-ingest`, selectedFileNames, {
-                params: { kbName: currentKb.name }
+                params: { kbName: currentKb.name, enable_qa_generation: enableAI }
             });
             if (res.status === 'success') {
                 message.success(`成功触发 ${selectedFileNames.length} 个文件的向量化`);
@@ -286,7 +288,7 @@ const AiKnowledgeManager: React.FC = () => {
             content: (
                 <div>
                     <p>确定要清除知识库 <span className="font-bold text-red-500">{record.name}</span> 下的所有向量数据吗？</p>
-                    <p className="text-xs text-slate-500">此操作将清空向量库内容，并将所有文件状态恢复为“已上传”。该操作不可撤销。</p>
+                    <p className="text-xs text-slate-500">此操作将清空向量库内容并删除该知识库下的所有文件记录与物理文件，该操作不可撤销。</p>
                 </div>
             ),
             okText: '确认重置',
@@ -300,6 +302,11 @@ const AiKnowledgeManager: React.FC = () => {
                     });
                     if (res.status === 'success') {
                         message.success('知识库已重置');
+                        fetchKbs();
+                        if (isFileDrawerOpen && currentKb?.name === record.name) {
+                            setSelectedFileKeys([]);
+                            fetchFiles(record.name);
+                        }
                     } else {
                         message.error(res.message || '重置失败');
                     }
@@ -352,7 +359,7 @@ const AiKnowledgeManager: React.FC = () => {
             dataIndex: 'fileName',
             key: 'fileName',
             render: (text: string, record: KBFile) => (
-                <Space direction="vertical" size={0}>
+                <div className="flex flex-col gap-0">
                     <Space>
                         <FileOutlined className="text-blue-500" />
                         <span className="font-medium">{text}</span>
@@ -362,7 +369,7 @@ const AiKnowledgeManager: React.FC = () => {
                             {record.errorMessage}
                         </span>
                     )}
-                </Space>
+                </div>
             )
         },
         {
@@ -477,7 +484,7 @@ const AiKnowledgeManager: React.FC = () => {
                             icon={<PlusOutlined />}
                             onClick={() => {
                                 form.resetFields();
-                                form.setFieldsValue({ embeddingModel: 'text-embedding-3-small' });
+                                form.setFieldsValue({ embeddingModel: 'bge-m3' });
                                 setIsModalOpen(true);
                             }}
                         >
@@ -518,10 +525,8 @@ const AiKnowledgeManager: React.FC = () => {
                         <Input placeholder="例如: finance_docs_v1" />
                     </Form.Item>
                     <Form.Item name="embeddingModel" label="Embedding 模型" rules={[{ required: true }]}>
-                        <Select placeholder="选择 Embedding 模型">
-                            <Select.Option value="text-embedding-3-small">text-embedding-3-small (OpenAI)</Select.Option>
-                            <Select.Option value="text-embedding-3-large">text-embedding-3-large (OpenAI)</Select.Option>
-                            <Select.Option value="bge-m3">BGE-M3 (Local)</Select.Option>
+                        <Select placeholder="选择 Embedding 模型" disabled>
+                            <Select.Option value="bge-m3">BGE-M3 (Local) - 默认</Select.Option>
                         </Select>
                     </Form.Item>
                     <Form.Item name="description" label="描述">
@@ -560,11 +565,41 @@ const AiKnowledgeManager: React.FC = () => {
                         >
                             全库向量化
                         </Button>
+                        {/* More Actions Dropdown could govern Reset/Clean, but keeping button for now if space allows */}
+                        <Tooltip title="清空所有数据">
+                            <Button
+                                danger
+                                icon={<ReloadOutlined />}
+                                onClick={() => currentKb && handleResetKB(currentKb)}
+                            />
+                        </Tooltip>
                     </Space>
                 }
             >
-                <div className="mb-4 text-slate-500 text-sm">
-                    上传文件到该知识库空间，点击“开始向量化”将文件处理并存入向量数据库。
+                {/* Configuration Bar */}
+                <div className="mb-6 bg-blue-50/50 p-4 rounded-xl border border-blue-100 flex items-center justify-between">
+                    <div>
+                        <h4 className="font-bold text-slate-700 text-sm mb-1 flex items-center gap-2">
+                            <Sparkles className="text-blue-500" size={16} />
+                            智能增强配置
+                        </h4>
+                        <div className="text-slate-500 text-xs">
+                            开启后，向量化时将使用 LLM 生成模拟问答对(Q&A)与摘要，显著提升检索在自然语言提问下的准确率。
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-lg border border-blue-100 shadow-sm">
+                        <span className="text-sm font-bold text-slate-700">启用 AI 模拟问答生成</span>
+                        <Switch
+                            checked={enableAI}
+                            onChange={setEnableAI}
+                            checkedChildren="开启"
+                            unCheckedChildren="关闭"
+                        />
+                    </div>
+                </div>
+
+                <div className="mb-4 text-slate-500 text-sm flex justify-between items-end">
+                    <span>文件列表 ({files.length})</span>
                 </div>
                 <Table
                     rowSelection={{
@@ -589,7 +624,8 @@ const AiKnowledgeManager: React.FC = () => {
                 onCancel={() => setVectorModalOpen(false)}
                 width={1300}
                 footer={null}
-                destroyOnClose
+                // destroyOnClose is deprecated in some versions, use key to force re-render
+                key={vectorModalOpen ? 'open' : 'closed'}
                 styles={{ body: { padding: 0, height: '80vh', overflow: 'hidden' } }}
             >
                 <VectorDbDashboard initialCollection={currentVectorCollection} />

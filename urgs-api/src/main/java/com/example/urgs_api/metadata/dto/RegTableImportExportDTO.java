@@ -10,14 +10,14 @@ import lombok.Data;
 @Data
 public class RegTableImportExportDTO {
 
-    @ExcelProperty(value = "表名", index = 0)
-    private String name;
+    @ExcelProperty(value = "序号", index = 0)
+    private Integer sortOrder;
 
-    @ExcelProperty(value = "中文名", index = 1)
-    private String cnName;
+    @ExcelProperty(value = "中文名/表名", index = 1)
+    private String cnName; // 原index=1
 
-    @ExcelProperty(value = "报表编码", index = 2)
-    private String code;
+    @ExcelProperty(value = "表名", index = 2)
+    private String name; // 原index=0，现在往后移
 
     @ExcelProperty(value = "系统编码", index = 3)
     private String systemCode;
@@ -40,11 +40,11 @@ public class RegTableImportExportDTO {
     @ExcelProperty(value = "自动取数状态", index = 9)
     private String autoFetchStatus;
 
-    @ExcelProperty(value = "文档编号", index = 10)
-    private String documentNo;
+    @ExcelProperty(value = "发文号", index = 10)
+    private String dispatchNo;
 
-    @ExcelProperty(value = "文档标题", index = 11)
-    private String documentTitle;
+    @ExcelProperty(value = "填报说明", index = 11)
+    private String fillInstruction;
 
     @ExcelProperty(value = "生效日期", index = 12)
     private String effectiveDate;

@@ -12,6 +12,9 @@ public class IssueStatsDTO {
     // 按问题类型统计
     private List<StatItem> typeStats;
 
+    // 按归属系统统计
+    private List<StatItem> systemStats;
+
     // 按处理人统计工时
     private List<HandlerStats> handlerStats;
 

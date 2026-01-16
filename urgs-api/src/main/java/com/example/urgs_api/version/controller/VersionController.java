@@ -4,8 +4,11 @@ import com.example.urgs_api.version.entity.AppSystem;
 import com.example.urgs_api.version.entity.GitRepository;
 import com.example.urgs_api.version.service.AppSystemService;
 import com.example.urgs_api.version.service.GitRepositoryService;
+import com.example.urgs_api.version.service.GitPlatformService;
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.http.ResponseEntity;
+
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
@@ -17,12 +20,15 @@ public class VersionController {
 
     private final AppSystemService appSystemService;
     private final GitRepositoryService gitRepositoryService;
+    private final GitPlatformService gitPlatformService;
 
     // ===== 应用系统 API =====
 
     @GetMapping("/apps")
-    public List<AppSystem> listApps(@RequestParam(required = false) String keyword) {
-        return appSystemService.search(keyword);
+    public List<AppSystem> listApps(
+            @RequestParam(required = false) String keyword,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+        return appSystemService.search(userId != null ? userId : 1L, keyword);
     }
 
     @GetMapping("/apps/{id}")
@@ -52,19 +58,43 @@ public class VersionController {
         return ResponseEntity.ok().build();
     }
 
+    // ===== 扩展 API =====
+    @GetMapping("/repos/pr-counts")
+    public Map<Long, Integer> getRepoPrCounts(@RequestAttribute(value = "userId", required = false) Long userId) {
+        if (userId == null)
+            userId = 1L;
+        List<GitRepository> repos = gitRepositoryService.findAll(userId);
+
+        // Parallel stream for faster fetching
+        return repos.parallelStream()
+                .collect(java.util.stream.Collectors.toMap(
+                        GitRepository::getId,
+                        repo -> gitPlatformService.getOpenPrCount(repo.getId())));
+    }
+
     // ===== Git 仓库 API =====
 
     @GetMapping("/repos")
     public List<GitRepository> listRepos(
             @RequestParam(required = false) Long ssoId,
-            @RequestParam(required = false) String platform) {
+            @RequestParam(required = false) String platform,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+
+        if (userId == null) {
+            userId = 1L; // Fallback for dev environment or default user
+        }
+
+        // 1. Fetch filtered list from DB
+        List<GitRepository> dbRepos;
         if (ssoId != null) {
-            return gitRepositoryService.findBySsoId(ssoId);
+            dbRepos = gitRepositoryService.findBySsoId(userId, ssoId);
+        } else if (platform != null) {
+            dbRepos = gitRepositoryService.findByPlatform(userId, platform);
+        } else {
+            dbRepos = gitRepositoryService.findAll(userId);
         }
-        if (platform != null) {
-            return gitRepositoryService.findByPlatform(platform);
-        }
-        return gitRepositoryService.findAll();
+
+        return dbRepos;
     }
 
     @GetMapping("/repos/{id}")
@@ -75,8 +105,9 @@ public class VersionController {
     }
 
     @PostMapping("/repos")
-    public GitRepository createRepo(@RequestBody GitRepository repo) {
-        return gitRepositoryService.create(repo);
+    public GitRepository createRepo(@RequestBody GitRepository repo,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+        return gitRepositoryService.create(repo, userId != null ? userId : 1L);
     }
 
     @PutMapping("/repos/{id}")

@@ -1,6 +1,7 @@
 package com.example.urgs_api.task.controller;
 
 import com.example.urgs_api.task.service.TaskService;
+import com.example.urgs_api.task.vo.TaskDefinitionStatsVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,24 +15,57 @@ public class TaskController {
     @PostMapping("/save")
     public String saveTask(@RequestBody TaskDto dto) {
         return taskService.saveTask(dto.getId(), dto.getName(), dto.getType(), dto.getContent(),
-                dto.getCronExpression(), dto.getStatus(), dto.getPriority(), dto.getPreTaskIds());
+                dto.getCronExpression(), dto.getStatus(), dto.getPriority(), dto.getPreTaskIds(), dto.getSystemId());
     }
 
     @GetMapping("/list")
     public com.baomidou.mybatisplus.core.metadata.IPage<com.example.urgs_api.task.entity.Task> listTasks(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String workflowIds,
+            @RequestParam(required = false) Integer status,
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer size) {
         System.out.println("DEBUG: listTasks called with keyword='" + keyword + "', workflowIds='" + workflowIds
-                + "', page=" + page + ", size=" + size);
-        return taskService.listTasks(keyword, workflowIds, page, size);
+                + "', status=" + status + ", page=" + page + ", size=" + size);
+        return taskService.listTasks(keyword, workflowIds, status, page, size);
+    }
+
+    @GetMapping("/global-stats")
+    public TaskDefinitionStatsVO getTaskGlobalStats() {
+        return taskService.getTaskGlobalStats();
     }
 
     @DeleteMapping("/{id}")
     public String deleteTask(@PathVariable String id) {
         taskService.deleteTask(id);
         return "Success";
+    }
+
+    @PostMapping("/batch-status")
+    public String batchUpdateStatus(@RequestBody BatchStatusDto dto) {
+        taskService.batchUpdateStatus(dto.getIds(), dto.getStatus());
+        return "Success";
+    }
+
+    public static class BatchStatusDto {
+        private java.util.List<String> ids;
+        private Integer status;
+
+        public java.util.List<String> getIds() {
+            return ids;
+        }
+
+        public void setIds(java.util.List<String> ids) {
+            this.ids = ids;
+        }
+
+        public Integer getStatus() {
+            return status;
+        }
+
+        public void setStatus(Integer status) {
+            this.status = status;
+        }
     }
 
     public static class TaskDto {
@@ -43,6 +77,7 @@ public class TaskController {
         private Integer status;
         private Integer priority;
         private java.util.List<String> preTaskIds;
+        private Long systemId;
 
         public String getId() {
             return id;
@@ -106,6 +141,14 @@ public class TaskController {
 
         public void setPreTaskIds(java.util.List<String> preTaskIds) {
             this.preTaskIds = preTaskIds;
+        }
+
+        public Long getSystemId() {
+            return systemId;
+        }
+
+        public void setSystemId(Long systemId) {
+            this.systemId = systemId;
         }
     }
 }

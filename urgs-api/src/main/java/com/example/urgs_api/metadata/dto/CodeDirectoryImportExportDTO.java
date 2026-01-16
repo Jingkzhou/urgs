@@ -42,6 +42,9 @@ public class CodeDirectoryImportExportDTO {
     @ExcelProperty("执行标准")
     private String standard;
 
+    @ExcelProperty("系统代码")
+    private String systemCode;
+
     public String getTableCode() {
         return tableCode;
     }
@@ -128,5 +131,13 @@ public class CodeDirectoryImportExportDTO {
 
     public void setStandard(String standard) {
         this.standard = standard;
+    }
+
+    public String getSystemCode() {
+        return systemCode;
+    }
+
+    public void setSystemCode(String systemCode) {
+        this.systemCode = systemCode;
     }
 }

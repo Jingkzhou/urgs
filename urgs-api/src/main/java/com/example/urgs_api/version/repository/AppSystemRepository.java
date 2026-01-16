@@ -16,4 +16,8 @@ public interface AppSystemRepository extends JpaRepository<AppSystem, Long> {
     List<AppSystem> findByNameContaining(String name);
 
     boolean existsByCode(String code);
+
+    java.util.List<AppSystem> findByNameIn(java.util.Collection<String> names);
+
+    java.util.List<AppSystem> findByCodeIn(java.util.Collection<String> codes);
 }

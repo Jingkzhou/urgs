@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Button, message, Spin, Card } from 'antd';
-import { Sparkles, Copy, RefreshCw, FileText } from 'lucide-react';
+import { Modal, Button, message, Spin, Card, Tabs } from 'antd';
+import { Sparkles, Copy, RefreshCw, FileText, PieChart as PieIcon, BarChart as BarChartIcon, TrendingUp } from 'lucide-react';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
+
+const STATUS_COLORS = ['#3b82f6', '#f59e0b', '#22c55e', '#ef4444'];
 
 interface ReportGeneratorModalProps {
     open: boolean;
@@ -159,60 +165,67 @@ const ReportGeneratorModal: React.FC<ReportGeneratorModalProps> = ({ open, onCan
                         <p className="text-slate-500 font-medium">AI 正在分析数据并撰写报告...</p>
                     </div>
                 ) : (
-                    <div className="prose prose-slate max-w-none">
-                        {/* Simple Markdown Rendering Support: 
-                            1. Split by newlines
-                            2. Detect headers (#, ##, ###)
-                            3. Detect list items (-, *)
-                            4. Detect bold (**text**) 
-                        */}
-                        {report.split('\n').map((line, i) => {
-                            let content = line;
-                            let className = "mb-2 text-slate-700 leading-relaxed";
+                    <div className="space-y-6">
+                        {/* 关键图表快照 */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-                            // Headers
-                            if (line.startsWith('# ')) {
-                                className = "text-2xl font-bold text-slate-900 mt-6 mb-4";
-                                content = line.replace('# ', '');
-                            } else if (line.startsWith('## ')) {
-                                className = "text-xl font-bold text-slate-800 mt-5 mb-3 border-b pb-2";
-                                content = line.replace('## ', '');
-                            } else if (line.startsWith('### ')) {
-                                className = "text-lg font-bold text-slate-800 mt-4 mb-2";
-                                content = line.replace('### ', '');
-                            }
-                            // List items
-                            else if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
-                                className = "ml-4 mb-1 flex gap-2";
-                                content = (
-                                    <>
-                                        <span className="text-slate-400">•</span>
-                                        <span>{line.trim().substring(2)}</span>
-                                    </>
-                                ) as any;
-                            }
+                            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                                <h4 className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1">
+                                    <TrendingUp size={12} /> 问题趋势
+                                </h4>
+                                <ResponsiveContainer width="100%" height={150}>
+                                    <LineChart data={data?.trend}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="period" tick={{ fontSize: 10 }} />
+                                        <YAxis tick={{ fontSize: 10 }} />
+                                        <Tooltip />
+                                        <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </div>
 
-                            // Bold processing (Simple regex)
-                            if (typeof content === 'string') {
-                                const parts = content.split(/(\*\*.*?\*\*)/g);
-                                content = (
-                                    <span>
-                                        {parts.map((part, idx) => {
-                                            if (part.startsWith('**') && part.endsWith('**')) {
-                                                return <strong key={idx} className="font-semibold text-slate-800">{part.slice(2, -2)}</strong>;
-                                            }
-                                            return part;
-                                        })}
-                                    </span>
-                                ) as any;
-                            }
+                            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                                <h4 className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1">
+                                    <PieIcon size={12} /> 处理人工时统计
+                                </h4>
+                                <ResponsiveContainer width="100%" height={150}>
+                                    <BarChart data={data?.handlerStats} layout="vertical">
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis type="number" tick={{ fontSize: 10 }} />
+                                        <YAxis dataKey="handler" type="category" tick={{ fontSize: 10 }} width={40} />
+                                        <Tooltip />
+                                        <Legend wrapperStyle={{ fontSize: '10px' }} />
+                                        <Bar dataKey="issueCount" name="问题数" fill="#22c55e" radius={[0, 4, 4, 0]} barSize={15} />
+                                        <Bar dataKey="totalWorkHours" name="工时" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={15} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
 
-                            return <div key={i} className={className}>{content}</div>
-                        })}
-                        {isStreaming && (
-                            <span className="inline-block w-2 h-4 bg-purple-500 animate-pulse ml-1 align-middle"></span>
-                        )}
-                        <div ref={endRef} />
+                            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 col-span-1 md:col-span-2">
+                                <h4 className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1">
+                                    <BarChartIcon size={12} /> 归属系统分布
+                                </h4>
+                                <ResponsiveContainer width="100%" height={150}>
+                                    <BarChart data={data?.systemStats}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                                        <YAxis tick={{ fontSize: 10 }} />
+                                        <Tooltip />
+                                        <Bar dataKey="value" fill="#ec4899" radius={[4, 4, 0, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        <div className="prose prose-slate max-w-none border-t pt-4">
+                            <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                                {report}
+                            </ReactMarkdown>
+                            {isStreaming && (
+                                <span className="inline-block w-2 h-4 bg-purple-500 animate-pulse ml-1 align-middle"></span>
+                            )}
+                            <div ref={endRef} />
+                        </div>
                     </div>
                 )}
             </div>

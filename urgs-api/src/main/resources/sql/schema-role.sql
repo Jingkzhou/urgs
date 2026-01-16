@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
     name VARCHAR(128) NOT NULL,
     org_name VARCHAR(128),
     role_name VARCHAR(128),
-    sso_system VARCHAR(128),
+    system VARCHAR(128),
     phone VARCHAR(64),
     last_login VARCHAR(64),
     status VARCHAR(16) DEFAULT 'active',

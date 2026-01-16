@@ -9,43 +9,50 @@ public class UserDTO {
     private String orgName;
     private String roleName;
     private Long roleId; // New
-    private String ssoSystem;
+    private String system;
     private String phone;
     private String lastLogin;
     private String status;
     private String avatarUrl;
+    private String email;
 
     public UserDTO() {
     }
 
-    public UserDTO(String id, String empId, String name, String orgName, String roleName, Long roleId, String ssoSystem,
-            String phone, String lastLogin, String status, String avatarUrl) {
+    public UserDTO(String id, String empId, String name, String orgName, String roleName, Long roleId, String system,
+            String phone, String lastLogin, String status, String avatarUrl, String email) {
         this.id = id;
         this.empId = empId;
         this.name = name;
         this.orgName = orgName;
         this.roleName = roleName;
         this.roleId = roleId;
-        this.ssoSystem = ssoSystem;
+        this.system = system;
         this.phone = phone;
         this.lastLogin = lastLogin;
         this.status = status;
         this.avatarUrl = avatarUrl;
+        this.email = email;
     }
 
-    public static UserDTO fromEntity(User u) {
-        return new UserDTO(
-                u.getId() == null ? null : String.valueOf(u.getId()),
-                u.getEmpId(),
-                u.getName(),
-                u.getOrgName(),
-                u.getRoleName(),
-                u.getRoleId(),
-                u.getSsoSystem(),
-                u.getPhone(),
-                u.getLastLogin(),
-                u.getStatus(),
-                u.getAvatarUrl());
+    public static UserDTO fromEntity(User user) {
+        if (user == null) {
+            return null;
+        }
+        UserDTO dto = new UserDTO();
+        dto.setId(user.getId() == null ? null : String.valueOf(user.getId())); // Convert Long to String for id
+        dto.setEmpId(user.getEmpId());
+        dto.setName(user.getName());
+        dto.setOrgName(user.getOrgName());
+        dto.setRoleName(user.getRoleName());
+        dto.setRoleId(user.getRoleId());
+        dto.setSystem(user.getSystem());
+        dto.setPhone(user.getPhone());
+        dto.setLastLogin(user.getLastLogin());
+        dto.setStatus(user.getStatus());
+        dto.setAvatarUrl(user.getAvatarUrl());
+        dto.setEmail(user.getEmail());
+        return dto;
     }
 
     public User toEntity() {
@@ -61,7 +68,7 @@ public class UserDTO {
         u.setName(this.name);
         u.setOrgName(this.orgName);
         u.setRoleName(this.roleName);
-        u.setSsoSystem(this.ssoSystem);
+        u.setSystem(this.system);
         u.setPhone(this.phone);
         u.setLastLogin(this.lastLogin);
         u.setStatus(this.status);
@@ -117,12 +124,12 @@ public class UserDTO {
         this.roleName = roleName;
     }
 
-    public String getSsoSystem() {
-        return ssoSystem;
+    public String getSystem() {
+        return system;
     }
 
-    public void setSsoSystem(String ssoSystem) {
-        this.ssoSystem = ssoSystem;
+    public void setSystem(String system) {
+        this.system = system;
     }
 
     public String getPhone() {
@@ -147,5 +154,21 @@ public class UserDTO {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public Long getRoleId() {
+        return roleId;
+    }
+
+    public void setRoleId(Long roleId) {
+        this.roleId = roleId;
     }
 }

@@ -3,8 +3,8 @@ import SystemLinks from './SystemLinks';
 import StatsSection from './StatsSection';
 import Notices from './Notices';
 import Auth from '../Auth';
-import QuickAccess from './QuickAccess';
 import BatchMonitoring from './BatchMonitoring';
+import DevWorkbench from './DevWorkbench';
 
 const Dashboard: React.FC = () => {
   return (
@@ -13,6 +13,13 @@ const Dashboard: React.FC = () => {
       <section className="animate-fade-in-up">
         <Auth code="dash:systems">
           <SystemLinks />
+        </Auth>
+      </section>
+
+      {/* 1.5 Developer Workbench */}
+      <section className="animate-fade-in-up" style={{ animationDelay: '50ms' }}>
+        <Auth code="dash:dev">
+          <DevWorkbench />
         </Auth>
       </section>
 

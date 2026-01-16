@@ -1,0 +1,68 @@
+/**
+ * Generate a consistent color based on a string (e.g., username or ID)
+ */
+const COLORS = [
+    '#F87171', '#FB923C', '#FBBF24', '#A3E635', '#34D399', '#22D3EE', '#818CF8', '#A78BFA', '#F472B6', '#FB7185', // Red to Rose (400)
+    '#EF4444', '#F97316', '#F59E0B', '#84CC16', '#10B981', '#06B6D4', '#6366F1', '#8B5CF6', '#EC4899', '#F43F5E', // Red to Rose (500)
+];
+
+const stringToColor = (str: string) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const index = Math.abs(hash) % COLORS.length;
+    return COLORS[index];
+};
+
+/**
+ * Generate a simple SVG avatar data URI
+ */
+export const generateAvatar = (seed: string | number) => {
+    const seedStr = String(seed);
+    const color = stringToColor(seedStr);
+    const initial = seedStr.slice(0, 1).toUpperCase();
+
+    // Create a simple SVG
+    const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+        <rect width="100" height="100" fill="${color}" />
+        <text x="50" y="50" dy=".1em" fill="#ffffff" font-family="Arial" font-size="50" text-anchor="middle" dominant-baseline="middle">
+            ${initial}
+        </text>
+    </svg>
+    `.trim();
+
+    // Convert to Data URI
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
+
+/**
+ * Get avatar URL, converting DiceBear/Unsplash to local fallback if needed
+ * Also handles relative paths correction
+ */
+export const getAvatarUrl = (originalUrl?: string | null, seed?: string | number) => {
+    // If no URL, generate one
+    if (!originalUrl) {
+        return generateAvatar(seed || 'User');
+    }
+
+    // Replace external services with local generator (for internal network compliance)
+    if (originalUrl.includes('dicebear.com') || originalUrl.includes('unsplash.com')) {
+        return generateAvatar(seed || 'User');
+    }
+
+    // Normalize URL: Strip domain/port if it contains '/profile/' 
+    // This solves the issue where hardcoded IPs in DB cause 404/Connection Refused on different networks
+    if (originalUrl.includes('/profile/')) {
+        const parts = originalUrl.split('/profile/');
+        return '/profile/' + parts[parts.length - 1];
+    }
+
+    // Handle relative paths (e.g. "profile/...")
+    if (originalUrl.startsWith('profile/')) {
+        return '/' + originalUrl;
+    }
+
+    return originalUrl;
+};

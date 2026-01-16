@@ -1,9 +1,10 @@
 package com.example.executor.urgs_executor.handler.impl;
 
 import com.example.executor.urgs_executor.entity.DataSourceConfig;
-import com.example.executor.urgs_executor.entity.TaskInstance;
+import com.example.executor.urgs_executor.entity.ExecutorTaskInstance;
 import com.example.executor.urgs_executor.handler.TaskHandler;
 import com.example.executor.urgs_executor.mapper.DataSourceConfigMapper;
+import com.example.executor.urgs_executor.util.PlaceholderUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -28,7 +29,7 @@ public class HttpTaskHandler implements TaskHandler {
     private DataSourceConfigMapper dataSourceConfigMapper;
 
     @Override
-    public String execute(TaskInstance instance) throws Exception {
+    public String execute(ExecutorTaskInstance instance) throws Exception {
         String url = "";
         String method = "GET";
         String body = null;
@@ -48,9 +49,8 @@ public class HttpTaskHandler implements TaskHandler {
 
         // Replace $dataDate with actual date
         // Replace $dataDate with actual date
-        url = url.replace("$dataDate", instance.getDataDate());
-        if (body != null)
-            body = body.replace("$dataDate", instance.getDataDate());
+        url = PlaceholderUtils.replaceDataDate(url, instance.getDataDate());
+        body = PlaceholderUtils.replaceDataDate(body, instance.getDataDate());
 
         // If resource is provided, use it as base configuration
         if (resourceId != null && !resourceId.isEmpty()) {

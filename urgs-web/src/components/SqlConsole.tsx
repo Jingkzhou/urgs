@@ -1,6 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import Editor from '@monaco-editor/react';
+import Editor, { loader } from '@monaco-editor/react';
+import * as monaco from 'monaco-editor';
 import { Play, AlertCircle, CheckCircle2, Database } from 'lucide-react';
+
+// Configure Monaco to use local instance (Offline Mode)
+if (typeof window !== 'undefined') {
+    // Standard fix for Monaco worker origin warning in Vite/CRA environments
+    (window as any).MonacoEnvironment = {
+        getWorkerUrl: function (_moduleId: any, label: string) {
+            // By returning a data URI that imports the worker, we satisfy the same-origin policy
+            // while still allowing the worker to be created.
+            return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
+                self.MonacoEnvironment = { baseUrl: '${window.location.origin}/' };
+                importScripts('https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/base/worker/workerMain.js');
+            `)}`;
+        }
+    };
+}
+loader.config({ monaco });
 
 interface SqlResult {
     success: boolean;
@@ -23,12 +40,18 @@ const SqlConsole: React.FC = () => {
     const fetchDataSources = async () => {
         const token = localStorage.getItem('auth_token');
         try {
-            const res = await fetch('/api/datasource/list', {
+            const res = await fetch('/api/datasource/config', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 const list = await res.json();
-                setDataSources(list);
+                // Filter to show only database-related sources
+                // Exclude SSH and other non-data sources that might be in 'Others'
+                const dbSources = list.filter((ds: any) =>
+                    ['RDBMS', 'NoSQL', 'Big Data', 'OLAP', 'Others'].includes(ds.category) &&
+                    !['ssh', 'http', 'stream'].includes(ds.typeCode)
+                );
+                setDataSources(dbSources);
             }
         } catch (err) {
             console.error(err);
@@ -82,7 +105,7 @@ const SqlConsole: React.FC = () => {
                     >
                         <option value="">Default Database (Local)</option>
                         {dataSources.map(ds => (
-                            <option key={ds.id} value={ds.id}>{ds.name} ({ds.type})</option>
+                            <option key={ds.id} value={ds.id}>{ds.name} ({ds.typeName || 'Unknown'})</option>
                         ))}
                     </select>
                 </div>
@@ -139,7 +162,10 @@ const SqlConsole: React.FC = () => {
                     )}
                 </div>
 
-                <div className="flex-1 overflow-auto p-0">
+                <div
+                    className="flex-1 overflow-auto p-0 select-none"
+                    onContextMenu={(e) => e.preventDefault()}
+                >
                     {!result && (
                         <div className="h-full flex flex-col items-center justify-center text-slate-400">
                             <Database className="w-12 h-12 mb-3 opacity-20" />

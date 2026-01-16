@@ -11,24 +11,24 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
       proxy: {
         '/api/rag': {
-          target: 'http://localhost:8001',
+          target: env.VITE_RAG_URL || 'http://localhost:8001',
           changeOrigin: true,
         },
         '/api/knowledge': {
-          target: 'http://localhost:8001',
+          target: env.VITE_RAG_URL || 'http://localhost:8001',
           changeOrigin: true,
         },
 
         '/api': {
-          target: 'http://localhost:8080',
+          target: env.URGS_API_URL || 'http://localhost:8080',
           changeOrigin: true,
         },
         '/uploads': {
-          target: 'http://localhost:8080',
+          target: env.URGS_API_URL || 'http://localhost:8080',
           changeOrigin: true,
         },
         '/profile': {
-          target: 'http://localhost:8080',
+          target: env.URGS_API_URL || 'http://localhost:8080',
           changeOrigin: true,
         },
       },

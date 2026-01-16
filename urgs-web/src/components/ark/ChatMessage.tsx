@@ -6,16 +6,61 @@ import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Copy, Check, Sparkles, SearchX, Quote, ChevronDown, ChevronRight } from 'lucide-react';
+import { Copy, Check, Sparkles, SearchX, Quote, ChevronDown, ChevronRight, HelpCircle, BookOpen, Scale, Wrench, MessageCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Message } from '../../api/chat';
 import 'katex/dist/katex.min.css';
+import { copyToClipboard } from '../../utils/clipboard';
 
 interface ChatMessageProps {
     message: Message;
+    isStreaming?: boolean;
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
+interface ScoreDetailProps {
+    details: Record<string, any>;
+}
+
+const getIntentConfig = (intent: string) => {
+    switch (intent) {
+        case 'WHAT_IS': return { label: '概念解释', color: 'bg-blue-100/50 text-blue-700', icon: <HelpCircle size={12} /> };
+        case 'HOW_TO': return { label: '操作指南', color: 'bg-emerald-100/50 text-emerald-700', icon: <BookOpen size={12} /> };
+        case 'COMPARE': return { label: '对比分析', color: 'bg-purple-100/50 text-purple-700', icon: <Scale size={12} /> };
+        case 'TROUBLESHOOT': return { label: '故障排查', color: 'bg-orange-100/50 text-orange-700', icon: <Wrench size={12} /> };
+        default: return { label: '通用对话', color: 'bg-slate-100/50 text-slate-600', icon: <MessageCircle size={12} /> };
+    }
+}
+
+const ScoreTooltip: React.FC<ScoreDetailProps> = ({ details }) => {
+    if (!details || Object.keys(details).length === 0) return null;
+
+    // Check if RRF
+    const isRRF = Object.keys(details).some(k => k.includes('rrf'));
+
+    return (
+        <div className="absolute bottom-full mb-2 left-0 w-48 bg-slate-800 text-white text-[10px] p-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 flex flex-col gap-1">
+            <div className="font-bold border-b border-slate-700 pb-1 mb-1 text-slate-300">
+                {isRRF ? 'RRF Fusion Details' : 'Retrieval Details'}
+            </div>
+            {Object.entries(details).map(([key, val]) => {
+                if (typeof val === 'number') {
+                    // Filter out raw boolean flags or long strings
+                    return (
+                        <div key={key} className="flex justify-between">
+                            <span className="opacity-70 capitalize">{key.replace('_', ' ')}:</span>
+                            <span className="font-mono font-bold text-blue-300">
+                                {Number.isInteger(val) ? `#${val}` : val.toFixed(4)}
+                            </span>
+                        </div>
+                    );
+                }
+                return null;
+            })}
+        </div>
+    );
+};
+
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false }) => {
     const isUser = message.role === 'user';
     const [isSourcesExpanded, setIsSourcesExpanded] = useState(false);
 
@@ -25,7 +70,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
                 {/* Avatar / Icon */}
                 <div className="flex-shrink-0 mt-1">
                     {!isUser && (
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-600 via-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-lg ring-4 ring-white transition-transform duration-500 group-hover:rotate-12">
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-600 via-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-lg ring-4 ring-white ark-avatar-glow transition-transform duration-500 group-hover:rotate-12">
                             <Sparkles size={18} fill="currentColor" />
                         </div>
                     )}
@@ -50,10 +95,26 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
                                     transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
                                     className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]"
                                 />
-                                <span className="text-slate-400 text-sm font-medium animate-pulse">思考中...</span>
+                                <span className="text-slate-400 text-sm font-medium animate-pulse">
+                                    {message.status === 'searching' ? '正在检索知识库...' :
+                                        message.status === 'compressing' ? '正在压缩对话历史...' :
+                                            '思考中...'}
+                                </span>
+                            </div>
+                        ) : !isUser && isStreaming ? (
+                            <div className="whitespace-pre-wrap break-words text-[16px] leading-[1.8] text-slate-700">
+                                {message.content}
                             </div>
                         ) : (
                             <div className={`markdown-body ${isUser ? 'text-[#041e49]' : ''}`}>
+                                {/* Intent Badge */}
+                                {!isUser && message.intent && message.intent !== 'GENERAL' && (
+                                    <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mb-4 border border-white/50 shadow-sm ${getIntentConfig(message.intent).color}`}>
+                                        {getIntentConfig(message.intent).icon}
+                                        {getIntentConfig(message.intent).label}
+                                    </div>
+                                )}
+
                                 <ReactMarkdown
                                     remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
                                     rehypePlugins={[rehypeKatex]}
@@ -155,11 +216,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
                                                                 source.score >= 0.6 ? 'bg-blue-100 text-blue-700' :
                                                                     'bg-slate-200 text-slate-600'
                                                                 }`}>
-                                                                {source.score > 0 ? `${(source.score * 100).toFixed(0)}%` : '召回'}
+                                                                {source.score > 0 ? (source.score < 0.1 ? `RRF ${(source.score).toFixed(4)}` : `${(source.score * 100).toFixed(0)}%`) : '召回'}
                                                             </span>
                                                         </div>
-                                                        <div className="text-slate-500 line-clamp-2 text-[11px] leading-relaxed">
+                                                        <div className="text-slate-500 line-clamp-2 text-[11px] leading-relaxed relative">
                                                             {source.content}
+                                                            <ScoreTooltip details={(source as any).score_details} />
                                                         </div>
                                                     </motion.div>
                                                 ))}
@@ -188,10 +250,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
 
 const CodeBlock = ({ language, value }: { language: string, value: string }) => {
     const [copied, setCopied] = React.useState(false);
-    const handleCopy = () => {
-        navigator.clipboard.writeText(value);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+    const handleCopy = async () => {
+        const success = await copyToClipboard(value);
+        if (success) {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }
     };
 
     return (
@@ -220,4 +284,6 @@ const CodeBlock = ({ language, value }: { language: string, value: string }) => 
     );
 };
 
-export default ChatMessage;
+export default React.memo(ChatMessage, (prev, next) => {
+    return prev.message === next.message && prev.isStreaming === next.isStreaming;
+});

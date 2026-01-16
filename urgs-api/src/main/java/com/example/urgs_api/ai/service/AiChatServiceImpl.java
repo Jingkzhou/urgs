@@ -62,10 +62,14 @@ public class AiChatServiceImpl implements AiChatService {
      * 同步聊天（带请求类型）
      */
     public String chat(String systemPrompt, String userPrompt, String requestType) {
+        List<Map<String, String>> messages = List.of(
+                Map.of("role", "system", "content", systemPrompt),
+                Map.of("role", "user", "content", userPrompt));
         StringBuilder result = new StringBuilder();
-        streamChat(systemPrompt, userPrompt, requestType, result::append, () -> {
+        executeCoreStream(messages, requestType, result::append, () -> {
         }, e -> {
             log.error("AI chat error", e);
+            throw new RuntimeException("AI 响应失败: " + e.getMessage());
         });
         return result.toString();
     }
@@ -166,6 +170,14 @@ public class AiChatServiceImpl implements AiChatService {
                         if (!collectionNames.isEmpty()) {
                             log.info("Performing RAG Query for Agent {} on Collections: {}", agent.getName(),
                                     collectionNames);
+
+                            // Send status update to frontend
+                            try {
+                                emitter.send(SseEmitter.event().name("status").data("searching"));
+                            } catch (Exception e) {
+                                log.warn("Failed to send searching status", e);
+                            }
+
                             com.example.urgs_api.ai.dto.RagQueryRequest ragReq = new com.example.urgs_api.ai.dto.RagQueryRequest();
                             ragReq.setQuery(userPrompt);
                             ragReq.setCollectionNames(collectionNames);
@@ -173,13 +185,30 @@ public class AiChatServiceImpl implements AiChatService {
 
                             try {
                                 com.example.urgs_api.ai.dto.RagQueryResponse ragRes = ragService.query(ragReq);
-                                if (ragRes != null && ragRes.getResults() != null && !ragRes.getResults().isEmpty()) {
+
+                                // [New] Send Intent
+                                if (ragRes != null && ragRes.getIntent() != null) {
+                                    try {
+                                        // Send as JSON object to be easily parsed by frontend (which ignores event
+                                        // names mostly)
+                                        String intentJson = objectMapper
+                                                .writeValueAsString(Map.of("intent", ragRes.getIntent()));
+                                        emitter.send(SseEmitter.event().data(intentJson));
+                                        log.info("Sent intent: {}", ragRes.getIntent());
+                                    } catch (Exception e) {
+                                        log.warn("Failed to send intent SSE", e);
+                                    }
+                                }
+
+                                if (ragRes != null && ragRes.getEffectiveResults() != null
+                                        && !ragRes.getEffectiveResults().isEmpty()) {
                                     StringBuilder sourcesBuilder = new StringBuilder();
                                     List<Map<String, Object>> sourceList = new java.util.ArrayList<>();
 
                                     // ===== [RELEVANCE THRESHOLD] Filter low-score results =====
-                                    final double SCORE_THRESHOLD = 0.5; // Minimum relevance score
-                                    List<Map<String, Object>> filteredResults = ragRes.getResults().stream()
+                                    // RRF scores typically range 0~0.1, so threshold must be low
+                                    final double SCORE_THRESHOLD = 0.02; // Minimum relevance score for RRF
+                                    List<Map<String, Object>> filteredResults = ragRes.getEffectiveResults().stream()
                                             .filter(r -> {
                                                 Object scoreObj = r.get("score");
                                                 if (scoreObj instanceof Number) {
@@ -190,7 +219,8 @@ public class AiChatServiceImpl implements AiChatService {
                                             .collect(java.util.stream.Collectors.toList());
 
                                     log.info("RAG Results: {} total, {} after threshold filter (>= {})",
-                                            ragRes.getResults().size(), filteredResults.size(), SCORE_THRESHOLD);
+                                            ragRes.getEffectiveResults().size(), filteredResults.size(),
+                                            SCORE_THRESHOLD);
 
                                     // ===== [DOCUMENT GROUPING] Group by source file =====
                                     Map<String, List<Map<String, Object>>> groupedByFile = new java.util.LinkedHashMap<>();
@@ -244,6 +274,7 @@ public class AiChatServiceImpl implements AiChatService {
                                                 // Prepare structured source for frontend
                                                 Object metadata = res.get("metadata");
                                                 if (metadata instanceof Map) {
+                                                    @SuppressWarnings("unchecked")
                                                     Map<String, Object> metaMap = (Map<String, Object>) metadata;
                                                     sourceList.add(Map.of(
                                                             "fileName", metaMap.getOrDefault("file_name", "Unknown"),
@@ -405,30 +436,52 @@ public class AiChatServiceImpl implements AiChatService {
         streamChat(messages, "chat",
                 chunk -> {
                     aiResponse.append(chunk);
+                    // Do NOT try-catch around emitter.send!
+                    // If client disconnected, this will throw an exception which will propagate to
+                    // executeCoreStream's while loop, safely terminating the background processing.
                     try {
                         emitter.send(
                                 SseEmitter.event().data(objectMapper.writeValueAsString(Map.of("content", chunk))));
-                    } catch (Exception e) {
-                        log.error("Failed to send SSE event", e);
+                    } catch (java.io.IOException | IllegalStateException e) {
+                        // Re-throw as RuntimeException to ensure it breaks out of the streaming reader
+                        // loop in executeCoreStream
+                        throw new RuntimeException("SSE connection broken", e);
                     }
                 },
                 () -> {
                     // 5. 聊天完成，保存 AI 回复 (Save AI Message on Complete)
                     try {
                         aiChatHistoryService.saveMessage(sessionId, "assistant", aiResponse.toString());
-                        emitter.send(SseEmitter.event().data("[DONE]"));
-                        emitter.complete();
+                        try {
+                            emitter.send(SseEmitter.event().data("[DONE]"));
+                            emitter.complete();
+                        } catch (Exception e) {
+                            log.warn("Failed to send terminal [DONE] or complete emitter (client likely closed): {}",
+                                    e.getMessage());
+                        }
                     } catch (Exception e) {
-                        log.error("Failed to complete SSE or save message", e);
+                        log.error("Failed to save message on completion", e);
                     }
                 },
                 e -> {
+                    // 6. Handle Error - Also save partial response if possible
                     try {
-                        emitter.send(SseEmitter.event()
-                                .data(objectMapper.writeValueAsString(Map.of("error", e.getMessage()))));
-                        emitter.completeWithError(e);
+                        if (aiResponse.length() > 0) {
+                            log.info("Saving partial AI response before error/disconnect: {} chars",
+                                    aiResponse.length());
+                            aiChatHistoryService.saveMessage(sessionId, "assistant", aiResponse.toString());
+                        }
+
+                        try {
+                            emitter.send(SseEmitter.event()
+                                    .data(objectMapper.writeValueAsString(Map.of("error", e.getMessage()))));
+                            emitter.completeWithError(e);
+                        } catch (Exception ex) {
+                            log.warn("Failed to send error event to emitter (client likely closed): {}",
+                                    ex.getMessage());
+                        }
                     } catch (Exception ex) {
-                        log.error("Failed to send error event", ex);
+                        log.error("Failed in error callback", ex);
                     }
                 });
     }

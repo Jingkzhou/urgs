@@ -107,16 +107,7 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
             console.log('Uploaded Avatar:', url);
 
             // 2. Update User Profile
-            // Try to get ID
-            const storedUserStr = localStorage.getItem('auth_user');
-            const storedUser = JSON.parse(storedUserStr || '{}');
-            console.log('DEBUG: displayInfo', displayInfo);
-            console.log('DEBUG: storedUser', storedUser);
-
-            // Check if storedUser has id (string) or userId (number). usually id for sys user.
-            const userId = displayInfo.userId || displayInfo.id || storedUser.id || storedUser.userId;
-            console.log('DEBUG: Resolved userId', userId);
-
+            const userId = displayInfo.userId || displayInfo.id;
             if (userId) {
                 await userService.updateProfile({
                     avatarUrl: url
@@ -124,21 +115,16 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
 
                 // 3. Update Local State
                 setDisplayInfo(prev => ({ ...prev, avatarUrl: url }));
-
-                // 4. Update Local Storage
-                localStorage.setItem('auth_user', JSON.stringify({ ...storedUser, avatarUrl: url }));
-                // Force update for other components listening to storage
-                window.dispatchEvent(new Event('storage'));
-
                 alert('头像更新成功');
-            } else {
-                alert('无法获取用户ID，更新失败');
             }
         } catch (error) {
             console.error('Update avatar failed', error);
             alert('头像上传失败');
         }
     };
+
+
+
 
     return (
         <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -237,6 +223,7 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                             </div>
                         </div>
                     </div>
+
                 </div>
             </div>
         </div>

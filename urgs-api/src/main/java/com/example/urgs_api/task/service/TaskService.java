@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
 import com.example.urgs_api.task.vo.WorkflowStatsVO;
+import com.example.urgs_api.task.vo.TaskDefinitionStatsVO;
 import com.example.urgs_api.workflow.entity.Workflow;
 import com.example.urgs_api.workflow.repository.WorkflowMapper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -46,7 +47,7 @@ public class TaskService {
 
     @Transactional(rollbackFor = Exception.class)
     public String saveTask(String id, String name, String type, String content,
-            String cronExpression, Integer status, Integer priority, List<String> preTaskIds) {
+            String cronExpression, Integer status, Integer priority, List<String> preTaskIds, Long systemId) {
         Task task = null;
         if (id != null) {
             task = taskMapper.selectById(id);
@@ -70,6 +71,7 @@ public class TaskService {
             task.setStatus(1); // Default to enabled for new tasks
         }
         task.setPriority(priority != null ? priority : 0);
+        task.setSystemId(systemId);
         task.setUpdateTime(LocalDateTime.now());
 
         if (taskMapper.selectById(task.getId()) == null) {
@@ -101,13 +103,29 @@ public class TaskService {
         taskMapper.deleteById(id);
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public void batchUpdateStatus(List<String> ids, Integer status) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        UpdateWrapper<Task> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.in("id", ids);
+        updateWrapper.set("status", status);
+        updateWrapper.set("update_time", LocalDateTime.now());
+        taskMapper.update(null, updateWrapper);
+    }
+
     public com.baomidou.mybatisplus.core.metadata.IPage<Task> listTasks(String keyword, String workflowIds,
+            Integer status,
             Integer page, Integer size) {
         com.baomidou.mybatisplus.extension.plugins.pagination.Page<Task> pageObj = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(
                 page, size);
         QueryWrapper<Task> query = new QueryWrapper<>();
         if (StringUtils.hasText(keyword)) {
             query.like("name", keyword);
+        }
+        if (status != null) {
+            query.eq("status", status);
         }
 
         if (StringUtils.hasText(workflowIds)) {
@@ -519,14 +537,48 @@ public class TaskService {
         QueryWrapper<TaskInstance> query = new QueryWrapper<>();
         query.eq("task_id", taskId);
         query.eq("data_date", dataDate);
-        if (taskInstanceMapper.selectCount(query) > 0) {
-            return "EXIST";
+        TaskInstance existing = taskInstanceMapper.selectOne(query);
+        if (existing != null) {
+            String status = existing.getStatus();
+            if ("RUNNING".equals(status) || "PENDING".equals(status)) {
+                return "EXIST";
+            }
+
+            Task task = taskMapper.selectById(taskId);
+            if (task != null) {
+                existing.setSystemId(task.getSystemId());
+                existing.setTaskType(task.getType());
+                existing.setContentSnapshot(task.getContent());
+            }
+
+            existing.setStatus("PENDING"); // Wait for dependencies
+            existing.setStartTime(null);
+            existing.setEndTime(null);
+            existing.setLogContent(null);
+            existing.setUpdateTime(LocalDateTime.now());
+            taskInstanceMapper.updateById(existing);
+
+            if (areAllDependenciesMet(taskId, dataDate)) {
+                existing.setStatus("WAITING");
+                taskInstanceMapper.updateById(existing);
+            }
+
+            return String.valueOf(existing.getId());
         }
 
         TaskInstance instance = new TaskInstance();
         instance.setTaskId(taskId);
         instance.setDataDate(dataDate);
         instance.setStatus("PENDING"); // Wait for dependencies
+
+        // Inherit systemId from task
+        Task task = taskMapper.selectById(taskId);
+        if (task != null) {
+            instance.setSystemId(task.getSystemId());
+            instance.setTaskType(task.getType());
+            instance.setContentSnapshot(task.getContent());
+        }
+
         instance.setCreateTime(LocalDateTime.now());
         instance.setUpdateTime(LocalDateTime.now());
 
@@ -546,5 +598,32 @@ public class TaskService {
         }
 
         return String.valueOf(instance.getId());
+    }
+
+    public TaskDefinitionStatsVO getTaskGlobalStats() {
+        TaskDefinitionStatsVO stats = new TaskDefinitionStatsVO();
+
+        long total = taskMapper.selectCount(null);
+        long enabled = taskMapper.selectCount(new QueryWrapper<Task>().ne("status", 0));
+        long disabled = total - enabled;
+
+        // Count distinct system IDs
+        QueryWrapper<Task> systemQuery = new QueryWrapper<>();
+        systemQuery.select("distinct system_id");
+        long systems = taskMapper.selectList(systemQuery).stream()
+                .filter(t -> t != null && t.getSystemId() != null)
+                .map(Task::getSystemId)
+                .distinct()
+                .count();
+
+        long workflows = workflowMapper.selectCount(null);
+
+        stats.setTotal(total);
+        stats.setEnabled(enabled);
+        stats.setDisabled(disabled);
+        stats.setSystems(systems);
+        stats.setWorkflows(workflows);
+
+        return stats;
     }
 }
