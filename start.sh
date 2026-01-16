@@ -5,8 +5,11 @@ set -euo pipefail
 export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home
 export PATH=$JAVA_HOME/bin:$PATH
 export HF_ENDPOINT=https://hf-mirror.com
+# 启用离线模式，使用本地缓存的模型，避免每次连接 HuggingFace
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
 echo "Using JAVA_HOME: $JAVA_HOME"
-echo "Using HF_ENDPOINT: $HF_ENDPOINT"
+echo "Using HF_ENDPOINT: $HF_ENDPOINT (Offline Mode: ON)"
 
 # Fix for macOS multiprocessing issues
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -125,9 +128,9 @@ start_rag() {
   kill_port_if_exists 8001
   
   if [ "$ENVIRONMENT" = "dev" ]; then
-    .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload --loop asyncio &
+    .venv_312/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload --loop asyncio &
   else
-    .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001 --loop asyncio &
+    .venv_312/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001 --loop asyncio &
   fi
   pids+=($!)
 }
