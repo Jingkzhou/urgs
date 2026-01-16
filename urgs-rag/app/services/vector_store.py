@@ -535,10 +535,6 @@ class VectorStoreService:
             if "MockEmbeddings" in str(embeddings):
                 print("[RAG-HybridSearch] Embedding is Mocked. Skipping vector search.")
             else:
-                # 调试：打印各向量空间状态
-                print(
-                    f"[RAG-Debug] semantic_vs: {self.semantic_vs is not None}, logic_vs: {self.logic_vs is not None}, summary_vs: {self.summary_vs is not None}"
-                )
                 semantic_hits = self._vector_search(
                     self.semantic_vs, query, candidate_k, metadata_filter, "semantic"
                 )

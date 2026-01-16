@@ -34,6 +34,12 @@ public class KnowledgeBaseController {
         return ResponseEntity.ok(Map.of("status", "success"));
     }
 
+    @PostMapping("/update")
+    public ResponseEntity<?> updateKB(@RequestBody KnowledgeBase kb) {
+        KnowledgeBase updated = kbService.updateKB(kb);
+        return ResponseEntity.ok(Map.of("status", "success", "id", updated.getId()));
+    }
+
     @GetMapping("/files")
     public ResponseEntity<?> listFiles(@RequestParam String kbName) {
         return ResponseEntity.ok(kbService.listFiles(kbName));

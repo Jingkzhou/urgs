@@ -184,6 +184,29 @@ public class KnowledgeBaseService {
         return kb;
     }
 
+    public KnowledgeBase updateKB(KnowledgeBase kb) {
+        if (kb.getId() == null) {
+            throw new RuntimeException("KnowledgeBase ID is required for update");
+        }
+        KnowledgeBase existing = kbRepository.selectById(kb.getId());
+        if (existing == null) {
+            throw new RuntimeException("Knowledge Base not found");
+        }
+
+        // Only update allowed fields
+        if (kb.getDescription() != null)
+            existing.setDescription(kb.getDescription());
+        if (kb.getEnrichPrompt() != null)
+            existing.setEnrichPrompt(kb.getEnrichPrompt());
+
+        // Not allowing name change easily as it affects file paths and collection names
+        // (complex migration)
+        // If needed, we could support renaming but requires robust file moving logic.
+
+        kbRepository.updateById(existing);
+        return existing;
+    }
+
     public void deleteKB(Long id) {
         kbRepository.deleteById(id);
     }

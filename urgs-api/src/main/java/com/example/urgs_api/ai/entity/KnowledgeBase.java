@@ -23,6 +23,9 @@ public class KnowledgeBase {
     @TableField("embedding_model")
     private String embeddingModel;
 
+    @TableField("enrich_prompt")
+    private String enrichPrompt;
+
     @TableField("created_at")
     private Date createdAt;
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Card, Tag, Space, Modal, Form, Input, Select, message, Drawer, Upload, Tooltip, Switch } from 'antd';
-import { DatabaseOutlined, PlusOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined, FolderOpenOutlined, UploadOutlined, ThunderboltOutlined, FileOutlined } from '@ant-design/icons';
+import { DatabaseOutlined, PlusOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined, FolderOpenOutlined, UploadOutlined, ThunderboltOutlined, FileOutlined, EditOutlined } from '@ant-design/icons';
 import { Sparkles } from 'lucide-react';
 import { get, post, del } from '../../../utils/request';
 import type { UploadFile } from 'antd/es/upload/interface';
@@ -13,6 +13,7 @@ interface KnowledgeBaseConfig {
     collectionName?: string;
     createdAt?: string;
     embeddingModel?: string; // Kept for frontend form, though not in Entity explicitly yet (can be in description or separate)
+    enrichPrompt?: string;
 }
 
 interface KBFile {
@@ -36,6 +37,7 @@ const AiKnowledgeManager: React.FC = () => {
 
     // KB Management Modal
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingKb, setEditingKb] = useState<KnowledgeBaseConfig | null>(null);
     const [form] = Form.useForm();
 
     // File Manager Drawer
@@ -234,6 +236,24 @@ const AiKnowledgeManager: React.FC = () => {
             align: 'right' as const,
             render: (_: any, record: KnowledgeBaseConfig) => (
                 <Space>
+                    <Tooltip title="编辑知识库配置">
+                        <Button
+                            type="text"
+                            size="small"
+                            icon={<EditOutlined />}
+                            className="text-blue-600 hover:text-blue-700"
+                            onClick={() => {
+                                setEditingKb(record);
+                                form.setFieldsValue({
+                                    name: record.name,
+                                    description: record.description,
+                                    embeddingModel: record.embeddingModel || 'bge-m3',
+                                    enrichPrompt: record.enrichPrompt
+                                });
+                                setIsModalOpen(true);
+                            }}
+                        />
+                    </Tooltip>
                     <Tooltip title="文件管理 & 向量化">
                         <Button
                             type="text"
@@ -339,17 +359,29 @@ const AiKnowledgeManager: React.FC = () => {
     const handleSave = async () => {
         try {
             const values = await form.validateFields();
-            await post('/api/ai/knowledge/create', {
-                name: values.name,
-                description: values.description,
-                collectionName: values.name,
-                embeddingModel: values.embeddingModel
-            });
-            message.success('创建成功');
+            if (editingKb) {
+                await post('/api/ai/knowledge/update', {
+                    id: editingKb.id,
+                    name: values.name, // Name usually usually immutable in this simple logic, but passing it doesn't hurt if backend ignores/matches
+                    description: values.description,
+                    enrichPrompt: values.enrichPrompt
+                });
+                message.success('更新成功');
+            } else {
+                await post('/api/ai/knowledge/create', {
+                    name: values.name,
+                    description: values.description,
+                    collectionName: values.name,
+                    embeddingModel: values.embeddingModel,
+                    enrichPrompt: values.enrichPrompt
+                });
+                message.success('创建成功');
+            }
             setIsModalOpen(false);
+            setEditingKb(null);
             fetchKbs();
         } catch (e) {
-            message.error('创建失败，可能是名称已存在');
+            message.error(editingKb ? '更新失败' : '创建失败，可能是名称已存在');
         }
     };
 
@@ -485,6 +517,7 @@ const AiKnowledgeManager: React.FC = () => {
                             onClick={() => {
                                 form.resetFields();
                                 form.setFieldsValue({ embeddingModel: 'bge-m3' });
+                                setEditingKb(null);
                                 setIsModalOpen(true);
                             }}
                         >
@@ -506,11 +539,14 @@ const AiKnowledgeManager: React.FC = () => {
             </Card>
 
             <Modal
-                title="新建知识库"
+                title={editingKb ? "编辑知识库" : "新建知识库"}
                 open={isModalOpen}
-                onCancel={() => setIsModalOpen(false)}
+                onCancel={() => {
+                    setIsModalOpen(false);
+                    setEditingKb(null);
+                }}
                 onOk={handleSave}
-                width={600}
+                width={700}
             >
                 <Form form={form} layout="vertical">
                     <Form.Item
@@ -520,14 +556,21 @@ const AiKnowledgeManager: React.FC = () => {
                             { required: true, message: '请输入名称' },
                             { pattern: /^[a-zA-Z0-9_-]+$/, message: '仅支持字母、数字、下划线和连字符' }
                         ]}
-                        tooltip="将作为 ChromaDB 的 Collection Name，需保证唯一性"
+                        tooltip="将作为 ChromaDB 的 Collection Name，需保证唯一性。创建后不可修改。"
                     >
-                        <Input placeholder="例如: finance_docs_v1" />
+                        <Input placeholder="例如: finance_docs_v1" disabled={!!editingKb} />
                     </Form.Item>
                     <Form.Item name="embeddingModel" label="Embedding 模型" rules={[{ required: true }]}>
                         <Select placeholder="选择 Embedding 模型" disabled>
                             <Select.Option value="bge-m3">BGE-M3 (Local) - 默认</Select.Option>
                         </Select>
+                    </Form.Item>
+                    <Form.Item name="enrichPrompt" label="自定义知识增强提示词 (Enrich Prompt)">
+                        <Input.TextArea
+                            rows={6}
+                            placeholder="自定义用于 RAG 知识精炼的 LLM 提示词。留空则使用系统默认提示词。&#10;建议包含：&#10;1. 角色设定 (如: 银行监管专家)&#10;2. 提取要求 (逻辑、摘要、标签)&#10;3. 输出JSON格式要求"
+                            className="font-mono text-xs"
+                        />
                     </Form.Item>
                     <Form.Item name="description" label="描述">
                         <Input.TextArea rows={3} placeholder="备注说明" />
