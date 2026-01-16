@@ -175,16 +175,28 @@ class VectorStoreService:
         logger.info(
             f"正在初始化 Embedding 模型: {settings.EMBEDDING_PROVIDER} ({settings.EMBEDDING_MODEL_NAME})..."
         )
+        print(
+            f"[DEBUG-Embed] Initializing embeddings: provider={settings.EMBEDDING_PROVIDER}, model={settings.EMBEDDING_MODEL_NAME}"
+        )
         if settings.EMBEDDING_PROVIDER == "huggingface":
             try:
                 from langchain_huggingface import HuggingFaceEmbeddings
+
+                print("[DEBUG-Embed] Importing HuggingFaceEmbeddings succeeded")
 
                 self._embeddings = HuggingFaceEmbeddings(
                     model_name=settings.EMBEDDING_MODEL_NAME,
                     model_kwargs={"device": settings.EMBEDDING_DEVICE},
                 )
-            except ImportError:
-                logger.error("Failed to import HuggingFaceEmbeddings.")
+                print(
+                    f"[DEBUG-Embed] HuggingFaceEmbeddings created successfully: {type(self._embeddings).__name__}"
+                )
+            except ImportError as e:
+                logger.error(f"Failed to import HuggingFaceEmbeddings: {e}")
+                print(f"[DEBUG-Embed] ImportError: {e}")
+            except Exception as e:
+                logger.error(f"Failed to create HuggingFaceEmbeddings: {e}")
+                print(f"[DEBUG-Embed] Exception during HuggingFaceEmbeddings init: {e}")
         elif settings.EMBEDDING_PROVIDER == "qwen3":
             try:
                 self._embeddings = OpenAIEmbeddings(
@@ -197,6 +209,7 @@ class VectorStoreService:
 
         if self._embeddings is None:
             logger.warning("No embedding provider available. Using Mock Embeddings.")
+            print("[DEBUG-Embed] WARNING: Falling back to MockEmbeddings!")
             from langchain_core.embeddings import Embeddings
 
             class MockEmbeddings(Embeddings):
@@ -207,6 +220,8 @@ class VectorStoreService:
                     return [0.0] * 384
 
             self._embeddings = MockEmbeddings()
+
+        print(f"[DEBUG-Embed] Final embedding type: {type(self._embeddings).__name__}")
 
         return self._embeddings
 
@@ -245,6 +260,10 @@ class VectorStoreService:
         # [智能缓存失效] 检测底层数据变化
         # 如果缓存的向量空间存在但没有数据，检查 ChromaDB 是否已有新数据
         need_reconnect = False
+
+        # [FIX] 检查是否需要初始化 embeddings（首次调用或 embeddings 未加载）
+        embeddings_just_initialized = self._embeddings is None
+
         if self.current_collection == collection_name and self.semantic_vs is not None:
             try:
                 # 检查 logic 和 summary 路是否存在但缓存为空
@@ -259,6 +278,9 @@ class VectorStoreService:
             except Exception:
                 pass
             if not need_reconnect:
+                print(
+                    f"[DEBUG-VS] Using cached vectorstores for {collection_name}, embeddings_just_initialized={embeddings_just_initialized}"
+                )
                 return
 
         logger.info(f"正在连接知识库向量空间: {collection_name}")
@@ -322,30 +344,105 @@ class VectorStoreService:
     ) -> List[ScoredDocument]:
         """执行单一向量空间的搜索，并自动回溯到父文档。"""
         if not vectorstore:
+            print(f"[DEBUG-Search] vectorstore is None for {source}")
             return []
         try:
-            hits = vectorstore.similarity_search_with_score(
-                query, k=k, filter=metadata_filter
-            )
-        except TypeError:
-            # 某些旧版本或兼容层不支持 filter
-            hits = vectorstore.similarity_search_with_score(query, k=k)
+            # [WORKAROUND] 绕过 LangChain 的 similarity_search_with_score (存在 BUG)
+            # 通过直接调用 ChromaDB API 进行向量检索来修复无结果返回的问题
+            embed_fn = vectorstore._embedding_function
+            query_embedding = embed_fn.embed_query(query)
 
-        parent_scores: Dict[str, float] = {}
+            # 构建 ChromaDB 原生查询 (minimal parameters to avoid issues)
+            # 注意：不传递 include 或 where=None，以最大程度兼容不同版本的 ChromaDB
+            query_kwargs = {
+                "query_embeddings": [query_embedding],
+                "n_results": k,
+            }
+            if metadata_filter:
+                # [Fix] 自动修正已知的 Filter 问题: 请求为 regulatory_asset 但数据为 document
+                if metadata_filter.get("source_type") == "regulatory_asset":
+                    print(
+                        f"[DEBUG-Search] Adjusting filter source_type: regulatory_asset -> document"
+                    )
+                    metadata_filter = metadata_filter.copy()
+                    metadata_filter["source_type"] = "document"
+
+                query_kwargs["where"] = metadata_filter
+            else:
+                # print(f"[DEBUG-Search] No metadata_filter used")
+                pass
+
+            raw_results = vectorstore._collection.query(**query_kwargs)
+
+            # 提取结果，处理可能的空值
+            docs = (
+                raw_results.get("documents", [[]])[0]
+                if raw_results.get("documents")
+                else []
+            )
+            metadatas = (
+                raw_results.get("metadatas", [[]])[0]
+                if raw_results.get("metadatas")
+                else []
+            )
+
+            print(f"[DEBUG-Search] {source} raw_results count: {len(docs)}")
+            if len(docs) > 0:
+                print(f"[DEBUG-Search] First doc metadata sample: {metadatas[0]}")
+            distances = (
+                raw_results.get("distances", [[]])[0]
+                if raw_results.get("distances")
+                else []
+            )
+
+            # 转换为 (Document, distance) 格式
+            hits = []
+            for i, doc_content in enumerate(docs):
+                from langchain_core.documents import Document as LCDocument
+
+                metadata = metadatas[i] if i < len(metadatas) else {}
+                distance = distances[i] if i < len(distances) else 0.0
+                hits.append(
+                    (
+                        LCDocument(page_content=doc_content, metadata=metadata),
+                        distance,
+                    )
+                )
+
+            # 如果需要调试，可取消注释
+            # print(f"[RAG-Search] {source} returned {len(hits)} hits")
+
+            # print(
+            #    f"[DEBUG-Search] {source} returned {len(hits)} raw hits for query: {query[:30]}..."
+            # )
+            # print(
+            #    f"[DEBUG-Search] {source} returned {len(hits)} raw hits for query: {query[:30]}..."
+            # )
+        except Exception as e:
+            print(f"[DEBUG-Search] {source} search exception: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return []
+
+        # 记录父文档信息：parent_id -> {'score': max_score, 'best_child': child_doc}
+        parent_map: Dict[str, Dict] = {}
         direct_results: List[ScoredDocument] = []
 
         # 遍历命中片段
         for child_doc, distance in hits:
             score = self._normalize_vector_score(distance)
-            # [关键修复] 优先使用 origin_parent_id 进行回溯
             # logic/summary 类型的文档使用 origin_parent_id 指向原始语义文档
             # 而 parent_id 是它们自己的切片 ID，不在 docstore 中
             parent_id = child_doc.metadata.get(
                 "origin_parent_id"
             ) or child_doc.metadata.get("parent_id")
+
             if parent_id:
-                # 记录该父文档的最佳子片段得分
-                parent_scores[parent_id] = max(parent_scores.get(parent_id, 0.0), score)
+                # 记录该父文档的最佳子片段得分及对应的子文档（作为缺失回退）
+                current = parent_map.get(parent_id, {"score": -1.0, "best_child": None})
+                if score > current["score"]:
+                    parent_map[parent_id] = {"score": score, "best_child": child_doc}
             else:
                 # 无父文档标识的直接作为结果
                 direct_results.append(
@@ -356,19 +453,32 @@ class VectorStoreService:
                     )
                 )
 
-        if parent_scores:
+        if parent_map:
             # 从父文档存储 (Shelve) 中批量取回完整内容
-            parent_ids = list(parent_scores.keys())
-            parent_docs = self.docstore.mget(parent_ids)
-            for parent_id, parent_doc in zip(parent_ids, parent_docs):
+            parent_ids = list(parent_map.keys())
+            try:
+                parent_docs = self.docstore.mget(parent_ids)
+            except Exception as e:
+                print(f"[DEBUG-Search] Docstore mget failed: {e}")
+                parent_docs = [None] * len(parent_ids)
+
+            for i, parent_id in enumerate(parent_ids):
+                parent_doc = parent_docs[i] if i < len(parent_docs) else None
+                info = parent_map[parent_id]
+                score = info["score"]
+
+                # 如果找不到父文档，回退到使用最佳子片段
                 if not parent_doc:
-                    continue
+                    # Debug: Warning about missing parent doc
+                    # print(f"[DEBUG-Search] Fallback: Parent {parent_id} missing, using child chunk.")
+                    parent_doc = info["best_child"]
+
                 # 后置过滤（以防向量库 filter 穿透）
+                # 注意：如果回退到 child_doc，它的 metadata 可能和 parent_doc 略有不同，但通常足够
                 if metadata_filter and not self.match_filters(
                     parent_doc.metadata, metadata_filter
                 ):
                     continue
-                score = parent_scores[parent_id]
                 direct_results.append(
                     ScoredDocument(
                         document=parent_doc,
