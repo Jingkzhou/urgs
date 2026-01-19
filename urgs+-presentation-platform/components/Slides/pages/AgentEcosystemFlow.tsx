@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { GitBranch, FileCode, Network, Database, BookOpen, Bot, LayoutDashboard, Lightbulb, ClipboardList, Code2, Zap, CheckCircle2, Terminal, X, ChevronRight, Activity, Cpu, Sparkles } from 'lucide-react';
+import { GitBranch, FileCode, Network, Database, BookOpen, Bot, LayoutDashboard, Lightbulb, ClipboardList, Code2, Zap, CheckCircle2, Terminal, X, ChevronRight, Activity, Cpu, Sparkles, ArrowLeft } from 'lucide-react';
+import { ActiveLineageGraph } from '../shared/ActiveLineageGraph';
 
 interface AgentEcosystemFlowProps {
     onNavigate?: (index: number) => void;
@@ -23,6 +24,9 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
     // Tooltip state
     const [hoveredConnection, setHoveredConnection] = useState<number | null>(null);
     const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+    // Lineage Modal state
+    const [showLineageModal, setShowLineageModal] = useState(false);
 
     // 专业配色方案：
     // Governance（治理层）- 蓝色 (blue): 版本管理、解析与血缘、资产管理、研发开发、监管批量调度
@@ -648,6 +652,48 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                     </div>
                 );
             })()}
+
+            {/* Lineage Fullscreen Modal */}
+            {showLineageModal && (
+                <div className="fixed inset-0 z-[100] bg-slate-50 animate-in fade-in duration-300">
+                    {/* Header */}
+                    <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-8 py-4 bg-white/80 backdrop-blur-sm border-b border-slate-200">
+                        <button
+                            onClick={() => setShowLineageModal(false)}
+                            className="group flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-all text-slate-600 hover:text-slate-900"
+                        >
+                            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                            <span className="text-sm font-medium">返回生态全景</span>
+                        </button>
+                        <h2 className="text-xl font-bold text-slate-900">血缘可视化：一眼洞穿监管生命周期</h2>
+                        <div className="w-32"></div>
+                    </div>
+
+                    {/* Content */}
+                    <div className="absolute inset-0 pt-20 pb-8 px-8 overflow-auto">
+                        <div className="w-full max-w-6xl mx-auto space-y-8">
+                            <div className="bg-white rounded-3xl p-8 shadow-2xl border border-slate-100 min-h-[500px] relative overflow-hidden">
+                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent opacity-30"></div>
+                                <ActiveLineageGraph />
+                            </div>
+                            <div className="grid md:grid-cols-3 gap-6">
+                                <div className="p-6 bg-blue-600 text-white rounded-2xl shadow-xl">
+                                    <h5 className="font-bold mb-2">字段级溯源</h5>
+                                    <p className="text-[10px] opacity-70">基于 Neo4j 图存储实现报表指标到底层字段的穿透追踪。</p>
+                                </div>
+                                <div className="p-6 bg-slate-100 rounded-2xl">
+                                    <h5 className="font-bold mb-2">资产自动更新</h5>
+                                    <p className="text-[10px] text-slate-500">定时同步物理模型，元数据与现实环境永远一致。</p>
+                                </div>
+                                <div className="p-6 bg-slate-100 rounded-2xl">
+                                    <h5 className="font-bold mb-2">代码值域管理</h5>
+                                    <p className="text-[10px] text-slate-500">维护业务标准的字典项，统一全行监管资产认知。</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
