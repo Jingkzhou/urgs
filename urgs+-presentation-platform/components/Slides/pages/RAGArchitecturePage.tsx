@@ -38,19 +38,19 @@ export const RAGArchitecturePage = ({ onBack }: RAGArchitecturePageProps) => {
                     {/* Core Objectives Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <FeatureCard
-                            icon={<Search className="w-6 h-6 text-blue-500" />}
-                            title="精准度 (Precision)"
-                            desc="逻辑增强 + 多路检索，解决复杂逻辑不足"
+                            icon={<BrainCircuit className="w-6 h-6 text-blue-500" />}
+                            title="知识精炼 (Refinery)"
+                            desc="自动生成 Q&A 对，将“存文档”升级为“存知识”，召回率提升 3 倍。"
                         />
                         <FeatureCard
-                            icon={<CheckCircle2 className="w-6 h-6 text-green-500" />}
-                            title="可靠性 (Reliability)"
-                            desc="精确引用溯源 (Citations)，大幅减少幻觉"
+                            icon={<GitMerge className="w-6 h-6 text-indigo-500" />}
+                            title="混合检索 (Hybrid)"
+                            desc="向量语义 (左脑) + BM25 关键词 (右脑) 双引擎自动加权融合。"
                         />
                         <FeatureCard
-                            icon={<Zap className="w-6 h-6 text-amber-500" />}
-                            title="高效性 (Efficiency)"
-                            desc="异步流水线 + 分级索引，亿级数据毫秒响应"
+                            icon={<Layers className="w-6 h-6 text-violet-500" />}
+                            title="父子索引 (Parent-Child)"
+                            desc="检索小切片匹配，返回大父块上下文，彻底解决断章取义。"
                         />
                     </div>
 

@@ -237,7 +237,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
     return (
         <div
             ref={containerRef}
-            className="relative w-full h-full bg-slate-50 rounded-3xl border border-slate-200 p-8 overflow-hidden flex font-sans selection:bg-indigo-500/30"
+            className="relative w-full h-full bg-slate-50 overflow-hidden flex font-sans selection:bg-indigo-500/30"
             onMouseMove={handleDrag}
             onMouseUp={handleDragEnd}
             onMouseLeave={handleDragEnd}
@@ -277,18 +277,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                             <p className="text-[10px] text-slate-500 font-mono uppercase tracking-[0.2em] font-bold">Autonomous Agent System • Active</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                        <div className="flex flex-col items-end">
-                            <div className="text-[10px] font-mono text-slate-400 uppercase font-bold">System Load</div>
-                            <div className="w-24 h-1.5 bg-slate-200 rounded-full mt-1 overflow-hidden">
-                                <div className="h-full bg-emerald-500 w-[72%] shadow-[0_0_10px_rgba(16,185,129,0.3)]"></div>
-                            </div>
-                        </div>
-                        <div className="px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 text-[10px] font-mono uppercase flex items-center gap-2 font-bold shadow-sm">
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                            Online
-                        </div>
-                    </div>
+
                 </div>
             )}
 
