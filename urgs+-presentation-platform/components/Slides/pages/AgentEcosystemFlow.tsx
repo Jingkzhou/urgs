@@ -24,10 +24,15 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
     const [hoveredConnection, setHoveredConnection] = useState<number | null>(null);
     const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
+    // 专业配色方案：
+    // Governance（治理层）- 蓝色 (blue): 版本管理、解析与血缘、资产管理、研发开发、监管批量调度
+    // Knowledge（知识层）- 紫色 (violet): 知识库、智能体群、生产问题登记
+    // Business（业务层）- 翠绿 (emerald): 业务报送、业务提需、需求评审
+
     const nodes = [
-        // 技术驱动闭环 (Top Row)
+        // Governance Layer (Blue) - 技术驱动闭环
         {
-            id: 1, title: "版本管理", icon: <GitBranch className="w-5 h-5" />, x: 140, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-cyan-400 border-cyan-500 bg-cyan-950/50", desc: "Git 代码提交触发自动化流程",
+            id: 1, title: "版本管理", icon: <GitBranch className="w-5 h-5" />, x: 140, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-blue-400 border-blue-500 bg-blue-950/50", desc: "Git 代码提交触发自动化流程",
             detail: {
                 features: ["应用系统库管理", "Git 仓库多元配置", "CI/CD 流水线编排", "发布版本台账", "一键回滚发布"],
                 goals: ["统一管理全行20+监管系统代码", "实现标准化、自动化的发布流程", "确保生产环境版本安全可追溯"],
@@ -35,7 +40,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 2, title: "解析与血缘", icon: <Network className="w-5 h-5" />, x: 500, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-violet-400 border-violet-500 bg-violet-950/50", desc: "SQL解析与全链路血缘构建",
+            id: 2, title: "解析与血缘", icon: <Network className="w-5 h-5" />, x: 500, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-blue-400 border-blue-500 bg-blue-950/50", desc: "SQL解析与全链路血缘构建",
             detail: {
                 features: ["智能代码 Diff 分析", "SQL 语法树解析", "字段级血缘溯源", "上下游影响分析"],
                 goals: ["自动识别业务逻辑变更", "构建精准数据血缘图谱", "支持秒级数据排障"],
@@ -43,7 +48,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 4, title: "资产管理", icon: <Database className="w-5 h-5" />, x: 860, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-emerald-400 border-emerald-500 bg-emerald-950/50", desc: "关联监管指标与业务元数据",
+            id: 4, title: "资产管理", icon: <Database className="w-5 h-5" />, x: 860, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-blue-400 border-blue-500 bg-blue-950/50", desc: "关联监管指标与业务元数据",
             detail: {
                 features: ["物理模型同步", "监管与代码资产维护", "报表与字段定义管理", "数据字典统一管理"],
                 goals: ["实现监管业务语言与技术语言的映射", "确保元数据与生产环境实时一致", "沉淀核心数据资产"],
@@ -51,9 +56,9 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
 
-        // 知识沉淀 (Right)
+        // Knowledge Layer (Violet) - 知识沉淀
         {
-            id: 5, title: "知识库", icon: <BookOpen className="w-5 h-5" />, x: 860, y: 280, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-teal-400 border-teal-500 bg-teal-950/50", desc: "RAG 向量化存储规则与发文",
+            id: 5, title: "知识库", icon: <BookOpen className="w-5 h-5" />, x: 860, y: 280, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-violet-400 border-violet-500 bg-violet-950/50", desc: "RAG 向量化存储规则与发文",
             detail: {
                 features: ["文档与文件夹管理", "多维标签体系", "非结构化文档解析", "知识切片与向量化"],
                 goals: ["构建监管领域的私有知识大脑", "将离散文档转化为可检索智慧", "支撑智能体精准问答"],
@@ -61,17 +66,19 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
 
-        // 智能服务 (Bottom Right)
+        // Knowledge Layer (Violet) - 智能服务
         {
-            id: 6, title: "智能体群", icon: <Bot className="w-5 h-5" />, x: 860, y: 480, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-amber-400 border-amber-500 bg-amber-950/50", desc: "多场景专业 Agent 实时辅助",
+            id: 6, title: "智能体群", icon: <Bot className="w-5 h-5" />, x: 860, y: 480, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-violet-400 border-violet-500 bg-violet-950/50", desc: "多场景专业 Agent 实时辅助",
             detail: {
                 features: ["Agent 创建与编排", "API 能力挂载管理", "1104/EAST 填报助手", "合规审计机器人"],
                 goals: ["将专家经验固化为数字员工", "7x24小时响应业务咨询", "自动化执行重复性合规检查"],
                 techStack: ["DeepSeek", "RAG", "Function Calling", "Prompt Engineering", "SSE"]
             }
         },
+
+        // Business Layer (Emerald) - 业务操作
         {
-            id: 7, title: "业务报送", icon: <LayoutDashboard className="w-5 h-5" />, x: 620, y: 480, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-rose-400 border-rose-500 bg-rose-950/50", desc: "1104/EAST 数据填报工作台",
+            id: 7, title: "业务报送", icon: <LayoutDashboard className="w-5 h-5" />, x: 620, y: 480, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-emerald-400 border-emerald-500 bg-emerald-950/50", desc: "1104/EAST 数据填报工作台",
             detail: {
                 features: ["统一数据填报入口", "批量监控与状态总览", "报表数据校验", "异常数据预警"],
                 goals: ["提升报送数据准确性与及时性", "降低业务人员操作门槛", "实现报送全流程可视可控"],
@@ -79,9 +86,9 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
 
-        // 业务反馈闭环 (Bottom Left)
+        // Business Layer (Emerald) - 业务反馈闭环
         {
-            id: 8, title: "业务提需", icon: <Lightbulb className="w-5 h-5" />, x: 380, y: 480, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-orange-400 border-orange-500 bg-orange-950/50", desc: "发现口径差异或新规要求",
+            id: 8, title: "业务提需", icon: <Lightbulb className="w-5 h-5" />, x: 380, y: 480, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-emerald-400 border-emerald-500 bg-emerald-950/50", desc: "发现口径差异或新规要求",
             detail: {
                 features: ["生产问题在线登记", "口径疑问快速提交", "新规需求结构化录入"],
                 goals: ["打通业务与技术的沟通壁垒", "快速响应监管新规变化", "实现需求全生命周期管理"],
@@ -89,31 +96,37 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 9, title: "需求评审", icon: <ClipboardList className="w-5 h-5" />, x: 140, y: 480, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-purple-400 border-purple-500 bg-purple-950/50", desc: "技术方案与可行性分析",
+            id: 9, title: "需求评审", icon: <ClipboardList className="w-5 h-5" />, x: 140, y: 480, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-emerald-400 border-emerald-500 bg-emerald-950/50", desc: "技术方案与可行性分析",
             detail: {
                 features: ["需求可行性分析", "技术方案自动生成", "工时预估参考", "变更影响面确认"],
                 goals: ["辅助技术团队快速制定方案", "确保需求理解一致性", "规避潜在技术风险"],
                 techStack: ["AI 辅助", "血缘分析API", "知识库检索", "模板引擎"]
             }
         },
+
+        // Governance Layer (Blue) - 研发
         {
-            id: 10, title: "研发开发", icon: <Code2 className="w-5 h-5" />, x: 140, y: 280, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-indigo-400 border-indigo-500 bg-indigo-950/50", desc: "代码实现与测试",
+            id: 10, title: "研发开发", icon: <Code2 className="w-5 h-5" />, x: 140, y: 280, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-blue-400 border-blue-500 bg-blue-950/50", desc: "代码实现与测试",
             detail: {
                 features: ["研发工作台", "API 开发与调试", "错误日志分析", "流水线运行监控"],
                 goals: ["提升开发与测试效率", "保障代码交付质量", "闭环响应业务提出的新需求"],
                 techStack: ["Spring Boot", "Vue 3", "PostgreSQL", "Redis", "RabbitMQ"]
             }
         },
+
+        // Knowledge Layer (Violet) - 问题沉淀
         {
-            id: 11, title: "生产问题登记", icon: <ClipboardList className="w-5 h-5" />, x: 1100, y: 280, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-red-400 border-red-500 bg-red-950/50", desc: "生产问题与FAQ沉淀",
+            id: 11, title: "生产问题登记", icon: <ClipboardList className="w-5 h-5" />, x: 1100, y: 280, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-violet-400 border-violet-500 bg-violet-950/50", desc: "生产问题与FAQ沉淀",
             detail: {
                 features: ["生产问题工单登记", "解决方案结构化录入", "自动转化为知识库条目"],
                 goals: ["实现运维经验的资产化", "丰富知识库实战案例", "降低重复问题排查成本"],
                 techStack: ["React", "Ant Design", "Flowable", "Elasticsearch"]
             }
         },
+
+        // Governance Layer (Blue) - 批量调度
         {
-            id: 12, title: "监管批量调度", icon: <Activity className="w-5 h-5" />, x: 1100, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-cyan-400 border-cyan-500 bg-cyan-950/50", desc: "自动化跑批与监控",
+            id: 12, title: "监管批量调度", icon: <Activity className="w-5 h-5" />, x: 1100, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-blue-400 border-blue-500 bg-blue-950/50", desc: "自动化跑批与监控",
             detail: {
                 features: ["批量任务编排", "依赖关系管理", "执行状态监控", "异常自动告警"],
                 goals: ["确保监管数据按时产出", "自动化处理任务依赖", "实时监控批量作业状态"],
@@ -189,6 +202,11 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
 
     const handleNodeClick = (id: number) => {
         if (draggingNode !== null) return;
+        // 节点2（解析与血缘）直接打开血缘可视化模态
+        if (id === 2) {
+            setShowLineageModal(true);
+            return;
+        }
         setSelectedNode(selectedNode === id ? null : id);
     };
 
@@ -344,17 +362,6 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                                         {conn.label}
                                     </text>
                                 )}
-                                {/* Moving Particle (Darker for visibility) */}
-                                <circle r="3" fill={isFeedback ? "#ea580c" : "#4f46e5"}>
-                                    <animateMotion
-                                        dur={isFeedback ? "5s" : "3s"}
-                                        repeatCount="indefinite"
-                                        path={pathD}
-                                        keyPoints="0;1"
-                                        keyTimes="0;1"
-                                        calcMode="linear"
-                                    />
-                                </circle>
                             </g>
                         );
                     })}
@@ -390,21 +397,45 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                                     onMouseMove={(e) => setTooltipPos({ x: e.clientX, y: e.clientY })}
                                     onMouseLeave={() => setHoveredConnection(null)}
                                 />
-                                {/* Particle */}
-                                <circle r="4" fill="#ec4899">
-                                    <animateMotion dur="2s" repeatCount="indefinite" path={pathD} keyPoints="0;1" keyTimes="0;1" calcMode="linear" />
-                                </circle>
                             </g>
                         );
                     })}
                 </svg>
 
+                {/* Tailwind JIT 需要完整静态类名 - 颜色映射 */}
                 {nodes.map((node, idx) => {
                     const isActive = activeNode === node.id;
                     const isSelected = selectedNode === node.id;
                     const pos = getNodePos(node.id);
                     const colorMatch = node.activeColor.match(/text-([a-z]+)-400/);
-                    const colorName = colorMatch ? colorMatch[1] : 'indigo';
+                    const colorName = colorMatch ? colorMatch[1] : 'blue';
+
+                    // 静态颜色类名映射（Tailwind JIT 必须使用完整类名）
+                    const colorStyles: Record<string, { bg: string; shadow: string; text: string; bgLabel: string; shadowLabel: string }> = {
+                        blue: {
+                            bg: 'bg-blue-500',
+                            shadow: 'shadow-xl shadow-blue-500/30',
+                            text: 'text-blue-600',
+                            bgLabel: 'bg-blue-600',
+                            shadowLabel: 'shadow-lg shadow-blue-500/30'
+                        },
+                        violet: {
+                            bg: 'bg-violet-500',
+                            shadow: 'shadow-xl shadow-violet-500/30',
+                            text: 'text-violet-600',
+                            bgLabel: 'bg-violet-600',
+                            shadowLabel: 'shadow-lg shadow-violet-500/30'
+                        },
+                        emerald: {
+                            bg: 'bg-emerald-500',
+                            shadow: 'shadow-xl shadow-emerald-500/30',
+                            text: 'text-emerald-600',
+                            bgLabel: 'bg-emerald-600',
+                            shadowLabel: 'shadow-lg shadow-emerald-500/30'
+                        }
+                    };
+
+                    const styles = colorStyles[colorName] || colorStyles.blue;
 
                     return (
                         <div
@@ -419,19 +450,19 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                             <div className="relative w-16 h-16 flex items-center justify-center">
                                 <div className={`absolute inset-0 transition-all duration-300 rounded-2xl rotate-45 group-hover:rotate-0
                                     ${isActive || isSelected
-                                        ? `bg-${colorName}-500 shadow-xl shadow-${colorName}-500/30 scale-110`
+                                        ? `${styles.bg} ${styles.shadow} scale-110`
                                         : 'bg-white shadow-lg shadow-slate-200 border border-slate-100'}`}
                                 ></div>
                                 <div className="relative z-10">
                                     {React.cloneElement(node.icon as React.ReactElement, {
-                                        className: `w-7 h-7 transition-all duration-300 ${isActive || isSelected ? 'text-white' : `text-${colorName}-600`}`
+                                        className: `w-7 h-7 transition-all duration-300 ${isActive || isSelected ? 'text-white' : styles.text}`
                                     })}
                                 </div>
                                 <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${isActive || isSelected ? 'bg-emerald-400' : 'bg-slate-300'} transition-colors shadow-sm`}></div>
                             </div>
                             <div className={`mt-5 px-4 py-1.5 rounded-full backdrop-blur-md transition-all duration-300 font-bold text-[11px] shadow-sm tracking-wide
                                 ${isActive || isSelected
-                                    ? `bg-${colorName}-600 text-white shadow-lg shadow-${colorName}-500/30`
+                                    ? `${styles.bgLabel} text-white ${styles.shadowLabel}`
                                     : 'bg-white/90 text-slate-600 border border-slate-200'}`}
                             >
                                 {node.title}
