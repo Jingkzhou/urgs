@@ -74,27 +74,7 @@ const App: React.FC = () => {
   return (
     <div className="relative h-screen w-screen bg-[#f9fafb] text-slate-900 flex flex-col overflow-hidden">
       {/* Navigation Header */}
-      <header className="absolute top-0 w-full z-50 flex justify-between items-center px-8 py-4 bg-white/50 backdrop-blur-sm border-b border-slate-200 shadow-sm">
-        <div className="flex items-center gap-2">
-          <div className="bg-indigo-600 text-white p-1 rounded font-bold text-lg">URGS+</div>
-          <span className="text-slate-500 font-medium">| 智能时代的监管运营</span>
-        </div>
-        <div className="flex items-center gap-6">
-          <div className="flex gap-1">
-            {Array.from({ length: totalSlides }).map((_, i) => (
-              <div
-                key={i}
-                className={`h-1.5 w-6 rounded-full transition-all duration-300 ${i === currentSlide ? 'bg-indigo-600 w-12' : 'bg-slate-200'}`}
-                onClick={() => setCurrentSlide(i)}
-                style={{ cursor: 'pointer' }}
-              />
-            ))}
-          </div>
-          <div className="text-sm font-medium text-slate-400">
-            {currentSlide + 1} / {totalSlides}
-          </div>
-        </div>
-      </header>
+
 
       {/* Main Content Area */}
       <main className="flex-1 relative overflow-hidden flex items-center justify-center p-4 sm:p-12 lg:p-24 pt-24">

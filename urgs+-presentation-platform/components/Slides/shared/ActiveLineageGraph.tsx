@@ -30,7 +30,7 @@ export const ActiveLineageGraph = () => {
     ];
 
     return (
-        <div className="relative w-full h-[400px] bg-slate-50/50 rounded-xl border border-slate-200 overflow-hidden font-sans select-none">
+        <div className="relative w-full h-full bg-slate-50 overflow-hidden font-sans select-none">
             {/* Grid Background */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-30">
                 <defs>
@@ -42,7 +42,7 @@ export const ActiveLineageGraph = () => {
             </svg>
 
             {/* Main Graph */}
-            <svg className="w-full h-full" viewBox="0 0 1100 400">
+            <svg className="w-full h-full" viewBox="0 0 1100 600" preserveAspectRatio="xMidYMid meet">
                 {/* Connections */}
                 {connections.map((conn, i) => {
                     const from = nodes.find(n => n.id === conn.from)!;

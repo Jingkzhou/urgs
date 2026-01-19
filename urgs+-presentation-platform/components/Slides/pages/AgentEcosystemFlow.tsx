@@ -1,7 +1,9 @@
 import React, { useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { GitBranch, FileCode, Network, Database, BookOpen, Bot, LayoutDashboard, Lightbulb, ClipboardList, Code2, Zap, CheckCircle2, Terminal, X, ChevronRight, Activity, Cpu, Sparkles, ArrowLeft } from 'lucide-react';
 import { ActiveLineageGraph } from '../shared/ActiveLineageGraph';
 import { RAGArchitecturePage } from './RAGArchitecturePage';
+import { LineagePage } from './LineagePage';
 
 interface AgentEcosystemFlowProps {
     onNavigate?: (index: number) => void;
@@ -251,33 +253,35 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             </div>
 
             {/* Header HUD - Light */}
-            <div className="absolute top-6 left-8 right-8 z-30 flex items-center justify-between pointer-events-none">
-                <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shadow-xl shadow-indigo-100 relative overflow-hidden group">
-                        <div className="absolute inset-0 bg-indigo-50/50"></div>
-                        <Bot className="w-6 h-6 text-indigo-600 relative z-10" />
-                    </div>
-                    <div>
-                        <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                            URGS<span className="text-indigo-600">+</span>
-                            <span className="text-xs font-mono font-medium text-slate-500 px-2 py-0.5 border border-slate-200 rounded-full bg-white">v2.4.0</span>
-                        </h2>
-                        <p className="text-[10px] text-slate-500 font-mono uppercase tracking-[0.2em] font-bold">Autonomous Agent System • Active</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-4">
-                    <div className="flex flex-col items-end">
-                        <div className="text-[10px] font-mono text-slate-400 uppercase font-bold">System Load</div>
-                        <div className="w-24 h-1.5 bg-slate-200 rounded-full mt-1 overflow-hidden">
-                            <div className="h-full bg-emerald-500 w-[72%] shadow-[0_0_10px_rgba(16,185,129,0.3)]"></div>
+            {!showRAGModal && !showLineageModal && (
+                <div className="absolute top-6 left-8 right-8 z-30 flex items-center justify-between pointer-events-none">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shadow-xl shadow-indigo-100 relative overflow-hidden group">
+                            <div className="absolute inset-0 bg-indigo-50/50"></div>
+                            <Bot className="w-6 h-6 text-indigo-600 relative z-10" />
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                URGS<span className="text-indigo-600">+</span>
+                                <span className="text-xs font-mono font-medium text-slate-500 px-2 py-0.5 border border-slate-200 rounded-full bg-white">v2.4.0</span>
+                            </h2>
+                            <p className="text-[10px] text-slate-500 font-mono uppercase tracking-[0.2em] font-bold">Autonomous Agent System • Active</p>
                         </div>
                     </div>
-                    <div className="px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 text-[10px] font-mono uppercase flex items-center gap-2 font-bold shadow-sm">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                        Online
+                    <div className="flex items-center gap-4">
+                        <div className="flex flex-col items-end">
+                            <div className="text-[10px] font-mono text-slate-400 uppercase font-bold">System Load</div>
+                            <div className="w-24 h-1.5 bg-slate-200 rounded-full mt-1 overflow-hidden">
+                                <div className="h-full bg-emerald-500 w-[72%] shadow-[0_0_10px_rgba(16,185,129,0.3)]"></div>
+                            </div>
+                        </div>
+                        <div className="px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 text-[10px] font-mono uppercase flex items-center gap-2 font-bold shadow-sm">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                            Online
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
 
             {/* Diagram Area */}
             <div className={`relative w-full h-full transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] ${selectedNode ? 'scale-90 opacity-40 blur-sm translate-x-[-10%]' : 'scale-100 opacity-100'}`}>
@@ -662,53 +666,20 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                 );
             })()}
 
-            {/* Lineage Fullscreen Modal */}
-            {showLineageModal && (
-                <div className="fixed inset-0 z-[100] bg-slate-50 animate-in fade-in duration-300">
-                    {/* Header */}
-                    <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-8 py-4 bg-white/80 backdrop-blur-sm border-b border-slate-200">
-                        <button
-                            onClick={() => setShowLineageModal(false)}
-                            className="group flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-all text-slate-600 hover:text-slate-900"
-                        >
-                            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-                            <span className="text-sm font-medium">返回生态全景</span>
-                        </button>
-                        <h2 className="text-xl font-bold text-slate-900">血缘可视化：一眼洞穿监管生命周期</h2>
-                        <div className="w-32"></div>
-                    </div>
-
-                    {/* Content */}
-                    <div className="absolute inset-0 pt-20 pb-8 px-8 overflow-auto">
-                        <div className="w-full max-w-6xl mx-auto space-y-8">
-                            <div className="bg-white rounded-3xl p-8 shadow-2xl border border-slate-100 min-h-[500px] relative overflow-hidden">
-                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent opacity-30"></div>
-                                <ActiveLineageGraph />
-                            </div>
-                            <div className="grid md:grid-cols-3 gap-6">
-                                <div className="p-6 bg-blue-600 text-white rounded-2xl shadow-xl">
-                                    <h5 className="font-bold mb-2">字段级溯源</h5>
-                                    <p className="text-[10px] opacity-70">基于 Neo4j 图存储实现报表指标到底层字段的穿透追踪。</p>
-                                </div>
-                                <div className="p-6 bg-slate-100 rounded-2xl">
-                                    <h5 className="font-bold mb-2">资产自动更新</h5>
-                                    <p className="text-[10px] text-slate-500">定时同步物理模型，元数据与现实环境永远一致。</p>
-                                </div>
-                                <div className="p-6 bg-slate-100 rounded-2xl">
-                                    <h5 className="font-bold mb-2">代码值域管理</h5>
-                                    <p className="text-[10px] text-slate-500">维护业务标准的字典项，统一全行监管资产认知。</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            {/* Lineage Fullscreen Modal - Portal to Body for True Fullscreen */}
+            {showLineageModal && createPortal(
+                <div className="fixed inset-0 z-[9999] bg-slate-50 animate-in fade-in duration-300">
+                    <LineagePage onBack={() => setShowLineageModal(false)} />
+                </div>,
+                document.body
             )}
 
-            {/* RAG Architecture Fullscreen Modal */}
-            {showRAGModal && (
-                <div className="fixed inset-0 z-[100] bg-slate-900 animate-in fade-in duration-300 overflow-auto">
+            {/* RAG Architecture Fullscreen Modal - Portal to Body */}
+            {showRAGModal && createPortal(
+                <div className="fixed inset-0 z-[9999] bg-[#F5F5F7] animate-in fade-in duration-300 overflow-auto">
                     <RAGArchitecturePage onBack={() => setShowRAGModal(false)} />
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );
