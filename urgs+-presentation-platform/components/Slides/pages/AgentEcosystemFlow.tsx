@@ -162,7 +162,8 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
 
     // AI 连接 (从 Qwen3 到使用 AI 的模块)
     const aiConnections = [
-        { from: 100, to: 2, tooltip: "AI 辅助代码规范审计与风险预评估" },
+        { from: 100, to: 2, tooltip: "AI 辅助ReviewSQL 解析质量" },
+        { from: 100, to: 4, tooltip: "AI 解析代码转换业务口径， AI解译指标制度" },
         { from: 100, to: 5, tooltip: "LLM 驱动知识问答与语义向量检索" },
         { from: 100, to: 6, tooltip: "Agent 核心推理引擎与 Function Calling" },
         { from: 100, to: 9, tooltip: "AI 自动生成技术方案与工时预估" },
