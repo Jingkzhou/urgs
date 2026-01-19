@@ -18,7 +18,8 @@ import {
   AiWorkflowPage,
   RolesPage,
   ConclusionPage,
-  AIExperiencePage
+  AIExperiencePage,
+  SQLParsingDetailPage
 } from './components/Slides';
 
 const App: React.FC = () => {
@@ -26,7 +27,7 @@ const App: React.FC = () => {
 
   const slides = [
     <TitlePage key="title" />,
-    <TableOfContentsPage key="toc" onNavigate={setCurrentSlide} />,
+    <TableOfContentsPage onNavigate={setCurrentSlide} />,
     <ChallengePage key="challenge" />,
     <VisionPage key="vision" />,
     <ArchitecturePage key="arch" />,
@@ -39,6 +40,7 @@ const App: React.FC = () => {
     <DashboardPage key="dash" />,
     <AssetPillarPage key="asset" />,  /* Capability 3: Asset */
     <LineagePage key="lineage" />,
+    <SQLParsingDetailPage key="sql-parsing" />,
     <ReleaseManagementPage key="release" />, /* Capability 4: Risk */
     <RolesPage key="roles" />,
     <ConclusionPage key="end" />
