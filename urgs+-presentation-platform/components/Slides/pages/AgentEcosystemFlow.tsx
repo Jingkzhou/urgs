@@ -27,7 +27,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
     const nodes = [
         // 技术驱动闭环 (Top Row)
         {
-            id: 1, title: "版本管理", icon: <GitBranch className="w-5 h-5" />, x: 150, y: 100, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-cyan-400 border-cyan-500 bg-cyan-950/50", desc: "Git 代码提交触发自动化流程",
+            id: 1, title: "版本管理", icon: <GitBranch className="w-5 h-5" />, x: 140, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-cyan-400 border-cyan-500 bg-cyan-950/50", desc: "Git 代码提交触发自动化流程",
             detail: {
                 features: ["应用系统库管理", "Git 仓库多元配置", "CI/CD 流水线编排", "发布版本台账", "一键回滚发布"],
                 goals: ["统一管理全行20+监管系统代码", "实现标准化、自动化的发布流程", "确保生产环境版本安全可追溯"],
@@ -35,7 +35,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 2, title: "SQL解析", icon: <FileCode className="w-5 h-5" />, x: 380, y: 70, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-violet-400 border-violet-500 bg-violet-950/50", desc: "自动提取表级/字段级依赖",
+            id: 2, title: "SQL解析", icon: <FileCode className="w-5 h-5" />, x: 380, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-violet-400 border-violet-500 bg-violet-950/50", desc: "自动提取表级/字段级依赖",
             detail: {
                 features: ["智能代码 Diff 分析", "SQL 语法树解析", "代码规范自动审计", "变更风险预评估"],
                 goals: ["自动识别业务逻辑变更", "降低人工代码审查遗漏风险", "为血缘构建提供精准输入"],
@@ -43,7 +43,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 3, title: "血缘图谱", icon: <Network className="w-5 h-5" />, x: 620, y: 70, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-blue-400 border-blue-500 bg-blue-950/50", desc: "构建全链路数据影响面",
+            id: 3, title: "血缘图谱", icon: <Network className="w-5 h-5" />, x: 620, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-blue-400 border-blue-500 bg-blue-950/50", desc: "构建全链路数据影响面",
             detail: {
                 features: ["字段级血缘溯源", "上下游影响分析", "血缘引擎管理与重启", "图谱可视化展示"],
                 goals: ["秒级定位指标数据来源", "精准评估变更对下游报表的影响", "提升数据排障效率"],
@@ -51,7 +51,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 4, title: "资产管理", icon: <Database className="w-5 h-5" />, x: 850, y: 100, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-emerald-400 border-emerald-500 bg-emerald-950/50", desc: "关联监管指标与业务元数据",
+            id: 4, title: "资产管理", icon: <Database className="w-5 h-5" />, x: 860, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-emerald-400 border-emerald-500 bg-emerald-950/50", desc: "关联监管指标与业务元数据",
             detail: {
                 features: ["物理模型同步", "监管与代码资产维护", "报表与字段定义管理", "数据字典统一管理"],
                 goals: ["实现监管业务语言与技术语言的映射", "确保元数据与生产环境实时一致", "沉淀核心数据资产"],
@@ -61,7 +61,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
 
         // 知识沉淀 (Right)
         {
-            id: 5, title: "知识库", icon: <BookOpen className="w-5 h-5" />, x: 920, y: 280, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-teal-400 border-teal-500 bg-teal-950/50", desc: "RAG 向量化存储规则与发文",
+            id: 5, title: "知识库", icon: <BookOpen className="w-5 h-5" />, x: 860, y: 280, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-teal-400 border-teal-500 bg-teal-950/50", desc: "RAG 向量化存储规则与发文",
             detail: {
                 features: ["文档与文件夹管理", "多维标签体系", "非结构化文档解析", "知识切片与向量化"],
                 goals: ["构建监管领域的私有知识大脑", "将离散文档转化为可检索智慧", "支撑智能体精准问答"],
@@ -71,7 +71,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
 
         // 智能服务 (Bottom Right)
         {
-            id: 6, title: "智能体群", icon: <Bot className="w-5 h-5" />, x: 850, y: 460, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-amber-400 border-amber-500 bg-amber-950/50", desc: "多场景专业 Agent 实时辅助",
+            id: 6, title: "智能体群", icon: <Bot className="w-5 h-5" />, x: 860, y: 480, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-amber-400 border-amber-500 bg-amber-950/50", desc: "多场景专业 Agent 实时辅助",
             detail: {
                 features: ["Agent 创建与编排", "API 能力挂载管理", "1104/EAST 填报助手", "合规审计机器人"],
                 goals: ["将专家经验固化为数字员工", "7x24小时响应业务咨询", "自动化执行重复性合规检查"],
@@ -79,7 +79,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 7, title: "业务报送", icon: <LayoutDashboard className="w-5 h-5" />, x: 620, y: 490, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-rose-400 border-rose-500 bg-rose-950/50", desc: "1104/EAST 数据填报工作台",
+            id: 7, title: "业务报送", icon: <LayoutDashboard className="w-5 h-5" />, x: 620, y: 480, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-rose-400 border-rose-500 bg-rose-950/50", desc: "1104/EAST 数据填报工作台",
             detail: {
                 features: ["统一数据填报入口", "批量监控与状态总览", "报表数据校验", "异常数据预警"],
                 goals: ["提升报送数据准确性与及时性", "降低业务人员操作门槛", "实现报送全流程可视可控"],
@@ -89,7 +89,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
 
         // 业务反馈闭环 (Bottom Left)
         {
-            id: 8, title: "业务提需", icon: <Lightbulb className="w-5 h-5" />, x: 380, y: 490, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-orange-400 border-orange-500 bg-orange-950/50", desc: "发现口径差异或新规要求",
+            id: 8, title: "业务提需", icon: <Lightbulb className="w-5 h-5" />, x: 380, y: 480, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-orange-400 border-orange-500 bg-orange-950/50", desc: "发现口径差异或新规要求",
             detail: {
                 features: ["生产问题在线登记", "口径疑问快速提交", "新规需求结构化录入"],
                 goals: ["打通业务与技术的沟通壁垒", "快速响应监管新规变化", "实现需求全生命周期管理"],
@@ -97,7 +97,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 9, title: "需求评审", icon: <ClipboardList className="w-5 h-5" />, x: 150, y: 460, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-purple-400 border-purple-500 bg-purple-950/50", desc: "技术方案与可行性分析",
+            id: 9, title: "需求评审", icon: <ClipboardList className="w-5 h-5" />, x: 140, y: 480, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-purple-400 border-purple-500 bg-purple-950/50", desc: "技术方案与可行性分析",
             detail: {
                 features: ["需求可行性分析", "技术方案自动生成", "工时预估参考", "变更影响面确认"],
                 goals: ["辅助技术团队快速制定方案", "确保需求理解一致性", "规避潜在技术风险"],
@@ -105,11 +105,19 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 10, title: "研发开发", icon: <Code2 className="w-5 h-5" />, x: 80, y: 280, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-indigo-400 border-indigo-500 bg-indigo-950/50", desc: "代码实现与测试",
+            id: 10, title: "研发开发", icon: <Code2 className="w-5 h-5" />, x: 140, y: 280, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-indigo-400 border-indigo-500 bg-indigo-950/50", desc: "代码实现与测试",
             detail: {
                 features: ["研发工作台", "API 开发与调试", "错误日志分析", "流水线运行监控"],
                 goals: ["提升开发与测试效率", "保障代码交付质量", "闭环响应业务提出的新需求"],
                 techStack: ["Spring Boot", "Vue 3", "PostgreSQL", "Redis", "RabbitMQ"]
+            }
+        },
+        {
+            id: 11, title: "生产问题登记", icon: <ClipboardList className="w-5 h-5" />, x: 1100, y: 280, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-red-400 border-red-500 bg-red-950/50", desc: "生产问题与FAQ沉淀",
+            detail: {
+                features: ["生产问题工单登记", "解决方案结构化录入", "自动转化为知识库条目"],
+                goals: ["实现运维经验的资产化", "丰富知识库实战案例", "降低重复问题排查成本"],
+                techStack: ["React", "Ant Design", "Flowable", "Elasticsearch"]
             }
         },
     ];
@@ -138,6 +146,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
         { from: 1, to: 2 }, { from: 2, to: 3 }, { from: 3, to: 4 }, { from: 4, to: 5 },
         // 服务流
         { from: 5, to: 6 }, { from: 6, to: 7 },
+        { from: 11, to: 5, dashed: true, label: "FAQ Import" }, // New connection: Issue -> Knowledge
         // 反馈流
         { from: 7, to: 8, dashed: true, label: "ISSUE" },
         { from: 8, to: 9, dashed: true },
