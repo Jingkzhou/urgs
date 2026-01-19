@@ -73,11 +73,11 @@ export const ProductVisionPage = () => {
                     <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-slate-300 to-transparent -translate-x-1/2 md:block hidden"></div>
 
                     <div className="space-y-24">
-                        {/* Timeline Item 1 */}
+                        {/* Timeline Item 1: Synergy Gap (Original) */}
                         <FadeInSection delay={100}>
                             <div className="flex flex-col md:flex-row items-center justify-center gap-8 md:gap-16">
                                 <div className="md:w-1/2 flex justify-end">
-                                    <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 max-w-lg w-full group hover:border-indigo-100 transition-all">
+                                    <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 max-w-lg w-full group hover:border-amber-100 transition-all">
                                         <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                                             <Users className="w-6 h-6 text-amber-500" />
                                         </div>
@@ -92,10 +92,29 @@ export const ProductVisionPage = () => {
                             </div>
                         </FadeInSection>
 
-                        {/* Timeline Item 2 */}
-                        <FadeInSection delay={200}>
+                        {/* Timeline Item 2: Code Quality (New) */}
+                        <FadeInSection delay={150}>
                             <div className="flex flex-col md:flex-row-reverse items-center justify-center gap-8 md:gap-16">
                                 <div className="md:w-1/2 flex justify-start">
+                                    <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 max-w-lg w-full group hover:border-indigo-100 transition-all">
+                                        <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                                            <CheckCircle2 className="w-6 h-6 text-indigo-500" />
+                                        </div>
+                                        <h3 className="text-xl font-bold text-slate-800 mb-3">代码质量参差</h3>
+                                        <p className="text-slate-500 leading-relaxed">缺乏统一的开发规范与质量门禁，技术债日益累积，系统维护成本高昂。</p>
+                                    </div>
+                                </div>
+                                <div className="relative z-10 hidden md:flex items-center justify-center w-12 h-12 rounded-full bg-white border-4 border-slate-100 shadow-lg">
+                                    <div className="w-4 h-4 rounded-full bg-slate-300"></div>
+                                </div>
+                                <div className="md:w-1/2 opacity-50 text-9xl font-black text-slate-100 select-none text-right hidden md:block">02</div>
+                            </div>
+                        </FadeInSection>
+
+                        {/* Timeline Item 3: Hidden Risks (Original) */}
+                        <FadeInSection delay={200}>
+                            <div className="flex flex-col md:flex-row items-center justify-center gap-8 md:gap-16">
+                                <div className="md:w-1/2 flex justify-end">
                                     <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 max-w-lg w-full group hover:border-red-100 transition-all">
                                         <div className="w-12 h-12 bg-red-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                                             <ShieldAlert className="w-6 h-6 text-red-500" />
@@ -107,17 +126,36 @@ export const ProductVisionPage = () => {
                                 <div className="relative z-10 hidden md:flex items-center justify-center w-12 h-12 rounded-full bg-white border-4 border-slate-100 shadow-lg">
                                     <div className="w-4 h-4 rounded-full bg-slate-300"></div>
                                 </div>
-                                <div className="md:w-1/2 opacity-50 text-9xl font-black text-slate-100 select-none text-right hidden md:block">02</div>
+                                <div className="md:w-1/2 opacity-50 text-9xl font-black text-slate-100 select-none hidden md:block">03</div>
                             </div>
                         </FadeInSection>
 
-                        {/* Timeline Item 3 */}
+                        {/* Timeline Item 4: Launch Risk (New) */}
+                        <FadeInSection delay={250}>
+                            <div className="flex flex-col md:flex-row-reverse items-center justify-center gap-8 md:gap-16">
+                                <div className="md:w-1/2 flex justify-start">
+                                    <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 max-w-lg w-full group hover:border-rose-100 transition-all">
+                                        <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                                            <Target className="w-6 h-6 text-rose-500" />
+                                        </div>
+                                        <h3 className="text-xl font-bold text-slate-800 mb-3">上线风险盲区</h3>
+                                        <p className="text-slate-500 leading-relaxed">代码变更的影响面主要靠人工评估，难以覆盖全链路，导致上线故障频发。</p>
+                                    </div>
+                                </div>
+                                <div className="relative z-10 hidden md:flex items-center justify-center w-12 h-12 rounded-full bg-white border-4 border-slate-100 shadow-lg">
+                                    <div className="w-4 h-4 rounded-full bg-slate-300"></div>
+                                </div>
+                                <div className="md:w-1/2 opacity-50 text-9xl font-black text-slate-100 select-none text-right hidden md:block">04</div>
+                            </div>
+                        </FadeInSection>
+
+                        {/* Timeline Item 5: Knowledge Islands (Original) */}
                         <FadeInSection delay={300}>
                             <div className="flex flex-col md:flex-row items-center justify-center gap-8 md:gap-16">
                                 <div className="md:w-1/2 flex justify-end">
-                                    <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 max-w-lg w-full group hover:border-indigo-100 transition-all">
-                                        <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                                            <BookOpen className="w-6 h-6 text-indigo-500" />
+                                    <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 max-w-lg w-full group hover:border-teal-100 transition-all">
+                                        <div className="w-12 h-12 bg-teal-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                                            <BookOpen className="w-6 h-6 text-teal-500" />
                                         </div>
                                         <h3 className="text-xl font-bold text-slate-800 mb-3">知识孤岛</h3>
                                         <p className="text-slate-500 leading-relaxed">宝贵的排障经验散落在聊天记录中，不仅无法复用，更随人员流动而流失。</p>
@@ -126,7 +164,26 @@ export const ProductVisionPage = () => {
                                 <div className="relative z-10 hidden md:flex items-center justify-center w-12 h-12 rounded-full bg-white border-4 border-slate-100 shadow-lg">
                                     <div className="w-4 h-4 rounded-full bg-slate-300"></div>
                                 </div>
-                                <div className="md:w-1/2 opacity-50 text-9xl font-black text-slate-100 select-none hidden md:block">03</div>
+                                <div className="md:w-1/2 opacity-50 text-9xl font-black text-slate-100 select-none hidden md:block">05</div>
+                            </div>
+                        </FadeInSection>
+
+                        {/* Timeline Item 6: Dev Ability (New) */}
+                        <FadeInSection delay={350}>
+                            <div className="flex flex-col md:flex-row-reverse items-center justify-center gap-8 md:gap-16">
+                                <div className="md:w-1/2 flex justify-start">
+                                    <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 max-w-lg w-full group hover:border-violet-100 transition-all">
+                                        <div className="w-12 h-12 bg-violet-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                                            <Users className="w-6 h-6 text-violet-500" />
+                                        </div>
+                                        <h3 className="text-xl font-bold text-slate-800 mb-3">人员能力瓶颈</h3>
+                                        <p className="text-slate-500 leading-relaxed">系统复杂度高，过度依赖少数专家经验，新人上手慢，研发效率难以突破。</p>
+                                    </div>
+                                </div>
+                                <div className="relative z-10 hidden md:flex items-center justify-center w-12 h-12 rounded-full bg-white border-4 border-slate-100 shadow-lg">
+                                    <div className="w-4 h-4 rounded-full bg-slate-300"></div>
+                                </div>
+                                <div className="md:w-1/2 opacity-50 text-9xl font-black text-slate-100 select-none text-right hidden md:block">06</div>
                             </div>
                         </FadeInSection>
                     </div>
@@ -142,9 +199,9 @@ export const ProductVisionPage = () => {
                             <p className="text-slate-500 max-w-2xl mx-auto">以技术、智能、流程为三大引擎，重构监管运营价值链</p>
                         </div>
 
-                        <div className="grid md:grid-cols-3 gap-12 relative z-10">
-                            {/* Card 1 */}
-                            <div className="flex flex-col items-center text-center group">
+                        <div className="flex flex-wrap justify-center gap-x-12 gap-y-16 relative z-10">
+                            {/* Card 1: Automated Lineage */}
+                            <div className="w-full md:w-[30%] flex flex-col items-center text-center group">
                                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-200 mb-6 group-hover:-translate-y-2 transition-transform duration-500">
                                     <Network className="w-8 h-8 text-white" />
                                 </div>
@@ -156,8 +213,8 @@ export const ProductVisionPage = () => {
                                 </div>
                             </div>
 
-                            {/* Card 2 */}
-                            <div className="flex flex-col items-center text-center group">
+                            {/* Card 2: RAG + Agent */}
+                            <div className="w-full md:w-[30%] flex flex-col items-center text-center group">
                                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center shadow-lg shadow-teal-200 mb-6 group-hover:-translate-y-2 transition-transform duration-500">
                                     <Bot className="w-8 h-8 text-white" />
                                 </div>
@@ -169,8 +226,8 @@ export const ProductVisionPage = () => {
                                 </div>
                             </div>
 
-                            {/* Card 3 */}
-                            <div className="flex flex-col items-center text-center group">
+                            {/* Card 3: Version Control */}
+                            <div className="w-full md:w-[30%] flex flex-col items-center text-center group">
                                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg shadow-orange-200 mb-6 group-hover:-translate-y-2 transition-transform duration-500">
                                     <GitBranch className="w-8 h-8 text-white" />
                                 </div>
@@ -179,6 +236,32 @@ export const ProductVisionPage = () => {
                                 <ArrowRight className="w-5 h-5 text-orange-200 mb-6 rotate-90 md:rotate-0" />
                                 <div className="px-6 py-3 bg-orange-50 rounded-xl border border-orange-100">
                                     <span className="text-orange-700 font-bold whitespace-nowrap">100% 可追溯</span>
+                                </div>
+                            </div>
+
+                            {/* Card 4: AI Code Smart Check (New) */}
+                            <div className="w-full md:w-[30%] flex flex-col items-center text-center group">
+                                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg shadow-violet-200 mb-6 group-hover:-translate-y-2 transition-transform duration-500">
+                                    <CheckCircle2 className="w-8 h-8 text-white" />
+                                </div>
+                                <h3 className="text-lg font-bold text-slate-800 mb-2">AI 代码智查</h3>
+                                <p className="text-sm text-slate-500 mb-6 px-4">开发规范与质量智能扫描</p>
+                                <ArrowRight className="w-5 h-5 text-violet-200 mb-6 rotate-90 md:rotate-0" />
+                                <div className="px-6 py-3 bg-violet-50 rounded-xl border border-violet-100">
+                                    <span className="text-violet-700 font-bold whitespace-nowrap">开发提效 50%+</span>
+                                </div>
+                            </div>
+
+                            {/* Card 5: Intelligent Risk Assessment (New) */}
+                            <div className="w-full md:w-[30%] flex flex-col items-center text-center group">
+                                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center shadow-lg shadow-rose-200 mb-6 group-hover:-translate-y-2 transition-transform duration-500">
+                                    <ShieldAlert className="w-8 h-8 text-white" />
+                                </div>
+                                <h3 className="text-lg font-bold text-slate-800 mb-2">上线风险智能评估</h3>
+                                <p className="text-sm text-slate-500 mb-6 px-4">变更影响面精准预测</p>
+                                <ArrowRight className="w-5 h-5 text-rose-200 mb-6 rotate-90 md:rotate-0" />
+                                <div className="px-6 py-3 bg-rose-50 rounded-xl border border-rose-100">
+                                    <span className="text-rose-700 font-bold whitespace-nowrap">变更零故障</span>
                                 </div>
                             </div>
                         </div>
