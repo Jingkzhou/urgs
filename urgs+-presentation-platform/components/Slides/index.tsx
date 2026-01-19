@@ -14,6 +14,7 @@ export * from './pages/TitlePage';
 export * from './pages/TableOfContentsPage';
 export * from './pages/ChallengePage';
 export * from './pages/VisionPage';
+export * from './pages/ProductVisionPage';
 export * from './pages/AgentEcosystemFlow';
 export * from './pages/ArchitecturePage';
 export * from './pages/RAGArchitecturePage';

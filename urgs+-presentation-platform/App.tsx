@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Menu, Home, Layers, Zap, Users, PieChart, Sh
 import {
   TitlePage,
   TableOfContentsPage,
+  ProductVisionPage,
   ChallengePage,
   VisionPage,
   ArchitecturePage,
@@ -29,7 +30,8 @@ const App: React.FC = () => {
   const slides = [
     <TitlePage key="title" />,
     <TableOfContentsPage onNavigate={setCurrentSlide} />,
-    <ChallengePage key="challenge" />,
+    <ProductVisionPage key="product-vision" />,
+
     <ArchitecturePage key="arch" />,
     <VisionPage key="vision" onNavigate={setCurrentSlide} />,
 
