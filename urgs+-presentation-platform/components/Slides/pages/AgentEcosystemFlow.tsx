@@ -35,19 +35,11 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 2, title: "SQL解析", icon: <FileCode className="w-5 h-5" />, x: 380, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-violet-400 border-violet-500 bg-violet-950/50", desc: "自动提取表级/字段级依赖",
+            id: 2, title: "解析与血缘", icon: <Network className="w-5 h-5" />, x: 500, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-violet-400 border-violet-500 bg-violet-950/50", desc: "SQL解析与全链路血缘构建",
             detail: {
-                features: ["智能代码 Diff 分析", "SQL 语法树解析", "代码规范自动审计", "变更风险预评估"],
-                goals: ["自动识别业务逻辑变更", "降低人工代码审查遗漏风险", "为血缘构建提供精准输入"],
-                techStack: ["ANTLR4", "Python", "AST Parser", "JSQLParser", "正则引擎"]
-            }
-        },
-        {
-            id: 3, title: "血缘图谱", icon: <Network className="w-5 h-5" />, x: 620, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-blue-400 border-blue-500 bg-blue-950/50", desc: "构建全链路数据影响面",
-            detail: {
-                features: ["字段级血缘溯源", "上下游影响分析", "血缘引擎管理与重启", "图谱可视化展示"],
-                goals: ["秒级定位指标数据来源", "精准评估变更对下游报表的影响", "提升数据排障效率"],
-                techStack: ["Neo4j", "Cypher", "D3.js", "GraphQL", "Redis"]
+                features: ["智能代码 Diff 分析", "SQL 语法树解析", "字段级血缘溯源", "上下游影响分析"],
+                goals: ["自动识别业务逻辑变更", "构建精准数据血缘图谱", "支持秒级数据排障"],
+                techStack: ["ANTLR4", "Python", "Neo4j", "Cypher", "D3.js"]
             }
         },
         {
@@ -120,6 +112,14 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                 techStack: ["React", "Ant Design", "Flowable", "Elasticsearch"]
             }
         },
+        {
+            id: 12, title: "监管批量调度", icon: <Activity className="w-5 h-5" />, x: 1100, y: 80, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-cyan-400 border-cyan-500 bg-cyan-950/50", desc: "自动化跑批与监控",
+            detail: {
+                features: ["批量任务编排", "依赖关系管理", "执行状态监控", "异常自动告警"],
+                goals: ["确保监管数据按时产出", "自动化处理任务依赖", "实时监控批量作业状态"],
+                techStack: ["XXL-JOB", "Python", "Shell", "Prometheus"]
+            }
+        },
     ];
 
     // Qwen3 中心节点 (AI Core)
@@ -139,19 +139,21 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
         { from: 100, to: 5, tooltip: "LLM 驱动知识问答与语义向量检索" },
         { from: 100, to: 6, tooltip: "Agent 核心推理引擎与 Function Calling" },
         { from: 100, to: 9, tooltip: "AI 自动生成技术方案与工时预估" },
+        { from: 100, to: 1, tooltip: "代码智能走查，和上线风险扫描" },
     ];
 
     const connections = [
         // 技术流
-        { from: 1, to: 2 }, { from: 2, to: 3 }, { from: 3, to: 4 }, { from: 4, to: 5 },
+        { from: 1, to: 2 }, { from: 2, to: 4, label: "血缘提取" }, { from: 4, to: 5 },
         // 服务流
         { from: 5, to: 6 }, { from: 6, to: 7 },
-        { from: 11, to: 5, dashed: true, label: "FAQ Import" }, // New connection: Issue -> Knowledge
+        { from: 11, to: 5, dashed: true, label: "FAQ 沉淀" },
+        { from: 12, to: 11, dashed: true, label: "报错直转" }, // New connection: Batch Error -> Issue
         // 反馈流
-        { from: 7, to: 8, dashed: true, label: "ISSUE" },
+        { from: 7, to: 8, dashed: true, label: "问题提单" },
         { from: 8, to: 9, dashed: true },
         { from: 9, to: 10, dashed: true },
-        { from: 10, to: 1, dashed: true, label: "DEPLOY" }
+        { from: 10, to: 1, dashed: true, label: "自动部署" }
     ];
 
     // 获取节点位置 (支持拖拽后的位置)
