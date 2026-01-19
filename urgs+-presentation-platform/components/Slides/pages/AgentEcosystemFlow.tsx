@@ -6,6 +6,7 @@ import { RAGArchitecturePage } from './RAGArchitecturePage';
 import { LineagePage } from './LineagePage';
 import { ArkAssistantPage } from './ArkAssistantPage';
 import { ReleaseManagementPage } from './ReleaseManagementPage';
+import { AICodeSmartCheckPage } from './AICodeSmartCheckPage';
 
 interface AgentEcosystemFlowProps {
     onNavigate?: (index: number) => void;
@@ -41,6 +42,9 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
 
     // Release Management Modal state
     const [showReleaseModal, setShowReleaseModal] = useState(false);
+
+    // AI Code Check Modal state
+    const [showAICodeCheckModal, setShowAICodeCheckModal] = useState(false);
 
     // 专业配色方案：
     // Governance（治理层）- 蓝色 (blue): 版本管理、解析与血缘、资产管理、研发开发、监管批量调度
@@ -620,12 +624,17 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                                         </h4>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             {detailNode.detail.features.map((feat, idx) => {
-                                                const isInteractive = feat === "预发布合规 AI 智查";
+                                                const isReleaseCheck = feat === "预发布合规 AI 智查";
+                                                const isCodeCheck = feat === "AI代码智查";
+                                                const isInteractive = isReleaseCheck || isCodeCheck;
 
                                                 return (
                                                     <div
                                                         key={idx}
-                                                        onClick={() => isInteractive && setShowReleaseModal(true)}
+                                                        onClick={() => {
+                                                            if (isReleaseCheck) setShowReleaseModal(true);
+                                                            if (isCodeCheck) setShowAICodeCheckModal(true);
+                                                        }}
                                                         className={`bg-slate-50 border border-slate-100 p-4 rounded-xl transition-all group relative overflow-hidden
                                                         ${isInteractive ? 'cursor-pointer hover:border-indigo-400 hover:shadow-lg hover:shadow-indigo-500/10' : 'hover:border-indigo-100 hover:shadow-md hover:shadow-indigo-500/5'}
                                                     `}
@@ -709,6 +718,14 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             {showReleaseModal && createPortal(
                 <div className="fixed inset-0 z-[9999] bg-[#F5F5F7] animate-in fade-in duration-300 overflow-auto">
                     <ReleaseManagementPage onBack={() => setShowReleaseModal(false)} />
+                </div>,
+                document.body
+            )}
+
+            {/* AI Code Smart Check Modal - Portal to Body */}
+            {showAICodeCheckModal && createPortal(
+                <div className="fixed inset-0 z-[9999] bg-[#F5F5F7] animate-in fade-in duration-300 overflow-auto">
+                    <AICodeSmartCheckPage onBack={() => setShowAICodeCheckModal(false)} />
                 </div>,
                 document.body
             )}
