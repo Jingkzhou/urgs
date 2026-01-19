@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { ArrowLeft, Code2, X, Cpu, GitMerge, Zap, Database, Layers } from 'lucide-react';
 import { ActiveLineageGraph } from '../shared/ActiveLineageGraph';
 
@@ -7,10 +7,9 @@ interface LineagePageProps {
 }
 
 export const LineagePage = ({ onBack }: LineagePageProps) => {
-    const [showSpecs, setShowSpecs] = useState(false);
 
     return (
-        <div className="md:fixed inset-0 w-full h-full bg-slate-50 relative overflow-hidden font-sans">
+        <div className="md:fixed inset-0 w-full h-full bg-slate-50 relative overflow-hidden font-sans flex flex-row">
             {/* Floating Back Button */}
             {onBack && (
                 <button
@@ -22,56 +21,47 @@ export const LineagePage = ({ onBack }: LineagePageProps) => {
                 </button>
             )}
 
-            {/* Tech Specs Toggle Button */}
-            <button
-                onClick={() => setShowSpecs(true)}
-                className="absolute top-6 left-20 z-50 flex items-center gap-2 px-4 py-2.5 bg-white/90 hover:bg-white backdrop-blur-md border border-slate-200/60 rounded-xl shadow-lg hover:shadow-xl transition-all text-slate-600 hover:text-indigo-600 group"
-            >
-                <Code2 className="w-4 h-4" />
-                <span className="text-xs font-bold">解析引擎架构</span>
-            </button>
 
-            {/* Fullscreen Graph Area */}
-            <div className="absolute inset-0 w-full h-full bg-slate-50">
-                <ActiveLineageGraph />
-            </div>
 
-            {/* Floating Info Cards (Bottom Overlay) */}
-            <div className={`absolute bottom-8 left-0 right-0 z-40 px-8 pointer-events-none transition-opacity duration-300 ${showSpecs ? 'opacity-0' : 'opacity-100'}`}>
-                <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4 pointer-events-auto">
-                    <div className="p-4 bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl shadow-lg hover:bg-white/90 transition-colors">
-                        <div className="flex items-center gap-3 mb-1">
-                            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                            <h5 className="font-bold text-slate-800 text-sm">字段级溯源</h5>
+            {/* Left Panel: Graph & Floating Info */}
+            <div className="flex-1 relative h-full">
+                {/* Fullscreen Graph Area */}
+                <div className="absolute inset-0 w-full h-full bg-slate-50">
+                    <ActiveLineageGraph />
+                </div>
+
+                {/* Floating Info Cards (Bottom Overlay) */}
+                <div className="absolute bottom-8 left-0 right-0 z-40 px-8 pointer-events-none">
+                    <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4 pointer-events-auto">
+                        <div className="p-4 bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl shadow-lg hover:bg-white/90 transition-colors">
+                            <div className="flex items-center gap-3 mb-1">
+                                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                <h5 className="font-bold text-slate-800 text-sm">字段级溯源</h5>
+                            </div>
+                            <p className="text-[11px] text-slate-600 leading-relaxed">基于 Neo4j 图存储实现报表指标到底层字段的穿透追踪。</p>
                         </div>
-                        <p className="text-[11px] text-slate-600 leading-relaxed">基于 Neo4j 图存储实现报表指标到底层字段的穿透追踪。</p>
-                    </div>
-                    <div className="p-4 bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl shadow-lg hover:bg-white/90 transition-colors">
-                        <div className="flex items-center gap-3 mb-1">
-                            <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                            <h5 className="font-bold text-slate-800 text-sm">资产自动更新</h5>
+                        <div className="p-4 bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl shadow-lg hover:bg-white/90 transition-colors">
+                            <div className="flex items-center gap-3 mb-1">
+                                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                                <h5 className="font-bold text-slate-800 text-sm">资产自动更新</h5>
+                            </div>
+                            <p className="text-[11px] text-slate-600 leading-relaxed">定时同步物理模型，元数据与现实环境永远一致。</p>
                         </div>
-                        <p className="text-[11px] text-slate-600 leading-relaxed">定时同步物理模型，元数据与现实环境永远一致。</p>
-                    </div>
-                    <div className="p-4 bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl shadow-lg hover:bg-white/90 transition-colors">
-                        <div className="flex items-center gap-3 mb-1">
-                            <div className="w-2 h-2 rounded-full bg-violet-500"></div>
-                            <h5 className="font-bold text-slate-800 text-sm">代码值域管理</h5>
+                        <div className="p-4 bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl shadow-lg hover:bg-white/90 transition-colors">
+                            <div className="flex items-center gap-3 mb-1">
+                                <div className="w-2 h-2 rounded-full bg-violet-500"></div>
+                                <h5 className="font-bold text-slate-800 text-sm">代码值域管理</h5>
+                            </div>
+                            <p className="text-[11px] text-slate-600 leading-relaxed">维护业务标准的字典项，统一全行监管资产认知。</p>
                         </div>
-                        <p className="text-[11px] text-slate-600 leading-relaxed">维护业务标准的字典项，统一全行监管资产认知。</p>
                     </div>
                 </div>
             </div>
 
-            {/* Tech Specs Side Panel (Left Side) - Widened */}
-            <div className={`fixed inset-y-0 left-0 z-[60] w-[640px] bg-white/95 backdrop-blur-xl shadow-2xl border-r border-slate-200 transform transition-transform duration-500 ease-out ${showSpecs ? 'translate-x-0' : '-translate-x-full'}`}>
-                <div className="h-full overflow-y-auto p-8 relative">
-                    <button
-                        onClick={() => setShowSpecs(false)}
-                        className="absolute top-6 right-6 p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400 hover:text-slate-600"
-                    >
-                        <X className="w-5 h-5" />
-                    </button>
+
+            {/* Right Panel: Tech Specs (Fixed) */}
+            <div className="w-[480px] h-full bg-white/95 backdrop-blur-xl border-l border-slate-200 shadow-2xl z-50 overflow-y-auto">
+                <div className="p-8 h-full">
 
                     <div className="mb-8">
                         <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-bold uppercase tracking-wider mb-4 border border-indigo-100">
@@ -151,13 +141,6 @@ export const LineagePage = ({ onBack }: LineagePageProps) => {
                 </div>
             </div>
 
-            {/* Backdrop for Side Panel */}
-            {showSpecs && (
-                <div
-                    className="fixed inset-0 bg-black/5 z-[55] backdrop-blur-[1px] transition-opacity"
-                    onClick={() => setShowSpecs(false)}
-                />
-            )}
         </div>
     );
 };
