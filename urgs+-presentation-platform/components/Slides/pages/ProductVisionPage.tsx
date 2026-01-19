@@ -248,7 +248,7 @@ export const ProductVisionPage = () => {
                                 <p className="text-sm text-slate-500 mb-6 px-4">开发规范与质量智能扫描</p>
                                 <ArrowRight className="w-5 h-5 text-violet-200 mb-6 rotate-90 md:rotate-0" />
                                 <div className="px-6 py-3 bg-violet-50 rounded-xl border border-violet-100">
-                                    <span className="text-violet-700 font-bold whitespace-nowrap">开发提效 50%+</span>
+                                    <span className="text-violet-700 font-bold whitespace-nowrap">代码隐患 100% 识别</span>
                                 </div>
                             </div>
 
@@ -276,14 +276,21 @@ export const ProductVisionPage = () => {
 
                 {/* 4. Future Vision */}
                 <FadeInSection>
-                    <div className="text-center pb-20">
-                        <h2 className="text-3xl font-bold text-slate-900 mb-8">我们的愿景</h2>
+                    <div className="text-center pb-32">
+                        <h2 className="text-3xl font-bold text-slate-900 mb-10">我们的愿景</h2>
                         <div className="inline-block relative">
-                            <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-teal-400 rounded-lg opacity-20 blur"></div>
-                            <div className="relative bg-white px-10 py-6 rounded-lg border border-slate-100 shadow-sm">
-                                <p className="text-xl md:text-2xl font-medium text-slate-700">
-                                    让每一次监管报送都 <span className="text-indigo-600">准确</span>、<span className="text-teal-600">高效</span>、<span className="text-indigo-600">可追溯</span>
+                            <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-rose-500 rounded-2xl opacity-20 blur-lg"></div>
+                            <div className="relative bg-white/80 backdrop-blur-sm px-12 py-10 rounded-2xl border border-slate-100 shadow-xl">
+                                <p className="text-2xl md:text-4xl font-black text-slate-800 mb-6 leading-tight">
+                                    构建 <span className="text-indigo-600">代码智能</span> 与 <span className="text-rose-600">主动防御</span> 的<br className="hidden md:block" />新一代监管底座
                                 </p>
+                                <div className="flex items-center justify-center gap-4 text-slate-500 font-medium text-sm md:text-base tracking-widest uppercase">
+                                    <span>让研发更高效</span>
+                                    <span className="text-slate-300">•</span>
+                                    <span>让上线更安全</span>
+                                    <span className="text-slate-300">•</span>
+                                    <span>让运营更智慧</span>
+                                </div>
                             </div>
                         </div>
                     </div>
