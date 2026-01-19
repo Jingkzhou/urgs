@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { GitBranch, FileCode, Network, Database, BookOpen, Bot, LayoutDashboard, Lightbulb, ClipboardList, Code2, Zap, CheckCircle2, Terminal, X, ChevronRight, Activity, Cpu, Sparkles, ArrowLeft } from 'lucide-react';
 import { ActiveLineageGraph } from '../shared/ActiveLineageGraph';
+import { RAGArchitecturePage } from './RAGArchitecturePage';
 
 interface AgentEcosystemFlowProps {
     onNavigate?: (index: number) => void;
@@ -27,6 +28,9 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
 
     // Lineage Modal state
     const [showLineageModal, setShowLineageModal] = useState(false);
+
+    // RAG Modal state
+    const [showRAGModal, setShowRAGModal] = useState(false);
 
     // 专业配色方案：
     // Governance（治理层）- 蓝色 (blue): 版本管理、解析与血缘、资产管理、研发开发、监管批量调度
@@ -209,6 +213,11 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
         // 节点2（解析与血缘）直接打开血缘可视化模态
         if (id === 2) {
             setShowLineageModal(true);
+            return;
+        }
+        // 节点5（知识库）直接打开RAG架构模态
+        if (id === 5) {
+            setShowRAGModal(true);
             return;
         }
         setSelectedNode(selectedNode === id ? null : id);
@@ -692,6 +701,13 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                             </div>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* RAG Architecture Fullscreen Modal */}
+            {showRAGModal && (
+                <div className="fixed inset-0 z-[100] bg-slate-900 animate-in fade-in duration-300 overflow-auto">
+                    <RAGArchitecturePage onBack={() => setShowRAGModal(false)} />
                 </div>
             )}
         </div>

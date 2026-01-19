@@ -1,11 +1,26 @@
 import React from 'react';
 import { SlideLayout } from '../layout/SlideLayout';
-import { Database, FileText, Search, Zap, Layers, Cpu, ArrowRight, GitMerge, Filter, BrainCircuit, ScanLine } from 'lucide-react';
+import { Database, FileText, Search, Zap, Layers, Cpu, ArrowRight, GitMerge, Filter, BrainCircuit, ScanLine, ArrowLeft } from 'lucide-react';
 
-export const RAGArchitecturePage = () => {
+interface RAGArchitecturePageProps {
+    onBack?: () => void;
+}
+
+export const RAGArchitecturePage = ({ onBack }: RAGArchitecturePageProps) => {
     return (
         <SlideLayout title="URGS 高性能 RAG 系统技术架构设计与实现">
             <div className="flex flex-col h-full gap-4 relative overflow-hidden">
+                {/* Back Button - Only show when onBack is provided */}
+                {onBack && (
+                    <button
+                        onClick={onBack}
+                        className="absolute top-0 left-0 z-50 group flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl shadow-sm hover:shadow-md transition-all text-slate-300 hover:text-white"
+                    >
+                        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                        <span className="text-sm font-medium">返回生态全景</span>
+                    </button>
+                )}
+
                 {/* Background Decor */}
                 <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl -z-10 animate-pulse"></div>
 
