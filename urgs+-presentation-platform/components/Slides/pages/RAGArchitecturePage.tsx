@@ -23,12 +23,8 @@ export const RAGArchitecturePage = ({ onBack }: RAGArchitecturePageProps) => {
             {/* 2. Main Content Area */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden pt-12">
                 <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
-
                     {/* Header Section */}
                     <div className="text-center mb-10">
-                        <div className="inline-flex items-center justify-center gap-2 mb-4 px-3 py-1 bg-white border border-slate-200 rounded-full shadow-sm">
-                            <span className="text-xs font-bold text-slate-600 tracking-wider uppercase">URGS RAG 架构</span>
-                        </div>
                         <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">智能时代的知识大脑</h2>
                         <p className="text-lg text-slate-500 max-w-2xl mx-auto">
                             基于多路混合检索与父子文档架构，打造精准、可靠的监管知识问答引擎。
