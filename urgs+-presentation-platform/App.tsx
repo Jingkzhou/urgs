@@ -32,19 +32,7 @@ const App: React.FC = () => {
     <ChallengePage key="challenge" />,
     <ArchitecturePage key="arch" />,
     <VisionPage key="vision" onNavigate={setCurrentSlide} />,
-    <RAGArchitecturePage key="rag-arch" />,
-    <PillarsPage key="pillars" />,
-    <AiPillarPage key="ai" />,
-    <ArkAssistantPage key="ark" />,
-    <AiWorkflowPage key="workflow" />,
-    <AIExperiencePage key="aiexp" />,
-    <OrchestrationPage key="orch" />, /* Capability 2: Automation/Collab */
-    <DashboardPage key="dash" />,
-    <AssetPillarPage key="asset" />,  /* Capability 3: Asset */
-    <LineagePage key="lineage" />,
-    <SQLParsingDetailPage key="sql-parsing" />,
-    <ReleaseManagementPage key="release" />, /* Capability 4: Risk */
-    <RolesPage key="roles" />,
+
     <ConclusionPage key="end" />
   ];
 
