@@ -5,6 +5,7 @@ import { ActiveLineageGraph } from '../shared/ActiveLineageGraph';
 import { RAGArchitecturePage } from './RAGArchitecturePage';
 import { LineagePage } from './LineagePage';
 import { ArkAssistantPage } from './ArkAssistantPage';
+import { ReleaseManagementPage } from './ReleaseManagementPage';
 
 interface AgentEcosystemFlowProps {
     onNavigate?: (index: number) => void;
@@ -38,6 +39,9 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
     // Ark Assistant Modal state
     const [showArkModal, setShowArkModal] = useState(false);
 
+    // Release Management Modal state
+    const [showReleaseModal, setShowReleaseModal] = useState(false);
+
     // 专业配色方案：
     // Governance（治理层）- 蓝色 (blue): 版本管理、解析与血缘、资产管理、研发开发、监管批量调度
     // Knowledge（知识层）- 紫色 (violet): 知识库、智能体群、生产问题登记
@@ -48,7 +52,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
         {
             id: 1, title: "版本管理", icon: <GitBranch className="w-5 h-5" />, x: 140, y: 180, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-blue-400 border-blue-500 bg-blue-950/50", desc: "Git 代码提交触发自动化流程",
             detail: {
-                features: ["应用系统库管理", "Git 仓库多元配置", "CI/CD 流水线编排", "发布版本台账", "一键回滚发布"],
+                features: ["应用系统库管理", "Git 仓库多元配置", "CI/CD 流水线编排", "发布版本台账", "一键回滚发布", "AI代码智查", "预发布合规 AI 智查"],
                 goals: ["统一管理全行20+监管系统代码", "实现标准化、自动化的发布流程", "确保生产环境版本安全可追溯"],
                 techStack: ["GitLab", "Jenkins", "Docker", "Kubernetes", "Shell"]
             }
@@ -615,14 +619,26 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                                             <Zap className="w-3 h-3 text-amber-500" /> Core Functions
                                         </h4>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                            {detailNode.detail.features.map((feat, idx) => (
-                                                <div key={idx} className="bg-slate-50 border border-slate-100 p-4 rounded-xl hover:border-indigo-100 hover:shadow-md hover:shadow-indigo-500/5 transition-all group">
-                                                    <div className="flex items-start gap-3">
-                                                        <span className={`text-[10px] font-mono text-slate-400 mt-1 font-bold`}>0{idx + 1}</span>
-                                                        <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 transition-colors">{feat}</span>
+                                            {detailNode.detail.features.map((feat, idx) => {
+                                                const isInteractive = feat === "预发布合规 AI 智查";
+
+                                                return (
+                                                    <div
+                                                        key={idx}
+                                                        onClick={() => isInteractive && setShowReleaseModal(true)}
+                                                        className={`bg-slate-50 border border-slate-100 p-4 rounded-xl transition-all group relative overflow-hidden
+                                                        ${isInteractive ? 'cursor-pointer hover:border-indigo-400 hover:shadow-lg hover:shadow-indigo-500/10' : 'hover:border-indigo-100 hover:shadow-md hover:shadow-indigo-500/5'}
+                                                    `}
+                                                    >
+                                                        {isInteractive && <div className="absolute inset-0 bg-indigo-50/50 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />}
+                                                        <div className="flex items-start gap-3 relative z-10">
+                                                            <span className={`text-[10px] font-mono text-slate-400 mt-1 font-bold`}>0{idx + 1}</span>
+                                                            <span className={`text-sm font-semibold transition-colors ${isInteractive ? 'text-indigo-700 group-hover:text-indigo-900 underline decoration-indigo-300 decoration-2 underline-offset-4' : 'text-slate-700 group-hover:text-slate-900'}`}>{feat}</span>
+                                                            {isInteractive && <LayoutDashboard className="w-3.5 h-3.5 text-indigo-500 ml-auto mt-1" />}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            ))}
+                                                )
+                                            })}
                                         </div>
                                     </div>
 
@@ -685,6 +701,14 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             {showArkModal && createPortal(
                 <div className="fixed inset-0 z-[9999] bg-[#F5F5F7] animate-in fade-in duration-300 overflow-auto">
                     <ArkAssistantPage onBack={() => setShowArkModal(false)} />
+                </div>,
+                document.body
+            )}
+
+            {/* Release Management Fullscreen Modal - Portal to Body */}
+            {showReleaseModal && createPortal(
+                <div className="fixed inset-0 z-[9999] bg-[#F5F5F7] animate-in fade-in duration-300 overflow-auto">
+                    <ReleaseManagementPage onBack={() => setShowReleaseModal(false)} />
                 </div>,
                 document.body
             )}
