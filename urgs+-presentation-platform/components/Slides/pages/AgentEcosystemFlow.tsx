@@ -4,6 +4,7 @@ import { GitBranch, FileCode, Network, Database, BookOpen, Bot, LayoutDashboard,
 import { ActiveLineageGraph } from '../shared/ActiveLineageGraph';
 import { RAGArchitecturePage } from './RAGArchitecturePage';
 import { LineagePage } from './LineagePage';
+import { ArkAssistantPage } from './ArkAssistantPage';
 
 interface AgentEcosystemFlowProps {
     onNavigate?: (index: number) => void;
@@ -33,6 +34,9 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
 
     // RAG Modal state
     const [showRAGModal, setShowRAGModal] = useState(false);
+
+    // Ark Assistant Modal state
+    const [showArkModal, setShowArkModal] = useState(false);
 
     // 专业配色方案：
     // Governance（治理层）- 蓝色 (blue): 版本管理、解析与血缘、资产管理、研发开发、监管批量调度
@@ -220,6 +224,11 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
         // 节点5（知识库）直接打开RAG架构模态
         if (id === 5) {
             setShowRAGModal(true);
+            return;
+        }
+        // 节点6（智能体群）直接打开Ark助手模态
+        if (id === 6) {
+            setShowArkModal(true);
             return;
         }
         setSelectedNode(selectedNode === id ? null : id);
@@ -678,6 +687,14 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             {showRAGModal && createPortal(
                 <div className="fixed inset-0 z-[9999] bg-[#F5F5F7] animate-in fade-in duration-300 overflow-auto">
                     <RAGArchitecturePage onBack={() => setShowRAGModal(false)} />
+                </div>,
+                document.body
+            )}
+
+            {/* Ark Assistant Fullscreen Modal - Portal to Body */}
+            {showArkModal && createPortal(
+                <div className="fixed inset-0 z-[9999] bg-[#F5F5F7] animate-in fade-in duration-300 overflow-auto">
+                    <ArkAssistantPage onBack={() => setShowArkModal(false)} />
                 </div>,
                 document.body
             )}

@@ -9,30 +9,27 @@ interface RAGArchitecturePageProps {
 export const RAGArchitecturePage = ({ onBack }: RAGArchitecturePageProps) => {
     return (
         <div className="w-full h-full bg-[#F5F5F7] text-slate-900 font-sans relative flex flex-col overflow-hidden">
-            {/* 1. Top Navigation Bar (Fixed/Sticky behavior visual) */}
-            <div className="flex-none px-6 py-4 bg-white/80 backdrop-blur-md border-b border-slate-200 z-50 flex items-center justify-between sticky top-0">
-                <div className="flex items-center gap-4">
-                    {onBack && (
-                        <button
-                            onClick={onBack}
-                            className="group flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-sm hover:shadow transition-all text-slate-600 hover:text-slate-900"
-                        >
-                            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-                            <span className="text-sm font-medium">返回</span>
-                        </button>
-                    )}
-                    <h1 className="text-xl font-semibold text-slate-900 tracking-tight">URGS RAG 架构</h1>
-                </div>
-                <div className="text-sm text-slate-500 font-medium">高性能检索生成系统</div>
-            </div>
+            {/* Floating Back Button */}
+            {onBack && (
+                <button
+                    onClick={onBack}
+                    className="absolute top-6 left-6 z-50 p-2.5 bg-white/90 hover:bg-white backdrop-blur-md border border-slate-200/60 rounded-xl shadow-lg hover:shadow-xl transition-all text-slate-600 hover:text-slate-900 group"
+                    title="返回生态全景"
+                >
+                    <ArrowLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform" />
+                </button>
+            )}
 
             {/* 2. Main Content Area */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden pt-12">
                 <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
 
                     {/* Header Section */}
                     <div className="text-center mb-10">
-                        <h2 className="text-3xl font-bold text-slate-900 mb-3">智能时代的知识大脑</h2>
+                        <div className="inline-flex items-center justify-center gap-2 mb-4 px-3 py-1 bg-white border border-slate-200 rounded-full shadow-sm">
+                            <span className="text-xs font-bold text-slate-600 tracking-wider uppercase">URGS RAG 架构</span>
+                        </div>
+                        <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">智能时代的知识大脑</h2>
                         <p className="text-lg text-slate-500 max-w-2xl mx-auto">
                             基于多路混合检索与父子文档架构，打造精准、可靠的监管知识问答引擎。
                         </p>
