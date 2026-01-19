@@ -1,18 +1,33 @@
-import React, { useState } from 'react';
-import { GitBranch, FileCode, Network, Database, BookOpen, Bot, LayoutDashboard, Lightbulb, ClipboardList, Code2, Zap, CheckCircle2, Terminal, X, ChevronRight } from 'lucide-react';
+import React, { useState, useRef, useCallback } from 'react';
+import { GitBranch, FileCode, Network, Database, BookOpen, Bot, LayoutDashboard, Lightbulb, ClipboardList, Code2, Zap, CheckCircle2, Terminal, X, ChevronRight, Activity, Cpu, Sparkles } from 'lucide-react';
 
 interface AgentEcosystemFlowProps {
     onNavigate?: (index: number) => void;
+}
+
+interface NodePosition {
+    x: number;
+    y: number;
 }
 
 export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
     const [activeNode, setActiveNode] = useState<number | null>(null);
     const [selectedNode, setSelectedNode] = useState<number | null>(null);
 
+    // Drag state
+    const [nodePositions, setNodePositions] = useState<Record<number, NodePosition>>({});
+    const [draggingNode, setDraggingNode] = useState<number | null>(null);
+    const dragOffset = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    // Tooltip state
+    const [hoveredConnection, setHoveredConnection] = useState<number | null>(null);
+    const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
     const nodes = [
-        // 技术驱动闭环
+        // 技术驱动闭环 (Top Row)
         {
-            id: 1, title: "版本管理", icon: <GitBranch className="w-5 h-5" />, x: 100, y: 100, color: "bg-slate-600", desc: "Git 代码提交触发自动化流程",
+            id: 1, title: "版本管理", icon: <GitBranch className="w-5 h-5" />, x: 150, y: 100, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-cyan-400 border-cyan-500 bg-cyan-950/50", desc: "Git 代码提交触发自动化流程",
             detail: {
                 features: ["应用系统库管理", "Git 仓库多元配置", "CI/CD 流水线编排", "发布版本台账", "一键回滚发布"],
                 goals: ["统一管理全行20+监管系统代码", "实现标准化、自动化的发布流程", "确保生产环境版本安全可追溯"],
@@ -20,7 +35,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 2, title: "SQL解析", icon: <FileCode className="w-5 h-5" />, x: 350, y: 100, color: "bg-indigo-600", desc: "自动提取表级/字段级依赖",
+            id: 2, title: "SQL解析", icon: <FileCode className="w-5 h-5" />, x: 380, y: 70, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-violet-400 border-violet-500 bg-violet-950/50", desc: "自动提取表级/字段级依赖",
             detail: {
                 features: ["智能代码 Diff 分析", "SQL 语法树解析", "代码规范自动审计", "变更风险预评估"],
                 goals: ["自动识别业务逻辑变更", "降低人工代码审查遗漏风险", "为血缘构建提供精准输入"],
@@ -28,7 +43,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 3, title: "血缘图谱", icon: <Network className="w-5 h-5" />, x: 600, y: 100, color: "bg-blue-600", desc: "构建全链路数据影响面",
+            id: 3, title: "血缘图谱", icon: <Network className="w-5 h-5" />, x: 620, y: 70, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-blue-400 border-blue-500 bg-blue-950/50", desc: "构建全链路数据影响面",
             detail: {
                 features: ["字段级血缘溯源", "上下游影响分析", "血缘引擎管理与重启", "图谱可视化展示"],
                 goals: ["秒级定位指标数据来源", "精准评估变更对下游报表的影响", "提升数据排障效率"],
@@ -36,7 +51,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 4, title: "资产管理", icon: <Database className="w-5 h-5" />, x: 850, y: 100, color: "bg-cyan-600", desc: "关联监管指标与业务元数据",
+            id: 4, title: "资产管理", icon: <Database className="w-5 h-5" />, x: 850, y: 100, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-emerald-400 border-emerald-500 bg-emerald-950/50", desc: "关联监管指标与业务元数据",
             detail: {
                 features: ["物理模型同步", "监管与代码资产维护", "报表与字段定义管理", "数据字典统一管理"],
                 goals: ["实现监管业务语言与技术语言的映射", "确保元数据与生产环境实时一致", "沉淀核心数据资产"],
@@ -44,9 +59,9 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
 
-        // 知识沉淀
+        // 知识沉淀 (Right)
         {
-            id: 5, title: "知识库", icon: <BookOpen className="w-5 h-5" />, x: 850, y: 260, color: "bg-teal-600", desc: "RAG 向量化存储规则与发文",
+            id: 5, title: "知识库", icon: <BookOpen className="w-5 h-5" />, x: 920, y: 280, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-teal-400 border-teal-500 bg-teal-950/50", desc: "RAG 向量化存储规则与发文",
             detail: {
                 features: ["文档与文件夹管理", "多维标签体系", "非结构化文档解析", "知识切片与向量化"],
                 goals: ["构建监管领域的私有知识大脑", "将离散文档转化为可检索智慧", "支撑智能体精准问答"],
@@ -54,9 +69,9 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
 
-        // 智能服务
+        // 智能服务 (Bottom Right)
         {
-            id: 6, title: "智能体群", icon: <Bot className="w-5 h-5" />, x: 600, y: 260, color: "bg-amber-500", desc: "多场景专业 Agent 实时辅助",
+            id: 6, title: "智能体群", icon: <Bot className="w-5 h-5" />, x: 850, y: 460, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-amber-400 border-amber-500 bg-amber-950/50", desc: "多场景专业 Agent 实时辅助",
             detail: {
                 features: ["Agent 创建与编排", "API 能力挂载管理", "1104/EAST 填报助手", "合规审计机器人"],
                 goals: ["将专家经验固化为数字员工", "7x24小时响应业务咨询", "自动化执行重复性合规检查"],
@@ -64,7 +79,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 7, title: "业务报送", icon: <LayoutDashboard className="w-5 h-5" />, x: 350, y: 260, color: "bg-rose-500", desc: "1104/EAST 数据填报工作台",
+            id: 7, title: "业务报送", icon: <LayoutDashboard className="w-5 h-5" />, x: 620, y: 490, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-rose-400 border-rose-500 bg-rose-950/50", desc: "1104/EAST 数据填报工作台",
             detail: {
                 features: ["统一数据填报入口", "批量监控与状态总览", "报表数据校验", "异常数据预警"],
                 goals: ["提升报送数据准确性与及时性", "降低业务人员操作门槛", "实现报送全流程可视可控"],
@@ -72,9 +87,9 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
 
-        // 业务反馈闭环
+        // 业务反馈闭环 (Bottom Left)
         {
-            id: 8, title: "业务提需", icon: <Lightbulb className="w-5 h-5" />, x: 350, y: 420, color: "bg-orange-500", desc: "发现口径差异或新规要求",
+            id: 8, title: "业务提需", icon: <Lightbulb className="w-5 h-5" />, x: 380, y: 490, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-orange-400 border-orange-500 bg-orange-950/50", desc: "发现口径差异或新规要求",
             detail: {
                 features: ["生产问题在线登记", "口径疑问快速提交", "新规需求结构化录入"],
                 goals: ["打通业务与技术的沟通壁垒", "快速响应监管新规变化", "实现需求全生命周期管理"],
@@ -82,7 +97,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 9, title: "需求评审", icon: <ClipboardList className="w-5 h-5" />, x: 100, y: 420, color: "bg-violet-500", desc: "技术方案与可行性分析",
+            id: 9, title: "需求评审", icon: <ClipboardList className="w-5 h-5" />, x: 150, y: 460, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-purple-400 border-purple-500 bg-purple-950/50", desc: "技术方案与可行性分析",
             detail: {
                 features: ["需求可行性分析", "技术方案自动生成", "工时预估参考", "变更影响面确认"],
                 goals: ["辅助技术团队快速制定方案", "确保需求理解一致性", "规避潜在技术风险"],
@@ -90,7 +105,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
             }
         },
         {
-            id: 10, title: "研发开发", icon: <Code2 className="w-5 h-5" />, x: 100, y: 260, color: "bg-purple-600", desc: "代码实现与测试",
+            id: 10, title: "研发开发", icon: <Code2 className="w-5 h-5" />, x: 80, y: 280, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-indigo-400 border-indigo-500 bg-indigo-950/50", desc: "代码实现与测试",
             detail: {
                 features: ["研发工作台", "API 开发与调试", "错误日志分析", "流水线运行监控"],
                 goals: ["提升开发与测试效率", "保障代码交付质量", "闭环响应业务提出的新需求"],
@@ -99,360 +114,486 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
         },
     ];
 
+    // Qwen3 中心节点 (AI Core)
+    const qwen3Node = {
+        id: 100,
+        title: "Qwen3",
+        icon: <Sparkles className="w-6 h-6" />,
+        x: 500,
+        y: 280,
+        desc: "通义千问大模型 · 智能核心",
+        isAICore: true
+    };
+
+    // AI 连接 (从 Qwen3 到使用 AI 的模块)
+    const aiConnections = [
+        { from: 100, to: 2, tooltip: "AI 辅助代码规范审计与风险预评估" },
+        { from: 100, to: 5, tooltip: "LLM 驱动知识问答与语义向量检索" },
+        { from: 100, to: 6, tooltip: "Agent 核心推理引擎与 Function Calling" },
+        { from: 100, to: 9, tooltip: "AI 自动生成技术方案与工时预估" },
+    ];
+
     const connections = [
         // 技术流
         { from: 1, to: 2 }, { from: 2, to: 3 }, { from: 3, to: 4 }, { from: 4, to: 5 },
         // 服务流
         { from: 5, to: 6 }, { from: 6, to: 7 },
         // 反馈流
-        { from: 7, to: 8, dashed: true, label: "发现问题" },
+        { from: 7, to: 8, dashed: true, label: "ISSUE" },
         { from: 8, to: 9, dashed: true },
         { from: 9, to: 10, dashed: true },
-        { from: 10, to: 1, dashed: true, label: "发布" }
+        { from: 10, to: 1, dashed: true, label: "DEPLOY" }
     ];
 
+    // 获取节点位置 (支持拖拽后的位置)
+    const getNodePos = useCallback((id: number) => {
+        if (id === 100) {
+            return nodePositions[100] || { x: qwen3Node.x, y: qwen3Node.y };
+        }
+        const node = nodes.find(n => n.id === id);
+        if (!node) return { x: 0, y: 0 };
+        return nodePositions[id] || { x: node.x, y: node.y };
+    }, [nodePositions, nodes]);
+
+    // 拖拽处理
+    const handleDragStart = useCallback((id: number, e: React.MouseEvent) => {
+        if (selectedNode) return; // 模态框打开时不允许拖拽
+        e.preventDefault();
+        const pos = getNodePos(id);
+        dragOffset.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
+        setDraggingNode(id);
+    }, [getNodePos, selectedNode]);
+
+    const handleDrag = useCallback((e: React.MouseEvent) => {
+        if (draggingNode === null || !containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const newX = Math.max(0, Math.min(e.clientX - dragOffset.current.x, rect.width - 80));
+        const newY = Math.max(60, Math.min(e.clientY - dragOffset.current.y, rect.height - 100));
+        setNodePositions(prev => ({ ...prev, [draggingNode]: { x: newX, y: newY } }));
+    }, [draggingNode]);
+
+    const handleDragEnd = useCallback(() => {
+        setDraggingNode(null);
+    }, []);
+
     const handleNodeClick = (id: number) => {
+        if (draggingNode !== null) return;
         setSelectedNode(selectedNode === id ? null : id);
     };
 
     return (
-        <div className="relative w-full h-full bg-gradient-to-br from-slate-50 via-white to-slate-100 rounded-3xl border border-slate-200 p-8 overflow-hidden flex">
-            {/* 科技感背景装饰 - 浅色版 */}
+        <div
+            ref={containerRef}
+            className="relative w-full h-full bg-slate-50 rounded-3xl border border-slate-200 p-8 overflow-hidden flex font-sans selection:bg-indigo-500/30"
+            onMouseMove={handleDrag}
+            onMouseUp={handleDragEnd}
+            onMouseLeave={handleDragEnd}
+        >
+            {/* Clean Future Background */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                {/* 网格背景 */}
+                {/* Grid */}
                 <div className="absolute inset-0 opacity-[0.03]"
-                    style={{ backgroundImage: 'linear-gradient(#4f46e5 1px, transparent 1px), linear-gradient(to right, #4f46e5 1px, transparent 1px)', backgroundSize: '40px 40px' }}>
+                    style={{
+                        backgroundImage: `linear-gradient(#4f46e5 1px, transparent 1px),
+                                        linear-gradient(to right, #4f46e5 1px, transparent 1px)`,
+                        backgroundSize: '40px 40px'
+                    }}>
                 </div>
-                {/* 辉光效果 */}
-                <div className="absolute top-[20%] left-[30%] w-[400px] h-[400px] bg-indigo-500/5 rounded-full blur-[100px] animate-pulse"></div>
-                <div className="absolute bottom-[20%] right-[30%] w-[300px] h-[300px] bg-cyan-500/5 rounded-full blur-[80px] animate-pulse" style={{ animationDelay: '1s' }}></div>
+
+                {/* Subtle Light Beams */}
+                <div className="absolute inset-0 bg-gradient-to-b from-white via-white/0 to-white/80 h-full w-full"></div>
+
+                {/* Glow Orbs - Muted for Light Mode */}
+                <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-indigo-200/40 rounded-full blur-[100px] mix-blend-multiply animate-pulse"></div>
+                <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-cyan-200/40 rounded-full blur-[100px] mix-blend-multiply animate-pulse" style={{ animationDelay: '2s' }}></div>
             </div>
 
-            {/* 浮动顶部标题栏 */}
-            <div className="absolute top-6 left-8 right-8 z-30 flex items-center justify-between">
+            {/* Header HUD - Light */}
+            <div className="absolute top-6 left-8 right-8 z-30 flex items-center justify-between pointer-events-none">
                 <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                        <Bot className="w-5 h-5 text-white" />
+                    <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shadow-xl shadow-indigo-100 relative overflow-hidden group">
+                        <div className="absolute inset-0 bg-indigo-50/50"></div>
+                        <Bot className="w-6 h-6 text-indigo-600 relative z-10" />
                     </div>
                     <div>
-                        <h2 className="text-xl font-black text-slate-900 tracking-tight">URGS+ 智能体生态闭环</h2>
-                        <p className="text-xs text-slate-500 font-mono uppercase tracking-wider">AI Agent Ecosystem · Closed-Loop Architecture</p>
+                        <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                            URGS<span className="text-indigo-600">+</span>
+                            <span className="text-xs font-mono font-medium text-slate-500 px-2 py-0.5 border border-slate-200 rounded-full bg-white">v2.4.0</span>
+                        </h2>
+                        <p className="text-[10px] text-slate-500 font-mono uppercase tracking-[0.2em] font-bold">Autonomous Agent System • Active</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-3">
-                    <div className="px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 text-[10px] font-mono uppercase flex items-center gap-2">
+                <div className="flex items-center gap-4">
+                    <div className="flex flex-col items-end">
+                        <div className="text-[10px] font-mono text-slate-400 uppercase font-bold">System Load</div>
+                        <div className="w-24 h-1.5 bg-slate-200 rounded-full mt-1 overflow-hidden">
+                            <div className="h-full bg-emerald-500 w-[72%] shadow-[0_0_10px_rgba(16,185,129,0.3)]"></div>
+                        </div>
+                    </div>
+                    <div className="px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 text-[10px] font-mono uppercase flex items-center gap-2 font-bold shadow-sm">
                         <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                        System Active
+                        Online
                     </div>
                 </div>
             </div>
 
-            {/* 流程图区域 */}
-            <div className={`relative transition-all duration-500 ease-in-out ${selectedNode ? 'w-2/3' : 'w-full'} pt-16`}>
-                {/* 动态连接线 SVG */}
-                <svg className="absolute inset-0 w-full h-full pointer-events-none">
+            {/* Diagram Area */}
+            <div className={`relative w-full h-full transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] ${selectedNode ? 'scale-90 opacity-40 blur-sm translate-x-[-10%]' : 'scale-100 opacity-100'}`}>
+                <svg className="absolute inset-0 w-full h-full overflow-visible" style={{ pointerEvents: 'none' }}>
                     <defs>
-                        <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <linearGradient id="cyberLine" x1="0%" y1="0%" x2="100%" y2="0%">
                             <stop offset="0%" stopColor="#818cf8" />
-                            <stop offset="100%" stopColor="#22d3ee" />
+                            <stop offset="50%" stopColor="#22d3ee" />
+                            <stop offset="100%" stopColor="#818cf8" />
                         </linearGradient>
-                        <linearGradient id="feedbackGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                            <stop offset="0%" stopColor="#f97316" />
+                        <linearGradient id="cyberLineDashe" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stopColor="#fb923c" />
+                            <stop offset="50%" stopColor="#f87171" />
                             <stop offset="100%" stopColor="#fb923c" />
                         </linearGradient>
-                        <filter id="glow-line" x="-50%" y="-50%" width="200%" height="200%">
-                            <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+                        <linearGradient id="aiLine" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stopColor="#a855f7" />
+                            <stop offset="50%" stopColor="#ec4899" />
+                            <stop offset="100%" stopColor="#a855f7" />
+                        </linearGradient>
+                        <filter id="soft-glow" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur stdDeviation="2" result="coloredBlur" />
                             <feMerge>
                                 <feMergeNode in="coloredBlur" />
                                 <feMergeNode in="SourceGraphic" />
                             </feMerge>
                         </filter>
-                        <filter id="particle-glow">
-                            <feGaussianBlur stdDeviation="2" result="blur" />
-                            <feMerge>
-                                <feMergeNode in="blur" />
-                                <feMergeNode in="SourceGraphic" />
-                            </feMerge>
-                        </filter>
-                        <marker id="arrowhead-tech" markerWidth="8" markerHeight="6" refX="24" refY="3" orient="auto">
-                            <polygon points="0 0, 8 3, 0 6" fill="#818cf8" />
-                        </marker>
-                        <marker id="arrowhead-feedback" markerWidth="8" markerHeight="6" refX="24" refY="3" orient="auto">
-                            <polygon points="0 0, 8 3, 0 6" fill="#f97316" />
-                        </marker>
                     </defs>
                     {connections.map((conn, i) => {
-                        const startNode = nodes.find(n => n.id === conn.from)!;
-                        const endNode = nodes.find(n => n.id === conn.to)!;
+                        const startPos = getNodePos(conn.from);
+                        const endPos = getNodePos(conn.to);
                         const isFeedback = conn.dashed;
 
-                        // 计算起点和终点
-                        const x1 = startNode.x + 32;
-                        const y1 = startNode.y + 32;
-                        const x2 = endNode.x + 32;
-                        const y2 = endNode.y + 32;
+                        const x1 = startPos.x + 32;
+                        const y1 = startPos.y + 32;
+                        const x2 = endPos.x + 32;
+                        const y2 = endPos.y + 32;
 
-                        // 计算贝塞尔曲线控制点
                         const dx = x2 - x1;
                         const dy = y2 - y1;
                         const midX = (x1 + x2) / 2;
                         const midY = (y1 + y2) / 2;
 
-                        // 根据连接方向计算控制点偏移
-                        let cx, cy;
-                        if (Math.abs(dx) > Math.abs(dy)) {
-                            // 水平为主的连接 - 控制点垂直偏移
-                            cx = midX;
-                            cy = midY - Math.abs(dx) * 0.15;
-                        } else {
-                            // 垂直为主的连接 - 控制点水平偏移
-                            cx = midX + Math.abs(dy) * 0.2;
-                            cy = midY;
-                        }
+                        // Calculate center point for label (middle of the line)
+                        // For straight lines, path is simply M start L end
+                        const pathD = `M ${x1},${y1} L ${x2},${y2}`;
 
-                        // 构建贝塞尔曲线路径
-                        const pathD = `M ${x1},${y1} Q ${cx},${cy} ${x2},${y2}`;
+                        // Center point for label
+                        const cx = midX;
+                        const cy = midY;
 
                         return (
                             <g key={i}>
+                                {/* Base line */}
                                 <path
                                     d={pathD}
                                     fill="none"
-                                    stroke={isFeedback ? "url(#feedbackGradient)" : "url(#lineGradient)"}
+                                    stroke={isFeedback ? "#fb923c" : "#6366f1"}
                                     strokeWidth="2"
-                                    strokeDasharray={isFeedback ? "6,4" : ""}
-                                    strokeOpacity="0.7"
-                                    markerEnd={isFeedback ? "url(#arrowhead-feedback)" : "url(#arrowhead-tech)"}
-                                    filter="url(#glow-line)"
+                                    strokeOpacity="0.1"
                                 />
+                                {/* Active Line */}
+                                <path
+                                    d={pathD}
+                                    fill="none"
+                                    stroke={isFeedback ? "url(#cyberLineDashe)" : "url(#cyberLine)"}
+                                    strokeWidth="2"
+                                    strokeDasharray={isFeedback ? "4,4" : ""}
+                                    className="animate-[pulse_3s_ease-in-out_infinite]"
+                                />
+                                {/* Label background */}
+                                {conn.label && (
+                                    <rect
+                                        x={cx - 22}
+                                        y={cy + 5}
+                                        width="44"
+                                        height="16"
+                                        rx="4"
+                                        fill="white"
+                                        stroke={isFeedback ? "#fed7aa" : "#c7d2fe"}
+                                        strokeWidth="1"
+                                        className="shadow-sm"
+                                    />
+                                )}
                                 {conn.label && (
                                     <text
                                         x={cx}
-                                        y={cy + 15}
-                                        fill="#64748b"
-                                        fontSize="10"
+                                        y={cy + 16}
+                                        fill={isFeedback ? "#f97316" : "#6366f1"}
+                                        fontSize="9"
                                         textAnchor="middle"
                                         fontFamily="monospace"
-                                        className="uppercase"
+                                        className="uppercase tracking-wider font-bold"
                                     >
                                         {conn.label}
                                     </text>
                                 )}
-                                {/* 发光粒子 - 沿曲线路径移动 */}
-                                <circle r="5" fill={isFeedback ? "#fb923c" : "#818cf8"} filter="url(#particle-glow)">
+                                {/* Moving Particle (Darker for visibility) */}
+                                <circle r="3" fill={isFeedback ? "#ea580c" : "#4f46e5"}>
                                     <animateMotion
-                                        dur={isFeedback ? "4s" : "2.5s"}
+                                        dur={isFeedback ? "5s" : "3s"}
                                         repeatCount="indefinite"
                                         path={pathD}
+                                        keyPoints="0;1"
+                                        keyTimes="0;1"
+                                        calcMode="linear"
                                     />
                                 </circle>
-                                <circle r="3" fill="#fff">
-                                    <animateMotion
-                                        dur={isFeedback ? "4s" : "2.5s"}
-                                        repeatCount="indefinite"
-                                        path={pathD}
-                                    />
+                            </g>
+                        );
+                    })}
+
+                    {/* AI Connections (Qwen3 -> Modules) */}
+                    {aiConnections.map((conn, i) => {
+                        const startPos = getNodePos(conn.from);
+                        const endPos = getNodePos(conn.to);
+
+                        const x1 = startPos.x + 40;
+                        const y1 = startPos.y + 40;
+                        const x2 = endPos.x + 32;
+                        const y2 = endPos.y + 32;
+
+                        const midX = (x1 + x2) / 2;
+                        const midY = (y1 + y2) / 2;
+                        const pathD = `M ${x1},${y1} L ${x2},${y2}`;
+
+                        return (
+                            <g key={`ai-${i}`}>
+                                {/* Base glow */}
+                                <path d={pathD} fill="none" stroke="#a855f7" strokeWidth="4" strokeOpacity="0.1" />
+                                {/* Main line */}
+                                <path d={pathD} fill="none" stroke="url(#aiLine)" strokeWidth="2" strokeDasharray="6,3" className="animate-[pulse_2s_ease-in-out_infinite]" />
+                                {/* Hover hitbox */}
+                                <path
+                                    d={pathD}
+                                    fill="none"
+                                    stroke="transparent"
+                                    strokeWidth="16"
+                                    style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                                    onMouseEnter={(e) => { setHoveredConnection(i); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
+                                    onMouseMove={(e) => setTooltipPos({ x: e.clientX, y: e.clientY })}
+                                    onMouseLeave={() => setHoveredConnection(null)}
+                                />
+                                {/* Particle */}
+                                <circle r="4" fill="#ec4899">
+                                    <animateMotion dur="2s" repeatCount="indefinite" path={pathD} keyPoints="0;1" keyTimes="0;1" calcMode="linear" />
                                 </circle>
                             </g>
                         );
                     })}
                 </svg>
 
-                {/* 节点渲染 - 科技风格 */}
-                {nodes.map((node, idx) => (
-                    <div
-                        key={node.id}
-                        className={`absolute flex flex-col items-center gap-3 cursor-pointer transition-all duration-300 group ${activeNode === node.id || selectedNode === node.id ? 'scale-110 z-20' : 'z-10'} ${selectedNode && selectedNode !== node.id ? 'opacity-30' : 'opacity-100'}`}
-                        style={{ left: node.x, top: node.y, animationDelay: `${idx * 100}ms` }}
-                        onMouseEnter={() => setActiveNode(node.id)}
-                        onMouseLeave={() => setActiveNode(null)}
-                        onClick={() => handleNodeClick(node.id)}
-                    >
-                        {/* 节点容器 - 六边形发光风格 */}
-                        <div className="relative">
-                            {/* 外围光环 */}
-                            <div className={`absolute -inset-2 rounded-2xl bg-gradient-to-b ${node.color.replace('bg-', 'from-')}/30 to-transparent blur-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500`}></div>
+                {nodes.map((node, idx) => {
+                    const isActive = activeNode === node.id;
+                    const isSelected = selectedNode === node.id;
+                    const pos = getNodePos(node.id);
+                    const colorMatch = node.activeColor.match(/text-([a-z]+)-400/);
+                    const colorName = colorMatch ? colorMatch[1] : 'indigo';
 
-                            {/* 主节点 */}
-                            <div
-                                className={`relative w-16 h-16 ${node.color} text-white flex items-center justify-center shadow-lg transition-all duration-300 group-hover:shadow-2xl`}
-                                style={{ clipPath: 'polygon(10% 0%, 90% 0%, 100% 50%, 90% 100%, 10% 100%, 0% 50%)' }}
-                            >
-                                {/* 内部光效 */}
-                                <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/10 to-white/20 pointer-events-none"></div>
-                                {/* 图标 */}
+                    return (
+                        <div
+                            key={node.id}
+                            className={`absolute flex flex-col items-center cursor-grab group z-10 transition-all ${draggingNode === node.id ? 'cursor-grabbing z-50' : ''} ${isSelected ? 'scale-110' : ''}`}
+                            style={{ left: pos.x, top: pos.y, transition: draggingNode === node.id ? 'none' : 'all 0.3s' }}
+                            onMouseDown={(e) => handleDragStart(node.id, e)}
+                            onMouseEnter={() => !draggingNode && setActiveNode(node.id)}
+                            onMouseLeave={() => setActiveNode(null)}
+                            onClick={() => handleNodeClick(node.id)}
+                        >
+                            <div className="relative w-16 h-16 flex items-center justify-center">
+                                <div className={`absolute inset-0 transition-all duration-300 rounded-2xl rotate-45 group-hover:rotate-0
+                                    ${isActive || isSelected
+                                        ? `bg-${colorName}-500 shadow-xl shadow-${colorName}-500/30 scale-110`
+                                        : 'bg-white shadow-lg shadow-slate-200 border border-slate-100'}`}
+                                ></div>
                                 <div className="relative z-10">
-                                    {React.cloneElement(node.icon as React.ReactElement, { className: "w-6 h-6" })}
+                                    {React.cloneElement(node.icon as React.ReactElement, {
+                                        className: `w-7 h-7 transition-all duration-300 ${isActive || isSelected ? 'text-white' : `text-${colorName}-600`}`
+                                    })}
                                 </div>
+                                <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${isActive || isSelected ? 'bg-emerald-400' : 'bg-slate-300'} transition-colors shadow-sm`}></div>
                             </div>
-
-                            {/* 能量指示器 */}
-                            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-slate-200 overflow-hidden">
-                                <div className={`h-full ${node.color} animate-pulse`} style={{ width: '100%' }}></div>
+                            <div className={`mt-5 px-4 py-1.5 rounded-full backdrop-blur-md transition-all duration-300 font-bold text-[11px] shadow-sm tracking-wide
+                                ${isActive || isSelected
+                                    ? `bg-${colorName}-600 text-white shadow-lg shadow-${colorName}-500/30`
+                                    : 'bg-white/90 text-slate-600 border border-slate-200'}`}
+                            >
+                                {node.title}
                             </div>
-
-                            {/* 选中指示器 */}
-                            {selectedNode === node.id && (
-                                <div className="absolute -inset-3 rounded-2xl border-2 border-cyan-400/50 animate-pulse"></div>
-                            )}
                         </div>
+                    );
+                })}
 
-                        {/* 标签 */}
-                        <span className="text-[10px] font-mono font-bold text-slate-600 bg-white/90 px-3 py-1 rounded-full backdrop-blur-sm border border-slate-200 uppercase tracking-wider group-hover:text-indigo-600 group-hover:border-indigo-300 transition-colors shadow-sm">
-                            {node.title}
-                        </span>
-
-                        {/* 悬浮简要提示 (未选中时显示) */}
-                        {!selectedNode && (
-                            <div className={`absolute top-24 w-52 bg-white/95 backdrop-blur-md p-4 rounded-xl shadow-2xl border border-slate-200 text-xs transition-all duration-300 pointer-events-none ${activeNode === node.id ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'}`}>
-                                <div className="flex items-center gap-2 mb-2">
-                                    <div className={`w-2 h-2 rounded-full ${node.color} animate-pulse`}></div>
-                                    <span className="font-mono font-bold text-slate-800 uppercase tracking-wide">{node.title}</span>
-                                </div>
-                                <p className="text-slate-600 leading-relaxed">{node.desc}</p>
-                                <div className="mt-3 pt-2 border-t border-slate-200 text-indigo-600 font-mono text-[9px]">
-                                    CLICK FOR DETAILS →
-                                </div>
+                {/* Qwen3 Central AI Node */}
+                {(() => {
+                    const pos = getNodePos(100);
+                    const isActive = activeNode === 100;
+                    return (
+                        <div
+                            className={`absolute flex flex-col items-center cursor-grab group z-20 ${draggingNode === 100 ? 'cursor-grabbing z-50' : ''}`}
+                            style={{ left: pos.x, top: pos.y, transition: draggingNode === 100 ? 'none' : 'all 0.3s' }}
+                            onMouseDown={(e) => handleDragStart(100, e)}
+                            onMouseEnter={() => !draggingNode && setActiveNode(100)}
+                            onMouseLeave={() => setActiveNode(null)}
+                        >
+                            <div className="relative w-20 h-20 flex items-center justify-center">
+                                {/* Pulsing rings */}
+                                <div className="absolute inset-0 rounded-full bg-gradient-to-br from-violet-500 to-pink-500 opacity-20 animate-ping"></div>
+                                <div className="absolute inset-1 rounded-full bg-gradient-to-br from-violet-500 to-pink-500 opacity-30 animate-pulse"></div>
+                                {/* Main orb */}
+                                <div className={`absolute inset-2 rounded-full bg-gradient-to-br from-violet-600 to-pink-600 shadow-xl shadow-violet-500/50 transition-transform ${isActive ? 'scale-110' : ''}`}></div>
+                                <Sparkles className="w-8 h-8 text-white relative z-10" />
                             </div>
-                        )}
+                            <div className={`mt-4 px-5 py-2 rounded-full font-black text-xs tracking-wider transition-all
+                                ${isActive ? 'bg-gradient-to-r from-violet-600 to-pink-600 text-white shadow-lg shadow-violet-500/40' : 'bg-white text-violet-700 border border-violet-200 shadow-md'}`}>
+                                {qwen3Node.title}
+                            </div>
+                            <div className="text-[9px] text-violet-500/80 font-mono mt-1 uppercase tracking-widest">{qwen3Node.desc}</div>
+                        </div>
+                    );
+                })()}
+
+                {/* AI Connection Tooltip */}
+                {hoveredConnection !== null && (
+                    <div
+                        className="fixed z-[100] pointer-events-none px-4 py-2.5 bg-white/95 backdrop-blur-md border border-violet-200 rounded-xl shadow-xl shadow-violet-500/10 max-w-xs"
+                        style={{ left: tooltipPos.x + 15, top: tooltipPos.y - 10 }}
+                    >
+                        <div className="flex items-center gap-2 text-xs font-bold text-violet-700">
+                            <Sparkles className="w-3.5 h-3.5 text-pink-500" />
+                            AI 使用场景
+                        </div>
+                        <p className="text-sm text-slate-600 mt-1">{aiConnections[hoveredConnection].tooltip}</p>
                     </div>
-                ))}
+                )}
             </div>
 
-            {/* Modal 弹窗 */}
+            {/* Frost Glass Modal */}
             {selectedNode && (() => {
                 const detailNode = nodes.find(n => n.id === selectedNode)!;
-                const themeColor = detailNode.color.replace('bg-', 'text-').split('-')[1] || 'indigo';
+                const activeClasses = detailNode.activeColor.split(' ');
+                const themeClass = activeClasses.find(c => c.startsWith('text-'));
+                const themeColor = themeClass ? themeClass.split('-')[1] : 'indigo';
 
                 return (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300">
-                        {/* 极简霜冻遮罩 */}
-                        <div
-                            className="absolute inset-0 bg-slate-50/80 backdrop-blur-md transition-opacity"
-                            onClick={() => setSelectedNode(null)}
-                        />
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 lg:p-12 animate-in fade-in duration-200">
+                        <div className="absolute inset-0 bg-slate-200/40 backdrop-blur-sm transition-opacity" onClick={() => setSelectedNode(null)}></div>
 
-                        <div className="relative bg-white/90 w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-[2rem] shadow-2xl flex flex-col md:flex-row overflow-hidden animate-in slide-in-from-bottom-4 duration-500 border border-white/50 ring-1 ring-slate-200/50">
+                        {/* Modal Window */}
+                        <div className="relative w-full max-w-6xl max-h-[85vh] bg-white rounded-3xl shadow-2xl shadow-slate-200/50 overflow-hidden flex flex-col md:flex-row group ring-1 ring-slate-100 animate-in slide-in-from-bottom-5 duration-500">
 
-                            {/* Close Button - Floating */}
+                            {/* Close Button */}
                             <button
                                 onClick={() => setSelectedNode(null)}
-                                className="absolute top-6 right-6 z-50 p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-all hover:rotate-90"
+                                className="absolute top-6 right-6 z-50 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-all"
                             >
-                                <X className="w-5 h-5" />
+                                <X className="w-6 h-6" />
                             </button>
 
-                            {/* Left Identity Column */}
-                            <div className="relative md:w-2/5 p-10 flex flex-col justify-between overflow-hidden bg-gradient-to-br from-slate-50 to-white border-r border-slate-100">
-                                <div className="absolute inset-0 opacity-[0.03] pointer-events-none"
-                                    style={{ backgroundImage: 'radial-gradient(#64748b 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
-                                </div>
-                                <div className={`absolute top-0 left-0 w-full h-1 bg-${themeColor}-500 shadow-[0_0_15px_rgba(var(--${themeColor}-500),0.5)]`}></div>
+                            {/* Left: Identity Column */}
+                            <div className="w-full md:w-1/3 bg-slate-50/80 p-10 flex flex-col relative overflow-hidden border-r border-slate-100">
+                                <div className={`absolute top-0 left-0 w-full h-1 bg-${themeColor}-500`}></div>
+                                <div className={`absolute -bottom-20 -left-20 w-64 h-64 bg-${themeColor}-100/50 rounded-full blur-[60px]`}></div>
 
-                                <div className="relative z-10">
-                                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-[10px] font-mono text-slate-500 mb-8 tracking-widest uppercase animate-in slide-in-from-left-4 fade-in duration-700">
-                                        ID: {String(detailNode.id).padStart(3, '0')} // SYSTEM_NODE
+                                <div className="z-10">
+                                    <div className="font-mono text-[10px] font-bold text-slate-400 mb-8 flex items-center gap-2 uppercase tracking-widest">
+                                        <Activity className="w-3 h-3 text-slate-300" />
+                                        System Node • {String(detailNode.id).padStart(3, '0')}
                                     </div>
 
-                                    <div className="relative mb-8 group animate-in zoom-in-50 duration-700 delay-100 fill-mode-backwards">
-                                        <div className={`active-node-icon w-20 h-20 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shadow-lg shadow-slate-200/50 group-hover:scale-105 transition-transform duration-500`}>
-                                            {React.cloneElement(detailNode.icon as React.ReactElement, { className: `w-10 h-10 text-${themeColor}-600` })}
+                                    <div className="mb-8 relative">
+                                        <div className={`w-20 h-20 flex items-center justify-center rounded-2xl bg-white shadow-xl shadow-slate-200/60 relative overflow-hidden group-hover:scale-105 transition-transform duration-500`}>
+                                            <div className={`absolute inset-0 bg-${themeColor}-50 opacity-0 group-hover:opacity-100 transition-opacity`}></div>
+                                            {React.cloneElement(detailNode.icon as React.ReactElement, { className: `w-10 h-10 text-${themeColor}-600 relative z-10` })}
                                         </div>
-                                        <div className={`absolute -inset-4 rounded-3xl bg-${themeColor}-400/20 blur-xl opacity-0 group-hover:opacity-100 animate-pulse transition-opacity duration-700`}></div>
                                     </div>
 
-                                    <h3 className="text-3xl font-black text-slate-900 tracking-tight mb-4 relative animate-in slide-in-from-bottom-2 fade-in duration-700 delay-200 fill-mode-backwards">
-                                        {detailNode.title}
-                                        <span className={`absolute -bottom-2 left-0 w-12 h-1 bg-${themeColor}-500 rounded-full`}></span>
-                                    </h3>
+                                    <h2 className="text-3xl font-black text-slate-900 mb-3 tracking-tight">{detailNode.title}</h2>
+                                    <p className="text-slate-500 text-sm font-medium leading-relaxed mb-8">{detailNode.desc}</p>
 
-                                    <p className="text-slate-500 text-sm leading-relaxed font-medium animate-in slide-in-from-bottom-2 fade-in duration-700 delay-300 fill-mode-backwards">
-                                        {detailNode.desc}
-                                    </p>
-                                </div>
+                                    <div className="mt-auto space-y-4">
+                                        <div className="p-4 bg-white rounded-xl border border-slate-100 shadow-sm flex items-center gap-3">
+                                            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)] animate-pulse"></div>
+                                            <div className="flex-1">
+                                                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Status</div>
+                                                <div className="text-xs text-emerald-700 font-bold">OPERATIONAL</div>
+                                            </div>
+                                        </div>
 
-                                <div className="relative z-10 mt-12 animate-in fade-in duration-1000 delay-500 fill-mode-backwards">
-                                    <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest mb-2">System Status</div>
-                                    <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50/50 px-3 py-2 rounded-lg border border-emerald-100/50 w-fit">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                                        <span className="text-xs font-bold">ONLINE / ACTIVE</span>
+                                        {/* Link for Node 5 (Knowledge Base) */}
+                                        {detailNode.id === 5 && onNavigate && (
+                                            <button
+                                                onClick={() => onNavigate(5)}
+                                                className="w-full group relative overflow-hidden pl-5 pr-4 py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
+                                            >
+                                                <div className="relative flex items-center justify-between z-10">
+                                                    <span className="text-xs font-bold uppercase tracking-wider">Access RAG View</span>
+                                                    <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                                </div>
+                                                <div className="absolute inset-0 bg-gradient-to-r from-teal-500 to-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                                            </button>
+                                        )}
                                     </div>
-
-                                    {/* Link for Node 5 (Knowledge Base) */}
-                                    {detailNode.id === 5 && onNavigate && (
-                                        <button
-                                            onClick={() => onNavigate(5)}
-                                            className="mt-4 w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold py-3 px-4 rounded-xl transition-all shadow-lg hover:shadow-teal-500/30 group/btn"
-                                        >
-                                            <BookOpen className="w-4 h-4" />
-                                            <span>查看技术架构详情</span>
-                                            <ChevronRight className="w-3 h-3 group-hover/btn:translate-x-1 transition-transform" />
-                                        </button>
-                                    )}
                                 </div>
                             </div>
 
-                            {/* Right Content Column */}
-                            <div className="flex-1 p-10 bg-white relative">
-                                <div className={`absolute top-0 right-0 w-[300px] h-[300px] bg-${themeColor}-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none animate-pulse duration-[5000ms]`}></div>
+                            {/* Right: Content */}
+                            <div className="flex-1 p-10 overflow-y-auto relative bg-white">
+                                <div className="absolute top-0 right-0 p-10 opacity-10">
+                                    <div className={`text-[120px] font-black tracking-tighter text-${themeColor}-900 leading-none select-none`}>
+                                        {String(detailNode.id).padStart(2, '0')}
+                                    </div>
+                                </div>
 
-                                <div className="space-y-10 relative z-10">
-                                    <div className="anim-fade-up delay-100">
-                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
-                                            <Zap className="w-4 h-4 text-slate-300" /> Key Capabilities
+                                <div className="relative z-10 space-y-10">
+                                    {/* Features */}
+                                    <div>
+                                        <h4 className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-5">
+                                            <Zap className="w-3 h-3 text-amber-500" /> Core Functions
                                         </h4>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             {detailNode.detail.features.map((feat, idx) => (
-                                                <div
-                                                    key={idx}
-                                                    className="group relative p-4 rounded-xl bg-slate-50/50 border border-slate-100 hover:border-slate-300 transition-all duration-300 hover:bg-white hover:shadow-lg hover:shadow-slate-200/50 anim-scale-in fill-mode-backwards"
-                                                    style={{ animationDelay: `${150 + idx * 100}ms` }}
-                                                >
-                                                    <div className={`absolute top-0 left-0 w-0.5 h-0 bg-${themeColor}-500 group-hover:h-full transition-all duration-300`}></div>
+                                                <div key={idx} className="bg-slate-50 border border-slate-100 p-4 rounded-xl hover:border-indigo-100 hover:shadow-md hover:shadow-indigo-500/5 transition-all group">
                                                     <div className="flex items-start gap-3">
-                                                        <span className="text-[10px] font-mono text-slate-400 mt-1">0{idx + 1}</span>
-                                                        <p className="text-sm font-semibold text-slate-700 group-hover:text-slate-900">{feat}</p>
+                                                        <span className={`text-[10px] font-mono text-slate-400 mt-1 font-bold`}>0{idx + 1}</span>
+                                                        <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 transition-colors">{feat}</span>
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
 
-                                    <div className="anim-fade-up delay-300">
-                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
-                                            <CheckCircle2 className="w-4 h-4 text-slate-300" /> Strategic Objectives
+                                    {/* Goals */}
+                                    <div>
+                                        <h4 className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-5">
+                                            <CheckCircle2 className="w-3 h-3 text-emerald-500" /> Strategic Objectives
                                         </h4>
-                                        <div className="flex flex-col gap-3">
+                                        <div className="space-y-2">
                                             {detailNode.detail.goals.map((goal, idx) => (
-                                                <div
-                                                    key={idx}
-                                                    className="flex items-center gap-4 group anim-fade-right fill-mode-backwards"
-                                                    style={{ animationDelay: `${400 + idx * 100}ms` }}
-                                                >
-                                                    <div className={`w-8 h-8 rounded-full bg-${themeColor}-50 text-${themeColor}-600 flex items-center justify-center shrink-0 border border-${themeColor}-100 group-hover:scale-110 transition-transform`}>
+                                                <div key={idx} className="flex items-center gap-4 p-3 rounded-xl hover:bg-slate-50 transition-colors">
+                                                    <div className={`w-8 h-8 rounded-full bg-${themeColor}-50 text-${themeColor}-600 flex items-center justify-center shrink-0`}>
                                                         <CheckCircle2 className="w-4 h-4" />
                                                     </div>
-                                                    <div className="flex-1 border-b border-slate-100 py-3 group-hover:border-slate-200 transition-colors">
-                                                        <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">{goal}</span>
-                                                    </div>
-                                                    <ChevronRight className="w-4 h-4 text-slate-300 opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0" />
+                                                    <span className="text-sm font-medium text-slate-600">{goal}</span>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
 
+                                    {/* Tech Stack */}
                                     {detailNode.detail.techStack && (
-                                        <div className="anim-fade-up delay-400">
-                                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
-                                                <Terminal className="w-4 h-4 text-slate-300" /> Technology Stack
+                                        <div>
+                                            <h4 className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-5">
+                                                <Terminal className="w-3 h-3 text-slate-900" /> Tech Stack
                                             </h4>
                                             <div className="flex flex-wrap gap-2">
                                                 {detailNode.detail.techStack.map((tech, idx) => (
-                                                    <span
-                                                        key={idx}
-                                                        className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-${themeColor}-50 text-${themeColor}-700 border border-${themeColor}-100 anim-scale-in fill-mode-backwards`}
-                                                        style={{ animationDelay: `${600 + idx * 80}ms` }}
-                                                    >
+                                                    <span key={idx} className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border bg-white border-slate-200 text-slate-600 shadow-sm transition-transform hover:-translate-y-0.5`}>
                                                         {tech}
                                                     </span>
                                                 ))}
@@ -465,25 +606,6 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                     </div>
                 );
             })()}
-
-            <div className={`absolute bottom-4 right-4 flex gap-4 transition-all duration-300 ${selectedNode ? 'translate-y-20 opacity-0' : 'translate-y-0 opacity-100'}`}>
-                {[
-                    { name: "1104 填报 Agent", color: "bg-rose-100 text-rose-600" },
-                    { name: "血缘分析 Agent", color: "bg-blue-100 text-blue-600" },
-                    { name: "合规审计 Agent", color: "bg-violet-100 text-violet-600" },
-                ].map((agent, i) => (
-                    <div key={i} className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 ${agent.color} border border-transparent shadow-sm`}>
-                        <Bot className="w-3 h-3" />
-                        {agent.name}
-                    </div>
-                ))}
-            </div>
-            <style>{`
-        @keyframes scan {
-          0% { transform: translateY(-100%); }
-          100% { transform: translateY(100vh); }
-        }
-      `}</style>
         </div>
     );
 };
