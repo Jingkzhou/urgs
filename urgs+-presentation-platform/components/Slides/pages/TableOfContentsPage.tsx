@@ -17,13 +17,13 @@ export const TableOfContentsPage = ({ onNavigate }: { onNavigate: (index: number
             <div className="text-center mb-12 space-y-4">
                 <div className="inline-flex items-center gap-2 px-3 py-1 bg-white border border-slate-200 rounded-full shadow-sm mb-2">
                     <Map className="w-3 h-3 text-indigo-500" />
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Navigation Hub</span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">导航导览</span>
                 </div>
                 <h2 className="text-4xl md:text-6xl font-black tracking-tight text-slate-900">
-                    System Roadmap
+                    演示大纲
                 </h2>
                 <p className="text-slate-500 text-lg max-w-2xl mx-auto font-light">
-                    Your journey through the <span className="font-semibold text-indigo-600">Enterprise Resource Governance System</span>
+                    开启您的 <span className="font-semibold text-indigo-600">监管报送一体化系统 (URGS)</span> 探索之旅
                 </p>
             </div>
 
