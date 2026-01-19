@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
 import { GitBranch, FileCode, Network, Database, BookOpen, Bot, LayoutDashboard, Lightbulb, ClipboardList, Code2, Zap, CheckCircle2, Terminal, X, ChevronRight } from 'lucide-react';
 
-export const AgentEcosystemFlow = () => {
+interface AgentEcosystemFlowProps {
+    onNavigate?: (index: number) => void;
+}
+
+export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
     const [activeNode, setActiveNode] = useState<number | null>(null);
     const [selectedNode, setSelectedNode] = useState<number | null>(null);
 
@@ -373,6 +377,18 @@ export const AgentEcosystemFlow = () => {
                                         <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
                                         <span className="text-xs font-bold">ONLINE / ACTIVE</span>
                                     </div>
+
+                                    {/* Link for Node 5 (Knowledge Base) */}
+                                    {detailNode.id === 5 && onNavigate && (
+                                        <button
+                                            onClick={() => onNavigate(5)}
+                                            className="mt-4 w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold py-3 px-4 rounded-xl transition-all shadow-lg hover:shadow-teal-500/30 group/btn"
+                                        >
+                                            <BookOpen className="w-4 h-4" />
+                                            <span>查看技术架构详情</span>
+                                            <ChevronRight className="w-3 h-3 group-hover/btn:translate-x-1 transition-transform" />
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 

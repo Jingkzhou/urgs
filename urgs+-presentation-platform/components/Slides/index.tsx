@@ -16,6 +16,7 @@ export * from './pages/ChallengePage';
 export * from './pages/VisionPage';
 export * from './pages/AgentEcosystemFlow';
 export * from './pages/ArchitecturePage';
+export * from './pages/RAGArchitecturePage';
 export * from './pages/PillarsPage';
 export * from './pages/OrchestrationPage';
 export * from './pages/DashboardPage';

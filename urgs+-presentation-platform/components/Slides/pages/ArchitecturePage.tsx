@@ -9,10 +9,10 @@ export const ArchitecturePage = () => (
             <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent z-20 opacity-0 group-hover:opacity-100 animate-[moveVertical_3s_ease-in-out_infinite] pointer-events-none shadow-[0_0_15px_rgba(34,211,238,0.8)]"></div>
 
             {[
-                { layer: "前端展现", tech: "角色化驾驶舱 (Role-Based Workbench)", desc: "为业务与技术人员定制的专属协同视图。", color: "bg-gradient-to-r from-blue-500 to-blue-600" },
-                { layer: "核心服务", tech: "微服务编排 + 任务引擎 (Task Engine)", desc: "承载自动化版本管理、调度与监管日历。", color: "bg-gradient-to-r from-indigo-500 to-indigo-600" },
-                { layer: "智能增强", tech: "Ark AI Agent (RAG + SQL Parser)", desc: "QWen3，BM25+语义检索，Agent 场景化服务。", color: "bg-gradient-to-r from-amber-500 to-orange-500", highlight: true },
-                { layer: "存储底座", tech: "Neo4j 图数据库 + 向量索引 (FAISS/MILVUS)", desc: "管理全链路血缘图谱与非结构化知识库。", color: "bg-gradient-to-r from-slate-700 to-slate-800" },
+                { layer: "前端展现", tech: "React 19 + Ant Design 6.0", desc: "ReactFlow (DAG) 可视化编排，Monaco Editor 代码编辑器。", color: "bg-gradient-to-r from-blue-500 to-blue-600" },
+                { layer: "核心服务", tech: "Spring Boot 3.2 + MyBatis Plus", desc: "Quartz 任务调度，Flyway 版本管理，EasyExcel 数据处理。", color: "bg-gradient-to-r from-indigo-500 to-indigo-600" },
+                { layer: "智能增强", tech: "FastAPI + LangChain + ChromaDB", desc: "RapidOCR 文档解析，Sentence-Transformers 向量化，Ragas 评估。", color: "bg-gradient-to-r from-amber-500 to-orange-500", highlight: true },
+                { layer: "存储底座", tech: "Neo4j + MySQL + MinIO", desc: "Neo4j 图谱存储，MySQL 业务数据，MinIO 非结构化存储。", color: "bg-gradient-to-r from-slate-700 to-slate-800" },
             ].map((row, idx) => (
                 <div key={idx} className={`flex rounded-xl overflow-hidden border border-slate-200 shadow-sm anim-fade-right hover:shadow-lg transition-all duration-300 relative ${row.highlight ? 'ring-2 ring-amber-400 ring-offset-2 scale-[1.02]' : 'hover:scale-[1.01]'}`} style={{ animationDelay: `${idx * 150}ms` }}>
                     {/* Glass overlay on hover */}

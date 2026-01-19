@@ -1,8 +1,12 @@
 import React from 'react';
 import { AgentEcosystemFlow } from './AgentEcosystemFlow';
 
-export const VisionPage = () => (
+interface VisionPageProps {
+    onNavigate?: (index: number) => void;
+}
+
+export const VisionPage = ({ onNavigate }: VisionPageProps) => (
     <div className="relative w-screen h-screen overflow-hidden">
-        <AgentEcosystemFlow />
+        <AgentEcosystemFlow onNavigate={onNavigate} />
     </div>
 );

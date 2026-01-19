@@ -19,7 +19,8 @@ import {
   RolesPage,
   ConclusionPage,
   AIExperiencePage,
-  SQLParsingDetailPage
+  SQLParsingDetailPage,
+  RAGArchitecturePage
 } from './components/Slides';
 
 const App: React.FC = () => {
@@ -29,8 +30,9 @@ const App: React.FC = () => {
     <TitlePage key="title" />,
     <TableOfContentsPage onNavigate={setCurrentSlide} />,
     <ChallengePage key="challenge" />,
-    <VisionPage key="vision" />,
     <ArchitecturePage key="arch" />,
+    <VisionPage key="vision" onNavigate={setCurrentSlide} />,
+    <RAGArchitecturePage key="rag-arch" />,
     <PillarsPage key="pillars" />,
     <AiPillarPage key="ai" />,
     <ArkAssistantPage key="ark" />,
