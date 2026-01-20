@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { GitBranch, FileCode, Network, Database, BookOpen, Bot, LayoutDashboard, Lightbulb, ClipboardList, Code2, Zap, CheckCircle2, Terminal, X, ChevronRight, Activity, Cpu, Sparkles, ArrowLeft } from 'lucide-react';
+import { GitBranch, FileCode, Network, Database, BookOpen, Bot, LayoutDashboard, Lightbulb, ClipboardList, Code2, Zap, CheckCircle2, Terminal, X, ChevronRight, Activity, Cpu, Sparkles, ArrowLeft, Headphones } from 'lucide-react';
 import { ActiveLineageGraph } from '../shared/ActiveLineageGraph';
 import { RAGArchitecturePage } from './RAGArchitecturePage';
 import { LineagePage } from './LineagePage';
@@ -155,6 +155,15 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                 techStack: ["XXL-JOB", "Python", "Shell", "Prometheus"]
             }
         },
+        // Business Layer (Emerald) - 运营支持
+        {
+            id: 13, title: "业务报送支持", icon: <Headphones className="w-5 h-5" />, x: 1100, y: 580, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-emerald-400 border-emerald-500 bg-emerald-950/50", desc: "业务疑难解答与支持",
+            detail: {
+                features: ["报送异常数据排查", "远程协助", "数据溯源"],
+                goals: ["快速响应填报问题", "提升业务填报效率", "报送支持沉淀"],
+                techStack: ["IM", "WebRTC", "Knowledge Base", "VoIP"]
+            }
+        },
     ];
 
     // Qwen3 中心节点 (AI Core)
@@ -187,6 +196,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
         { from: 5, to: 6 }, { from: 6, to: 7 },
         { from: 11, to: 5, dashed: true, label: "FAQ 沉淀" },
         { from: 12, to: 11, dashed: true, label: "报错直转" }, // New connection: Batch Error -> Issue
+        { from: 13, to: 11, dashed: true, label: "支持沉淀" }, // New connection: Support -> Issue
         // 反馈流
         { from: 7, to: 8, dashed: true, label: "问题提单" },
         { from: 8, to: 9, dashed: true },
@@ -349,7 +359,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                                     fill="none"
                                     stroke={isFeedback ? "#fb923c" : "#6366f1"}
                                     strokeWidth="2"
-                                    strokeOpacity="0.1"
+                                    strokeOpacity="0.4"
                                 />
                                 {/* Active Line */}
                                 <path
@@ -357,8 +367,8 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                                     fill="none"
                                     stroke={isFeedback ? "url(#cyberLineDashe)" : "url(#cyberLine)"}
                                     strokeWidth="2"
-                                    strokeDasharray={isFeedback ? "4,4" : ""}
-                                    className="animate-[pulse_3s_ease-in-out_infinite]"
+                                    strokeDasharray="4,4"
+                                    className="animate-[line-flow_1s_linear_infinite]"
                                 />
                                 {/* Label background */}
                                 {conn.label && (
@@ -408,9 +418,9 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                         return (
                             <g key={`ai-${i}`}>
                                 {/* Base glow */}
-                                <path d={pathD} fill="none" stroke="#a855f7" strokeWidth="4" strokeOpacity="0.1" />
+                                <path d={pathD} fill="none" stroke="#a855f7" strokeWidth="4" strokeOpacity="0.05" />
                                 {/* Main line */}
-                                <path d={pathD} fill="none" stroke="url(#aiLine)" strokeWidth="2" strokeDasharray="6,3" className="animate-[pulse_2s_ease-in-out_infinite]" />
+                                <path d={pathD} fill="none" stroke="url(#aiLine)" strokeWidth="2" strokeOpacity="0.3" strokeDasharray="10,5" className="animate-[line-flow_2s_linear_infinite]" />
                                 {/* Hover hitbox */}
                                 <path
                                     d={pathD}
@@ -425,6 +435,53 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                             </g>
                         );
                     })}
+                    {/* Main Flow Path & Signal Icon */}
+                    {(() => {
+                        const pathNodes = [1, 2, 4, 5, 6, 7];
+                        const points = pathNodes.map(id => {
+                            const pos = getNodePos(id);
+                            return `${pos.x + 32},${pos.y + 32}`;
+                        });
+                        const mainPathD = `M ${points.join(' L ')}`;
+
+                        return (
+                            <g>
+                                <path
+                                    id="main-flow-path"
+                                    d={mainPathD}
+                                    fill="none"
+                                    stroke="transparent"
+                                />
+                                <circle r="5" fill="#6366f1" filter="url(#soft-glow)">
+                                    <animateMotion
+                                        dur="8s"
+                                        repeatCount="indefinite"
+                                        path={mainPathD}
+                                    />
+                                </circle>
+                                <circle r="3" fill="white">
+                                    <animateMotion
+                                        dur="8s"
+                                        repeatCount="indefinite"
+                                        path={mainPathD}
+                                    />
+                                </circle>
+                                <circle r="8" fill="#6366f1" opacity="0.3">
+                                    <animateMotion
+                                        dur="8s"
+                                        repeatCount="indefinite"
+                                        path={mainPathD}
+                                    />
+                                    <animate
+                                        attributeName="r"
+                                        values="8;12;8"
+                                        dur="2s"
+                                        repeatCount="indefinite"
+                                    />
+                                </circle>
+                            </g>
+                        );
+                    })()}
                 </svg>
 
                 {/* Tailwind JIT 需要完整静态类名 - 颜色映射 */}

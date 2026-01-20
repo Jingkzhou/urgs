@@ -11,7 +11,7 @@ export const ConclusionPage = () => {
         <SlideLayout title="开启智能监管新范式" subtitle="构建韧性、敏捷、智慧的运营平台">
             <div className="grid md:grid-cols-3 gap-8 mt-12 mb-16">
                 {[
-                    { title: "极致效率", items: ["端到端发布流水线", "AI 知识检索与翻译"] },
+                    { title: "极致效率", items: ["发布流水线，辅助生成代码", "AI 知识检索与智能问答", "监管发文解读"] },
                     { title: "极致稳健", items: ["图谱驱动事前风险阻断", "全量血缘覆盖审计"] },
                     { title: "极致智慧", items: ["RAG 引擎沉淀经验", "多场景 Agent 伴随"] }
                 ].map((card, i) => (
