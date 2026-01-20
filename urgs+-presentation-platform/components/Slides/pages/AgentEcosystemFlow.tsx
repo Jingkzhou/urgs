@@ -174,8 +174,10 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
         { from: 100, to: 4, tooltip: "AI 解析代码转换业务口径， AI解译指标制度" },
         { from: 100, to: 5, tooltip: "LLM 驱动知识问答与语义向量检索" },
         { from: 100, to: 6, tooltip: "Agent 核心推理引擎与 Function Calling" },
-        { from: 100, to: 9, tooltip: "AI 自动生成技术方案与工时预估" },
+        { from: 100, to: 9, tooltip: "架构影响分析" },
         { from: 100, to: 1, tooltip: "代码智能走查，和上线风险扫描" },
+        { from: 100, to: 10, tooltip: "辅助自动生成代码理解业务需求" },
+        { from: 100, to: 12, tooltip: "AI 分析异常排查方案和紧急处理步骤" },
     ];
 
     const connections = [
@@ -281,7 +283,6 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                         <div>
                             <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
                                 URGS<span className="text-indigo-600">+</span>
-                                <span className="text-xs font-mono font-medium text-slate-500 px-2 py-0.5 border border-slate-200 rounded-full bg-white">v2.4.0</span>
                             </h2>
                             <p className="text-[10px] text-slate-500 font-mono uppercase tracking-[0.2em] font-bold">Autonomous Agent System • Active</p>
                         </div>
@@ -528,7 +529,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                 {hoveredConnection !== null && (
                     <div
                         className="fixed z-[100] pointer-events-none px-4 py-2.5 bg-white/95 backdrop-blur-md border border-violet-200 rounded-xl shadow-xl shadow-violet-500/10 max-w-xs"
-                        style={{ left: tooltipPos.x + 15, top: tooltipPos.y - 10 }}
+                        style={{ left: tooltipPos.x + 5, top: tooltipPos.y + 5 }}
                     >
                         <div className="flex items-center gap-2 text-xs font-bold text-violet-700">
                             <Sparkles className="w-3.5 h-3.5 text-pink-500" />
