@@ -536,7 +536,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                                         : 'bg-white shadow-lg shadow-slate-200 border border-slate-100'}`}
                                 ></div>
                                 <div className="relative z-10">
-                                    {React.cloneElement(node.icon as React.ReactElement, {
+                                    {React.cloneElement(node.icon as React.ReactElement<{ className?: string }>, {
                                         className: `w-7 h-7 transition-all duration-300 ${isActive || isSelected ? 'text-white' : styles.text}`
                                     })}
                                 </div>
@@ -633,7 +633,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                                     <div className="mb-8 relative">
                                         <div className={`w-20 h-20 flex items-center justify-center rounded-2xl bg-white shadow-xl shadow-slate-200/60 relative overflow-hidden group-hover:scale-105 transition-transform duration-500`}>
                                             <div className={`absolute inset-0 bg-${themeColor}-50 opacity-0 group-hover:opacity-100 transition-opacity`}></div>
-                                            {React.cloneElement(detailNode.icon as React.ReactElement, { className: `w-10 h-10 text-${themeColor}-600 relative z-10` })}
+                                            {React.cloneElement(detailNode.icon as React.ReactElement<{ className?: string }>, { className: `w-10 h-10 text-${themeColor}-600 relative z-10` })}
                                         </div>
                                     </div>
 
