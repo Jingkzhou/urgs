@@ -56,7 +56,7 @@ export const AIJourneyOverlay = ({ onClose }: { onClose: () => void }) => {
                         <Zap className="w-4 h-4 text-amber-400" /> RAG 混合检索就绪
                     </div>
                     <div className="flex items-center gap-2 px-6 py-3 bg-white/5 border border-white/10 rounded-full text-slate-300 text-sm font-medium">
-                        <ShieldCheck className="w-4 h-4 text-teal-400" /> 合规 Agent 在线
+                        <ShieldCheck className="w-4 h-4 text-teal-400" /> 专业 Agent 在线
                     </div>
                 </div>
 

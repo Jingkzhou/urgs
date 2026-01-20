@@ -18,7 +18,7 @@ export const ReleaseManagementPage = ({ onBack }: ReleaseManagementPageProps) =>
                 <ArrowLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform" />
             </button>
         )}
-        <SlideLayout title="能力四：风险防控与版本管理">
+        <SlideLayout title="风险防控">
             <div className="grid lg:grid-cols-2 gap-12 items-center w-full">
                 <div className="anim-scale-in delay-200">
                     <RiskGauge />
@@ -31,13 +31,10 @@ export const ReleaseManagementPage = ({ onBack }: ReleaseManagementPageProps) =>
                             <p className="text-xs text-slate-500 mt-1">当基础表修改时，血缘图谱自动报警，阻断高风险代码上线，强制二级审批。</p>
                         </div>
                         <div className="p-4 bg-white rounded-xl border-l-4 border-indigo-500 shadow-sm">
-                            <p className="text-sm font-bold text-slate-800">AI 智查报告</p>
-                            <p className="text-xs text-slate-500 mt-1">自动化走查 SQL 规范、索引建议及合规性，输出风险证据图。</p>
+                            <p className="text-sm font-bold text-slate-800">AI 风险防控</p>
+                            <p className="text-xs text-slate-500 mt-1">风险防控，自动识别风险点，自动驳回上线。 </p>
                         </div>
-                        <div className="p-4 bg-white rounded-xl border-l-4 border-teal-500 shadow-sm">
-                            <p className="text-sm font-bold text-slate-800">全流程灰度</p>
-                            <p className="text-xs text-slate-500 mt-1">多环境一键部署，支持自动记录发布台账与一键回滚。</p>
-                        </div>
+
                     </div>
                 </div>
             </div>

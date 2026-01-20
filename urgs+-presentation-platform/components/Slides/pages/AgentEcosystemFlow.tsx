@@ -56,7 +56,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
         {
             id: 1, title: "版本管理", icon: <GitBranch className="w-5 h-5" />, x: 140, y: 180, color: "text-slate-400 border-slate-600 bg-slate-900/80", activeColor: "text-blue-400 border-blue-500 bg-blue-950/50", desc: "Git 代码提交触发自动化流程",
             detail: {
-                features: ["应用系统库管理", "Git 仓库多元配置", "CI/CD 流水线编排", "发布版本台账", "一键回滚发布", "AI代码智查", "预发布合规 AI 智查"],
+                features: ["应用系统库管理", "Git 仓库多元配置", "CI/CD 流水线编排，一键部署", "发布版本台账", "一键回滚发布", "AI代码智查", "预发布合规 AI 智查"],
                 goals: ["统一管理全行20+监管系统代码", "实现标准化、自动化的发布流程", "确保生产环境版本安全可追溯"],
                 techStack: ["GitLab", "Jenkins", "Docker", "Kubernetes", "Shell"]
             }
@@ -284,7 +284,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                             <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
                                 URGS<span className="text-indigo-600">+</span>
                             </h2>
-                            <p className="text-[10px] text-slate-500 font-mono uppercase tracking-[0.2em] font-bold">Autonomous Agent System • Active</p>
+                            <p className="text-[10px] text-slate-500 font-mono uppercase tracking-[0.2em] font-bold">自主智能体系统 • 运行中</p>
                         </div>
                     </div>
 
@@ -570,7 +570,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                                 <div className="z-10">
                                     <div className="font-mono text-[10px] font-bold text-slate-400 mb-8 flex items-center gap-2 uppercase tracking-widest">
                                         <Activity className="w-3 h-3 text-slate-300" />
-                                        System Node • {String(detailNode.id).padStart(3, '0')}
+                                        系统节点 • {String(detailNode.id).padStart(3, '0')}
                                     </div>
 
                                     <div className="mb-8 relative">
@@ -587,8 +587,8 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                                         <div className="p-4 bg-white rounded-xl border border-slate-100 shadow-sm flex items-center gap-3">
                                             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)] animate-pulse"></div>
                                             <div className="flex-1">
-                                                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Status</div>
-                                                <div className="text-xs text-emerald-700 font-bold">OPERATIONAL</div>
+                                                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">状态</div>
+                                                <div className="text-xs text-emerald-700 font-bold">运行正常</div>
                                             </div>
                                         </div>
 
@@ -599,7 +599,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                                                 className="w-full group relative overflow-hidden pl-5 pr-4 py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
                                             >
                                                 <div className="relative flex items-center justify-between z-10">
-                                                    <span className="text-xs font-bold uppercase tracking-wider">Access RAG View</span>
+                                                    <span className="text-xs font-bold uppercase tracking-wider">访问 RAG 视图</span>
                                                     <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                                                 </div>
                                                 <div className="absolute inset-0 bg-gradient-to-r from-teal-500 to-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
@@ -621,7 +621,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                                     {/* Features */}
                                     <div>
                                         <h4 className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-5">
-                                            <Zap className="w-3 h-3 text-amber-500" /> Core Functions
+                                            <Zap className="w-3 h-3 text-amber-500" /> 核心功能
                                         </h4>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             {detailNode.detail.features.map((feat, idx) => {
@@ -655,7 +655,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                                     {/* Goals */}
                                     <div>
                                         <h4 className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-5">
-                                            <CheckCircle2 className="w-3 h-3 text-emerald-500" /> Strategic Objectives
+                                            <CheckCircle2 className="w-3 h-3 text-emerald-500" /> 战略目标
                                         </h4>
                                         <div className="space-y-2">
                                             {detailNode.detail.goals.map((goal, idx) => (
@@ -673,7 +673,7 @@ export const AgentEcosystemFlow = ({ onNavigate }: AgentEcosystemFlowProps) => {
                                     {detailNode.detail.techStack && (
                                         <div>
                                             <h4 className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-5">
-                                                <Terminal className="w-3 h-3 text-slate-900" /> Tech Stack
+                                                <Terminal className="w-3 h-3 text-slate-900" /> 技术栈
                                             </h4>
                                             <div className="flex flex-wrap gap-2">
                                                 {detailNode.detail.techStack.map((tech, idx) => (
