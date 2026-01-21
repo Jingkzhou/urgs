@@ -6,8 +6,15 @@ import httpx
 from crewai.tools import tool
 from core.config import get_settings
 from core.logging import get_logger
+from crewai_tools import NL2SQLTool
 
 logger = get_logger("tools")
+settings = get_settings()
+
+
+def get_sql_tool() -> NL2SQLTool:
+    """获取自然语言转SQL查询工具"""
+    return NL2SQLTool(db_uri=settings.get_mysql_dsn, name="业务数据查询工具")
 
 
 # ==================== RAG 知识检索工具 ====================

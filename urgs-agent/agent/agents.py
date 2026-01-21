@@ -98,3 +98,26 @@ def create_executor_agent(tools: list = None) -> Agent:
         llm=get_llm(),
         tools=tools or [],
     )
+
+
+def create_data_analyst_agent(tools: list = None) -> Agent:
+    """
+    数据分析师 Agent
+    负责执行 SQL 查询业务数据
+    """
+    return Agent(
+        role="数据分析师",
+        goal="根据用户提问生成 SQL 并查询数据库，解答关于业务数据的问题",
+        backstory="""你是 URGS 系统的数据分析师，擅长通过 SQL 查询数据库来获取准确的业务数据。
+当用户询问“有多少任务”、“状态分布如何”等统计类或明细类问题时，你会：
+1. 理解用户意图
+2. 生成正确的 SQL 语句（基于 MySQL 语法）
+3. 执行查询并获取结果
+4. 根据结果回答用户问题
+
+你非常谨慎，只执行查询（SELECT）操作，绝不修改数据。""",
+        verbose=True,
+        allow_delegation=False,
+        llm=get_llm(),
+        tools=tools or [],
+    )

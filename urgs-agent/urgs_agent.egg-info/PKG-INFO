@@ -8,13 +8,14 @@ Description-Content-Type: text/markdown
 Requires-Dist: fastapi>=0.110.0
 Requires-Dist: uvicorn[standard]>=0.23.0
 Requires-Dist: crewai<2.0,>=1.8.0
-Requires-Dist: crewai-tools>=0.76.0
+Requires-Dist: crewai-tools[sqlalchemy]>=0.76.0
 Requires-Dist: pydantic>=2.6.0
 Requires-Dist: pydantic-settings>=2.2.0
 Requires-Dist: sse-starlette>=2.0.0
 Requires-Dist: structlog>=24.1.0
 Requires-Dist: httpx>=0.25.0
 Requires-Dist: litellm>=1.0.0
+Requires-Dist: pymysql>=1.1.0
 Provides-Extra: redis
 Requires-Dist: redis>=5.0.1; extra == "redis"
 Provides-Extra: mysql

@@ -1,13 +1,14 @@
 fastapi>=0.110.0
 uvicorn[standard]>=0.23.0
 crewai<2.0,>=1.8.0
-crewai-tools>=0.76.0
+crewai-tools[sqlalchemy]>=0.76.0
 pydantic>=2.6.0
 pydantic-settings>=2.2.0
 sse-starlette>=2.0.0
 structlog>=24.1.0
 httpx>=0.25.0
 litellm>=1.0.0
+pymysql>=1.1.0
 
 [dev]
 pytest>=7.4.0

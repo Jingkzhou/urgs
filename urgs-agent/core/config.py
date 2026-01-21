@@ -28,7 +28,21 @@ class Settings(BaseSettings):
 
     session_store: str = Field("memory", validation_alias="SESSION_STORE")
     redis_url: Optional[str] = Field(default=None, validation_alias="REDIS_URL")
-    mysql_dsn: Optional[str] = Field(default=None, validation_alias="MYSQL_DSN")
+    # Database Config (MySQL)
+    db_host: str = Field("localhost", validation_alias="DB_HOST")
+    db_port: int = Field(3306, validation_alias="DB_PORT")
+    db_name: str = Field("urgs_dev", validation_alias="DB_NAME")
+    db_user: str = Field("root", validation_alias="DB_USER")
+    db_password: str = Field("", validation_alias="DB_PASSWORD")
+
+    mysql_dsn: Optional[str] = Field(None, validation_alias="MYSQL_DSN")
+
+    @property
+    def get_mysql_dsn(self) -> str:
+        if self.mysql_dsn:
+            return self.mysql_dsn
+        return f"mysql+pymysql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+
     audit_enabled: bool = Field(True, validation_alias="AUDIT_ENABLED")
 
     require_approval_for_side_effect: bool = Field(

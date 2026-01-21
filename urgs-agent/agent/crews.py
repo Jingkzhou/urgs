@@ -9,6 +9,7 @@ from agent.agents import (
     create_rag_expert_agent,
     create_lineage_analyst_agent,
     create_executor_agent,
+    create_data_analyst_agent,
 )
 from agent.tasks import (
     create_analyze_request_task,
@@ -18,11 +19,13 @@ from agent.tasks import (
     create_job_status_task,
     create_execute_job_task,
     create_summary_task,
+    create_sql_query_task,
 )
 from agent.tools import (
     get_rag_tools,
     get_lineage_tools,
     get_executor_tools,
+    get_sql_tool,
     get_all_tools,
 )
 from core.logging import get_logger
@@ -42,6 +45,7 @@ class URGSCrew:
         self.rag_expert = create_rag_expert_agent(tools=get_rag_tools())
         self.lineage_analyst = create_lineage_analyst_agent(tools=get_lineage_tools())
         self.executor = create_executor_agent(tools=get_executor_tools())
+        self.data_analyst = create_data_analyst_agent(tools=[get_sql_tool()])
 
     def create_general_crew(self, user_input: str) -> Crew:
         """
@@ -57,6 +61,7 @@ class URGSCrew:
                 self.rag_expert,
                 self.lineage_analyst,
                 self.executor,
+                self.data_analyst,
             ],
             tasks=[analyze_task, summary_task],
             process=Process.hierarchical,
@@ -98,6 +103,19 @@ class URGSCrew:
         return Crew(
             agents=[self.lineage_analyst],
             tasks=tasks,
+            process=Process.sequential,
+            verbose=True,
+        )
+
+    def create_data_analysis_crew(self, user_input: str) -> Crew:
+        """
+        创建数据分析 Crew
+        负责执行 NL2SQL 查询业务数据
+        """
+        task = create_sql_query_task(self.data_analyst, user_input)
+        return Crew(
+            agents=[self.data_analyst],
+            tasks=[task],
             process=Process.sequential,
             verbose=True,
         )
@@ -148,6 +166,8 @@ def run_crew(user_input: str, context: Optional[Dict[str, Any]] = None) -> str:
         crew = crew_instance.create_rag_crew(user_input)
     elif intent == "lineage":
         crew = crew_instance.create_lineage_crew(sql=extract_sql(user_input))
+    elif intent == "data":
+        crew = crew_instance.create_data_analysis_crew(user_input)
     elif intent == "job":
         crew = crew_instance.create_job_management_crew()
     else:
@@ -195,6 +215,21 @@ def classify_intent(user_input: str) -> str:
     rag_keywords = ["什么是", "怎么", "如何", "为什么", "查询", "找", "搜索", "文档"]
     if any(kw in user_input_lower for kw in rag_keywords):
         return "rag"
+
+    # 数据分析关键词
+    data_keywords = [
+        "统计",
+        "多少",
+        "分布",
+        "top",
+        "排名",
+        "总数",
+        "count",
+        "sum",
+        "数据",
+    ]
+    if any(kw in user_input_lower for kw in data_keywords):
+        return "data"
 
     return "general"
 

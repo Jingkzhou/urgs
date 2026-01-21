@@ -148,3 +148,25 @@ def create_summary_task(agent, context: str = None) -> Task:
         expected_output="对用户请求的完整回答",
         agent=agent,
     )
+
+
+def create_sql_query_task(agent, user_input: str = None) -> Task:
+    """
+    业务数据查询任务
+    由数据分析师执行
+    """
+    return Task(
+        description=f"""根据用户的业务问题，查询数据库并提供答案。
+
+用户问题: {user_input or "{user_input}"}
+
+请执行：
+1. 分析问题，推导出需要的 SQL 查询（基于已知表结构）
+   (主要表: task_info, task_schedule, task_execution_log 等)
+2. 使用业务数据查询工具执行 SQL
+3. 根据查询结果，回答用户问题
+
+注意：只回答与数据相关的事实，不要臆测。""",
+        expected_output="基于数据库查询结果的业务问题回答",
+        agent=agent,
+    )
