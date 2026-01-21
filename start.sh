@@ -156,16 +156,35 @@ start_presentation() {
   pids+=($!)
 }
 
+AGENT_DIR="$SCRIPT_DIR/urgs-agent"
+
+# ... (existing flags)
+ENABLE_AGENT=false
+
+# ... (existing functions)
+
+start_agent() {
+  echo "Starting agent..."
+  cd "$AGENT_DIR"
+  kill_port_if_exists 8002
+  
+  # Ensure script is executable
+  chmod +x start.sh
+  ./start.sh &
+  pids+=($!)
+}
+
 # --- Interactive Menu ---
 echo "Multiple services detected. Please select which ones to start:"
-echo "  [1] All Services (Backend, Executor, Frontend, RAG)"
+echo "  [1] All Services (Backend, Executor, Frontend, RAG, Agent)"
 echo "  [2] Backend (urgs-api)"
 echo "  [3] Executor (urgs-executor)"
 echo "  [4] Frontend (urgs-web)"
 echo "  [5] RAG (urgs-rag)"
 echo "  [6] Presentation (urgs-presentation)"
+echo "  [7] Agent (urgs-agent)"
 echo ""
-echo "Enter your choice (e.g., '1' for all, or '2 3' for Backend+Executor):"
+echo "Enter your choice (e.g., '1' for all, or '2 7' for Backend+Agent):"
 read -r -a choices
 
 if [ ${#choices[@]} -eq 0 ]; then
@@ -181,12 +200,14 @@ for choice in "${choices[@]}"; do
       ENABLE_FRONTEND=true
       ENABLE_RAG=true
       ENABLE_PRESENTATION=true
+      ENABLE_AGENT=true
       ;;
     2) ENABLE_BACKEND=true ;;
     3) ENABLE_EXECUTOR=true ;;
     4) ENABLE_FRONTEND=true ;;
     5) ENABLE_RAG=true ;;
     6) ENABLE_PRESENTATION=true ;;
+    7) ENABLE_AGENT=true ;;
     *) echo "Unknown option: $choice (ignored)" ;;
   esac
 done
@@ -196,6 +217,7 @@ if [ "$ENABLE_EXECUTOR" = true ]; then start_executor; fi
 if [ "$ENABLE_FRONTEND" = true ]; then start_frontend; fi
 if [ "$ENABLE_RAG" = true ]; then start_rag; fi
 if [ "$ENABLE_PRESENTATION" = true ]; then start_presentation; fi
+if [ "$ENABLE_AGENT" = true ]; then start_agent; fi
 
 if [ ${#pids[@]} -eq 0 ]; then
   echo "No services selected. Exiting."
@@ -204,7 +226,6 @@ fi
 
 echo "Selected services are running. Press Ctrl+C to stop."
 
-# Portable wait-for-any (macOS bash 3.x lacks `wait -n`)
 while true; do
   for pid in "${pids[@]}"; do
     if ! kill -0 "$pid" 2>/dev/null; then

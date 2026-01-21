@@ -19,15 +19,13 @@ from schemas.api import (
     PendingApproval,
 )
 from schemas.events import SSEEvent
-from storage.audit_store import AuditStore
-from storage.session_store import SessionStore
+from storage.audit_store import audit_store
+from storage.session_store import session_store
 
 router = APIRouter()
 logger = get_logger("chat")
 
-# 复用现有的存储和策略
-session_store = SessionStore()
-audit_store = AuditStore()
+# 策略实例
 approval_policy = ApprovalPolicy()
 injection_guard = InjectionGuard()
 
