@@ -14,6 +14,7 @@ Requires-Dist: pydantic-settings>=2.2.0
 Requires-Dist: sse-starlette>=2.0.0
 Requires-Dist: structlog>=24.1.0
 Requires-Dist: httpx>=0.25.0
+Requires-Dist: litellm>=1.0.0
 Provides-Extra: redis
 Requires-Dist: redis>=5.0.1; extra == "redis"
 Provides-Extra: mysql

@@ -18,7 +18,7 @@ class AuditStore:
             payload={"session_id": session_id, **payload},
         )
         self.records.append(event)
-        self.logger.info("audit_event", event=event.model_dump())
+        self.logger.info("audit_event", data=event.model_dump())
         return event
 
     async def list_events(self, session_id: str) -> List[EventRecord]:
