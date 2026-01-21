@@ -1,43 +1,199 @@
 # urgs-agent
 
-URGS 的智能编排服务，负责对话管理、LangGraph 状态机编排、工具调用循环、审批与审计输出。模块目标：把用户意图转成受控的工具调用序列，并产出可审计、可回放、可确认的执行结果。
+URGS 智能编排服务，基于 **CrewAI** 实现多 Agent 协作。负责对话管理、任务编排、工具调用、审批与审计输出。
 
-## 快速开始
+## 🏗️ 架构概览
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        FastAPI 入口层                            │
+│         /chat │ /chat/stream │ /sessions │ /approvals           │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      CrewAI 多 Agent 协作层                       │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌───────────┐ │
+│  │  协调员      │ │ RAG 专家    │ │ 血缘分析师   │ │ 执行者    │ │
+│  │ Coordinator │ │ RAG Expert  │ │  Lineage    │ │ Executor  │ │
+│  └─────────────┘ └─────────────┘ └─────────────┘ └───────────┘ │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                           工具层                                 │
+│    RAG 知识检索 │ SQL 血缘分析 │ 任务查询/执行 │ 文档搜索          │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         外部服务                                 │
+│      urgs-rag (8001) │ sql-lineage-engine │ urgs-api (8080)     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## 🚀 快速开始
 
 ```bash
 cd urgs-agent
+
+# 安装依赖
 pip install -e ".[dev]"
-uvicorn app.main:app --reload
+
+# 启动服务
+uvicorn app.main:app --reload --port 8002
 ```
 
-环境变量主要通过 `core/config.py` 定义，至少需要配置模型与工具端点，例如：
+### 环境变量配置
+
+通过 `.env` 文件或环境变量配置：
 
 ```bash
+# LLM 配置
 export OPENAI_BASE_URL=http://localhost:11434/v1
-export OPENAI_API_KEY=dummy
+export OPENAI_API_KEY=your-api-key
 export MODEL_NAME=qwen3
+
+# 服务地址
+export RAG_SERVICE_URL=http://localhost:8001      # urgs-rag 服务
+export LINEAGE_SERVICE_URL=http://localhost:8002  # sql-lineage-engine
+export API_SERVICE_URL=http://localhost:8080      # urgs-api 后端
 ```
 
-## 目录结构
+## 📁 目录结构
 
-- `app/`：FastAPI 入口与路由（chat、sessions、approvals、health），中间件封装 trace_id、鉴权等。
-- `core/`：配置、日志、错误定义。
-- `llm/`：模型客户端封装与系统提示词。
-- `agent/`：LangGraph 定义、状态结构、策略（工具白名单、审批、注入防护）、运行时（执行器、工具注册）。
-- `storage/`：会话与审计存储适配层（内存/Redis/MySQL）。
-- `schemas/`：API 与 SSE 事件的 Pydantic 模型。
-- `tests/`：策略、图状态与接口的最小单测占位。
+```
+urgs-agent/
+├── agent/
+│   ├── agents.py          # CrewAI Agent 定义（4 个角色）
+│   ├── crews.py           # Crew 团队编排与意图分类
+│   ├── tasks.py           # Task 任务模板（7 种任务类型）
+│   ├── tools/             # 工具层
+│   │   └── __init__.py    # 7 个工具：RAG/血缘/执行器
+│   └── policies/          # 策略
+│       ├── approval_policy.py   # 审批策略
+│       ├── injection_guard.py   # 注入防护
+│       └── tool_policy.py       # 工具白名单
+├── app/                   # FastAPI 应用
+│   ├── main.py            # 应用入口
+│   ├── routes/            # API 路由
+│   │   ├── chat.py        # 聊天接口
+│   │   ├── sessions.py    # 会话管理
+│   │   ├── approvals.py   # 审批接口
+│   │   └── health.py      # 健康检查
+│   └── middleware/        # 中间件（TraceID、Auth）
+├── core/                  # 核心配置
+│   ├── config.py          # 环境配置
+│   └── logging.py         # 日志
+├── storage/               # 存储层
+│   ├── session_store.py   # 会话存储（内存/Redis）
+│   └── audit_store.py     # 审计日志
+├── schemas/               # API 数据模型
+│   ├── api.py             # 请求/响应模型
+│   └── events.py          # SSE 事件模型
+├── llm/                   # LLM 客户端
+└── tests/                 # 测试
+```
 
-## 功能概览
+## 🤖 Agent 角色
 
-- /chat 与 /chat/stream（SSE）对接模型与工具调用循环，支持 NEED_APPROVAL 中断与回放。
-- /approvals/* 确认写操作后恢复状态机继续执行。
-- /sessions/* 提供会话摘要与事件回放。
-- trace_id 全链路：日志、SSE、审计事件保持一致。
-- 工具层通过 MCP 适配，带白名单、写操作判定、参数约束，写操作强制审批。
+| Agent | 职责 | 工具 |
+|-------|------|------|
+| **协调员** | 理解用户意图，分派任务，汇总结果 | 全部工具 |
+| **RAG 专家** | 从知识库检索文档和信息 | RAG知识检索、文档摘要检索 |
+| **血缘分析师** | 解析 SQL 获取表/字段级血缘 | SQL血缘分析、查询表血缘关系 |
+| **任务执行者** | 触发和管理调度任务 | 查询任务列表、任务详情、触发执行 |
 
-## 状态机要点
+## 🔧 工具列表
 
-- 节点：ingest → classify_intent → draft_plan → select_tool → precheck_policy → maybe_require_approval → execute_tool → reflect → finalize（纯问答可直接 finalize）。
-- AgentState 记录 messages、context、plan、tool_budget、pending_approval、audit_trace_id、final_answer。
-- 审计事件覆盖 plan_created、tool_called/returned、approval_created/approved/rejected、final_answer、error。
+| 工具名 | 功能 | 调用服务 |
+|--------|------|----------|
+| **RAG知识检索** | 从知识库检索信息 | urgs-rag |
+| **文档摘要检索** | 根据关键词搜索文档 | urgs-rag |
+| **SQL血缘分析** | 解析 SQL 提取血缘关系 | sql-lineage-engine |
+| **查询表血缘关系** | 查询表的上下游依赖 | urgs-api |
+| **查询任务列表** | 获取调度任务列表 | urgs-api |
+| **查询任务详情** | 获取指定任务详情 | urgs-api |
+| **触发任务执行** | 执行调度任务（需审批） | urgs-api |
+
+## 📡 API 接口
+
+### POST /chat
+同步聊天接口
+
+```bash
+curl -X POST http://localhost:8002/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "u001",
+    "text": "帮我分析这条 SQL 的血缘关系：SELECT a.id, b.name FROM t1 a JOIN t2 b ON a.id = b.id"
+  }'
+```
+
+**响应示例**：
+```json
+{
+  "session_id": "s_abc123",
+  "message_id": "msg_xyz789",
+  "answer": "**源表**: t1, t2\n**目标表**: 无\n**字段血缘**: a.id, b.name",
+  "status": "COMPLETED"
+}
+```
+
+### POST /chat/stream
+流式聊天接口 (SSE)，实时返回处理进度
+
+### GET /sessions/{session_id}
+获取会话摘要
+
+### GET /sessions/{session_id}/events
+获取会话事件历史（用于回放）
+
+### POST /approvals/{approval_id}/confirm
+确认或拒绝待审批操作
+
+### GET /health
+健康检查
+
+## 🛡️ 审批机制
+
+当检测到危险操作关键词时，系统会自动要求人工审批：
+
+| 关键词 | 操作类型 |
+|--------|----------|
+| 删除、drop、truncate | 数据删除 |
+| 执行、运行、trigger | 任务执行 |
+| 重跑、update | 数据修改 |
+
+**审批流程**：
+1. 系统检测到危险操作 → 返回 `NEED_APPROVAL` 状态
+2. 用户通过 `/approvals/{id}/confirm` 确认或拒绝
+3. 确认后系统继续执行，拒绝则终止
+
+## ⚙️ 依赖服务
+
+完整功能需要以下服务运行：
+
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| urgs-rag | 8001 | 知识库检索服务 |
+| urgs-api | 8080 | 后端 API 服务 |
+| sql-lineage-engine | - | SQL 血缘分析（命令行/API） |
+
+## 🧪 测试
+
+```bash
+# 运行所有测试
+pytest tests/ -v
+
+# 运行特定测试
+pytest tests/test_health.py -v
+```
+
+## 📦 技术栈
+
+- **框架**: FastAPI, CrewAI
+- **LLM**: 支持 OpenAI API 兼容接口（如 Ollama）
+- **存储**: 内存（默认）/ Redis / MySQL
+- **日志**: structlog
