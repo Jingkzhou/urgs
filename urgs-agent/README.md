@@ -129,6 +129,80 @@ curl -X POST http://localhost:8002/chat \
   }'
 ```
 
+## 🧭 执行链路（/chat 示例）
+
+下面以 `POST /chat` 为主线，说明“统计任务数量”这类请求在代码里的执行路径，以及每个模块的职责。
+
+### 1) 入口与中间件
+
+- `app/main.py`：创建 FastAPI 应用，注册路由与中间件。
+- `app/middleware/trace.py`：为每个请求生成/透传 `X-Trace-Id`，便于链路追踪。
+- `app/middleware/auth.py`：从 `X-User-Id` 读取用户身份到 `request.state`（当前未做强校验）。
+
+### 2) /chat 路由核心流程
+
+`app/routes/chat.py::chat_endpoint` 做了以下步骤：
+
+1. **提示注入检测**：`InjectionGuard.assert_safe` 对输入做安全检查，命中规则会抛错拦截请求。
+2. **会话创建**：`session_store.create_session` 创建会话并保存上下文。
+3. **审计事件**：`audit_store.record_event` 写入 `chat_started` 审计记录。
+4. **审批判断**：`_maybe_require_approval` 检测危险关键词（如执行/trigger/drop 等）。
+   - 若命中，写入待审批并返回 `NEED_APPROVAL`。
+5. **CrewAI 执行**：`run_crew` 进入多 Agent 协作流程（见下文）。
+6. **结果落库与返回**：记录 `final_answer` 审计事件并更新会话状态为 `COMPLETED`。
+
+### 3) CrewAI 任务编排
+
+`agent/crews.py::run_crew` 负责意图分类与 Crew 选择：
+
+- `classify_intent` 先按关键词判断意图（注意：**任务关键词优先于统计关键词**）。
+- 对应的 Crew 选择如下：
+  - `job` → `create_job_management_crew`
+  - `data` → `create_data_analysis_crew`
+  - `lineage` / `rag` / `general` → 对应 Crew
+
+> 例：输入“帮我统计一下现在有多少个任务？”包含“任务”关键词，因此优先走 **job** 流程。
+
+### 4) 任务执行与工具调用
+
+以 **job 流程** 为例：
+
+- `agent/tasks.py::create_job_status_task` 生成“查询任务状态”任务。
+- `agent/agents.py::create_executor_agent` 作为执行者 Agent。
+- `agent/tools/__init__.py::list_jobs` 调用 `urgs-api`：`GET /api/jobs`。
+- CrewAI 汇总工具返回的任务列表，生成最终文本响应。
+
+若进入 **data 流程**：
+
+- `agent/tasks.py::create_sql_query_task` 描述“生成 SQL 并查询数据库”。
+- `agent/tools/__init__.py::get_sql_tool` 使用 `NL2SQLTool` 对 MySQL 执行 **只读查询**。
+
+### 5) 审批与会话/审计
+
+- `agent/policies/approval_policy.py`：构造 `PendingApproval` 与过期时间。
+- `app/routes/approvals.py`：确认/拒绝审批，更新会话状态。
+- `storage/session_store.py`：会话、事件、审批暂存（默认内存）。
+- `storage/audit_store.py`：审计日志记录与查询。
+
+### 6) 流式接口 /chat/stream
+
+`app/routes/chat.py::chat_stream` 用 SSE 推送执行过程：
+
+- `start` 事件：返回 session_id。
+- `token` 事件：提示当前处理阶段（意图、Crew 执行中）。
+- `need_approval` / `final` / `error`：最终结果或错误。
+
+## 🔍 关键代码位置速查
+
+- 入口与路由：`app/main.py`、`app/routes/chat.py`
+- 意图分类与编排：`agent/crews.py`
+- Agent 角色定义：`agent/agents.py`
+- Task 模板：`agent/tasks.py`
+- 工具调用：`agent/tools/__init__.py`
+- 审批/安全：`agent/policies/approval_policy.py`、`agent/policies/injection_guard.py`
+- 会话/审计：`storage/session_store.py`、`storage/audit_store.py`
+- 配置与日志：`core/config.py`、`core/logging.py`
+
 **响应示例**：
 ```json
 {

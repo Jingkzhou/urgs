@@ -170,3 +170,47 @@ def create_sql_query_task(agent, user_input: str = None) -> Task:
         expected_output="基于数据库查询结果的业务问题回答",
         agent=agent,
     )
+
+
+def create_data_quality_check_task(agent, table_name: str = None) -> Task:
+    """
+    数据质量检查任务
+    由数据分析师执行
+    """
+    return Task(
+        description=f"""检查表 {table_name or "{table_name}"} 的数据质量问题。
+
+使用"数据质量检查"工具执行检查，分析：
+1. 总行数和字段数
+2. 各字段的 NULL 值分布
+3. 是否存在异常模式
+
+返回数据质量问题清单。""",
+        expected_output="数据质量检查报告，包含 NULL 值统计和异常发现",
+        agent=agent,
+    )
+
+
+def create_root_cause_summary_task(agent, context: list = None) -> Task:
+    """
+    根因分析汇总任务
+    由协调员执行，基于多个专家的输出
+    """
+    return Task(
+        description="""根据各专家的分析结果，进行根因推断。
+
+你将获得以下信息：
+- 数据质量检查结果（NULL 值、异常）
+- 表血缘关系（上下游依赖）
+- 历史问题参考（知识库检索）
+
+请：
+1. 综合分析所有信息
+2. 推断最可能的根因
+3. 给出修复建议
+
+输出结构化的根因分析报告。""",
+        expected_output="根因分析报告，包含问题定位、可能原因和修复建议",
+        agent=agent,
+        context=context,  # 依赖前面任务的输出
+    )

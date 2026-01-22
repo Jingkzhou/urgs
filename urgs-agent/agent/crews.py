@@ -20,12 +20,15 @@ from agent.tasks import (
     create_execute_job_task,
     create_summary_task,
     create_sql_query_task,
+    create_data_quality_check_task,
+    create_root_cause_summary_task,
 )
 from agent.tools import (
     get_rag_tools,
     get_lineage_tools,
     get_executor_tools,
     get_sql_tool,
+    get_data_quality_tools,
     get_all_tools,
 )
 from core.logging import get_logger
@@ -141,6 +144,46 @@ class URGSCrew:
             verbose=True,
         )
 
+    def create_data_quality_crew(self, table_name: str) -> Crew:
+        """
+        数据质量根因分析 Crew
+        4 个 Agent 协作完成
+        """
+        # 为 hierarchical 模式创建不带工具的 manager agent
+        from agent.agents import create_coordinator_agent
+
+        manager = create_coordinator_agent(tools=[])  # Manager 不能有工具
+
+        # Step 1: 数据分析师检查数据质量
+        quality_check_task = create_data_quality_check_task(
+            self.data_analyst, table_name
+        )
+
+        # Step 2: 血缘分析师查上游依赖
+        lineage_task = create_table_impact_task(self.lineage_analyst, table_name)
+
+        # Step 3: RAG 专家查历史问题
+        rag_task = create_rag_query_task(
+            self.rag_expert, f"{table_name} 历史数据问题 质量"
+        )
+
+        # Step 4: 协调员汇总根因分析
+        summary_task = create_root_cause_summary_task(
+            manager, context=[quality_check_task, lineage_task, rag_task]
+        )
+
+        return Crew(
+            agents=[
+                self.data_analyst,
+                self.lineage_analyst,
+                self.rag_expert,
+            ],
+            tasks=[quality_check_task, lineage_task, rag_task, summary_task],
+            process=Process.hierarchical,
+            manager_agent=manager,
+            verbose=True,
+        )
+
 
 def run_crew(user_input: str, context: Optional[Dict[str, Any]] = None) -> str:
     """
@@ -168,6 +211,9 @@ def run_crew(user_input: str, context: Optional[Dict[str, Any]] = None) -> str:
         crew = crew_instance.create_lineage_crew(sql=extract_sql(user_input))
     elif intent == "data":
         crew = crew_instance.create_data_analysis_crew(user_input)
+    elif intent == "quality":
+        table_name = extract_table_name(user_input) or "unknown_table"
+        crew = crew_instance.create_data_quality_crew(table_name)
     elif intent == "job":
         crew = crew_instance.create_job_management_crew()
     else:
@@ -226,10 +272,14 @@ def classify_intent(user_input: str) -> str:
         "总数",
         "count",
         "sum",
-        "数据",
     ]
     if any(kw in user_input_lower for kw in data_keywords):
         return "data"
+
+    # 数据质量分析关键词
+    quality_keywords = ["数据质量", "质检", "检查", "null", "异常", "根因", "问题"]
+    if any(kw in user_input_lower for kw in quality_keywords):
+        return "quality"
 
     return "general"
 
@@ -253,5 +303,27 @@ def extract_sql(user_input: str) -> Optional[str]:
         match = re.search(pattern, user_input, re.IGNORECASE | re.DOTALL)
         if match:
             return match.group(1).strip()
+
+    return None
+
+
+def extract_table_name(user_input: str) -> Optional[str]:
+    """
+    从用户输入中提取表名
+    """
+    import re
+
+    # 尝试匹配常见表名模式
+    patterns = [
+        r"表\s*[`'\"]?(\w+)[`'\"]?",  # 表 xxx
+        r"[`'\"](\w+)[`'\"]?\s*表",  # xxx 表
+        r"table\s+(\w+)",  # table xxx
+        r"(\w+)\s+table",  # xxx table
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, user_input, re.IGNORECASE)
+        if match:
+            return match.group(1)
 
     return None

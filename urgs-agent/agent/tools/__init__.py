@@ -296,6 +296,72 @@ def trigger_job(job_id: str, params: Optional[str] = None) -> str:
         return f"触发任务失败: {str(e)}"
 
 
+# ==================== 数据质量检查工具 ====================
+
+
+@tool("数据质量检查")
+def check_data_quality(table_name: str) -> str:
+    """
+    检查指定表的数据质量，包括 NULL 值统计、行数、异常值检测等。
+
+    Args:
+        table_name: 要检查的表名
+
+    Returns:
+        数据质量检查报告
+    """
+    import pymysql
+
+    try:
+        conn = pymysql.connect(
+            host=settings.db_host,
+            port=settings.db_port,
+            user=settings.db_user,
+            password=settings.db_password,
+            database=settings.db_name,
+            charset="utf8mb4",
+        )
+
+        results = []
+        with conn.cursor() as cursor:
+            # 1. 获取行数
+            cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+            row_count = cursor.fetchone()[0]
+            results.append(f"**总行数**: {row_count}")
+
+            # 2. 获取列信息
+            cursor.execute(f"DESCRIBE {table_name}")
+            columns = cursor.fetchall()
+            results.append(f"**字段数**: {len(columns)}")
+
+            # 3. 检查每列的 NULL 值
+            null_stats = []
+            for col in columns:
+                col_name = col[0]
+                cursor.execute(
+                    f"SELECT COUNT(*) FROM {table_name} WHERE `{col_name}` IS NULL"
+                )
+                null_count = cursor.fetchone()[0]
+                if null_count > 0:
+                    null_rate = (null_count / row_count * 100) if row_count > 0 else 0
+                    null_stats.append(
+                        f"  - `{col_name}`: {null_count} 个 NULL ({null_rate:.1f}%)"
+                    )
+
+            if null_stats:
+                results.append("\n**NULL 值统计**:")
+                results.extend(null_stats)
+            else:
+                results.append("\n**NULL 值统计**: 无 NULL 值")
+
+        conn.close()
+        return "\n".join(results)
+
+    except Exception as e:
+        logger.warning("data_quality_check_failed", error=str(e))
+        return f"数据质量检查失败: {str(e)}"
+
+
 # ==================== 工具集合 ====================
 
 
@@ -314,6 +380,16 @@ def get_executor_tools() -> list:
     return [list_jobs, get_job_detail, trigger_job]
 
 
+def get_data_quality_tools() -> list:
+    """获取数据质量检查工具"""
+    return [check_data_quality, get_sql_tool()]
+
+
 def get_all_tools() -> list:
     """获取所有工具"""
-    return get_rag_tools() + get_lineage_tools() + get_executor_tools()
+    return (
+        get_rag_tools()
+        + get_lineage_tools()
+        + get_executor_tools()
+        + [check_data_quality]
+    )
