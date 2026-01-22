@@ -10,11 +10,29 @@ class Settings(BaseSettings):
         env_file=".env", env_prefix="", case_sensitive=False
     )
 
-    openai_base_url: str = Field(
-        "http://localhost:11434/v1", validation_alias="OPENAI_BASE_URL"
+    # Primary Model (大模型 - 协调/汇总/复杂推理)
+    # provider: google | openai (可随意搭配，独立于 Secondary)
+    primary_model_provider: str = Field(
+        "google", validation_alias="PRIMARY_MODEL_PROVIDER"
     )
-    openai_api_key: str = Field("dummy", validation_alias="OPENAI_API_KEY")
-    model_name: str = Field("qwen3", validation_alias="MODEL_NAME")
+    primary_model_name: str = Field(
+        "gemini-2.0-flash", validation_alias="PRIMARY_MODEL_NAME"
+    )
+    primary_api_key: str = Field("", validation_alias="PRIMARY_API_KEY")
+    primary_base_url: str = Field("", validation_alias="PRIMARY_BASE_URL")
+
+    # Secondary Model (小模型 - 执行层/工具调用)
+    # provider: google | openai (可随意搭配，独立于 Primary)
+    secondary_model_provider: str = Field(
+        "openai", validation_alias="SECONDARY_MODEL_PROVIDER"
+    )
+    secondary_model_name: str = Field("qwen3", validation_alias="SECONDARY_MODEL_NAME")
+    secondary_api_key: str = Field("dummy", validation_alias="SECONDARY_API_KEY")
+    secondary_base_url: str = Field(
+        "http://localhost:11434/v1", validation_alias="SECONDARY_BASE_URL"
+    )
+
+    # LLM 通用配置
     llm_temperature: float = Field(0.3, validation_alias="LLM_TEMPERATURE")
     llm_timeout_s: int = Field(60, validation_alias="LLM_TIMEOUT_S")
 

@@ -5,14 +5,55 @@ from crewai import Agent, LLM
 from core.config import get_settings
 
 
-def get_llm() -> LLM:
-    """获取配置的 LLM 实例"""
-    settings = get_settings()
-    return LLM(
-        model=f"openai/{settings.model_name}",
-        base_url=settings.openai_base_url,
-        api_key=settings.openai_api_key,
+def _create_llm(
+    provider: str, model_name: str, api_key: str, base_url: str = ""
+) -> LLM:
+    """
+    根据 provider 创建 LLM 实例
+
+    Args:
+        provider: 'google' 或 'openai'
+        model_name: 模型名称
+        api_key: API Key
+        base_url: OpenAI 兼容 API 的 base URL
+    """
+    if provider == "google":
+        # 使用 Google AI Studio 的 OpenAI 兼容端点
+        # 无需安装 crewai[google-genai]，直接走 OpenAI 兼容路径
+        return LLM(
+            model=f"openai/{model_name}",
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            api_key=api_key,
+        )
+    else:  # openai 兼容
+        return LLM(model=f"openai/{model_name}", base_url=base_url, api_key=api_key)
+
+
+def get_primary_llm() -> LLM:
+    """获取主模型（大模型，用于协调/汇总/复杂推理）"""
+    s = get_settings()
+    return _create_llm(
+        s.primary_model_provider,
+        s.primary_model_name,
+        s.primary_api_key,
+        s.primary_base_url,
     )
+
+
+def get_secondary_llm() -> LLM:
+    """获取次模型（小模型，用于执行层/工具调用）"""
+    s = get_settings()
+    return _create_llm(
+        s.secondary_model_provider,
+        s.secondary_model_name,
+        s.secondary_api_key,
+        s.secondary_base_url,
+    )
+
+
+def get_llm() -> LLM:
+    """获取配置的 LLM 实例（向后兼容，默认返回次模型）"""
+    return get_secondary_llm()
 
 
 def create_coordinator_agent(tools: list = None) -> Agent:
@@ -32,7 +73,7 @@ def create_coordinator_agent(tools: list = None) -> Agent:
 你需要分析用户请求，判断是否需要调用专家，并组织最终答案。""",
         verbose=True,
         allow_delegation=True,
-        llm=get_llm(),
+        llm=get_primary_llm(),
         tools=tools or [],
     )
 
