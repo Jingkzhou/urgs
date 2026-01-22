@@ -3,6 +3,9 @@
 
 from crewai import Agent, LLM
 from core.config import get_settings
+from core.logging import get_logger
+
+logger = get_logger("agents")
 
 
 def _create_llm(
@@ -32,6 +35,12 @@ def _create_llm(
 def get_primary_llm() -> LLM:
     """获取主模型（大模型，用于协调/汇总/复杂推理）"""
     s = get_settings()
+    logger.info(
+        "llm_created",
+        tier="PRIMARY",
+        provider=s.primary_model_provider,
+        model=s.primary_model_name,
+    )
     return _create_llm(
         s.primary_model_provider,
         s.primary_model_name,
@@ -43,6 +52,12 @@ def get_primary_llm() -> LLM:
 def get_secondary_llm() -> LLM:
     """获取次模型（小模型，用于执行层/工具调用）"""
     s = get_settings()
+    logger.info(
+        "llm_created",
+        tier="SECONDARY",
+        provider=s.secondary_model_provider,
+        model=s.secondary_model_name,
+    )
     return _create_llm(
         s.secondary_model_provider,
         s.secondary_model_name,
@@ -91,7 +106,7 @@ def create_rag_expert_agent(tools: list = None) -> Agent:
 当收到查询请求时，你会调用 RAG 工具进行检索并返回相关知识。""",
         verbose=True,
         allow_delegation=False,
-        llm=get_llm(),
+        llm=get_secondary_llm(),
         tools=tools or [],
     )
 
@@ -113,7 +128,7 @@ def create_lineage_analyst_agent(tools: list = None) -> Agent:
 你会将分析结果以清晰的格式返回，帮助用户理解数据流转。""",
         verbose=True,
         allow_delegation=False,
-        llm=get_llm(),
+        llm=get_secondary_llm(),
         tools=tools or [],
     )
 
@@ -136,7 +151,7 @@ def create_executor_agent(tools: list = None) -> Agent:
 你会谨慎处理任务执行请求，确保操作安全可控。""",
         verbose=True,
         allow_delegation=False,
-        llm=get_llm(),
+        llm=get_secondary_llm(),
         tools=tools or [],
     )
 
@@ -159,6 +174,6 @@ def create_data_analyst_agent(tools: list = None) -> Agent:
 你非常谨慎，只执行查询（SELECT）操作，绝不修改数据。""",
         verbose=True,
         allow_delegation=False,
-        llm=get_llm(),
+        llm=get_secondary_llm(),
         tools=tools or [],
     )
