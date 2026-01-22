@@ -11,6 +11,11 @@ from agent.agents import (
     create_executor_agent,
     create_data_analyst_agent,
 )
+from agent.detective_agents import (
+    create_investigation_lead_agent,
+    create_schema_expert_agent,
+    create_evidence_collector_agent,
+)
 from agent.tasks import (
     create_analyze_request_task,
     create_rag_query_task,
@@ -22,6 +27,7 @@ from agent.tasks import (
     create_sql_query_task,
     create_data_quality_check_task,
     create_root_cause_summary_task,
+    create_investigation_task,
 )
 from agent.tools import (
     get_rag_tools,
@@ -184,6 +190,28 @@ class URGSCrew:
             verbose=True,
         )
 
+    def create_data_detective_crew(self, user_input: str) -> Crew:
+        """
+        创建数据侦探 Crew
+        模拟 '业务 -> 研发 -> 运维' 的排查链路
+        """
+        # 1. 初始化 Agents
+        lead_agent = create_investigation_lead_agent()
+        schema_expert = create_schema_expert_agent()
+        evidence_collector = create_evidence_collector_agent()
+
+        # 2. 创建核心任务（由 Lead 负责拆解和委派）
+        investigation_task = create_investigation_task(lead_agent, user_input)
+
+        return Crew(
+            agents=[schema_expert, evidence_collector],
+            tasks=[investigation_task],
+            process=Process.hierarchical,  # 必须使用层级模式，让 Lead 能够指挥其他人
+            manager_agent=lead_agent,
+            verbose=True,
+            memory=False,  # 暂时关闭记忆，避免 Embedding 连接错误 (Connection reset by peer)
+        )
+
 
 def run_crew(user_input: str, context: Optional[Dict[str, Any]] = None) -> str:
     """
@@ -216,6 +244,8 @@ def run_crew(user_input: str, context: Optional[Dict[str, Any]] = None) -> str:
         crew = crew_instance.create_data_quality_crew(table_name)
     elif intent == "job":
         crew = crew_instance.create_job_management_crew()
+    elif intent == "investigate":
+        crew = crew_instance.create_data_detective_crew(user_input)
     else:
         crew = crew_instance.create_general_crew(user_input)
 
@@ -237,6 +267,26 @@ def classify_intent(user_input: str) -> str:
     """
     user_input_lower = user_input.lower()
 
+    # 数据排查关键词 (Data Detective)
+    investigate_keywords = [
+        "查不到",
+        "没数据",
+        "少了",
+        "排查",
+        "原因",
+        "为什么",
+        "investigate",
+        "missing",
+        "data issue",
+        "debug",
+    ]
+    # 注意："为什么" 也可能用于 RAG，但如果没有具体知识库文案，通常是排查
+    # 这里我们优先匹配排查，如果只是纯粹的 "什么是..." 归 RAG
+    if any(kw in user_input_lower for kw in investigate_keywords):
+        # 排除纯 RAG 问题
+        if not any(k in user_input_lower for k in ["什么是", "how to", "文档"]):
+            return "investigate"
+
     # 血缘相关关键词
     lineage_keywords = [
         "血缘",
@@ -252,17 +302,7 @@ def classify_intent(user_input: str) -> str:
     if any(kw in user_input_lower for kw in lineage_keywords):
         return "lineage"
 
-    # 任务管理关键词
-    job_keywords = ["任务", "调度", "执行", "job", "运行", "触发", "状态"]
-    if any(kw in user_input_lower for kw in job_keywords):
-        return "job"
-
-    # 知识检索关键词
-    rag_keywords = ["什么是", "怎么", "如何", "为什么", "查询", "找", "搜索", "文档"]
-    if any(kw in user_input_lower for kw in rag_keywords):
-        return "rag"
-
-    # 数据分析关键词
+    # 数据分析关键词 (优先于任务管理，例如 '统计任务数' 应归为 data)
     data_keywords = [
         "统计",
         "多少",
@@ -275,6 +315,16 @@ def classify_intent(user_input: str) -> str:
     ]
     if any(kw in user_input_lower for kw in data_keywords):
         return "data"
+
+    # 任务管理关键词
+    job_keywords = ["任务", "调度", "执行", "job", "运行", "触发", "状态"]
+    if any(kw in user_input_lower for kw in job_keywords):
+        return "job"
+
+    # 知识检索关键词
+    rag_keywords = ["什么是", "怎么", "如何", "查询", "找", "搜索", "文档"]
+    if any(kw in user_input_lower for kw in rag_keywords):
+        return "rag"
 
     # 数据质量分析关键词
     quality_keywords = ["数据质量", "质检", "检查", "null", "异常", "根因", "问题"]

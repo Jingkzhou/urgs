@@ -3,6 +3,7 @@ pyproject.toml
 agent/__init__.py
 agent/agents.py
 agent/crews.py
+agent/detective_agents.py
 agent/tasks.py
 agent/policies/__init__.py
 agent/policies/approval_policy.py
@@ -12,6 +13,8 @@ agent/runtime/__init__.py
 agent/runtime/executor.py
 agent/runtime/tool_registry.py
 agent/tools/__init__.py
+agent/tools/safe_sql_tool.py
+agent/tools/schema_tool.py
 app/__init__.py
 app/main.py
 app/middleware/__init__.py
@@ -36,6 +39,7 @@ storage/audit_store.py
 storage/session_store.py
 tests/test_health.py
 tests/test_policy.py
+tests/test_safe_sql.py
 tests/test_session_store.py
 urgs_agent.egg-info/PKG-INFO
 urgs_agent.egg-info/SOURCES.txt

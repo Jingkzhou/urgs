@@ -214,3 +214,33 @@ def create_root_cause_summary_task(agent, context: list = None) -> Task:
         agent=agent,
         context=context,  # 依赖前面任务的输出
     )
+
+
+def create_investigation_task(agent, user_input: str) -> Task:
+    """
+    通用数据排查任务
+    由排查指挥官（Lead）负责，协调专家进行排查
+    """
+    return Task(
+        description=f"""针对用户反馈的数据问题进行全流程排查。
+
+用户问题: {user_input}
+
+你的职责是带领团队（SQL专家、取证员）找出问题的根因。
+你必须遵循以下排查原则：
+1. **Schema First**: 不要猜测表名和字段。先让 SQL 专家查询表结构 (DDL)。
+2. **Step-by-Step**: 分步排查。先查总数，再查样本，最后查特定条件。
+3. **Safe Execution**: 所有的 SQL 执行必须通过"现场取证员"进行。
+4. **Data Driven**: 基于查回来的真实数据做判断，而不是基于假设。
+5. **Self-Healing Loop**: 如果 SQL 执行报错（如字段不存在），必须指示 SQL 专家分析错误，修正 SQL 并重试，不要就此停止。
+
+建议排查步骤：
+1. 分析用户意图，确定涉及的业务实体（如 用户、订单、任务）。
+2. 让 SQL 专家找到对应的表结构。
+3. 让 SQL 专家构造探测 SQL，并由取证员执行。
+4. 分析返回的数据，如果没查到，逐步减少 WHERE 条件，看是哪个条件过滤掉了数据。
+5. 综合线索，给出最终结论。
+""",
+        expected_output="详细的数据排查报告，包含排查路径、执行的 SQL、关键数据发现和根因分析。",
+        agent=agent,
+    )

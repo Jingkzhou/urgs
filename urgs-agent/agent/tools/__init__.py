@@ -7,6 +7,8 @@ from crewai.tools import tool
 from core.config import get_settings
 from core.logging import get_logger
 from crewai_tools import NL2SQLTool
+from agent.tools.schema_tool import lookup_schema
+from agent.tools.safe_sql_tool import execute_safe_sql
 
 logger = get_logger("tools")
 settings = get_settings()
@@ -393,3 +395,8 @@ def get_all_tools() -> list:
         + get_executor_tools()
         + [check_data_quality]
     )
+
+
+def get_detective_tools() -> list:
+    """获取数据侦探专用工具"""
+    return [lookup_schema, execute_safe_sql]

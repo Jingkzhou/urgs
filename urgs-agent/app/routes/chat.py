@@ -5,6 +5,7 @@ import uuid
 from typing import AsyncGenerator
 
 from fastapi import APIRouter
+from fastapi.concurrency import run_in_threadpool
 from sse_starlette.sse import EventSourceResponse
 
 from agent.crews import run_crew, URGSCrew, classify_intent
@@ -70,7 +71,7 @@ async def chat_endpoint(payload: ChatRequest) -> ChatResponse:
     # 调用 CrewAI 执行
     try:
         context = payload.context.model_dump() if payload.context else {}
-        answer = run_crew(payload.text, context)
+        answer = await run_in_threadpool(run_crew, payload.text, context)
     except Exception as e:
         logger.error("crew_execution_failed", error=str(e))
         answer = f"处理请求时发生错误: {str(e)}"
@@ -144,7 +145,7 @@ async def chat_stream(payload: ChatRequest) -> EventSourceResponse:
             ).as_sse_message()
 
             context = payload.context.model_dump() if payload.context else {}
-            answer = run_crew(payload.text, context)
+            answer = await run_in_threadpool(run_crew, payload.text, context)
 
             await audit_store.record_event(
                 session_id, "final_answer", {"answer": answer[:500]}, trace_id
