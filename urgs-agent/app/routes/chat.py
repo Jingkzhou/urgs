@@ -8,7 +8,7 @@ from fastapi import APIRouter
 from fastapi.concurrency import run_in_threadpool
 from sse_starlette.sse import EventSourceResponse
 
-from agent.crews import run_crew, URGSCrew, classify_intent
+from agent.crews import run_crew, URGSCrew
 from agent.policies.approval_policy import ApprovalPolicy
 from agent.policies.injection_guard import InjectionGuard
 from core.config import get_settings
@@ -115,12 +115,10 @@ async def chat_stream(payload: ChatRequest) -> EventSourceResponse:
             type="start", trace_id=trace_id, payload={"session_id": session_id}
         ).as_sse_message()
 
-        # 发送处理中提示
-        intent = classify_intent(payload.text)
         yield SSEEvent(
             type="token",
             trace_id=trace_id,
-            payload={"text": f"正在分析请求 (意图: {intent})..."},
+            payload={"text": "正在分析请求..."},
         ).as_sse_message()
 
         # 检查审批

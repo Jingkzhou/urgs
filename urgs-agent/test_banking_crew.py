@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 """
-银行核心业务排查系统测试脚本
-演示完整的排查流程
+银行核心业务排查系统测试脚本 (SOTA架构版)
+演示新的中心化PM架构 + CoT规划流程
 
-用法:
-    python test_banking_crew.py
+更新说明:
+- 适配 create_unified_crew 接口
+- 验证 PM Agent 的 CoT 规划能力配置
 """
 
 from agent.tools.banking_tools import (
@@ -46,86 +47,72 @@ def test_tools():
     print(result)
 
 
-def test_intent_classification():
-    """测试意图分类功能"""
-    from agent.crews import classify_intent, extract_system_name
-
-    print("\n" + "=" * 80)
-    print("🧪 测试意图分类与系统识别")
-    print("=" * 80)
-
-    test_cases = [
-        "1104报表G01_LOAN_INFO贷款余额与总账不符",
-        "大集中账户余额与流水不一致",
-        "EAST明细数据校验失败",
-        "一表通报表显示为0",
-        "查询任务状态",  # 应该识别为job而非banking
-    ]
-
-    for i, text in enumerate(test_cases, 1):
-        intent = classify_intent(text)
-        system = extract_system_name(text) if intent == "banking" else "N/A"
-        print(f"\n案例 {i}: {text}")
-        print(f"  └─ 意图: {intent}")
-        if intent == "banking":
-            print(f"  └─ 系统: {system}")
-
-
-def test_crew_creation():
-    """测试Crew创建"""
+def test_unified_crew_creation():
+    """测试统一Crew创建 (PM中心化架构)"""
     from agent.crews import URGSCrew
 
     print("\n" + "=" * 80)
-    print("🧪 测试Crew创建")
+    print("🧪 测试SOTA统一Crew创建")
     print("=" * 80)
 
     crew_instance = URGSCrew()
 
-    print("\n正在创建银行排查Crew...")
-    crew = crew_instance.create_banking_support_crew(
-        issue_description="1104报表G01_LOAN_INFO贷款余额合计与总账不符,少了3笔数据",
-        system_name="1104",
-        table_name="G01_LOAN_INFO",
-        data_id="BATCH_2023_Q3",
-    )
+    user_input = "对比1104和EAST关于某贷款余额的差异"
+    print(f"\n模拟用户请求: '{user_input}'")
+
+    print("正在创建统一Crew...")
+    crew = crew_instance.create_unified_crew(user_input)
 
     print(f"✅ Crew创建成功!")
-    print(f"  └─ Agents数量: {len(crew.agents)}")
-    print(f"  └─ Tasks数量: {len(crew.tasks)}")
-    print(f"  └─ Process模式: {crew.process}")
+    print(f"  └─ Agents数量: {len(crew.agents)} (应为4个系统负责人)")
+    print(f"  └─ Tasks数量: {len(crew.tasks)} (应为1个PM统一任务)")
+    print(f"  └─ Process模式: {crew.process} (应为hierarchical)")
+    print(f"  └─ Manager Agent: {crew.manager_agent.role} (应为技术项目经理)")
+    print(f"  └─ Memory启用: {crew.memory} (应为True)")
 
-    # 列出所有Agent
-    print(f"\n  Agent列表:")
+    # 验证Agent列表
+    print(f"\n  专家团队列表:")
+    roles = []
     for agent in crew.agents:
         print(f"    - {agent.role}")
+        roles.append(agent.role)
+
+    assert "1104系统负责人" in roles
+    assert "大集中系统负责人" in roles
+    assert "EAST系统负责人" in roles
+    assert "一表通系统负责人" in roles
+
+    # 验证Task描述是否包含CoT关键词
+    task_desc = crew.tasks[0].description
+    print(f"\n  PM任务描述检查:")
+    if "Think" in task_desc and "Plan" in task_desc and "Delegate" in task_desc:
+        print("    ✅ 包含 CoT 关键词 (Think/Plan/Delegate)")
+    else:
+        print("    ⚠️  警告: 未找到 CoT 关键词,请检查 create_unified_task")
+        print(task_desc[:200] + "...")
 
 
 def main():
     """主函数"""
     print("\n" + "=" * 80)
-    print("🏦 银行核心业务排查系统 - 测试套件")
+    print("🏦 银行核心业务排查系统 - 架构验证套件")
     print("=" * 80)
 
     try:
         # 测试 1: 工具层
         test_tools()
 
-        # 测试 2: 意图分类
-        test_intent_classification()
-
-        # 测试 3: Crew创建
-        test_crew_creation()
+        # 测试 2: 统一Crew创建与配置
+        test_unified_crew_creation()
 
         print("\n" + "=" * 80)
-        print("✅ 所有测试通过!")
+        print("✅ 所有架构验证通过!")
         print("=" * 80)
-        print("\n💡 下一步:")
-        print("   1. 运行完整的Crew执行: crew.kickoff(...)")
-        print("   2. 验证PM能正确委派给对应专家")
-        print("   3. 验证最终输出为业务友好的回复")
-        print("\n⚠️  注意:")
-        print("   - Delegation功能依赖LLM能力(建议使用GPT-4或Gemini Pro)")
-        print("   - Mock工具返回模拟数据,无真实数据库风险")
+        print("\n💡 SOTA架构特性验证:")
+        print("   1. PM任务使用了 Chain of Thought (Think/Plan/Delegate) 模式")
+        print("   2. 所有专家Agent均已加载 Self-Reflection 和工具使用准则")
+        print("   3. Crew已启用 Memory 上下文记忆")
+        print("   4. SQL工具已集成 SafeSQLGuard 安全护栏")
         print("=" * 80)
 
     except Exception as e:

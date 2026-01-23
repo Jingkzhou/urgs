@@ -135,6 +135,10 @@ class URGSCrew:
         task = create_unified_task(pm, user_input)
 
         # 4. 组装Crew (Hierarchical模式)
+        from core.config import get_settings
+
+        settings = get_settings()
+
         return Crew(
             agents=[
                 expert_1104,  # 所有系统负责人都加入
@@ -146,7 +150,7 @@ class URGSCrew:
             process=Process.hierarchical,  # 使用hierarchical模式
             manager_agent=pm,  # PM作为Manager
             verbose=True,
-            memory=True,  # 启用记忆,支持多轮对话和上下文回溯
+            memory=False,  # 暂时禁用记忆,避免连接错误
         )
 
 

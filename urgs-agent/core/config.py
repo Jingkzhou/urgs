@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_prefix="", case_sensitive=False
+        env_file=".env", env_prefix="", case_sensitive=False, extra="ignore"
     )
 
     # Primary Model (大模型 - 协调/汇总/复杂推理)
@@ -32,9 +32,21 @@ class Settings(BaseSettings):
         "http://localhost:11434/v1", validation_alias="SECONDARY_BASE_URL"
     )
 
-    # LLM 通用配置
+    # LLM 通用配置 (RAG Service / Embedding)
+    llm_api_base: str = Field("", validation_alias="LLM_API_BASE")
+    llm_model: str = Field("qwen3", validation_alias="LLM_MODEL")
+    llm_api_key: str = Field("dummy", validation_alias="LLM_API_KEY")
+
     llm_temperature: float = Field(0.3, validation_alias="LLM_TEMPERATURE")
     llm_timeout_s: int = Field(60, validation_alias="LLM_TIMEOUT_S")
+
+    # Embeddings Model 配置
+    embedding_model_provider: str = Field(
+        "openai", validation_alias="Embeddings_MODEL_PROVIDER"
+    )
+    embedding_model_name: str = Field("qwen3", validation_alias="Embeddings_MODEL_NAME")
+    embedding_base_url: str = Field("", validation_alias="Embeddings_BASE_URL")
+    embedding_api_key: str = Field("", validation_alias="Embeddings_API_KEY")
 
     mcp_servers: List[str] = Field(default_factory=list, validation_alias="MCP_SERVERS")
     allowlist_tools: List[str] = Field(
