@@ -51,6 +51,11 @@ from agent.tools.banking_tools import (
     get_core_banking_tools,
     get_east_tools,
     get_ybt_tools,
+    # RAG Tools
+    get_1104_rag_tools,
+    get_core_rag_tools,
+    get_east_rag_tools,
+    get_ybt_rag_tools,
 )
 from core.logging import get_logger
 

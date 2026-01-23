@@ -1,7 +1,7 @@
 # 银行核心系统数据库查询工具
 # Mock实现,用于演示Agent协作流程
 
-from crewai_tools import BaseTool
+from crewai.tools import BaseTool
 from typing import Type
 from pydantic import BaseModel, Field
 

@@ -1,7 +1,7 @@
 # 安全SQL执行工具 (带安全护栏)
 # 防止危险操作: DROP, DELETE, UPDATE, TRUNCATE等
 
-from crewai_tools import BaseTool
+from crewai.tools import BaseTool
 from typing import Type
 from pydantic import BaseModel, Field
 import re

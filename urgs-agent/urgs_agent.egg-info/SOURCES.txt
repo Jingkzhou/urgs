@@ -13,6 +13,8 @@ agent/runtime/__init__.py
 agent/runtime/executor.py
 agent/runtime/tool_registry.py
 agent/tools/__init__.py
+agent/tools/banking_tools.py
+agent/tools/safe_sql_guard.py
 agent/tools/safe_sql_tool.py
 agent/tools/schema_tool.py
 app/__init__.py
