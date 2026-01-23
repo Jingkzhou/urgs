@@ -9,14 +9,22 @@ from core.logging import get_logger
 from crewai_tools import NL2SQLTool
 from agent.tools.schema_tool import lookup_schema
 from agent.tools.safe_sql_tool import execute_safe_sql
+from agent.tools.safe_sql_guard import get_safe_sql_tool  # 新增:安全SQL工具
 
 logger = get_logger("tools")
 settings = get_settings()
 
 
-def get_sql_tool() -> NL2SQLTool:
-    """获取自然语言转SQL查询工具"""
-    return NL2SQLTool(db_uri=settings.get_mysql_dsn, name="业务数据查询工具")
+def get_sql_tool():
+    """
+    获取SQL查询工具(带安全护栏)
+
+    使用SafeSQLTool代替NL2SQLTool,增加安全检查:
+    - 禁止 DROP/DELETE/UPDATE 等修改操作
+    - 检查WHERE条件避免全表扫描
+    - 限制返回结果数量
+    """
+    return get_safe_sql_tool()
 
 
 # ==================== RAG 知识检索工具 ====================
