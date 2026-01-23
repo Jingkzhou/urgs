@@ -141,7 +141,7 @@ class URGSCrew:
             process=Process.hierarchical,  # 使用hierarchical模式
             manager_agent=pm,  # PM作为Manager
             verbose=True,
-            memory=False,  # 关闭记忆以提升性能
+            memory=True,  # 启用记忆,支持多轮对话和上下文回溯
         )
 
 
