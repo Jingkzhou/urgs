@@ -387,6 +387,23 @@ def get_data_quality_tools() -> list:
     return [check_data_quality, get_sql_tool()]
 
 
+def get_banking_tools() -> list:
+    """获取银行系统工具"""
+    from agent.tools.banking_tools import (
+        Search_1104_DB_Tool,
+        Search_Core_DB_Tool,
+        Search_EAST_DB_Tool,
+        Search_YBT_DB_Tool,
+    )
+
+    return [
+        Search_1104_DB_Tool(),
+        Search_Core_DB_Tool(),
+        Search_EAST_DB_Tool(),
+        Search_YBT_DB_Tool(),
+    ]
+
+
 def get_all_tools() -> list:
     """获取所有工具"""
     return (
@@ -394,6 +411,7 @@ def get_all_tools() -> list:
         + get_lineage_tools()
         + get_executor_tools()
         + [check_data_quality]
+        + get_banking_tools()
     )
 
 

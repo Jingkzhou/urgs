@@ -10,6 +10,12 @@ from agent.agents import (
     create_lineage_analyst_agent,
     create_executor_agent,
     create_data_analyst_agent,
+    # 银行系统专家Agents
+    create_pm_agent,
+    create_1104_expert_agent,
+    create_core_banking_expert_agent,
+    create_east_expert_agent,
+    create_ybt_expert_agent,
 )
 from agent.detective_agents import (
     create_investigation_lead_agent,
@@ -28,6 +34,9 @@ from agent.tasks import (
     create_data_quality_check_task,
     create_root_cause_summary_task,
     create_investigation_task,
+    # 银行排查系统Tasks
+    create_triage_investigation_task,
+    create_qa_response_task,
 )
 from agent.tools import (
     get_rag_tools,
@@ -37,6 +46,12 @@ from agent.tools import (
     get_data_quality_tools,
     get_all_tools,
 )
+from agent.tools.banking_tools import (
+    get_1104_tools,
+    get_core_banking_tools,
+    get_east_tools,
+    get_ybt_tools,
+)
 from core.logging import get_logger
 
 logger = get_logger("crew")
@@ -44,172 +59,89 @@ logger = get_logger("crew")
 
 class URGSCrew:
     """
-    URGS 智能助手 Crew
-    根据用户请求类型自动编排 Agent 协作
+    URGS 智能助手 Crew (中心化PM架构)
+    所有请求由PM统一接收并委派给对应系统负责人
     """
 
     def __init__(self):
-        # 初始化 Agents（带工具）
-        self.coordinator = create_coordinator_agent(tools=get_all_tools())
-        self.rag_expert = create_rag_expert_agent(tools=get_rag_tools())
-        self.lineage_analyst = create_lineage_analyst_agent(tools=get_lineage_tools())
-        self.executor = create_executor_agent(tools=get_executor_tools())
-        self.data_analyst = create_data_analyst_agent(tools=[get_sql_tool()])
+        # 极简架构:不再预初始化Agent,在create_unified_crew时动态创建
+        pass
 
-    def create_general_crew(self, user_input: str) -> Crew:
+    def create_unified_crew(self, user_input: str) -> Crew:
         """
-        创建通用问答 Crew
-        使用分层协作模式，由协调员统领
-        """
-        analyze_task = create_analyze_request_task(self.coordinator)
-        summary_task = create_summary_task(self.coordinator)
+        创建统一Crew - 中心化PM架构
+        PM接收所有请求,委派给4个系统负责人之一
 
+        Args:
+            user_input: 用户请求
+
+        Returns:
+            配置好的Crew实例
+        """
+        #  1. 创建PM (Manager Agent)
+        pm = create_pm_agent()
+
+        # 2. 创建4个系统负责人,每人拥有完整工具集
+        from agent.tools import get_sql_tool, get_lineage_tools
+
+        # 1104系统负责人
+        expert_1104 = create_1104_expert_agent(
+            tools=[
+                *get_1104_tools(),  # 1104数据库工具
+                *get_1104_rag_tools(),  # 1104知识库工具
+                get_sql_tool(),  # SQL执行工具
+                *get_lineage_tools(),  # 血缘分析工具
+            ]
+        )
+
+        # 大集中系统负责人
+        expert_core = create_core_banking_expert_agent(
+            tools=[
+                *get_core_banking_tools(),  # 大集中数据库工具
+                *get_core_rag_tools(),  # 大集中知识库工具
+                get_sql_tool(),  # SQL执行工具
+                *get_lineage_tools(),  # 血缘分析工具
+            ]
+        )
+
+        # EAST系统负责人
+        expert_east = create_east_expert_agent(
+            tools=[
+                *get_east_tools(),  # EAST数据库工具
+                *get_east_rag_tools(),  # EAST知识库工具
+                get_sql_tool(),  # SQL执行工具
+                *get_lineage_tools(),  # 血缘分析工具
+            ]
+        )
+
+        # 一表通系统负责人
+        expert_ybt = create_ybt_expert_agent(
+            tools=[
+                *get_ybt_tools(),  # 一表通数据库工具
+                *get_ybt_rag_tools(),  # 一表通知识库工具
+                get_sql_tool(),  # SQL执行工具
+                *get_lineage_tools(),  # 血缘分析工具
+            ]
+        )
+
+        # 3. 创建PM的统一任务
+        from agent.tasks import create_unified_task
+
+        task = create_unified_task(pm, user_input)
+
+        # 4. 组装Crew (Hierarchical模式)
         return Crew(
             agents=[
-                self.coordinator,
-                self.rag_expert,
-                self.lineage_analyst,
-                self.executor,
-                self.data_analyst,
+                expert_1104,  # 所有系统负责人都加入
+                expert_core,
+                expert_east,
+                expert_ybt,
             ],
-            tasks=[analyze_task, summary_task],
-            process=Process.hierarchical,
-            manager_agent=self.coordinator,
+            tasks=[task],  # 只有一个任务
+            process=Process.hierarchical,  # 使用hierarchical模式
+            manager_agent=pm,  # PM作为Manager
             verbose=True,
-        )
-
-    def create_rag_crew(self, question: str) -> Crew:
-        """
-        创建 RAG 知识检索 Crew
-        专注知识库查询场景
-        """
-        query_task = create_rag_query_task(self.rag_expert, question)
-
-        return Crew(
-            agents=[self.rag_expert],
-            tasks=[query_task],
-            process=Process.sequential,
-            verbose=True,
-        )
-
-    def create_lineage_crew(self, sql: str = None, table_name: str = None) -> Crew:
-        """
-        创建血缘分析 Crew
-        用于 SQL 解析和表影响分析
-        """
-        tasks = []
-
-        if sql:
-            tasks.append(create_lineage_analysis_task(self.lineage_analyst, sql))
-
-        if table_name:
-            tasks.append(create_table_impact_task(self.lineage_analyst, table_name))
-
-        if not tasks:
-            # 默认分析任务
-            tasks.append(create_lineage_analysis_task(self.lineage_analyst))
-
-        return Crew(
-            agents=[self.lineage_analyst],
-            tasks=tasks,
-            process=Process.sequential,
-            verbose=True,
-        )
-
-    def create_data_analysis_crew(self, user_input: str) -> Crew:
-        """
-        创建数据分析 Crew
-        负责执行 NL2SQL 查询业务数据
-        """
-        task = create_sql_query_task(self.data_analyst, user_input)
-        return Crew(
-            agents=[self.data_analyst],
-            tasks=[task],
-            process=Process.sequential,
-            verbose=True,
-        )
-
-    def create_job_management_crew(
-        self, job_id: str = None, action: str = "status"
-    ) -> Crew:
-        """
-        创建任务管理 Crew
-        用于任务查询和执行
-        """
-        tasks = []
-
-        if action == "trigger" and job_id:
-            tasks.append(create_execute_job_task(self.executor, job_id=job_id))
-        else:
-            tasks.append(create_job_status_task(self.executor))
-
-        return Crew(
-            agents=[self.executor],
-            tasks=tasks,
-            process=Process.sequential,
-            verbose=True,
-        )
-
-    def create_data_quality_crew(self, table_name: str) -> Crew:
-        """
-        数据质量根因分析 Crew
-        4 个 Agent 协作完成
-        """
-        # 为 hierarchical 模式创建不带工具的 manager agent
-        from agent.agents import create_coordinator_agent
-
-        manager = create_coordinator_agent(tools=[])  # Manager 不能有工具
-
-        # Step 1: 数据分析师检查数据质量
-        quality_check_task = create_data_quality_check_task(
-            self.data_analyst, table_name
-        )
-
-        # Step 2: 血缘分析师查上游依赖
-        lineage_task = create_table_impact_task(self.lineage_analyst, table_name)
-
-        # Step 3: RAG 专家查历史问题
-        rag_task = create_rag_query_task(
-            self.rag_expert, f"{table_name} 历史数据问题 质量"
-        )
-
-        # Step 4: 协调员汇总根因分析
-        summary_task = create_root_cause_summary_task(
-            manager, context=[quality_check_task, lineage_task, rag_task]
-        )
-
-        return Crew(
-            agents=[
-                self.data_analyst,
-                self.lineage_analyst,
-                self.rag_expert,
-            ],
-            tasks=[quality_check_task, lineage_task, rag_task, summary_task],
-            process=Process.hierarchical,
-            manager_agent=manager,
-            verbose=True,
-        )
-
-    def create_data_detective_crew(self, user_input: str) -> Crew:
-        """
-        创建数据侦探 Crew
-        模拟 '业务 -> 研发 -> 运维' 的排查链路
-        """
-        # 1. 初始化 Agents
-        lead_agent = create_investigation_lead_agent()
-        schema_expert = create_schema_expert_agent()
-        evidence_collector = create_evidence_collector_agent()
-
-        # 2. 创建核心任务（由 Lead 负责拆解和委派）
-        investigation_task = create_investigation_task(lead_agent, user_input)
-
-        return Crew(
-            agents=[schema_expert, evidence_collector],
-            tasks=[investigation_task],
-            process=Process.hierarchical,  # 必须使用层级模式，让 Lead 能够指挥其他人
-            manager_agent=lead_agent,
-            verbose=True,
-            memory=False,  # 暂时关闭记忆，避免 Embedding 连接错误 (Connection reset by peer)
+            memory=False,  # 关闭记忆以提升性能
         )
 
 
@@ -228,26 +160,9 @@ def run_crew(user_input: str, context: Optional[Dict[str, Any]] = None) -> str:
 
     crew_instance = URGSCrew()
 
-    # 简单意图分类（后续可用 LLM 增强）
-    intent = classify_intent(user_input)
-    logger.info("intent_classified", intent=intent)
-
-    # 根据意图选择 Crew
-    if intent == "rag":
-        crew = crew_instance.create_rag_crew(user_input)
-    elif intent == "lineage":
-        crew = crew_instance.create_lineage_crew(sql=extract_sql(user_input))
-    elif intent == "data":
-        crew = crew_instance.create_data_analysis_crew(user_input)
-    elif intent == "quality":
-        table_name = extract_table_name(user_input) or "unknown_table"
-        crew = crew_instance.create_data_quality_crew(table_name)
-    elif intent == "job":
-        crew = crew_instance.create_job_management_crew()
-    elif intent == "investigate":
-        crew = crew_instance.create_data_detective_crew(user_input)
-    else:
-        crew = crew_instance.create_general_crew(user_input)
+    # 统一创建Crew,不再需要复杂的意图分类
+    # PM会自动识别系统并委派给对应负责人
+    crew = crew_instance.create_unified_crew(user_input)
 
     # 执行 Crew
     inputs = {"user_input": user_input}
@@ -258,122 +173,3 @@ def run_crew(user_input: str, context: Optional[Dict[str, Any]] = None) -> str:
 
     logger.info("crew_completed")
     return result.raw if hasattr(result, "raw") else str(result)
-
-
-def classify_intent(user_input: str) -> str:
-    """
-    简单意图分类
-    后续可升级为 LLM 分类
-    """
-    user_input_lower = user_input.lower()
-
-    # 数据排查关键词 (Data Detective)
-    investigate_keywords = [
-        "查不到",
-        "没数据",
-        "少了",
-        "排查",
-        "原因",
-        "为什么",
-        "investigate",
-        "missing",
-        "data issue",
-        "debug",
-    ]
-    # 注意："为什么" 也可能用于 RAG，但如果没有具体知识库文案，通常是排查
-    # 这里我们优先匹配排查，如果只是纯粹的 "什么是..." 归 RAG
-    if any(kw in user_input_lower for kw in investigate_keywords):
-        # 排除纯 RAG 问题
-        if not any(k in user_input_lower for k in ["什么是", "how to", "文档"]):
-            return "investigate"
-
-    # 血缘相关关键词
-    lineage_keywords = [
-        "血缘",
-        "lineage",
-        "sql",
-        "解析",
-        "表关系",
-        "字段",
-        "上游",
-        "下游",
-        "影响",
-    ]
-    if any(kw in user_input_lower for kw in lineage_keywords):
-        return "lineage"
-
-    # 数据分析关键词 (优先于任务管理，例如 '统计任务数' 应归为 data)
-    data_keywords = [
-        "统计",
-        "多少",
-        "分布",
-        "top",
-        "排名",
-        "总数",
-        "count",
-        "sum",
-    ]
-    if any(kw in user_input_lower for kw in data_keywords):
-        return "data"
-
-    # 任务管理关键词
-    job_keywords = ["任务", "调度", "执行", "job", "运行", "触发", "状态"]
-    if any(kw in user_input_lower for kw in job_keywords):
-        return "job"
-
-    # 知识检索关键词
-    rag_keywords = ["什么是", "怎么", "如何", "查询", "找", "搜索", "文档"]
-    if any(kw in user_input_lower for kw in rag_keywords):
-        return "rag"
-
-    # 数据质量分析关键词
-    quality_keywords = ["数据质量", "质检", "检查", "null", "异常", "根因", "问题"]
-    if any(kw in user_input_lower for kw in quality_keywords):
-        return "quality"
-
-    return "general"
-
-
-def extract_sql(user_input: str) -> Optional[str]:
-    """
-    从用户输入中提取 SQL 语句
-    """
-    import re
-
-    # 尝试匹配常见 SQL 模式
-    sql_patterns = [
-        r"(SELECT\s+.+)",
-        r"(INSERT\s+.+)",
-        r"(UPDATE\s+.+)",
-        r"(CREATE\s+.+)",
-        r"(DELETE\s+.+)",
-    ]
-
-    for pattern in sql_patterns:
-        match = re.search(pattern, user_input, re.IGNORECASE | re.DOTALL)
-        if match:
-            return match.group(1).strip()
-
-    return None
-
-
-def extract_table_name(user_input: str) -> Optional[str]:
-    """
-    从用户输入中提取表名
-    """
-    import re
-
-    # 尝试匹配常见表名模式
-    patterns = [
-        r"表\s*[`'\"]?(\w+)[`'\"]?",  # 表 xxx
-        r"[`'\"](\w+)[`'\"]?\s*表",  # xxx 表
-        r"table\s+(\w+)",  # table xxx
-        r"(\w+)\s+table",  # xxx table
-    ]
-
-    for pattern in patterns:
-        match = re.search(pattern, user_input, re.IGNORECASE)
-        if match:
-            return match.group(1)
-
-    return None
