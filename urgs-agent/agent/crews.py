@@ -141,6 +141,7 @@ class URGSCrew:
 
         return Crew(
             agents=[
+                pm,  # [FIX] 将 PM 显式加入到团队中，防止成为光杆司令
                 expert_1104,  # 所有系统负责人都加入
                 expert_core,
                 expert_east,
