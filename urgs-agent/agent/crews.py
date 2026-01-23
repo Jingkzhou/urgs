@@ -129,29 +129,24 @@ class URGSCrew:
             ]
         )
 
-        # 3. 创建PM的统一任务
+        # 3. 创建PM的统一任务 (由Manager领取)
         from agent.tasks import create_unified_task
 
-        task = create_unified_task(pm, user_input)
+        task = create_unified_task(user_input)
 
         # 4. 组装Crew (Hierarchical模式)
-        from core.config import get_settings
-
-        settings = get_settings()
-
         return Crew(
             agents=[
-                pm,  # [FIX] 将 PM 显式加入到团队中，防止成为光杆司令
-                expert_1104,  # 所有系统负责人都加入
+                expert_1104,  # 专家列表
                 expert_core,
                 expert_east,
                 expert_ybt,
             ],
-            tasks=[task],  # 只有一个任务
-            process=Process.hierarchical,  # 使用hierarchical模式
-            manager_agent=pm,  # PM作为Manager
+            tasks=[task],
+            process=Process.hierarchical,
+            manager_agent=pm,  # 由 PM 担任经理进行分派
             verbose=True,
-            memory=False,  # 暂时禁用记忆,避免连接错误
+            memory=False,
         )
 
 

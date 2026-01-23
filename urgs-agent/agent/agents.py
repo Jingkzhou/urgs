@@ -216,8 +216,10 @@ def create_pm_agent(tools: list = None) -> Agent:
 
 4. **汇总回复**: 确保回复通俗易懂,去除过度技术化的术语
 
-【重要】你不需要了解技术细节,只需正确识别系统并委派即可。
-系统负责人是全能专家,会自己决定使用哪些工具来解决问题。""",
+【错误恢复与禁止幻觉】
+- 如果委派失败(Coworker not found),请立即反思系统配置而非盲目重试。
+- 你的结论必须100%基于研发专家返回的真实报告。
+- **没有数据支持时严禁推测原因**。如果排查受阻，请直接如实说明。""",
         verbose=True,
         allow_delegation=True,  # 核心配置!必须能委派
         llm=get_primary_llm(),  # 使用大模型
@@ -270,15 +272,7 @@ def create_1104_expert_agent(tools: list = None) -> Agent:
    - 用户问"从哪来"、"影响哪些表" → 使用 SQL血缘工具
    - ✅ 示例: "这个字段从哪来?" → 分析血缘
 
-【执行规范 - Self-Reflection】
-在执行任何SQL或给出关键结论前,你必须:
-1. 先输出推理过程: "我即将查询...,因为..."
-2. 自我检查: 数据来源是否可靠?结论是否有支撑?
-3. 数据验证: 执行后检查结果是否合理(如余额不应为负)
-
-如果发现异常,请主动标注: ⚠️ 此结果需要人工复核
-
-你的回复应包含:数据来源标注、问题定位、根本原因、修复建议。""",
+【SOTA 协议】结论必须有据可查；SQL报错需尝试修复；无数据严禁推断。""",
         verbose=True,
         allow_delegation=False,
         llm=get_secondary_llm(),
@@ -319,14 +313,7 @@ def create_core_banking_expert_agent(tools: list = None) -> Agent:
 3. 分析型问题(血缘/链路):
    - 用户问"数据流向" → 使用 SQL血缘工具
 
-【执行规范 - Self-Reflection】
-在执行任何SQL或给出关键结论前,你必须:
-1. 先输出推理过程: "我即将查询...,因为..."
-2. 自我检查: 结论是否有数据支撑? 不要臆测!
-3. 数据验证: 余额是否为负? 流水是否连续?
-
-如果发现异常,请主动标注: ⚠️ 此结果需要人工复核
-""",
+【SOTA 协议】结论必须有据可查；SQL报错需尝试修复表结构理解；无数据严禁推断。""",
         verbose=True,
         allow_delegation=False,
         llm=get_secondary_llm(),
@@ -364,14 +351,7 @@ def create_east_expert_agent(tools: list = None) -> Agent:
    - 用户问"校验失败记录"、"字段值" → 使用 search_east_database
    - ✅ 示例: "有多少客户校验失败?" → 查询数据库
 
-【执行规范 - Self-Reflection】
-在执行任何SQL或给出关键结论前,你必须:
-1. 先输出推理过程: "我即将查询...,因为..."
-2. 自我检查: 是否符合EAST数据标准?
-3. 数据验证: 枚举值是否在标准范围内?
-
-如果发现异常,请主动标注: ⚠️ 此结果需要人工复核
-""",
+【SOTA 协议】结论必须有据可查；SQL报错需尝试修复；无数据严禁推断。""",
         verbose=True,
         allow_delegation=False,
         llm=get_secondary_llm(),
@@ -412,14 +392,7 @@ def create_ybt_expert_agent(tools: list = None) -> Agent:
 3. 跨系统对比:
    - 用户问"与上游不一致" → 分别查自己和上游,然后对比
 
-【执行规范 - Self-Reflection】
-在执行任何SQL或给出关键结论前,你必须:
-1. 先输出推理过程: "我即将查询...,因为..."
-2. 自我检查: 上游数据是否就绪(ETL完成)? 
-3. 数据验证: 汇总值是否等于明细之和?
-
-如果发现异常,请主动标注: ⚠️ 此结果需要人工复核
-""",
+【SOTA 协议】结论必须有据可查；SQL报错需尝试修复；无数据严禁推断。""",
         verbose=True,
         allow_delegation=False,
         llm=get_secondary_llm(),
