@@ -57,6 +57,7 @@ from agent.tools.banking_tools import (
     get_east_rag_tools,
     get_ybt_rag_tools,
 )
+from core.config import get_settings
 from core.logging import get_logger
 
 logger = get_logger("crew")
@@ -135,6 +136,16 @@ class URGSCrew:
         task = create_unified_task(user_input)
 
         # 4. 组装Crew (Hierarchical模式)
+        settings = get_settings()
+
+        # 使用火山引擎多模态 Embedding 适配器
+        from agent.ark_embedder import ArkMultimodalEmbeddingFunction
+
+        ark_embedder = ArkMultimodalEmbeddingFunction(
+            api_key=settings.embedding_api_key,
+            model=settings.embedding_model_name,
+        )
+
         return Crew(
             agents=[
                 expert_1104,  # 专家列表
@@ -146,7 +157,8 @@ class URGSCrew:
             process=Process.hierarchical,
             manager_agent=pm,  # 由 PM 担任经理进行分派
             verbose=True,
-            memory=False,
+            memory=True,
+            embedder=ark_embedder,  # 直接传入自定义 embedder 实例
         )
 
 
