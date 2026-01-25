@@ -201,12 +201,17 @@ def extract_column_lineage(
                 target_col = f"col_{i}"
                 source_expr = expr
 
-            # 提取源列
-            source_columns = list(source_expr.find_all(exp.Column))
+            # 提取源列并去重
+            seen_sources = set()
             transform_type = classify_expression(source_expr)
 
-            for src_col in source_columns:
+            for src_col in source_expr.find_all(exp.Column):
                 table_ref = src_col.table or "UNKNOWN"
+                source_key = (table_ref, src_col.name)
+                if source_key in seen_sources:
+                    continue
+                seen_sources.add(source_key)
+
                 # 将别名解析为完整表名
                 table_name = alias_map.get(table_ref, table_ref)
                 column_lineages.append(
