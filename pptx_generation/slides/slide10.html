@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            width: 720pt;
+            height: 405pt;
+            margin: 0;
+            padding: 0;
+            background: #1C2833;
+            color: #F4F6F6;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            height: 60pt;
+            background: #2E4053;
+            border-bottom: 2pt solid #5D6D7E;
+            display: flex;
+            align-items: center;
+            padding-left: 30pt;
+        }
+
+        h1 {
+            font-size: 24pt;
+            margin: 0;
+        }
+
+        .content {
+            flex: 1;
+            padding: 30pt;
+            display: flex;
+            gap: 30pt;
+        }
+
+        .box {
+            flex: 1;
+            background: #283747;
+            padding: 15pt;
+            border-radius: 8pt;
+            border: 1pt solid #E74C3C;
+        }
+
+        .box-header {
+            border-bottom: 1pt solid #E74C3C;
+            margin-bottom: 5pt;
+        }
+
+        .box h2 {
+            font-size: 20pt;
+            margin: 0;
+            color: #E74C3C;
+        }
+
+        .box ul {
+            font-size: 14pt;
+            color: #D5DBDB;
+        }
+
+        .box-blue {
+            border-color: #5DADE2;
+        }
+
+        .box-blue .box-header {
+            border-color: #5DADE2;
+        }
+
+        .box-blue h2 {
+            color: #5DADE2;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>09 技术指标与安全</h1>
+    </div>
+    <div class="content">
+        <div class="box box-blue">
+            <div class="box-header">
+                <h2>非功能性需求</h2>
+            </div>
+            <ul>
+                <li><b>性能</b>：秒级调度延迟。</li>
+                <li><b>高可用</b>：集群化部署。</li>
+                <li><b>可扩展</b>：插件化任务与方言。</li>
+            </ul>
+        </div>
+        <div class="box">
+            <div class="box-header">
+                <h2>安全与合规</h2>
+            </div>
+            <ul>
+                <li>敏感数据加密存储。</li>
+                <li>RBAC 权限体系。</li>
+                <li>完整操作审计日志。</li>
+            </ul>
+        </div>
+    </div>
+</body>
+
+</html>

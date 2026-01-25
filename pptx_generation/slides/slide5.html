@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            width: 720pt;
+            height: 405pt;
+            margin: 0;
+            padding: 0;
+            background: #1C2833;
+            color: #F4F6F6;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            height: 60pt;
+            background: #2E4053;
+            border-bottom: 2pt solid #5D6D7E;
+            display: flex;
+            align-items: center;
+            padding-left: 30pt;
+        }
+
+        h1 {
+            font-size: 24pt;
+            margin: 0;
+        }
+
+        .content {
+            flex: 1;
+            padding: 30pt;
+        }
+
+        .flow-box {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            margin-top: 40pt;
+        }
+
+        .node {
+            width: 150pt;
+            height: 80pt;
+            background: #283747;
+            border: 2pt solid #5DADE2;
+            border-radius: 8pt;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16pt;
+            color: #FFFFFF;
+            font-weight: bold;
+            box-shadow: 4pt 4pt 10pt rgba(0, 0, 0, 0.3);
+        }
+
+        .arrow {
+            font-size: 30pt;
+            color: #5D6D7E;
+        }
+
+        .bottom-text {
+            margin-top: 40pt;
+            text-align: center;
+            font-size: 18pt;
+            color: #BDC3C7;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>04 分布式执行器</h1>
+    </div>
+    <div class="content">
+        <div class="flow-box">
+            <div class="node">
+                <p>任务拉取</p>
+            </div>
+            <div class="arrow">
+                <p>→</p>
+            </div>
+            <div class="node">
+                <p>线程池执行</p>
+            </div>
+            <div class="arrow">
+                <p>→</p>
+            </div>
+            <div class="node">
+                <p>状态回报</p>
+            </div>
+        </div>
+        <div class="bottom-text">
+            <p>实时日志采集 · 超时强制终止 · 并发限制</p>
+        </div>
+    </div>
+</body>
+
+</html>

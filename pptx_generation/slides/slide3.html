@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            width: 720pt;
+            height: 405pt;
+            margin: 0;
+            padding: 0;
+            background: #1C2833;
+            color: #F4F6F6;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            height: 60pt;
+            background: #2E4053;
+            border-bottom: 2pt solid #5D6D7E;
+            display: flex;
+            align-items: center;
+            padding-left: 30pt;
+        }
+
+        h1 {
+            font-size: 24pt;
+            margin: 0;
+        }
+
+        .content {
+            flex: 1;
+            padding: 20pt 30pt;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15pt;
+            margin-top: 10pt;
+        }
+
+        .card {
+            background: #283747;
+            border: 1pt solid #34495E;
+            border-radius: 6pt;
+            padding: 10pt;
+        }
+
+        .card h2 {
+            font-size: 16pt;
+            margin-top: 0;
+            color: #5DADE2;
+            font-family: 'Courier New', monospace;
+        }
+
+        .card p {
+            font-size: 12pt;
+            margin-bottom: 0;
+            line-height: 1.4;
+            color: #BDC3C7;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>02 系统组成</h1>
+    </div>
+    <div class="content">
+        <div class="grid">
+            <div class="card">
+                <h2>urgs-api</h2>
+                <p>核心后端。管理任务、元数据、权限及监控。</p>
+            </div>
+            <div class="card">
+                <h2>urgs-executor</h2>
+                <p>执行器。拉取并执行脚本、SQL、数据同步任务。</p>
+            </div>
+            <div class="card">
+                <h2>urgs-web</h2>
+                <p>前端门户。可视化编排、运维监控与系统管理。</p>
+            </div>
+            <div class="card">
+                <h2>urgs-rag</h2>
+                <p>AI 检索。知识库向量化、语义检索、SQL 解释。</p>
+            </div>
+            <div class="card">
+                <h2>lineage-engine</h2>
+                <p>血缘引擎。支持多方言解析，字段级血缘追踪。</p>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
