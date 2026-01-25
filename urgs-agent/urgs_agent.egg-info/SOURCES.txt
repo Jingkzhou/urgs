@@ -2,6 +2,7 @@ README.md
 pyproject.toml
 agent/__init__.py
 agent/agents.py
+agent/ark_embedder.py
 agent/crews.py
 agent/detective_agents.py
 agent/tasks.py
@@ -39,6 +40,7 @@ schemas/events.py
 storage/__init__.py
 storage/audit_store.py
 storage/session_store.py
+tests/test_crew_memory.py
 tests/test_health.py
 tests/test_policy.py
 tests/test_safe_sql.py

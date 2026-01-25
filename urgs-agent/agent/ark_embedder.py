@@ -7,12 +7,16 @@
 
 import numpy as np
 from typing import List, Any, cast
-from chromadb.utils.embedding_functions import EmbeddingFunction
+
+# from chromadb.utils.embedding_functions import EmbeddingFunction
 from chromadb.api.types import Documents
 from volcenginesdkarkruntime import Ark
+from crewai.rag.embeddings.providers.custom.embedding_callable import (
+    CustomEmbeddingFunction,
+)
 
 
-class ArkMultimodalEmbeddingFunction(EmbeddingFunction[Documents]):
+class ArkMultimodalEmbeddingFunction(CustomEmbeddingFunction):
     """
     火山引擎多模态 Embedding 适配器
 
@@ -20,17 +24,30 @@ class ArkMultimodalEmbeddingFunction(EmbeddingFunction[Documents]):
     实现 ChromaDB EmbeddingFunction 接口，可直接用于 CrewAI
     """
 
-    def __init__(self, api_key: str, model: str, **kwargs):
+    def __init__(self, api_key: str = None, model: str = None, **kwargs):
         """
         初始化适配器
 
         Args:
-            api_key: 火山引擎 API Key
-            model: 模型接入点 ID (ep-xxxxxx)
+            api_key: 火山引擎 API Key (可选，默认读取 Embeddings_API_KEY 环境变量)
+            model: 模型接入点 ID (可选，默认读取 Embeddings_MODEL_NAME 环境变量)
             **kwargs: 其他兼容参数
         """
-        self._client = Ark(api_key=api_key)
-        self._model = model
+        import os
+
+        self._api_key = api_key or os.getenv("Embeddings_API_KEY")
+        self._model = model or os.getenv("Embeddings_MODEL_NAME")
+
+        if not self._api_key:
+            raise ValueError(
+                "ArkMultimodalEmbeddingFunction requires api_key. Set Embeddings_API_KEY env var or pass it explicitly."
+            )
+        if not self._model:
+            raise ValueError(
+                "ArkMultimodalEmbeddingFunction requires model. Set Embeddings_MODEL_NAME env var or pass it explicitly."
+            )
+
+        self._client = Ark(api_key=self._api_key)
         self._name = "ark_multimodal"
 
     @property

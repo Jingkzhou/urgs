@@ -158,7 +158,12 @@ class URGSCrew:
             manager_agent=pm,  # 由 PM 担任经理进行分派
             verbose=True,
             memory=True,
-            embedder=ark_embedder,  # 直接传入自定义 embedder 实例
+            embedder={
+                "provider": "custom",
+                "config": {
+                    "embedding_callable": ArkMultimodalEmbeddingFunction,
+                },
+            },
         )
 
 

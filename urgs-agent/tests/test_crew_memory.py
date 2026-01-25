@@ -84,7 +84,12 @@ try:
         agents=[test_agent],
         tasks=[test_task],
         memory=True,
-        embedder=embedder,  # 直接传入自定义 embedder 实例
+        embedder={
+            "provider": "custom",
+            "config": {
+                "embedding_callable": ArkMultimodalEmbeddingFunction,
+            },
+        },
         verbose=False,
     )
 
