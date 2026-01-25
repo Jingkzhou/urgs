@@ -307,7 +307,11 @@ def parse_procedure(procedure_sql: str, dialect: str = "mysql") -> list[TableLin
                 result.warnings.append(f"降级解析: {str(e)}")
                 results.append(result)
 
-    return results
+    return [
+        res
+        for res in results
+        if not (res.confidence < 0.7 and not res.target_table and not res.source_tables)
+    ]
 
 
 def compare_lineage(old: TableLineage, new: TableLineage) -> dict:
