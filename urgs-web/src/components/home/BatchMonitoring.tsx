@@ -67,24 +67,44 @@ const BatchMonitoring: React.FC = () => {
     ] : [];
 
 
+    const CustomTooltip = ({ active, payload, label }: any) => {
+        if (active && payload && payload.length) {
+            return (
+                <div className="bg-white/80 backdrop-blur-md border border-slate-200/50 p-3 rounded-2xl shadow-xl">
+                    <p className="text-[11px] font-black text-slate-800 mb-2 border-b border-slate-100 pb-1 lowercase tracking-tight">{label}</p>
+                    {payload.map((entry: any, index: number) => (
+                        <div key={index} className="flex items-center gap-3 mt-1.5">
+                            <div className="w-2 h-2 rounded-full shadow-[0_0_5px_rgba(0,0,0,0.1)]" style={{ backgroundColor: entry.color || entry.fill }} />
+                            <span className="text-[11px] text-slate-500 font-bold">{entry.name}:</span>
+                            <span className="text-[11px] font-black text-slate-900 ml-auto tabular-nums">{entry.value}</span>
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+        return null;
+    };
+
     return (
-        <div className="min-h-screen bg-[#F5F5F7] text-slate-900 px-8 pb-8 pt-4  font-sans">
+        <div className="min-h-screen bg-slate-50/30 text-slate-900 px-8 pb-8 pt-6 font-sans selection:bg-red-100 selection:text-red-900">
             {/* Header */}
-            <div className="flex justify-between items-center mb-8">
-                <div>
-                    <h1 className="text-3xl font-semibold text-slate-900 tracking-tight">
-                        批量监控
+            <div className="flex justify-between items-end mb-10">
+                <div className="relative">
+                    <div className="absolute -left-4 top-0 w-1 h-full bg-red-600 rounded-full" />
+                    <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">
+                        Batch <span className="text-red-600">Monitoring</span>
                     </h1>
-                    <div className="text-sm text-slate-500 font-medium mt-1">
-                        System Status: Online
+                    <div className="flex items-center gap-2 mt-2">
+                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                        <span className="text-xs text-slate-400 font-bold uppercase tracking-widest">System Online</span>
                     </div>
                 </div>
-                <div className="text-right">
-                    <div className="text-xl font-medium text-slate-900 tabular-nums">
+                <div className="flex flex-col items-end">
+                    <div className="text-3xl font-black text-slate-800 tabular-nums tracking-tighter">
                         {currentTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })}
                     </div>
-                    <div className="text-sm text-slate-500 font-normal">
-                        {currentTime.toLocaleDateString('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' })}
+                    <div className="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mt-1 bg-slate-100 px-2 py-0.5 rounded">
+                        {currentTime.toLocaleDateString('zh-CN', { weekday: 'long', month: 'short', day: 'numeric' })}
                     </div>
                 </div>
             </div>
@@ -131,108 +151,124 @@ const BatchMonitoring: React.FC = () => {
             </div>
 
             {/* Main Content Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Workflow Stats Chart */}
-                <div className="lg:col-span-2 bg-white rounded-3xl p-6 shadow-[0_2px_12px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.06)] transition-shadow duration-300">
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-lg font-semibold text-slate-900">
-                            工作流执行概览
-                        </h3>
-
+                <div className="relative lg:col-span-2 bg-white/70 backdrop-blur-md rounded-[2.5rem] p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] transition-all duration-500 group overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-red-600 via-red-400 to-transparent opacity-40" />
+                    <div className="flex justify-between items-center mb-10">
+                        <div className="flex flex-col">
+                            <h3 className="text-xl font-black text-slate-800 tracking-tight">
+                                工作流执行概览
+                            </h3>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Workflow Execution View</span>
+                        </div>
+                        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner group-hover:scale-110 transition-transform duration-500">
+                            <Activity className="w-5 h-5 text-red-600" />
+                        </div>
                     </div>
-                    <div className="h-[320px]">
+                    <div className="h-[340px]">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={workflowStats.map(stat => ({
                                 ...stat,
                                 remaining: Math.max(0, stat.total - stat.success - stat.failed)
-                            }))} barCategoryGap="25%">
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E5EA" />
+                            }))} barCategoryGap="30%">
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
                                 <XAxis
                                     dataKey="workflowName"
-                                    stroke="#8E8E93"
-                                    fontSize={11}
+                                    stroke="#94A3B8"
+                                    fontSize={10}
+                                    fontWeight={800}
                                     tickLine={false}
                                     axisLine={false}
                                     interval={0}
-                                    angle={-45}
+                                    angle={-15}
                                     textAnchor="end"
-                                    height={80}
-                                    tickMargin={10}
+                                    height={60}
+                                    tickMargin={12}
                                 />
-                                <YAxis stroke="#8E8E93" fontSize={11} tickLine={false} axisLine={false} />
-                                <Tooltip
-                                    cursor={{ fill: '#F2F2F7', opacity: 0.5 }}
-                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                <YAxis
+                                    stroke="#94A3B8"
+                                    fontSize={10}
+                                    fontWeight={800}
+                                    tickLine={false}
+                                    axisLine={false}
                                 />
+                                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(241, 245, 249, 0.5)', radius: 12 }} />
                                 <Legend
                                     iconType="circle"
                                     layout="horizontal"
                                     verticalAlign="top"
                                     align="right"
-                                    wrapperStyle={{ paddingBottom: '20px', fontSize: '12px', color: '#8E8E93' }}
+                                    iconSize={8}
+                                    wrapperStyle={{ paddingBottom: '30px', fontSize: '11px', fontWeight: 800, color: '#64748B' }}
                                 />
-                                <Bar dataKey="success" name="成功" stackId="a" fill="#34C759" radius={[0, 0, 4, 4]} animationDuration={500} />
-                                <Bar dataKey="failed" name="失败" stackId="a" fill="#FF3B30" radius={[0, 0, 0, 0]} animationDuration={500} />
-                                <Bar dataKey="remaining" name="剩余" stackId="a" fill="#E5E5EA" radius={[4, 4, 0, 0]} animationDuration={500} />
+                                <Bar dataKey="success" name="成功" stackId="a" fill="#10B981" radius={[0, 0, 0, 0]} animationDuration={1000} barSize={32} />
+                                <Bar dataKey="failed" name="失败" stackId="a" fill="#EF4444" radius={[0, 0, 0, 0]} animationDuration={1000} barSize={32} />
+                                <Bar dataKey="remaining" name="剩余" stackId="a" fill="#F1F5F9" radius={[8, 8, 0, 0]} animationDuration={1000} barSize={32} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
 
                 {/* Status Distribution */}
-                <div className="bg-white rounded-3xl p-6 shadow-[0_2px_12px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.06)] transition-shadow duration-300">
-                    <h3 className="text-lg font-semibold text-slate-900 mb-6">
-                        状态分布
-                    </h3>
-                    <div className="h-[240px] relative">
+                <div className="relative bg-white/70 backdrop-blur-md rounded-[2.5rem] p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] transition-all duration-500 group overflow-hidden">
+                    <div className="absolute top-0 right-0 w-1.5 h-full bg-gradient-to-b from-blue-600 via-purple-400 to-transparent opacity-40" />
+                    <div className="flex flex-col mb-10">
+                        <h3 className="text-xl font-black text-slate-800 tracking-tight">
+                            状态分布
+                        </h3>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Status Distribution</span>
+                    </div>
+
+                    <div className="h-[260px] relative mt-2">
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                                 <Pie
                                     data={statusDataFixed}
                                     cx="50%"
                                     cy="50%"
-                                    innerRadius={70}
-                                    outerRadius={90}
-                                    paddingAngle={4}
+                                    innerRadius={80}
+                                    outerRadius={105}
+                                    paddingAngle={6}
                                     dataKey="value"
                                     stroke="none"
-                                    animationDuration={500}
+                                    animationDuration={1000}
                                     animationBegin={0}
+                                    cornerRadius={8}
                                 >
                                     {statusDataFixed.map((entry, index) => (
                                         <Cell key={`cell-${index}`} fill={entry.color} />
                                     ))}
                                 </Pie>
-                                <Tooltip
-                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                                />
+                                <Tooltip content={<CustomTooltip />} />
                             </PieChart>
                         </ResponsiveContainer>
                         {/* Center Text */}
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                            <span className="text-3xl font-semibold text-slate-900">{stats?.total || 0}</span>
-                            <span className="text-xs text-slate-500 font-medium uppercase tracking-wide mt-1">Total</span>
+                            <span className="text-4xl font-black text-slate-900 tracking-tighter">{stats?.total || 0}</span>
+                            <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-0.5">Total</span>
                         </div>
                     </div>
 
-                    <div className="mt-6 flex flex-col gap-3">
+                    <div className="mt-8 flex flex-col gap-4">
                         {statusDataFixed.map(item => (
-                            <div key={item.name} className="flex items-center justify-between group">
-                                <div className="flex items-center gap-3">
-                                    <span className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: item.color }}></span>
-                                    <span className="text-sm text-slate-600 font-medium">{item.name}</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-sm font-semibold text-slate-900">{item.value}</span>
-                                    <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full rounded-full opacity-80"
-                                            style={{
-                                                width: `${stats?.total ? (item.value / stats.total) * 100 : 0}%`,
-                                                backgroundColor: item.color
-                                            }}
-                                        ></div>
+                            <div key={item.name} className="flex flex-col gap-1.5 group/item">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-2.5 h-2.5 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.1)] transition-transform group-hover/item:scale-125" style={{ backgroundColor: item.color }} />
+                                        <span className="text-[11px] text-slate-600 font-black uppercase tracking-tight">{item.name}</span>
                                     </div>
+                                    <span className="text-xs font-black text-slate-900 tabular-nums">{item.value}</span>
+                                </div>
+                                <div className="w-full h-1.5 bg-slate-100/50 rounded-full overflow-hidden shadow-inner border border-slate-50">
+                                    <div
+                                        className="h-full rounded-full transition-all duration-1000 ease-out"
+                                        style={{
+                                            width: `${stats?.total ? (item.value / stats.total) * 100 : 0}%`,
+                                            backgroundColor: item.color,
+                                            boxShadow: `0 0 10px ${item.color}40`
+                                        }}
+                                    ></div>
                                 </div>
                             </div>
                         ))}
@@ -245,37 +281,44 @@ const BatchMonitoring: React.FC = () => {
 
 // Simplified Apple-style Card
 const KpiCard = ({ title, value, icon, color, subValue, animate, isAlert }: any) => {
-    // Apple System Colors style map
     const colorStyles: any = {
-        gray: { text: 'text-slate-500', bgIcon: 'bg-slate-100 text-slate-600' },
-        blue: { text: 'text-blue-500', bgIcon: 'bg-blue-100 text-blue-600' },
-        purple: { text: 'text-purple-500', bgIcon: 'bg-purple-100 text-purple-600' },
-        red: { text: 'text-red-500', bgIcon: 'bg-red-100 text-red-600' },
-        green: { text: 'text-green-500', bgIcon: 'bg-green-100 text-green-600' },
+        gray: { text: 'text-slate-600', bgIcon: 'bg-slate-50 text-slate-600', ring: 'ring-slate-100', glow: 'from-slate-100/30' },
+        blue: { text: 'text-blue-600', bgIcon: 'bg-blue-50 text-blue-600', ring: 'ring-blue-100', glow: 'from-blue-100/30' },
+        purple: { text: 'text-purple-600', bgIcon: 'bg-indigo-50 text-indigo-600', ring: 'ring-indigo-100', glow: 'from-indigo-100/30' },
+        red: { text: 'text-red-600', bgIcon: 'bg-red-50 text-red-600', ring: 'ring-red-100', glow: 'from-red-100/30' },
+        green: { text: 'text-emerald-600', bgIcon: 'bg-emerald-50 text-emerald-600', ring: 'ring-emerald-100', glow: 'from-emerald-100/30' },
     };
 
     const style = colorStyles[color] || colorStyles.gray;
 
     return (
-        <div className={`bg-white rounded-3xl p-6 shadow-[0_2px_12px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.06)] transition-all duration-300 relative group overflow-hidden ${isAlert ? 'ring-2 ring-red-100' : ''}`}>
-            <div className="flex items-start justify-between mb-4">
-                <div className={`p-2.5 rounded-full ${style.bgIcon} transition-transform group-hover:scale-110 duration-300`}>
-                    {icon}
+        <div className={`relative bg-white/70 backdrop-blur-md rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] hover:-translate-y-1.5 transition-all duration-500 overflow-hidden group ${isAlert ? 'ring-2 ring-red-400/30' : ''}`}>
+            {/* Background Glow */}
+            <div className={`absolute -inset-1 bg-gradient-to-br ${style.glow} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700`} />
+
+            <div className="relative flex items-center justify-between mb-6">
+                <div className={`p-3 rounded-2xl ${style.bgIcon} border border-white shadow-sm ring-4 ${style.ring} group-hover:rotate-12 transition-all duration-500`}>
+                    {React.cloneElement(icon, { strokeWidth: 2.5, className: 'w-5 h-5' })}
                 </div>
                 {animate && (
-                    <span className="relative flex h-3 w-3">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
-                    </span>
+                    <div className="flex items-center gap-1.5 bg-blue-50 px-2 py-1 rounded-full border border-blue-100">
+                        <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                        </span>
+                        <span className="text-[8px] font-black text-blue-600 uppercase tracking-widest">Active</span>
+                    </div>
                 )}
             </div>
 
-            <div className="flex flex-col">
-                <span className="text-sm font-medium text-slate-500 mb-1">{title}</span>
-                <span className="text-3xl font-semibold text-slate-900 tracking-tight">{value}</span>
+            <div className="relative flex flex-col">
+                <span className="text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">{title}</span>
+                <span className={`text-3xl font-black text-slate-900 tracking-tighter tabular-nums ${isAlert && value > 0 ? 'text-red-600 animate-pulse' : ''}`}>{value}</span>
             </div>
-            <div className="mt-3 text-xs font-medium text-slate-400 flex items-center">
-                {subValue}
+
+            <div className="relative mt-4 pt-4 border-t border-slate-100/50 flex items-center justify-between">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{subValue}</span>
+                <div className="w-1.5 h-1.5 rounded-full bg-slate-200 group-hover:bg-red-500 transition-colors duration-500" />
             </div>
         </div>
     );
