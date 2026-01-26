@@ -307,11 +307,27 @@ def parse_procedure(procedure_sql: str, dialect: str = "mysql") -> list[TableLin
                 result.warnings.append(f"降级解析: {str(e)}")
                 results.append(result)
 
-    return [
-        res
-        for res in results
-        if not (res.confidence < 0.7 and not res.target_table and not res.source_tables)
-    ]
+    filtered_results = []
+    for res in results:
+        # 1. 必须有 source 或 target
+        if not res.source_tables and not res.target_table:
+            continue
+
+        # 2. 过滤掉无目标表的 SELECT (通常是 SELECT INTO 变量)
+        if res.statement_type == "SELECT" and not res.target_table:
+            continue
+
+        # 3. 过滤 UNKNOWN 类型 (通常是 PL/SQL 赋值或控制流)
+        if res.statement_type == "UNKNOWN":
+            continue
+
+        # 4. 过滤置信度过低的结果
+        if res.confidence < 0.5:
+            continue
+
+        filtered_results.append(res)
+
+    return filtered_results
 
 
 def compare_lineage(old: TableLineage, new: TableLineage) -> dict:
