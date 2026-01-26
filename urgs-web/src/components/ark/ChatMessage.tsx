@@ -101,10 +101,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                                             '思考中...'}
                                 </span>
                             </div>
-                        ) : !isUser && isStreaming ? (
-                            <div className="whitespace-pre-wrap break-words text-[16px] leading-[1.8] text-slate-700">
-                                {message.content}
-                            </div>
                         ) : (
                             <div className={`markdown-body ${isUser ? 'text-[#041e49]' : ''}`}>
                                 {/* Intent Badge */}
