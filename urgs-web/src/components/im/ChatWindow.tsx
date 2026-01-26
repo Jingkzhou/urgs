@@ -137,7 +137,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
     return (
         <div className="flex-1 bg-transparent flex flex-col relative h-full"> {/* Transparent to show blur */}
             {/* Header */}
-            <div className="h-16 flex items-center justify-between px-6 z-10 border-b border-slate-100/50 bg-white/30 backdrop-blur-sm">
+            <div className="h-16 flex items-center justify-between px-6 z-10 border-b border-slate-100/50 bg-white/80 backdrop-blur-md">
                 <div className="flex items-center gap-3">
                     <h3 className="font-bold text-slate-800 text-lg tracking-tight">{sessionName}</h3>
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>

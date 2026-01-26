@@ -530,7 +530,7 @@ const ChatWidget: React.FC = () => {
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.9, y: 30 }}
                         transition={{ type: "spring", stiffness: 350, damping: 25 }}
-                        className="mb-6 bg-white/65 backdrop-blur-3xl rounded-[2.5rem] shadow-[0_20px_60px_rgba(0,0,0,0.12)] border border-white/40 w-[950px] h-[700px] flex overflow-hidden ring-1 ring-black/[0.03]"
+                        className="mb-6 bg-white/65 backdrop-blur-3xl rounded-[2.5rem] shadow-[0_20px_60px_rgba(0,0,0,0.12)] border border-white/40 w-[950px] h-[min(700px,calc(100vh-140px))] flex overflow-hidden ring-1 ring-black/[0.03]"
                     >
 
                         {/* Sidebar */}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { RobotOutlined } from '@ant-design/icons';
-import { Sparkles, Database, ChevronRight, User, Cpu, Layers, PenTool, Settings, Sliders } from 'lucide-react';
+import { Sparkles, Database, ChevronRight, User, Cpu, Layers, PenTool, Settings, Sliders, ArrowDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from './Sidebar';
 import ChatMessage from './ChatMessage';
@@ -42,6 +42,7 @@ const ArkPage: React.FC = () => {
         fusionStrategy: 'rrf', // rrf | weighted
         topK: 4
     });
+    const [showScrollBottom, setShowScrollBottom] = useState(false);
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -286,6 +287,7 @@ const ArkPage: React.FC = () => {
         const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
         const isBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 50; // Threshold of 50px
         isAtBottom.current = isBottom;
+        setShowScrollBottom(!isBottom);
         isScrollingRef.current = true;
         if (scrollIdleTimerRef.current !== null) {
             window.clearTimeout(scrollIdleTimerRef.current);
@@ -697,6 +699,24 @@ const ArkPage: React.FC = () => {
                     )}
                 </AnimatePresence>
 
+                {/* Scroll to Bottom Button */}
+                <AnimatePresence>
+                    {showScrollBottom && currentSessionId && (
+                        <motion.button
+                            initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.8, y: 10 }}
+                            onClick={() => {
+                                scrollToBottom();
+                                setShowScrollBottom(false);
+                            }}
+                            className="absolute bottom-32 -translate-x-1/2 left-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-500 shadow-md ring-1 ring-slate-200/50 transition-colors hover:bg-slate-50 hover:text-blue-600"
+                        >
+                            <ArrowDown size={16} />
+                        </motion.button>
+                    )}
+                </AnimatePresence>
+
                 {/* Metrics Badge */}
                 {metrics && currentSessionId && (
                     <div className="absolute top-6 right-8 z-20">
@@ -710,7 +730,7 @@ const ArkPage: React.FC = () => {
                 )}
 
                 {/* Bottom Input Area */}
-                <div className="absolute bottom-0 left-0 w-full px-6 pb-8 pt-12 bg-gradient-to-t from-[#f8fbff] via-[#f8fbff]/90 to-transparent pointer-events-none flex justify-center z-10">
+                <div className="absolute bottom-0 left-0 w-full px-6 pb-6 pt-16 bg-gradient-to-t from-[#f8fbff] via-[#f8fbff]/95 to-transparent pointer-events-none flex justify-center z-10">
                     <div className="w-full max-w-3xl pointer-events-auto">
                         <ChatInput
                             value={inputValue}
