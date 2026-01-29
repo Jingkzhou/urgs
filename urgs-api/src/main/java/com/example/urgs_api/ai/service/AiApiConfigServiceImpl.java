@@ -46,13 +46,19 @@ public class AiApiConfigServiceImpl extends ServiceImpl<AiApiConfigMapper, AiApi
     }
 
     @Override
-    public boolean testConnection(AiApiConfig config) {
+    public java.util.Map<String, Object> testConnection(AiApiConfig config) {
+        java.util.Map<String, Object> result = new java.util.HashMap<>();
+
         // 验证配置完整性
         if (config.getEndpoint() == null || config.getEndpoint().isEmpty()) {
-            return false;
+            result.put("success", false);
+            result.put("message", "API 端点不能为空");
+            return result;
         }
         if (config.getApiKey() == null || config.getApiKey().isEmpty()) {
-            return false;
+            result.put("success", false);
+            result.put("message", "API 密钥不能为空");
+            return result;
         }
 
         try {
@@ -63,14 +69,21 @@ public class AiApiConfigServiceImpl extends ServiceImpl<AiApiConfigMapper, AiApi
             }
             endpoint += "chat/completions";
 
-            // 构建请求体 - 发送一个最简单的测试请求
+            // 构建请求体
+            String model = config.getModel();
+            if (model == null || model.isEmpty()) {
+                // 如果未提供模型，对于 Ollama/vLLM 等私有部署，通常需要一个具体的模型名称
+                // 默认使用 gpt-3.5-turbo 仅适用于 OpenAI
+                model = "gpt-3.5-turbo";
+            }
+
             String requestBody = String.format("""
                     {
                         "model": "%s",
                         "messages": [{"role": "user", "content": "Hi"}],
                         "max_tokens": 5
                     }
-                    """, config.getModel() != null ? config.getModel() : "gpt-3.5-turbo");
+                    """, model);
 
             // 创建 HTTP 连接
             java.net.URL url = java.net.URI.create(endpoint).toURL();
@@ -89,23 +102,42 @@ public class AiApiConfigServiceImpl extends ServiceImpl<AiApiConfigMapper, AiApi
 
             int responseCode = conn.getResponseCode();
 
-            // 200 表示成功，其他状态码表示失败
             if (responseCode == 200) {
-                return true;
+                result.put("success", true);
+                result.put("message", "连接成功");
+                return result;
             } else {
-                // 读取错误信息用于日志
+                // 读取错误信息
+                String errorBody = "";
                 try (java.io.InputStream errorStream = conn.getErrorStream()) {
                     if (errorStream != null) {
-                        String errorBody = new String(errorStream.readAllBytes(),
-                                java.nio.charset.StandardCharsets.UTF_8);
-                        System.err.println("AI API test failed: " + responseCode + " - " + errorBody);
+                        errorBody = new String(errorStream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
                     }
                 }
-                return false;
+
+                String message = "连接失败 (HTTP " + responseCode + ")";
+                if (responseCode == 404) {
+                    message = "模型名称未找到。请确认模型名称是否正确。如果您使用的是私有服务器，请在“模型”字段输入正确的 ID (如 qwen3)。";
+                } else if (responseCode == 401) {
+                    message = "认证失败，请检查 API 密钥。";
+                } else if (!errorBody.isEmpty()) {
+                    // 尝试提取 JSON 中的错误信息
+                    if (errorBody.contains("\"message\"")) {
+                        message += ": " + errorBody;
+                    }
+                }
+
+                System.err.println("AI API test failed: " + responseCode + " - " + errorBody);
+                result.put("success", false);
+                result.put("message", message);
+                result.put("details", errorBody);
+                return result;
             }
         } catch (Exception e) {
             System.err.println("AI API test connection error: " + e.getMessage());
-            return false;
+            result.put("success", false);
+            result.put("message", "网络连接错误: " + e.getMessage());
+            return result;
         }
     }
 

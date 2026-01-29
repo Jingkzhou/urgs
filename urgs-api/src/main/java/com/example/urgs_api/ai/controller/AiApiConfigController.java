@@ -94,11 +94,7 @@ public class AiApiConfigController {
      */
     @PostMapping("/test")
     public Map<String, Object> testConnection(@RequestBody AiApiConfig config) {
-        Map<String, Object> result = new HashMap<>();
-        boolean success = aiApiConfigService.testConnection(config);
-        result.put("success", success);
-        result.put("message", success ? "连接成功" : "连接失败");
-        return result;
+        return aiApiConfigService.testConnection(config);
     }
 
     /**
