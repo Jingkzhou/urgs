@@ -40,7 +40,7 @@ const ScoreTooltip: React.FC<ScoreDetailProps> = ({ details }) => {
     return (
         <div className="absolute bottom-full mb-2 left-0 w-48 bg-slate-800 text-white text-[10px] p-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 flex flex-col gap-1">
             <div className="font-bold border-b border-slate-700 pb-1 mb-1 text-slate-300">
-                {isRRF ? 'RRF Fusion Details' : 'Retrieval Details'}
+                {isRRF ? 'RRF 融合详情' : '检索详情'}
             </div>
             {Object.entries(details).map(([key, val]) => {
                 if (typeof val === 'number') {
@@ -82,7 +82,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                         max-w-none w-full
                         ${isUser
                             ? 'bg-[#d3e3fd] px-6 py-3.5 rounded-[28px] rounded-tr-lg text-[#041e49] font-medium shadow-sm leading-relaxed inline-block'
-                            : 'bg-transparent text-[#1f1f1f] text-[16px] leading-[1.8] font-normal transition-opacity duration-300'
+                            : 'bg-white text-[#1f1f1f] text-[16px] leading-[1.8] font-normal transition-opacity duration-300'
                         }
                     `}>
                         {!isUser && !message.content ? (

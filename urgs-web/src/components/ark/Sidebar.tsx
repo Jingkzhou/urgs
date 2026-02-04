@@ -73,7 +73,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
         <motion.aside
             initial={false}
             animate={{ width: isCollapsed ? 88 : 300 }}
-            className="flex-shrink-0 bg-white/45 backdrop-blur-2xl flex flex-col h-full font-sans transition-all duration-500 relative border-r border-slate-200/30 z-[50]"
+            className="flex-shrink-0 bg-white flex flex-col h-full font-sans transition-all duration-500 relative border-r border-slate-100 z-[50]"
         >
             {/* Header: Logo & Interaction */}
             <div className="p-6 pb-2">
@@ -89,7 +89,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
                                 <div className="w-8 h-8 bg-red-600 rounded-xl flex items-center justify-center shadow-lg shadow-red-500/20">
                                     <Sparkles size={16} className="text-white" strokeWidth={2.5} />
                                 </div>
-                                <span className="text-lg font-black tracking-tighter italic text-slate-800 uppercase">Ark / System</span>
+                                <span className="text-lg font-black tracking-tighter italic text-slate-800 uppercase">Ark / 系统架构</span>
                             </motion.div>
                         )}
                     </AnimatePresence>
@@ -103,21 +103,18 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
 
                 <button
                     onClick={() => onNewChat()}
-                    className={`group relative overflow-hidden flex items-center justify-center gap-3 bg-slate-900 text-white rounded-2xl transition-all duration-500 shadow-xl shadow-slate-900/10 hover:shadow-slate-900/20 active:scale-95 ${isCollapsed ? 'w-12 h-12 mx-auto' : 'w-full py-4'}`}
+                    className={`group relative overflow-hidden flex items-center justify-start gap-3 bg-[#f0f4f9] text-slate-700 rounded-xl transition-all duration-300 hover:bg-[#e3e8ef] active:scale-95 ${isCollapsed ? 'w-12 h-12 mx-auto justify-center' : 'w-full px-5 py-3.5'}`}
                 >
-                    {/* Shimmer Effect */}
-                    <div className="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-[-20deg]"></div>
-
-                    <Plus size={20} strokeWidth={3} className="text-red-500" />
+                    <Plus size={20} className="text-slate-600" />
                     <AnimatePresence>
                         {!isCollapsed && (
                             <motion.span
                                 initial={{ opacity: 0, width: 0 }}
                                 animate={{ opacity: 1, width: 'auto' }}
                                 exit={{ opacity: 0, width: 0 }}
-                                className="font-black text-[11px] uppercase tracking-[0.2em] whitespace-nowrap"
+                                className="font-medium text-[14px] whitespace-nowrap"
                             >
-                                Start New Era
+                                新建对话
                             </motion.span>
                         )}
                     </AnimatePresence>
@@ -133,7 +130,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
                             animate={{ opacity: 1 }}
                             className="text-[9px] font-black text-slate-400/70 uppercase tracking-[0.3em] mb-6 px-4"
                         >
-                            RECENT OPERATIONS
+                            最近操作
                         </motion.h3>
                     )}
                 </AnimatePresence>
@@ -144,25 +141,15 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
                             key={session.id}
                             layout
                             onClick={() => onSessionSelect(session.id, session.agentId)}
-                            className={`group flex items-center gap-4 px-4 py-3.5 rounded-[1.25rem] transition-all cursor-pointer relative overflow-hidden
+                            className={`group flex items-center gap-3 px-5 py-2.5 rounded-full transition-all cursor-pointer relative overflow-hidden
                                 ${currentSessionId === session.id
-                                    ? 'bg-white shadow-xl shadow-black/[0.03] border border-slate-100'
-                                    : 'hover:bg-white/60 text-slate-500 opacity-60 hover:opacity-100'
+                                    ? 'bg-[#d3e3fd] text-[#041e49]'
+                                    : 'hover:bg-[#f0f4f9] text-[#1f1f1f]'
                                 }`
                             }
                         >
-                            {/* Selection Indicator */}
-                            {currentSessionId === session.id && (
-                                <motion.div
-                                    layoutId="indicator"
-                                    className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-red-600 rounded-r-full shadow-[0_0_10px_rgba(220,38,38,0.5)]"
-                                />
-                            )}
-
                             <div className="flex-shrink-0 relative z-10">
-                                <div className={`p-2 rounded-xl transition-colors ${currentSessionId === session.id ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-400 group-hover:bg-white group-hover:text-red-400'}`}>
-                                    <MessageSquare size={16} strokeWidth={2.5} />
-                                </div>
+                                <MessageSquare size={16} strokeWidth={2} className={currentSessionId === session.id ? 'text-[#041e49]' : 'text-slate-500'} />
                             </div>
 
                             {!isCollapsed && (
@@ -180,12 +167,12 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
                                         </div>
                                     ) : (
                                         <div className="flex items-center justify-between">
-                                            <span className={`truncate text-[13px] ${currentSessionId === session.id ? 'font-black text-slate-800' : 'font-bold'}`}>
+                                            <span className={`truncate text-[14px] ${currentSessionId === session.id ? 'font-medium' : 'font-normal'}`}>
                                                 {session.title}
                                             </span>
-                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
-                                                <button onClick={(e) => startEdit(e, session)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-600"><Pencil size={12} strokeWidth={2.5} /></button>
-                                                <button onClick={(e) => handleDelete(e, session.id)} className="p-1.5 hover:bg-red-50 rounded-lg transition-colors text-slate-400 hover:text-red-500"><Trash2 size={12} strokeWidth={2.5} /></button>
+                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                                <button onClick={(e) => startEdit(e, session)} className="p-1.5 hover:bg-black/5 rounded-full transition-colors text-slate-500"><Pencil size={12} /></button>
+                                                <button onClick={(e) => handleDelete(e, session.id)} className="p-1.5 hover:bg-black/5 rounded-full transition-colors text-slate-500"><Trash2 size={12} /></button>
                                             </div>
                                         </div>
                                     )}
@@ -200,11 +187,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
             <div className={`p-6 border-t border-slate-200/30 space-y-2`}>
                 <button className="w-full flex items-center justify-center gap-4 px-4 py-3 text-slate-400 hover:text-slate-800 hover:bg-white/80 rounded-[1.25rem] transition-all group overflow-hidden">
                     <History size={18} strokeWidth={2.5} className="group-hover:rotate-[-10deg] transition-transform" />
-                    {!isCollapsed && <span className="flex-1 text-left text-[11px] font-black uppercase tracking-widest">Analytics Flow</span>}
+                    {!isCollapsed && <span className="flex-1 text-left text-[11px] font-black uppercase tracking-widest">分析流</span>}
                 </button>
                 <button className="w-full flex items-center justify-center gap-4 px-4 py-3 text-slate-400 hover:text-slate-800 hover:bg-white/80 rounded-[1.25rem] transition-all group overflow-hidden">
                     <Settings size={18} strokeWidth={2.5} className="group-hover:rotate-[20deg] transition-transform" />
-                    {!isCollapsed && <span className="flex-1 text-left text-[11px] font-black uppercase tracking-widest">Operational Core</span>}
+                    {!isCollapsed && <span className="flex-1 text-left text-[11px] font-black uppercase tracking-widest">操作核心</span>}
                 </button>
             </div>
         </motion.aside>

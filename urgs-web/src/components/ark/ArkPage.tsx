@@ -730,8 +730,8 @@ const ArkPage: React.FC = () => {
                 )}
 
                 {/* Bottom Input Area */}
-                <div className="absolute bottom-0 left-0 w-full px-6 pb-6 pt-16 bg-gradient-to-t from-[#f8fbff] via-[#f8fbff]/95 to-transparent pointer-events-none flex justify-center z-10">
-                    <div className="w-full max-w-3xl pointer-events-auto">
+                <div className="absolute bottom-0 left-0 w-full px-6 pb-8 pt-20 bg-gradient-to-t from-white via-white/95 to-transparent pointer-events-none flex justify-center z-10">
+                    <div className="w-full max-w-4xl pointer-events-auto">
                         <ChatInput
                             value={inputValue}
                             onChange={setInputValue}
