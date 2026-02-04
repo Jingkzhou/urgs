@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Switch } from 'antd';
 import { Plus, GitBranch, Trash2, Edit, ExternalLink, RefreshCw, LayoutList, LayoutGrid, MoreHorizontal, GitPullRequest } from 'lucide-react';
-import { getGitRepositories, createGitRepository, updateGitRepository, deleteGitRepository, getSsoList, GitRepository, SsoConfig, getRepoPrCounts } from '@/api/version';
+import { getGitRepositories, createGitRepository, updateGitRepository, deleteGitRepository, getSsoList, GitRepository, SsoConfig, getRepoPrCounts, syncGitLabProjects, importGitRepositories } from '@/api/version';
 import GitRepoDetail from './GitRepoDetail';
 import PageHeader from '../../common/PageHeader';
 import StatusTag from '../../common/StatusTag';
@@ -142,7 +142,7 @@ const GitRepoManagement: React.FC = () => {
         setSyncModalVisible(true);
         setSyncLoading(true);
         try {
-            const projects = await import('@/api/version').then(mod => mod.syncGitLabProjects());
+            const projects = await syncGitLabProjects();
             setGitLabProjects(projects || []);
         } catch (error) {
             message.error('同步 GitLab 项目失败，请检查是否在个人设置中配置了 Token');
@@ -162,10 +162,10 @@ const GitRepoManagement: React.FC = () => {
         }
 
         try {
-            await import('@/api/version').then(mod => mod.importGitRepositories({
+            await importGitRepositories({
                 systemId: selectedSystemId,
                 projects: selectedProjects
-            }));
+            });
             message.success('导入成功');
             setSyncModalVisible(false);
             fetchRepos();
