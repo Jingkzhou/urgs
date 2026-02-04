@@ -89,7 +89,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
                                 <div className="w-8 h-8 bg-red-600 rounded-xl flex items-center justify-center shadow-lg shadow-red-500/20">
                                     <Sparkles size={16} className="text-white" strokeWidth={2.5} />
                                 </div>
-                                <span className="text-lg font-black tracking-tighter italic text-slate-800 uppercase">Ark / 系统架构</span>
+                                <span className="text-lg font-black tracking-tighter italic text-slate-800 uppercase">Ark / 方舟</span>
                             </motion.div>
                         )}
                     </AnimatePresence>
