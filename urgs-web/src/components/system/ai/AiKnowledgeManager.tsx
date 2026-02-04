@@ -12,8 +12,12 @@ interface KnowledgeBaseConfig {
     description?: string;
     collectionName?: string;
     createdAt?: string;
-    embeddingModel?: string; // Kept for frontend form, though not in Entity explicitly yet (can be in description or separate)
+    embeddingModel?: string;
     enrichPrompt?: string;
+    provider?: 'LOCAL' | 'DIFY';
+    externalId?: string;
+    externalUrl?: string;
+    externalApiKey?: string;
 }
 
 interface KBFile {
@@ -216,6 +220,17 @@ const AiKnowledgeManager: React.FC = () => {
             render: (text: string) => text ? <Tag color="blue">{text}</Tag> : <span className="text-slate-300">-</span>
         },
         {
+            title: '后端服务',
+            dataIndex: 'provider',
+            key: 'provider',
+            width: 100,
+            render: (provider: string) => (
+                <Tag color={provider === 'DIFY' ? 'geekblue' : 'green'} className="font-mono">
+                    {provider || 'LOCAL'}
+                </Tag>
+            )
+        },
+        {
             title: '描述',
             dataIndex: 'description',
             key: 'description',
@@ -248,7 +263,10 @@ const AiKnowledgeManager: React.FC = () => {
                                     name: record.name,
                                     description: record.description,
                                     embeddingModel: record.embeddingModel || 'bge-m3',
-                                    enrichPrompt: record.enrichPrompt
+                                    enrichPrompt: record.enrichPrompt,
+                                    provider: record.provider || 'LOCAL',
+                                    externalUrl: record.externalUrl,
+                                    externalApiKey: record.externalApiKey
                                 });
                                 setIsModalOpen(true);
                             }}
@@ -364,7 +382,9 @@ const AiKnowledgeManager: React.FC = () => {
                     id: editingKb.id,
                     name: values.name, // Name usually usually immutable in this simple logic, but passing it doesn't hurt if backend ignores/matches
                     description: values.description,
-                    enrichPrompt: values.enrichPrompt
+                    enrichPrompt: values.enrichPrompt,
+                    externalUrl: values.externalUrl,
+                    externalApiKey: values.externalApiKey
                 });
                 message.success('更新成功');
             } else {
@@ -372,8 +392,11 @@ const AiKnowledgeManager: React.FC = () => {
                     name: values.name,
                     description: values.description,
                     collectionName: values.name,
-                    embeddingModel: values.embeddingModel,
-                    enrichPrompt: values.enrichPrompt
+                    embeddingModel: values.provider === 'DIFY' ? 'DIFY-Managed' : values.embeddingModel,
+                    enrichPrompt: values.enrichPrompt,
+                    provider: values.provider,
+                    externalUrl: values.externalUrl,
+                    externalApiKey: values.externalApiKey
                 });
                 message.success('创建成功');
             }
@@ -560,10 +583,44 @@ const AiKnowledgeManager: React.FC = () => {
                     >
                         <Input placeholder="例如: finance_docs_v1" disabled={!!editingKb} />
                     </Form.Item>
-                    <Form.Item name="embeddingModel" label="Embedding 模型" rules={[{ required: true }]}>
-                        <Select placeholder="选择 Embedding 模型" disabled>
-                            <Select.Option value="bge-m3">BGE-M3 (Local) - 默认</Select.Option>
+                    <Form.Item name="provider" label="后端服务提供商" initialValue="LOCAL" rules={[{ required: true }]}>
+                        <Select disabled={!!editingKb}>
+                            <Select.Option value="LOCAL">本地 RAG (ChromaDB + BGE-M3)</Select.Option>
+                            <Select.Option value="DIFY">Dify 平台 (私有化部署)</Select.Option>
                         </Select>
+                    </Form.Item>
+                    <Form.Item
+                        noStyle
+                        shouldUpdate={(prevValues, currentValues) => prevValues.provider !== currentValues.provider}
+                    >
+                        {({ getFieldValue }) =>
+                            getFieldValue('provider') === 'LOCAL' ? (
+                                <Form.Item name="embeddingModel" label="Embedding 模型" rules={[{ required: true }]}>
+                                    <Select placeholder="选择 Embedding 模型" disabled>
+                                        <Select.Option value="bge-m3">BGE-M3 (Local) - 默认</Select.Option>
+                                    </Select>
+                                </Form.Item>
+                            ) : (
+                                <>
+                                    <Form.Item
+                                        name="externalUrl"
+                                        label="Dify API Endpoint"
+                                        rules={[{ required: true, message: '请输入 Dify API 地址' }]}
+                                        tooltip="例如: http://192.168.1.100/v1"
+                                    >
+                                        <Input placeholder="http://ip:port/v1" />
+                                    </Form.Item>
+                                    <Form.Item
+                                        name="externalApiKey"
+                                        label="Dify API Key (Dataset Key)"
+                                        rules={[{ required: true, message: '请输入 Dify API Key' }]}
+                                        tooltip="在 Dify 数据集设置页面生成的 API Key"
+                                    >
+                                        <Input.Password placeholder="app-..." />
+                                    </Form.Item>
+                                </>
+                            )
+                        }
                     </Form.Item>
                     <Form.Item name="enrichPrompt" label="自定义知识增强提示词 (Enrich Prompt)">
                         <Input.TextArea

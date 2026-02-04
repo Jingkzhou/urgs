@@ -4,8 +4,11 @@ import com.example.urgs_api.ai.entity.KnowledgeBase;
 import com.example.urgs_api.ai.entity.KnowledgeFile;
 import com.example.urgs_api.ai.repository.KnowledgeBaseRepository;
 import com.example.urgs_api.ai.repository.KnowledgeFileRepository;
+import com.example.urgs_api.ai.client.DifyClient;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -13,6 +16,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.scheduling.annotation.Async;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -24,10 +28,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.springframework.scheduling.annotation.Async;
 
 @Service
 public class KnowledgeBaseService {
+
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeBaseService.class);
 
     @Autowired
     private KnowledgeBaseRepository kbRepository;
@@ -35,11 +40,15 @@ public class KnowledgeBaseService {
     @Autowired
     private KnowledgeFileRepository fileRepository;
 
+    @Autowired
+    private DifyClient difyClient;
+
     @Value("${ai.rag.doc-store-path}")
     private String docStorePath;
 
     @Value("${ai.rag.base-url}")
     private String pythonRagUrl;
+
     private final String DEFAULT_EMBEDDING_MODEL = "shibing624/text2vec-base-chinese";
 
     private final RestTemplate restTemplate = new RestTemplate();
@@ -65,6 +74,7 @@ public class KnowledgeBaseService {
                     kb.setEmbeddingModel(DEFAULT_EMBEDDING_MODEL);
                     kb.setDescription("Auto-discovered from filesystem");
                     kb.setCreatedAt(new Date());
+                    kb.setProvider("LOCAL");
                     kbRepository.insert(kb);
 
                     // Sync files for this new KB
@@ -74,7 +84,7 @@ public class KnowledgeBaseService {
                 }
             });
         } catch (IOException e) {
-            e.printStackTrace();
+            log.error("Failed to sync knowledge bases from filesystem", e);
         }
     }
 
@@ -102,7 +112,7 @@ public class KnowledgeBaseService {
                 }
             });
         } catch (IOException e) {
-            e.printStackTrace();
+            log.error("Failed to sync files for KB: {}", kb.getName(), e);
         }
     }
 
@@ -136,6 +146,17 @@ public class KnowledgeBaseService {
             existing.setUploadTime(new Date());
             fileRepository.updateById(existing);
         }
+
+        // Dify Integration: Sync to Dify if provider is DIFY
+        if ("DIFY".equalsIgnoreCase(kb.getProvider()) && kb.getExternalId() != null) {
+            try {
+                String docId = difyClient.uploadDocument(kb.getExternalId(), file, kb.getExternalUrl(),
+                        kb.getExternalApiKey());
+                log.info("Synced file to Dify: {} -> doc_id: {}", fileName, docId);
+            } catch (Exception e) {
+                log.error("Failed to sync file to Dify for KB: {}", kbName, e);
+            }
+        }
     }
 
     public List<KnowledgeFile> listFiles(String kbName) {
@@ -158,7 +179,7 @@ public class KnowledgeBaseService {
         Path file = Paths.get(docStorePath, kbName, fileName);
         Files.deleteIfExists(file);
 
-        // 删除对应的向量切片
+        // Local RAG cleanup
         try {
             String url = UriComponentsBuilder.fromHttpUrl(pythonRagUrl + "/delete-file")
                     .queryParam("collection_name", kbName)
@@ -167,8 +188,7 @@ public class KnowledgeBaseService {
                     .toUriString();
             restTemplate.postForEntity(url, null, Map.class);
         } catch (Exception e) {
-            // 向量删除失败不阻断文件删除流程
-            e.printStackTrace();
+            log.warn("Failed to delete local RAG vectors for file: {}", fileName);
         }
     }
 
@@ -180,6 +200,22 @@ public class KnowledgeBaseService {
             kb.setEmbeddingModel(DEFAULT_EMBEDDING_MODEL);
         }
         kb.setCreatedAt(new Date());
+
+        // Dify Integration: Create Dataset in Dify
+        if ("DIFY".equalsIgnoreCase(kb.getProvider())) {
+            try {
+                String datasetId = difyClient.createDataset(kb.getName(), kb.getDescription(), kb.getExternalUrl(),
+                        kb.getExternalApiKey());
+                kb.setExternalId(datasetId);
+                log.info("Created Dify Dataset: {} for KB: {}", datasetId, kb.getName());
+            } catch (Exception e) {
+                log.error("Failed to create Dify Dataset", e);
+                throw new RuntimeException("Dify 集成失败: " + e.getMessage());
+            }
+        } else {
+            kb.setProvider("LOCAL");
+        }
+
         kbRepository.insert(kb);
         return kb;
     }
@@ -193,21 +229,25 @@ public class KnowledgeBaseService {
             throw new RuntimeException("Knowledge Base not found");
         }
 
-        // Only update allowed fields
         if (kb.getDescription() != null)
             existing.setDescription(kb.getDescription());
         if (kb.getEnrichPrompt() != null)
             existing.setEnrichPrompt(kb.getEnrichPrompt());
-
-        // Not allowing name change easily as it affects file paths and collection names
-        // (complex migration)
-        // If needed, we could support renaming but requires robust file moving logic.
 
         kbRepository.updateById(existing);
         return existing;
     }
 
     public void deleteKB(Long id) {
+        KnowledgeBase kb = kbRepository.selectById(id);
+        if (kb != null && "DIFY".equalsIgnoreCase(kb.getProvider()) && kb.getExternalId() != null) {
+            try {
+                difyClient.deleteDataset(kb.getExternalId(), kb.getExternalUrl(), kb.getExternalApiKey());
+                log.info("Deleted Dify Dataset: {}", kb.getExternalId());
+            } catch (Exception e) {
+                log.warn("Failed to delete Dify Dataset for KB ID: {}", id, e);
+            }
+        }
         kbRepository.deleteById(id);
     }
 
@@ -222,14 +262,12 @@ public class KnowledgeBaseService {
         if (files.isEmpty())
             throw new RuntimeException("No file records found");
 
-        // 1. Update all to VECTORIZING
         for (KnowledgeFile file : files) {
             file.setStatus("VECTORIZING");
             file.setErrorMessage(null);
             fileRepository.updateById(file);
         }
 
-        // 2. Start Async process
         performAsyncIngestion(kb, files, fileNames, enableQa);
 
         Map<String, Object> result = new java.util.HashMap<>();
@@ -241,7 +279,6 @@ public class KnowledgeBaseService {
     @Async("aiTaskExecutor")
     public void performAsyncIngestion(KnowledgeBase kb, List<KnowledgeFile> files, List<String> fileNames,
             boolean enableQa) {
-        // Sort files by priority (desc) then hit_count (desc)
         List<KnowledgeFile> sortedFiles = files.stream()
                 .sorted((a, b) -> {
                     int pComp = Integer.compare(
@@ -258,7 +295,6 @@ public class KnowledgeBaseService {
         String kbName = kb.getName();
         for (KnowledgeFile file : sortedFiles) {
             try {
-                // Call Python Backend for individual file to track progress more granularly
                 String url = UriComponentsBuilder.fromHttpUrl(pythonRagUrl + "/ingest")
                         .queryParam("collection_name", kbName)
                         .queryParam("filenames", file.getFileName())
@@ -312,7 +348,7 @@ public class KnowledgeBaseService {
             Map<String, Object> body = (Map<String, Object>) response.getBody();
             return body;
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Failed to trigger ingestion: {}", e.getMessage());
             throw new RuntimeException("Failed to trigger ingestion: " + e.getMessage());
         }
     }
@@ -322,7 +358,6 @@ public class KnowledgeBaseService {
         if (kb == null)
             throw new RuntimeException("Knowledge Base not found");
 
-        // 1. Call Python Reset
         String url = UriComponentsBuilder.fromHttpUrl(pythonRagUrl + "/reset")
                 .queryParam("collection_name", kbName)
                 .build()
@@ -334,7 +369,6 @@ public class KnowledgeBaseService {
             Map<String, Object> body = (Map<String, Object>) response.getBody();
 
             if (body != null && "success".equals(body.get("status"))) {
-                // 2. 删除知识库下的文件记录与物理文件
                 List<KnowledgeFile> files = fileRepository.selectList(
                         new QueryWrapper<KnowledgeFile>().eq("kb_id", kb.getId()));
                 for (KnowledgeFile file : files) {
@@ -342,7 +376,7 @@ public class KnowledgeBaseService {
                         Path filePath = Paths.get(docStorePath, kbName, file.getFileName());
                         Files.deleteIfExists(filePath);
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        log.warn("Failed to delete physical file during reset: {}", file.getFileName());
                     }
                 }
                 fileRepository.delete(new QueryWrapper<KnowledgeFile>().eq("kb_id", kb.getId()));
