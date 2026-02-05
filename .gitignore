@@ -46,6 +46,7 @@ env/
 
 # Environment/Sensitive
 .env
+.env.dify
 .env.local
 .env.*.local
 *.key
