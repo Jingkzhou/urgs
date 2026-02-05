@@ -121,6 +121,99 @@ services:
     volumes:
       - lineage_tmp:/tmp/lineage-share
 
+  # ========================================
+  # Dify Microservices (Synced from urgs-dify)
+  # ========================================
+  urgs-dify-api:
+    build:
+      context: ./urgs-dify/api
+      dockerfile: Dockerfile
+    image: urgs-dify-api:latest
+    environment:
+      - CONSOLE_API_URL=${DIFY_WEB_API_URL}
+      - CONSOLE_WEB_URL=${DIFY_WEB_URL}
+      - SERVICE_API_URL=${DIFY_WEB_API_URL}
+      - APP_WEB_URL=${DIFY_WEB_URL}
+      - SECRET_KEY=${DIFY_SECRET_KEY}
+      - DB_USERNAME=${DIFY_DB_USER}
+      - DB_PASSWORD=${DIFY_DB_PASSWORD}
+      - DB_HOSTNAME=${DIFY_DB_HOST}
+      - DB_PORT=${DIFY_DB_PORT}
+      - DB_DATABASE=${DIFY_DB_NAME}
+      - REDIS_HOST=${DIFY_REDIS_HOST}
+      - REDIS_PORT=${DIFY_REDIS_PORT}
+      - REDIS_PASSWORD=${DIFY_REDIS_PASSWORD}
+    depends_on:
+      - urgs-dify-db
+      - urgs-dify-redis
+    networks:
+      - urgs-net
+
+  urgs-dify-web:
+    build:
+      context: ./urgs-dify/web
+      dockerfile: Dockerfile
+    image: urgs-dify-web:latest
+    environment:
+      - CONSOLE_API_URL=${DIFY_WEB_API_URL}
+      - APP_API_URL=${DIFY_WEB_API_URL}
+    ports:
+      - "5001:3000"
+    networks:
+      - urgs-net
+
+  urgs-dify-worker:
+    build:
+      context: ./urgs-dify/api
+      dockerfile: Dockerfile
+    image: urgs-dify-api:latest
+    command: /usr/bin/supervisord
+    environment:
+      - SECRET_KEY=${DIFY_SECRET_KEY}
+      - DB_USERNAME=${DIFY_DB_USER}
+      - DB_PASSWORD=${DIFY_DB_PASSWORD}
+      - DB_HOSTNAME=${DIFY_DB_HOST}
+      - DB_PORT=${DIFY_DB_PORT}
+      - DB_DATABASE=${DIFY_DB_NAME}
+      - REDIS_HOST=${DIFY_REDIS_HOST}
+      - REDIS_PORT=${DIFY_REDIS_PORT}
+      - REDIS_PASSWORD=${DIFY_REDIS_PASSWORD}
+    depends_on:
+      - urgs-dify-db
+      - urgs-dify-redis
+    networks:
+      - urgs-net
+
+  urgs-dify-db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=${DIFY_DB_USER}
+      - POSTGRES_PASSWORD=${DIFY_DB_PASSWORD}
+      - POSTGRES_DB=${DIFY_DB_NAME}
+    volumes:
+      - dify_db_data:/var/lib/postgresql/data
+    networks:
+      - urgs-net
+
+  urgs-dify-redis:
+    image: redis:6-alpine
+    command: redis-server --requirepass ${DIFY_REDIS_PASSWORD}
+    networks:
+      - urgs-net
+
+  urgs-dify-weaviate:
+    image: semitechnologies/weaviate:1.19.0
+    environment:
+      - PERSISTENCE_DATA_PATH=/var/lib/weaviate
+      - QUERY_DEFAULTS_LIMIT=25
+      - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
+      - DEFAULT_VECTORIZER_MODULE=none
+      - CLUSTER_HOSTNAME=node1
+    volumes:
+      - dify_weaviate_data:/var/lib/weaviate
+    networks:
+      - urgs-net
+
 networks:
   urgs-net:
     driver: bridge
@@ -128,3 +221,5 @@ networks:
 volumes:
   neo4j_data:
   lineage_tmp:
+  dify_db_data:
+  dify_weaviate_data:
