@@ -204,6 +204,7 @@ public class KnowledgeBaseService {
         // Dify Integration: Create Dataset in Dify
         if ("DIFY".equalsIgnoreCase(kb.getProvider())) {
             try {
+                log.info("Creating Dify Dataset at: {}", kb.getExternalUrl());
                 String datasetId = difyClient.createDataset(kb.getName(), kb.getDescription(), kb.getExternalUrl(),
                         kb.getExternalApiKey());
                 kb.setExternalId(datasetId);

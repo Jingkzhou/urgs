@@ -145,7 +145,13 @@ public class DifyClient {
         AiApiConfig config = getDifyConfig();
         if (config != null && config.getEndpoint() != null)
             return config.getEndpoint();
-        return System.getenv("DIFY_BASE_URL");
+
+        // 依次尝试 DIFY_BASE_URL 和 DIFY_WEB_API_URL
+        String baseUrl = System.getenv("DIFY_BASE_URL");
+        if (baseUrl == null || baseUrl.isEmpty()) {
+            baseUrl = System.getenv("DIFY_WEB_API_URL");
+        }
+        return baseUrl;
     }
 
     private String getEffectiveKey(String override) {
@@ -158,12 +164,15 @@ public class DifyClient {
     }
 
     private String normalizeUrl(String url) {
-        if (url == null)
-            return "";
+        if (url == null || url.trim().isEmpty()) {
+            throw new RuntimeException("Dify API 配置缺失: 未在数据库或环境变量 [DIFY_BASE_URL, DIFY_WEB_API_URL] 中找到有效端点");
+        }
+        url = url.trim();
         return url.endsWith("/") ? url : url + "/";
     }
 
     private String post(String url, String apiKey, String jsonBody) throws Exception {
+        log.info("Dify API Request: POST {}", url);
         HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
