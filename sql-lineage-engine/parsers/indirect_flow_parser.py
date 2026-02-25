@@ -39,6 +39,8 @@ class IndirectFlowParser:
     
     def __init__(self, dialect: str = "mysql"):
         self.dialect = self.DIALECT_MAP.get(dialect.lower(), None)
+        from utils.metadata_resolver import MetadataResolver
+        self.resolver = MetadataResolver()
     
     def parse(self, sql: str, source_file: str = None) -> List[Dict[str, Any]]:
         """解析 SQL 并使用 Scope 提取间接依赖关系。"""
@@ -308,9 +310,30 @@ class IndirectFlowParser:
             if len(scope.sources) == 1:
                 source = list(scope.sources.values())[0]
                 tables.update(self._resolve_source_to_physical(source))
-            # 否则是模糊的还是本地列引用？跳过还是尝试匹配？
-            # 没有 schema，我们无法确定裸列属于哪个表。
-            # 我们跳过以避免误报。
+            # 否则如果有多个来源，调用 MetadataResolver 查询表字段进行推断
+            elif len(scope.sources) > 1:
+                possible_tables = set()
+                # 获取所有来源物理表
+                for src in scope.sources.values():
+                    possible_tables.update(self._resolve_source_to_physical(src))
+                
+                # 在这些可能物理表中查找该列
+                matched_tables = set()
+                for pt in possible_tables:
+                    try:
+                        val = self.resolver.validate_column(pt, col.name)
+                        # 如果高度匹配或者模糊匹配到了，我们认为是正确来源表
+                        if val.get("exists") and val.get("confidence") in ["HIGH", "MEDIUM"]:
+                            matched_tables.add(pt)
+                    except Exception as e:
+                        logging.debug(f"Resolver validation failed for table {pt}, column {col.name}: {e}")
+                
+                # 如果只匹配到一个表，明确绑定
+                if len(matched_tables) == 1:
+                    tables.update(matched_tables)
+                # 如果匹配到多个表（可能是重名列引发笛卡尔积/歧义语义），全加上或者保持空，这里选择全加上
+                elif len(matched_tables) > 1:
+                    tables.update(matched_tables)
 
         return tables
 
