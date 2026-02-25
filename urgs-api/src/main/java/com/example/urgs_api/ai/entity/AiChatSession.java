@@ -24,6 +24,9 @@ public class AiChatSession {
     @com.baomidou.mybatisplus.annotation.TableField("agent_id")
     private Long agentId;
 
+    @com.baomidou.mybatisplus.annotation.TableField("dify_conversation_id")
+    private String difyConversationId;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

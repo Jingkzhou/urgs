@@ -66,6 +66,14 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
     }
 
     @Override
+    public void updateSession(AiChatSession session) {
+        if (session.getUpdateTime() == null) {
+            session.setUpdateTime(LocalDateTime.now());
+        }
+        sessionMapper.updateById(session);
+    }
+
+    @Override
     public AiChatMessage saveMessage(String sessionId, String role, String content) {
         AiChatMessage message = new AiChatMessage();
         message.setId(UUID.randomUUID().toString());

@@ -33,6 +33,11 @@ public interface AiChatHistoryService {
     void updateSessionTitle(String sessionId, String title);
 
     /**
+     * 更新整个会话实体
+     */
+    void updateSession(AiChatSession session);
+
+    /**
      * 记录消息
      */
     AiChatMessage saveMessage(String sessionId, String role, String content);
