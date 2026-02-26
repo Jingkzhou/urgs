@@ -1,0 +1,248 @@
+app:
+  description: '1104 监管报送助手，通过大模型重写用户问题，进行知识库检索，最后通过 LLM 加工并返回结果。'
+  icon: "🏦"
+  icon_background: '#E0F2FE'
+  mode: workflow
+  name: 1104监管报送助手
+workflow:
+  features:
+    file_upload:
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        sourceType: start
+        targetType: llm
+      id: 1720000000001-source-1720000000002-target
+      source: '1720000000001'
+      sourceHandle: source
+      target: '1720000000002'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        sourceType: llm
+        targetType: code
+      id: 1720000000002-source-1720000000003-target
+      source: '1720000000002'
+      sourceHandle: source
+      target: '1720000000003'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: llm
+      id: 1720000000003-source-1720000000004-target
+      source: '1720000000003'
+      sourceHandle: source
+      target: '1720000000004'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        sourceType: llm
+        targetType: end
+      id: 1720000000004-source-1720000000005-target
+      source: '1720000000004'
+      sourceHandle: source
+      target: '1720000000005'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        desc: '定义用户输入问题'
+        selected: false
+        title: 开始
+        type: start
+        variables:
+        - label: 用户输入
+          max_length: 2000
+          options: []
+          required: true
+          type: paragraph
+          variable: user_question
+      height: 90
+      id: '1720000000001'
+      position:
+        x: 30
+        y: 282
+      positionAbsolute:
+        x: 30
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: '将用户口语化表达转义为专业1104检索词'
+        model:
+          completion_params:
+            temperature: 0.3
+          mode: chat
+          name: gpt-4o
+          provider: openai
+        prompt_template:
+        - id: sys01
+          role: system
+          text: |
+            你是一个金融监管领域的专家。请将用户的问题转义、重写为适合在“1104监管报送知识库”中进行语义检索的查询词（Query）。
+            要求：
+            1. 提取核心的监管指标、报表名称（如G01, G04等）。
+            2. 补全潜在的上下文，使其变成标准的术语。
+            3. 必须直接输出最终的检索短语，绝对不能包含任何 <think> 标签或推理过程，也不能有标点符号和前缀。
+
+            用户问题：
+            {{#1720000000001.user_question#}}
+        selected: false
+        title: 意图转义(大模型)
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 98
+      id: '1720000000002'
+      position:
+        x: 334
+        y: 282
+      positionAbsolute:
+        x: 334
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: |
+          def main(arg1: str) -> dict:
+              # 这是一个占位节点。知识库(Dataset)是跟具体 Dify 环境绑定的。
+              # 请在 Dify 画布中，将此 Code 节点删除，
+              # 并拖入一个【知识检索】节点连接此处。
+              return {"result": "（这里应当是知识库召回的 1104 监管报送相关规定和规范的片段文本，请在画布中手动替换此代码节点为真实的知识检索节点）\n检索词为：" + arg1}
+        code_language: python3
+        desc: '占位符：请在 Dify 画布中将其替换真正的【知识检索】节点'
+        outputs:
+          result:
+            type: string
+        title: 知识检索(待替换)
+        type: code
+        variables:
+        - value_selector:
+          - '1720000000002'
+          - text
+          variable: arg1
+      height: 90
+      id: '1720000000003'
+      position:
+        x: 638
+        y: 282
+      positionAbsolute:
+        x: 638
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: '参考召回的知识加工最终答案'
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: gpt-4o
+          provider: openai
+        prompt_template:
+        - id: sys02
+          role: system
+          text: |
+            你是一个专业的 1104 监管报送助手。请根据以下召回的知识片段（如果有），回答用户的问题。
+            
+            【召回知识】：
+            {{#1720000000003.result#}}
+
+            【用户原始问题】：
+            {{#1720000000001.user_question#}}
+
+            要求：
+            1. 回答需严谨、准确，符合银保监会/金管局的相关监管规定。
+            2. 如果召回知识中无法回答该问题，请基于你的专业知识补充，但优先以召回知识为准。
+            3. 条理清晰地输出。
+        selected: false
+        title: 结果加工(大模型)
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 98
+      id: '1720000000004'
+      position:
+        x: 942
+        y: 282
+      positionAbsolute:
+        x: 942
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: '返回给用户'
+        outputs:
+        - value_selector:
+          - '1720000000004'
+          - text
+          variable: output
+        selected: false
+        title: 结束
+        type: end
+      height: 90
+      id: '1720000000005'
+      position:
+        x: 1246
+        y: 282
+      positionAbsolute:
+        x: 1246
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 1
