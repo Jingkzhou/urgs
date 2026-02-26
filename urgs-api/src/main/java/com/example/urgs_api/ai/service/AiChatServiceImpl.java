@@ -724,49 +724,71 @@ public class AiChatServiceImpl implements AiChatService {
             if (useDify) {
                 log.info("Delegating stream request to Dify API for session {}", sessionId);
 
-                String difyEndpoint = difyApiBase;
-                if (!difyEndpoint.endsWith("/"))
-                    difyEndpoint += "/";
-                difyEndpoint += "chat-messages";
+                boolean isWorkflowApp = false;
+                HttpURLConnection conn = null;
+                int responseCode = 0;
+                String errorBody = "";
 
-                // Extract user input (the last message)
-                String query = "";
-                if (!messages.isEmpty()) {
-                    query = messages.get(messages.size() - 1).getOrDefault("content", "");
-                }
+                for (int attempt = 0; attempt < 2; attempt++) {
+                    String difyEndpoint = difyApiBase;
+                    if (!difyEndpoint.endsWith("/"))
+                        difyEndpoint += "/";
+                    difyEndpoint += isWorkflowApp ? "workflows/run" : "chat-messages";
 
-                // Get conversation id if exists
-                String difyConversationId = sessionInfo.getDifyConversationId();
+                    String query = "";
+                    if (!messages.isEmpty()) {
+                        query = messages.get(messages.size() - 1).getOrDefault("content", "");
+                    }
+                    String difyConversationId = sessionInfo.getDifyConversationId();
 
-                Map<String, Object> difyReq = new java.util.HashMap<>();
-                difyReq.put("inputs", new java.util.HashMap<>());
-                difyReq.put("query", query);
-                difyReq.put("response_mode", "streaming");
-                difyReq.put("user",
-                        sessionInfo != null && sessionInfo.getUserId() != null ? sessionInfo.getUserId() : "system");
-                if (difyConversationId != null && !difyConversationId.isBlank()) {
-                    difyReq.put("conversation_id", difyConversationId);
-                }
+                    Map<String, Object> difyReq = new java.util.HashMap<>();
+                    difyReq.put("response_mode", "streaming");
+                    difyReq.put("user", sessionInfo != null && sessionInfo.getUserId() != null ? sessionInfo.getUserId()
+                            : "system");
 
-                String jsonBody = objectMapper.writeValueAsString(difyReq);
+                    if (isWorkflowApp) {
+                        Map<String, Object> inputs = new java.util.HashMap<>();
+                        inputs.put("query", query);
+                        inputs.put("user_question", query);
+                        inputs.put("input", query);
+                        difyReq.put("inputs", inputs);
+                    } else {
+                        difyReq.put("inputs", new java.util.HashMap<>());
+                        difyReq.put("query", query);
+                        if (difyConversationId != null && !difyConversationId.isBlank()) {
+                            difyReq.put("conversation_id", difyConversationId);
+                        }
+                    }
 
-                HttpURLConnection conn = (HttpURLConnection) URI.create(difyEndpoint).toURL().openConnection();
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
-                conn.setRequestProperty(HttpHeaders.AUTHORIZATION, "Bearer " + difyApiKey);
-                conn.setRequestProperty(HttpHeaders.ACCEPT, "text/event-stream");
-                conn.setDoOutput(true);
-                conn.setConnectTimeout(30000);
-                conn.setReadTimeout(120000);
+                    String jsonBody = objectMapper.writeValueAsString(difyReq);
 
-                try (OutputStream os = conn.getOutputStream()) {
-                    os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
-                }
+                    conn = (HttpURLConnection) URI.create(difyEndpoint).toURL().openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
+                    conn.setRequestProperty(HttpHeaders.AUTHORIZATION, "Bearer " + difyApiKey);
+                    conn.setRequestProperty(HttpHeaders.ACCEPT, "text/event-stream");
+                    conn.setDoOutput(true);
+                    conn.setConnectTimeout(30000);
+                    conn.setReadTimeout(120000);
 
-                int responseCode = conn.getResponseCode();
-                if (responseCode != 200) {
-                    String errorBody = new String(conn.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-                    throw new RuntimeException("Dify API 调用失败: " + responseCode + " - " + errorBody);
+                    try (OutputStream os = conn.getOutputStream()) {
+                        os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
+                    } catch (Exception e) {
+                        // ignore
+                    }
+
+                    responseCode = conn.getResponseCode();
+                    if (responseCode == 200) {
+                        break; // Success
+                    } else {
+                        errorBody = new String(conn.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+                        if (!isWorkflowApp && responseCode == 400 && errorBody.contains("not_chat_app")) {
+                            log.info("Dify app is not a chat app, retrying as workflow app...");
+                            isWorkflowApp = true;
+                            continue;
+                        }
+                        throw new RuntimeException("Dify API 调用失败: " + responseCode + " - " + errorBody);
+                    }
                 }
 
                 try (BufferedReader reader = new BufferedReader(
@@ -783,27 +805,41 @@ public class AiChatServiceImpl implements AiChatService {
                                 JsonNode node = objectMapper.readTree(data);
                                 String event = node.has("event") ? node.get("event").asText() : "";
 
-                                if ("message".equals(event) || "agent_message".equals(event)) {
-                                    if (node.has("answer")) {
-                                        String answer = node.get("answer").asText();
-                                        if (answer != null && !answer.isEmpty()) {
-                                            chunkConsumer.accept(answer);
+                                if (!isWorkflowApp) {
+                                    if ("message".equals(event) || "agent_message".equals(event)) {
+                                        if (node.has("answer")) {
+                                            String answer = node.get("answer").asText();
+                                            if (answer != null && !answer.isEmpty()) {
+                                                chunkConsumer.accept(answer);
+                                            }
+                                        }
+                                    } else if ("message_end".equals(event)) {
+                                        break;
+                                    }
+
+                                    // Capture conversation_id on the first meaningful message
+                                    if (isFirstDetailedMessage && node.has("conversation_id")) {
+                                        String newConvId = node.get("conversation_id").asText();
+                                        if (newConvId != null && !newConvId.isBlank() && sessionInfo != null
+                                                && (sessionInfo.getDifyConversationId() == null
+                                                        || sessionInfo.getDifyConversationId().isBlank())) {
+                                            sessionInfo.setDifyConversationId(newConvId);
+                                            aiChatHistoryService.updateSession(sessionInfo);
+                                            isFirstDetailedMessage = false;
+                                            log.info("Saved new Dify Conversation ID: {}", newConvId);
                                         }
                                     }
-                                } else if ("message_end".equals(event)) {
-                                    // Could extract usage metrics here if needed
-                                    break;
-                                }
-
-                                // Capture conversation_id on the first meaningful message
-                                if (isFirstDetailedMessage && node.has("conversation_id")) {
-                                    String newConvId = node.get("conversation_id").asText();
-                                    if (newConvId != null && !newConvId.isBlank() && sessionInfo != null
-                                            && (difyConversationId == null || difyConversationId.isBlank())) {
-                                        sessionInfo.setDifyConversationId(newConvId);
-                                        aiChatHistoryService.updateSession(sessionInfo);
-                                        isFirstDetailedMessage = false;
-                                        log.info("Saved new Dify Conversation ID: {}", newConvId);
+                                } else {
+                                    // Workflow app parsing
+                                    if ("text_chunk".equals(event) || "node_chunk".equals(event)) {
+                                        if (node.has("data") && node.get("data").has("text")) {
+                                            String text = node.get("data").get("text").asText();
+                                            if (text != null && !text.isEmpty()) {
+                                                chunkConsumer.accept(text);
+                                            }
+                                        }
+                                    } else if ("workflow_finished".equals(event)) {
+                                        break;
                                     }
                                 }
                             } catch (Exception e) {

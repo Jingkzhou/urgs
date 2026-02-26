@@ -29,11 +29,12 @@ workflow:
 
 ### ⚠️ 关键易错点
 - **不需要也不能有** `kind`、`version` 顶层字段。包含这些会导致部分版本的 Dify Cloud 前端解析失败白屏。
-- `app.mode` 枚举值：
+- `app.mode` **仅接受以下 4 个枚举值**：
   - `workflow`：非对话型工作流（API 入口 `/v1/workflows/run`）
-  - `chat`：对话型 Chatflow（API 入口 `/v1/chat-messages`）
+  - `chat`：对话型 Chatflow（API 入口 `/v1/chat-messages`），支持 `sys.query`、`sys.conversation_history` 等系统变量
   - `completion`：基础文本补全应用
   - `agent-chat`：Agent 智能体应用
+- ⛔ **`advanced-chat` 不是有效值！** 虽然 Dify UI 内部可能使用此术语描述 Chatflow，但在 DSL 导入时必须写 `chat`。写 `advanced-chat` 会导致前端白屏崩溃。
 
 ---
 
@@ -68,6 +69,10 @@ workflow:
 ### ⚠️ 关键易错点
 - `file_upload` 下**只有** `image` 子键（包含 `enabled`, `number_limits`, `transfer_methods`）。
 - **不要加** `allowed_file_extensions`、`allowed_file_types`、`allowed_extensions` 等字段，这些在某些版本中不被识别会导致解析异常。
+- ⛔ **features 子结构必须包含完整字段，不能省略任何属性**：
+  - `file_upload.image` 必须同时包含 `enabled`、`number_limits`、`transfer_methods`
+  - `text_to_speech` 必须同时包含 `enabled`、`language`、`voice`
+  - 只写 `enabled: false` 而省略其他字段会导致 Dify 前端解析崩溃！
 
 ---
 
@@ -99,6 +104,16 @@ edges:
 ### Edge ID 命名规则
 格式为 `{sourceId}-{sourceHandle}-{targetId}-{targetHandle}`。
 例如：`1720794829558-source-1720795218540-target`
+
+### ⛔ Edge `sourceType` / `targetType` 一致性规则（极其重要）
+
+Edge 中的 `sourceType` 和 `targetType` 必须与对应 Node 的 `data.type` 字段 **字符串完全一致**。
+
+例如，如果一个节点的类型是 `knowledge-retrieval`，那么指向它的 Edge 必须写 `targetType: knowledge-retrieval`，从它出发的 Edge 必须写 `sourceType: knowledge-retrieval`。
+
+**常见错误**：将一个 `code` 节点替换为 `knowledge-retrieval` 节点时，只改了 Node 的 `type` 而忘记同步修改 Edge 的 `sourceType` / `targetType`，导致 Dify 前端 React Flow 画布崩溃白屏。
+
+> **自检规则**：生成 YAML 后，检查每条 Edge 的 `sourceType`/`targetType` 是否能在 `nodes` 列表中找到对应 `id` 的节点且 `type` 字段完全匹配。
 
 ---
 
@@ -193,6 +208,17 @@ data:
     provider: openai            # 供应商标识
   prompt_template:
   - id: system_prompt_id        # 每条 prompt 的唯一 ID
+```
+
+#### ⛔ `completion_params` 白名单
+`completion_params` 只能包含以下 Dify 标准参数：
+- `temperature`、`top_p`、`max_tokens`、`presence_penalty`、`frequency_penalty`
+
+**禁止添加** OpenAI 专属参数如 `response_format`、`seed`、`logprobs` 等。Dify 不识别这些参数，会导致应用异常。如果需要 JSON 输出，应通过 Prompt 指令要求大模型输出 JSON，而不是依赖 `response_format`。
+
+```yaml
+  prompt_template:
+  - id: system_prompt_id        # 每条 prompt 的唯一 ID
     role: system                # system | user | assistant
     text: '你的系统提示词。引用变量使用 {{#NodeID.variable#}} 格式'
   selected: false
@@ -279,6 +305,51 @@ data:
     - result
     variable: arg1
 ```
+
+### 7.7 Knowledge Retrieval (知识检索节点)
+
+```yaml
+data:
+  dataset_ids:
+  - 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'   # 知识库 Dataset ID（环境绑定，导入后需手动关联）
+  desc: ''
+  query_variable:                             # 检索查询词的来源
+  - '1720795218540'                           # 源节点 ID
+  - text                                      # 源变量名
+  retrieval_mode: multiple                    # 必填！枚举：single | multiple
+  multiple_retrieval_config:                  # retrieval_mode 为 multiple 时必填
+    reranking_enable: true
+    reranking_mode: reranking_model
+    reranking_model:
+      model: bge-reranker-large
+      provider: xinference
+    top_k: 4
+    score_threshold: 0.5
+  selected: false
+  title: 知识检索
+  type: knowledge-retrieval
+```
+
+#### ❗️ 关键注意
+- `dataset_ids` 是环境绑定的，导入后必须在 Dify 画布中手动关联知识库。生成 YAML 时可留空数组 `[]`。
+- `retrieval_mode` 必须显式指定，缺少此字段会导致前端解析异常。
+- 知识检索节点的输出变量名为 `result`，引用语法为 `{{#NodeID.result#}}`。
+
+### 7.8 Answer (直接回复节点，仅 Chatflow)
+
+```yaml
+data:
+  answer: '{{#1720800425522.output#}}'    # 引用上游节点的输出
+  desc: ''
+  selected: false
+  title: 回复
+  type: answer
+```
+
+#### ❗️ 关键注意
+- `answer` 节点仅在 `app.mode: chat`（Chatflow）中使用。
+- `app.mode: workflow` 中应使用 `end` 节点代替。
+- 切勿混用：Chatflow 用 `answer`，Workflow 用 `end`。
 
 ---
 

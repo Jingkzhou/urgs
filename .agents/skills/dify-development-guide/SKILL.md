@@ -32,7 +32,7 @@ description: 专门用于指导开发者如何在 Dify (开源 LLM 应用开发�
 
 ### 步骤 B: 编写并提供 DSL (YAML)
 你可以直接为用户生成符合 Dify 结构的 `.yml` 文件（**首选**）。
-Dify 的工作流是由 `app`, `version`, `workflow`, `graph.nodes`, `graph.edges` 等核心节点组成的。
+Dify 的工作流只有 `app` 和 `workflow` 两个顶层 key，由 `graph.nodes`, `graph.edges` 等核心节点组成。**禁止添加 `kind`、`version` 等额外顶层字段。**
 - 生成规范的 YAML 时，务必确保 `id` 唯一。
 - **示例：引导用户怎么用**：明确告诉用户将此 YAML 存为文件，并在 Dify 控制台点击“导入 (Import)”。
 
@@ -72,11 +72,15 @@ Dify 的工作流是由 `app`, `version`, `workflow`, `graph.nodes`, `graph.edge
 
 ### 核心规则速查
 1. **顶层结构**：只有 `app` + `workflow` 两个 key，禁止加 `kind`、`version`。
-2. **Node ID**：必须使用毫秒时间戳格式的纯数字字符串，如 `'1720794829558'`。
-3. **Edge ID**：格式为 `{sourceId}-{sourceHandle}-{targetId}-{targetHandle}`。
-4. **features.file_upload**：只包含 `image` 子键，不要添加 `allowed_file_types` 等字段。
-5. **Iteration 节点**：不要手写，必须在 Dify UI 上拖拽生成。
-6. **变量引用语法**：`{{#NodeID.variable#}}`。
+2. **`app.mode` 枚举**：只允许 `workflow` | `chat` | `completion` | `agent-chat`。**禁止使用** `advanced-chat` 等非标准值，否则前端白屏崩溃。
+3. **Node ID**：必须使用毫秒时间戳格式的纯数字字符串，如 `'1720794829558'`。
+4. **Edge `sourceType` / `targetType` 一致性**：必须与对应 Node 的 `data.type` **完全一致**。例如 `knowledge-retrieval` 节点的 Edge 必须写 `sourceType: knowledge-retrieval`，不能写 `code` 或其他简称。**这是最常见的导入崩溃原因之一。**
+5. **Edge ID**：格式为 `{sourceId}-{sourceHandle}-{targetId}-{targetHandle}`。
+6. **features 属性完整性**：`features` 下所有子结构必须包含完整字段，不能省略。`file_upload.image` 必须含 `enabled`、`number_limits`、`transfer_methods`；`text_to_speech` 必须含 `enabled`、`language`、`voice`。
+7. **`completion_params` 白名单**：只能含 Dify 标准参数（`temperature`、`top_p`、`max_tokens`、`presence_penalty`、`frequency_penalty`）。**禁止** OpenAI 专属参数如 `response_format`、`seed`。
+8. **`knowledge-retrieval` 必填字段**：`dataset_ids`（数组）、`query_variable`（变量选择器）、`retrieval_mode`（`single` | `multiple`）。`multiple` 模式还须含 `multiple_retrieval_config`。
+9. **Iteration 节点**：不要手写，必须在 Dify UI 上拖拽生成。
+10. **变量引用语法**：`{{#NodeID.variable#}}`。
 
 ---
 
