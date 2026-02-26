@@ -123,8 +123,9 @@ public class AiChatServiceImpl implements AiChatService {
                         systemPrompt = agent.getSystemPrompt();
                     }
 
-                    // 2. RAG Retrieval
-                    if (agent.getKnowledgeBase() != null && !agent.getKnowledgeBase().isBlank()) {
+                    // 2. RAG Retrieval (SKIP if Agent uses Dify, as Dify handles its own RAG)
+                    boolean useDify = agent.getDifyApiKey() != null && !agent.getDifyApiKey().isBlank();
+                    if (!useDify && agent.getKnowledgeBase() != null && !agent.getKnowledgeBase().isBlank()) {
                         java.util.List<String> collectionNames = new java.util.ArrayList<>();
                         String[] kbIds = agent.getKnowledgeBase().split(",");
                         for (String kbIdStr : kbIds) {
