@@ -476,7 +476,7 @@ public class AiChatServiceImpl implements AiChatService {
                         try {
                             emitter.send(SseEmitter.event()
                                     .data(objectMapper.writeValueAsString(Map.of("error", e.getMessage()))));
-                            emitter.completeWithError(e);
+                            emitter.complete();
                         } catch (Exception ex) {
                             log.warn("Failed to send error event to emitter (client likely closed): {}",
                                     ex.getMessage());
@@ -639,14 +639,20 @@ public class AiChatServiceImpl implements AiChatService {
                             try {
                                 emitter.send(SseEmitter.event()
                                         .data(objectMapper.writeValueAsString(Map.of("error", e.getMessage()))));
-                                emitter.completeWithError(e);
+                                emitter.complete();
                             } catch (Exception ex) {
                                 log.error("Failed to send error event", ex);
                             }
                         });
             } catch (Exception e) {
                 log.error("Stream chat failed", e);
-                emitter.completeWithError(e);
+                try {
+                    emitter.send(
+                            SseEmitter.event().data(objectMapper.writeValueAsString(Map.of("error", e.getMessage()))));
+                } catch (Exception ex) {
+                    log.error("Failed to send error event", ex);
+                }
+                emitter.complete();
             }
         });
     }
