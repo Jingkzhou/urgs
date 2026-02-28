@@ -1,451 +1,260 @@
-app:
-  description: '【进阶加固版】通用监管填报说明 ETL 全流程向量化工作流。包含：文档长窗解析、LLM 逻辑及元数据提取、正则非贪婪 JSON 脱水清洗、脏数据条件拦截(If/Else) 及挂载自定义 Metadata 的自动化 API 入库。'
-  icon: "�️"
-  icon_background: '#E1E9FF'
-  mode: workflow
-  name: 通用监管文档 ETL (稳定进阶版)
+dependencies:
+  - current_identifier: null
+    type: package
+    value:
+      plugin_unique_identifier: langgenius/parentchild_chunker:0.0.1@b1a28a27e33fec442ce494da2a7814edd7eb9d646c81f38bccfcf1133d486e40
+      version: null
+  - current_identifier: null
+    type: package
+    value:
+      plugin_unique_identifier: langgenius/xinference:0.0.9@5977ed9c9d0cd4471ec45ce726b5049e337b26378301d2fe445e7935206a5a96
+      version: null
+kind: rag_pipeline
+rag_pipeline:
+  description: ''
+  icon: 📙
+  icon_background: '#FFEAD5'
+  icon_type: emoji
+  icon_url: null
+  name: 1104监管发文
+version: 0.1.0
 workflow:
-  features:
-    file_upload:
-      image:
-        enabled: false
-        number_limits: 3
-        transfer_methods:
-        - local_file
-        - remote_url
-    opening_statement: ''
-    retriever_resource:
-      enabled: false
-    sensitive_word_avoidance:
-      enabled: false
-    speech_to_text:
-      enabled: false
-    suggested_questions: []
-    suggested_questions_after_answer:
-      enabled: false
-    text_to_speech:
-      enabled: false
-      language: ''
-      voice: ''
+  conversation_variables: []
+  environment_variables: []
+  features: {}
   graph:
     edges:
-    - data:
-        isInIteration: false
-        sourceType: start
-        targetType: document-extractor
-      id: 1720000000001-source-1720000000002-target
-      source: '1720000000001'
-      sourceHandle: source
-      target: '1720000000002'
-      targetHandle: target
-      type: custom
-      zIndex: 0
-    - data:
-        isInIteration: false
-        sourceType: document-extractor
-        targetType: llm
-      id: 1720000000002-source-1720000000003-target
-      source: '1720000000002'
-      sourceHandle: source
-      target: '1720000000003'
-      targetHandle: target
-      type: custom
-      zIndex: 0
-    - data:
-        isInIteration: false
-        sourceType: llm
-        targetType: code
-      id: 1720000000003-source-1720000000004-target
-      source: '1720000000003'
-      sourceHandle: source
-      target: '1720000000004'
-      targetHandle: target
-      type: custom
-      zIndex: 0
-    
-    # 将原来的 Code -> HTTP 改为 Code -> IfElse
-    - data:
-        isInIteration: false
-        sourceType: code
-        targetType: if-else
-      id: 1720000000004-source-1720000000007-target
-      source: '1720000000004'
-      sourceHandle: source
-      target: '1720000000007'
-      targetHandle: target
-      type: custom
-      zIndex: 0
-      
-    # IF 条件成立 (True) -> HTTP 请求 (走正常入库)
-    - data:
-        isInIteration: false
-        sourceType: if-else
-        targetType: http-request
-      id: 1720000000007-true-1720000000005-target
-      source: '1720000000007'
-      sourceHandle: 'true'
-      target: '1720000000005'
-      targetHandle: target
-      type: custom
-      zIndex: 0
-
-    # IF 条件不成立 (False) -> End (异常记录分支拦截)
-    - data:
-        isInIteration: false
-        sourceType: if-else
-        targetType: end
-      id: 1720000000007-false-1720000000008-target
-      source: '1720000000007'
-      sourceHandle: 'false'
-      target: '1720000000008'
-      targetHandle: target
-      type: custom
-      zIndex: 0
-
-    # HTTP 请求完成 -> End (正常分支结束)
-    - data:
-        isInIteration: false
-        sourceType: http-request
-        targetType: end
-      id: 1720000000005-source-1720000000006-target
-      source: '1720000000005'
-      sourceHandle: source
-      target: '1720000000006'
-      targetHandle: target
-      type: custom
-      zIndex: 0
-
+      - id: 1772260422785-source-docExtractor-target
+        source: '1772260422785'
+        sourceHandle: source
+        target: docExtractor
+        targetHandle: target
+        type: custom
+      - id: docExtractor-source-parentChildChunker-target
+        source: docExtractor
+        sourceHandle: source
+        target: parentChildChunker
+        targetHandle: target
+        type: custom
+      - id: parentChildChunker-source-knowledgeBase-target
+        source: parentChildChunker
+        sourceHandle: source
+        target: knowledgeBase
+        targetHandle: target
+        type: custom
     nodes:
-    - data:
-        desc: ''
+      - data:
+          datasource_configurations: {}
+          datasource_label: File
+          datasource_name: upload-file
+          datasource_parameters: {}
+          fileExtensions:
+            - txt
+            - markdown
+            - mdx
+            - pdf
+            - html
+            - xlsx
+            - xls
+            - vtt
+            - properties
+            - doc
+            - docx
+            - csv
+            - eml
+            - msg
+            - pptx
+            - xml
+            - epub
+            - ppt
+            - md
+          plugin_id: langgenius/file
+          plugin_unique_identifier: langgenius/file:0.0.1@dify
+          provider_name: file
+          provider_type: local_file
+          selected: false
+          title: File
+          type: datasource
+        height: 52
+        id: '1772260422785'
+        position:
+          x: 280
+          y: 282
+        positionAbsolute:
+          x: 280
+          y: 282
         selected: false
-        title: Start
-        type: start
-        variables:
-        - label: 文档
-          max_length: 0
-          options: []
-          required: true
-          type: file
-          allowed_file_types:
-          - document
-          allowed_file_extensions:
-          - .pdf
-          - .docx
-          - .doc
-          - .txt
-          - .csv
-          allowed_file_upload_methods:
-          - local_file
-          - remote_url
-          variable: source_document
-        - label: 目标知识库ID
-          max_length: 48
-          options: []
-          required: true
-          type: text-input
-          variable: dataset_id
-        - label: 知识库 API Key
-          max_length: 100
-          options: []
-          required: true
-          type: text-input
-          variable: dataset_api_key
-      height: 90
-      id: '1720000000001'
-      position:
-        x: 0
-        y: 200
-      positionAbsolute:
-        x: 0
-        y: 200
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
-    - data:
-        desc: '解析上传且可能非常长的文档为纯文本'
+        sourcePosition: right
+        targetPosition: left
+        type: custom
+        width: 242
+      - data:
+          desc: ''
+          selected: false
+          title: 文档提取器
+          type: document-extractor
+          variable_selector:
+            - '1772260422785'
+            - file
+        height: 92
+        id: docExtractor
+        position:
+          x: 444
+          y: 282
+        positionAbsolute:
+          x: 444
+          y: 282
         selected: false
-        title: 文档提取
-        type: document-extractor
-        variable_selector:
-        - '1720000000001'
-        - source_document
-      height: 90
-      id: '1720000000002'
-      position:
-        x: 300
-        y: 200
-      positionAbsolute:
-        x: 300
-        y: 200
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
-      
-    - data:
-        context:
-          enabled: false
-          variable_selector: []
-        desc: '提取公式及Metadata。建议搭配 1M/2M 等大上下文模型。'
-        model:
-          completion_params:
-            temperature: 0.05
-          mode: chat
-          name: ''
-          provider: ''
-        prompt_template:
-        - id: sys1
-          role: system
-          text: '你是一个金融监管极长文档及规范解析专家。请阅读以下文件文本，一并提取以下元数据和内容：1) 报表或规范的系统编码（如G01，若无或找不到则设为"通用"）。2) 报表或规范的完整主名称。3) 该文档所属的大分类类型 (如"填报说明"、"通知指引"、"核查规则")。4) 所有的“核对公式”或“表间核对关系”（如果存在）。5) 填报口径说明、规则要求或操作指南。6) 全局摘要。\n\n请严格输出一个 JSON 对象，字段必须且仅包含：report_code (字符串), report_name (字符串), doc_type (字符串), formulas (数组，包含 rule_id, formula, description), explanations (口径/规则数组，字符串), summary (摘要字符串)。\n重要：直接返回纯净的 `{...}` 格式的 JSON，绝对不要输出任何 markdown 格式标记（不允许使用 ```json）、也没有任何寒暄或头尾文字。\n\n【文档内容】\n{{#1720000000002.text#}}'
+        sourcePosition: right
+        targetPosition: left
+        type: custom
+        width: 242
+      - data:
+          is_team_authorization: true
+          output_schema:
+            properties:
+              result:
+                description: Parent child chunks result
+                items:
+                  type: object
+                type: array
+            type: object
+          provider_id: langgenius/parentchild_chunker/parentchild_chunker
+          provider_name: langgenius/parentchild_chunker/parentchild_chunker
+          provider_type: builtin
+          selected: false
+          title: 父子级拆分
+          tool_configurations: {}
+          tool_description: Parent-child Chunk Structure
+          tool_label: Parent-child Chunker
+          tool_name: parentchild_chunker
+          tool_parameters:
+            input_text:
+              type: mixed
+              value: '{{#docExtractor.text#}}'
+            max_length:
+              type: variable
+              value:
+              - rag
+              - shared
+              - max_chunk_length
+            parent_mode:
+              type: variable
+              value:
+              - rag
+              - shared
+              - parent_mode
+            remove_extra_spaces:
+              type: mixed
+              value: '{{#rag.shared.replace_consecutive_spaces#}}'
+            remove_urls_emails:
+              type: mixed
+              value: '{{#rag.shared.delete_urls_email#}}'
+            separator:
+              type: mixed
+              value: '{{#rag.shared.delimiter#}}'
+            subchunk_max_length:
+              type: variable
+              value:
+              - rag
+              - shared
+              - child_max_chunk_length
+            subchunk_separator:
+              type: mixed
+              value: '{{#rag.shared.child_delimiter#}}'
+          type: tool
+        height: 52
+        id: parentChildChunker
+        position:
+          x: 444
+          y: 600
+        positionAbsolute:
+          x: 444
+          y: 600
         selected: false
-        title: LLM (无损信息提取)
-        type: llm
-        variables: []
-        vision:
-          enabled: false
-      height: 98
-      id: '1720000000003'
-      position:
-        x: 600
-        y: 200
-      positionAbsolute:
-        x: 600
-        y: 200
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
-      
-    - data:
-        code: |
-          import json
-          import re
-          
-          def main(llm_output: str) -> dict:
-              try:
-                  # 使用正则表达式提取最外层的 JSON 结构，(?s) 代表 re.DOTALL 使得 . 可以匹配换行符
-                  # 寻找第一个 { 开头，到最后一个 } 结尾的所有内容
-                  match = re.search(r'(?s)\{.*\}', llm_output)
-                  if not match:
-                      raise ValueError("LLM 未能输出包裹在 {} 内的 JSON")
-                      
-                  json_str = match.group(0)
-                  # 尝试解析提取出来的 JSON 字符串
-                  data = json.loads(json_str)
-                  
-                  # 提取强化的 Custom Metadata
-                  doc_type = data.get('doc_type', '通用规制类型')
-                  report_code = data.get('report_code', '通用编码')
-                  report_name = data.get('report_name', '通用名称')
-                  
-                  # 放弃从上传文件拿字面，直接用 LLM 完美提取出来的名称构建规范名
-                  doc_title = f"[{report_code}] {report_name}"
-                  
-                  # 组装长文本部分
-                  combined_text = f"【文档摘要】\n{data.get('summary', '')}\n\n【规则与公式】\n"
-                  for f in data.get('formulas', []):
-                      combined_text += f"{f.get('rule_id', '')}: {f.get('formula', '')} - {f.get('description', '')}\n"
-                  
-                  combined_text += "\n【口径与说明】\n"
-                  for e in data.get('explanations', []):
-                      combined_text += f"- {e}\n"
-                  
-                  # 深度利用 API：应用父子分块（Hierarchical 切片）
-                  # 这是针对长篇复杂监管说明（存在长篇总则包含极短公式子元素）的最佳推荐模式
-                  payload = {
-                     "name": doc_title,
-                     "text": combined_text,
-                     "indexing_technique": "high_quality",
-                     "doc_metadata": {
-                         "doc_type": doc_type,
-                         "report_code": report_code,
-                         "source": "automated_etl_pipeline"
-                     },
-                     "process_rule": {
-                         # 必须指定为 hierarchical 模式开启高级父子切片规则
-                         "mode": "hierarchical",
-                         "rules": {
-                             "pre_processing_rules": [{"id": "remove_extra_spaces", "enabled": True}],
-                             # 父分块限制
-                             "parent_classes": ["paragraph"],
-                             "segmentation": {
-                                 "separator": "\n\n",
-                                 "max_tokens": 800, # 父切片长度
-                                 "chunk_overlap": 100
-                             },
-                             # 子分块特征（公式、规则级等细粒度子文档）
-                             "subchunk_segmentation": {
-                                 "separator": "\n",
-                                 "max_tokens": 150, # 子切片长度
-                                 "chunk_overlap": 20
-                             }
-                         }
-                     }
-                  }
-                  
-                  # 设置 status = success 让后置的 If/Else 放行！
-                  return {"payload_json": json.dumps(payload, ensure_ascii=False), "status": "success", "error_log": ""}
-              except Exception as e:
-                  # 如果 JSON 解析等报错，直接设置 status = error 触发分支阻断
-                  return {"payload_json": "{}", "status": "error", "error_log": str(e) + " | 源产出: " + llm_output}
-        code_language: python3
-        desc: '正则脱水、注入Metadata、并输出 status 用于异常拦截'
-        outputs:
-          payload_json:
-            type: string
-          status:
-            type: string
-          error_log:
-            type: string
-        title: Code (组装 API 与防脏拦截)
-        type: code
-        variables:
-        - value_selector:
-          - '1720000000003'
-          - text
-          variable: llm_output
-      height: 90
-      id: '1720000000004'
-      position:
-        x: 900
-        y: 200
-      positionAbsolute:
-        x: 900
-        y: 200
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
-      
-    - data:
-        cases:
-        - case_id: 'true'
-          conditions:
-          - comparison_operator: contains
-            id: cond_success
-            value: 'success'
-            varType: string
-            variable_selector:
-            - '1720000000004'
-            - status
-          id: 'true'
-          logical_operator: and
-        desc: '若状态不是 success，阻断后续流程并跳到报错结束页，防止脏数据入库'
+        sourcePosition: right
+        targetPosition: left
+        type: custom
+        width: 242
+      - data:
+          chunk_structure: hierarchical_model
+          embedding_model: bge-m3
+          embedding_model_provider: langgenius/xinference/xinference
+          index_chunk_variable_selector:
+            - parentChildChunker
+            - result
+          indexing_technique: high_quality
+          keyword_number: 10
+          retrieval_model:
+            reranking_enable: true
+            reranking_mode: reranking_model
+            reranking_model:
+              reranking_model_name: bge-reranker-v2-m3
+              reranking_provider_name: langgenius/xinference/xinference
+            score_threshold: 0.5
+            score_threshold_enabled: false
+            search_method: hybrid_search
+            top_k: 6
+            weights:
+              keyword_setting:
+                keyword_weight: 0.3
+              vector_setting:
+                embedding_model_name: bge-m3
+                embedding_provider_name: langgenius/xinference/xinference
+                vector_weight: 0.7
+          selected: true
+          title: 知识库
+          type: knowledge-index
+        height: 114
+        id: knowledgeBase
+        position:
+          x: 608
+          y: 270
+        positionAbsolute:
+          x: 608
+          y: 270
         selected: false
-        title: 拦截脏数据探测
-        type: if-else
-      height: 95
-      id: '1720000000007'
-      position:
-        x: 1200
-        y: 200
-      positionAbsolute:
-        x: 1200
-        y: 200
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
-
-    # HTTP节点：仅在 If 出口为 True 时执行
-    - data:
-        authorization:
-          config: null
-          type: no-auth
-        body:
-          data: '{{#1720000000004.payload_json#}}'
-          type: raw-text
-        desc: '调用 Dify 内部知识库新增文档 API'
-        headers: "Authorization: Bearer {{#1720000000001.dataset_api_key#}}\nContent-Type: application/json"
-        method: post
-        params: ''
-        selected: false
-        timeout:
-          connect: 15
-          read: 60
-          write: 20
-        title: HTTP Request (安全入库)
-        type: http-request
-        url: 'http://25.18.92.167/v1/datasets/{{#1720000000001.dataset_id#}}/document/create-by-text'
-      height: 90
-      id: '1720000000005'
-      position:
-        x: 1515
-        y: 54
-      positionAbsolute:
-        x: 1515
-        y: 54
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
-      
-    # 正常结束口 (挂载于 HTTP Request 之后)
-    - data:
-        desc: '成功入库'
-        outputs:
-        - value_selector:
-          - '1720000000004'
-          - status
-          variable: final_status
-        - value_selector:
-          - '1720000000005'
-          - body
-          variable: api_response
-        selected: false
-        title: 入库成功
-        type: end
-      height: 90
-      id: '1720000000006'
-      position:
-        x: 1815
-        y: 54
-      positionAbsolute:
-        x: 1815
-        y: 54
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
-      
-    # 异常错误抛出口 (挂载于 If/Else 的 False 或 Else 处理)
-    - data:
-        desc: '脏数据或格式错误被阻断抛弃，中止流程'
-        outputs:
-        - value_selector:
-          - '1720000000004'
-          - status
-          variable: final_status
-        - value_selector:
-          - '1720000000004'
-          - error_log
-          variable: error_log
-        selected: false
-        title: 拦截与报错
-        type: end
-      height: 90
-      id: '1720000000008'
-      position:
-        x: 1515
-        y: 346
-      positionAbsolute:
-        x: 1515
-        y: 346
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 244
+        sourcePosition: right
+        targetPosition: left
+        type: custom
+        width: 242
     viewport:
-      x: 0
-      y: 0
-      zoom: 1
+      x: -281.9905899369046
+      y: -11.626035836065626
+      zoom: 1.0675932316050327
+  rag_pipeline_variables:
+  - belong_to_node_id: shared
+    default_value: \n\n
+    label: Delimiter
+    type: text-input
+    variable: delimiter
+  - belong_to_node_id: shared
+    default_value: 1024
+    label: Maximum chunk length
+    type: number
+    variable: max_chunk_length
+  - belong_to_node_id: shared
+    default_value: \n
+    label: Child delimiter
+    type: text-input
+    variable: child_delimiter
+  - belong_to_node_id: shared
+    default_value: 512
+    label: Child max chunk length
+    type: number
+    variable: child_max_chunk_length
+  - belong_to_node_id: shared
+    default_value: paragraph
+    label: Parent mode
+    type: select
+    variable: parent_mode
+  - belong_to_node_id: shared
+    default_value: false
+    label: Replace consecutive spaces, newlines and tabs
+    type: checkbox
+    variable: replace_consecutive_spaces
+  - belong_to_node_id: shared
+    default_value: false
+    label: Delete all URLs and email addresses
+    type: checkbox
+    variable: delete_urls_email
