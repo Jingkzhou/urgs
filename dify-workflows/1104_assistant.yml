@@ -115,6 +115,28 @@ workflow:
       targetHandle: target
       type: custom
       zIndex: 0
+    - data:
+        isInIteration: false
+        sourceType: knowledge-retrieval
+        targetType: llm
+      id: 1720000000011-source-1720000000020-target
+      source: '1720000000011'
+      sourceHandle: source
+      target: '1720000000020'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        sourceType: llm
+        targetType: template-transform
+      id: 1720000000020-source-1720000000014-target
+      source: '1720000000020'
+      sourceHandle: source
+      target: '1720000000014'
+      targetHandle: target
+      type: custom
+      zIndex: 0
     nodes:
     - data:
         desc: ''
@@ -349,7 +371,7 @@ workflow:
 
           ---
 
-          **【参考的信息】**
+          **【参考文件】**
 
           {{reference}}
 
@@ -369,8 +391,8 @@ workflow:
           - text
           variable: answer_text
         - value_selector:
-          - '1720000000011'
-          - result
+          - '1720000000020'
+          - text
           variable: reference
       height: 80
       id: '1720000000014'
@@ -404,6 +426,57 @@ workflow:
       positionAbsolute:
         x: 1854
         y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 从原文提取文件名去重
+        model:
+          completion_params:
+            temperature: 0.1
+          mode: chat
+          name: ''
+          provider: ''
+        prompt_template:
+        - id: sys04
+          role: system
+          text: '你是一个信息提取助手。请从下面这段知识库召回的原始片段中，提取出所有的"来源文件名"或"文档标题"。
+
+            要求：
+
+            1. 只输出文件名列表，不输出任何详细内容。
+
+            2. 对同名文件进行去重。
+
+            3. 直接使用无序列表的格式输出（如：- G01资产负债表.docx）。
+
+            4. 如果没有找到文件名，直接输出"未找到明确的参考文件"。
+
+
+            召回片段：
+
+            {{#1720000000011.result#}}
+
+            '
+        selected: false
+        title: 提取参考文件
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 98
+      id: '1720000000020'
+      position:
+        x: 942
+        y: 432
+      positionAbsolute:
+        x: 942
+        y: 432
       selected: false
       sourcePosition: right
       targetPosition: left
