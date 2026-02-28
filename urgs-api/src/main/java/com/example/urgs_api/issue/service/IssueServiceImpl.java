@@ -235,6 +235,22 @@ public class IssueServiceImpl extends ServiceImpl<IssueMapper, Issue> implements
             }
         }
 
+        // If neither startDate nor endDate is provided, filter by frequency
+        if (!StringUtils.hasText(startDate) && !StringUtils.hasText(endDate)) {
+            LocalDateTime now = LocalDateTime.now();
+            if ("day".equals(frequency)) {
+                wrapper.ge(Issue::getOccurTime, now.minusDays(30));
+            } else if ("month".equals(frequency)) {
+                wrapper.ge(Issue::getOccurTime, now.minusMonths(12));
+            } else if ("quarter".equals(frequency)) {
+                wrapper.ge(Issue::getOccurTime, now.minusYears(1));
+            } else if ("half".equals(frequency)) {
+                wrapper.ge(Issue::getOccurTime, now.minusYears(2));
+            } else if ("year".equals(frequency)) {
+                wrapper.ge(Issue::getOccurTime, now.minusYears(5));
+            }
+        }
+
         List<Issue> allIssues = list(wrapper);
 
         // 总数统计
