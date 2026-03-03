@@ -1,0 +1,56 @@
+{
+    "dialect": "oracle",
+    "description": "CASE WHEN 转换 + 常量列 + TO_CHAR/TO_DATE 函数 + WHERE 条件",
+    "table_lineage": {
+        "sources": [
+            "ODS.FTP_SOURCE"
+        ],
+        "targets": [
+            "DWD.FTP_DETAIL"
+        ]
+    },
+    "column_lineage": [
+        {
+            "source_table": "ODS.FTP_SOURCE",
+            "source_column": "AS_OF_DATE",
+            "target_table": "DWD.FTP_DETAIL",
+            "target_column": "DATA_DATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.FTP_SOURCE",
+            "source_column": "BIZ_TYPE",
+            "target_table": "DWD.FTP_DETAIL",
+            "target_column": "BUSINESS_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.FTP_SOURCE",
+            "source_column": "TERM_VALUE",
+            "target_table": "DWD.FTP_DETAIL",
+            "target_column": "TERM_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.FTP_SOURCE",
+            "source_column": "TERM_UNIT",
+            "target_table": "DWD.FTP_DETAIL",
+            "target_column": "TERM_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.FTP_SOURCE",
+            "source_column": "RATE_VALUE",
+            "target_table": "DWD.FTP_DETAIL",
+            "target_column": "RATE_VALUE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.FTP_SOURCE",
+            "source_column": "AS_OF_DATE",
+            "target_table": "DWD.FTP_DETAIL",
+            "target_column": "*",
+            "dependency_type": "fdr"
+        }
+    ]
+}

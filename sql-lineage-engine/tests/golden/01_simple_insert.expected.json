@@ -1,0 +1,49 @@
+{
+    "dialect": "oracle",
+    "description": "基础 INSERT INTO SELECT 场景，5列直接映射，单源单目标",
+    "table_lineage": {
+        "sources": [
+            "ODS.ORDERS"
+        ],
+        "targets": [
+            "DWD.ORDER_FACT"
+        ]
+    },
+    "column_lineage": [
+        {
+            "source_table": "ODS.ORDERS",
+            "source_column": "ORDER_ID",
+            "target_table": "DWD.ORDER_FACT",
+            "target_column": "ORDER_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.ORDERS",
+            "source_column": "CUSTOMER_ID",
+            "target_table": "DWD.ORDER_FACT",
+            "target_column": "CUSTOMER_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.ORDERS",
+            "source_column": "ORDER_DATE",
+            "target_table": "DWD.ORDER_FACT",
+            "target_column": "ORDER_DATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.ORDERS",
+            "source_column": "AMOUNT",
+            "target_table": "DWD.ORDER_FACT",
+            "target_column": "AMOUNT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.ORDERS",
+            "source_column": "STATUS",
+            "target_table": "DWD.ORDER_FACT",
+            "target_column": "STATUS",
+            "dependency_type": "fdd"
+        }
+    ]
+}

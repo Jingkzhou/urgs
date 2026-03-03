@@ -9,3 +9,4 @@ pydantic
 pydantic-settings
 JPype1
 numpy<2
+pytest

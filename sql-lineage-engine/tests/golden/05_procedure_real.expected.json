@@ -1,0 +1,98 @@
+{
+    "dialect": "oracle",
+    "description": "真实 Oracle 存储过程（精简版），含 CREATE PROCEDURE + BEGIN/END + INSERT INTO SELECT + 常量列 + EXCEPTION 块",
+    "table_lineage": {
+        "sources": [
+            "IE_DK_TZYWYE1"
+        ],
+        "targets": [
+            "IE_DK_TZYWYE"
+        ]
+    },
+    "column_lineage": [
+        {
+            "source_table": "IE_DK_TZYWYE1",
+            "source_column": "DATADATE",
+            "target_table": "IE_DK_TZYWYE",
+            "target_column": "DATADATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "IE_DK_TZYWYE1",
+            "source_column": "CUSTID",
+            "target_table": "IE_DK_TZYWYE",
+            "target_column": "CUSTID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "IE_DK_TZYWYE1",
+            "source_column": "ACCOUNT",
+            "target_table": "IE_DK_TZYWYE",
+            "target_column": "ACCOUNT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "IE_DK_TZYWYE1",
+            "source_column": "ODBUSITYPE",
+            "target_table": "IE_DK_TZYWYE",
+            "target_column": "ODBUSITYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "IE_DK_TZYWYE1",
+            "source_column": "MONEYSYMB",
+            "target_table": "IE_DK_TZYWYE",
+            "target_column": "MONEYSYMB",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "IE_DK_TZYWYE1",
+            "source_column": "BALANCE",
+            "target_table": "IE_DK_TZYWYE",
+            "target_column": "BALANCE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "IE_DK_TZYWYE1",
+            "source_column": "REALRATE",
+            "target_table": "IE_DK_TZYWYE",
+            "target_column": "REALRATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "IE_DK_TZYWYE1",
+            "source_column": "RATETYPE",
+            "target_table": "IE_DK_TZYWYE",
+            "target_column": "RATETYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "IE_DK_TZYWYE1",
+            "source_column": "PRICINGTYPE",
+            "target_table": "IE_DK_TZYWYE",
+            "target_column": "PRICINGTYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "IE_DK_TZYWYE1",
+            "source_column": "BASERATE",
+            "target_table": "IE_DK_TZYWYE",
+            "target_column": "BASERATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "IE_DK_TZYWYE1",
+            "source_column": "FLOATFREQ",
+            "target_table": "IE_DK_TZYWYE",
+            "target_column": "FLOATFREQ",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "IE_DK_TZYWYE1",
+            "source_column": "CREDITCARDFLG",
+            "target_table": "IE_DK_TZYWYE",
+            "target_column": "CREDITCARDFLG",
+            "dependency_type": "fdd"
+        }
+    ]
+}
