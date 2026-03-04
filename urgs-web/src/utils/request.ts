@@ -6,9 +6,21 @@ export interface RequestOptions extends RequestInit {
 export const request = async <T = any>(url: string, options: RequestOptions = {}): Promise<T> => {
     const token = localStorage.getItem('auth_token');
 
+    const authUserStr = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_user') : null;
+
     const headers = new Headers(options.headers);
     if (token) {
         headers.set('Authorization', `Bearer ${token}`);
+    }
+
+    if (authUserStr) {
+        try {
+            const authUser = JSON.parse(authUserStr);
+            if (authUser?.id || authUser?.userId) {
+                // Ensure we send X-User-Id which many backend controllers rely on
+                headers.set('X-User-Id', String(authUser.id || authUser.userId));
+            }
+        } catch (e) { /* ignore parse error */ }
     }
 
     // Default to JSON content type if body is present and not FormData

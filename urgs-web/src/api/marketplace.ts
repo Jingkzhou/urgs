@@ -1,4 +1,4 @@
-import { request } from '../utils/request';
+import { get, post, put, del } from '../utils/request';
 
 // Definitions matching backend DTOs
 export interface WorkCreateDTO {
@@ -70,18 +70,18 @@ export interface TaskApplication {
 }
 
 // APIs
-export const createWork = (data: WorkCreateDTO) => request.post('/api/marketplace/works', data);
-export const listWorks = (params: any) => request.get('/api/marketplace/works', { params });
-export const publishWork = (id: string) => request.put(`/api/marketplace/works/${id}/publish`);
-export const cancelWork = (id: string) => request.put(`/api/marketplace/works/${id}/cancel`);
+export const createWork = (data: WorkCreateDTO) => post('/api/marketplace/works', data);
+export const listWorks = (params: any) => get('/api/marketplace/works', params);
+export const publishWork = (id: string) => put(`/api/marketplace/works/${id}/publish`);
+export const cancelWork = (id: string) => put(`/api/marketplace/works/${id}/cancel`);
 
-export const getMarketTasks = (params: any) => request.get('/api/marketplace/tasks', { params });
-export const getMyTasks = (params: any) => request.get('/api/marketplace/tasks/my', { params });
-export const claimTask = (id: string) => request.post(`/api/marketplace/tasks/${id}/claim`);
-export const assignTask = (id: string, assigneeId: string) => request.put(`/api/marketplace/tasks/${id}/assign`, { assigneeId });
-export const updateTaskStatus = (id: string, status: string) => request.put(`/api/marketplace/tasks/${id}/status`, { status });
+export const getMarketTasks = (params: any) => get('/api/marketplace/tasks', params);
+export const getMyTasks = (params: any) => get('/api/marketplace/tasks/my', params);
+export const claimTask = (id: string) => post(`/api/marketplace/tasks/${id}/claim`);
+export const assignTask = (id: string, assigneeId: string) => put(`/api/marketplace/tasks/${id}/assign`, { assigneeId });
+export const updateTaskStatus = (id: string, status: string) => put(`/api/marketplace/tasks/${id}/status`, { status });
 
-export const applyForTask = (taskId: string, message: string) => request.post('/api/marketplace/applications/apply', { taskId, message });
-export const approveApplication = (id: string) => request.put(`/api/marketplace/applications/${id}/approve`);
-export const rejectApplication = (id: string) => request.put(`/api/marketplace/applications/${id}/reject`);
-export const getTaskApplications = (taskId: string, params: any) => request.get(`/api/marketplace/applications/task/${taskId}`, { params });
+export const applyForTask = (taskId: string, message: string) => post('/api/marketplace/applications/apply', { taskId, message });
+export const approveApplication = (id: string) => put(`/api/marketplace/applications/${id}/approve`);
+export const rejectApplication = (id: string) => put(`/api/marketplace/applications/${id}/reject`);
+export const getTaskApplications = (taskId: string, params: any) => get(`/api/marketplace/applications/task/${taskId}`, params);

@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { listWorks, publishWork, cancelWork, Work } from '../../api/marketplace';
 import { Plus, Play, XCircle } from 'lucide-react';
+import CreateWorkDrawer from './CreateWorkDrawer';
 
 const WorkList: React.FC = () => {
     const [works, setWorks] = useState<Work[]>([]);
     const [loading, setLoading] = useState(false);
+    const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
     const fetchWorks = async () => {
         setLoading(true);
@@ -47,16 +49,25 @@ const WorkList: React.FC = () => {
     };
 
     return (
-        <div className="h-full flex flex-col p-6 overflow-y-auto">
+        <div className="h-full flex flex-col p-6 overflow-y-auto relative">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold text-slate-800">我发布的工作</h2>
                 <button
-                    onClick={() => alert("创建工作表单即将上线")}
+                    onClick={() => setIsDrawerOpen(true)}
                     className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors text-sm font-bold"
                 >
                     <Plus size={16} />新建工作
                 </button>
             </div>
+
+            <CreateWorkDrawer
+                isOpen={isDrawerOpen}
+                onClose={() => setIsDrawerOpen(false)}
+                onSuccess={() => {
+                    setIsDrawerOpen(false);
+                    fetchWorks();
+                }}
+            />
 
             {loading ? (
                 <div className="text-center py-10 text-slate-400">加载中...</div>
@@ -72,8 +83,8 @@ const WorkList: React.FC = () => {
                                 <div className="flex items-center gap-3 mb-2">
                                     <h3 className="text-lg font-bold text-slate-800">{work.title}</h3>
                                     <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${work.status === 'PUBLISHED' ? 'bg-green-100 text-green-700' :
-                                            work.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
-                                                work.status === 'DRAFT' ? 'bg-slate-100 text-slate-600' : 'bg-red-100 text-red-600'
+                                        work.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
+                                            work.status === 'DRAFT' ? 'bg-slate-100 text-slate-600' : 'bg-red-100 text-red-600'
                                         }`}>
                                         {work.status}
                                     </span>

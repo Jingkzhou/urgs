@@ -19,14 +19,21 @@ public class WorkController {
     private WorkService workService;
 
     @PostMapping
-    public Work createWork(@RequestHeader("X-User-Id") String userId, @RequestBody WorkCreateDTO workCreateDTO) {
+    public Work createWork(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @RequestBody WorkCreateDTO workCreateDTO) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
         return workService.createWork(workCreateDTO, userId);
     }
 
     @GetMapping
-    public PageResult<Work> listWorks(@RequestHeader("X-User-Id") String userId,
+    public PageResult<Work> listWorks(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "10") int size) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
         Page<Work> page = new Page<>(current, size);
         Page<Work> resultPage = workService.page(page, new LambdaQueryWrapper<Work>()
                 .eq(Work::getPublisherId, userId)
@@ -35,14 +42,32 @@ public class WorkController {
     }
 
     @PutMapping("/{id}/publish")
-    public ResponseEntity<Void> publishWork(@RequestHeader("X-User-Id") String userId, @PathVariable String id) {
+    public ResponseEntity<Void> publishWork(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @PathVariable String id) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
         workService.publishWork(userId, id);
         return ResponseEntity.ok().build();
     }
 
     @PutMapping("/{id}/cancel")
-    public ResponseEntity<Void> cancelWork(@RequestHeader("X-User-Id") String userId, @PathVariable String id) {
+    public ResponseEntity<Void> cancelWork(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @PathVariable String id) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
         workService.cancelWork(userId, id);
         return ResponseEntity.ok().build();
+    }
+
+    private String getEffectiveUserId(String headerUserId, Long attrUserId) {
+        if (headerUserId != null && !headerUserId.isEmpty()) {
+            return headerUserId;
+        }
+        if (attrUserId != null) {
+            return String.valueOf(attrUserId);
+        }
+        throw new IllegalArgumentException("Missing user identifier");
     }
 }
