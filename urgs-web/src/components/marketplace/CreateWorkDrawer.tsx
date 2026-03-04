@@ -6,16 +6,15 @@ import { X, Plus, Trash2 } from 'lucide-react';
 import { createWork } from '../../api/marketplace';
 import UserSelect from './UserSelect';
 
-// Form validation schema using Zod
 const taskSchema = z.object({
     title: z.string().min(2, '任务标题至少2个字符'),
     description: z.string().min(10, '任务描述至少10个字符'),
     points: z.number().min(0, '积分不能为负数'),
-    requiredSkills: z.string().optional(),
+    requiredSkills: z.string().optional().or(z.literal('')),
     assignMode: z.enum(['OPEN', 'ASSIGN', 'COMPETE']),
-    assigneeId: z.string().optional(),
-    maxApplicants: z.number().optional(),
-    deadline: z.string().refine((val) => !val || new Date(val) > new Date(), {
+    assigneeId: z.string().optional().or(z.literal('')),
+    maxApplicants: z.number().optional().or(z.literal('')),
+    deadline: z.string().optional().or(z.literal('')).refine((val) => !val || new Date(val) > new Date(), {
         message: '截止日期必须在将来',
     }),
 });
@@ -25,7 +24,7 @@ const workSchema = z.object({
     description: z.string().min(10, '工作描述至少10个字符'),
     category: z.string().min(2, '请输入分类'),
     priority: z.enum(['P0', 'P1', 'P2', 'P3', 'P4']),
-    deadline: z.string().refine((val) => !val || new Date(val) > new Date(), {
+    deadline: z.string().optional().or(z.literal('')).refine((val) => !val || new Date(val) > new Date(), {
         message: '截止日期必须在将来',
     }),
     tasks: z.array(taskSchema).min(1, '至少需要添加一个工作任务'),
@@ -73,13 +72,28 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
 
     const onSubmit = async (data: WorkFormValues) => {
         try {
-            await createWork(data);
+            const payload = {
+                ...data,
+                deadline: data.deadline || undefined,
+                tasks: data.tasks.map(t => ({
+                    ...t,
+                    requiredSkills: t.requiredSkills || undefined,
+                    assigneeId: t.assigneeId || undefined,
+                    maxApplicants: t.maxApplicants === '' ? undefined : t.maxApplicants,
+                    deadline: t.deadline || undefined,
+                }))
+            };
+            await createWork(payload as any);
             reset();
             onSuccess();
         } catch (error) {
             console.error('Create work failed:', error);
             alert('创建工作失败，请重试');
         }
+    };
+
+    const onError = (errors: any) => {
+        console.log('Form validation failed:', errors);
     };
 
     return (
@@ -106,7 +120,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
-                    <form id="create-work-form" onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+                    <form id="create-work-form" onSubmit={handleSubmit(onSubmit, onError)} className="space-y-8">
                         {/* 基础信息 */}
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                             <h3 className="text-base font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4">基础信息</h3>

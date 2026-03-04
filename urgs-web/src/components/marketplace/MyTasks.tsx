@@ -10,8 +10,8 @@ const MyTasks: React.FC = () => {
         setLoading(true);
         try {
             const res = await getMyTasks({ current: 1, size: 20 });
-            if (res.data?.records) {
-                setTasks(res.data.records);
+            if (res?.records) {
+                setTasks(res.records);
             }
         } catch (error) {
             console.error('Failed to fetch my tasks', error);
@@ -53,8 +53,8 @@ const MyTasks: React.FC = () => {
                             <div className="flex items-center justify-between mb-2">
                                 <h3 className="font-bold text-slate-800">{task.title}</h3>
                                 <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${task.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
-                                        task.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
-                                            task.status === 'REVIEW' ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-600'
+                                    task.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
+                                        task.status === 'REVIEW' ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-600'
                                     }`}>
                                     {task.status}
                                 </span>

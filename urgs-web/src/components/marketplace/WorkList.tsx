@@ -12,8 +12,8 @@ const WorkList: React.FC = () => {
         setLoading(true);
         try {
             const res = await listWorks({ current: 1, size: 20 });
-            if (res.data?.records) {
-                setWorks(res.data.records);
+            if (res?.records) {
+                setWorks(res.records);
             }
         } catch (error) {
             console.error('Failed to fetch works', error);

@@ -10,9 +10,9 @@ const TaskMarket: React.FC = () => {
     const fetchTasks = async () => {
         setLoading(true);
         try {
-            const res = await getMarketTasks({ current: 1, size: 20, keyword });
-            if (res.data?.records) {
-                setTasks(res.data.records);
+            const res = await getMarketTasks({ current: 1, size: 20 });
+            if (res?.records) {
+                setTasks(res.records);
             }
         } catch (error) {
             console.error('Failed to fetch tasks', error);
