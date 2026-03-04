@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { hasPermission } from './utils/permission';
-import { LayoutDashboard, Menu, Bell, Search, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Timer, Database, GitBranch, Activity, Lock, Palette, User, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Menu, Bell, Search, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Timer, Database, GitBranch, Activity, Lock, Palette, User, Sparkles, Award } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Login from './components/Login';
 import Dashboard from './components/home/Dashboard';
@@ -15,6 +15,7 @@ import ChatWidget from './components/home/ChatWidget';
 import BasicInfo from './components/BasicInfo';
 import ArkPage from './components/ark/ArkPage';
 import KnowledgeCenter from './components/knowledge/KnowledgeCenter';
+import MarketplacePage from './components/marketplace/MarketplacePage';
 import { LOGO_URL } from './constants';
 
 const NAV_ITEMS = [
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
     { id: 'ark', label: 'Ark (方舟)', icon: Sparkles, permission: 'ark' },
     { id: 'announcement', label: '公告管理', icon: Megaphone, permission: 'announcement' },
     { id: 'version', label: '版本管理', icon: GitBranch, permission: 'version' },
+    { id: 'marketplace', label: '工作市场', icon: Award, permission: 'dashboard' }, // Added Marketplace using dashboard perm for now
     { id: 'metadata', label: '数据管理', icon: Database, permission: 'metadata' },
     { id: 'ops', label: '运维管理', icon: Activity, permission: 'ops' },
     { id: 'knowledge', label: '知识中心', icon: Database, permission: 'knowledge' },
@@ -377,6 +379,7 @@ const App: React.FC = () => {
                         {activeTab === 'metadata' && <MetadataManagement />}
                         {activeTab === 'ops' && <OpsManagement />}
                         {activeTab === 'knowledge' && <KnowledgeCenter />}
+                        {activeTab === 'marketplace' && <MarketplacePage />}
                         {activeTab === 'basic_info' && <BasicInfo userInfo={userInfo} />}
                     </div>
                 </main>
