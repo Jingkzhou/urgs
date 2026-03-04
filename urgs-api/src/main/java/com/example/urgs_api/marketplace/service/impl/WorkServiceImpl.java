@@ -10,6 +10,9 @@ import com.example.urgs_api.marketplace.model.Work;
 import com.example.urgs_api.marketplace.model.WorkTask;
 import com.example.urgs_api.marketplace.service.WorkService;
 import com.example.urgs_api.marketplace.service.WorkTaskService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,12 +20,16 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Service
 public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements WorkService {
 
     @Autowired
     @org.springframework.context.annotation.Lazy
     private WorkTaskService workTaskService;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -35,6 +42,15 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         work.setStatus(WorkStatus.DRAFT.name());
         work.setPublisherId(userId);
         work.setDeadline(dto.getDeadline());
+        work.setRequirementNumber(dto.getRequirementNumber());
+
+        if (dto.getAttachments() != null && !dto.getAttachments().isEmpty()) {
+            try {
+                work.setAttachments(objectMapper.writeValueAsString(dto.getAttachments()));
+            } catch (JsonProcessingException e) {
+                log.error("Failed to serialize attachments for work: {}", dto.getTitle(), e);
+            }
+        }
 
         // Calculate total points
         int totalPoints = 0;

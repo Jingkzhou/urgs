@@ -12,5 +12,13 @@ public class WorkCreateDTO {
     private String category;
     private String priority;
     private LocalDateTime deadline;
+    private String requirementNumber;
+    private List<AttachmentDTO> attachments;
     private List<WorkTaskCreateDTO> tasks;
+
+    @Data
+    public static class AttachmentDTO {
+        private String name;
+        private String url;
+    }
 }

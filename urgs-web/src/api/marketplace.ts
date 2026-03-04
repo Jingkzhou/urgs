@@ -7,6 +7,8 @@ export interface WorkCreateDTO {
     category?: string;
     priority?: string;
     deadline?: string;
+    requirementNumber?: string;
+    attachments?: any[];
     tasks?: WorkTaskCreateDTO[];
 }
 

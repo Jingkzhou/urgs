@@ -21,6 +21,8 @@ public class Work {
     private String status;
     private String publisherId;
     private LocalDateTime deadline;
+    private String requirementNumber;
+    private String attachments;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

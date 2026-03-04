@@ -2,7 +2,8 @@ import React from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { X, Plus, Trash2 } from 'lucide-react';
+import { X, Plus, Trash2, Paperclip, Upload as UploadIcon } from 'lucide-react';
+import { Upload, message } from 'antd';
 import { createWork } from '../../api/marketplace';
 import UserSelect from './UserSelect';
 
@@ -27,6 +28,8 @@ const workSchema = z.object({
     deadline: z.string().optional().or(z.literal('')).refine((val) => !val || new Date(val) > new Date(), {
         message: '截止日期必须在将来',
     }),
+    requirementNumber: z.string().optional().or(z.literal('')),
+    attachments: z.array(z.any()).optional(),
     tasks: z.array(taskSchema).min(1, '至少需要添加一个工作任务'),
 });
 
@@ -44,6 +47,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
         control,
         handleSubmit,
         watch,
+        setValue,
         reset,
         formState: { errors, isSubmitting }
     } = useForm<WorkFormValues>({
@@ -58,6 +62,8 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
         control,
         name: "tasks"
     });
+
+    const attachments = watch('attachments') || [];
 
     // Close drawer on escape key
     React.useEffect(() => {
@@ -75,6 +81,11 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
             const payload = {
                 ...data,
                 deadline: data.deadline || undefined,
+                requirementNumber: data.requirementNumber || undefined,
+                attachments: data.attachments?.map(file => ({
+                    name: file.name,
+                    url: file.response?.url || file.url || ''
+                })),
                 tasks: data.tasks.map(t => ({
                     ...t,
                     requiredSkills: t.requiredSkills || undefined,
@@ -188,6 +199,42 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                     className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all"
                                 />
                                 {errors.deadline && <p className="text-red-500 text-xs mt-1">{errors.deadline.message}</p>}
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">
+                                    需求编号 <span className="text-slate-400 text-xs font-normal">(可选)</span>
+                                </label>
+                                <input
+                                    {...register("requirementNumber")}
+                                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all"
+                                    placeholder="例如：REQ-2026-001"
+                                />
+                            </div>
+
+                            <div className="pt-2">
+                                <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                                    <Paperclip size={16} className="text-slate-400" />
+                                    相关附件 <span className="text-slate-400 text-xs font-normal">(可选)</span>
+                                </label>
+                                <Upload
+                                    action="/api/common/upload"
+                                    fileList={attachments}
+                                    onChange={({ fileList }) => setValue('attachments', fileList)}
+                                    name="file"
+                                    className="block"
+                                    headers={{
+                                        Authorization: `Bearer ${typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : ''}`
+                                    }}
+                                >
+                                    <button
+                                        type="button"
+                                        className="flex items-center gap-2 px-4 py-2 border border-slate-200 border-dashed rounded-lg text-sm text-slate-600 hover:border-red-400 hover:text-red-500 transition-all w-full justify-center"
+                                    >
+                                        <UploadIcon size={16} /> 点击上传附件
+                                    </button>
+                                </Upload>
+                                <p className="text-[10px] text-slate-400 mt-1">支持PDF, DOC, ZIP等常用业务文件</p>
                             </div>
                         </div>
 
