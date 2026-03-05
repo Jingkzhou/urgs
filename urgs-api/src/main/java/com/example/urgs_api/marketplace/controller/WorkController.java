@@ -47,7 +47,7 @@ public class WorkController {
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @PathVariable String id) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        workService.publishWork(userId, id);
+        workService.publishWork(id, userId);
         return ResponseEntity.ok().build();
     }
 
@@ -57,7 +57,7 @@ public class WorkController {
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @PathVariable String id) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        workService.cancelWork(userId, id);
+        workService.cancelWork(id, userId);
         return ResponseEntity.ok().build();
     }
 

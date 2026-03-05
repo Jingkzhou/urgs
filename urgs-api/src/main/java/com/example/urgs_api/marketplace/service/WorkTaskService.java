@@ -6,7 +6,7 @@ import com.example.urgs_api.marketplace.dto.TaskMarketDTO;
 import com.example.urgs_api.marketplace.model.WorkTask;
 
 public interface WorkTaskService extends IService<WorkTask> {
-    Page<TaskMarketDTO> getMarketTasks(Page<WorkTask> page, String category, String keyword);
+    Page<TaskMarketDTO> getMarketTasks(Page<WorkTask> page, String category, String keyword, String status);
 
     boolean claimTask(String taskId, String userId);
 
@@ -15,4 +15,6 @@ public interface WorkTaskService extends IService<WorkTask> {
     boolean updateTaskStatus(String taskId, String status, String userId);
 
     void logTaskAction(String taskId, String operatorId, String action, String detail);
+
+    TaskMarketDTO getTaskDetail(String taskId);
 }

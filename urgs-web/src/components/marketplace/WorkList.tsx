@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { listWorks, publishWork, cancelWork, Work } from '../../api/marketplace';
+import { listWorks, publishWork, cancelWork, Work, getWorkDetail } from '../../api/marketplace';
 import { Plus, Play, XCircle } from 'lucide-react';
 import CreateWorkDrawer from './CreateWorkDrawer';
+import WorkDetailDrawer from './WorkDetailDrawer';
 
 const WorkList: React.FC = () => {
     const [works, setWorks] = useState<Work[]>([]);
     const [loading, setLoading] = useState(false);
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+    const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
+    const [isDetailOpen, setIsDetailOpen] = useState(false);
 
     const fetchWorks = async () => {
         setLoading(true);
@@ -81,7 +84,15 @@ const WorkList: React.FC = () => {
                         <div key={work.id} className="bg-white border text-left border-slate-200 rounded-xl p-5 shadow-sm flex items-center justify-between">
                             <div>
                                 <div className="flex items-center gap-3 mb-2">
-                                    <h3 className="text-lg font-bold text-slate-800">{work.title}</h3>
+                                    <h3
+                                        onClick={() => {
+                                            setSelectedWorkId(work.id);
+                                            setIsDetailOpen(true);
+                                        }}
+                                        className="text-lg font-bold text-slate-800 hover:text-red-600 cursor-pointer transition-colors"
+                                    >
+                                        {work.title}
+                                    </h3>
                                     <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${work.status === 'PUBLISHED' ? 'bg-green-100 text-green-700' :
                                         work.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
                                             work.status === 'DRAFT' ? 'bg-slate-100 text-slate-600' : 'bg-red-100 text-red-600'
@@ -120,6 +131,12 @@ const WorkList: React.FC = () => {
                     ))}
                 </div>
             )}
+
+            <WorkDetailDrawer
+                workId={selectedWorkId}
+                isOpen={isDetailOpen}
+                onClose={() => setIsDetailOpen(false)}
+            />
         </div>
     );
 };

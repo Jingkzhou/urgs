@@ -44,10 +44,16 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
     private UserMapper userMapper;
 
     @Override
-    public Page<TaskMarketDTO> getMarketTasks(Page<WorkTask> page, String category, String keyword) {
-        // Query tasks that are part of PUBLISHED works and are OPEN
+    public Page<TaskMarketDTO> getMarketTasks(Page<WorkTask> page, String category, String keyword, String status) {
+        // Query tasks that are part of PUBLISHED works
         LambdaQueryWrapper<WorkTask> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(WorkTask::getStatus, TaskStatus.OPEN.name());
+
+        if (StringUtils.hasText(status)) {
+            queryWrapper.eq(WorkTask::getStatus, status);
+        } else {
+            // Default to only show OPEN tasks in the main hall
+            queryWrapper.eq(WorkTask::getStatus, TaskStatus.OPEN.name());
+        }
 
         if (StringUtils.hasText(keyword)) {
             queryWrapper.like(WorkTask::getTitle, keyword);
@@ -61,21 +67,25 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
         // Map to DTO and enrich with Work and User info
         dtoPage.setRecords(taskPage.getRecords().stream().map(task -> {
+            Work work = workService.getById(task.getWorkId());
+            // Show tasks from PUBLISHED or IN_PROGRESS works. Reject DRAFT/CANCELLED.
+            if (work == null || WorkStatus.DRAFT.name().equals(work.getStatus())
+                    || WorkStatus.CANCELLED.name().equals(work.getStatus())) {
+                return null;
+            }
+
             TaskMarketDTO dto = new TaskMarketDTO();
             BeanUtils.copyProperties(task, dto);
+            dto.setWorkTitle(work.getTitle());
 
-            Work work = workService.getById(task.getWorkId());
-            if (work != null) {
-                dto.setWorkTitle(work.getTitle());
-                if (StringUtils.hasText(category) && !category.equals(work.getCategory())) {
-                    return null; // Should filter in SQL ideally, but simplified here
-                }
+            if (StringUtils.hasText(category) && !category.equals(work.getCategory())) {
+                return null;
+            }
 
-                User publisher = userMapper.selectById(work.getPublisherId());
-                if (publisher != null) {
-                    dto.setPublisherName(publisher.getName());
-                    dto.setPublisherAvatar(publisher.getAvatarUrl());
-                }
+            User publisher = userMapper.selectById(work.getPublisherId());
+            if (publisher != null) {
+                dto.setPublisherName(publisher.getName());
+                dto.setPublisherAvatar(publisher.getAvatarUrl());
             }
 
             // Get application count if COMPETE mode
@@ -193,5 +203,39 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 workService.updateById(work);
             }
         }
+    }
+
+    @Override
+    public TaskMarketDTO getTaskDetail(String taskId) {
+        WorkTask task = this.getById(taskId);
+        if (task == null) {
+            throw new IllegalArgumentException("任务不存在");
+        }
+
+        TaskMarketDTO dto = new TaskMarketDTO();
+        BeanUtils.copyProperties(task, dto);
+
+        Work work = workService.getById(task.getWorkId());
+        if (work != null) {
+            dto.setWorkTitle(work.getTitle());
+            User publisher = userMapper.selectById(work.getPublisherId());
+            if (publisher != null) {
+                dto.setPublisherName(publisher.getName());
+                dto.setPublisherAvatar(publisher.getAvatarUrl());
+            }
+        }
+
+        // Get application count if COMPETE mode
+        if (AssignMode.COMPETE.name().equals(task.getAssignMode())) {
+            long count = taskApplicationService.lambdaQuery()
+                    .eq(com.example.urgs_api.marketplace.model.TaskApplication::getTaskId, task.getId())
+                    .eq(com.example.urgs_api.marketplace.model.TaskApplication::getStatus, "PENDING")
+                    .count();
+            dto.setApplicationCount((int) count);
+        } else {
+            dto.setApplicationCount(0);
+        }
+
+        return dto;
     }
 }

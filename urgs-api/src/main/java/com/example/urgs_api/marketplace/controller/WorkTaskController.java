@@ -21,11 +21,18 @@ public class WorkTaskController {
     @GetMapping
     public PageResult<TaskMarketDTO> getMarketTasks(@RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false) String keyword) {
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String status) {
         Page<WorkTask> page = new Page<>(current, size);
         // FIXME: category is missing in RequestParam, passing null for now
-        Page<TaskMarketDTO> resultPage = workTaskService.getMarketTasks(page, null, keyword);
+        Page<TaskMarketDTO> resultPage = workTaskService.getMarketTasks(page, null, keyword, status);
         return PageResult.of(resultPage);
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<TaskMarketDTO> getTaskById(@PathVariable String id) {
+        TaskMarketDTO dto = workTaskService.getTaskDetail(id);
+        return ResponseEntity.ok(dto);
     }
 
     @GetMapping("/my")
@@ -49,7 +56,7 @@ public class WorkTaskController {
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @PathVariable String id) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        workTaskService.claimTask(userId, id);
+        workTaskService.claimTask(id, userId);
         return ResponseEntity.ok().build();
     }
 
@@ -60,7 +67,7 @@ public class WorkTaskController {
             @PathVariable String id,
             @RequestBody Map<String, String> body) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        workTaskService.assignTask(userId, id, body.get("assigneeId"));
+        workTaskService.assignTask(id, body.get("assigneeId"), userId);
         return ResponseEntity.ok().build();
     }
 

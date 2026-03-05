@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { getMyTasks, updateTaskStatus, WorkTask } from '../../api/marketplace';
 import { CheckCircle, Clock } from 'lucide-react';
+import TaskDetailDrawer from './TaskDetailDrawer';
 
 const MyTasks: React.FC = () => {
     const [tasks, setTasks] = useState<WorkTask[]>([]);
     const [loading, setLoading] = useState(false);
+    const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+    const [isDetailOpen, setIsDetailOpen] = useState(false);
 
     const fetchTasks = async () => {
         setLoading(true);
@@ -51,7 +54,15 @@ const MyTasks: React.FC = () => {
                     {tasks.map(task => (
                         <div key={task.id} className="bg-white border text-left border-slate-200 rounded-xl p-5 shadow-sm">
                             <div className="flex items-center justify-between mb-2">
-                                <h3 className="font-bold text-slate-800">{task.title}</h3>
+                                <h3
+                                    onClick={() => {
+                                        setSelectedTaskId(task.id);
+                                        setIsDetailOpen(true);
+                                    }}
+                                    className="font-bold text-slate-800 hover:text-red-600 cursor-pointer transition-colors"
+                                >
+                                    {task.title}
+                                </h3>
                                 <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${task.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
                                     task.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
                                         task.status === 'REVIEW' ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-600'
@@ -95,6 +106,13 @@ const MyTasks: React.FC = () => {
                     ))}
                 </div>
             )}
+
+            <TaskDetailDrawer
+                taskId={selectedTaskId}
+                isOpen={isDetailOpen}
+                onClose={() => setIsDetailOpen(false)}
+                onClaimSuccess={fetchTasks}
+            />
         </div>
     );
 };

@@ -24,7 +24,7 @@ public class TaskApplicationController {
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @RequestBody Map<String, String> body) {
         String applicantId = getEffectiveUserId(headerApplicantId, attrUserId);
-        taskApplicationService.applyForTask(applicantId, body.get("taskId"), body.get("message"));
+        taskApplicationService.applyForTask(body.get("taskId"), applicantId, body.get("message"));
         return ResponseEntity.ok().build();
     }
 
@@ -34,7 +34,7 @@ public class TaskApplicationController {
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @PathVariable String id) {
         String publisherId = getEffectiveUserId(headerPublisherId, attrUserId);
-        taskApplicationService.approveApplication(publisherId, id);
+        taskApplicationService.approveApplication(id, publisherId);
         return ResponseEntity.ok().build();
     }
 
@@ -44,7 +44,7 @@ public class TaskApplicationController {
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @PathVariable String id) {
         String publisherId = getEffectiveUserId(headerPublisherId, attrUserId);
-        taskApplicationService.rejectApplication(publisherId, id);
+        taskApplicationService.rejectApplication(id, publisherId);
         return ResponseEntity.ok().build();
     }
 

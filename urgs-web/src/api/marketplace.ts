@@ -33,6 +33,8 @@ export interface Work {
     status: string;
     publisherId: string;
     deadline: string;
+    requirementNumber?: string;
+    attachments?: string;
     createTime: string;
     updateTime: string;
 }
@@ -74,10 +76,12 @@ export interface TaskApplication {
 // APIs
 export const createWork = (data: WorkCreateDTO) => post('/api/marketplace/works', data);
 export const listWorks = (params: any) => get('/api/marketplace/works', params);
+export const getWorkDetail = (id: string) => get(`/api/marketplace/works/${id}`);
 export const publishWork = (id: string) => put(`/api/marketplace/works/${id}/publish`);
 export const cancelWork = (id: string) => put(`/api/marketplace/works/${id}/cancel`);
 
 export const getMarketTasks = (params: any) => get('/api/marketplace/tasks', params);
+export const getTaskDetail = (id: string) => get(`/api/marketplace/tasks/${id}`);
 export const getMyTasks = (params: any) => get('/api/marketplace/tasks/my', params);
 export const claimTask = (id: string) => post(`/api/marketplace/tasks/${id}/claim`);
 export const assignTask = (id: string, assigneeId: string) => put(`/api/marketplace/tasks/${id}/assign`, { assigneeId });

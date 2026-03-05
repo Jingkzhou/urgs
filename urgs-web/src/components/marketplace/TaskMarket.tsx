@@ -1,16 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { getMarketTasks, claimTask, TaskMarketDTO } from '../../api/marketplace';
 import { Search, Clock, Award, Users, ChevronRight } from 'lucide-react';
+import TaskDetailDrawer from './TaskDetailDrawer';
 
 const TaskMarket: React.FC = () => {
     const [tasks, setTasks] = useState<TaskMarketDTO[]>([]);
     const [loading, setLoading] = useState(false);
     const [keyword, setKeyword] = useState('');
+    const [activeStatus, setActiveStatus] = useState<'OPEN' | 'ASSIGNED'>('OPEN');
+    const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+    const [isDetailOpen, setIsDetailOpen] = useState(false);
 
-    const fetchTasks = async () => {
+    const fetchTasks = async (status?: string) => {
         setLoading(true);
         try {
-            const res = await getMarketTasks({ current: 1, size: 20 });
+            const currentStatus = status || activeStatus;
+            const res = await getMarketTasks({
+                current: 1,
+                size: 20,
+                keyword: keyword || undefined,
+                status: currentStatus
+            });
             if (res?.records) {
                 setTasks(res.records);
             }
@@ -23,7 +33,7 @@ const TaskMarket: React.FC = () => {
 
     useEffect(() => {
         fetchTasks();
-    }, []);
+    }, [activeStatus]);
 
     const handleClaim = async (taskId: string) => {
         if (!window.confirm("确定要领取该任务吗？")) return;
@@ -37,8 +47,35 @@ const TaskMarket: React.FC = () => {
         }
     };
 
+    const handleStatusChange = (status: 'OPEN' | 'ASSIGNED') => {
+        setActiveStatus(status);
+    };
+
     return (
         <div className="h-full flex flex-col bg-slate-50/50">
+            {/* Tab Header */}
+            <div className="flex bg-white px-6 pt-4 gap-8">
+                <button
+                    onClick={() => handleStatusChange('OPEN')}
+                    className={`pb-3 text-sm font-bold transition-all relative ${activeStatus === 'OPEN'
+                        ? 'text-red-600'
+                        : 'text-slate-400 hover:text-slate-600'
+                        }`}
+                >
+                    待领取
+                    {activeStatus === 'OPEN' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-red-600 rounded-full" />}
+                </button>
+                <button
+                    onClick={() => handleStatusChange('ASSIGNED')}
+                    className={`pb-3 text-sm font-bold transition-all relative ${activeStatus === 'ASSIGNED'
+                        ? 'text-red-600'
+                        : 'text-slate-400 hover:text-slate-600'
+                        }`}
+                >
+                    已被领取
+                    {activeStatus === 'ASSIGNED' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-red-600 rounded-full" />}
+                </button>
+            </div>
             {/* Search Bar */}
             <div className="p-6 border-b border-slate-100 bg-white">
                 <div className="relative max-w-xl">
@@ -76,7 +113,13 @@ const TaskMarket: React.FC = () => {
                                     </div>
                                 </div>
 
-                                <h3 className="text-lg font-bold text-slate-800 mb-2 group-hover:text-red-600 transition-colors line-clamp-2">
+                                <h3
+                                    onClick={() => {
+                                        setSelectedTaskId(task.id);
+                                        setIsDetailOpen(true);
+                                    }}
+                                    className="text-lg font-bold text-slate-800 mb-2 group-hover:text-red-600 cursor-pointer transition-colors line-clamp-2"
+                                >
                                     {task.title}
                                 </h3>
 
@@ -108,22 +151,41 @@ const TaskMarket: React.FC = () => {
                                 <div className="pt-4 border-t border-slate-100 flex items-center justify-between mt-auto">
                                     <div className="flex items-center gap-3">
                                         <img src={task.publisherAvatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + task.publisherName} alt="" className="w-8 h-8 rounded-full bg-slate-100" />
-                                        <span className="text-sm font-medium text-slate-700 truncate max-w[100px]">{task.publisherName}</span>
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] text-slate-400 font-medium">发布者</span>
+                                            <span className="text-xs font-bold text-slate-700 truncate max-w-[100px]">{task.publisherName}</span>
+                                        </div>
                                     </div>
 
-                                    <button
-                                        onClick={() => task.assignMode === 'OPEN' ? handleClaim(task.id) : alert("竞标功能即将上线")}
-                                        className="flex items-center gap-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold transition-colors shadow-sm"
-                                    >
-                                        <span>{task.assignMode === 'OPEN' ? '立即领取' : '参与竞标'}</span>
-                                        <ChevronRight size={16} />
-                                    </button>
+                                    {activeStatus === 'OPEN' ? (
+                                        <button
+                                            onClick={() => task.assignMode === 'OPEN' ? handleClaim(task.id) : alert("竞标功能即将上线")}
+                                            className="flex items-center gap-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold transition-colors shadow-sm"
+                                        >
+                                            <span>{task.assignMode === 'OPEN' ? '立即领取' : '参与竞标'}</span>
+                                            <ChevronRight size={16} />
+                                        </button>
+                                    ) : (
+                                        <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg">
+                                            <div className="w-5 h-5 rounded-full bg-slate-300 flex items-center justify-center text-[10px] text-white">
+                                                {task.assigneeId ? 'L' : '?'}
+                                            </div>
+                                            <span className="text-xs font-bold text-slate-500">已领用</span>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}
                     </div>
                 )}
             </div>
+
+            <TaskDetailDrawer
+                taskId={selectedTaskId}
+                isOpen={isDetailOpen}
+                onClose={() => setIsDetailOpen(false)}
+                onClaimSuccess={fetchTasks}
+            />
         </div>
     );
 };
