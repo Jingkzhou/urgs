@@ -86,28 +86,8 @@ const BatchMonitoring: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50/30 text-slate-900 px-8 pb-8 pt-6 font-sans selection:bg-red-100 selection:text-red-900">
-            {/* Header */}
-            <div className="flex justify-between items-end mb-10">
-                <div className="relative">
-                    <div className="absolute -left-4 top-0 w-1 h-full bg-red-600 rounded-full" />
-                    <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">
-                        Batch <span className="text-red-600">Monitoring</span>
-                    </h1>
-                    <div className="flex items-center gap-2 mt-2">
-                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                        <span className="text-xs text-slate-400 font-bold uppercase tracking-widest">System Online</span>
-                    </div>
-                </div>
-                <div className="flex flex-col items-end">
-                    <div className="text-3xl font-black text-slate-800 tabular-nums tracking-tighter">
-                        {currentTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                    <div className="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mt-1 bg-slate-100 px-2 py-0.5 rounded">
-                        {currentTime.toLocaleDateString('zh-CN', { weekday: 'long', month: 'short', day: 'numeric' })}
-                    </div>
-                </div>
-            </div>
+        <div className="text-slate-900 font-sans selection:bg-red-100 selection:text-red-900">
+            {/* Header Removed to match Dashboard Section styling */}
 
             {/* KPI Grid (Bento Box Style) */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5 mb-6">

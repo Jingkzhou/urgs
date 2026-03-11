@@ -55,7 +55,7 @@ const App: React.FC = () => {
         avatarUrl?: string;
         system?: string;
     } | null>(initialUser);
-    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
     const [layoutMode, setLayoutMode] = useState<'sidebar' | 'topbar'>(() => {
         if (typeof window !== 'undefined') {
             const savedMode = localStorage.getItem('user_layout_preference');
@@ -272,7 +272,7 @@ const App: React.FC = () => {
 
                                         // Find active item index
                                         const activeIndex = allowedItems.findIndex(item => item.id === activeTab);
-                                        
+
                                         // Decide which items to show directly
                                         const MAX_VISIBLE = 4;
                                         let visibleItems = allowedItems.slice(0, MAX_VISIBLE);
@@ -282,9 +282,9 @@ const App: React.FC = () => {
                                         if (activeIndex >= MAX_VISIBLE) {
                                             const activeItem = allowedItems[activeIndex];
                                             const itemToHide = visibleItems[MAX_VISIBLE - 1];
-                                            
+
                                             visibleItems[MAX_VISIBLE - 1] = activeItem;
-                                            
+
                                             // Replace activeitem in hiddenItems with the itemToHide so it visually swaps instead of just pushing
                                             hiddenItems = hiddenItems.map(item => item.id === activeItem.id ? itemToHide : item);
                                         }
@@ -329,7 +329,7 @@ const App: React.FC = () => {
                                                                 transition={{ type: 'spring', stiffness: 200, damping: 20 }}
                                                             >
                                                                 <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                                    <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                                                    <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                                                                 </svg>
                                                             </motion.div>
                                                         </button>
@@ -422,27 +422,25 @@ const App: React.FC = () => {
                                                 <div className="flex items-center gap-1 bg-slate-100/50 p-1 rounded-xl">
                                                     <button
                                                         onClick={() => setLayoutMode('topbar')}
-                                                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${
-                                                            layoutMode === 'topbar' 
-                                                                ? 'bg-white text-red-600 shadow-sm border border-slate-100' 
+                                                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${layoutMode === 'topbar'
+                                                                ? 'bg-white text-red-600 shadow-sm border border-slate-100'
                                                                 : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
-                                                        }`}
+                                                            }`}
                                                     >
-                                                        <PanelTop size={14} strokeWidth={2.5}/> 顶部
+                                                        <PanelTop size={14} strokeWidth={2.5} /> 顶部
                                                     </button>
                                                     <button
                                                         onClick={() => setLayoutMode('sidebar')}
-                                                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${
-                                                            layoutMode === 'sidebar' 
-                                                                ? 'bg-white text-red-600 shadow-sm border border-slate-100' 
+                                                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${layoutMode === 'sidebar'
+                                                                ? 'bg-white text-red-600 shadow-sm border border-slate-100'
                                                                 : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
-                                                        }`}
+                                                            }`}
                                                     >
-                                                        <PanelLeft size={14} strokeWidth={2.5}/> 侧边
+                                                        <PanelLeft size={14} strokeWidth={2.5} /> 侧边
                                                     </button>
                                                 </div>
                                             </div>
-                                            
+
                                             <div className="h-px bg-slate-100/80 my-1 mx-2"></div>
 
                                             <button
@@ -524,16 +522,23 @@ interface NavItemProps {
 const NavItem: React.FC<NavItemProps> = ({ icon, label, active, isOpen, onClick }) => (
     <button
         onClick={onClick}
-        className={`
-        flex items-center gap-3 w-full p-3 rounded-md transition-all duration-200 font-medium
+        className={`group relative flex items-center gap-3 w-full p-3 rounded-md transition-all duration-200 font-medium
         ${active
                 ? 'bg-red-600 text-white shadow-md shadow-red-600/20'
                 : 'text-slate-600 hover:text-red-700 hover:bg-red-50'
             }
-        ${!isOpen && 'justify-center'}
+        ${!isOpen ? 'justify-center' : ''}
     `}>
         {icon}
         {isOpen && <span className="text-sm">{label}</span>}
+
+        {!isOpen && (
+            <div className="absolute left-full ml-3 px-2 py-1.5 bg-slate-800 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 whitespace-nowrap">
+                {label}
+                {/* Tooltip Arrow */}
+                <div className="absolute top-1/2 -left-1 -translate-y-1/2 w-2 h-2 bg-slate-800 rotate-45"></div>
+            </div>
+        )}
     </button>
 );
 
