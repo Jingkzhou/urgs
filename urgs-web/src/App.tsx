@@ -59,14 +59,20 @@ const App: React.FC = () => {
     const [layoutMode, setLayoutMode] = useState<'sidebar' | 'topbar'>('topbar');
     const [activeTab, setActiveTab] = useState('dashboard');
     const [showUserMenu, setShowUserMenu] = useState(false);
+    const [showMoreNavMenu, setShowMoreNavMenu] = useState(false);
     const [changePasswordVisible, setChangePasswordVisible] = useState(false);
 
     // Click outside handler for user menu
     const userMenuRef = React.useRef<HTMLDivElement>(null);
+    const moreMenuRef = React.useRef<HTMLDivElement>(null);
+
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (showUserMenu && userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
                 setShowUserMenu(false);
+            }
+            if (showMoreNavMenu && moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
+                setShowMoreNavMenu(false);
             }
         };
         // Use mousedown to capture the event before click (optional, but robust)
@@ -74,7 +80,7 @@ const App: React.FC = () => {
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [showUserMenu]);
+    }, [showUserMenu, showMoreNavMenu]);
 
     useEffect(() => {
         if (isAuthenticated) {
@@ -244,29 +250,107 @@ const App: React.FC = () => {
                                 </div>
 
                                 {/* Top Navigation Tabs - Dynamic Capsule Style */}
-                                <nav className="hidden lg:flex items-center bg-slate-100/50 p-1.5 rounded-[1.25rem] relative">
-                                    {NAV_ITEMS.filter(item => hasPermission(item.permission)).map((item) => {
-                                        const isActive = activeTab === item.id;
+                                <nav className="hidden lg:flex items-center bg-slate-100/50 p-1.5 rounded-[1.25rem] relative" ref={moreMenuRef}>
+                                    {(() => {
+                                        const allowedItems = NAV_ITEMS.filter(item => hasPermission(item.permission));
+                                        if (allowedItems.length === 0) return null;
+
+                                        // Find active item index
+                                        const activeIndex = allowedItems.findIndex(item => item.id === activeTab);
+                                        
+                                        // Decide which items to show directly
+                                        const MAX_VISIBLE = 4;
+                                        let visibleItems = allowedItems.slice(0, MAX_VISIBLE);
+                                        let hiddenItems = allowedItems.slice(MAX_VISIBLE);
+
+                                        // If active item is in hidden, swap it up to visible (replacing the last visible one)
+                                        if (activeIndex >= MAX_VISIBLE) {
+                                            const activeItem = allowedItems[activeIndex];
+                                            const itemToHide = visibleItems[MAX_VISIBLE - 1];
+                                            
+                                            visibleItems[MAX_VISIBLE - 1] = activeItem;
+                                            
+                                            // Replace activeitem in hiddenItems with the itemToHide so it visually swaps instead of just pushing
+                                            hiddenItems = hiddenItems.map(item => item.id === activeItem.id ? itemToHide : item);
+                                        }
+
                                         return (
-                                            <button
-                                                key={item.id}
-                                                onClick={() => setActiveTab(item.id)}
-                                                className={`relative flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300 z-10
-                                                    ${isActive ? 'text-red-600' : 'text-slate-500 hover:text-slate-800'}
-                                                `}
-                                            >
-                                                {isActive && (
-                                                    <motion.div
-                                                        layoutId="topNavTab"
-                                                        className="absolute inset-0 bg-white shadow-xl shadow-black/[0.03] rounded-xl z-[-1] border border-slate-100"
-                                                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                                                    />
+                                            <>
+                                                {visibleItems.map((item) => {
+                                                    const isActive = activeTab === item.id;
+                                                    return (
+                                                        <button
+                                                            key={item.id}
+                                                            onClick={() => setActiveTab(item.id)}
+                                                            className={`relative flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300 z-10
+                                                                ${isActive ? 'text-red-600' : 'text-slate-500 hover:text-slate-800'}
+                                                            `}
+                                                        >
+                                                            {isActive && (
+                                                                <motion.div
+                                                                    layoutId="topNavTab"
+                                                                    className="absolute inset-0 bg-white shadow-xl shadow-black/[0.03] rounded-xl z-[-1] border border-slate-100"
+                                                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                                                />
+                                                            )}
+                                                            <item.icon size={16} strokeWidth={isActive ? 3 : 2} />
+                                                            <span className="whitespace-nowrap">{item.label}</span>
+                                                        </button>
+                                                    );
+                                                })}
+
+                                                {/* More Dropdown */}
+                                                {hiddenItems.length > 0 && (
+                                                    <div className="relative z-20 ml-1">
+                                                        <button
+                                                            onClick={() => setShowMoreNavMenu(!showMoreNavMenu)}
+                                                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300
+                                                                ${showMoreNavMenu ? 'bg-white text-slate-800 shadow-sm border border-slate-100' : 'text-slate-500 hover:text-slate-800'}
+                                                            `}
+                                                        >
+                                                            <span>更多应用</span>
+                                                            <motion.div
+                                                                animate={{ rotate: showMoreNavMenu ? 180 : 0 }}
+                                                                transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+                                                            >
+                                                                <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                                    <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                                                </svg>
+                                                            </motion.div>
+                                                        </button>
+
+                                                        <AnimatePresence>
+                                                            {showMoreNavMenu && (
+                                                                <motion.div
+                                                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                                    transition={{ type: "spring", bounce: 0.3, duration: 0.5 }}
+                                                                    className="absolute right-0 top-full mt-3 w-56 bg-white/90 backdrop-blur-2xl rounded-[1.25rem] shadow-[0_20px_40px_-10px_rgba(0,0,0,0.1)] border border-white p-2 z-50 grid grid-cols-1 gap-1"
+                                                                >
+                                                                    {hiddenItems.map((item) => (
+                                                                        <button
+                                                                            key={item.id}
+                                                                            onClick={() => {
+                                                                                setActiveTab(item.id);
+                                                                                setShowMoreNavMenu(false);
+                                                                            }}
+                                                                            className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left transition-all hover:bg-slate-50 hover:text-red-600 group"
+                                                                        >
+                                                                            <div className="p-1.5 rounded-lg bg-slate-100/80 text-slate-500 group-hover:bg-red-100/50 group-hover:text-red-600 transition-colors">
+                                                                                <item.icon size={16} strokeWidth={2.5} />
+                                                                            </div>
+                                                                            <span className="text-[13px] font-bold text-slate-700 group-hover:text-red-600">{item.label}</span>
+                                                                        </button>
+                                                                    ))}
+                                                                </motion.div>
+                                                            )}
+                                                        </AnimatePresence>
+                                                    </div>
                                                 )}
-                                                <item.icon size={16} strokeWidth={isActive ? 3 : 2} />
-                                                <span className="whitespace-nowrap">{item.label}</span>
-                                            </button>
+                                            </>
                                         );
-                                    })}
+                                    })()}
                                 </nav>
                             </div>
                         )}
