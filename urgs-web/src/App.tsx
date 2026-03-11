@@ -21,11 +21,11 @@ import { LOGO_URL } from './constants';
 const NAV_ITEMS = [
     { id: 'dashboard', label: '工作台', icon: LayoutDashboard, permission: 'dashboard' },
     { id: 'ark', label: 'Ark (方舟)', icon: Sparkles, permission: 'ark' },
-    { id: 'announcement', label: '公告管理', icon: Megaphone, permission: 'announcement' },
-    { id: 'version', label: '版本管理', icon: GitBranch, permission: 'version' },
+    { id: 'announcement', label: '公告', icon: Megaphone, permission: 'announcement' },
+    { id: 'version', label: '版本', icon: GitBranch, permission: 'version' },
     { id: 'marketplace', label: '工作市场', icon: Award, permission: 'marketplace' },
-    { id: 'metadata', label: '数据管理', icon: Database, permission: 'metadata' },
-    { id: 'ops', label: '运维管理', icon: Activity, permission: 'ops' },
+    { id: 'metadata', label: '数据', icon: Database, permission: 'metadata' },
+    { id: 'ops', label: '运维', icon: Activity, permission: 'ops' },
     { id: 'knowledge', label: '知识中心', icon: Database, permission: 'knowledge' },
     { id: 'sys', label: '系统管理', icon: Settings, permission: 'sys' },
 ];
@@ -201,8 +201,8 @@ const App: React.FC = () => {
                     <button
                         onClick={() => { setLayoutMode('topbar'); setShowUserMenu(false); }}
                         className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${layoutMode === 'topbar'
-                                ? 'bg-white text-red-600 shadow-sm border border-slate-100'
-                                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+                            ? 'bg-white text-red-600 shadow-sm border border-slate-100'
+                            : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
                             }`}
                     >
                         <PanelTop size={14} strokeWidth={2.5} /> 顶部
@@ -210,8 +210,8 @@ const App: React.FC = () => {
                     <button
                         onClick={() => { setLayoutMode('sidebar'); setShowUserMenu(false); }}
                         className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${layoutMode === 'sidebar'
-                                ? 'bg-white text-red-600 shadow-sm border border-slate-100'
-                                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+                            ? 'bg-white text-red-600 shadow-sm border border-slate-100'
+                            : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
                             }`}
                     >
                         <PanelLeft size={14} strokeWidth={2.5} /> 侧边
@@ -251,32 +251,34 @@ const App: React.FC = () => {
 
     return (
         <div className={`flex h-screen bg-slate-50 ${layoutMode === 'topbar' ? 'flex-col' : 'flex-row'}`}>
-            {/* Sidebar Navigation - Only render in sidebar mode */}
             {layoutMode === 'sidebar' && (
                 <aside
-                    className={`${sidebarOpen ? 'w-64' : 'w-20'
-                        } bg-white border-r border-slate-200 text-slate-800 transition-all duration-300 flex flex-col shadow-sm z-20 shrink-0 relative`}
+                    className={`${sidebarOpen ? 'w-64' : 'w-24'
+                        } m-4 mr-0 rounded-[2.5rem] bg-white/70 backdrop-blur-3xl border border-white/40 text-slate-800 transition-all duration-500 flex flex-col shadow-[0_40px_100px_-20px_rgba(0,0,0,0.1)] z-20 shrink-0 relative`}
                 >
-                    <div className="h-20 flex items-center justify-between px-4 border-b border-slate-100 bg-white overflow-hidden shrink-0">
+                    <div className="h-24 flex items-center justify-between px-6 border-b border-slate-100/30 bg-white/10 overflow-hidden shrink-0">
                         {sidebarOpen && (
-                            <div className="flex flex-col items-center animate-fade-in pl-2">
-                                {/* Logo Image */}
-                                <img src={LOGO_URL} alt="Bank of Jilin" className="h-8 object-contain" />
-                            </div>
+                            <motion.div
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                className="flex flex-col items-center pl-1"
+                            >
+                                <img src={LOGO_URL} alt="Bank of Jilin" className="h-7 object-contain brightness-110" />
+                            </motion.div>
                         )}
                         <button
                             onClick={() => setSidebarOpen(!sidebarOpen)}
-                            className={`p-2.5 bg-slate-50 hover:bg-white rounded-xl text-slate-500 hover:text-red-600 transition-all shadow-sm border border-transparent hover:border-slate-100 flex-shrink-0 ${!sidebarOpen ? 'mx-auto' : ''}`}
+                            className={`p-3 bg-slate-100/50 hover:bg-white rounded-[1.25rem] text-slate-500 hover:text-red-600 transition-all border border-transparent hover:border-slate-200/50 flex-shrink-0 ${!sidebarOpen ? 'mx-auto' : ''}`}
                         >
-                            <Menu size={20} strokeWidth={2.5} />
+                            <Menu size={18} strokeWidth={2.5} />
                         </button>
                     </div>
 
-                    <nav className="flex-1 p-3 space-y-2 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                    <nav className="flex-1 p-3 pt-6 space-y-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                         {NAV_ITEMS.filter(item => hasPermission(item.permission)).map((item) => (
                             <NavItem
                                 key={item.id}
-                                icon={<item.icon size={20} />}
+                                icon={<item.icon size={19} />}
                                 label={item.label}
                                 active={activeTab === item.id}
                                 isOpen={sidebarOpen}
@@ -293,7 +295,7 @@ const App: React.FC = () => {
                                 <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white shadow-sm"></span>
                             </button>
                         </div>
-                        
+
                         {/* User Profile */}
                         <div className="relative" ref={userMenuRef}>
                             <button
@@ -323,12 +325,15 @@ const App: React.FC = () => {
                             <AnimatePresence>
                                 {showUserMenu && (
                                     <motion.div
-                                        initial={{ opacity: 0, x: -10, scale: 0.95 }}
-                                        animate={{ opacity: 1, x: 0, scale: 1 }}
-                                        exit={{ opacity: 0, x: -10, scale: 0.95 }}
-                                        className="absolute left-[calc(100%+10px)] bottom-0 w-60 bg-white/90 backdrop-blur-2xl rounded-[1.5rem] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] border border-white/60 p-2 z-[110]"
+                                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        className="absolute left-0 bottom-[calc(100%+15px)] w-60 bg-white/95 backdrop-blur-3xl rounded-[2rem] shadow-[0_40px_80px_-15px_rgba(0,0,0,0.2)] border border-white/60 p-2 z-[150]"
                                     >
-                                        {renderUserMenuContent()}
+                                        <div className="absolute inset-0 bg-gradient-to-br from-red-500/[0.02] to-transparent pointer-events-none rounded-[2rem]"></div>
+                                        <div className="relative z-10">
+                                            {renderUserMenuContent()}
+                                        </div>
                                     </motion.div>
                                 )}
                             </AnimatePresence>
@@ -342,173 +347,173 @@ const App: React.FC = () => {
 
                 {/* 1. Global Header - Premium Floating Glass (Topbar layout only) */}
                 {layoutMode === 'topbar' && (
-                <header className="bg-white/80 backdrop-blur-xl border-b border-slate-200/50 h-20 flex items-center justify-between px-8 z-[100] relative shrink-0">
-                    {/* Subtle bottom glow line */}
-                    <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-red-500/20 to-transparent"></div>
+                    <header className="bg-white/80 backdrop-blur-xl border-b border-slate-200/50 h-20 flex items-center justify-between px-8 z-[100] relative shrink-0">
+                        {/* Subtle bottom glow line */}
+                        <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-red-500/20 to-transparent"></div>
 
-                    <div className="flex items-center gap-10">
-                        {/* Logo & Platform Title */}
                         <div className="flex items-center gap-10">
-                            <div className="flex items-center gap-4 py-1 px-3 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner">
-                                <img src={LOGO_URL} alt="Bank Logo" className="h-8 w-auto object-contain" />
-                                <div className="h-6 w-px bg-slate-200"></div>
-                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest italic pr-1">ARK / PORTAL</span>
-                            </div>
+                            {/* Logo & Platform Title */}
+                            <div className="flex items-center gap-10">
+                                <div className="flex items-center gap-4 py-1 px-3 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner">
+                                    <img src={LOGO_URL} alt="Bank Logo" className="h-8 w-auto object-contain" />
+                                    <div className="h-6 w-px bg-slate-200"></div>
+                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest italic pr-1">ARK / PORTAL</span>
+                                </div>
 
-                            {/* Top Navigation Tabs - Dynamic Capsule Style */}
-                            <nav className="hidden lg:flex items-center bg-slate-100/50 p-1.5 rounded-[1.25rem] relative" ref={moreMenuRef}>
-                                {(() => {
-                                    const allowedItems = NAV_ITEMS.filter(item => hasPermission(item.permission));
-                                    if (allowedItems.length === 0) return null;
+                                {/* Top Navigation Tabs - Dynamic Capsule Style */}
+                                <nav className="hidden lg:flex items-center bg-slate-100/50 p-1.5 rounded-[1.25rem] relative" ref={moreMenuRef}>
+                                    {(() => {
+                                        const allowedItems = NAV_ITEMS.filter(item => hasPermission(item.permission));
+                                        if (allowedItems.length === 0) return null;
 
-                                    // Find active item index
-                                    const activeIndex = allowedItems.findIndex(item => item.id === activeTab);
+                                        // Find active item index
+                                        const activeIndex = allowedItems.findIndex(item => item.id === activeTab);
 
-                                    // Decide which items to show directly
-                                    const MAX_VISIBLE = 4;
-                                    let visibleItems = allowedItems.slice(0, MAX_VISIBLE);
-                                    let hiddenItems = allowedItems.slice(MAX_VISIBLE);
+                                        // Decide which items to show directly
+                                        const MAX_VISIBLE = 4;
+                                        let visibleItems = allowedItems.slice(0, MAX_VISIBLE);
+                                        let hiddenItems = allowedItems.slice(MAX_VISIBLE);
 
-                                    // If active item is in hidden, swap it up to visible (replacing the last visible one)
-                                    if (activeIndex >= MAX_VISIBLE) {
-                                        const activeItem = allowedItems[activeIndex];
-                                        const itemToHide = visibleItems[MAX_VISIBLE - 1];
+                                        // If active item is in hidden, swap it up to visible (replacing the last visible one)
+                                        if (activeIndex >= MAX_VISIBLE) {
+                                            const activeItem = allowedItems[activeIndex];
+                                            const itemToHide = visibleItems[MAX_VISIBLE - 1];
 
-                                        visibleItems[MAX_VISIBLE - 1] = activeItem;
+                                            visibleItems[MAX_VISIBLE - 1] = activeItem;
 
-                                        // Replace activeitem in hiddenItems with the itemToHide so it visually swaps instead of just pushing
-                                        hiddenItems = hiddenItems.map(item => item.id === activeItem.id ? itemToHide : item);
-                                    }
+                                            // Replace activeitem in hiddenItems with the itemToHide so it visually swaps instead of just pushing
+                                            hiddenItems = hiddenItems.map(item => item.id === activeItem.id ? itemToHide : item);
+                                        }
 
-                                    return (
-                                        <>
-                                            {visibleItems.map((item) => {
-                                                const isActive = activeTab === item.id;
-                                                return (
-                                                    <button
-                                                        key={item.id}
-                                                        onClick={() => setActiveTab(item.id)}
-                                                        className={`relative flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300 z-10
+                                        return (
+                                            <>
+                                                {visibleItems.map((item) => {
+                                                    const isActive = activeTab === item.id;
+                                                    return (
+                                                        <button
+                                                            key={item.id}
+                                                            onClick={() => setActiveTab(item.id)}
+                                                            className={`relative flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300 z-10
                                                             ${isActive ? 'text-red-600' : 'text-slate-500 hover:text-slate-800'}
                                                         `}
-                                                    >
-                                                        {isActive && (
-                                                            <motion.div
-                                                                layoutId="topNavTab"
-                                                                className="absolute inset-0 bg-white shadow-xl shadow-black/[0.03] rounded-xl z-[-1] border border-slate-100"
-                                                                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                                                            />
-                                                        )}
-                                                        <item.icon size={16} strokeWidth={isActive ? 3 : 2} />
-                                                        <span className="whitespace-nowrap">{item.label}</span>
-                                                    </button>
-                                                );
-                                            })}
+                                                        >
+                                                            {isActive && (
+                                                                <motion.div
+                                                                    layoutId="topNavTab"
+                                                                    className="absolute inset-0 bg-white shadow-xl shadow-black/[0.03] rounded-xl z-[-1] border border-slate-100"
+                                                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                                                />
+                                                            )}
+                                                            <item.icon size={16} strokeWidth={isActive ? 3 : 2} />
+                                                            <span className="whitespace-nowrap">{item.label}</span>
+                                                        </button>
+                                                    );
+                                                })}
 
-                                            {/* More Dropdown */}
-                                            {hiddenItems.length > 0 && (
-                                                <div className="relative z-20 ml-1">
-                                                    <button
-                                                        onClick={() => setShowMoreNavMenu(!showMoreNavMenu)}
-                                                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300
+                                                {/* More Dropdown */}
+                                                {hiddenItems.length > 0 && (
+                                                    <div className="relative z-20 ml-1">
+                                                        <button
+                                                            onClick={() => setShowMoreNavMenu(!showMoreNavMenu)}
+                                                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300
                                                             ${showMoreNavMenu ? 'bg-white text-slate-800 shadow-sm border border-slate-100' : 'text-slate-500 hover:text-slate-800'}
                                                         `}
-                                                    >
-                                                        <span>更多应用</span>
-                                                        <motion.div
-                                                            animate={{ rotate: showMoreNavMenu ? 180 : 0 }}
-                                                            transition={{ type: 'spring', stiffness: 200, damping: 20 }}
                                                         >
-                                                            <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                                <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                                            </svg>
-                                                        </motion.div>
-                                                    </button>
-
-                                                    <AnimatePresence>
-                                                        {showMoreNavMenu && (
+                                                            <span>更多应用</span>
                                                             <motion.div
-                                                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                                transition={{ type: "spring", bounce: 0.3, duration: 0.5 }}
-                                                                className="absolute right-0 top-full mt-3 w-56 bg-white/90 backdrop-blur-2xl rounded-[1.25rem] shadow-[0_20px_40px_-10px_rgba(0,0,0,0.1)] border border-white p-2 z-50 grid grid-cols-1 gap-1"
+                                                                animate={{ rotate: showMoreNavMenu ? 180 : 0 }}
+                                                                transition={{ type: 'spring', stiffness: 200, damping: 20 }}
                                                             >
-                                                                {hiddenItems.map((item) => (
-                                                                    <button
-                                                                        key={item.id}
-                                                                        onClick={() => {
-                                                                            setActiveTab(item.id);
-                                                                            setShowMoreNavMenu(false);
-                                                                        }}
-                                                                        className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left transition-all hover:bg-slate-50 hover:text-red-600 group"
-                                                                    >
-                                                                        <div className="p-1.5 rounded-lg bg-slate-100/80 text-slate-500 group-hover:bg-red-100/50 group-hover:text-red-600 transition-colors">
-                                                                            <item.icon size={16} strokeWidth={2.5} />
-                                                                        </div>
-                                                                        <span className="text-[13px] font-bold text-slate-700 group-hover:text-red-600">{item.label}</span>
-                                                                    </button>
-                                                                ))}
+                                                                <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                                    <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                                </svg>
                                                             </motion.div>
-                                                        )}
-                                                    </AnimatePresence>
-                                                </div>
-                                            )}
-                                        </>
-                                    );
-                                })()}
-                            </nav>
-                        </div>
-                    </div>
+                                                        </button>
 
-                    {/* Right Utilities Section */}
-                    <div className="flex items-center gap-6">
-
-                        <button className="p-3 relative bg-slate-50 hover:bg-white rounded-2xl text-slate-400 hover:text-red-500 transition-all border border-slate-100/50 shadow-sm group">
-                            <Bell size={20} strokeWidth={2.5} className="group-hover:rotate-12 transition-transform" />
-                            <span className="absolute top-2.5 right-2.5 w-3 h-3 bg-red-500 rounded-full border-[3px] border-white shadow-sm"></span>
-                        </button>
-
-                        <div className="flex items-center gap-5 pl-4 border-l border-slate-200/60">
-                            <div className="text-right hidden xl:block">
-                                <p className="text-[13px] font-black text-slate-800 tracking-tight leading-none mb-1">{userInfo?.name || '用户'}</p>
-                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.15em]">{userInfo?.roleName || 'System Admin'}</p>
+                                                        <AnimatePresence>
+                                                            {showMoreNavMenu && (
+                                                                <motion.div
+                                                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                                    transition={{ type: "spring", bounce: 0.3, duration: 0.5 }}
+                                                                    className="absolute right-0 top-full mt-3 w-56 bg-white/90 backdrop-blur-2xl rounded-[1.25rem] shadow-[0_20px_40px_-10px_rgba(0,0,0,0.1)] border border-white p-2 z-50 grid grid-cols-1 gap-1"
+                                                                >
+                                                                    {hiddenItems.map((item) => (
+                                                                        <button
+                                                                            key={item.id}
+                                                                            onClick={() => {
+                                                                                setActiveTab(item.id);
+                                                                                setShowMoreNavMenu(false);
+                                                                            }}
+                                                                            className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left transition-all hover:bg-slate-50 hover:text-red-600 group"
+                                                                        >
+                                                                            <div className="p-1.5 rounded-lg bg-slate-100/80 text-slate-500 group-hover:bg-red-100/50 group-hover:text-red-600 transition-colors">
+                                                                                <item.icon size={16} strokeWidth={2.5} />
+                                                                            </div>
+                                                                            <span className="text-[13px] font-bold text-slate-700 group-hover:text-red-600">{item.label}</span>
+                                                                        </button>
+                                                                    ))}
+                                                                </motion.div>
+                                                            )}
+                                                        </AnimatePresence>
+                                                    </div>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
+                                </nav>
                             </div>
+                        </div>
 
-                            <div className="relative" ref={userMenuRef}>
-                                <button
-                                    onClick={() => setShowUserMenu(!showUserMenu)}
-                                    className={`group relative w-12 h-12 rounded-[1.25rem] bg-slate-50 border transition-all duration-500 overflow-hidden flex items-center justify-center
+                        {/* Right Utilities Section */}
+                        <div className="flex items-center gap-6">
+
+                            <button className="p-3 relative bg-slate-50 hover:bg-white rounded-2xl text-slate-400 hover:text-red-500 transition-all border border-slate-100/50 shadow-sm group">
+                                <Bell size={20} strokeWidth={2.5} className="group-hover:rotate-12 transition-transform" />
+                                <span className="absolute top-2.5 right-2.5 w-3 h-3 bg-red-500 rounded-full border-[3px] border-white shadow-sm"></span>
+                            </button>
+
+                            <div className="flex items-center gap-5 pl-4 border-l border-slate-200/60">
+                                <div className="text-right hidden xl:block">
+                                    <p className="text-[13px] font-black text-slate-800 tracking-tight leading-none mb-1">{userInfo?.name || '用户'}</p>
+                                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.15em]">{userInfo?.roleName || 'System Admin'}</p>
+                                </div>
+
+                                <div className="relative" ref={userMenuRef}>
+                                    <button
+                                        onClick={() => setShowUserMenu(!showUserMenu)}
+                                        className={`group relative w-12 h-12 rounded-[1.25rem] bg-slate-50 border transition-all duration-500 overflow-hidden flex items-center justify-center
                                         ${showUserMenu ? 'border-red-400 shadow-lg shadow-red-500/10' : 'border-slate-100 hover:border-red-200 hover:shadow-md'}
                                     `}
-                                >
-                                    {userInfo?.avatarUrl ? (
-                                        <img src={userInfo.avatarUrl} alt="Avatar" className="w-full h-full object-cover grayscale-[0.5] group-hover:grayscale-0 transition-all duration-700" />
-                                    ) : (
-                                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-50 text-slate-400">
-                                            <UserCircle size={28} strokeWidth={1.5} />
-                                        </div>
-                                    )}
-                                    {/* Small indicator on avatar */}
-                                    <div className="absolute bottom-1 right-1 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white"></div>
-                                </button>
+                                    >
+                                        {userInfo?.avatarUrl ? (
+                                            <img src={userInfo.avatarUrl} alt="Avatar" className="w-full h-full object-cover grayscale-[0.5] group-hover:grayscale-0 transition-all duration-700" />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-50 text-slate-400">
+                                                <UserCircle size={28} strokeWidth={1.5} />
+                                            </div>
+                                        )}
+                                        {/* Small indicator on avatar */}
+                                        <div className="absolute bottom-1 right-1 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white"></div>
+                                    </button>
 
-                                <AnimatePresence>
-                                    {showUserMenu && (
-                                        <motion.div
-                                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                                            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                            className="absolute right-0 top-full mt-4 w-60 bg-white/90 backdrop-blur-2xl rounded-[1.5rem] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] border border-white/60 p-2 z-[110] overflow-hidden"
-                                        >
-                                            {renderUserMenuContent()}
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
+                                    <AnimatePresence>
+                                        {showUserMenu && (
+                                            <motion.div
+                                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                className="absolute right-0 top-full mt-4 w-60 bg-white/90 backdrop-blur-2xl rounded-[1.5rem] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] border border-white/60 p-2 z-[110] overflow-hidden"
+                                            >
+                                                {renderUserMenuContent()}
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </header>
+                    </header>
                 )}
 
                 {/* Scrollable Content Area */}
@@ -557,21 +562,31 @@ interface NavItemProps {
 const NavItem: React.FC<NavItemProps> = ({ icon, label, active, isOpen, onClick }) => (
     <button
         onClick={onClick}
-        className={`group relative flex items-center gap-3 w-full p-3 rounded-md transition-all duration-200 font-medium
-        ${active
-                ? 'bg-red-600 text-white shadow-md shadow-red-600/20'
-                : 'text-slate-600 hover:text-red-700 hover:bg-red-50'
-            }
+        className={`group relative flex items-center gap-3.5 w-full p-3.5 rounded-2xl transition-all duration-300
+        ${active ? 'text-red-600' : 'text-slate-500 hover:text-slate-900'}
         ${!isOpen ? 'justify-center' : ''}
     `}>
-        {icon}
-        {isOpen && <span className="text-sm">{label}</span>}
+        {active && (
+            <motion.div
+                layoutId="sidebarActivePill"
+                className="absolute inset-x-2 inset-y-1 bg-white border border-red-100 shadow-sm rounded-2xl z-[-1]"
+                transition={{ type: "spring", bounce: 0.25, duration: 0.5 }}
+            />
+        )}
+
+        <div className={`transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>
+            {icon}
+        </div>
+
+        {isOpen && (
+            <span className={`text-[11px] font-black tracking-[0.15em] uppercase transition-all duration-300 ${active ? 'opacity-100' : 'opacity-70 group-hover:opacity-100'}`}>
+                {label}
+            </span>
+        )}
 
         {!isOpen && (
-            <div className="absolute left-full ml-3 px-2 py-1.5 bg-slate-800 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 whitespace-nowrap">
+            <div className="absolute left-[calc(100%+15px)] px-3 py-2 bg-slate-900/90 backdrop-blur-md text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50 whitespace-nowrap border border-white/10">
                 {label}
-                {/* Tooltip Arrow */}
-                <div className="absolute top-1/2 -left-1 -translate-y-1/2 w-2 h-2 bg-slate-800 rotate-45"></div>
             </div>
         )}
     </button>

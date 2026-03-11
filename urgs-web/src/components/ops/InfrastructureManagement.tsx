@@ -606,7 +606,7 @@ const InfrastructureManagement: React.FC = () => {
             <Drawer
                 title={null}
                 placement="right"
-                width={520}
+                size="large"
                 open={detailVisible}
                 onClose={() => setDetailVisible(false)}
                 closable={false}

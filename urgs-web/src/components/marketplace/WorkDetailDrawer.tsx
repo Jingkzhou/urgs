@@ -71,7 +71,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             placement="right"
             onClose={onClose}
             open={isOpen}
-            width={700}
+            size="large"
         >
             {loading ? (
                 <div className="flex justify-center items-center h-64">

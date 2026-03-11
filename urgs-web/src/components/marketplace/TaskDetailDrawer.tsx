@@ -59,7 +59,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
             placement="right"
             onClose={onClose}
             open={isOpen}
-            width={600}
+            size="large"
             extra={
                 <Space>
                     <Button onClick={onClose}>关闭</Button>

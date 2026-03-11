@@ -25,7 +25,7 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '1-5-2', name: '错误日志', code: 'dash:dev:logs', type: 'button', path: '-', level: 2, parentId: '1-5' },
     { id: '1-5-3', name: 'API状态', code: 'dash:dev:api', type: 'button', path: '-', level: 2, parentId: '1-5' },
     { id: '7', name: 'Ark (方舟)', code: 'ark', type: 'menu', path: '/ark', level: 0, parentId: 'root' },
-    { id: '2', name: '公告管理', code: 'announcement', type: 'menu', path: '/announcement', level: 0, parentId: 'root' },
+    { id: '2', name: '公告', code: 'announcement', type: 'menu', path: '/announcement', level: 0, parentId: 'root' },
     { id: '2-1', name: '公告列表', code: 'announcement:list', type: 'menu', path: '/announcement/list', level: 1, parentId: '2' },
     { id: '2-1-1', name: '发布公告', code: 'announcement:publish', type: 'button', path: '/announcement/publish', level: 2, parentId: '2-1' },
     { id: '2-1-2', name: '编辑公告', code: 'announcement:edit', type: 'button', path: '/announcement/edit', level: 2, parentId: '2-1' },
