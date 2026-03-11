@@ -23,7 +23,7 @@ const NAV_ITEMS = [
     { id: 'ark', label: 'Ark (方舟)', icon: Sparkles, permission: 'ark' },
     { id: 'announcement', label: '公告管理', icon: Megaphone, permission: 'announcement' },
     { id: 'version', label: '版本管理', icon: GitBranch, permission: 'version' },
-    { id: 'marketplace', label: '工作市场', icon: Award, permission: 'dashboard' }, // Added Marketplace using dashboard perm for now
+    { id: 'marketplace', label: '工作市场', icon: Award, permission: 'marketplace' },
     { id: 'metadata', label: '数据管理', icon: Database, permission: 'metadata' },
     { id: 'ops', label: '运维管理', icon: Activity, permission: 'ops' },
     { id: 'knowledge', label: '知识中心', icon: Database, permission: 'knowledge' },
