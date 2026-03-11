@@ -1,43 +1,54 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  AreaChart, Area
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+  AreaChart,
+  Area
 } from 'recharts';
-import { BarChart as BarChartIcon, TrendingUp, RefreshCw } from 'lucide-react';
-import { TREND_STATS } from '../../constants';
+import {
+  RefreshCw,
+  TrendingUp,
+  Activity,
+  Zap,
+  Box
+} from 'lucide-react';
+import { TaskStatsVO } from '../../api/stats';
 
-import { fetchBatchStatusStats, TaskStatsVO } from '../../api/stats';
+interface ChartProps {
+  loading?: boolean;
+}
 
-const StatsSection: React.FC = () => {
-  const [batchStats, setBatchStats] = useState<TaskStatsVO[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const fetchStats = async () => {
-    setLoading(true);
-    try {
-      const data = await fetchBatchStatusStats();
-      setBatchStats(data);
-    } catch (err) {
-      console.error('Failed to fetch batch stats', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchStats();
-  }, []);
+// ----------------------------------------------------------------------
+// 1. BatchStatusChart - Glassmorphism Capsule Design
+// ----------------------------------------------------------------------
+export const BatchStatusChart: React.FC<ChartProps & { data: TaskStatsVO[], onRefresh: () => void }> = ({ data, loading, onRefresh }) => {
+  const chartData = useMemo(() => {
+    if (!data || data.length === 0) return [];
+    // Show top 6 systems to maintain clean look
+    return data.slice(0, 6).map(item => ({
+      name: item.systemName || '未知系统',
+      completed: item.totalCompleted || 0,
+      running: item.totalInProgress || 0,
+      failed: item.totalFailed || 0,
+    }));
+  }, [data]);
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-white/80 backdrop-blur-md border border-slate-200/50 p-3 rounded-xl shadow-xl">
-          <p className="text-xs font-black text-slate-800 mb-2 border-b border-slate-100 pb-1">{label}</p>
+        <div className="bg-white/95 backdrop-blur-xl border border-slate-200 p-3 rounded-2xl shadow-2xl ring-1 ring-black/5">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 border-b border-slate-100 pb-1.5">{label}</p>
           {payload.map((entry: any, index: number) => (
-            <div key={index} className="flex items-center gap-2 mt-1">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color || entry.fill }} />
-              <span className="text-[11px] text-slate-500 font-medium">{entry.name}:</span>
-              <span className="text-[11px] font-bold text-slate-900 ml-auto">{entry.value}</span>
+            <div key={index} className="flex items-center gap-2.5 mt-1">
+              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: entry.fill }} />
+              <span className="text-[10px] text-slate-500 font-bold">{entry.name}:</span>
+              <span className="text-xs font-black text-slate-900 ml-auto">{entry.value}</span>
             </div>
           ))}
         </div>
@@ -47,159 +58,172 @@ const StatsSection: React.FC = () => {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Chart 1: Batch Completion Status */}
-      <div className="relative bg-white/70 backdrop-blur-md p-6 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 flex flex-col h-[400px] overflow-hidden group">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-transparent opacity-60" />
+    <div className="relative bg-white/70 backdrop-blur-md rounded-[2.5rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.08)] border border-slate-200/50 flex flex-col h-[320px] overflow-hidden group w-full transition-all duration-700 hover:shadow-[0_45px_90px_-20px_rgba(0,0,0,0.12)]">
+      {/* Decorative Gradient Background */}
+      <div className="absolute top-0 right-0 w-64 h-64 bg-red-500/5 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="flex items-center justify-between mb-8">
-          <h2 className="text-lg font-black text-slate-800 flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-br from-red-50 to-red-100/50 rounded-xl border border-red-100 shadow-sm transition-all duration-500 group-hover:scale-110 group-hover:rotate-6">
-              <BarChartIcon className="w-4 h-4 text-red-600" />
+      {/* Header */}
+      <div className="flex items-center justify-between p-7 relative z-10">
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <div className="absolute -inset-1 bg-gradient-to-r from-red-500/20 to-amber-500/20 rounded-2xl blur opacity-30 group-hover:opacity-60 transition duration-1000"></div>
+            <div className="relative p-2.5 bg-white rounded-2xl border border-slate-100 shadow-sm">
+              <Activity className="w-4 h-4 text-red-500" />
             </div>
-            <div className="flex flex-col">
-              <span className="tracking-tight">批量完成情况统计</span>
-              <span className="text-[10px] text-slate-400 font-medium uppercase tracking-widest mt-0.5">Batch Status</span>
-            </div>
-          </h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={fetchStats}
-              className="p-2 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all duration-300 text-slate-400 border border-transparent hover:border-red-100"
-              title="刷新数据"
-            >
-              <RefreshCw size={14} className={`${loading ? 'animate-spin' : ''}`} />
-            </button>
-            <select className="text-[11px] font-bold border-slate-100 bg-slate-50/50 rounded-lg text-slate-600 focus:ring-red-500/20 focus:border-red-500 py-1 pl-2 pr-8 transition-all hover:bg-white cursor-pointer shadow-sm">
-              <option>本周 (This Week)</option>
-              <option>本月 (This Month)</option>
-            </select>
+          </div>
+          <div>
+            <h2 className="text-base font-black text-slate-800 tracking-tight leading-none">实时任务态势</h2>
+            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.3em] mt-1.5 flex items-center gap-1.5">
+              <Zap className="w-2.5 h-2.5 text-amber-500 animate-pulse" />
+              Pulse Monitor
+            </p>
           </div>
         </div>
 
-        <div className="flex-1 w-full min-h-[260px]">
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart
-              data={batchStats}
-              margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-              barGap={8}
-            >
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis
-                dataKey="systemName"
-                tick={{ fontSize: 11, fill: '#94a3b8', fontWeight: 600 }}
-                axisLine={false}
-                tickLine={false}
-                dy={10}
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: '#94a3b8', fontWeight: 600 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(241, 15, 15, 0.03)', radius: 8 }} />
-              <Legend
-                verticalAlign="top"
-                align="right"
-                iconType="circle"
-                iconSize={8}
-                wrapperStyle={{ paddingBottom: '20px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}
-              />
-              <Bar dataKey="totalCompleted" name="已完成" stackId="a" fill="#e11d48" radius={[0, 0, 0, 0]} barSize={24} />
-              <Bar dataKey="totalInProgress" name="进行中" stackId="a" fill="#f59e0b" barSize={24} />
-              <Bar dataKey="totalNotStarted" name="未开始" stackId="a" fill="#f1f5f9" radius={[6, 6, 0, 0]} barSize={24} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <button
+          onClick={onRefresh}
+          disabled={loading}
+          className="group/btn relative p-2.5 bg-slate-100/50 hover:bg-slate-200/50 rounded-2xl border border-slate-200/50 transition-all duration-300 disabled:opacity-50"
+        >
+          <RefreshCw size={14} className={`text-slate-500 group-hover/btn:text-slate-800 ${loading ? 'animate-spin' : ''}`} />
+        </button>
       </div>
 
-      {/* Chart 2: Indicator Trends */}
-      <div className="relative bg-white/70 backdrop-blur-md p-6 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 flex flex-col h-[400px] overflow-hidden group">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-transparent opacity-60" />
-
-        <div className="flex items-center justify-between mb-8">
-          <h2 className="text-lg font-black text-slate-800 flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-br from-amber-50 to-amber-100/50 rounded-xl border border-amber-100 shadow-sm transition-all duration-500 group-hover:scale-110 group-hover:rotate-6">
-              <TrendingUp className="w-4 h-4 text-amber-600" />
-            </div>
-            <div className="flex flex-col">
-              <span className="tracking-tight">指标趋势</span>
-              <span className="text-[10px] text-slate-400 font-medium uppercase tracking-widest mt-0.5">Trend Indicators</span>
-            </div>
-          </h2>
-          <div className="flex gap-2">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-xl font-black text-[10px] border border-emerald-100 shadow-sm">
-              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
-              合规率 +2.4%
-            </div>
+      {/* Chart Canvas */}
+      <div className="flex-1 w-full px-6 pb-6 relative z-10 min-h-[180px]">
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            <RefreshCw className="w-8 h-8 text-slate-200 animate-spin" />
           </div>
-        </div>
-
-        <div className="flex-1 w-full min-h-[260px]">
-          <ResponsiveContainer width="100%" height={260}>
-            <AreaChart
-              data={TREND_STATS}
-              margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-            >
-              <defs>
-                <linearGradient id="colorCompliance" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#e11d48" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#e11d48" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="colorRisk" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-                </linearGradient>
-              </defs>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.03)" vertical={false} />
               <XAxis
-                dataKey="month"
-                tick={{ fontSize: 11, fill: '#94a3b8', fontWeight: 600 }}
+                dataKey="name"
                 axisLine={false}
                 tickLine={false}
+                tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 700 }}
                 dy={10}
               />
-              <YAxis
-                tick={{ fontSize: 11, fill: '#94a3b8', fontWeight: 600 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend
-                verticalAlign="top"
-                align="right"
-                iconType="circle"
-                iconSize={8}
-                wrapperStyle={{ paddingBottom: '20px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}
-              />
-              <Area
-                type="monotone"
-                dataKey="complianceRate"
-                name="合规率"
-                stroke="#e11d48"
-                fillOpacity={1}
-                fill="url(#colorCompliance)"
-                strokeWidth={3}
-                dot={{ fill: '#e11d48', strokeWidth: 2, r: 4, fillOpacity: 1 }}
-                activeDot={{ r: 6, strokeWidth: 0 }}
-              />
-              <Area
-                type="monotone"
-                dataKey="riskScore"
-                name="风险指数"
-                stroke="#f59e0b"
-                fillOpacity={1}
-                fill="url(#colorRisk)"
-                strokeWidth={3}
-                dot={{ fill: '#f59e0b', strokeWidth: 2, r: 4, fillOpacity: 1 }}
-                activeDot={{ r: 6, strokeWidth: 0 }}
-              />
-            </AreaChart>
+              <YAxis hide />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
+              <Bar dataKey="completed" name="已完成" stackId="a" fill="#10b981" barSize={18} radius={[0, 0, 0, 0]} />
+              <Bar dataKey="running" name="运行中" stackId="a" fill="#3b82f6" barSize={18} radius={[0, 0, 0, 0]} />
+              <Bar dataKey="failed" name="已失败" stackId="a" fill="#ef4444" barSize={18} radius={[8, 8, 0, 0]} />
+            </BarChart>
           </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* Decorative Bottom Accents */}
+      <div className="absolute bottom-4 left-7 flex items-center gap-6 opacity-30 group-hover:opacity-60 transition-opacity">
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+          <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest">Global Sync</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 bg-red-500 rounded-full" />
+          <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest">Active Thread</span>
         </div>
       </div>
     </div>
   );
 };
 
-export default StatsSection;
+// ----------------------------------------------------------------------
+// 2. TrendAnalysisChart - Neon Waveglow Design
+// ----------------------------------------------------------------------
+export const TrendAnalysisChart: React.FC = () => {
+  const trendData = [
+    { name: '00:00', value: 320, load: 45 },
+    { name: '04:00', value: 280, load: 38 },
+    { name: '08:00', value: 650, load: 72 },
+    { name: '12:00', value: 890, load: 88 },
+    { name: '16:00', value: 720, load: 65 },
+    { name: '20:00', value: 540, load: 52 },
+    { name: '24:00', value: 410, load: 42 }
+  ];
+
+  return (
+    <div className="relative bg-white border border-slate-100 rounded-[2.5rem] shadow-[0_20px_40px_rgba(0,0,0,0.03)] flex flex-col h-[400px] overflow-hidden group transition-all duration-700 hover:shadow-[0_40px_80px_rgba(0,0,0,0.06)]">
+      {/* Clean Gradient Backdrop */}
+      <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-slate-50 to-transparent opacity-50 pointer-events-none" />
+
+      {/* Header */}
+      <div className="flex items-center justify-between p-8 relative z-10">
+        <div className="flex items-center gap-5">
+          <div className="p-3 bg-slate-900 rounded-2xl shadow-xl shadow-slate-900/20">
+            <TrendingUp className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h2 className="text-xl font-black text-slate-900 tracking-tight leading-none">指标走势</h2>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-2 flex items-center gap-1.5">
+              <Box className="w-3 h-3 text-red-500" />
+              Global Trend Metrics
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-6">
+          <div className="flex flex-col items-end">
+            <span className="text-2xl font-black text-slate-900 leading-none">2.4k</span>
+            <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest mt-1">+12.5% VOL</span>
+          </div>
+          <div className="w-px h-10 bg-slate-100" />
+          <div className="px-5 py-2.5 bg-slate-50 border border-slate-100 rounded-xl">
+            <span className="text-xs font-black text-slate-900 flex items-center gap-2">
+              <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
+              REAL-TIME
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Chart Canvas */}
+      <div className="flex-1 w-full px-4 pb-4">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={trendData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#ef4444" stopOpacity={0.15} />
+                <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+            <XAxis
+              dataKey="name"
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
+              dy={15}
+            />
+            <YAxis
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
+            />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                borderRadius: '20px',
+                border: 'none',
+                color: '#fff',
+                boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)'
+              }}
+            />
+            <Area
+              type="monotone"
+              dataKey="value"
+              stroke="#ef4444"
+              strokeWidth={4}
+              fillOpacity={1}
+              fill="url(#colorValue)"
+              animationDuration={2500}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};

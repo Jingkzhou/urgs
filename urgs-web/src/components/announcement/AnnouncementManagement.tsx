@@ -82,7 +82,7 @@ const AnnouncementManagement: React.FC = () => {
                     </div>
                     <h3 className="text-xl font-bold text-slate-700 mb-2">暂无访问权限</h3>
                     <p className="text-slate-400 leading-relaxed">
-                        您当前没有查看公告管理的权限。<br />
+                        您当前没有查看公告的权限。<br />
                         如需访问，请联系管理员为您添加以下权限：<br />
                         <code className="text-xs bg-slate-100 px-2 py-1 rounded mt-2 inline-block text-slate-500 font-mono">announcement:list</code>
                     </p>
@@ -111,7 +111,7 @@ const AnnouncementManagement: React.FC = () => {
                         </span>
                     </motion.div>
                     <h1 className="text-4xl font-black text-slate-800 tracking-tight">
-                        公告管理
+                        公告
                         <span className="text-violet-500 ml-1">.</span>
                     </h1>
                     <p className="text-slate-500 font-medium max-w-xl text-lg">
@@ -159,8 +159,8 @@ const AnnouncementManagement: React.FC = () => {
                                 <button
                                     onClick={() => handleTabChange(tab.key)}
                                     className={`relative px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2 z-10 select-none ${activeTab === tab.key
-                                            ? 'text-violet-700'
-                                            : 'text-slate-500 hover:text-slate-700'
+                                        ? 'text-violet-700'
+                                        : 'text-slate-500 hover:text-slate-700'
                                         }`}
                                 >
                                     {activeTab === tab.key && (
