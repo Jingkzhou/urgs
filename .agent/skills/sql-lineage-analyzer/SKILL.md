@@ -1,6 +1,6 @@
 ---
 name: sql-lineage-analyzer
-description: 双引擎 SQL 血缘解析工具（GSP + sqlglot），支持 MySQL、Oracle、Hive、GBase、SparkSQL 等多方言。提供表级和字段级血缘分析、存储过程解析、CTE 递归展开、增量变更比对、影响范围评估、Mermaid 可视化。当用户需要解析 SQL 血缘关系、分析数据流向、进行变更影响分析、生成血缘可视化图时使用。适用于数据治理、数据质量管理、ETL 文档生成等场景。
+description: 双引擎 SQL 血缘解析工具（GSP + sqlglot），支持多方言解析。提供表级和字段级血缘分析、存储过程解析、增量比对及影响范围评估。当需要进行数据治理、数据血缘可视化、数据质量管理、ETL 文档生成或变更影响分析时使用。
 ---
 
 # SQL 血缘解析器
