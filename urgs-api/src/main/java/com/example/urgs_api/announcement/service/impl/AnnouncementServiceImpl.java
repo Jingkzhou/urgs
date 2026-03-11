@@ -11,6 +11,7 @@ import com.example.urgs_api.announcement.mapper.AnnouncementCommentMapper;
 import com.example.urgs_api.announcement.model.AnnouncementComment;
 import com.example.urgs_api.announcement.model.AnnouncementRead;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import org.springframework.beans.factory.annotation.Autowired;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -35,17 +36,13 @@ public class AnnouncementServiceImpl extends ServiceImpl<AnnouncementMapper, Ann
 
         @Override
         public void markAsRead(String announcementId, String userId) {
-                long count = readMapper.selectCount(new QueryWrapper<AnnouncementRead>()
-                                .eq("announcement_id", announcementId)
-                                .eq("user_id", userId));
-
-                if (count == 0) {
-                        AnnouncementRead read = new AnnouncementRead();
-                        read.setAnnouncementId(announcementId);
-                        read.setUserId(userId);
-                        read.setReadTime(LocalDateTime.now());
-                        readMapper.insert(read);
-                }
+                // 使用 INSERT IGNORE 实现原子性幂等操作，解决并发下的唯一键冲突 ( uk_announcement_user )
+                AnnouncementRead read = new AnnouncementRead();
+                read.setId(IdWorker.getIdStr());
+                read.setAnnouncementId(announcementId);
+                read.setUserId(userId);
+                read.setReadTime(LocalDateTime.now());
+                readMapper.insertIgnore(read);
         }
 
         @Autowired

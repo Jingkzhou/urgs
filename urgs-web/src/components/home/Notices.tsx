@@ -178,7 +178,7 @@ const Notices: React.FC = () => {
                     
                     {/* Content Preview */}
                     <p className={`text-[11px] line-clamp-1 mb-1 leading-relaxed transition-colors ${notice.hasRead ? 'text-slate-400' : 'text-slate-500 opacity-80'}`}>
-                      {notice.content || '暂无详细内容'}
+                      {notice.content ? notice.content.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ') : '暂无详细内容'}
                     </p>
 
                     <div className="flex items-center justify-between">

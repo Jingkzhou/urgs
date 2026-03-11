@@ -289,9 +289,27 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit }) => {
                                     </div>
 
                                     <div className="mb-6">
-                                        <h3 className="text-lg font-bold text-slate-800 line-clamp-2 leading-tight group-hover:text-violet-600 transition-colors mb-3">
+                                        <h3 className="text-lg font-bold text-slate-800 line-clamp-2 leading-tight group-hover:text-violet-600 transition-colors mb-2">
                                             {notice.title}
                                         </h3>
+                                        
+                                        {/* Systems Tags */}
+                                        <div className="flex flex-wrap gap-1.5 mb-3">
+                                            {(() => {
+                                                try {
+                                                    const sys = typeof notice.systems === 'string' ? JSON.parse(notice.systems) : notice.systems;
+                                                    if (Array.isArray(sys) && sys.length > 0) {
+                                                        return sys.map(s => (
+                                                            <span key={s} className="px-2 py-0.5 bg-slate-50 text-slate-400 rounded-lg text-[10px] font-bold border border-slate-100">
+                                                                {s}
+                                                            </span>
+                                                        ));
+                                                    }
+                                                } catch (e) { }
+                                                return <span className="text-[10px] text-slate-300 font-medium italic">全系统可见</span>;
+                                            })()}
+                                        </div>
+
                                         <p className="text-slate-500 text-sm line-clamp-2 leading-relaxed opacity-80">
                                             {notice.summary || '暂无摘要，点击查看详情...'}
                                         </p>
@@ -382,13 +400,30 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit }) => {
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    <div className="flex items-center gap-3">
-                                                        {!notice.hasRead && (
-                                                            <div className="w-2 h-2 rounded-full bg-red-500 shadow-sm shrink-0" />
-                                                        )}
-                                                        <span className="font-bold text-slate-700 group-hover:text-violet-600 transition-colors truncate max-w-md text-sm">
-                                                            {notice.title}
-                                                        </span>
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <div className="flex items-center gap-3">
+                                                            {!notice.hasRead && (
+                                                                <div className="w-2 h-2 rounded-full bg-red-500 shadow-sm shrink-0" />
+                                                            )}
+                                                            <span className="font-bold text-slate-700 group-hover:text-violet-600 transition-colors truncate max-w-sm text-sm">
+                                                                {notice.title}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-1 ml-5">
+                                                            {(() => {
+                                                                try {
+                                                                    const sys = typeof notice.systems === 'string' ? JSON.parse(notice.systems) : notice.systems;
+                                                                    if (Array.isArray(sys) && sys.length > 0) {
+                                                                        return sys.map(s => (
+                                                                            <span key={s} className="px-1.5 py-0.5 bg-slate-50 text-slate-400 rounded text-[9px] font-bold border border-slate-100">
+                                                                                {s}
+                                                                            </span>
+                                                                        ));
+                                                                    }
+                                                                } catch (e) { }
+                                                                return <span className="text-[9px] text-slate-300 italic">全系统</span>;
+                                                            })()}
+                                                        </div>
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4">

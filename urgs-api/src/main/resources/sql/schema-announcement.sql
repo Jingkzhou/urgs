@@ -8,5 +8,6 @@ CREATE TABLE IF NOT EXISTS sys_announcement (
     systems TEXT,
     status INT DEFAULT 0 COMMENT '0:Draft, 1:Published',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     create_by VARCHAR(50)
 ) COMMENT='Announcements and Notices';
