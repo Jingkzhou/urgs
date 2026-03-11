@@ -56,7 +56,15 @@ const App: React.FC = () => {
         system?: string;
     } | null>(initialUser);
     const [sidebarOpen, setSidebarOpen] = useState(true);
-    const [layoutMode, setLayoutMode] = useState<'sidebar' | 'topbar'>('topbar');
+    const [layoutMode, setLayoutMode] = useState<'sidebar' | 'topbar'>(() => {
+        if (typeof window !== 'undefined') {
+            const savedMode = localStorage.getItem('user_layout_preference');
+            if (savedMode === 'sidebar' || savedMode === 'topbar') {
+                return savedMode;
+            }
+        }
+        return 'topbar';
+    });
     const [activeTab, setActiveTab] = useState('dashboard');
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [showMoreNavMenu, setShowMoreNavMenu] = useState(false);
@@ -87,6 +95,13 @@ const App: React.FC = () => {
             setShowUserMenu(false);
         }
     }, [isAuthenticated]);
+
+    // Save layout mode preference
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('user_layout_preference', layoutMode);
+        }
+    }, [layoutMode]);
 
     useEffect(() => {
         if (initialToken) {
@@ -358,24 +373,6 @@ const App: React.FC = () => {
 
                     {/* Right Utilities Section */}
                     <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-2 bg-slate-50/50 p-1 rounded-2xl border border-slate-100/50 shadow-inner">
-                            <button
-                                onClick={() => setLayoutMode(prev => prev === 'sidebar' ? 'topbar' : 'sidebar')}
-                                className={`p-2.5 rounded-xl transition-all duration-300 ${layoutMode === 'topbar' ? 'bg-white shadow-sm text-red-600' : 'text-slate-400 hover:text-slate-600'}`}
-                                title="顶部模式"
-                            >
-                                <PanelTop size={18} strokeWidth={2.5} />
-                            </button>
-                            <button
-                                onClick={() => setLayoutMode(prev => prev === 'sidebar' ? 'topbar' : 'sidebar')}
-                                className={`p-2.5 rounded-xl transition-all duration-300 ${layoutMode === 'sidebar' ? 'bg-white shadow-sm text-red-600' : 'text-slate-400 hover:text-slate-600'}`}
-                                title="侧边模式"
-                            >
-                                <PanelLeft size={18} strokeWidth={2.5} />
-                            </button>
-                        </div>
-
-                        <div className="h-8 w-px bg-slate-200/60 mx-1"></div>
 
                         <button className="p-3 relative bg-slate-50 hover:bg-white rounded-2xl text-slate-400 hover:text-red-500 transition-all border border-slate-100/50 shadow-sm group">
                             <Bell size={20} strokeWidth={2.5} className="group-hover:rotate-12 transition-transform" />
@@ -419,12 +416,41 @@ const App: React.FC = () => {
                                                 <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{userInfo?.roleName}</p>
                                             </div>
 
+                                            {/* Layout Mode Toggles */}
+                                            <div className="px-2 py-2 mb-1">
+                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-2">导航布局偏好</p>
+                                                <div className="flex items-center gap-1 bg-slate-100/50 p-1 rounded-xl">
+                                                    <button
+                                                        onClick={() => setLayoutMode('topbar')}
+                                                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${
+                                                            layoutMode === 'topbar' 
+                                                                ? 'bg-white text-red-600 shadow-sm border border-slate-100' 
+                                                                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+                                                        }`}
+                                                    >
+                                                        <PanelTop size={14} strokeWidth={2.5}/> 顶部
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setLayoutMode('sidebar')}
+                                                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${
+                                                            layoutMode === 'sidebar' 
+                                                                ? 'bg-white text-red-600 shadow-sm border border-slate-100' 
+                                                                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+                                                        }`}
+                                                    >
+                                                        <PanelLeft size={14} strokeWidth={2.5}/> 侧边
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="h-px bg-slate-100/80 my-1 mx-2"></div>
+
                                             <button
                                                 onClick={() => { setActiveTab('basic_info'); setShowUserMenu(false); }}
                                                 className="w-full flex items-center gap-4 px-4 py-3 text-[11px] font-black uppercase tracking-[0.15em] text-slate-500 hover:text-red-600 hover:bg-red-50/50 rounded-xl transition-all group"
                                             >
                                                 <User size={16} strokeWidth={2.5} className="group-hover:scale-110 transition-transform" />
-                                                <span>Personal Identity</span>
+                                                <span>个人信息</span>
                                             </button>
 
                                             <button
@@ -432,7 +458,7 @@ const App: React.FC = () => {
                                                 className="w-full flex items-center gap-4 px-4 py-3 text-[11px] font-black uppercase tracking-[0.15em] text-slate-500 hover:text-red-600 hover:bg-red-50/50 rounded-xl transition-all group"
                                             >
                                                 <Lock size={16} strokeWidth={2.5} className="group-hover:scale-110 transition-transform" />
-                                                <span>Access Control</span>
+                                                <span>修改密码</span>
                                             </button>
 
                                             <div className="h-px bg-slate-100 my-2 mx-2"></div>
@@ -442,7 +468,7 @@ const App: React.FC = () => {
                                                 className="w-full flex items-center gap-4 px-4 py-3 text-[11px] font-black uppercase tracking-[0.15em] text-red-600 hover:bg-red-50 rounded-xl transition-all group"
                                             >
                                                 <LogOut size={16} strokeWidth={3} className="group-hover:translate-x-1 transition-transform" />
-                                                <span>System Exit</span>
+                                                <span>退出登录</span>
                                             </button>
                                         </motion.div>
                                     )}
