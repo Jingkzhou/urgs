@@ -6,9 +6,10 @@ import AnnouncementDetail from './AnnouncementDetail';
 
 interface AnnouncementListProps {
     onEdit?: (id: string) => void;
+    defaultSelectedId?: string | null;
 }
 
-const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit }) => {
+const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit, defaultSelectedId }) => {
     const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState<string>('all');
@@ -16,7 +17,14 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit }) => {
     const [loading, setLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
     const [total, setTotal] = useState(0);
-    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [selectedId, setSelectedId] = useState<string | null>(defaultSelectedId || null);
+
+    // Sync selectedId when defaultSelectedId changes (e.g. from URL)
+    useEffect(() => {
+        if (defaultSelectedId) {
+            setSelectedId(defaultSelectedId);
+        }
+    }, [defaultSelectedId]);
 
     const fetchNotices = async () => {
         setLoading(true);

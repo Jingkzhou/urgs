@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Megaphone, Plus, List, TrendingUp, AlertCircle, TrendingDown, BellRing } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import AnnouncementList from './AnnouncementList';
@@ -56,6 +56,27 @@ const AnnouncementManagement: React.FC = () => {
 
     const [activeTab, setActiveTab] = useState<'list' | 'publish'>(getInitialTab());
     const [editId, setEditId] = useState<string | null>(null);
+    const [initialSelectedId, setInitialSelectedId] = useState<string | null>(null);
+
+    // Initial URL Parameter Parsing
+    useEffect(() => {
+        const handleUrlParams = () => {
+            const hash = window.location.hash;
+            if (hash.includes('?')) {
+                const searchPart = hash.split('?')[1];
+                const params = new URLSearchParams(searchPart);
+                const id = params.get('id');
+                if (id) {
+                    setInitialSelectedId(id);
+                    setActiveTab('list');
+                }
+            }
+        };
+
+        handleUrlParams();
+        window.addEventListener('hashchange', handleUrlParams);
+        return () => window.removeEventListener('hashchange', handleUrlParams);
+    }, []);
 
     const handleEdit = (id: string) => {
         setEditId(id);
@@ -216,7 +237,10 @@ const AnnouncementManagement: React.FC = () => {
                         >
                             {activeTab === 'list' && canList && (
                                 <div className="p-6">
-                                    <AnnouncementList onEdit={handleEdit} />
+                                    <AnnouncementList 
+                                        onEdit={handleEdit} 
+                                        defaultSelectedId={initialSelectedId} 
+                                    />
                                 </div>
                             )}
                             {activeTab === 'publish' && canPublish && (
