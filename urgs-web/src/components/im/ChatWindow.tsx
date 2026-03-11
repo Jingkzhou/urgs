@@ -37,19 +37,24 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
     const isFirstScroll = useRef(true);
 
     const scrollToBottom = (instant = false) => {
-        // Small timeout to allow DOM layout to complete
-        setTimeout(() => {
-            messagesEndRef.current?.scrollIntoView({ behavior: instant ? 'auto' : 'smooth' });
-        }, 100);
+        if (instant) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        } else {
+            // Small timeout for subsequent smooth scrolls to allow DOM layout (e.g., images) to partly complete
+            setTimeout(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+        }
     };
 
-    // Use useLayoutEffect for more immediate scrolling after render
+    // Use useLayoutEffect for immediate scrolling after DOM updates but before paint
     React.useLayoutEffect(() => {
+        if (messages.length === 0) return;
+
         if (isFirstScroll.current) {
-            // Do not scroll to bottom on first load/open, stay at the top.
+            scrollToBottom(true);
             isFirstScroll.current = false;
         } else {
-            // Only scroll to bottom when new messages arrive.
             scrollToBottom(false);
         }
     }, [messages]);
@@ -151,7 +156,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth">
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
                 {messages.map((msg) => (
                     <div key={msg.id} className={`flex w-full ${msg.isSelf ? 'justify-end' : 'justify-start'} group animate-in fade-in slide-in-from-bottom-2 duration-300`}>
                         {/* Left Side (Other) */}
