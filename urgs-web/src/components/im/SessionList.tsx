@@ -58,7 +58,7 @@ const SessionList: React.FC<SessionListProps> = ({ sessions, activeSessionId, on
                     key={session.id}
                     onClick={() => onSelectSession(session.id)}
                     onContextMenu={(e) => handleContextMenu(e, session.id)}
-                    className={`px-4 py-3 cursor-pointer transition-colors flex gap-3 group ${activeSessionId === session.id ? 'bg-indigo-50' : 'hover:bg-slate-100'}`}
+                    className={`px-4 py-3 cursor-pointer transition-colors flex gap-3 group border-l-2 ${activeSessionId === session.id ? 'bg-white border-indigo-600' : 'border-transparent hover:bg-slate-100/50'}`}
                 >
                     <div className="relative">
                         {session.avatar ? (
@@ -69,20 +69,20 @@ const SessionList: React.FC<SessionListProps> = ({ sessions, activeSessionId, on
                             </div>
                         )}
                         {session.unread > 0 && (
-                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center border-2 border-slate-50">
+                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center ring-2 ring-white shadow-sm">
                                 {session.unread}
                             </span>
                         )}
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 flex flex-col justify-center">
                         <div className="flex justify-between items-baseline mb-0.5">
-                            <h4 className={`font-medium text-sm truncate ${activeSessionId === session.id ? 'text-indigo-600' : 'text-slate-800'}`}>{session.name}</h4>
+                            <h4 className={`font-medium text-[13px] truncate ${activeSessionId === session.id ? 'text-indigo-600 font-semibold' : 'text-slate-800'}`}>{session.name}</h4>
+                            <span className="text-[11px] text-slate-400 whitespace-nowrap ml-2">{session.time}</span>
                         </div>
                         <div className="flex justify-between items-center">
-                            <p className={`text-xs truncate flex-1 mr-2 ${session.unread > 0 ? 'text-slate-800 font-medium' : 'text-slate-500'}`}>
+                            <p className={`text-[12px] truncate flex-1 ${session.unread > 0 ? 'text-slate-700 font-medium' : 'text-slate-500'}`}>
                                 {session.message}
                             </p>
-                            <span className="text-xs text-slate-400 whitespace-nowrap">{session.time}</span>
                         </div>
                     </div>
                 </div>

@@ -46,9 +46,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
     // Use useLayoutEffect for more immediate scrolling after render
     React.useLayoutEffect(() => {
         if (isFirstScroll.current) {
-            scrollToBottom(true);
+            // Do not scroll to bottom on first load/open, stay at the top.
             isFirstScroll.current = false;
         } else {
+            // Only scroll to bottom when new messages arrive.
             scrollToBottom(false);
         }
     }, [messages]);
@@ -137,11 +138,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
     return (
         <div className="flex-1 bg-transparent flex flex-col relative h-full"> {/* Transparent to show blur */}
             {/* Header */}
-            <div className="h-16 flex items-center justify-between px-6 z-10 border-b border-slate-100/50 bg-white/80 backdrop-blur-md">
+            <div className="h-[68px] flex items-center justify-between px-6 z-10 border-b border-slate-100 bg-white/95 backdrop-blur-sm flex-shrink-0">
                 <div className="flex items-center gap-3">
-                    <h3 className="font-bold text-slate-800 text-lg tracking-tight">{sessionName}</h3>
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <h3 className="font-semibold text-slate-800 text-[15px] tracking-tight">{sessionName}</h3>
+                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
                 </div>
+                {onShowDetails && (
+                    <button onClick={onShowDetails} className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-600 transition-colors mr-8">
+                        <MoreHorizontal size={18} />
+                    </button>
+                )}
             </div>
 
             {/* Messages */}
@@ -153,22 +159,22 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
                             <>
                                 <img
                                     src={getAvatarUrl(msg.senderAvatar, msg.senderName || `User ${msg.senderId}`)}
-                                    className="w-9 h-9 rounded-full mr-3 flex-shrink-0 cursor-pointer shadow-sm border border-white/50 hover:scale-105 transition-transform"
+                                    className="w-9 h-9 rounded-xl mr-3 flex-shrink-0 cursor-pointer object-cover"
                                     alt="Avatar"
                                 />
                                 <div className="flex flex-col items-start max-w-[70%]">
-                                    <span className="text-[10px] text-slate-400 mb-1 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">{msg.senderName || `User ${msg.senderId}`} {msg.time && `· ${msg.time}`}</span>
+                                    <span className="text-[11px] text-slate-400 mb-1 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">{msg.senderName || `User ${msg.senderId}`} {msg.time && `· ${msg.time}`}</span>
                                     <div className={`
-                                        relative px-4 py-2.5 rounded-2xl rounded-tl-sm text-sm shadow-sm
-                                        bg-white border border-slate-100 text-slate-700
+                                        relative px-4 py-2.5 rounded-2xl rounded-tl-sm text-[14px]
+                                        bg-slate-100 text-slate-800
                                     `}>
                                         {msg.type === 'text' ? (
-                                            <p className="whitespace-pre-wrap break-all leading-6 font-medium">{msg.content}</p>
+                                            <p className="whitespace-pre-wrap break-all leading-relaxed">{msg.content}</p>
                                         ) : (
                                             <img
                                                 src={msg.content}
                                                 alt="Content"
-                                                className="rounded-lg max-w-full cursor-pointer hover:opacity-95 shadow-sm max-h-64"
+                                                className="rounded-lg max-w-full cursor-pointer hover:opacity-95 max-h-64 object-contain bg-white"
                                                 onDoubleClick={() => setPreviewImage(msg.content)}
                                             />
                                         )}
@@ -182,18 +188,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
                             <>
                                 <div className="flex flex-col items-end max-w-[70%]">
                                     {/* Time hidden unless hovered */}
-                                    <span className="text-[10px] text-slate-400 mb-1 mr-1 opacity-0 group-hover:opacity-100 transition-opacity">{msg.time}</span>
+                                    <span className="text-[11px] text-slate-400 mb-1 mr-1 opacity-0 group-hover:opacity-100 transition-opacity">{msg.time}</span>
                                     <div className={`
-                                        relative px-4 py-2.5 rounded-2xl rounded-tr-sm text-sm shadow-md
-                                        bg-gradient-to-br from-indigo-500 to-purple-600 text-white
+                                        relative px-4 py-2.5 rounded-2xl rounded-tr-sm text-[14px]
+                                        bg-slate-900 text-white
                                     `}>
                                         {msg.type === 'text' ? (
-                                            <p className="whitespace-pre-wrap break-all leading-6 font-medium tracking-wide">{msg.content}</p>
+                                            <p className="whitespace-pre-wrap break-all leading-relaxed">{msg.content}</p>
                                         ) : (
                                             <img
                                                 src={msg.content}
                                                 alt="Content"
-                                                className="rounded-lg max-w-full cursor-pointer hover:opacity-95 shadow-sm border-2 border-white/20 max-h-64"
+                                                className="rounded-lg max-w-full cursor-pointer hover:opacity-95 border border-white/10 max-h-64 object-contain bg-slate-800"
                                                 onDoubleClick={() => setPreviewImage(msg.content)}
                                             />
                                         )}
@@ -201,7 +207,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
                                 </div>
                                 <img
                                     src={getAvatarUrl(msg.senderAvatar, msg.senderName || `User ${msg.senderId}`)}
-                                    className="w-9 h-9 rounded-full ml-3 flex-shrink-0 cursor-pointer shadow-sm border border-white/50 hover:scale-105 transition-transform"
+                                    className="w-9 h-9 rounded-xl ml-3 flex-shrink-0 cursor-pointer object-cover"
                                     alt="Avatar"
                                 />
                             </>
@@ -212,7 +218,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
             </div>
 
             {/* Input Area */}
-            <div className="p-4 bg-white/50 border-t border-slate-100">
+            <div className="bg-white border-t border-slate-100 px-6 py-4 flex-shrink-0">
                 <input
                     type="file"
                     ref={fileInputRef}
@@ -232,54 +238,59 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
                         }
                     }}
                 />
-                <div className="flex gap-2 items-center mb-2 text-slate-400">
+                
+                {/* Toolbar */}
+                <div className="flex gap-4 items-center mb-3 text-slate-400 px-1">
                     <button
                         onClick={() => fileInputRef.current?.click()}
-                        className="p-1.5 hover:bg-slate-100 rounded transition-colors"
+                        className="hover:text-slate-600 transition-colors"
+                        title="发送图片"
                     >
-                        <Image size={18} />
+                        <Image size={20} strokeWidth={1.5} />
                     </button>
-                    <button className="p-1.5 hover:bg-slate-100 rounded transition-colors"><Paperclip size={18} /></button>
+                    <button className="hover:text-slate-600 transition-colors" title="发送文件">
+                        <Paperclip size={20} strokeWidth={1.5} />
+                    </button>
+                    <button className="hover:text-slate-600 transition-colors" title="语音消息">
+                        <Mic size={20} strokeWidth={1.5} />
+                    </button>
                 </div>
-                <div className="flex gap-2">
-                    <div className="flex-1 bg-white border border-slate-200 rounded-xl flex items-center px-3 py-2 focus-within:ring-2 focus-within:ring-[#10a37f]/20 focus-within:border-[#10a37f] transition-all">
-                        <textarea
-                            value={inputValue}
-                            onChange={(e) => setInputValue(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            onPaste={async (e) => {
-                                const items = e.clipboardData.items;
-                                for (let i = 0; i < items.length; i++) {
-                                    if (items[i].type.indexOf('image') !== -1) {
-                                        const file = items[i].getAsFile();
-                                        if (file && onFileUpload) {
-                                            try {
-                                                const url = await onFileUpload(file);
-                                                onSendMessage(url, 'image');
-                                            } catch (err) {
-                                                console.error('Paste upload failed', err);
-                                                alert('图片上传失败');
-                                            }
+
+                <div className="flex gap-4 items-end">
+                    <textarea
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        onPaste={async (e) => {
+                            const items = e.clipboardData.items;
+                            for (let i = 0; i < items.length; i++) {
+                                if (items[i].type.indexOf('image') !== -1) {
+                                    const file = items[i].getAsFile();
+                                    if (file && onFileUpload) {
+                                        try {
+                                            const url = await onFileUpload(file);
+                                            onSendMessage(url, 'image');
+                                        } catch (err) {
+                                            console.error('Paste upload failed', err);
+                                            alert('图片上传失败');
                                         }
-                                        e.preventDefault();
-                                        return;
                                     }
+                                    e.preventDefault();
+                                    return;
                                 }
-                            }}
-                            placeholder="输入消息..."
-                            className="flex-1 bg-transparent border-none outline-none text-sm resize-none max-h-24 py-1"
-                            rows={1}
-                        />
-                        <button className="p-1.5 text-slate-400 hover:text-slate-600">
-                            <Mic size={18} />
-                        </button>
-                    </div>
+                            }
+                        }}
+                        placeholder="输入消息..."
+                        className="flex-1 bg-transparent border-none outline-none text-[14px] text-slate-800 resize-none max-h-32 min-h-[44px] py-1 placeholder-slate-400"
+                        rows={1}
+                    />
                     <button
                         onClick={handleSend}
-                        className={`${inputValue.trim() ? 'bg-[#10a37f] hover:bg-[#0e906f]' : 'bg-slate-200 cursor-not-allowed'} text-white p-3 rounded-xl transition-all duration-200 flex items-center justify-center`}
+                        className={`${inputValue.trim() ? 'text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50' : 'text-slate-300 cursor-not-allowed'} p-2 rounded-xl transition-all duration-200 flex items-center justify-center flex-shrink-0`}
                         disabled={!inputValue.trim()}
+                        title="发送 (Enter)"
                     >
-                        <Send size={18} />
+                        <Send size={22} strokeWidth={1.5} />
                     </button>
                 </div>
             </div>
