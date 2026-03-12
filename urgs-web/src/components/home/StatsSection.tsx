@@ -68,7 +68,7 @@ export const BatchStatusChart: React.FC<ChartProps & { data: TaskStatsVO[], onRe
     const systemId = payload.systemId;
     setSelectedSystemId(systemId);
     setSelectedSystemName(payload.name);
-    
+
     setLoadingDetails(true);
     try {
       const result = await fetchRealtimeDetails(systemId);
@@ -135,11 +135,89 @@ export const BatchStatusChart: React.FC<ChartProps & { data: TaskStatsVO[], onRe
         </button>
       </div>
 
-      {/* Chart Canvas */}
-      <div className="flex-1 w-full px-6 pb-6 relative z-10 min-h-[180px]">
+      {/* Interactive Cards / Chart Canvas */}
+      <div className="flex-1 w-full px-6 pb-6 relative z-10 flex flex-col justify-center min-h-[180px]">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <RefreshCw className="w-8 h-8 text-slate-200 animate-spin" />
+          </div>
+        ) : chartData.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-4 opacity-60">
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full bg-slate-100/50 flex items-center justify-center relative z-10 shadow-sm border border-white">
+                <Box className="w-6 h-6 text-slate-400" />
+              </div>
+              <div className="absolute inset-0 bg-slate-200 rounded-full animate-ping opacity-20" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-black text-slate-500 tracking-wide">所有系统静默待命</p>
+              <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">今日暂无调度任务</p>
+            </div>
+          </div>
+        ) : chartData.length <= 4 ? (
+          <div className={`grid w-full h-full max-h-[220px] overflow-y-auto mt-2 px-2 pb-2 place-content-center ${
+            chartData.length === 1 ? 'grid-cols-1 w-full max-w-[560px] mx-auto gap-0' :
+            chartData.length === 2 ? 'grid-cols-2 max-w-[720px] mx-auto gap-6' : 
+            chartData.length === 3 ? 'grid-cols-3 max-w-[1000px] mx-auto gap-5' :
+            'grid-cols-2 md:grid-cols-4 max-w-full mx-auto gap-4'
+          }`}>
+            {chartData.map((sys) => {
+              const total = sys.completed + sys.running + sys.failed;
+              const completedPct = total === 0 ? 0 : (sys.completed / total) * 100;
+              const runningPct = total === 0 ? 0 : (sys.running / total) * 100;
+              const failedPct = total === 0 ? 0 : (sys.failed / total) * 100;
+
+              return (
+                <div 
+                  key={sys.systemId}
+                  onClick={() => handleBarClick(sys)}
+                  className={`group/card relative bg-white/60 hover:bg-white/95 backdrop-blur-xl border border-slate-200/60 rounded-[2rem] cursor-pointer transition-all duration-500 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] hover:-translate-y-1 overflow-hidden flex ${
+                    chartData.length === 1 ? 'flex-row items-center p-6 gap-6 w-full' : 'flex-col h-full justify-between p-5'
+                  }`}
+                >
+                  {/* Background decoration */}
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-slate-100/50 to-transparent rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none group-hover/card:from-blue-50/50 transition-colors duration-500" />
+                  
+                  <div className={`relative z-10 flex ${chartData.length === 1 ? 'flex-col min-w-[120px]' : 'items-start justify-between mb-5'}`}>
+                    <div>
+                      <h3 className={`font-black text-slate-800 tracking-tight leading-tight line-clamp-2 ${chartData.length === 1 ? 'text-lg max-w-[180px]' : 'text-base max-w-[140px]'}`}>{sys.name}</h3>
+                      <p className={`font-bold text-slate-400 mt-1 uppercase tracking-wider ${chartData.length === 1 ? 'text-[11px]' : 'text-[9px]'}`}>今日任务数: <span className="text-slate-600 font-black">{total}</span></p>
+                    </div>
+                    {chartData.length !== 1 && (
+                      <div className="w-8 h-8 shrink-0 rounded-full bg-slate-50/80 flex items-center justify-center border border-slate-200/50 group-hover/card:bg-slate-800 transition-colors duration-500 shadow-sm">
+                        <Activity size={12} className="text-slate-500 group-hover/card:text-white transition-colors duration-500" />
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className={`relative z-10 flex flex-col w-full ${chartData.length === 1 ? 'flex-1 pl-6 border-l border-slate-100/80 gap-3' : 'gap-4'}`}>
+                    <div className="grid grid-cols-3 gap-2">
+                       <div className={`flex flex-col items-center justify-center bg-emerald-50/60 border border-emerald-100/50 rounded-2xl group-hover/card:bg-emerald-50 transition-colors duration-300 ${chartData.length === 1 ? 'py-3' : 'py-2.5'}`}>
+                         <span className={`font-black text-emerald-600 leading-none ${chartData.length === 1 ? 'text-2xl' : 'text-xl'}`}>{sys.completed}</span>
+                         <span className="text-[10px] font-bold text-emerald-500 mt-1 uppercase">完成</span>
+                       </div>
+                       <div className={`flex flex-col items-center justify-center bg-blue-50/60 border border-blue-100/50 rounded-2xl group-hover/card:bg-blue-50 transition-colors duration-300 ${chartData.length === 1 ? 'py-3' : 'py-2.5'}`}>
+                         <span className={`font-black text-blue-600 leading-none ${chartData.length === 1 ? 'text-2xl' : 'text-xl'}`}>{sys.running}</span>
+                         <span className="text-[10px] font-bold text-blue-500 mt-1 uppercase">运行</span>
+                       </div>
+                       <div className={`flex flex-col items-center justify-center bg-red-50/60 border border-red-100/50 rounded-2xl group-hover/card:bg-red-50 transition-colors duration-300 ${chartData.length === 1 ? 'py-3' : 'py-2.5'}`}>
+                         <span className={`font-black text-red-600 leading-none ${chartData.length === 1 ? 'text-2xl' : 'text-xl'}`}>{sys.failed}</span>
+                         <span className="text-[10px] font-bold text-red-500 mt-1 uppercase">失败</span>
+                       </div>
+                    </div>
+
+                    <div className={`flex items-center gap-3 ${chartData.length === 1 ? '' : 'mt-1'}`}>
+                      <div className={`flex-1 flex rounded-full overflow-hidden bg-slate-100 ${chartData.length === 1 ? 'h-2' : 'h-1.5'}`}>
+                        {completedPct > 0 && <div style={{ width: `${completedPct}%` }} className="bg-emerald-500 transition-all duration-1000" />}
+                        {runningPct > 0 && <div style={{ width: `${runningPct}%` }} className="bg-blue-500 animate-pulse" />}
+                        {failedPct > 0 && <div style={{ width: `${failedPct}%` }} className="bg-red-500 transition-all duration-1000" />}
+                      </div>
+                      <span className="text-[10px] font-black text-slate-300 w-8 text-right tabular-nums">{completedPct > 0 ? Math.round(completedPct) : 0}%</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
@@ -352,13 +430,13 @@ export const TrendAnalysisChart: React.FC = () => {
             </div>
             <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mt-2">Active Requests / Hr</span>
           </div>
-          
+
           <div className="relative h-12 w-px bg-slate-100">
-             <motion.div 
-               animate={{ y: [0, 48, 0] }}
-               transition={{ duration: 3, repeat: Infinity }}
-               className="absolute top-0 left-[-1px] w-[3px] h-4 bg-red-500/30 blur-[1px]" 
-             />
+            <motion.div
+              animate={{ y: [0, 48, 0] }}
+              transition={{ duration: 3, repeat: Infinity }}
+              className="absolute top-0 left-[-1px] w-[3px] h-4 bg-red-500/30 blur-[1px]"
+            />
           </div>
 
           <div className="px-6 py-3 bg-slate-50 border border-slate-100 rounded-2xl group-hover:border-red-100 transition-colors">
@@ -387,10 +465,10 @@ export const TrendAnalysisChart: React.FC = () => {
                 <stop offset="100%" stopColor="#ef4444" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid 
-              strokeDasharray="4 4" 
-              stroke="rgba(0,0,0,0.03)" 
-              vertical={false} 
+            <CartesianGrid
+              strokeDasharray="4 4"
+              stroke="rgba(0,0,0,0.03)"
+              vertical={false}
             />
             <XAxis
               dataKey="name"
@@ -406,7 +484,7 @@ export const TrendAnalysisChart: React.FC = () => {
               dx={-10}
             />
             <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#ef4444', strokeWidth: 1, strokeDasharray: '5 5' }} />
-            
+
             {/* Soft Glow Layer */}
             <Area
               type="monotone"
@@ -416,7 +494,7 @@ export const TrendAnalysisChart: React.FC = () => {
               animationDuration={3000}
               animationBegin={500}
             />
-            
+
             {/* Main Area Layer */}
             <Area
               type="monotone"
@@ -457,12 +535,12 @@ export const TrendAnalysisChart: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
-           <div className="flex -space-x-1.5">
-             {[1,2,3].map(i => (
-               <div key={i} className="w-5 h-5 rounded-full bg-slate-200 border-2 border-white" />
-             ))}
-           </div>
-           <span className="text-[10px] font-black text-slate-500">+12 Nodes Active</span>
+          <div className="flex -space-x-1.5">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="w-5 h-5 rounded-full bg-slate-200 border-2 border-white" />
+            ))}
+          </div>
+          <span className="text-[10px] font-black text-slate-500">+12 Nodes Active</span>
         </div>
       </div>
     </motion.div>
