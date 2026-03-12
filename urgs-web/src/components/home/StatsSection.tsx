@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { TaskStatsVO, fetchRealtimeDetails, TaskRealtimeMonitor } from '../../api/stats';
 import { X } from 'lucide-react';
+import { createPortal } from 'react-dom';
 
 interface ChartProps {
   loading?: boolean;
@@ -48,19 +49,32 @@ export const BatchStatusChart: React.FC<ChartProps & { data: TaskStatsVO[], onRe
   const [loadingDetails, setLoadingDetails] = React.useState(false);
 
   const handleBarClick = async (dataItem: any) => {
-    if (!dataItem || !dataItem.activePayload || !dataItem.activePayload[0]) return;
-    const payload = dataItem.activePayload[0].payload;
-    const systemId = payload.systemId;
-    if (!systemId) return;
+    let payload = null;
 
+    // 当点击 <Bar> 时，Recharts 返回的 dataItem 通常就是当前柱子的行数据（含我们自定义的 systemId）
+    if (dataItem && dataItem.systemId) {
+      payload = dataItem;
+    } else if (dataItem && dataItem.payload && dataItem.payload.systemId) {
+      payload = dataItem.payload;
+    } else if (dataItem && dataItem.activePayload && dataItem.activePayload.length > 0) {
+      payload = dataItem.activePayload[0].payload;
+    }
+
+    if (!payload || !payload.systemId) {
+      console.warn("未在此元素中找到 systemId 参数:", dataItem);
+      return;
+    }
+
+    const systemId = payload.systemId;
     setSelectedSystemId(systemId);
     setSelectedSystemName(payload.name);
+    
     setLoadingDetails(true);
     try {
       const result = await fetchRealtimeDetails(systemId);
       setDetails(result);
     } catch (err) {
-      console.error('Failed to fetch details', err);
+      console.error('Failed to fetch realtime details', err);
     } finally {
       setLoadingDetails(false);
     }
@@ -129,7 +143,7 @@ export const BatchStatusChart: React.FC<ChartProps & { data: TaskStatsVO[], onRe
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} onClick={handleBarClick}>
+            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.03)" vertical={false} />
               <XAxis
                 dataKey="name"
@@ -140,9 +154,9 @@ export const BatchStatusChart: React.FC<ChartProps & { data: TaskStatsVO[], onRe
               />
               <YAxis hide />
               <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)', radius: 8 }} />
-              <Bar dataKey="completed" name="已完成" stackId="a" fill="#10b981" barSize={18} radius={[0, 0, 0, 0]} style={{ cursor: 'pointer' }} />
-              <Bar dataKey="running" name="运行中" stackId="a" fill="#3b82f6" barSize={18} radius={[0, 0, 0, 0]} style={{ cursor: 'pointer' }} />
-              <Bar dataKey="failed" name="已失败" stackId="a" fill="#ef4444" barSize={18} radius={[8, 8, 0, 0]} style={{ cursor: 'pointer' }} />
+              <Bar dataKey="completed" name="已完成" stackId="a" fill="#10b981" barSize={18} radius={[0, 0, 0, 0]} style={{ cursor: 'pointer' }} onClick={handleBarClick} />
+              <Bar dataKey="running" name="运行中" stackId="a" fill="#3b82f6" barSize={18} radius={[0, 0, 0, 0]} style={{ cursor: 'pointer' }} onClick={handleBarClick} />
+              <Bar dataKey="failed" name="已失败" stackId="a" fill="#ef4444" barSize={18} radius={[8, 8, 0, 0]} style={{ cursor: 'pointer' }} onClick={handleBarClick} />
             </BarChart>
           </ResponsiveContainer>
         )}
@@ -161,81 +175,84 @@ export const BatchStatusChart: React.FC<ChartProps & { data: TaskStatsVO[], onRe
       </div>
 
       {/* Details Modal */}
-      <AnimatePresence>
-        {selectedSystemId && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm"
-              onClick={closeDetails}
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="fixed z-50 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]"
-            >
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                <div>
-                  <h3 className="text-lg font-black text-slate-800 tracking-tight">今日任务明细</h3>
-                  <p className="text-xs text-slate-500 font-bold mt-1">{selectedSystemName}</p>
+      {typeof document !== 'undefined' ? createPortal(
+        <AnimatePresence>
+          {selectedSystemId && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+                onClick={closeDetails}
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="relative z-10 w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh] mx-4"
+              >
+                <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-800 tracking-tight">今日任务明细</h3>
+                    <p className="text-xs text-slate-500 font-bold mt-1">{selectedSystemName}</p>
+                  </div>
+                  <button
+                    onClick={closeDetails}
+                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
+                  >
+                    <X size={20} />
+                  </button>
                 </div>
-                <button
-                  onClick={closeDetails}
-                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="p-6 overflow-y-auto">
-                {loadingDetails ? (
-                  <div className="flex items-center justify-center h-32">
-                    <RefreshCw className="w-6 h-6 text-slate-300 animate-spin" />
-                  </div>
-                ) : details.length === 0 ? (
-                  <div className="text-center py-10 text-sm text-slate-500 font-medium">
-                    当日暂无任务运行记录
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {details.map((task) => (
-                      <div key={task.id} className="flex items-center justify-between p-4 rounded-2xl border border-slate-100 bg-white hover:border-slate-200 transition-colors shadow-sm">
-                        <div className="flex flex-col gap-1">
-                          <span className="text-sm font-bold text-slate-800">{task.taskName}</span>
-                          <span className="text-[10px] text-slate-400 font-medium flex gap-3">
-                            <span>开始: {task.startTime ? new Date(task.startTime).toLocaleTimeString() : '-'}</span>
-                            <span>结束: {task.endTime ? new Date(task.endTime).toLocaleTimeString() : '-'}</span>
-                          </span>
+                <div className="p-6 overflow-y-auto">
+                  {loadingDetails ? (
+                    <div className="flex items-center justify-center h-32">
+                      <RefreshCw className="w-6 h-6 text-slate-300 animate-spin" />
+                    </div>
+                  ) : details.length === 0 ? (
+                    <div className="text-center py-10 text-sm text-slate-500 font-medium">
+                      当日暂无任务运行记录
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {details.map((task) => (
+                        <div key={task.id} className="flex items-center justify-between p-4 rounded-2xl border border-slate-100 bg-white hover:border-slate-200 transition-colors shadow-sm">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-sm font-bold text-slate-800">{task.taskName}</span>
+                            <span className="text-[10px] text-slate-400 font-medium flex gap-3">
+                              <span>开始: {task.startTime ? new Date(task.startTime).toLocaleTimeString() : '-'}</span>
+                              <span>结束: {task.endTime ? new Date(task.endTime).toLocaleTimeString() : '-'}</span>
+                            </span>
+                          </div>
+                          <div className="flex items-center">
+                            {task.taskStatus === 'SUCCESS' && (
+                              <span className="px-2.5 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black tracking-widest uppercase rounded-lg border border-emerald-100/50">
+                                完成
+                              </span>
+                            )}
+                            {task.taskStatus === 'RUNNING' && (
+                              <span className="px-2.5 py-1 bg-blue-50 text-blue-600 text-[10px] font-black tracking-widest uppercase rounded-lg border border-blue-100/50 flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                                执行中
+                              </span>
+                            )}
+                            {task.taskStatus === 'FAILED' && (
+                              <span className="px-2.5 py-1 bg-red-50 text-red-600 text-[10px] font-black tracking-widest uppercase rounded-lg border border-red-100/50">
+                                异常
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center">
-                          {task.taskStatus === 'SUCCESS' && (
-                            <span className="px-2.5 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black tracking-widest uppercase rounded-lg border border-emerald-100/50">
-                              完成
-                            </span>
-                          )}
-                          {task.taskStatus === 'RUNNING' && (
-                            <span className="px-2.5 py-1 bg-blue-50 text-blue-600 text-[10px] font-black tracking-widest uppercase rounded-lg border border-blue-100/50 flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-                              执行中
-                            </span>
-                          )}
-                          {task.taskStatus === 'FAILED' && (
-                            <span className="px-2.5 py-1 bg-red-50 text-red-600 text-[10px] font-black tracking-widest uppercase rounded-lg border border-red-100/50">
-                              异常
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body
+      ) : null}
     </div>
   );
 };
