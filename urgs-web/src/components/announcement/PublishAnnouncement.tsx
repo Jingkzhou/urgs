@@ -8,7 +8,7 @@ import { IDomEditor, IEditorConfig, IToolbarConfig } from '@wangeditor/editor';
 
 interface PublishAnnouncementProps {
     editId?: string | null;
-    onSuccess?: () => void;
+    onSuccess?: (category?: string) => void;
 }
 
 const PublishAnnouncement: React.FC<PublishAnnouncementProps> = ({ editId, onSuccess }) => {
@@ -130,7 +130,7 @@ const PublishAnnouncement: React.FC<PublishAnnouncementProps> = ({ editId, onSuc
 
             if (response.ok) {
                 message.success(editId ? '保存成功！' : '公告发布成功！');
-                if (onSuccess) onSuccess();
+                if (onSuccess) onSuccess(values.category);
             } else {
                 throw new Error();
             }
@@ -157,6 +157,27 @@ const PublishAnnouncement: React.FC<PublishAnnouncementProps> = ({ editId, onSuc
 
         setPolishing(true);
         try {
+            const category = form.getFieldValue('category');
+
+            let systemPrompt = `你是一个资深的公文写作评审专家。请对用户提供的草稿进行提炼和润色，使其完全符合专业『通知公告发布范式』。
+具体要求：
+1. 语言风格：必须庄重、严谨、客观、得体，使用标准的书面语规范和官方公文用语（如“鉴于”、“为了”、“兹定于”等）。
+2. 结构范式：须包含发文缘由（目的背景）、通知事项（具体内容）、工作要求或总结（呼吁与执行）。
+3. 信息降噪：去除口语化词汇、多余的感情色彩及冗余修饰，保证文字精炼准确。
+4. 格式输出：必须直接返回润色后的纯 HTML 源码。强制保留原有的 HTML 标签嵌套结构（如 <p>, <b>, <ul>, <li> 等），但可根据结构逻辑适当增加分段和列表标签，严禁输出任何 Markdown 标记或多余的解释性文本。`;
+
+            if (category === 'Log') {
+                systemPrompt = `你是一个资深的高级产品经理与技术架构师。请将用户提供的零散信息整理并润色成符合业界标准『软件版本发布报告（Release Notes）格式范式』的技术文本。
+具体要求：
+1. 语言风格：专业、清晰、精炼，使用准确的技术工程术语，避免口头表达和模糊描述。
+2. 结构范式：必须强逻辑性，按重要度将内容聚类划分，通常应涵盖：
+   - 🌟 主要特性 (New Features / Highlights)：核心的业务价值与最重要的功能新增。
+   - 🚀 性能优化与改进 (Improvements)：已有功能的升级、前端或后端的优化改进。
+   - 🐛 问题修复 (Bug Fixes)：解决了哪些关键的体验阻断或安全漏洞。
+3. 表述规范：每一个关键点以动词驱动，直击痛点和解决的业务场景。
+4. 格式输出：必须直接返回高度排版优化的纯 HTML 源码。请通过 <h3>, <ul>, <li>, <strong> 等标签构建层次分明的视觉结构，严禁输出任何 Markdown 标记或解释性前缀后缀。`;
+            }
+
             const token = localStorage.getItem('auth_token');
             const response = await fetch('/api/ai/chat/completions', {
                 method: 'POST',
@@ -165,7 +186,7 @@ const PublishAnnouncement: React.FC<PublishAnnouncementProps> = ({ editId, onSuc
                     'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
-                    systemPrompt: "你是一个专业的文案润色专家。请对用户提供的公告内容进行润色，使其语言更专业、正式、得体。请直接返回润色后的 HTML 内容，必须保留原有的 HTML 标签结构（如 p, b, li 等），不要添加任何解释性文字或 Markdown 标签。",
+                    systemPrompt,
                     userPrompt: html
                 })
             });

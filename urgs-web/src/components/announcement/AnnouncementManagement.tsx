@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Megaphone, Plus, List, TrendingUp, AlertCircle, TrendingDown, BellRing } from 'lucide-react';
+import { Megaphone, Plus, List, TrendingUp, AlertCircle, TrendingDown, BellRing, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import AnnouncementList from './AnnouncementList';
 import PublishAnnouncement from './PublishAnnouncement';
@@ -54,7 +54,7 @@ const AnnouncementManagement: React.FC = () => {
         return 'list';
     };
 
-    const [activeTab, setActiveTab] = useState<'list' | 'publish'>(getInitialTab());
+    const [activeTab, setActiveTab] = useState<'list' | 'log' | 'publish'>(getInitialTab());
     const [editId, setEditId] = useState<string | null>(null);
     const [initialSelectedId, setInitialSelectedId] = useState<string | null>(null);
 
@@ -66,9 +66,12 @@ const AnnouncementManagement: React.FC = () => {
                 const searchPart = hash.split('?')[1];
                 const params = new URLSearchParams(searchPart);
                 const id = params.get('id');
+                const type = params.get('type');
                 if (id) {
                     setInitialSelectedId(id);
-                    setActiveTab('list');
+                    setActiveTab(type === 'log' ? 'log' : 'list');
+                } else if (type === 'log') {
+                    setActiveTab('log');
                 }
             }
         };
@@ -83,14 +86,14 @@ const AnnouncementManagement: React.FC = () => {
         setActiveTab('publish');
     };
 
-    const handlePublishSuccess = () => {
+    const handlePublishSuccess = (category?: string) => {
         setEditId(null);
-        setActiveTab('list');
+        setActiveTab(category === 'Log' ? 'log' : 'list');
     };
 
-    const handleTabChange = (key: 'list' | 'publish') => {
+    const handleTabChange = (key: 'list' | 'log' | 'publish') => {
         setActiveTab(key);
-        if (key === 'list') setEditId(null);
+        if (key === 'list' || key === 'log') setEditId(null);
     };
 
     // No permission view
@@ -114,7 +117,8 @@ const AnnouncementManagement: React.FC = () => {
 
     const tabs = [
         { key: 'list' as const, label: '公告列表', icon: List, permission: 'announcement:list' },
-        { key: 'publish' as const, label: editId ? '编辑公告' : '发布公告', icon: Plus, permission: 'announcement:publish' },
+        { key: 'log' as const, label: '更新日志', icon: FileText, permission: 'announcement:list' },
+        { key: 'publish' as const, label: editId ? '编辑公告' : '发布内容', icon: Plus, permission: 'announcement:publish' },
     ];
 
     return (
@@ -240,6 +244,16 @@ const AnnouncementManagement: React.FC = () => {
                                     <AnnouncementList 
                                         onEdit={handleEdit} 
                                         defaultSelectedId={initialSelectedId} 
+                                        forceCategory="Announcement"
+                                    />
+                                </div>
+                            )}
+                            {activeTab === 'log' && canList && (
+                                <div className="p-6">
+                                    <AnnouncementList 
+                                        onEdit={handleEdit} 
+                                        defaultSelectedId={initialSelectedId} 
+                                        forceCategory="Log"
                                     />
                                 </div>
                             )}

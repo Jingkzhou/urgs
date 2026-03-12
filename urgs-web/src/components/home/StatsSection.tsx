@@ -11,6 +11,7 @@ import {
   AreaChart,
   Area
 } from 'recharts';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   RefreshCw,
   TrendingUp,
@@ -132,7 +133,7 @@ export const BatchStatusChart: React.FC<ChartProps & { data: TaskStatsVO[], onRe
 };
 
 // ----------------------------------------------------------------------
-// 2. TrendAnalysisChart - Neon Waveglow Design
+// 2. TrendAnalysisChart - Premium Flowing Glow Design
 // ----------------------------------------------------------------------
 export const TrendAnalysisChart: React.FC = () => {
   const trendData = [
@@ -145,85 +146,200 @@ export const TrendAnalysisChart: React.FC = () => {
     { name: '24:00', value: 410, load: 42 }
   ];
 
-  return (
-    <div className="relative bg-white border border-slate-100 rounded-[2.5rem] shadow-[0_20px_40px_rgba(0,0,0,0.03)] flex flex-col h-[400px] overflow-hidden group transition-all duration-700 hover:shadow-[0_40px_80px_rgba(0,0,0,0.06)]">
-      {/* Clean Gradient Backdrop */}
-      <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-slate-50 to-transparent opacity-50 pointer-events-none" />
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          className="bg-slate-900/90 backdrop-blur-xl border border-white/10 p-4 rounded-2xl shadow-2xl"
+        >
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-white/5 pb-2">
+            Timeline: {label}
+          </p>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-8">
+              <span className="text-[11px] text-slate-300 font-bold flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+                Requests
+              </span>
+              <span className="text-sm font-black text-white">{payload[0].value}</span>
+            </div>
+            <div className="flex items-center justify-between gap-8">
+              <span className="text-[11px] text-slate-300 font-bold flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]" />
+                System Load
+              </span>
+              <span className="text-sm font-black text-white">{payload[0].payload.load}%</span>
+            </div>
+          </div>
+        </motion.div>
+      );
+    }
+    return null;
+  };
 
-      {/* Header */}
-      <div className="flex items-center justify-between p-8 relative z-10">
-        <div className="flex items-center gap-5">
-          <div className="p-3 bg-slate-900 rounded-2xl shadow-xl shadow-slate-900/20">
-            <TrendingUp className="w-5 h-5 text-white" />
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.8, ease: "easeOut" }}
+      className="relative bg-white/80 backdrop-blur-xl border border-slate-200/60 rounded-[3rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] flex flex-col h-[420px] overflow-hidden group transition-all duration-700 hover:shadow-[0_48px_96px_-24px_rgba(0,0,0,0.12)] hover:-translate-y-1"
+    >
+      {/* Dynamic Background Elements */}
+      <div className="absolute -top-24 -right-24 w-64 h-64 bg-red-500/5 rounded-full blur-[80px] group-hover:bg-red-500/10 transition-colors duration-1000" />
+      <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-amber-500/5 rounded-full blur-[80px] group-hover:bg-amber-500/10 transition-colors duration-1000" />
+
+      {/* Header Section */}
+      <div className="flex items-center justify-between p-9 relative z-10">
+        <div className="flex items-center gap-6">
+          <div className="relative">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+              className="absolute -inset-2 bg-gradient-to-r from-red-500/20 via-transparent to-amber-500/20 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-1000"
+            />
+            <div className="relative p-3.5 bg-slate-900 rounded-2xl shadow-2xl shadow-slate-900/20 overflow-hidden group-hover:scale-110 transition-transform duration-500">
+              <TrendingUp className="w-5 h-5 text-white" />
+              <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-tr from-white/10 to-transparent" />
+            </div>
           </div>
           <div>
-            <h2 className="text-xl font-black text-slate-900 tracking-tight leading-none">指标走势</h2>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-2 flex items-center gap-1.5">
-              <Box className="w-3 h-3 text-red-500" />
-              Global Trend Metrics
-            </p>
+            <h2 className="text-xl font-black text-slate-900 tracking-tight leading-none mb-2.5">指标走势</h2>
+            <div className="flex items-center gap-3">
+              <span className="px-2 py-0.5 bg-red-50 text-[9px] font-black text-red-600 rounded-md border border-red-100/50 uppercase tracking-widest">Live Flow</span>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] flex items-center gap-2">
+                <Activity className="w-3 h-3 text-slate-300" />
+                Network Latency Monitor
+              </p>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-8">
           <div className="flex flex-col items-end">
-            <span className="text-2xl font-black text-slate-900 leading-none">2.4k</span>
-            <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest mt-1">+12.5% VOL</span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-3xl font-black text-slate-900 leading-none tabular-nums">2.4k</span>
+              <span className="text-xs font-black text-emerald-500 flex items-center gap-0.5">
+                <TrendingUp size={12} />
+                12.5%
+              </span>
+            </div>
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mt-2">Active Requests / Hr</span>
           </div>
-          <div className="w-px h-10 bg-slate-100" />
-          <div className="px-5 py-2.5 bg-slate-50 border border-slate-100 rounded-xl">
-            <span className="text-xs font-black text-slate-900 flex items-center gap-2">
-              <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
-              REAL-TIME
+          
+          <div className="relative h-12 w-px bg-slate-100">
+             <motion.div 
+               animate={{ y: [0, 48, 0] }}
+               transition={{ duration: 3, repeat: Infinity }}
+               className="absolute top-0 left-[-1px] w-[3px] h-4 bg-red-500/30 blur-[1px]" 
+             />
+          </div>
+
+          <div className="px-6 py-3 bg-slate-50 border border-slate-100 rounded-2xl group-hover:border-red-100 transition-colors">
+            <span className="text-xs font-black text-slate-900 flex items-center gap-3">
+              <div className="relative">
+                <div className="w-2.5 h-2.5 bg-red-500 rounded-full" />
+                <div className="absolute inset-0 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping scale-150 opacity-40" />
+              </div>
+              NODE-01
             </span>
           </div>
         </div>
       </div>
 
-      {/* Chart Canvas */}
-      <div className="flex-1 w-full px-4 pb-4">
+      {/* Chart Canvas with Smooth Transitions */}
+      <div className="flex-1 w-full px-4 pb-6 relative z-10 overflow-hidden">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={trendData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+          <AreaChart data={trendData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#ef4444" stopOpacity={0.15} />
                 <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
               </linearGradient>
+              <linearGradient id="colorGlow" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#ef4444" stopOpacity={0.3} />
+                <stop offset="100%" stopColor="#ef4444" stopOpacity={0} />
+              </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+            <CartesianGrid 
+              strokeDasharray="4 4" 
+              stroke="rgba(0,0,0,0.03)" 
+              vertical={false} 
+            />
             <XAxis
               dataKey="name"
               axisLine={false}
               tickLine={false}
-              tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
+              tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 800 }}
               dy={15}
             />
             <YAxis
               axisLine={false}
               tickLine={false}
-              tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
+              tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 800 }}
+              dx={-10}
             />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                borderRadius: '20px',
-                border: 'none',
-                color: '#fff',
-                boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)'
-              }}
+            <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#ef4444', strokeWidth: 1, strokeDasharray: '5 5' }} />
+            
+            {/* Soft Glow Layer */}
+            <Area
+              type="monotone"
+              dataKey="value"
+              stroke="none"
+              fill="url(#colorGlow)"
+              animationDuration={3000}
+              animationBegin={500}
             />
+            
+            {/* Main Area Layer */}
             <Area
               type="monotone"
               dataKey="value"
               stroke="#ef4444"
               strokeWidth={4}
-              fillOpacity={1}
+              strokeLinecap="round"
               fill="url(#colorValue)"
               animationDuration={2500}
+              dot={(props: any) => {
+                const { cx, cy, index } = props;
+                if (index === trendData.length - 1) {
+                  return (
+                    <g key="pulsing-dot">
+                      <circle cx={cx} cy={cy} r={10} fill="#ef4444" opacity={0.2} className="animate-pulse" />
+                      <circle cx={cx} cy={cy} r={4} fill="#ef4444" stroke="#fff" strokeWidth={2} />
+                    </g>
+                  );
+                }
+                return null;
+              }}
+              activeDot={{ r: 6, fill: '#ef4444', stroke: '#fff', strokeWidth: 3 }}
             />
           </AreaChart>
         </ResponsiveContainer>
       </div>
-    </div>
+
+      {/* Futuristic Metadata Footer */}
+      <div className="px-9 py-6 border-t border-slate-50 bg-slate-50/30 flex items-center justify-between">
+        <div className="flex gap-8">
+          <div className="flex flex-col">
+            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Peak Utilization</span>
+            <span className="text-xs font-bold text-slate-700">89.4% <span className="text-emerald-500 ml-1">Normal</span></span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Avg Response</span>
+            <span className="text-xs font-bold text-slate-700">124ms</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+           <div className="flex -space-x-1.5">
+             {[1,2,3].map(i => (
+               <div key={i} className="w-5 h-5 rounded-full bg-slate-200 border-2 border-white" />
+             ))}
+           </div>
+           <span className="text-[10px] font-black text-slate-500">+12 Nodes Active</span>
+        </div>
+      </div>
+    </motion.div>
   );
 };

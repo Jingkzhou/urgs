@@ -7,9 +7,10 @@ import AnnouncementDetail from './AnnouncementDetail';
 interface AnnouncementListProps {
     onEdit?: (id: string) => void;
     defaultSelectedId?: string | null;
+    forceCategory?: string;
 }
 
-const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit, defaultSelectedId }) => {
+const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit, defaultSelectedId, forceCategory }) => {
     const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState<string>('all');
@@ -45,6 +46,10 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit, defaultSele
                 type: filterType,
                 keyword: searchTerm
             });
+            
+            if (forceCategory) {
+                queryParams.append('category', forceCategory);
+            }
 
             const res = await fetch(`/api/announcement/list?${queryParams.toString()}`, {
                 headers: {
@@ -206,20 +211,22 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit, defaultSele
 
                         <div className="h-8 w-px bg-slate-200 mx-1" />
 
-                        <div className="flex gap-2">
-                            {['all', 'urgent', 'normal', 'update'].map((type) => (
-                                <button
-                                    key={type}
-                                    onClick={() => setFilterType(type)}
-                                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border ${filterType === type
-                                            ? 'bg-violet-600 text-white border-violet-600 shadow-lg shadow-violet-200'
-                                            : 'bg-white text-slate-500 border-slate-200 hover:border-violet-300 hover:text-violet-600'
-                                        }`}
-                                >
-                                    {type === 'all' ? '全部' : typeConfig[type]?.label || type}
-                                </button>
-                            ))}
-                        </div>
+                        {(!forceCategory || forceCategory !== 'Log') && (
+                            <div className="flex gap-2">
+                                {['all', 'urgent', 'normal', 'update'].map((type) => (
+                                    <button
+                                        key={type}
+                                        onClick={() => setFilterType(type)}
+                                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border ${filterType === type
+                                                ? 'bg-violet-600 text-white border-violet-600 shadow-lg shadow-violet-200'
+                                                : 'bg-white text-slate-500 border-slate-200 hover:border-violet-300 hover:text-violet-600'
+                                            }`}
+                                    >
+                                        {type === 'all' ? '全部' : typeConfig[type]?.label || type}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
