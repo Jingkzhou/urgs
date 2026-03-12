@@ -81,6 +81,11 @@ start_backend() {
     export SPRING_DATASOURCE_PASSWORD="${DB_PASSWORD}"
   fi
 
+  # Explicitly export RAG properties to avoid placeholder resolution issues
+  export RAG_BASE_URL="${RAG_SERVICE_URL:-http://localhost:8001}/api/rag"
+  export AI_RAG_BASE_URL="$RAG_BASE_URL"
+  export AI_RAG_DOC_STORE_PATH="${RAG_DOC_STORE_PATH:-${SCRIPT_DIR}/../urgs-rag/doc_store}"
+
   # Construct Neo4j Properties if var exists
   if [ -n "${NEO4J_HOST:-}" ]; then
     # 如果在宿主机运行，neo4j 习惯上访问 localhost

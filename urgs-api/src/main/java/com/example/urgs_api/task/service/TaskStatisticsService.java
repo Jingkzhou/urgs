@@ -2,6 +2,7 @@ package com.example.urgs_api.task.service;
 
 import com.example.urgs_api.task.dto.TaskStatsQuery;
 import com.example.urgs_api.task.dto.TaskStatsVO;
+import com.example.urgs_api.task.entity.TaskRealtimeMonitor;
 import com.example.urgs_api.task.mapper.TaskStatisticsMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -14,5 +15,9 @@ public class TaskStatisticsService {
 
     public List<TaskStatsVO> getBatchStatusStats(TaskStatsQuery query) {
         return taskStatisticsMapper.selectBatchStatusStats(query);
+    }
+
+    public List<TaskRealtimeMonitor> getRealtimeDetails(String systemId) {
+        return taskStatisticsMapper.selectRealtimeDetails(systemId);
     }
 }
