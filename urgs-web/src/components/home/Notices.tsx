@@ -17,7 +17,54 @@ const Notices: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'Announcement' | 'Log'>('Announcement');
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadCounts, setUnreadCounts] = useState({ Announcement: 0, Log: 0 });
+
+  // 独立获取全局未读数量
+  const fetchUnreadCount = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const userStr = localStorage.getItem('auth_user');
+      let userId = 'admin';
+      let systems = '';
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        userId = user.empId || 'admin';
+        systems = user.system || '';
+      }
+
+      // 请求所有的，不限制类别
+      const queryParams = new URLSearchParams({
+        current: '1',
+        size: '100', // 拉足够多以统计未读（理想情况后端应有独立 count 接口，这里权宜）
+      });
+
+      const res = await fetch(`/api/announcement/list?${queryParams.toString()}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'X-User-Id': encodeURIComponent(userId),
+          'X-User-Systems': encodeURIComponent(systems)
+        }
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const announcements = data.records.filter((n: any) => !n.hasRead && n.category === 'Announcement').length;
+        const logs = data.records.filter((n: any) => !n.hasRead && n.category === 'Log').length;
+        setUnreadCounts({ Announcement: announcements, Log: logs });
+      }
+    } catch (error) {
+      console.error('Failed to fetch unread count', error);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchUnreadCount();
+
+    // Listen for global announcement read events
+    const handleRead = () => fetchUnreadCount();
+    window.addEventListener('announcementRead', handleRead);
+    return () => window.removeEventListener('announcementRead', handleRead);
+  }, []);
 
   React.useEffect(() => {
     fetchNotices();
@@ -71,7 +118,8 @@ const Notices: React.FC = () => {
         );
 
         setNotices(sorted);
-        setUnreadCount(sorted.filter((n: any) => !n.hasRead).length);
+        // Refresh unread count total whenever we fetch
+        fetchUnreadCount();
       }
     } catch (error) {
       console.error('Failed to fetch notices', error);
@@ -101,11 +149,6 @@ const Notices: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-base font-black text-slate-800 tracking-tight leading-none">公告中心</h2>
-              {unreadCount > 0 && (
-                <span className="flex items-center justify-center px-1.5 py-0.5 min-w-[18px] bg-rose-500 text-white text-[9px] font-black rounded-full shadow-[0_4px_12px_rgba(244,63,94,0.3)] animate-bounce-subtle">
-                  {unreadCount}
-                </span>
-              )}
             </div>
             <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1.5 flex items-center gap-1.5">
               <Layers className="w-2.5 h-2.5" />
@@ -115,20 +158,30 @@ const Notices: React.FC = () => {
         </div>
 
         {/* Liquid Tab Switcher */}
-        <div className="flex bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200/50">
+        <div className="flex gap-1 bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200/50">
           <button
             onClick={() => setActiveTab('Announcement')}
-            className={`relative px-4 py-1.5 text-[11px] font-black rounded-xl transition-all duration-500 ${activeTab === 'Announcement' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+            className={`relative px-4 py-1.5 text-[11px] font-black rounded-xl transition-all duration-500 flex items-center gap-1.5 ${activeTab === 'Announcement' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
               }`}
           >
             通知公告
+            {unreadCounts.Announcement > 0 && (
+              <span className={`flex items-center justify-center px-1.5 py-0.5 min-w-[16px] text-[9px] font-black rounded-full transition-colors ${activeTab === 'Announcement' ? 'bg-rose-500 text-white shadow-[0_2px_8px_rgba(244,63,94,0.3)] animate-pulse' : 'bg-slate-200 text-slate-500'}`}>
+                {unreadCounts.Announcement}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab('Log')}
-            className={`relative px-4 py-1.5 text-[11px] font-black rounded-xl transition-all duration-500 ${activeTab === 'Log' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+            className={`relative px-4 py-1.5 text-[11px] font-black rounded-xl transition-all duration-500 flex items-center gap-1.5 ${activeTab === 'Log' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
               }`}
           >
             更新日志
+            {unreadCounts.Log > 0 && (
+              <span className={`flex items-center justify-center px-1.5 py-0.5 min-w-[16px] text-[9px] font-black rounded-full transition-colors ${activeTab === 'Log' ? 'bg-rose-500 text-white shadow-[0_2px_8px_rgba(244,63,94,0.3)] animate-pulse' : 'bg-slate-200 text-slate-500'}`}>
+                {unreadCounts.Log}
+              </span>
+            )}
           </button>
         </div>
       </div>

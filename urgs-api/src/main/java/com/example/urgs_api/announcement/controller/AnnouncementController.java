@@ -220,4 +220,22 @@ public class AnnouncementController {
         announcementService.addComment(comment);
         return ResponseEntity.ok().build();
     }
+
+    @GetMapping("/stats")
+    public ResponseEntity<java.util.Map<String, Object>> getStats() {
+        return ResponseEntity.ok(announcementService.getStats());
+    }
+
+    @PostMapping("/read-all")
+    public ResponseEntity<Void> markAllAsRead(@RequestParam(required = false) String category,
+            @RequestHeader(value = "X-User-Id", defaultValue = "admin") String userId) {
+        String decodedUserId = userId;
+        try {
+            decodedUserId = java.net.URLDecoder.decode(userId, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            // ignore
+        }
+        announcementService.markAllAsRead(category, decodedUserId);
+        return ResponseEntity.ok().build();
+    }
 }

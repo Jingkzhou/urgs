@@ -17,4 +17,8 @@ public interface AnnouncementService extends IService<Announcement> {
     void addComment(AnnouncementComment comment);
 
     List<AnnouncementComment> getComments(String announcementId);
+
+    java.util.Map<String, Object> getStats();
+
+    void markAllAsRead(String category, String userId);
 }

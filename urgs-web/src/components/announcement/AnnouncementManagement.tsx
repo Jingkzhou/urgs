@@ -45,18 +45,41 @@ const StatCard: React.FC<StatCardProps> = ({ icon: Icon, iconColor, iconBg, labe
 
 const AnnouncementManagement: React.FC = () => {
     const canList = hasPermission('announcement:list');
+    const canLog = hasPermission('announcement:log');
     const canPublish = hasPermission('announcement:publish');
 
     // Initialize active tab based on permissions
     const getInitialTab = () => {
         if (canList) return 'list';
+        if (canLog) return 'log';
         if (canPublish) return 'publish';
         return 'list';
     };
 
     const [activeTab, setActiveTab] = useState<'list' | 'log' | 'publish'>(getInitialTab());
     const [editId, setEditId] = useState<string | null>(null);
+    const [publishCategoryIntent, setPublishCategoryIntent] = useState<'Announcement' | 'Log'>('Announcement');
     const [initialSelectedId, setInitialSelectedId] = useState<string | null>(null);
+    const [stats, setStats] = useState({
+        monthlyCount: 0,
+        urgentCount: 0,
+        pendingCount: 0
+    });
+
+    const fetchStats = async () => {
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch('/api/announcement/stats', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setStats(data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch announcement stats", err);
+        }
+    };
 
     // Initial URL Parameter Parsing
     useEffect(() => {
@@ -77,6 +100,7 @@ const AnnouncementManagement: React.FC = () => {
         };
 
         handleUrlParams();
+        fetchStats();
         window.addEventListener('hashchange', handleUrlParams);
         return () => window.removeEventListener('hashchange', handleUrlParams);
     }, []);
@@ -92,12 +116,15 @@ const AnnouncementManagement: React.FC = () => {
     };
 
     const handleTabChange = (key: 'list' | 'log' | 'publish') => {
+        if (key === 'publish' && activeTab !== 'publish') {
+            setPublishCategoryIntent(activeTab === 'log' ? 'Log' : 'Announcement');
+        }
         setActiveTab(key);
         if (key === 'list' || key === 'log') setEditId(null);
     };
 
     // No permission view
-    if (!canList && !canPublish) {
+    if (!canList && !canLog && !canPublish) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh]">
                 <div className="p-8 bg-slate-50 rounded-3xl border border-dashed border-slate-200 text-center max-w-md mx-auto">
@@ -108,7 +135,7 @@ const AnnouncementManagement: React.FC = () => {
                     <p className="text-slate-400 leading-relaxed">
                         您当前没有查看公告的权限。<br />
                         如需访问，请联系管理员为您添加以下权限：<br />
-                        <code className="text-xs bg-slate-100 px-2 py-1 rounded mt-2 inline-block text-slate-500 font-mono">announcement:list</code>
+                        <code className="text-xs bg-slate-100 px-2 py-1 rounded mt-2 inline-block text-slate-500 font-mono">announcement:list</code> 或者 <code className="text-xs bg-slate-100 px-2 py-1 rounded mt-2 inline-block text-slate-500 font-mono">announcement:log</code>
                     </p>
                 </div>
             </div>
@@ -117,7 +144,7 @@ const AnnouncementManagement: React.FC = () => {
 
     const tabs = [
         { key: 'list' as const, label: '公告列表', icon: List, permission: 'announcement:list' },
-        { key: 'log' as const, label: '更新日志', icon: FileText, permission: 'announcement:list' },
+        { key: 'log' as const, label: '更新日志', icon: FileText, permission: 'announcement:log' },
         { key: 'publish' as const, label: editId ? '编辑公告' : '发布内容', icon: Plus, permission: 'announcement:publish' },
     ];
 
@@ -151,7 +178,7 @@ const AnnouncementManagement: React.FC = () => {
                         iconColor="text-violet-600"
                         iconBg="bg-violet-50"
                         label="本月发布"
-                        value="24"
+                        value={stats.monthlyCount}
                         trend="up"
                         trendValue="+12%"
                     />
@@ -160,14 +187,14 @@ const AnnouncementManagement: React.FC = () => {
                         iconColor="text-rose-600"
                         iconBg="bg-rose-50"
                         label="紧急通知"
-                        value="3"
+                        value={stats.urgentCount}
                     />
                     <StatCard
                         icon={BellRing}
                         iconColor="text-amber-500"
                         iconBg="bg-amber-50"
                         label="待审核"
-                        value="5"
+                        value={stats.pendingCount}
                     />
                 </div>
             </header>
@@ -207,7 +234,7 @@ const AnnouncementManagement: React.FC = () => {
                     {/* Quick Action */}
                     <Auth code="announcement:publish">
                         <AnimatePresence>
-                            {activeTab === 'list' && (
+                            {(activeTab === 'list' || activeTab === 'log') && (
                                 <motion.div
                                     initial={{ opacity: 0, scale: 0.9, x: 20 }}
                                     animate={{ opacity: 1, scale: 1, x: 0 }}
@@ -248,7 +275,7 @@ const AnnouncementManagement: React.FC = () => {
                                     />
                                 </div>
                             )}
-                            {activeTab === 'log' && canList && (
+                            {activeTab === 'log' && canLog && (
                                 <div className="p-6">
                                     <AnnouncementList 
                                         onEdit={handleEdit} 
@@ -259,7 +286,11 @@ const AnnouncementManagement: React.FC = () => {
                             )}
                             {activeTab === 'publish' && canPublish && (
                                 <div className="p-6">
-                                    <PublishAnnouncement editId={editId} onSuccess={handlePublishSuccess} />
+                                    <PublishAnnouncement 
+                                        editId={editId} 
+                                        onSuccess={handlePublishSuccess} 
+                                        defaultCategory={publishCategoryIntent}
+                                    />
                                 </div>
                             )}
                         </motion.div>

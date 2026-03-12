@@ -27,6 +27,7 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '7', name: 'Ark (方舟)', code: 'ark', type: 'menu', path: '/ark', level: 0, parentId: 'root' },
     { id: '2', name: '公告', code: 'announcement', type: 'menu', path: '/announcement', level: 0, parentId: 'root' },
     { id: '2-1', name: '公告列表', code: 'announcement:list', type: 'menu', path: '/announcement/list', level: 1, parentId: '2' },
+    { id: '2-2', name: '更新日志', code: 'announcement:log', type: 'menu', path: '/announcement/log', level: 1, parentId: '2' },
     { id: '2-1-1', name: '发布公告', code: 'announcement:publish', type: 'button', path: '/announcement/publish', level: 2, parentId: '2-1' },
     { id: '2-1-2', name: '编辑公告', code: 'announcement:edit', type: 'button', path: '/announcement/edit', level: 2, parentId: '2-1' },
     { id: '2-1-3', name: '删除公告', code: 'announcement:del', type: 'button', path: '/announcement/del', level: 2, parentId: '2-1' },

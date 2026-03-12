@@ -9,9 +9,10 @@ import { IDomEditor, IEditorConfig, IToolbarConfig } from '@wangeditor/editor';
 interface PublishAnnouncementProps {
     editId?: string | null;
     onSuccess?: (category?: string) => void;
+    defaultCategory?: 'Announcement' | 'Log';
 }
 
-const PublishAnnouncement: React.FC<PublishAnnouncementProps> = ({ editId, onSuccess }) => {
+const PublishAnnouncement: React.FC<PublishAnnouncementProps> = ({ editId, onSuccess, defaultCategory = 'Announcement' }) => {
     const [editor, setEditor] = useState<IDomEditor | null>(null);
     const [html, setHtml] = useState('');
     const [fileList, setFileList] = useState<UploadFile[]>([]);
@@ -214,7 +215,7 @@ const PublishAnnouncement: React.FC<PublishAnnouncementProps> = ({ editId, onSuc
                 form={form}
                 layout="vertical"
                 onFinish={onFinish}
-                initialValues={{ type: 'normal', category: 'Announcement', systems: [] }}
+                initialValues={{ type: 'normal', category: defaultCategory, systems: [] }}
                 onValuesChange={(_, all) => setPreviewData(all)}
                 className="w-full"
             >
@@ -332,7 +333,7 @@ const PublishAnnouncement: React.FC<PublishAnnouncementProps> = ({ editId, onSuc
                                     label={<span className="text-xs font-bold text-slate-500">所属分类</span>}
                                     className="mb-0"
                                 >
-                                    <Select className="w-full" size="large">
+                                    <Select className="w-full" size="large" disabled={true}>
                                         <Select.Option value="Announcement">通知公告</Select.Option>
                                         <Select.Option value="Log">更新日志</Select.Option>
                                     </Select>

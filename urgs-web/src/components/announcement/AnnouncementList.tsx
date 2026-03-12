@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, MoreHorizontal, Eye, Trash2, Edit, LayoutGrid, List as ListIcon, Calendar, User, MessageCircle, ArrowUpRight, SearchSlash, ChevronLeft, ChevronRight, Clock } from 'lucide-react';
+import { Search, Filter, MoreHorizontal, Eye, Trash2, Edit, LayoutGrid, List as ListIcon, Calendar, User, MessageCircle, ArrowUpRight, SearchSlash, ChevronLeft, ChevronRight, Clock, CheckCircle } from 'lucide-react';
 import { message, Modal, Tooltip, Dropdown } from 'antd';
 import { motion, AnimatePresence } from 'framer-motion';
 import AnnouncementDetail from './AnnouncementDetail';
@@ -19,6 +19,24 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit, defaultSele
     const [currentPage, setCurrentPage] = useState(1);
     const [total, setTotal] = useState(0);
     const [selectedId, setSelectedId] = useState<string | null>(defaultSelectedId || null);
+
+    const handleMarkAllAsRead = async () => {
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch(`/api/announcement/read-all?category=${forceCategory || ''}`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                fetchNotices();
+                // Optionally notify other components via custom event
+                window.dispatchEvent(new CustomEvent('announcementRead'));
+                message.success('已全部标记为已读');
+            }
+        } catch (err) {
+            console.error("Failed to mark all as read", err);
+        }
+    };
 
     // Sync selectedId when defaultSelectedId changes (e.g. from URL)
     useEffect(() => {
@@ -490,34 +508,40 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit, defaultSele
                 )}
             </AnimatePresence>
 
-            {/* Pagination Grid */}
+            {/* Pagination & Batch Actions */}
             {total > 0 && (
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-100">
-                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                        Running {Math.min(currentPage * 12, total)} of {total} items
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); window.scrollTo(0, 0); }}
-                            disabled={currentPage === 1 || loading}
-                            className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-500 hover:border-violet-300 hover:text-violet-600 disabled:opacity-50 disabled:hover:border-slate-200 disabled:hover:text-slate-500 transition-all shadow-sm"
-                        >
-                            <ChevronLeft size={18} />
-                        </button>
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pt-8 border-t border-slate-100 mt-8">
+                    <button
+                        onClick={(e) => { e.stopPropagation(); handleMarkAllAsRead(); }}
+                        className="flex items-center gap-2 px-5 py-2.5 text-[11px] font-black uppercase tracking-widest text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition-all group"
+                    >
+                        <CheckCircle size={15} className="group-hover:scale-110 transition-transform" />
+                        全部标记为已读
+                    </button>
 
-                        <div className="flex items-center px-4 py-2 bg-slate-50 rounded-xl border border-slate-100">
-                            <span className="text-violet-600 font-black">{currentPage}</span>
+                    <div className="flex items-center gap-4">
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                            <span className="text-violet-600">{currentPage}</span>
                             <span className="text-slate-300 mx-2">/</span>
-                            <span className="text-slate-500 font-bold">{Math.ceil(total / 12)}</span>
+                            <span className="text-slate-500">{Math.ceil(total / 12)}</span>
                         </div>
 
-                        <button
-                            onClick={() => { setCurrentPage(p => p + 1); window.scrollTo(0, 0); }}
-                            disabled={currentPage >= Math.ceil(total / 12) || loading}
-                            className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-500 hover:border-violet-300 hover:text-violet-600 disabled:opacity-50 disabled:hover:border-slate-200 disabled:hover:text-slate-500 transition-all shadow-sm"
-                        >
-                            <ChevronRight size={18} />
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); window.scrollTo(0, 0); }}
+                                disabled={currentPage === 1 || loading}
+                                className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-500 hover:border-violet-300 hover:text-violet-600 disabled:opacity-50 disabled:hover:border-slate-200 disabled:hover:text-slate-500 transition-all shadow-sm"
+                            >
+                                <ChevronLeft size={18} />
+                            </button>
+                            <button
+                                onClick={() => { setCurrentPage(p => p + 1); window.scrollTo(0, 0); }}
+                                disabled={currentPage >= Math.ceil(total / 12) || loading}
+                                className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-500 hover:border-violet-300 hover:text-violet-600 disabled:opacity-50 disabled:hover:border-slate-200 disabled:hover:text-slate-500 transition-all shadow-sm"
+                            >
+                                <ChevronRight size={18} />
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

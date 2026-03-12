@@ -45,6 +45,49 @@ public class AnnouncementServiceImpl extends ServiceImpl<AnnouncementMapper, Ann
                 readMapper.insertIgnore(read);
         }
 
+        @Override
+        public java.util.Map<String, Object> getStats() {
+                java.util.Map<String, Object> stats = new java.util.HashMap<>();
+                
+                // 本月发布总数
+                LocalDateTime monthStart = LocalDateTime.now().withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0);
+                stats.put("monthlyCount", baseMapper.selectCount(new QueryWrapper<Announcement>()
+                        .eq("status", 1)
+                        .ge("create_time", monthStart)));
+                
+                // 紧急公告总数
+                stats.put("urgentCount", baseMapper.selectCount(new QueryWrapper<Announcement>()
+                        .eq("status", 1)
+                        .eq("type", "urgent")));
+                
+                // 待发布总数
+                stats.put("pendingCount", baseMapper.selectCount(new QueryWrapper<Announcement>()
+                        .eq("status", 0)));
+                
+                return stats;
+        }
+
+        @Override
+        public void markAllAsRead(String category, String userId) {
+                // 查询该分类下所有已发布且当前用户未读的公告 ID
+                // 这通常涉及一个复杂的子查询或多步操作。为了实现幂等性且不报错：
+                // 1. 获取所有符合条件的公告 ID
+                QueryWrapper<Announcement> qw = new QueryWrapper<Announcement>().eq("status", 1);
+                if (category != null && !category.isEmpty()) {
+                        qw.eq("category", category);
+                }
+                List<Announcement> list = baseMapper.selectList(qw.select("id"));
+                
+                for (Announcement a : list) {
+                        AnnouncementRead read = new AnnouncementRead();
+                        read.setId(IdWorker.getIdStr());
+                        read.setAnnouncementId(a.getId());
+                        read.setUserId(userId);
+                        read.setReadTime(LocalDateTime.now());
+                        readMapper.insertIgnore(read);
+                }
+        }
+
         @Autowired
         private com.example.urgs_api.im.service.ImChatService imChatService;
 
