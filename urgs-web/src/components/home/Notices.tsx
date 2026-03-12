@@ -144,7 +144,7 @@ const Notices: React.FC = () => {
       <div className="px-8 py-5 flex items-center justify-between border-b border-slate-100/50 relative z-10">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl shadow-lg ring-4 ring-slate-100/50">
-            <Sparkles className="w-4 h-4 text-white animate-pulse" />
+            <Megaphone className="w-4 h-4 text-white" />
           </div>
           <div>
             <div className="flex items-center gap-2">
