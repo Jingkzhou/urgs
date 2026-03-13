@@ -19,3 +19,7 @@ lineage:
   engine:
     workdir: "${LINEAGE_ENGINE_WORKDIR:${user.dir}/../sql-lineage-engine}"
     script: "./run.sh"
+
+deploy:
+  tool:
+    workdir: "${DEPLOY_TOOL_WORKDIR:classpath:db_deploy}"

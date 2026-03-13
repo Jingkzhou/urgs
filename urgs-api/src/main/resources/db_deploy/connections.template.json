@@ -1,0 +1,17 @@
+{
+  "_comment": "数据环境连接配置示例，用于 db_deploy 引擎",
+  "oracle_ods": {
+    "type": "oracle",
+    "user": "ods_owner",
+    "password": "your_password",
+    "dsn": "192.168.1.10:1521/ORCL"
+  },
+  "mysql_dw": {
+    "type": "mysql",
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "root",
+    "password": "your_password",
+    "database": "data_warehouse"
+  }
+}
