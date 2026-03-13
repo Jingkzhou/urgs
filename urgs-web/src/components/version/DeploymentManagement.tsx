@@ -4,12 +4,18 @@ import {
     Plus, Trash2, Edit, RefreshCw, Server, Rocket, RotateCcw, 
     CheckCircle, XCircle, Loader, Clock, Globe, Download, 
     ChevronRight, Info, Package, GitBranch, Tag as TagIcon, MoreVertical, 
-    Play, Activity, ShieldCheck, History, Settings, Zap, AlertTriangle
+    Play, Activity, ShieldCheck, History, Zap, AlertTriangle
 } from 'lucide-react';
 import {
     getDeployEnvironments, 
     getDeployments, 
     getSsoList,
+} from '@/api/version';
+import {
+    getInfrastructureAssets,
+    InfrastructureAsset
+} from '@/api/ops';
+import {
     getGitRepositories,
     getRepoBranches,
     getRepoTags,
@@ -18,8 +24,6 @@ import {
     downloadVersionPackage,
     updatePackageStatus,
     deployWithPackage,
-    createDeployEnvironment,
-    deleteDeployEnvironment,
     DeployEnvironment, 
     Deployment, 
     SsoConfig,
@@ -51,6 +55,8 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const [deployments, setDeployments] = useState<Deployment[]>([]);
     const [versionPackages, setVersionPackages] = useState<VersionPackage[]>([]);
     const [repos, setRepos] = useState<GitRepository[]>([]);
+    const [infraAssets, setInfraAssets] = useState<InfrastructureAsset[]>([]);
+    const [availableUsers, setAvailableUsers] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
     const [activeTab, setActiveTab] = useState<'packages' | 'history'>('packages');
 
@@ -67,10 +73,6 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const [selectedPackage, setSelectedPackage] = useState<VersionPackage | null>(null);
     const [deployForm] = Form.useForm();
 
-    // 环境管理 Modal
-    const [envModalVisible, setEnvModalVisible] = useState(false);
-    const [envForm] = Form.useForm();
-    const [envLoading, setEnvLoading] = useState(false);
 
     useEffect(() => {
         if (ssoId) {
@@ -81,22 +83,121 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [envs, deps, pkgs, repositories] = await Promise.all([
+            const [envs, deps, pkgs, repositories, assets] = await Promise.all([
                 getDeployEnvironments(ssoId),
                 getDeployments({ ssoId }),
                 getVersionPackages(ssoId!),
-                getGitRepositories({ ssoId })
+                getGitRepositories({ ssoId }),
+                getInfrastructureAssets({ appSystemId: Number(ssoId) })
             ]);
             setEnvironments(envs || []);
             setDeployments(deps || []);
             setVersionPackages(pkgs || []);
             setRepos(repositories || []);
+            setInfraAssets(assets || []);
         } catch (error) {
             message.error('加载数据失败');
         } finally {
             setLoading(false);
         }
     };
+
+    // ========== 派生数据 ==========
+    const derivedEnvironments = useMemo(() => {
+        // 从基础设施资产中按环境类型分组
+        const envGroups = infraAssets.reduce((acc, asset) => {
+            if (asset.envType) {
+                if (!acc[asset.envType]) acc[asset.envType] = [];
+                acc[asset.envType].push(asset);
+            }
+            return acc;
+        }, {} as Record<string, InfrastructureAsset[]>);
+        
+        const types = Object.keys(envGroups);
+        
+        // 映射为统一的结构
+        const assetEnvs = types.map((type, index) => ({
+            id: -(index + 1), // 虚拟 ID
+            name: type,
+            code: type,
+            assets: envGroups[type],
+            assetCount: envGroups[type].length,
+            isDerived: true
+        }));
+
+        // 合并原有的环境，并附带资产信息
+        const combined = environments.map(e => {
+            const assets = infraAssets.filter(a => String(a.envId) === String(e.id) || (a.envType === e.name));
+            return {
+                ...e,
+                assets,
+                assetCount: assets.length
+            };
+        });
+
+        assetEnvs.forEach(ae => {
+            if (!combined.find(e => e.name === ae.name)) {
+                combined.push(ae as any);
+            }
+        });
+
+        return combined;
+    }, [environments, infraAssets]);
+
+    const handleEnvChange = (envId: any) => {
+        if (!envId) {
+            setAvailableUsers([]);
+            return;
+        }
+
+        // 查找选中的环境
+        const env = (derivedEnvironments as any[]).find(e => 
+            String(e.id) === String(envId) || 
+            (e.isDerived && e.name === envId)
+        );
+
+        if (env) {
+            const assets = env.assets || [];
+            // 提取所有资产关联的鉴权账号
+            const users = Array.from(new Set(
+                assets.flatMap((a: any) => {
+                    const usernames: string[] = [];
+                    // 1. users 数组
+                    if (Array.isArray(a.users)) {
+                        a.users.forEach((u: any) => {
+                            if (u.username) usernames.push(u.username);
+                        });
+                    }
+                    // 2. 常见单字段 fallback
+                    if (a.account) usernames.push(a.account);
+                    if (a.username) usernames.push(a.username);
+                    if (a.loginUser) usernames.push(a.loginUser);
+                    return usernames;
+                })
+            )).filter(Boolean) as string[];
+            
+            console.log(`Matched Env: ${env.name}, Assets: ${assets.length}, Users:`, users);
+            setAvailableUsers(users);
+            
+            // 智能选中：如果只有一个用户，自动填入
+            const current = packageForm.getFieldValue('execUser');
+            if (users.length === 1 && (!current || !users.includes(current))) {
+                packageForm.setFieldsValue({ execUser: users[0] });
+            }
+        } else {
+            setAvailableUsers([]);
+        }
+    };
+
+    const watchedEnvId = Form.useWatch('envId', packageForm);
+
+    useEffect(() => {
+        if (watchedEnvId) {
+            handleEnvChange(watchedEnvId);
+        } else {
+            setAvailableUsers([]);
+        }
+    }, [watchedEnvId, derivedEnvironments]);
 
     // ========== 版本包操作 ==========
     const handleRepoChange = async (repoId: number) => {
@@ -158,64 +259,13 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
         }
     };
 
-    // ========== 环境管理操作 ==========
-    const handleAddEnvironment = async () => {
-        try {
-            const values = await envForm.validateFields();
-            await createDeployEnvironment({
-                ...values,
-                ssoId: ssoId!
-            });
-            message.success('环境添加成功');
-            envForm.resetFields();
-            fetchData();
-        } catch (error) {
-            console.error(error);
-        }
-    };
-
-    const handleDeleteEnv = async (id: number) => {
-        try {
-            await deleteDeployEnvironment(id);
-            message.success('环境已删除');
-            fetchData();
-        } catch (error) {
-            message.error('删除失败');
-        }
-    };
-
-    const handleQuickInitEnvs = async () => {
-        setEnvLoading(true);
-        try {
-            const defaults = [
-                { name: '测试环境', code: 'SIT', sortOrder: 10 },
-                { name: '预发布环境', code: 'UAT', sortOrder: 20 },
-                { name: '生产环境', code: 'PROD', sortOrder: 30 },
-            ];
-            
-            await Promise.all(defaults.map(env => 
-                createDeployEnvironment({
-                    ...env,
-                    ssoId: ssoId!,
-                    deployType: 'ssh'
-                })
-            ));
-            
-            message.success('环境快速初始化成功');
-            fetchData();
-        } catch (error) {
-            message.error('部分环境初始化失败，可能已存在');
-        } finally {
-            setEnvLoading(false);
-        }
-    };
 
     // ========== 部署操作 ==========
     const openDeployConfirm = (pkg: VersionPackage) => {
         setSelectedPackage(pkg);
         deployForm.setFieldsValue({
             packageId: pkg.id,
-            envId: environments.length > 0 ? environments[0].id : undefined
+            envId: derivedEnvironments.length > 0 ? derivedEnvironments[0].id : undefined
         });
         setDeployConfirmVisible(true);
     };
@@ -307,12 +357,6 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                             onClick={fetchData}
                         >
                             刷新
-                        </Button>
-                        <Button 
-                            icon={<Settings size={14} />} 
-                            onClick={() => setEnvModalVisible(true)}
-                        >
-                            管理环境
                         </Button>
                         <Button 
                             type="primary" 
@@ -524,10 +568,55 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                             placeholder="选择该版本拟投产的目标环境" 
                             showSearch
                             optionFilterProp="children"
+                            onChange={handleEnvChange}
                         >
-                            {environments.map(env => (
-                                <Option key={env.id} value={env.id}>
-                                    {env.name} ({env.code})
+                            {derivedEnvironments.map(env => (
+                                <Option key={env.id} value={env.id} label={env.name}>
+                                    <div className="py-2 border-b last:border-0 border-slate-50">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <Globe size={14} className="text-indigo-500" />
+                                                <span className="font-bold text-slate-800">{env.name}</span>
+                                            </div>
+                                            <Tag color="blue" className="m-0 text-[10px] rounded-full">{env.assetCount || 0} 台服务器</Tag>
+                                        </div>
+                                        {/* 资产明细列表 */}
+                                        <div className="space-y-1 pl-4 border-l-2 border-indigo-100 mt-1">
+                                            {(env.assets || []).slice(0, 3).map((asset: any) => (
+                                                <div key={asset.id} className="flex items-center justify-between text-[11px] text-slate-500 hover:bg-slate-50 p-1 rounded transition-colors">
+                                                    <div className="flex items-center gap-2 overflow-hidden">
+                                                        <Server size={10} className="text-slate-400 shrink-0" />
+                                                        <span className="font-medium text-slate-700 truncate">{asset.hostname || '未命名'}</span>
+                                                        <span className="text-slate-400 shrink-0">{asset.internalIp}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 shrink-0">
+                                                        <span className="text-indigo-400 bg-indigo-50 px-1 rounded uppercase tracking-wider scale-90">{asset.role}</span>
+                                                        <span className="flex items-center gap-1 text-[10px] text-slate-400">
+                                                            <Zap size={10} /> {asset.cpu}核 / {asset.memory}G
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {env.assetCount > 3 && <div className="text-[10px] text-slate-400 italic pl-5">...及其他 {env.assetCount - 3} 台</div>}
+                                        </div>
+                                    </div>
+                                </Option>
+                            ))}
+                        </Select>
+                    </Form.Item>
+                    
+                    <Form.Item name="execUser" label="执行用户" rules={[{ required: true, message: '请选择执行用户' }]}>
+                        <Select 
+                            placeholder={availableUsers.length > 0 ? "选择环境鉴权账号" : "该环境暂未配置鉴权账号"}
+                            allowClear
+                            showSearch
+                        >
+                            {availableUsers.map(user => (
+                                <Option key={user} value={user}>
+                                    <div className="flex items-center gap-2">
+                                        <ShieldCheck size={14} className="text-emerald-500" />
+                                        <span>{user}</span>
+                                    </div>
                                 </Option>
                             ))}
                         </Select>
@@ -537,109 +626,17 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                         <Input.TextArea rows={3} placeholder="填写该版本的变更点、注意事项等" />
                     </Form.Item>
                     
-                    {environments.length === 0 && (
+                    {derivedEnvironments.length === 0 && (
                         <div className="mt-2 p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-start gap-3">
                             <AlertTriangle size={16} className="text-amber-500 mt-0.5" />
                             <div className="text-xs text-amber-700">
-                                <b>注意：</b> 当前系统暂未配置任何投产环境。请关闭此弹窗并点击右上角的“管理环境”进行配置。
+                                <b>注意：</b> 当前系统暂未配置任何投产环境。请前往“基础设施管理”进行配置。
                             </div>
                         </div>
                     )}
                 </Form>
             </Modal>
 
-            {/* 环境管理 Modal */}
-            <Modal
-                title={
-                    <div className="flex items-center gap-3 py-1">
-                        <div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600">
-                            <Settings size={18} />
-                        </div>
-                        <span>部署环境管理</span>
-                    </div>
-                }
-                open={envModalVisible}
-                onCancel={() => setEnvModalVisible(false)}
-                footer={null}
-                width={650}
-                centered
-            >
-                <div className="space-y-6 mt-4">
-                    {/* 环境列表 */}
-                    <div>
-                        <div className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center justify-between">
-                            <span>当前系统环境列表</span>
-                            {environments.length === 0 && (
-                                <Button 
-                                    type="link" 
-                                    size="small" 
-                                    icon={<Zap size={12} />} 
-                                    onClick={handleQuickInitEnvs}
-                                    loading={envLoading}
-                                >
-                                    快速初始化 (SIT/UAT/PROD)
-                                </Button>
-                            )}
-                        </div>
-                        <div className="bg-slate-50 rounded-2xl border border-slate-100 divide-y divide-slate-100 overflow-hidden">
-                            {environments.length === 0 ? (
-                                <div className="py-8 text-center text-slate-400 text-sm italic">暂无环境配置</div>
-                            ) : (
-                                environments.map(env => (
-                                    <div key={env.id} className="p-3 flex items-center justify-between hover:bg-white transition-colors">
-                                        <div className="flex items-center gap-4">
-                                            <div className="bg-white p-2 rounded-lg border border-slate-200">
-                                                <Server size={14} className="text-slate-500" />
-                                            </div>
-                                            <div>
-                                                <div className="text-sm font-bold text-slate-800">{env.name}</div>
-                                                <div className="text-xs text-slate-400 font-mono">{env.code} · {env.deployType}</div>
-                                            </div>
-                                        </div>
-                                        <Popconfirm 
-                                            title="确定删除此环境吗？" 
-                                            onConfirm={() => env.id && handleDeleteEnv(env.id)}
-                                            okButtonProps={{ danger: true }}
-                                        >
-                                            <Button type="text" danger icon={<Trash2 size={14} />} />
-                                        </Popconfirm>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-
-                    <Divider className="my-0" />
-
-                    {/* 添加环境表单 */}
-                    <div>
-                        <div className="text-xs font-bold text-slate-400 uppercase mb-3 font-bold">添加新环境</div>
-                        <Form form={envForm} layout="vertical" onFinish={handleAddEnvironment}>
-                            <div className="grid grid-cols-2 gap-x-4">
-                                <Form.Item name="name" label="环境名称" rules={[{ required: true }]}>
-                                    <Input placeholder="例如: 准生产环境" />
-                                </Form.Item>
-                                <Form.Item name="code" label="环境代码" rules={[{ required: true }]}>
-                                    <Input placeholder="例如: PRE" />
-                                </Form.Item>
-                                <Form.Item name="deployType" label="部署方式" initialValue="ssh">
-                                    <Select>
-                                        <Option value="ssh">SSH (常规发布)</Option>
-                                        <Option value="docker">Docker (镜像发布)</Option>
-                                        <Option value="k8s">K8s (容器发布)</Option>
-                                    </Select>
-                                </Form.Item>
-                                <Form.Item name="sortOrder" label="排序权重" initialValue={10}>
-                                    <Input type="number" />
-                                </Form.Item>
-                            </div>
-                            <Button type="dashed" block icon={<Plus size={14} />} onClick={() => envForm.submit()}>
-                                点击添加环境
-                            </Button>
-                        </Form>
-                    </div>
-                </div>
-            </Modal>
 
             {/* 登记部署 Modal */}
             <Modal
@@ -660,9 +657,27 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                     </div>
                     
                     <Form.Item name="envId" label="部署目标环境" rules={[{ required: true }]}>
-                        <Select placeholder="选择实际部署的环境">
-                            {environments.map(env => (
-                                <Option key={env.id} value={env.id}>{env.name} ({env.code})</Option>
+                        <Select 
+                            placeholder="选择实际部署的环境"
+                            optionLabelProp="label"
+                        >
+                            {derivedEnvironments.map(env => (
+                                <Option key={env.id} value={env.id} label={env.name}>
+                                    <div className="py-2 border-b last:border-0 border-slate-50">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="font-bold text-slate-800">{env.name}</span>
+                                            <span className="text-[10px] text-indigo-400">{env.assetCount || 0} 资产</span>
+                                        </div>
+                                        <div className="space-y-0.5">
+                                            {(env.assets || []).slice(0, 2).map((asset: any) => (
+                                                <div key={asset.id} className="flex justify-between text-[10px] text-slate-500">
+                                                    <span>{asset.internalIp} ({asset.hostname})</span>
+                                                    <span>{asset.role} | {asset.cpu}C{asset.memory}G</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </Option>
                             ))}
                         </Select>
                     </Form.Item>
