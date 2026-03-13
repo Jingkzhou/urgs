@@ -82,6 +82,27 @@ public class DeploymentService {
     }
 
     /**
+     * 创建部署记录 (关联版本包)
+     */
+    @Transactional
+    public Deployment deployWithPackage(Long ssoId, Long envId, Long packageId, Long deployedBy, String remark) {
+        if (!envRepository.existsById(envId)) {
+            throw new IllegalArgumentException("环境不存在: " + envId);
+        }
+
+        Deployment deployment = new Deployment();
+        deployment.setSsoId(ssoId);
+        deployment.setEnvId(envId);
+        deployment.setPackageId(packageId);
+        deployment.setDeployedBy(deployedBy);
+        deployment.setRemark(remark);
+        deployment.setStatus(Deployment.STATUS_SUCCESS); // 因为是手工部署，默认创建即成功，或者标记为 PENDING 等待回填
+        deployment.setDeployedAt(LocalDateTime.now());
+
+        return deploymentRepository.save(deployment);
+    }
+
+    /**
      * 创建部署
      */
     @Transactional

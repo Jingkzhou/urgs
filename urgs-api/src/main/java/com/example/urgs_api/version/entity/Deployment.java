@@ -46,6 +46,18 @@ public class Deployment {
     @Column(name = "artifact_url", length = 500)
     private String artifactUrl;
 
+    /** 关联版本包ID */
+    @Column(name = "package_id")
+    private Long packageId;
+
+    /** 部署模式: full, incremental */
+    @Column(name = "deploy_mode", length = 20)
+    private String deployMode = "full";
+
+    /** 生产备份路径 */
+    @Column(name = "backup_path", length = 500)
+    private String backupPath;
+
     /** 部署状态 */
     @Column(length = 20)
     private String status = STATUS_PENDING;

@@ -1,688 +1,507 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Badge } from 'antd';
-import { Plus, Trash2, Edit, RefreshCw, Server, Rocket, RotateCcw, CheckCircle, XCircle, Loader, Clock, Globe } from 'lucide-react';
+import { Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Badge, List, Card, Timeline, Divider, Dropdown } from 'antd';
+import { 
+    Plus, Trash2, Edit, RefreshCw, Server, Rocket, RotateCcw, 
+    CheckCircle, XCircle, Loader, Clock, Globe, Download, 
+    ChevronRight, Info, Package, GitBranch, Tag as TagIcon, MoreVertical, 
+    Play, Activity, ShieldCheck, History
+} from 'lucide-react';
 import {
-    getDeployEnvironments, createDeployEnvironment, updateDeployEnvironment, deleteDeployEnvironment,
-    getDeployments, executeDeploy, rollbackDeploy,
+    getDeployEnvironments, 
+    getDeployments, 
     getSsoList,
-    DeployEnvironment, Deployment, SsoConfig
+    getGitRepositories,
+    getRepoBranches,
+    getRepoTags,
+    getVersionPackages,
+    createVersionPackage,
+    downloadVersionPackage,
+    updatePackageStatus,
+    deployWithPackage,
+    DeployEnvironment, 
+    Deployment, 
+    SsoConfig,
+    GitRepository,
+    GitBranch as IGitBranch,
+    GitTag as IGitTag,
+    VersionPackage
 } from '@/api/version';
-import { getInfrastructureAssets, InfrastructureAsset } from '@/api/ops';
 
 const { Option } = Select;
 
 const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
-    pending: { color: 'default', icon: <Clock size={14} />, label: '等待中' },
-    deploying: { color: 'processing', icon: <Loader size={14} className="animate-spin" />, label: '部署中' },
+    draft: { color: 'default', icon: <Edit size={14} />, label: '草稿' },
+    ready: { color: 'blue', icon: <CheckCircle size={14} />, label: '就绪' },
+    deployed: { color: 'success', icon: <Rocket size={14} />, label: '已部署' },
+    archived: { color: 'default', icon: <History size={14} />, label: '已归档' },
+    pending: { color: 'default', icon: <Clock size={14} />, label: '待处理' },
     success: { color: 'success', icon: <CheckCircle size={14} />, label: '成功' },
     failed: { color: 'error', icon: <XCircle size={14} />, label: '失败' },
-    rollback: { color: 'warning', icon: <RotateCcw size={14} />, label: '回滚' },
 };
 
 interface Props {
     ssoId?: number;
+    repoId?: number; // 新增：指定默认使用的版本库ID
 }
 
-const DeploymentManagement: React.FC<Props> = ({ ssoId }) => {
+const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const [environments, setEnvironments] = useState<DeployEnvironment[]>([]);
     const [deployments, setDeployments] = useState<Deployment[]>([]);
-    const [ssoList, setSsoList] = useState<SsoConfig[]>([]);
-    const [infrastructureAssets, setInfrastructureAssets] = useState<InfrastructureAsset[]>([]);
+    const [versionPackages, setVersionPackages] = useState<VersionPackage[]>([]);
+    const [repos, setRepos] = useState<GitRepository[]>([]);
     const [loading, setLoading] = useState(false);
-    const [envSearchKeyword, setEnvSearchKeyword] = useState('');
+    const [activeTab, setActiveTab] = useState<'packages' | 'history'>('packages');
 
-    // 环境 Modal
-    const [envModalVisible, setEnvModalVisible] = useState(false);
-    const [editingEnv, setEditingEnv] = useState<DeployEnvironment | null>(null);
-    const [envForm] = Form.useForm();
+    // 版本包 Modal
+    const [packageModalVisible, setPackageModalVisible] = useState(false);
+    const [packageForm] = Form.useForm();
+    const [selectedRepo, setSelectedRepo] = useState<number | null>(null);
+    const [branches, setBranches] = useState<IGitBranch[]>([]);
+    const [tags, setTags] = useState<IGitTag[]>([]);
+    const [fetchingGit, setFetchingGit] = useState(false);
 
-    // 部署 Modal
-    const [deployModalVisible, setDeployModalVisible] = useState(false);
+    // 部署确认 Modal
+    const [deployConfirmVisible, setDeployConfirmVisible] = useState(false);
+    const [selectedPackage, setSelectedPackage] = useState<VersionPackage | null>(null);
     const [deployForm] = Form.useForm();
 
     useEffect(() => {
-        fetchSsoList();
-        fetchEnvironments();
-        fetchDeployments();
-        fetchInfrastructureAssets();
-    }, []);
-
-    const fetchSsoList = async () => {
-        try {
-            const data = await getSsoList();
-            setSsoList(data || []);
-        } catch (error) {
-            console.error('获取监管系统列表失败', error);
+        if (ssoId) {
+            fetchData();
         }
-    };
+    }, [ssoId]);
 
-    const fetchEnvironments = async () => {
-        try {
-            const data = await getDeployEnvironments(ssoId);
-            setEnvironments(data || []);
-        } catch (error) {
-            message.error('获取环境列表失败');
-        }
-    };
-
-    const fetchInfrastructureAssets = async () => {
-        try {
-            const data = await getInfrastructureAssets({ appSystemId: ssoId });
-            setInfrastructureAssets(data || []);
-        } catch (error) {
-            console.error('获取基础设施资产失败', error);
-        }
-    };
-
-    // 按系统和环境类型分组的服务器资产
-    const filteredAssets = useMemo(() => {
-        return infrastructureAssets.filter(asset => {
-            const matchSearch = !envSearchKeyword ||
-                asset.hostname?.toLowerCase().includes(envSearchKeyword.toLowerCase()) ||
-                asset.internalIp?.toLowerCase().includes(envSearchKeyword.toLowerCase());
-            return matchSearch;
-        });
-    }, [infrastructureAssets, envSearchKeyword]);
-
-    // 按环境类型分组
-    const assetsByEnvType = useMemo(() => {
-        const groups: Record<string, InfrastructureAsset[]> = {};
-        filteredAssets.forEach(asset => {
-            const envType = asset.envType || '未分类';
-            if (!groups[envType]) {
-                groups[envType] = [];
-            }
-            groups[envType].push(asset);
-        });
-        return groups;
-    }, [filteredAssets]);
-
-    const fetchDeployments = async () => {
+    const fetchData = async () => {
         setLoading(true);
         try {
-            const data = await getDeployments({ ssoId });
-            setDeployments(data || []);
+            const [envs, deps, pkgs, repositories] = await Promise.all([
+                getDeployEnvironments(ssoId),
+                getDeployments({ ssoId }),
+                getVersionPackages(ssoId!),
+                getGitRepositories({ ssoId })
+            ]);
+            setEnvironments(envs || []);
+            setDeployments(deps || []);
+            setVersionPackages(pkgs || []);
+            setRepos(repositories || []);
         } catch (error) {
-            message.error('获取部署记录失败');
+            message.error('加载数据失败');
         } finally {
             setLoading(false);
         }
     };
 
-    // ========== 环境管理 ==========
-    const handleAddEnv = () => {
-        setEditingEnv(null);
-        envForm.resetFields();
-        envForm.setFieldsValue({
-            deployType: 'ssh',
-            sortOrder: 0,
-            ssoId: ssoId
-        });
-        setEnvModalVisible(true);
-    };
-
-    const handleEditEnv = (record: DeployEnvironment) => {
-        setEditingEnv(record);
-        envForm.setFieldsValue(record);
-        setEnvModalVisible(true);
-    };
-
-    const handleDeleteEnv = async (id: number) => {
+    // ========== 版本包操作 ==========
+    const handleRepoChange = async (repoId: number) => {
+        setSelectedRepo(repoId);
+        setFetchingGit(true);
+        packageForm.setFieldsValue({ gitRef: undefined });
         try {
-            await deleteDeployEnvironment(id);
-            message.success('删除成功');
-            fetchEnvironments();
+            const [b, t] = await Promise.all([
+                getRepoBranches(repoId),
+                getRepoTags(repoId)
+            ]);
+            setBranches(b || []);
+            setTags(t || []);
         } catch (error) {
-            message.error('删除失败');
+            message.error('获取仓库分支/标签失败');
+        } finally {
+            setFetchingGit(false);
         }
     };
 
-    const handleEnvSubmit = async () => {
+    const handleCreatePackage = async () => {
         try {
-            const values = await envForm.validateFields();
-            if (editingEnv?.id) {
-                await updateDeployEnvironment(editingEnv.id, values);
-                message.success('更新成功');
-            } else {
-                await createDeployEnvironment(values);
-                message.success('创建成功');
-            }
-            setEnvModalVisible(false);
-            fetchEnvironments();
+            const values = await packageForm.validateFields();
+            await createVersionPackage({
+                ...values,
+                ssoId: ssoId!
+            });
+            message.success('版本包创建成功');
+            setPackageModalVisible(false);
+            fetchData();
         } catch (error) {
-            message.error('保存失败');
+            console.error(error);
+        }
+    };
+
+    const handleDownload = async (pkg: VersionPackage) => {
+        try {
+            const blob = await downloadVersionPackage(pkg.id);
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `deploy-${pkg.version}-${pkg.gitRef}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            message.success('部署包下载开始');
+        } catch (error) {
+            message.error('下载部署包失败');
+        }
+    };
+
+    const handleUpdateStatus = async (id: number, status: string) => {
+        try {
+            await updatePackageStatus(id, status);
+            message.success('状态更新成功');
+            fetchData();
+        } catch (error) {
+            message.error('更新状态失败');
         }
     };
 
     // ========== 部署操作 ==========
-    const handleDeploy = () => {
-        deployForm.resetFields();
-        if (ssoId) {
-            deployForm.setFieldsValue({ ssoId });
-        }
-        setDeployModalVisible(true);
+    const openDeployConfirm = (pkg: VersionPackage) => {
+        setSelectedPackage(pkg);
+        deployForm.setFieldsValue({
+            packageId: pkg.id,
+            envId: environments.length > 0 ? environments[0].id : undefined
+        });
+        setDeployConfirmVisible(true);
     };
 
-    const handleDeploySubmit = async () => {
+    const handleDeployConfirm = async () => {
         try {
             const values = await deployForm.validateFields();
-            await executeDeploy(values);
-            message.success('已开始部署');
-            setDeployModalVisible(false);
-            fetchDeployments();
+            await deployWithPackage({
+                ...values,
+                ssoId: ssoId!,
+                deployedBy: 1, // 实际应用中应从当前用户获取
+            });
+            message.success('部署记录已成功创建');
+            setDeployConfirmVisible(false);
+            fetchData();
+            setActiveTab('history');
         } catch (error) {
-            message.error('部署失败');
+            message.error('记录部署失败');
         }
     };
 
-    const handleRollback = async (deployment: Deployment) => {
-        try {
-            await rollbackDeploy(deployment.id!);
-            message.success('已开始回滚');
-            fetchDeployments();
-        } catch (error) {
-            message.error('回滚失败');
-        }
-    };
-
-    const deployTypeLabelMap: Record<string, string> = {
-        ssh: 'SSH',
-        docker: 'Docker',
-        k8s: 'Kubernetes',
-    };
-
-    const mockEnvironments: DeployEnvironment[] = [
-        {
-            id: 1,
-            name: '开发环境',
-            code: 'dev',
-            ssoId: ssoId ?? 0,
-            deployType: 'k8s',
-            deployUrl: 'dev-cluster',
-        },
-        {
-            id: 2,
-            name: '预发环境',
-            code: 'staging',
-            ssoId: ssoId ?? 0,
-            deployType: 'docker',
-            deployUrl: 'staging-node-01',
-        },
-        {
-            id: 3,
-            name: '生产环境',
-            code: 'prod',
-            ssoId: ssoId ?? 0,
-            deployType: 'k8s',
-            deployUrl: 'prod-east',
-        },
-    ];
-
-    const mockDeployments: Deployment[] = [
-        {
-            id: 101,
-            ssoId: ssoId ?? 0,
-            envId: 2,
-            version: 'v2.4.8',
-            status: 'deploying',
-            deployedAt: '2 分钟前',
-        },
-        {
-            id: 102,
-            ssoId: ssoId ?? 0,
-            envId: 3,
-            version: 'v2.4.7',
-            status: 'success',
-            deployedAt: '15 分钟前',
-        },
-        {
-            id: 103,
-            ssoId: ssoId ?? 0,
-            envId: 1,
-            version: 'v2.4.6',
-            status: 'failed',
-            deployedAt: '1 小时前',
-        },
-    ];
-
-    const envItems = environments.length > 0 ? environments : mockEnvironments;
-    const deploymentItems = deployments.length > 0 ? deployments : mockDeployments;
-
-    const primaryButtonClass =
-        'bg-gradient-to-tr from-indigo-500 to-purple-600 border-none hover:from-indigo-600 hover:to-purple-700';
-    const secondaryButtonClass =
-        'border-indigo-200 text-indigo-600 hover:text-indigo-700 hover:border-indigo-300';
-    const subtleButtonClass =
-        'border-slate-200 text-slate-600 hover:text-indigo-700 hover:border-indigo-200';
-
-    const overviewStats = [
-        { label: '发布成功率', value: '98.1%', note: '近 30 天' },
-        { label: '平均耗时', value: '11m 42s', note: 'P95 18m' },
-        { label: '回滚率', value: '1.2%', note: '趋势下降' },
-        { label: '风险指数', value: '低', note: '合规通过' },
-    ];
-
-    const rolloutStages = [
-        { title: '制品准备', subtitle: '签名 / SBOM', badge: '可信链' },
-        { title: '质量门禁', subtitle: 'SAST/DAST', badge: 'Policy' },
-        { title: '灰度发布', subtitle: '5% → 30%', badge: 'Canary' },
-        { title: '全量发布', subtitle: '多区域', badge: 'Global' },
-        { title: '运行观测', subtitle: 'SLO / 回归', badge: 'Observe' },
-    ];
-
-    const envNameMap = (envId: number) => envItems.find(item => item.id === envId)?.name || '-';
+    const primaryButtonClass = 'bg-gradient-to-tr from-indigo-500 to-purple-600 border-none hover:from-indigo-600 hover:to-purple-700';
 
     return (
-        <div className="relative">
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                <div className="relative bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600">
-                    <div
-                        className="absolute inset-0 opacity-20"
-                        style={{
-                            backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(255,255,255,0.4), transparent 40%), radial-gradient(circle at 80% 0%, rgba(255,255,255,0.2), transparent 45%)',
-                        }}
-                    />
-                    <div className="relative px-6 py-5 text-white">
-                        <div className="flex flex-wrap items-center justify-between gap-4">
-                            <div>
-                                <div className="text-xs uppercase tracking-[0.2em] text-indigo-100">Deployment Control</div>
-                                <h3 className="text-xl font-semibold text-white">部署管理中心</h3>
-                                <p className="text-sm text-indigo-100">多环境发布 · 门禁合规 · 回滚保障</p>
-                            </div>
-                            <Space>
-                                <Button
-                                    icon={<RefreshCw size={14} />}
-                                    onClick={() => {
-                                        fetchDeployments();
-                                        fetchEnvironments();
-                                    }}
-                                    loading={loading}
-                                    className="text-white border-white/40 hover:border-white"
-                                >
-                                    刷新
-                                </Button>
-                                <Button type="primary" icon={<Rocket size={14} />} onClick={handleDeploy} className={primaryButtonClass}>
-                                    执行部署
-                                </Button>
-                            </Space>
+        <div className="space-y-6">
+            {/* 统计概览 */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden bg-white">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-indigo-50 rounded-xl text-indigo-600">
+                            <Package size={24} />
                         </div>
-                        <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                            {overviewStats.map(stat => (
-                                <div key={stat.label} className="rounded-xl border border-white/30 bg-white/10 px-4 py-3 backdrop-blur">
-                                    <div className="text-xs uppercase tracking-wide text-indigo-100">{stat.label}</div>
-                                    <div className="mt-2 flex items-end justify-between">
-                                        <span className="text-lg font-semibold text-white">{stat.value}</span>
-                                        <span className="text-xs text-indigo-100">{stat.note}</span>
-                                    </div>
-                                </div>
-                            ))}
+                        <div>
+                            <div className="text-xs text-slate-400 font-medium uppercase tracking-wider">总版本包</div>
+                            <div className="text-2xl font-bold text-slate-800">{versionPackages.length}</div>
                         </div>
                     </div>
+                </Card>
+                <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden bg-white">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-emerald-50 rounded-xl text-emerald-600">
+                            <CheckCircle size={24} />
+                        </div>
+                        <div>
+                            <div className="text-xs text-slate-400 font-medium uppercase tracking-wider">最近已部署</div>
+                            <div className="text-2xl font-bold text-slate-800">
+                                {versionPackages.filter(p => p.status === 'deployed').length}
+                            </div>
+                        </div>
+                    </div>
+                </Card>
+                <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden bg-white">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-blue-50 rounded-xl text-blue-600">
+                            <History size={24} />
+                        </div>
+                        <div>
+                            <div className="text-xs text-slate-400 font-medium uppercase tracking-wider">部署记录</div>
+                            <div className="text-2xl font-bold text-slate-800">{deployments.length}</div>
+                        </div>
+                    </div>
+                </Card>
+            </div>
+
+            {/* 操作主区域 */}
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                    <div className="flex items-center gap-8">
+                        <div 
+                            className={`flex items-center gap-2 cursor-pointer transition-colors ${activeTab === 'packages' ? 'text-indigo-600 font-bold' : 'text-slate-500 font-medium'}`}
+                            onClick={() => setActiveTab('packages')}
+                        >
+                            <Package size={18} />
+                            版本包管理
+                            {activeTab === 'packages' && <div className="ml-1 w-1.5 h-1.5 rounded-full bg-indigo-600" />}
+                        </div>
+                        <div 
+                            className={`flex items-center gap-2 cursor-pointer transition-colors ${activeTab === 'history' ? 'text-indigo-600 font-bold' : 'text-slate-500 font-medium'}`}
+                            onClick={() => setActiveTab('history')}
+                        >
+                            <History size={18} />
+                            部署历史
+                            {activeTab === 'history' && <div className="ml-1 w-1.5 h-1.5 rounded-full bg-indigo-600" />}
+                        </div>
+                    </div>
+                    <Space>
+                        <Button 
+                            icon={<RefreshCw size={14} className={loading ? 'animate-spin' : ''} />} 
+                            onClick={fetchData}
+                        >
+                            刷新
+                        </Button>
+                        <Button 
+                            type="primary" 
+                            icon={<Plus size={16} />} 
+                            className={primaryButtonClass}
+                            onClick={() => {
+                                setPackageModalVisible(true);
+                                // 如果是从具体仓库页面进来的，自动填充 repoId
+                                if (repoId) {
+                                    packageForm.setFieldsValue({ repoId });
+                                    // 延迟一小会儿执行加载，确保 Modal 内部状态同步
+                                    setTimeout(() => handleRepoChange(repoId), 0);
+                                }
+                            }}
+                        >
+                            创建版本包
+                        </Button>
+                    </Space>
                 </div>
 
-                <div className="bg-slate-50 px-6 py-6">
-                    <div className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_320px] gap-5">
-                        <aside className="space-y-5">
-                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                <div className="flex items-center justify-between mb-3">
-                                    <div>
-                                        <div className="text-xs uppercase tracking-widest text-slate-400">服务器资产</div>
-                                        <div className="text-sm font-semibold text-slate-800">关联服务器</div>
-                                    </div>
-                                    <Tag color="blue">{infrastructureAssets.length}</Tag>
+                <div className="p-6">
+                    {activeTab === 'packages' ? (
+                        <div className="space-y-4">
+                            {versionPackages.length === 0 ? (
+                                <div className="py-20 text-center flex flex-col items-center justify-center opacity-40">
+                                    <Package size={64} strokeWidth={1} className="mb-4" />
+                                    <p>暂无版本包记录，请点击上方按钮从 Git 仓库创建</p>
                                 </div>
-                                <Input
-                                    placeholder="搜索主机名或IP"
-                                    className="border-slate-200"
-                                    value={envSearchKeyword}
-                                    onChange={(e) => setEnvSearchKeyword(e.target.value)}
-                                    allowClear
-                                />
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                    {Object.keys(assetsByEnvType).map(envType => (
-                                        <span
-                                            key={envType}
-                                            className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-500"
-                                        >
-                                            {envType} ({assetsByEnvType[envType].length})
-                                        </span>
-                                    ))}
-                                </div>
-                                <div className="mt-4 space-y-4 max-h-[400px] overflow-y-auto">
-                                    {Object.entries(assetsByEnvType).map(([envType, assets]) => (
-                                        <div key={envType}>
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <Tag color={envType.includes('生产') ? 'red' : envType.includes('测试') ? 'blue' : 'default'} className="m-0">
-                                                    {envType}
-                                                </Tag>
-                                                <span className="text-xs text-slate-400">{assets.length} 台服务器</span>
-                                            </div>
-                                            <div className="space-y-2">
-                                                {assets.map(asset => (
-                                                    <div key={asset.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm hover:border-indigo-200 transition-colors">
-                                                        <div className="flex items-start justify-between gap-2">
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center gap-2">
-                                                                    <Server size={14} className="text-indigo-500 flex-shrink-0" />
-                                                                    <span className="text-sm font-semibold text-slate-800 truncate">{asset.hostname}</span>
-                                                                </div>
-                                                                <div className="mt-1 text-xs text-slate-500 font-mono flex items-center gap-1">
-                                                                    <Globe size={12} />
-                                                                    {asset.internalIp}
-                                                                </div>
-                                                            </div>
-                                                            <Badge
-                                                                status={asset.status === 'active' ? 'success' : asset.status === 'maintenance' ? 'warning' : 'default'}
-                                                                text={asset.status === 'active' ? '运行中' : asset.status === 'maintenance' ? '维护中' : '离线'}
-                                                                className="text-[10px]"
-                                                            />
-                                                        </div>
-                                                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
-                                                            {asset.cpu && <span>CPU: {asset.cpu}</span>}
-                                                            {asset.memory && <span>内存: {asset.memory}</span>}
-                                                            {asset.role && <Tag className="m-0 text-[10px]">{asset.role}</Tag>}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {Object.keys(assetsByEnvType).length === 0 && (
-                                        <div className="text-center text-slate-400 text-sm py-8">
-                                            <Server size={32} className="mx-auto mb-2 opacity-30" />
-                                            <div>暂无关联服务器</div>
-                                            <div className="text-xs mt-1">请在基础设施管理中添加服务器并关联系统</div>
-                                        </div>
-                                    )}
-                                </div>
-                                <Button type="primary" icon={<RefreshCw size={14} />} onClick={fetchInfrastructureAssets} className={`mt-4 w-full ${primaryButtonClass}`}>
-                                    刷新资产
-                                </Button>
-                            </div>
-
-                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                <div className="text-xs uppercase tracking-widest text-slate-400">发布窗口</div>
-                                <div className="mt-2 text-sm font-semibold text-slate-800">全局窗口状态</div>
-                                <div className="mt-3 space-y-3 text-xs text-slate-500">
-                                    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
-                                        <div className="flex items-center justify-between">
-                                            <span>当前窗口</span>
-                                            <span className="font-semibold text-emerald-600">开放</span>
-                                        </div>
-                                        <div className="mt-2 text-[10px] text-slate-400">下一次冻结: 周四 20:00</div>
-                                    </div>
-                                    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
-                                        <div className="flex items-center justify-between">
-                                            <span>审批队列</span>
-                                            <span className="font-semibold text-slate-700">2</span>
-                                        </div>
-                                        <div className="mt-2 text-[10px] text-slate-400">平均处理 18m</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </aside>
-
-                        <section className="space-y-5">
-                            <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <div className="text-xs uppercase tracking-widest text-slate-400">Release Orchestration</div>
-                                        <div className="text-sm font-semibold text-slate-800">发布编排</div>
-                                    </div>
-                                    <div className="text-xs text-slate-500">策略: 金丝雀发布</div>
-                                </div>
-                                <div className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3">
-                                    {rolloutStages.map(stage => (
-                                        <div key={stage.title} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-sm font-semibold text-slate-800">{stage.title}</span>
-                                                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-                                                    {stage.badge}
-                                                </span>
-                                            </div>
-                                            <div className="mt-1 text-xs text-slate-500">{stage.subtitle}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
-                                    <div className="flex items-center justify-between">
-                                        <span>分流曲线</span>
-                                        <span>5% → 30% → 60% → 100%</span>
-                                    </div>
-                                    <div className="mt-2 h-1.5 rounded-full bg-slate-200">
-                                        <div className="h-1.5 w-3/5 rounded-full bg-indigo-500" />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <div className="text-xs uppercase tracking-widest text-slate-400">Live Delivery</div>
-                                        <div className="text-sm font-semibold text-slate-800">部署队列</div>
-                                    </div>
-                                    <Button size="small" className={secondaryButtonClass}>
-                                        查看策略
-                                    </Button>
-                                </div>
-                                <div className="mt-4 space-y-3">
-                                    {deploymentItems.slice(0, 3).map(deployment => {
-                                        const config = statusConfig[deployment.status] || statusConfig.pending;
+                            ) : (
+                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                    {versionPackages.map(pkg => {
+                                        const config = statusConfig[pkg.status] || statusConfig.draft;
                                         return (
-                                            <div key={deployment.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-                                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                                                    {config.icon}
-                                                    {deployment.version || '-'}
+                                            <div key={pkg.id} className="rounded-2xl border border-slate-200 p-5 hover:border-indigo-300 transition-all hover:shadow-md bg-white group">
+                                                <div className="flex items-start justify-between mb-4">
+                                                    <div>
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <h4 className="text-base font-bold text-slate-800 m-0">版本: {pkg.version}</h4>
+                                                            <Tag color={config.color} className="flex items-center gap-1">
+                                                                {config.icon} {config.label}
+                                                            </Tag>
+                                                        </div>
+                                                        <div className="text-xs text-slate-400 font-mono">ID: VP-{pkg.id.toString().padStart(6, '0')}</div>
+                                                    </div>
+                                                    <Dropdown menu={{
+                                                        items: [
+                                                            { key: 'deployed', label: '标记为已部署', onClick: () => handleUpdateStatus(pkg.id, 'deployed') },
+                                                            { key: 'archived', label: '标记为归档', onClick: () => handleUpdateStatus(pkg.id, 'archived') },
+                                                            { key: 'delete', label: '删除', danger: true, onClick: () => message.info('功能暂未开放') },
+                                                        ]
+                                                    }}>
+                                                        <Button type="text" icon={<MoreVertical size={16} />} />
+                                                    </Dropdown>
                                                 </div>
-                                                <span className="text-xs text-slate-500">{envNameMap(deployment.envId)}</span>
-                                                <Tag color={config.color}>{config.label}</Tag>
-                                                <span className="text-xs text-slate-400">{deployment.deployedAt || '-'}</span>
+
+                                                <div className="grid grid-cols-2 gap-y-3 gap-x-6 text-sm">
+                                                    <div className="flex items-center gap-2 text-slate-600">
+                                                        <Globe size={14} className="text-slate-400" />
+                                                        <span className="truncate">仓库: {repos.find(r => r.id === pkg.repoId)?.name || '未知'}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 text-slate-600">
+                                                        <GitBranch size={14} className="text-slate-400" />
+                                                        <span>引用: {pkg.gitRef}</span>
+                                                    </div>
+                                                    <div className="col-span-2 flex items-start gap-2 text-slate-600">
+                                                        <Info size={14} className="text-slate-400 mt-1" />
+                                                        <span>说明: {pkg.description || '无'}</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
+                                                    <div className="text-xs text-slate-400">
+                                                        创建时间: {pkg.createdAt ? new Date(pkg.createdAt).toLocaleString() : '-'}
+                                                    </div>
+                                                    <Space>
+                                                        <Button 
+                                                            size="small" 
+                                                            icon={<Download size={14} />} 
+                                                            onClick={() => handleDownload(pkg)}
+                                                        >
+                                                            下载安装包
+                                                        </Button>
+                                                        <Button 
+                                                            size="small" 
+                                                            type="primary" 
+                                                            icon={<Rocket size={14} />} 
+                                                            ghost
+                                                            onClick={() => openDeployConfirm(pkg)}
+                                                        >
+                                                            登记部署
+                                                        </Button>
+                                                    </Space>
+                                                </div>
                                             </div>
                                         );
                                     })}
                                 </div>
-                            </div>
-                        </section>
-
-                        <aside className="space-y-5">
-                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                <div className="text-xs uppercase tracking-widest text-slate-400">门禁与审批</div>
-                                <div className="mt-2 text-sm font-semibold text-slate-800">合规矩阵</div>
-                                <div className="mt-4 space-y-3 text-xs text-slate-500">
-                                    {[
-                                        { label: 'SAST 扫描', status: '通过', tone: 'emerald' },
-                                        { label: 'DAST 扫描', status: '通过', tone: 'emerald' },
-                                        { label: '依赖安全', status: '轻微警告', tone: 'amber' },
-                                        { label: '签名验证', status: '通过', tone: 'emerald' },
-                                    ].map(item => (
-                                        <div key={item.label} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
-                                            <span>{item.label}</span>
-                                            <span className={`font-semibold ${item.tone === 'amber' ? 'text-amber-600' : 'text-emerald-600'}`}>
-                                                {item.status}
-                                            </span>
-                                        </div>
-                                    ))}
-                                    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
-                                        <div className="text-[10px] uppercase tracking-widest text-slate-400">审批链</div>
-                                        <div className="mt-2 text-xs text-slate-500">研发 → 安全 → 运维</div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                <div className="text-xs uppercase tracking-widest text-slate-400">回滚保障</div>
-                                <div className="mt-2 text-sm font-semibold text-slate-800">稳定性护栏</div>
-                                <div className="mt-4 space-y-3 text-xs text-slate-500">
-                                    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
-                                        <div className="flex items-center justify-between">
-                                            <span>回滚准备度</span>
-                                            <span className="font-semibold text-indigo-600">98%</span>
-                                        </div>
-                                        <div className="mt-2 text-[10px] text-slate-400">镜像可用 · 配置回滚</div>
-                                    </div>
-                                    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
-                                        <div className="flex items-center justify-between">
-                                            <span>平均 MTTR</span>
-                                            <span className="font-semibold text-slate-700">9m</span>
-                                        </div>
-                                        <div className="mt-2 text-[10px] text-slate-400">近 10 次回滚</div>
-                                    </div>
-                                    <Button className={`w-full ${secondaryButtonClass}`} icon={<RotateCcw size={14} />}>
-                                        一键回滚预案
-                                    </Button>
-                                </div>
-                            </div>
-                        </aside>
-                    </div>
-
-                    <div className="mt-6 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-5">
-                        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <div className="text-xs uppercase tracking-widest text-slate-400">Recent Deployments</div>
-                                    <div className="text-sm font-semibold text-slate-800">部署记录</div>
-                                </div>
-                                <Button size="small" className={secondaryButtonClass} onClick={fetchDeployments}>
-                                    刷新记录
-                                </Button>
-                            </div>
-                            <div className="mt-4 space-y-3">
-                                {deploymentItems.map(deployment => {
-                                    const config = statusConfig[deployment.status] || statusConfig.pending;
-                                    return (
-                                        <div key={deployment.id} className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-                                            <div className="flex flex-wrap items-center justify-between gap-3">
-                                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                                                    {config.icon}
-                                                    {deployment.version || '-'}
-                                                    {deployment.rollbackTo ? <Tag color="orange" className="text-xs">回滚</Tag> : null}
+                            )}
+                        </div>
+                    ) : (
+                        <div className="max-w-3xl mx-auto">
+                            <Timeline
+                                mode="left"
+                                items={deployments.map(dep => {
+                                    const config = statusConfig[dep.status] || statusConfig.success;
+                                    return {
+                                        label: <span className="text-slate-400 text-xs">{dep.deployedAt}</span>,
+                                        children: (
+                                            <div className="mb-8">
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <div className="text-base font-bold text-slate-800">
+                                                        {dep.version || (dep.packageId ? `版本包 #${dep.packageId}` : '未命名发布')}
+                                                    </div>
+                                                    <Tag color={config.color} className="m-0">{config.label}</Tag>
                                                 </div>
-                                                <Tag color={config.color}>{config.label}</Tag>
+                                                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-sm text-slate-600">
+                                                    <div className="flex flex-wrap gap-x-6 gap-y-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <Server size={14} className="text-slate-400" />
+                                                            环境: {environments.find(e => e.id === dep.envId)?.name || '未知'}
+                                                        </div>
+                                                        <div className="flex items-center gap-2 text-slate-400 text-xs italic">
+                                                            <Edit size={12} />
+                                                            备注: {dep.remark || '无'}
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div className="mt-2 text-xs text-slate-500">
-                                                环境: {envNameMap(deployment.envId)} · {deployment.deployedAt || '-'}
-                                            </div>
-                                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                                                {deployment.status === 'success' && !deployment.rollbackTo ? (
-                                                    <Popconfirm title="确定回滚到此版本？" onConfirm={() => handleRollback(deployment)}>
-                                                        <Button size="small" className={secondaryButtonClass} icon={<RotateCcw size={12} />}>
-                                                            回滚
-                                                        </Button>
-                                                    </Popconfirm>
-                                                ) : null}
-                                                <Button size="small" className={subtleButtonClass} icon={<Rocket size={12} />} onClick={handleDeploy}>
-                                                    复用发布
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    );
+                                        ),
+                                        dot: <div className={`w-3 h-3 rounded-full ${dep.status === 'success' ? 'bg-emerald-500' : 'bg-slate-300'}`} />,
+                                        color: dep.status === 'success' ? 'green' : 'gray'
+                                    };
                                 })}
-                            </div>
+                            />
+                            {deployments.length === 0 && (
+                                <div className="text-center py-10 opacity-40">暂无部署历史记录</div>
+                            )}
                         </div>
-
-                        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                            <div className="text-xs uppercase tracking-widest text-slate-400">Risk Radar</div>
-                            <div className="text-sm font-semibold text-slate-800">风险与告警</div>
-                            <div className="mt-4 space-y-3 text-xs text-slate-500">
-                                <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-3">
-                                    <div className="flex items-center justify-between">
-                                        <span>发布失败波动</span>
-                                        <span className="text-rose-600 font-semibold">3 次</span>
-                                    </div>
-                                    <div className="mt-2 text-[10px] text-rose-400">建议提升集成测试稳定性</div>
-                                </div>
-                                <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-3">
-                                    <div className="flex items-center justify-between">
-                                        <span>审批延迟</span>
-                                        <span className="text-amber-600 font-semibold">2 项</span>
-                                    </div>
-                                    <div className="mt-2 text-[10px] text-amber-400">超出 SLA 15 分钟</div>
-                                </div>
-                                <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
-                                    <div className="flex items-center justify-between">
-                                        <span>环境漂移</span>
-                                        <span className="text-slate-700 font-semibold">无</span>
-                                    </div>
-                                    <div className="mt-2 text-[10px] text-slate-400">GitOps 同步正常</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    )}
                 </div>
             </div>
 
-            {/* 环境 Modal */}
+            {/* 创建版本包 Modal */}
             <Modal
-                title={editingEnv ? '编辑环境' : '添加环境'}
-                open={envModalVisible}
-                onOk={handleEnvSubmit}
-                onCancel={() => setEnvModalVisible(false)}
-                width={500}
+                title={
+                    <div className="flex items-center gap-3 py-1">
+                        <div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600">
+                            <Package size={18} />
+                        </div>
+                        <span>创建新版本包</span>
+                    </div>
+                }
+                open={packageModalVisible}
+                onOk={handleCreatePackage}
+                onCancel={() => setPackageModalVisible(false)}
+                okText="创建版本包"
+                cancelText="取消"
+                width={550}
+                centered
             >
-                <Form form={envForm} layout="vertical" className="mt-4">
-                    {!ssoId && (
-                        <Form.Item name="ssoId" label="关联系统" rules={[{ required: true }]}>
-                            <Select placeholder="选择监管系统">
-                                {ssoList.map(sso => (
-                                    <Option key={sso.id} value={sso.id}>{sso.name}</Option>
+                <Form form={packageForm} layout="vertical" className="mt-4 px-1">
+                    <Form.Item name="repoId" label="项目仓库" rules={[{ required: true }]}>
+                        {repoId ? (
+                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <Globe size={14} className="text-indigo-500" />
+                                    <span className="font-bold text-slate-800">
+                                        {repos.find(r => r.id === repoId)?.name || '正在加载...'}
+                                    </span>
+                                </div>
+                                <div className="text-xs text-slate-400 font-mono break-all pl-6">
+                                    {repos.find(r => r.id === repoId)?.cloneUrl}
+                                </div>
+                            </div>
+                        ) : (
+                            <Select placeholder="选择关联的 Git 仓库" onChange={handleRepoChange}>
+                                {repos.map(repo => (
+                                    <Option key={repo.id} value={repo.id}>
+                                        <div className="flex items-center gap-2">
+                                            <Globe size={14} className="text-slate-400" />
+                                            <span>{repo.name} {repo.fullName && `(${repo.fullName})`}</span>
+                                        </div>
+                                    </Option>
                                 ))}
                             </Select>
-                        </Form.Item>
-                    )}
-                    <Form.Item name="name" label="环境名称" rules={[{ required: true }]}>
-                        <Input placeholder="例如：生产环境" />
+                        )}
                     </Form.Item>
-                    <Form.Item name="code" label="环境编码" rules={[{ required: true }]}>
-                        <Select placeholder="选择环境编码">
-                            <Option value="dev">dev - 开发环境</Option>
-                            <Option value="test">test - 测试环境</Option>
-                            <Option value="staging">staging - 预发环境</Option>
-                            <Option value="prod">prod - 生产环境</Option>
+
+                    <Form.Item name="gitRef" label="版本标签 (Tag)" rules={[{ required: true }]}>
+                        <Select 
+                            placeholder={selectedRepo ? "选择一个 Git 标签 (Tag)" : "请先选择仓库"} 
+                            disabled={!selectedRepo} 
+                            loading={fetchingGit}
+                            showSearch
+                        >
+                            {tags.map(tag => (
+                                <Option key={`tag-${tag.name}`} value={tag.name}>
+                                    <div className="flex items-center gap-2">
+                                        <TagIcon size={14} className="text-indigo-500"/>
+                                        <span>{tag.name}</span>
+                                    </div>
+                                </Option>
+                            ))}
                         </Select>
                     </Form.Item>
-                    <Form.Item name="deployUrl" label="部署地址">
-                        <Input placeholder="例如：192.168.1.100" />
-                    </Form.Item>
-                    <Form.Item name="deployType" label="部署方式">
-                        <Select>
-                            <Option value="ssh">SSH</Option>
-                            <Option value="docker">Docker</Option>
-                            <Option value="k8s">Kubernetes</Option>
+
+                    <Form.Item name="envId" label="投产环境" rules={[{ required: true, message: '请选择投产环境' }]}>
+                        <Select 
+                            placeholder="选择该版本拟投产的目标环境" 
+                            showSearch
+                            optionFilterProp="children"
+                        >
+                            {environments.map(env => (
+                                <Option key={env.id} value={env.id}>
+                                    {env.name} ({env.code})
+                                </Option>
+                            ))}
                         </Select>
+                    </Form.Item>
+
+                    <Form.Item name="description" label="版本说明">
+                        <Input.TextArea rows={3} placeholder="填写该版本的变更点、注意事项等" />
                     </Form.Item>
                 </Form>
             </Modal>
 
-            {/* 部署 Modal */}
+            {/* 登记部署 Modal */}
             <Modal
-                title="执行部署"
-                open={deployModalVisible}
-                onOk={handleDeploySubmit}
-                onCancel={() => setDeployModalVisible(false)}
-                width={500}
+                title="登记部署执行结果"
+                open={deployConfirmVisible}
+                onOk={handleDeployConfirm}
+                onCancel={() => setDeployConfirmVisible(false)}
+                okText="确认登记"
+                centered
             >
                 <Form form={deployForm} layout="vertical" className="mt-4">
-                    {!ssoId && (
-                        <Form.Item name="ssoId" label="选择系统" rules={[{ required: true }]}>
-                            <Select placeholder="选择监管系统">
-                                {ssoList.map(sso => (
-                                    <Option key={sso.id} value={sso.id}>{sso.name}</Option>
-                                ))}
-                            </Select>
-                        </Form.Item>
-                    )}
-                    <Form.Item name="envId" label="选择环境" rules={[{ required: true }]}>
-                        <Select placeholder="选择部署环境">
+                    <div className="mb-4 p-3 bg-indigo-50 rounded-xl border border-indigo-100 flex items-center gap-3">
+                        <Rocket size={18} className="text-indigo-600" />
+                        <div>
+                            <div className="text-xs text-indigo-400">正在为以下版本登记部署</div>
+                            <div className="text-sm font-bold text-indigo-900">{selectedPackage?.version} ({selectedPackage?.gitRef})</div>
+                        </div>
+                    </div>
+                    
+                    <Form.Item name="envId" label="部署目标环境" rules={[{ required: true }]}>
+                        <Select placeholder="选择实际部署的环境">
                             {environments.map(env => (
                                 <Option key={env.id} value={env.id}>{env.name} ({env.code})</Option>
                             ))}
                         </Select>
                     </Form.Item>
-                    <Form.Item name="version" label="版本号" rules={[{ required: true }]}>
-                        <Input placeholder="例如：v1.0.0" />
-                    </Form.Item>
-                    <Form.Item name="artifactUrl" label="制品地址">
-                        <Input placeholder="可选，制品下载地址" />
+
+                    <Form.Item name="remark" label="部署备注">
+                        <Input.TextArea placeholder="手工部署后的执行发现、通过情况等" />
                     </Form.Item>
                 </Form>
             </Modal>
