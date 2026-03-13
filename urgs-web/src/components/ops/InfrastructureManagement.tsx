@@ -255,9 +255,15 @@ const InfrastructureManagement: React.FC = () => {
         },
         {
             title: '角色',
-            dataIndex: 'role',
             key: 'role',
-            render: (role: string) => <Tag className="uppercase font-mono text-[10px]">{role || 'UNCATEGORIZED'}</Tag>
+            render: (_: any, record: InfrastructureAsset) => (
+                <Space size={4}>
+                    <Tag className="uppercase font-mono text-[10px] m-0">{record.role || 'UNCATEGORIZED'}</Tag>
+                    {record.dbType && (
+                        <Tag color="blue" className="font-mono text-[10px] m-0">{record.dbType}</Tag>
+                    )}
+                </Space>
+            )
         },
         {
             title: '状态',
@@ -449,7 +455,7 @@ const InfrastructureManagement: React.FC = () => {
                         </Col>
                         <Col span={12}>
                             <Form.Item name="role" label="服务器角色">
-                                <Select placeholder="选择角色">
+                                <Select placeholder="选择角色" allowClear>
                                     <Option value="app">应用服务器</Option>
                                     <Option value="db">数据库服务器</Option>
                                     <Option value="redis">缓存服务器</Option>
@@ -460,12 +466,44 @@ const InfrastructureManagement: React.FC = () => {
                         </Col>
                     </Row>
 
+                    <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.role !== currentValues.role}>
+                        {({ getFieldValue }) =>
+                            getFieldValue('role') === 'db' ? (
+                                <Row gutter={16}>
+                                    <Col span={24}>
+                                        <Form.Item
+                                            name="dbType"
+                                            label="数据库类型"
+                                            rules={[{ required: true, message: '请选择数据库类型' }]}
+                                        >
+                                            <Select placeholder="选择数据库类型">
+                                                <Option value="Oracle">Oracle</Option>
+                                                <Option value="MySQL">MySQL</Option>
+                                                <Option value="gbase">gbase</Option>
+                                                <Option value="达梦">达梦</Option>
+                                                <Option value="hive">hive</Option>
+                                                <Option value="云树">云树</Option>
+                                            </Select>
+                                        </Form.Item>
+                                    </Col>
+                                </Row>
+                            ) : null
+                        }
+                    </Form.Item>
+
                     <Row gutter={16}>
                         <Col span={12}>
-                            <Form.Item name="envId" label="具体部署环境" extra={modalEnvs.length === 0 && form.getFieldValue('appSystemId') ? "该系统暂未配置部署环境，请先在[版本管理]中添加" : null}>
-                                <Select placeholder="选择环境" allowClear>
-                                    {modalEnvs.map(e => <Option key={e.id} value={e.id}>{e.name}</Option>)}
-                                </Select>
+                            <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.appSystemId !== currentValues.appSystemId}>
+                                {({ getFieldValue }) => {
+                                    const appSystemId = getFieldValue('appSystemId');
+                                    return (
+                                        <Form.Item name="envId" label="具体部署环境" extra={modalEnvs.length === 0 && appSystemId ? "该系统暂未配置部署环境，请先在[版本管理]中添加" : null}>
+                                            <Select placeholder="选择环境" allowClear>
+                                                {modalEnvs.map(e => <Option key={e.id} value={e.id}>{e.name}</Option>)}
+                                            </Select>
+                                        </Form.Item>
+                                    );
+                                }}
                             </Form.Item>
                         </Col>
                         <Col span={12}>
@@ -694,7 +732,12 @@ const InfrastructureManagement: React.FC = () => {
                                     )}
                                     <div className="flex px-4 py-3">
                                         <span className="text-slate-400 text-sm w-24">服务器角色</span>
-                                        <Tag className="uppercase font-mono text-[10px] m-0">{selectedAsset.role || 'UNCATEGORIZED'}</Tag>
+                                        <Space size={8}>
+                                            <Tag className="uppercase font-mono text-[10px] m-0">{selectedAsset.role || 'UNCATEGORIZED'}</Tag>
+                                            {selectedAsset.dbType && (
+                                                <Tag color="cyan" className="font-mono text-[10px] m-0">{selectedAsset.dbType}</Tag>
+                                            )}
+                                        </Space>
                                     </div>
                                 </div>
                             </div>

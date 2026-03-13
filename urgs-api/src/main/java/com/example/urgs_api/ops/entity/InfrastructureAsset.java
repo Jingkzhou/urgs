@@ -76,6 +76,11 @@ public class InfrastructureAsset {
     @ExcelProperty("角色")
     private String role;
 
+    /** 数据库类型 (Oracle, MySQL, gbase, etc.) */
+    @Column(name = "db_type", length = 50)
+    @ExcelProperty("数据库类型")
+    private String dbType;
+
     /** 关联应用系统ID */
     @Column(name = "app_system_id")
     @ExcelProperty("关联系统ID")

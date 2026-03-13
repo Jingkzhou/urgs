@@ -4,7 +4,7 @@ import {
     Plus, Trash2, Edit, RefreshCw, Server, Rocket, RotateCcw, 
     CheckCircle, XCircle, Loader, Clock, Globe, Download, 
     ChevronRight, Info, Package, GitBranch, Tag as TagIcon, MoreVertical, 
-    Play, Activity, ShieldCheck, History
+    Play, Activity, ShieldCheck, History, Settings, Zap, AlertTriangle
 } from 'lucide-react';
 import {
     getDeployEnvironments, 
@@ -18,6 +18,8 @@ import {
     downloadVersionPackage,
     updatePackageStatus,
     deployWithPackage,
+    createDeployEnvironment,
+    deleteDeployEnvironment,
     DeployEnvironment, 
     Deployment, 
     SsoConfig,
@@ -64,6 +66,11 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const [deployConfirmVisible, setDeployConfirmVisible] = useState(false);
     const [selectedPackage, setSelectedPackage] = useState<VersionPackage | null>(null);
     const [deployForm] = Form.useForm();
+
+    // 环境管理 Modal
+    const [envModalVisible, setEnvModalVisible] = useState(false);
+    const [envForm] = Form.useForm();
+    const [envLoading, setEnvLoading] = useState(false);
 
     useEffect(() => {
         if (ssoId) {
@@ -148,6 +155,58 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
             fetchData();
         } catch (error) {
             message.error('更新状态失败');
+        }
+    };
+
+    // ========== 环境管理操作 ==========
+    const handleAddEnvironment = async () => {
+        try {
+            const values = await envForm.validateFields();
+            await createDeployEnvironment({
+                ...values,
+                ssoId: ssoId!
+            });
+            message.success('环境添加成功');
+            envForm.resetFields();
+            fetchData();
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    const handleDeleteEnv = async (id: number) => {
+        try {
+            await deleteDeployEnvironment(id);
+            message.success('环境已删除');
+            fetchData();
+        } catch (error) {
+            message.error('删除失败');
+        }
+    };
+
+    const handleQuickInitEnvs = async () => {
+        setEnvLoading(true);
+        try {
+            const defaults = [
+                { name: '测试环境', code: 'SIT', sortOrder: 10 },
+                { name: '预发布环境', code: 'UAT', sortOrder: 20 },
+                { name: '生产环境', code: 'PROD', sortOrder: 30 },
+            ];
+            
+            await Promise.all(defaults.map(env => 
+                createDeployEnvironment({
+                    ...env,
+                    ssoId: ssoId!,
+                    deployType: 'ssh'
+                })
+            ));
+            
+            message.success('环境快速初始化成功');
+            fetchData();
+        } catch (error) {
+            message.error('部分环境初始化失败，可能已存在');
+        } finally {
+            setEnvLoading(false);
         }
     };
 
@@ -248,6 +307,12 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                             onClick={fetchData}
                         >
                             刷新
+                        </Button>
+                        <Button 
+                            icon={<Settings size={14} />} 
+                            onClick={() => setEnvModalVisible(true)}
+                        >
+                            管理环境
                         </Button>
                         <Button 
                             type="primary" 
@@ -471,7 +536,109 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                     <Form.Item name="description" label="版本说明">
                         <Input.TextArea rows={3} placeholder="填写该版本的变更点、注意事项等" />
                     </Form.Item>
+                    
+                    {environments.length === 0 && (
+                        <div className="mt-2 p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-start gap-3">
+                            <AlertTriangle size={16} className="text-amber-500 mt-0.5" />
+                            <div className="text-xs text-amber-700">
+                                <b>注意：</b> 当前系统暂未配置任何投产环境。请关闭此弹窗并点击右上角的“管理环境”进行配置。
+                            </div>
+                        </div>
+                    )}
                 </Form>
+            </Modal>
+
+            {/* 环境管理 Modal */}
+            <Modal
+                title={
+                    <div className="flex items-center gap-3 py-1">
+                        <div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600">
+                            <Settings size={18} />
+                        </div>
+                        <span>部署环境管理</span>
+                    </div>
+                }
+                open={envModalVisible}
+                onCancel={() => setEnvModalVisible(false)}
+                footer={null}
+                width={650}
+                centered
+            >
+                <div className="space-y-6 mt-4">
+                    {/* 环境列表 */}
+                    <div>
+                        <div className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center justify-between">
+                            <span>当前系统环境列表</span>
+                            {environments.length === 0 && (
+                                <Button 
+                                    type="link" 
+                                    size="small" 
+                                    icon={<Zap size={12} />} 
+                                    onClick={handleQuickInitEnvs}
+                                    loading={envLoading}
+                                >
+                                    快速初始化 (SIT/UAT/PROD)
+                                </Button>
+                            )}
+                        </div>
+                        <div className="bg-slate-50 rounded-2xl border border-slate-100 divide-y divide-slate-100 overflow-hidden">
+                            {environments.length === 0 ? (
+                                <div className="py-8 text-center text-slate-400 text-sm italic">暂无环境配置</div>
+                            ) : (
+                                environments.map(env => (
+                                    <div key={env.id} className="p-3 flex items-center justify-between hover:bg-white transition-colors">
+                                        <div className="flex items-center gap-4">
+                                            <div className="bg-white p-2 rounded-lg border border-slate-200">
+                                                <Server size={14} className="text-slate-500" />
+                                            </div>
+                                            <div>
+                                                <div className="text-sm font-bold text-slate-800">{env.name}</div>
+                                                <div className="text-xs text-slate-400 font-mono">{env.code} · {env.deployType}</div>
+                                            </div>
+                                        </div>
+                                        <Popconfirm 
+                                            title="确定删除此环境吗？" 
+                                            onConfirm={() => env.id && handleDeleteEnv(env.id)}
+                                            okButtonProps={{ danger: true }}
+                                        >
+                                            <Button type="text" danger icon={<Trash2 size={14} />} />
+                                        </Popconfirm>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
+                    <Divider className="my-0" />
+
+                    {/* 添加环境表单 */}
+                    <div>
+                        <div className="text-xs font-bold text-slate-400 uppercase mb-3 font-bold">添加新环境</div>
+                        <Form form={envForm} layout="vertical" onFinish={handleAddEnvironment}>
+                            <div className="grid grid-cols-2 gap-x-4">
+                                <Form.Item name="name" label="环境名称" rules={[{ required: true }]}>
+                                    <Input placeholder="例如: 准生产环境" />
+                                </Form.Item>
+                                <Form.Item name="code" label="环境代码" rules={[{ required: true }]}>
+                                    <Input placeholder="例如: PRE" />
+                                </Form.Item>
+                                <Form.Item name="deployType" label="部署方式" initialValue="ssh">
+                                    <Select>
+                                        <Option value="ssh">SSH (常规发布)</Option>
+                                        <Option value="docker">Docker (镜像发布)</Option>
+                                        <Option value="k8s">K8s (容器发布)</Option>
+                                    </Select>
+                                </Form.Item>
+                                <Form.Item name="sortOrder" label="排序权重" initialValue={10}>
+                                    <Input type="number" />
+                                </Form.Item>
+                            </div>
+                            <Button type="dashed" block icon={<Plus size={14} />} onClick={() => envForm.submit()}>
+                                点击添加环境
+                            </Button>
+                        </Form>
+                    </div>
+                </div>
             </Modal>
 
             {/* 登记部署 Modal */}

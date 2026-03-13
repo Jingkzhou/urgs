@@ -23,6 +23,7 @@ export interface InfrastructureAsset {
     disk?: string;
     hardwareModel?: string;
     role?: string;
+    dbType?: string;
     appSystemId?: number;
     envId?: number;
     envType?: string;
