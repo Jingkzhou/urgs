@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/version/packages")
+@RequestMapping("/api/version/deploy/packages")
 @RequiredArgsConstructor
 public class VersionPackageController {
 
