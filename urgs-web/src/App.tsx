@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { hasPermission } from './utils/permission';
-import { LayoutDashboard, Menu, Bell, Search, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Timer, Database, GitBranch, Activity, Lock, Palette, User, Sparkles, Award } from 'lucide-react';
+import { LayoutDashboard, Menu, Bell, Search, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Timer, Database, GitBranch, Activity, Lock, Palette, User, Sparkles, Award, BookOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Login from './components/Login';
 import Dashboard from './components/home/Dashboard';
@@ -26,7 +26,7 @@ const NAV_ITEMS = [
     { id: 'marketplace', label: '工作市场', icon: Award, permission: 'marketplace' },
     { id: 'metadata', label: '数据', icon: Database, permission: 'metadata' },
     { id: 'ops', label: '运维', icon: Activity, permission: 'ops' },
-    { id: 'knowledge', label: '知识中心', icon: Database, permission: 'knowledge' },
+    { id: 'knowledge', label: '知识中心', icon: BookOpen, permission: 'knowledge' },
     { id: 'sys', label: '系统管理', icon: Settings, permission: 'sys' },
 ];
 

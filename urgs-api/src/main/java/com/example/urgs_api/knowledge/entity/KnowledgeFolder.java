@@ -26,6 +26,9 @@ public class KnowledgeFolder {
     /** 文件夹名称 */
     private String name;
 
+    /** 空间类型: private(私人)/shared(共享) */
+    private String scope = "private";
+
     /** 排序 */
     private Integer sortOrder;
 
