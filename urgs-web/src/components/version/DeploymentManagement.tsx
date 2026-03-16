@@ -103,118 +103,83 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     };
 
     // ========== 派生数据 ==========
-    const derivedEnvironments = useMemo(() => {
-        // 从基础设施资产中按环境类型分组
-        const envGroups = infraAssets.reduce((acc, asset) => {
-            if (asset.envType) {
-                if (!acc[asset.envType]) acc[asset.envType] = [];
-                acc[asset.envType].push(asset);
-            }
-            return acc;
-        }, {} as Record<string, InfrastructureAsset[]>);
-        
-        const types = Object.keys(envGroups);
-        
-        // 映射为统一的结构
-        const assetEnvs = types.map((type, index) => ({
-            id: -(index + 1), // 虚拟 ID
-            name: type,
-            code: type,
-            assets: envGroups[type],
-            assetCount: envGroups[type].length,
-            isDerived: true
-        }));
+    // 筛选出 role=db 的数据库服务器，供版本包创建时选择单台服务器
+    const dbAssets = useMemo(() => {
+        return infraAssets.filter(a => a.role === 'db');
+    }, [infraAssets]);
 
-        // 合并原有的环境，并附带资产信息
-        const combined = environments.map(e => {
-            const assets = infraAssets.filter(a => String(a.envId) === String(e.id) || (a.envType === e.name));
-            return {
-                ...e,
-                assets,
-                assetCount: assets.length
-            };
-        });
-
-        assetEnvs.forEach(ae => {
-            if (!combined.find(e => e.name === ae.name)) {
-                combined.push(ae as any);
-            }
-        });
-
-        return combined;
-    }, [environments, infraAssets]);
-
-    const handleEnvChange = (envId: any) => {
-        if (!envId) {
+    const handleAssetChange = (assetId: any) => {
+        if (!assetId) {
             setAvailableUsers([]);
+            packageForm.setFieldsValue({ execUser: undefined });
             return;
         }
 
-        // 查找选中的环境
-        const env = (derivedEnvironments as any[]).find(e => 
-            String(e.id) === String(envId) || 
-            (e.isDerived && e.name === envId)
-        );
+        const asset = infraAssets.find(a => a.id === assetId);
+        if (asset) {
+            // 从该服务器的 users 中筛选 userType=db 的数据库用户
+            const dbUsers = (asset.users || [])
+                .filter((u: any) => u.userType === 'db')
+                .map((u: any) => u.username)
+                .filter(Boolean);
 
-        if (env) {
-            const assets = env.assets || [];
-            // 提取所有资产关联的鉴权账号
-            const users = Array.from(new Set(
-                assets.flatMap((a: any) => {
-                    const usernames: string[] = [];
-                    // 1. users 数组
-                    if (Array.isArray(a.users)) {
-                        a.users.forEach((u: any) => {
-                            if (u.username) usernames.push(u.username);
-                        });
-                    }
-                    // 2. 常见单字段 fallback
-                    if (a.account) usernames.push(a.account);
-                    if (a.username) usernames.push(a.username);
-                    if (a.loginUser) usernames.push(a.loginUser);
-                    return usernames;
-                })
-            )).filter(Boolean) as string[];
-            
-            console.log(`Matched Env: ${env.name}, Assets: ${assets.length}, Users:`, users);
-            setAvailableUsers(users);
-            
-            // 智能选中：如果只有一个用户，自动填入
+            console.log(`Selected Asset: ${asset.hostname} (${asset.internalIp}), DB Users:`, dbUsers);
+            setAvailableUsers(dbUsers);
+
+            // 智能选中：如果只有一个 db 用户，自动填入
             const current = packageForm.getFieldValue('execUser');
-            if (users.length === 1 && (!current || !users.includes(current))) {
-                packageForm.setFieldsValue({ execUser: users[0] });
+            if (dbUsers.length === 1 && (!current || !dbUsers.includes(current))) {
+                packageForm.setFieldsValue({ execUser: dbUsers[0] });
+            } else if (!dbUsers.includes(current)) {
+                packageForm.setFieldsValue({ execUser: undefined });
             }
         } else {
             setAvailableUsers([]);
         }
     };
 
-    const watchedEnvId = Form.useWatch('envId', packageForm);
+    const watchedAssetId = Form.useWatch('assetId', packageForm);
 
     useEffect(() => {
-        if (watchedEnvId) {
-            handleEnvChange(watchedEnvId);
+        if (watchedAssetId) {
+            handleAssetChange(watchedAssetId);
         } else {
             setAvailableUsers([]);
         }
-    }, [watchedEnvId, derivedEnvironments]);
+    }, [watchedAssetId, infraAssets]);
 
     // ========== 版本包操作 ==========
     const handleRepoChange = async (repoId: number) => {
         setSelectedRepo(repoId);
         setFetchingGit(true);
-        packageForm.setFieldsValue({ gitRef: undefined });
+        packageForm.setFieldsValue({ gitRef: undefined, previousGitRef: undefined });
         try {
             const [b, t] = await Promise.all([
                 getRepoBranches(repoId),
                 getRepoTags(repoId)
             ]);
             setBranches(b || []);
-            setTags(t || []);
+            // 按 taggerDate 时间倒序排列
+            const sortedTags = [...(t || [])].sort((a, b) => {
+                const dateA = a.taggerDate || '';
+                const dateB = b.taggerDate || '';
+                return dateB.localeCompare(dateA);
+            });
+            setTags(sortedTags);
         } catch (error) {
             message.error('获取仓库分支/标签失败');
         } finally {
             setFetchingGit(false);
+        }
+    };
+
+    // 选择当前 tag 后，自动填入基线 tag（时间线上的前一个）
+    const handleTagChange = (tagName: string) => {
+        const idx = tags.findIndex(t => t.name === tagName);
+        if (idx >= 0 && idx + 1 < tags.length) {
+            packageForm.setFieldsValue({ previousGitRef: tags[idx + 1].name });
+        } else {
+            packageForm.setFieldsValue({ previousGitRef: undefined });
         }
     };
 
@@ -265,7 +230,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
         setSelectedPackage(pkg);
         deployForm.setFieldsValue({
             packageId: pkg.id,
-            envId: derivedEnvironments.length > 0 ? derivedEnvironments[0].id : undefined
+            envId: environments.length > 0 ? environments[0].id : undefined
         });
         setDeployConfirmVisible(true);
     };
@@ -546,58 +511,70 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                     </Form.Item>
 
                     <Form.Item name="gitRef" label="版本标签 (Tag)" rules={[{ required: true }]}>
-                        <Select 
-                            placeholder={selectedRepo ? "选择一个 Git 标签 (Tag)" : "请先选择仓库"} 
-                            disabled={!selectedRepo} 
+                        <Select
+                            placeholder={selectedRepo ? "选择一个 Git 标签 (Tag)" : "请先选择仓库"}
+                            disabled={!selectedRepo}
                             loading={fetchingGit}
                             showSearch
+                            onChange={handleTagChange}
                         >
                             {tags.map(tag => (
                                 <Option key={`tag-${tag.name}`} value={tag.name}>
                                     <div className="flex items-center gap-2">
                                         <TagIcon size={14} className="text-indigo-500"/>
                                         <span>{tag.name}</span>
+                                        {tag.taggerDate && (
+                                            <span className="text-[10px] text-slate-400 ml-auto">{tag.taggerDate.split('T')[0]}</span>
+                                        )}
                                     </div>
                                 </Option>
                             ))}
                         </Select>
                     </Form.Item>
 
-                    <Form.Item name="envId" label="投产环境" rules={[{ required: true, message: '请选择投产环境' }]}>
-                        <Select 
-                            placeholder="选择该版本拟投产的目标环境" 
+                    <Form.Item name="previousGitRef" label="基线标签 (上一版本 Tag)" rules={[{ required: true, message: '请选择基线标签' }]}
+                        tooltip="用于对比差异，只打包两个标签之间变更的数据库脚本"
+                    >
+                        <Select
+                            placeholder={selectedRepo ? "自动选择上一版本标签（可手动修改）" : "请先选择仓库"}
+                            disabled={!selectedRepo}
+                            loading={fetchingGit}
                             showSearch
-                            optionFilterProp="children"
-                            onChange={handleEnvChange}
                         >
-                            {derivedEnvironments.map(env => (
-                                <Option key={env.id} value={env.id} label={env.name}>
-                                    <div className="py-2 border-b last:border-0 border-slate-50">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <div className="flex items-center gap-2">
-                                                <Globe size={14} className="text-indigo-500" />
-                                                <span className="font-bold text-slate-800">{env.name}</span>
-                                            </div>
-                                            <Tag color="blue" className="m-0 text-[10px] rounded-full">{env.assetCount || 0} 台服务器</Tag>
+                            {tags
+                                .filter(tag => tag.name !== packageForm.getFieldValue('gitRef'))
+                                .map(tag => (
+                                <Option key={`prev-${tag.name}`} value={tag.name}>
+                                    <div className="flex items-center gap-2">
+                                        <History size={14} className="text-slate-400"/>
+                                        <span>{tag.name}</span>
+                                        {tag.taggerDate && (
+                                            <span className="text-[10px] text-slate-400 ml-auto">{tag.taggerDate.split('T')[0]}</span>
+                                        )}
+                                    </div>
+                                </Option>
+                            ))}
+                        </Select>
+                    </Form.Item>
+
+                    <Form.Item name="assetId" label="投产数据库服务器" rules={[{ required: true, message: '请选择投产数据库服务器' }]}>
+                        <Select
+                            placeholder="选择该版本拟投产的目标数据库服务器"
+                            showSearch
+                            optionFilterProp="label"
+                            onChange={handleAssetChange}
+                        >
+                            {dbAssets.map(asset => (
+                                <Option key={asset.id} value={asset.id} label={`${asset.hostname} ${asset.internalIp}`}>
+                                    <div className="flex items-center justify-between py-1">
+                                        <div className="flex items-center gap-2 overflow-hidden">
+                                            <Server size={14} className="text-indigo-500 shrink-0" />
+                                            <span className="font-bold text-slate-800 truncate">{asset.hostname || '未命名'}</span>
+                                            <span className="text-slate-400 text-xs shrink-0">{asset.internalIp}</span>
                                         </div>
-                                        {/* 资产明细列表 */}
-                                        <div className="space-y-1 pl-4 border-l-2 border-indigo-100 mt-1">
-                                            {(env.assets || []).slice(0, 3).map((asset: any) => (
-                                                <div key={asset.id} className="flex items-center justify-between text-[11px] text-slate-500 hover:bg-slate-50 p-1 rounded transition-colors">
-                                                    <div className="flex items-center gap-2 overflow-hidden">
-                                                        <Server size={10} className="text-slate-400 shrink-0" />
-                                                        <span className="font-medium text-slate-700 truncate">{asset.hostname || '未命名'}</span>
-                                                        <span className="text-slate-400 shrink-0">{asset.internalIp}</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 shrink-0">
-                                                        <span className="text-indigo-400 bg-indigo-50 px-1 rounded uppercase tracking-wider scale-90">{asset.role}</span>
-                                                        <span className="flex items-center gap-1 text-[10px] text-slate-400">
-                                                            <Zap size={10} /> {asset.cpu}核 / {asset.memory}G
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                            {env.assetCount > 3 && <div className="text-[10px] text-slate-400 italic pl-5">...及其他 {env.assetCount - 3} 台</div>}
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {asset.dbType && <Tag color="purple" className="m-0 text-[10px]">{asset.dbType}</Tag>}
+                                            {asset.envType && <Tag color="blue" className="m-0 text-[10px]">{asset.envType}</Tag>}
                                         </div>
                                     </div>
                                 </Option>
@@ -626,11 +603,11 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                         <Input.TextArea rows={3} placeholder="填写该版本的变更点、注意事项等" />
                     </Form.Item>
                     
-                    {derivedEnvironments.length === 0 && (
-                        <div className="mt-2 p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-start gap-3">
-                            <AlertTriangle size={16} className="text-amber-500 mt-0.5" />
-                            <div className="text-xs text-amber-700">
-                                <b>注意：</b> 当前系统暂未配置任何投产环境。请前往“基础设施管理”进行配置。
+                    {dbAssets.length === 0 && (
+                        <div className=”mt-2 p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-start gap-3”>
+                            <AlertTriangle size={16} className=”text-amber-500 mt-0.5” />
+                            <div className=”text-xs text-amber-700”>
+                                <b>注意：</b> 当前系统暂未配置任何数据库服务器（role=db）。请前往”基础设施管理”添加数据库服务器。
                             </div>
                         </div>
                     )}
@@ -661,21 +638,11 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                             placeholder="选择实际部署的环境"
                             optionLabelProp="label"
                         >
-                            {derivedEnvironments.map(env => (
+                            {environments.map(env => (
                                 <Option key={env.id} value={env.id} label={env.name}>
-                                    <div className="py-2 border-b last:border-0 border-slate-50">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="font-bold text-slate-800">{env.name}</span>
-                                            <span className="text-[10px] text-indigo-400">{env.assetCount || 0} 资产</span>
-                                        </div>
-                                        <div className="space-y-0.5">
-                                            {(env.assets || []).slice(0, 2).map((asset: any) => (
-                                                <div key={asset.id} className="flex justify-between text-[10px] text-slate-500">
-                                                    <span>{asset.internalIp} ({asset.hostname})</span>
-                                                    <span>{asset.role} | {asset.cpu}C{asset.memory}G</span>
-                                                </div>
-                                            ))}
-                                        </div>
+                                    <div className="py-1">
+                                        <span className="font-bold text-slate-800">{env.name}</span>
+                                        <span className="ml-2 text-[10px] text-slate-400">{env.code}</span>
                                     </div>
                                 </Option>
                             ))}

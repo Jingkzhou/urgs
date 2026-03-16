@@ -42,6 +42,14 @@ public class VersionPackage {
     @Column(name = "commit_sha", length = 100)
     private String commitSha;
 
+    /** 基线 Git 引用 (上一版本 Tag) */
+    @Column(name = "previous_git_ref", length = 100)
+    private String previousGitRef;
+
+    /** 基线 Commit SHA */
+    @Column(name = "previous_commit_sha", length = 100)
+    private String previousCommitSha;
+
     /** 包名 */
     @Column(name = "package_name", length = 255)
     private String packageName;
@@ -69,6 +77,14 @@ public class VersionPackage {
     /** 状态: draft, ready, deployed, archived */
     @Column(length = 20)
     private String status = STATUS_DRAFT;
+
+    /** 目标数据库服务器资产 ID */
+    @Column(name = "asset_id")
+    private Long assetId;
+
+    /** 执行用户（数据库用户名） */
+    @Column(name = "exec_user", length = 100)
+    private String execUser;
 
     /** 创建人 ID */
     @Column(name = "created_by")
