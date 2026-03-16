@@ -27,6 +27,10 @@ public class InfrastructureUser {
     @Column(length = 255)
     private String password;
 
+    /** 用户类型: os(操作系统) / db(数据库) */
+    @Column(name = "user_type", length = 20)
+    private String userType = "os";
+
     /** 说明 */
     @Column(length = 500)
     private String description;
