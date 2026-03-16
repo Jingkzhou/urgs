@@ -604,10 +604,10 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                     </Form.Item>
                     
                     {dbAssets.length === 0 && (
-                        <div className=”mt-2 p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-start gap-3”>
-                            <AlertTriangle size={16} className=”text-amber-500 mt-0.5” />
-                            <div className=”text-xs text-amber-700”>
-                                <b>注意：</b> 当前系统暂未配置任何数据库服务器（role=db）。请前往”基础设施管理”添加数据库服务器。
+                        <div className="mt-2 p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-start gap-3">
+                            <AlertTriangle size={16} className="text-amber-500 mt-0.5" />
+                            <div className="text-xs text-amber-700">
+                                <b>{'注意：'}</b> {'当前系统暂未配置任何数据库服务器(role=db)，请前往基础设施管理添加数据库服务器。'}
                             </div>
                         </div>
                     )}
