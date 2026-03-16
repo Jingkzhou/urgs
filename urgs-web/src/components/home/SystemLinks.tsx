@@ -12,7 +12,11 @@ import {
 } from 'lucide-react';
 import { getSystemList } from '@/api/ops';
 
-const SystemLinks: React.FC = () => {
+interface SystemLinksProps {
+  fullWidth?: boolean;
+}
+
+const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
   const [systems, setSystems] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -67,7 +71,7 @@ const SystemLinks: React.FC = () => {
   }
 
   return (
-    <div className="relative bg-white/70 backdrop-blur-md pt-7 pb-8 px-6 rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.08)] border border-slate-200/50 overflow-hidden h-[600px] flex flex-col group transition-all duration-700 hover:shadow-[0_45px_90px_-20px_rgba(0,0,0,0.15)]">
+    <div className={`relative bg-white/70 backdrop-blur-md pt-7 pb-8 px-6 rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.08)] border border-slate-200/50 overflow-hidden flex flex-col group transition-all duration-700 hover:shadow-[0_45px_90px_-20px_rgba(0,0,0,0.15)] ${fullWidth ? 'h-auto' : 'h-[600px]'}`}>
       {/* Abstract Background Decoration */}
       <div className="absolute -top-24 -right-24 w-64 h-64 bg-red-500/5 rounded-full blur-3xl pointer-events-none group-hover:bg-red-500/10 transition-colors duration-1000" />
 
@@ -92,7 +96,7 @@ const SystemLinks: React.FC = () => {
 
       {/* Vertical Matrix Grid */}
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 relative z-10">
-        <div className="grid grid-cols-2 gap-4 pb-4">
+        <div className={`grid gap-4 pb-4 ${fullWidth ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6' : 'grid-cols-2'}`}>
           {systems.map((system, idx) => (
             <motion.div
               key={system.id || idx}
@@ -101,7 +105,7 @@ const SystemLinks: React.FC = () => {
               transition={{ delay: idx * 0.05, type: 'spring', stiffness: 200 }}
               whileHover={{ scale: 1.05, y: -5 }}
               whileTap={{ scale: 0.95 }}
-              className="relative aspect-square cursor-pointer"
+              className={`relative cursor-pointer ${fullWidth ? 'aspect-[4/3]' : 'aspect-square'}`}
               onClick={() => window.open(system.url, '_blank')}
             >
               {/* Card Container */}
@@ -137,7 +141,7 @@ const SystemLinks: React.FC = () => {
           {/* More Action */}
           <motion.div
             whileHover={{ scale: 1.05 }}
-            className="border-2 border-dashed border-slate-200 rounded-[1.75rem] flex flex-col items-center justify-center aspect-square text-slate-400 hover:border-red-200 hover:text-red-500 transition-all cursor-pointer bg-slate-50/50"
+            className={`border-2 border-dashed border-slate-200 rounded-[1.75rem] flex flex-col items-center justify-center text-slate-400 hover:border-red-200 hover:text-red-500 transition-all cursor-pointer bg-slate-50/50 ${fullWidth ? 'aspect-[4/3]' : 'aspect-square'}`}
             onClick={() => window.location.href = '#/ops/system-list'}
           >
             <div className="p-2 rounded-full bg-white shadow-sm mb-1">
