@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Settings,
   ShieldCheck,
@@ -8,7 +8,8 @@ import {
   ArrowUpRight,
   Sparkles,
   Monitor,
-  ChevronRight
+  ChevronRight,
+  ChevronLeft
 } from 'lucide-react';
 import { getSystemList } from '@/api/ops';
 
@@ -19,10 +20,38 @@ interface SystemLinksProps {
 const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
   const [systems, setSystems] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [columnsPerRow, setColumnsPerRow] = useState(6);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchSystems();
   }, []);
+
+  // 全宽模式下动态计算每行能放多少列
+  const updateColumns = useCallback(() => {
+    if (!fullWidth || !gridRef.current) return;
+    const containerWidth = gridRef.current.offsetWidth;
+    // 每个卡片最小宽度约 160px，gap 16px
+    const cols = Math.max(3, Math.min(8, Math.floor((containerWidth + 16) / (160 + 16))));
+    setColumnsPerRow(cols);
+  }, [fullWidth]);
+
+  useEffect(() => {
+    if (!fullWidth) return;
+    updateColumns();
+    const observer = new ResizeObserver(updateColumns);
+    if (gridRef.current) observer.observe(gridRef.current);
+    return () => observer.disconnect();
+  }, [fullWidth, updateColumns]);
+
+  // 翻页时重置到有效范围
+  useEffect(() => {
+    if (fullWidth && systems.length > 0) {
+      const totalPages = Math.ceil(systems.length / columnsPerRow);
+      if (currentPage >= totalPages) setCurrentPage(totalPages - 1);
+    }
+  }, [columnsPerRow, systems.length, fullWidth, currentPage]);
 
   const fetchSystems = async () => {
     setLoading(true);
@@ -36,7 +65,6 @@ const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
     }
   };
 
-  // 映射内置图标
   const getSystemIcon = (name: string) => {
     if (name.includes('RAG')) return <Cpu className="w-5 h-5" />;
     if (name.includes('血缘')) return <Sparkles className="w-5 h-5" />;
@@ -45,7 +73,6 @@ const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
     return <Monitor className="w-5 h-5" />;
   };
 
-  // 映射色调
   const getSystemColor = (index: number) => {
     const colors = [
       'from-rose-500 to-red-600',
@@ -70,6 +97,44 @@ const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
     );
   }
 
+  // 全宽分页逻辑
+  const totalPages = fullWidth ? Math.ceil(systems.length / columnsPerRow) : 1;
+  const visibleSystems = fullWidth
+    ? systems.slice(currentPage * columnsPerRow, (currentPage + 1) * columnsPerRow)
+    : systems;
+
+  // 渲染单个系统卡片
+  const renderCard = (system: any, idx: number, originalIndex: number) => (
+    <motion.div
+      key={system.id || originalIndex}
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ delay: idx * 0.05, type: 'spring', stiffness: 200 }}
+      whileHover={{ scale: 1.05, y: -5 }}
+      whileTap={{ scale: 0.95 }}
+      className={`relative cursor-pointer ${fullWidth ? '' : 'aspect-square'}`}
+      onClick={() => window.open(system.url, '_blank')}
+    >
+      <div className={`${fullWidth ? '' : 'absolute inset-0'} bg-white border border-slate-200/60 rounded-[1.75rem] shadow-[0_4px_12px_-4px_rgba(0,0,0,0.05)] overflow-hidden transition-all duration-500 group-hover:border-slate-300`}>
+        <div className={`absolute -inset-px opacity-0 hover:opacity-10 transition-opacity bg-gradient-to-br ${getSystemColor(originalIndex)}`} />
+        <div className={`w-full flex flex-col items-center justify-center relative z-10 ${fullWidth ? 'py-6 px-3' : 'h-full p-3'}`}>
+          <div className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${getSystemColor(originalIndex)} flex items-center justify-center text-white shadow-lg shadow-inherit/20 mb-3 transform transition-transform duration-500 group-hover:rotate-12 group-hover:scale-110`}>
+            {getSystemIcon(system.name)}
+          </div>
+          <span className="text-[11px] font-black text-slate-700 tracking-tight text-center leading-tight">
+            {system.name}
+          </span>
+          <span className="text-[8px] text-slate-400 font-bold tracking-widest uppercase mt-1.5 opacity-60">
+            {system.code || 'SVC'}
+          </span>
+        </div>
+        <div className="absolute bottom-2 right-2 opacity-0 hover:opacity-100 transition-opacity">
+          <ArrowUpRight className="w-3 h-3 text-slate-300" />
+        </div>
+      </div>
+    </motion.div>
+  );
+
   return (
     <div className={`relative bg-white/70 backdrop-blur-md pt-7 pb-8 px-6 rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.08)] border border-slate-200/50 overflow-hidden flex flex-col group transition-all duration-700 hover:shadow-[0_45px_90px_-20px_rgba(0,0,0,0.15)] ${fullWidth ? 'h-auto' : 'h-[600px]'}`}>
       {/* Abstract Background Decoration */}
@@ -86,70 +151,75 @@ const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
           </h2>
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1.5">Launchpad Matrix</p>
         </div>
-        <button
-          onClick={() => window.location.href = '#/ops/system-list'}
-          className="p-2.5 bg-slate-100/50 hover:bg-slate-200/50 rounded-xl transition-all text-slate-500 hover:text-slate-800 border border-slate-200/50"
-        >
-          <Settings size={16} />
-        </button>
+
+        <div className="flex items-center gap-2">
+          {/* 全宽模式下的翻页控件 */}
+          {fullWidth && totalPages > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+                disabled={currentPage === 0}
+                className="p-2 rounded-xl transition-all border border-slate-200/50 disabled:opacity-30 disabled:cursor-not-allowed bg-slate-100/50 hover:bg-slate-200/50 text-slate-500 hover:text-slate-800"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span className="text-[11px] font-bold text-slate-400 tabular-nums min-w-[3rem] text-center">
+                {currentPage + 1} / {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+                disabled={currentPage === totalPages - 1}
+                className="p-2 rounded-xl transition-all border border-slate-200/50 disabled:opacity-30 disabled:cursor-not-allowed bg-slate-100/50 hover:bg-slate-200/50 text-slate-500 hover:text-slate-800"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+
+          <button
+            onClick={() => window.location.href = '#/ops/system-list'}
+            className="p-2.5 bg-slate-100/50 hover:bg-slate-200/50 rounded-xl transition-all text-slate-500 hover:text-slate-800 border border-slate-200/50"
+          >
+            <Settings size={16} />
+          </button>
+        </div>
       </div>
 
-      {/* Vertical Matrix Grid */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 relative z-10">
-        <div className={`grid gap-4 pb-4 ${fullWidth ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6' : 'grid-cols-2'}`}>
-          {systems.map((system, idx) => (
+      {/* Grid Content */}
+      <div ref={gridRef} className={`relative z-10 ${fullWidth ? '' : 'flex-1 overflow-y-auto custom-scrollbar pr-1'}`}>
+        {fullWidth ? (
+          /* 全宽模式：单行 + 翻页 */
+          <AnimatePresence mode="wait">
             <motion.div
-              key={system.id || idx}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: idx * 0.05, type: 'spring', stiffness: 200 }}
-              whileHover={{ scale: 1.05, y: -5 }}
-              whileTap={{ scale: 0.95 }}
-              className={`relative cursor-pointer ${fullWidth ? 'aspect-[4/3]' : 'aspect-square'}`}
-              onClick={() => window.open(system.url, '_blank')}
+              key={currentPage}
+              initial={{ opacity: 0, x: 30 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -30 }}
+              transition={{ duration: 0.25 }}
+              className="grid gap-4"
+              style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` }}
             >
-              {/* Card Container */}
-              <div className="absolute inset-0 bg-white border border-slate-200/60 rounded-[1.75rem] shadow-[0_4px_12px_-4px_rgba(0,0,0,0.05)] overflow-hidden transition-all duration-500 group-hover:border-slate-300">
-                {/* Glow Effect */}
-                <div className={`absolute -inset-px opacity-0 hover:opacity-10 transition-opacity bg-gradient-to-br ${getSystemColor(idx)}`} />
-
-                <div className="h-full w-full flex flex-col items-center justify-center p-3 relative z-10">
-                  {/* Icon Orb */}
-                  <div className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${getSystemColor(idx)} flex items-center justify-center text-white shadow-lg shadow-inherit/20 mb-3 transform transition-transform duration-500 group-hover:rotate-12 group-hover:scale-110`}>
-                    {getSystemIcon(system.name)}
-                  </div>
-
-                  {/* Label */}
-                  <span className="text-[11px] font-black text-slate-700 tracking-tight text-center leading-tight">
-                    {system.name}
-                  </span>
-
-                  {/* System Code - Small */}
-                  <span className="text-[8px] text-slate-400 font-bold tracking-widest uppercase mt-1.5 opacity-60">
-                    {system.code || 'SVC'}
-                  </span>
-                </div>
-
-                {/* Arrow Decor */}
-                <div className="absolute bottom-2 right-2 opacity-0 hover:opacity-100 transition-opacity">
-                  <ArrowUpRight className="w-3 h-3 text-slate-300" />
-                </div>
-              </div>
+              {visibleSystems.map((system, idx) => renderCard(system, idx, currentPage * columnsPerRow + idx))}
             </motion.div>
-          ))}
+          </AnimatePresence>
+        ) : (
+          /* 窄列模式：原始滚动网格 */
+          <div className="grid grid-cols-2 gap-4 pb-4">
+            {systems.map((system, idx) => renderCard(system, idx, idx))}
 
-          {/* More Action */}
-          <motion.div
-            whileHover={{ scale: 1.05 }}
-            className={`border-2 border-dashed border-slate-200 rounded-[1.75rem] flex flex-col items-center justify-center text-slate-400 hover:border-red-200 hover:text-red-500 transition-all cursor-pointer bg-slate-50/50 ${fullWidth ? 'aspect-[4/3]' : 'aspect-square'}`}
-            onClick={() => window.location.href = '#/ops/system-list'}
-          >
-            <div className="p-2 rounded-full bg-white shadow-sm mb-1">
-              <ChevronRight className="w-4 h-4" />
-            </div>
-            <span className="text-[9px] font-bold uppercase tracking-widest">More</span>
-          </motion.div>
-        </div>
+            {/* More Action */}
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              className="border-2 border-dashed border-slate-200 rounded-[1.75rem] flex flex-col items-center justify-center aspect-square text-slate-400 hover:border-red-200 hover:text-red-500 transition-all cursor-pointer bg-slate-50/50"
+              onClick={() => window.location.href = '#/ops/system-list'}
+            >
+              <div className="p-2 rounded-full bg-white shadow-sm mb-1">
+                <ChevronRight className="w-4 h-4" />
+              </div>
+              <span className="text-[9px] font-bold uppercase tracking-widest">More</span>
+            </motion.div>
+          </div>
+        )}
       </div>
 
       {/* Control Status Footer */}
