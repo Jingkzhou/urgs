@@ -206,7 +206,10 @@ const Notices: React.FC = () => {
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: idx * 0.1 }}
-                  onClick={() => window.location.href = `#/announcement?id=${notice.id}&type=${activeTab === 'Log' ? 'log' : 'list'}`}
+                  onClick={() => {
+                    sessionStorage.setItem('announcement_nav', JSON.stringify({ id: notice.id, type: activeTab === 'Log' ? 'log' : 'list' }));
+                    window.location.href = '#/announcement';
+                  }}
                   className={`group/item relative border rounded-3xl p-4 cursor-pointer transition-all duration-500 flex items-center gap-4 hover:shadow-xl hover:-translate-y-1 ${
                     notice.hasRead 
                     ? 'bg-white/30 border-slate-100 opacity-60' 
@@ -294,7 +297,12 @@ const Notices: React.FC = () => {
         </div>
         <button
           className="px-4 py-1 bg-white hover:bg-slate-900 hover:text-white border border-slate-200/50 rounded-xl text-[10px] font-black transition-all duration-500 shadow-sm"
-          onClick={() => window.location.href = `#/announcement${activeTab === 'Log' ? '?type=log' : ''}`}
+          onClick={() => {
+            if (activeTab === 'Log') {
+              sessionStorage.setItem('announcement_nav', JSON.stringify({ type: 'log' }));
+            }
+            window.location.href = '#/announcement';
+          }}
         >
           FULL ARCHIVE
         </button>

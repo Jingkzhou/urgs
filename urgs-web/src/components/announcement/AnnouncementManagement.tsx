@@ -81,28 +81,24 @@ const AnnouncementManagement: React.FC = () => {
         }
     };
 
-    // Initial URL Parameter Parsing
+    // Read navigation params from sessionStorage (one-time, not persisted in URL)
     useEffect(() => {
-        const handleUrlParams = () => {
-            const hash = window.location.hash;
-            if (hash.includes('?')) {
-                const searchPart = hash.split('?')[1];
-                const params = new URLSearchParams(searchPart);
-                const id = params.get('id');
-                const type = params.get('type');
+        const navData = sessionStorage.getItem('announcement_nav');
+        if (navData) {
+            sessionStorage.removeItem('announcement_nav');
+            try {
+                const { id, type } = JSON.parse(navData);
                 if (id) {
                     setInitialSelectedId(id);
                     setActiveTab(type === 'log' ? 'log' : 'list');
                 } else if (type === 'log') {
                     setActiveTab('log');
                 }
+            } catch (e) {
+                // ignore invalid data
             }
-        };
-
-        handleUrlParams();
+        }
         fetchStats();
-        window.addEventListener('hashchange', handleUrlParams);
-        return () => window.removeEventListener('hashchange', handleUrlParams);
     }, []);
 
     const handleEdit = (id: string) => {
