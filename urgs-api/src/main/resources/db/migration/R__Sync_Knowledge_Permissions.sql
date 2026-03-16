@@ -48,6 +48,20 @@ INSERT IGNORE INTO `sys_function` (`code`, `name`, `type`, `path`, `parent_id`, 
 ('knowledge:tag:create', '新建标签', 'button', '-', @tagMenuId, 1, 1),
 ('knowledge:tag:delete', '删除标签', 'button', '-', @tagMenuId, 2, 1);
 
+-- 5. 共享空间 (二级菜单)
+INSERT INTO `sys_function` (`code`, `name`, `type`, `path`, `parent_id`, `sort_order`, `enabled`)
+SELECT 'knowledge:shared', '共享空间', 'menu', '/knowledge/shared', @parentId, 40, 1
+WHERE NOT EXISTS (SELECT 1 FROM `sys_function` WHERE `code` = 'knowledge:shared');
+
+SET @sharedMenuId = (SELECT `id` FROM `sys_function` WHERE `code` = 'knowledge:shared');
+
+-- 5.1 共享空间操作按钮
+INSERT IGNORE INTO `sys_function` (`code`, `name`, `type`, `path`, `parent_id`, `sort_order`, `enabled`) VALUES
+('knowledge:shared:upload', '共享上传', 'button', '-', @sharedMenuId, 1, 1),
+('knowledge:shared:delete', '共享删除', 'button', '-', @sharedMenuId, 2, 1),
+('knowledge:shared:folder:create', '共享新建文件夹', 'button', '-', @sharedMenuId, 3, 1),
+('knowledge:shared:folder:delete', '共享删除文件夹', 'button', '-', @sharedMenuId, 4, 1);
+
 -- ----------------------------
 -- 自动授权给系统管理员角色 (假设角色ID为1)
 -- ----------------------------
