@@ -103,7 +103,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                             <div className="text-xs text-slate-400 mb-1">总积分</div>
                             <div className="font-black text-xl text-slate-800">{work.totalPoints}</div>
                         </div>
-                        <Divider type="vertical" className="h-10 border-slate-200" />
+                        <Divider orientation="vertical" className="h-10 border-slate-200" />
                         <div className="text-center">
                             <div className="text-xs text-slate-400 mb-1">截止日期</div>
                             <div className="font-bold text-slate-800">{work.deadline ? new Date(work.deadline).toLocaleDateString() : '无期限'}</div>

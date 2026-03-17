@@ -146,8 +146,19 @@ const InfrastructureManagement: React.FC = () => {
             }
             setModalVisible(false);
             fetchAssets();
-        } catch (error) {
-            message.error('保存失败');
+        } catch (error: any) {
+            // 表单校验失败（validateFields 抛出包含 errorFields 的对象）
+            if (error?.errorFields) {
+                const labels = error.errorFields
+                    .map((f: any) => f.errors?.[0])
+                    .filter(Boolean)
+                    .join('、');
+                message.error(labels ? `请填写必填项：${labels}` : '请填写所有必填项');
+                return;
+            }
+            // 后端返回的错误信息
+            const msg = error?.response?.data?.message || error?.message || '保存失败';
+            message.error(msg);
         }
     };
 
@@ -340,7 +351,7 @@ const InfrastructureManagement: React.FC = () => {
                         value={filterIp}
                         onChange={e => setFilterIp(e.target.value)}
                     />
-                    <Divider type="vertical" className="h-6 mx-1" />
+                    <Divider orientation="vertical" className="h-6 mx-1" />
                     {/* 下拉筛选 */}
                     <Select
                         placeholder="按系统筛选"
