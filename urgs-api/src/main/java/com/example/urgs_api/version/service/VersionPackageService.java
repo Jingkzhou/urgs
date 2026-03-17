@@ -90,7 +90,12 @@ public class VersionPackageService {
         vp.setDescription(description);
         vp.setStatus(VersionPackage.STATUS_READY);
         vp.setCreatedBy(createdBy);
-        vp.setEnvId(envId);
+        // 若前端未传 envId，从关联的服务器资产自动推导
+        if (envId != null) {
+            vp.setEnvId(envId);
+        } else if (assetId != null) {
+            assetRepository.findById(assetId).ifPresent(a -> vp.setEnvId(a.getEnvId()));
+        }
 
         return packageRepository.save(vp);
     }

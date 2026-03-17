@@ -113,10 +113,8 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
 
             setAvailableUsers(dbUsers);
 
-            // 自动带出服务器所属环境
-            if (asset.envId) {
-                packageForm.setFieldsValue({ envId: asset.envId });
-            }
+            // 自动带出服务器所属环境（后端也会从 asset 推导，前端同步设置用于显示）
+            packageForm.setFieldsValue({ envId: asset.envId ?? undefined });
 
             // 智能选中：如果只有一个 db 用户，自动填入
             const current = packageForm.getFieldValue('execUser');
@@ -581,23 +579,8 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                         </Select>
                     </Form.Item>
                     
-                    <Form.Item
-                        name="envId"
-                        label="目标环境"
-                        extra="选择服务器后自动带出，如需调整可手动选择"
-                        rules={[{ required: true, message: '请选择目标投产环境' }]}
-                    >
-                        <Select placeholder="选择服务器后自动带出" optionLabelProp="label" allowClear>
-                            {environments.map(env => (
-                                <Option key={env.id} value={env.id} label={env.name}>
-                                    <div className="py-1">
-                                        <span className="font-bold text-slate-800">{env.name}</span>
-                                        <span className="ml-2 text-[10px] text-slate-400">{env.code}</span>
-                                    </div>
-                                </Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
+                    {/* envId 由选中服务器自动带出，不需要用户手动选择 */}
+                    <Form.Item name="envId" hidden><Input /></Form.Item>
 
                     {assetMissingDsn && (
                         <div className="mb-4 p-3 bg-red-50 rounded-xl border border-red-200 flex items-start gap-3">
