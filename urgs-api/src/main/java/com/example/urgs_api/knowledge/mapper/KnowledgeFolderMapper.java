@@ -17,7 +17,7 @@ public interface KnowledgeFolderMapper extends BaseMapper<KnowledgeFolder> {
     /**
      * 查询用户的所有文件夹
      */
-    @Select("SELECT * FROM knowledge_folder WHERE user_id = #{userId} ORDER BY sort_order, id")
+    @Select("SELECT * FROM knowledge_folder WHERE user_id = #{userId} AND (scope = 'private' OR scope IS NULL) ORDER BY sort_order, id")
     List<KnowledgeFolder> findByUserId(@Param("userId") Long userId);
 
     /**

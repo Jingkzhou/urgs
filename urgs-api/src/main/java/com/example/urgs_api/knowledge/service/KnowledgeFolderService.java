@@ -119,9 +119,19 @@ public class KnowledgeFolderService {
      */
     @Transactional
     public KnowledgeFolder getOrCreateFolder(Long userId, String name, Long parentId) {
+        return getOrCreateFolder(userId, name, parentId, "private");
+    }
+
+    /**
+     * 获取或创建文件夹（指定空间）
+     */
+    @Transactional
+    public KnowledgeFolder getOrCreateFolder(Long userId, String name, Long parentId, String scope) {
+        String resolvedScope = scope != null ? scope : "private";
         LambdaQueryWrapper<KnowledgeFolder> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(KnowledgeFolder::getUserId, userId)
-                .eq(KnowledgeFolder::getName, name);
+                .eq(KnowledgeFolder::getName, name)
+                .eq(KnowledgeFolder::getScope, resolvedScope);
         if (parentId == null) {
             wrapper.isNull(KnowledgeFolder::getParentId);
         } else {
@@ -133,7 +143,7 @@ public class KnowledgeFolderService {
             return existing;
         }
 
-        return createFolder(userId, name, parentId);
+        return createFolder(userId, name, parentId, resolvedScope);
     }
 
     /**
