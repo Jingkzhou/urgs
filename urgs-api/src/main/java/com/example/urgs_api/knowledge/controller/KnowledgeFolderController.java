@@ -57,7 +57,8 @@ public class KnowledgeFolderController {
             HttpServletRequest request,
             @RequestBody CreateFolderRequest req) {
         Long userId = getUserId(request);
-        return ResponseEntity.ok(folderService.getOrCreateFolder(userId, req.getName(), req.getParentId()));
+        String scope = req.getScope() != null ? req.getScope() : "private";
+        return ResponseEntity.ok(folderService.getOrCreateFolder(userId, req.getName(), req.getParentId(), scope));
     }
 
     /**

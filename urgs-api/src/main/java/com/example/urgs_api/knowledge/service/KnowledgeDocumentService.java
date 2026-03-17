@@ -184,6 +184,7 @@ public class KnowledgeDocumentService {
     public List<KnowledgeDocument> getRecentDocuments(Long userId, int limit) {
         LambdaQueryWrapper<KnowledgeDocument> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(KnowledgeDocument::getUserId, userId)
+                .eq(KnowledgeDocument::getScope, "private")
                 .orderByDesc(KnowledgeDocument::getUpdateTime)
                 .last("LIMIT " + limit);
         return documentMapper.selectList(wrapper);
@@ -195,6 +196,7 @@ public class KnowledgeDocumentService {
     public List<KnowledgeDocument> getFavoriteDocuments(Long userId) {
         LambdaQueryWrapper<KnowledgeDocument> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(KnowledgeDocument::getUserId, userId)
+                .eq(KnowledgeDocument::getScope, "private")
                 .eq(KnowledgeDocument::getIsFavorite, 1)
                 .orderByDesc(KnowledgeDocument::getUpdateTime);
         return documentMapper.selectList(wrapper);

@@ -313,7 +313,8 @@ const KnowledgeCenter: React.FC = () => {
                 // 如果缓存中没有，发起创建请求（后端 getOrCreate 会处理幂等）
                 folderPromise = api.ensureFolder({
                     name: part,
-                    parentId: currentParentId ?? undefined
+                    parentId: currentParentId ?? undefined,
+                    scope: scope
                 }).then(folder => folder.id);
 
                 folderCreationCache.current.set(cacheKey, folderPromise);
