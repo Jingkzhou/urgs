@@ -565,6 +565,19 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                         </Select>
                     </Form.Item>
 
+                    <Form.Item name="envId" label="目标环境" rules={[{ required: true, message: '请选择目标投产环境' }]}>
+                        <Select placeholder="选择该版本包对应的投产环境" optionLabelProp="label">
+                            {environments.map(env => (
+                                <Option key={env.id} value={env.id} label={env.name}>
+                                    <div className="py-1">
+                                        <span className="font-bold text-slate-800">{env.name}</span>
+                                        <span className="ml-2 text-[10px] text-slate-400">{env.code}</span>
+                                    </div>
+                                </Option>
+                            ))}
+                        </Select>
+                    </Form.Item>
+
                     <Form.Item name="assetId" label="投产数据库服务器" rules={[{ required: true, message: '请选择投产数据库服务器' }]}>
                         <Select
                             placeholder="选择该版本拟投产的目标数据库服务器"
