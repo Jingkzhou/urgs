@@ -373,6 +373,8 @@ export interface VersionPackage {
     createdBy?: number;
     deployedBy?: number;
     deployedAt?: string;
+    envId?: number;
+    execUser?: string;
     createdAt?: string;
     updatedAt?: string;
 }
@@ -578,6 +580,8 @@ export const createVersionPackage = (params: {
     execUser?: string;
     description: string;
     createdBy?: number;
+    envId?: number;
+    execUser?: string;
 }) => post<VersionPackage>('/api/version/deploy/packages', params);
 
 /**

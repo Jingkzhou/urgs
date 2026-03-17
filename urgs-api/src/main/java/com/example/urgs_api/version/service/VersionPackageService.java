@@ -57,7 +57,7 @@ public class VersionPackageService {
      */
     @Transactional
     public VersionPackage createPackage(Long repoId, Long ssoId, String gitRef, String previousGitRef,
-                                         Long assetId, String execUser, String description, Long createdBy) {
+                                         Long assetId, String execUser, String description, Long createdBy, Long envId) {
         // 获取当前 tag 的提交信息
         GitCommit latestCommit = gitPlatformService.getLatestCommit(repoId, gitRef);
 
@@ -90,6 +90,7 @@ public class VersionPackageService {
         vp.setDescription(description);
         vp.setStatus(VersionPackage.STATUS_READY);
         vp.setCreatedBy(createdBy);
+        vp.setEnvId(envId);
 
         return packageRepository.save(vp);
     }
