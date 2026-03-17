@@ -44,11 +44,19 @@
 ## 二、环境要求
 
 - **Python**: 3.8+
-- **数据库驱动**（按实际使用安装）：
+- **数据库驱动**
+
+**离线/内网环境（推荐）：** 部署包已根据数据库类型内置对应驱动，直接执行：
 
 ```bash
-pip install cx_Oracle   # Oracle（需额外安装 Oracle Instant Client）
-pip install pymysql     # MySQL / GBase
+bash bin/db_deploy/install_deps.sh
+```
+
+**在线环境（有外网）：**
+
+```bash
+pip3 install cx_Oracle   # Oracle（需额外安装 Oracle Instant Client）
+pip3 install pymysql     # MySQL / GBase
 ```
 
 ---
