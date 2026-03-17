@@ -1,15 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Badge, List, Card, Timeline, Divider, Dropdown } from 'antd';
+import { Button, Modal, Form, Input, Select, Tag, Space, message, Card, Dropdown } from 'antd';
 import { 
-    Plus, Trash2, Edit, RefreshCw, Server, Rocket, RotateCcw, 
-    CheckCircle, XCircle, Loader, Clock, Globe, Download, 
-    ChevronRight, Info, Package, GitBranch, Tag as TagIcon, MoreVertical, 
-    Play, Activity, ShieldCheck, History, Zap, AlertTriangle
+    Plus, Edit, RefreshCw, Server, Rocket,
+    CheckCircle, XCircle, Clock, Globe, Download,
+    Info, Package, GitBranch, Tag as TagIcon, MoreVertical,
+    ShieldCheck, History, AlertTriangle
 } from 'lucide-react';
 import {
-    getDeployEnvironments, 
-    getDeployments, 
-    getSsoList,
+    getDeployEnvironments,
 } from '@/api/version';
 import {
     getInfrastructureAssets,
@@ -23,10 +21,7 @@ import {
     createVersionPackage,
     downloadVersionPackage,
     updatePackageStatus,
-    deployWithPackage,
-    DeployEnvironment, 
-    Deployment, 
-    SsoConfig,
+    DeployEnvironment,
     GitRepository,
     GitBranch as IGitBranch,
     GitTag as IGitTag,
@@ -52,7 +47,6 @@ interface Props {
 
 const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const [environments, setEnvironments] = useState<DeployEnvironment[]>([]);
-    const [deployments, setDeployments] = useState<Deployment[]>([]);
     const [versionPackages, setVersionPackages] = useState<VersionPackage[]>([]);
     const [repos, setRepos] = useState<GitRepository[]>([]);
     const [infraAssets, setInfraAssets] = useState<InfrastructureAsset[]>([]);
@@ -68,10 +62,6 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const [tags, setTags] = useState<IGitTag[]>([]);
     const [fetchingGit, setFetchingGit] = useState(false);
 
-    // 部署确认 Modal
-    const [deployConfirmVisible, setDeployConfirmVisible] = useState(false);
-    const [selectedPackage, setSelectedPackage] = useState<VersionPackage | null>(null);
-    const [deployForm] = Form.useForm();
 
 
     useEffect(() => {
@@ -83,15 +73,13 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [envs, deps, pkgs, repositories, assets] = await Promise.all([
+            const [envs, pkgs, repositories, assets] = await Promise.all([
                 getDeployEnvironments(ssoId),
-                getDeployments({ ssoId }),
                 getVersionPackages(ssoId!),
                 getGitRepositories({ ssoId }),
                 getInfrastructureAssets({ appSystemId: Number(ssoId) })
             ]);
             setEnvironments(envs || []);
-            setDeployments(deps || []);
             setVersionPackages(pkgs || []);
             setRepos(repositories || []);
             setInfraAssets(assets || []);
@@ -225,33 +213,6 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     };
 
 
-    // ========== 部署操作 ==========
-    const openDeployConfirm = (pkg: VersionPackage) => {
-        setSelectedPackage(pkg);
-        deployForm.setFieldsValue({
-            packageId: pkg.id,
-            envId: environments.length > 0 ? environments[0].id : undefined
-        });
-        setDeployConfirmVisible(true);
-    };
-
-    const handleDeployConfirm = async () => {
-        try {
-            const values = await deployForm.validateFields();
-            await deployWithPackage({
-                ...values,
-                ssoId: ssoId!,
-                deployedBy: 1, // 实际应用中应从当前用户获取
-            });
-            message.success('部署记录已成功创建');
-            setDeployConfirmVisible(false);
-            fetchData();
-            setActiveTab('history');
-        } catch (error) {
-            message.error('记录部署失败');
-        }
-    };
-
     const primaryButtonClass = 'bg-gradient-to-tr from-indigo-500 to-purple-600 border-none hover:from-indigo-600 hover:to-purple-700';
 
     return (
@@ -288,8 +249,8 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                             <History size={24} />
                         </div>
                         <div>
-                            <div className="text-xs text-slate-400 font-medium uppercase tracking-wider">部署记录</div>
-                            <div className="text-2xl font-bold text-slate-800">{deployments.length}</div>
+                            <div className="text-xs text-slate-400 font-medium uppercase tracking-wider">部署历史</div>
+                            <div className="text-2xl font-bold text-slate-800">{versionPackages.filter(p => p.status === 'deployed' || p.status === 'archived').length}</div>
                         </div>
                     </div>
                 </Card>
@@ -345,14 +306,14 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                 <div className="p-6">
                     {activeTab === 'packages' ? (
                         <div className="space-y-4">
-                            {versionPackages.length === 0 ? (
+                            {versionPackages.filter(p => p.status !== 'deployed' && p.status !== 'archived').length === 0 ? (
                                 <div className="py-20 text-center flex flex-col items-center justify-center opacity-40">
                                     <Package size={64} strokeWidth={1} className="mb-4" />
                                     <p>暂无版本包记录，请点击上方按钮从 Git 仓库创建</p>
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                                    {versionPackages.map(pkg => {
+                                    {versionPackages.filter(p => p.status !== 'deployed' && p.status !== 'archived').map(pkg => {
                                         const config = statusConfig[pkg.status] || statusConfig.draft;
                                         return (
                                             <div key={pkg.id} className="rounded-2xl border border-slate-200 p-5 hover:border-indigo-300 transition-all hover:shadow-md bg-white group">
@@ -404,24 +365,13 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                                                     <div className="text-xs text-slate-400">
                                                         创建时间: {pkg.createdAt ? new Date(pkg.createdAt).toLocaleString() : '-'}
                                                     </div>
-                                                    <Space>
-                                                        <Button 
-                                                            size="small" 
-                                                            icon={<Download size={14} />} 
-                                                            onClick={() => handleDownload(pkg)}
-                                                        >
-                                                            下载安装包
-                                                        </Button>
-                                                        <Button 
-                                                            size="small" 
-                                                            type="primary" 
-                                                            icon={<Rocket size={14} />} 
-                                                            ghost
-                                                            onClick={() => openDeployConfirm(pkg)}
-                                                        >
-                                                            登记部署
-                                                        </Button>
-                                                    </Space>
+                                                    <Button
+                                                        size="small"
+                                                        icon={<Download size={14} />}
+                                                        onClick={() => handleDownload(pkg)}
+                                                    >
+                                                        下载安装包
+                                                    </Button>
                                                 </div>
                                             </div>
                                         );
@@ -430,42 +380,67 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                             )}
                         </div>
                     ) : (
-                        <div className="max-w-3xl mx-auto">
-                            <Timeline
-                                mode="left"
-                                items={deployments.map(dep => {
-                                    const config = statusConfig[dep.status] || statusConfig.success;
-                                    return {
-                                        label: <span className="text-slate-400 text-xs">{dep.deployedAt}</span>,
-                                        children: (
-                                            <div className="mb-8">
-                                                <div className="flex items-center gap-3 mb-2">
-                                                    <div className="text-base font-bold text-slate-800">
-                                                        {dep.version || (dep.packageId ? `版本包 #${dep.packageId}` : '未命名发布')}
+                        <div className="space-y-4">
+                            {versionPackages.filter(p => p.status === 'deployed' || p.status === 'archived').length === 0 ? (
+                                <div className="py-20 text-center flex flex-col items-center justify-center opacity-40">
+                                    <History size={64} strokeWidth={1} className="mb-4" />
+                                    <p>暂无已部署记录，标记版本包为"已部署"后将在此展示</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                    {versionPackages.filter(p => p.status === 'deployed' || p.status === 'archived').map(pkg => {
+                                        const config = statusConfig[pkg.status] || statusConfig.deployed;
+                                        return (
+                                            <div key={pkg.id} className="rounded-2xl border border-slate-200 p-5 bg-white">
+                                                <div className="flex items-start justify-between mb-4">
+                                                    <div>
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <h4 className="text-base font-bold text-slate-800 m-0">版本: {pkg.version}</h4>
+                                                            <Tag color={config.color} className="flex items-center gap-1">
+                                                                {config.icon} {config.label}
+                                                            </Tag>
+                                                        </div>
+                                                        <div className="text-xs text-slate-400 font-mono">ID: VP-{pkg.id.toString().padStart(6, '0')}</div>
                                                     </div>
-                                                    <Tag color={config.color} className="m-0">{config.label}</Tag>
                                                 </div>
-                                                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-sm text-slate-600">
-                                                    <div className="flex flex-wrap gap-x-6 gap-y-2">
-                                                        <div className="flex items-center gap-2">
-                                                            <Server size={14} className="text-slate-400" />
-                                                            环境: {environments.find(e => e.id === dep.envId)?.name || '未知'}
-                                                        </div>
-                                                        <div className="flex items-center gap-2 text-slate-400 text-xs italic">
-                                                            <Edit size={12} />
-                                                            备注: {dep.remark || '无'}
-                                                        </div>
+                                                <div className="grid grid-cols-2 gap-y-3 gap-x-6 text-sm">
+                                                    <div className="flex items-center gap-2 text-slate-600">
+                                                        <Globe size={14} className="text-slate-400" />
+                                                        <span className="truncate">仓库: {repos.find(r => r.id === pkg.repoId)?.name || '未知'}</span>
                                                     </div>
+                                                    <div className="flex items-center gap-2 text-slate-600">
+                                                        <GitBranch size={14} className="text-slate-400" />
+                                                        <span>引用: {pkg.gitRef}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 text-slate-600">
+                                                        <Server size={14} className="text-slate-400" />
+                                                        <span className="truncate">环境: {environments.find(e => String(e.id) === String(pkg.envId))?.name || '-'}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 text-slate-600">
+                                                        <ShieldCheck size={14} className="text-emerald-500" />
+                                                        <span>执行用户: {pkg.execUser || '-'}</span>
+                                                    </div>
+                                                    <div className="col-span-2 flex items-start gap-2 text-slate-600">
+                                                        <Info size={14} className="text-slate-400 mt-1" />
+                                                        <span>说明: {pkg.description || '无'}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
+                                                    <div className="text-xs text-slate-400">
+                                                        创建时间: {pkg.createdAt ? new Date(pkg.createdAt).toLocaleString() : '-'}
+                                                    </div>
+                                                    <Button
+                                                        size="small"
+                                                        icon={<Download size={14} />}
+                                                        onClick={() => handleDownload(pkg)}
+                                                    >
+                                                        下载安装包
+                                                    </Button>
                                                 </div>
                                             </div>
-                                        ),
-                                        dot: <div className={`w-3 h-3 rounded-full ${dep.status === 'success' ? 'bg-emerald-500' : 'bg-slate-300'}`} />,
-                                        color: dep.status === 'success' ? 'green' : 'gray'
-                                    };
-                                })}
-                            />
-                            {deployments.length === 0 && (
-                                <div className="text-center py-10 opacity-40">暂无部署历史记录</div>
+                                        );
+                                    })}
+                                </div>
                             )}
                         </div>
                     )}
@@ -636,45 +611,6 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
             </Modal>
 
 
-            {/* 登记部署 Modal */}
-            <Modal
-                title="登记部署执行结果"
-                open={deployConfirmVisible}
-                onOk={handleDeployConfirm}
-                onCancel={() => setDeployConfirmVisible(false)}
-                okText="确认登记"
-                centered
-            >
-                <Form form={deployForm} layout="vertical" className="mt-4">
-                    <div className="mb-4 p-3 bg-indigo-50 rounded-xl border border-indigo-100 flex items-center gap-3">
-                        <Rocket size={18} className="text-indigo-600" />
-                        <div>
-                            <div className="text-xs text-indigo-400">正在为以下版本登记部署</div>
-                            <div className="text-sm font-bold text-indigo-900">{selectedPackage?.version} ({selectedPackage?.gitRef})</div>
-                        </div>
-                    </div>
-                    
-                    <Form.Item name="envId" label="部署目标环境" rules={[{ required: true }]}>
-                        <Select 
-                            placeholder="选择实际部署的环境"
-                            optionLabelProp="label"
-                        >
-                            {environments.map(env => (
-                                <Option key={env.id} value={env.id} label={env.name}>
-                                    <div className="py-1">
-                                        <span className="font-bold text-slate-800">{env.name}</span>
-                                        <span className="ml-2 text-[10px] text-slate-400">{env.code}</span>
-                                    </div>
-                                </Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
-
-                    <Form.Item name="remark" label="部署备注">
-                        <Input.TextArea placeholder="手工部署后的执行发现、通过情况等" />
-                    </Form.Item>
-                </Form>
-            </Modal>
         </div>
     );
 };
