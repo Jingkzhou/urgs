@@ -62,7 +62,12 @@ public class InfrastructureService {
         asset.setCpu(assetDetails.getCpu());
         asset.setMemory(assetDetails.getMemory());
         asset.setDisk(assetDetails.getDisk());
+        asset.setHardwareModel(assetDetails.getHardwareModel());
         asset.setRole(assetDetails.getRole());
+        asset.setDbType(assetDetails.getDbType());
+        asset.setDbPort(assetDetails.getDbPort());
+        asset.setDbName(assetDetails.getDbName());
+        asset.setDbServiceName(assetDetails.getDbServiceName());
         asset.setAppSystemId(assetDetails.getAppSystemId());
         asset.setEnvId(assetDetails.getEnvId());
         asset.setEnvType(assetDetails.getEnvType());
