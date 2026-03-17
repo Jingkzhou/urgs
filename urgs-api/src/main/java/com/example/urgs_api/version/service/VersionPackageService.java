@@ -311,6 +311,10 @@ public class VersionPackageService {
                     connConfig.put("dsn", String.format("%s:%d/%s", host, port, serviceName));
                 } else if (sid != null && !sid.isBlank()) {
                     connConfig.put("dsn", String.format("%s:%d:%s", host, port, sid));
+                } else {
+                    connConfig.put("dsn", null);
+                    connConfig.put("_warning", "服务器未配置 dbServiceName 或 dbName，dsn 无法生成，请在基础设施管理中补充后重新创建版本包");
+                    log.error("资产 {} (id={}) 未配置 dbServiceName/dbName，manifest.json 中 dsn 将为空", asset.getHostname(), asset.getId());
                 }
                 break;
             case "mysql":

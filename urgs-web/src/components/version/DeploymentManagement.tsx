@@ -128,6 +128,18 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
 
     const watchedAssetId = Form.useWatch('assetId', packageForm);
 
+    // 检测所选服务器是否缺少连接字符串信息
+    const assetMissingDsn = useMemo(() => {
+        if (!watchedAssetId) return false;
+        const asset = infraAssets.find(a => a.id === watchedAssetId);
+        if (!asset) return false;
+        const dbType = (asset.dbType || '').toLowerCase();
+        if (dbType === 'oracle') {
+            return !asset.dbServiceName && !asset.dbName;
+        }
+        return !asset.dbName;
+    }, [watchedAssetId, infraAssets]);
+
     useEffect(() => {
         if (watchedAssetId) {
             handleAssetChange(watchedAssetId);
@@ -578,6 +590,17 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                         </Select>
                     </Form.Item>
                     
+                    {assetMissingDsn && (
+                        <div className="mb-4 p-3 bg-red-50 rounded-xl border border-red-200 flex items-start gap-3">
+                            <AlertTriangle size={16} className="text-red-500 mt-0.5 shrink-0" />
+                            <div className="text-xs text-red-700">
+                                <b>连接字符串缺失：</b>该服务器未配置 <b>数据库名/SID</b> 或 <b>服务名</b>，
+                                生成的 manifest.json 中将缺少 <code>dsn</code> 字段，部署脚本无法连接数据库。
+                                请前往 <b>基础设施管理</b> 完善该服务器的数据库连接信息后再创建版本包。
+                            </div>
+                        </div>
+                    )}
+
                     <Form.Item name="execUser" label="执行用户" rules={[{ required: true, message: '请选择执行用户' }]}>
                         <Select 
                             placeholder={availableUsers.length > 0 ? "选择环境鉴权账号" : "该环境暂未配置鉴权账号"}
