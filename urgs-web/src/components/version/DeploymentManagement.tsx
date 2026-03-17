@@ -388,7 +388,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                                                     </div>
                                                     <div className="flex items-center gap-2 text-slate-600">
                                                         <Server size={14} className="text-slate-400" />
-                                                        <span className="truncate">环境: {derivedEnvironments.find(e => String(e.id) === String(pkg.envId))?.name || '-'}</span>
+                                                        <span className="truncate">环境: {environments.find(e => String(e.id) === String(pkg.envId))?.name || '-'}</span>
                                                     </div>
                                                     <div className="flex items-center gap-2 text-slate-600">
                                                         <ShieldCheck size={14} className="text-emerald-500" />
