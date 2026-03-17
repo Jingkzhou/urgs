@@ -1,0 +1,1 @@
+ALTER TABLE t_version_package ADD COLUMN env_id BIGINT DEFAULT NULL COMMENT '投产环境ID';

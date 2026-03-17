@@ -98,6 +98,10 @@ public class VersionPackage {
     @Column(name = "deployed_at")
     private LocalDateTime deployedAt;
 
+    /** 投产环境ID */
+    @Column(name = "env_id")
+    private Long envId;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
