@@ -45,7 +45,7 @@ public class VersionPackageService {
      * 从 Git 引用创建版本包记录
      */
     @Transactional
-    public VersionPackage createPackage(Long repoId, Long ssoId, String gitRef, String description, Long createdBy) {
+    public VersionPackage createPackage(Long repoId, Long ssoId, String gitRef, String description, Long createdBy, Long envId, String execUser) {
         // 获取提交信息
         GitCommit latestCommit = gitPlatformService.getLatestCommit(repoId, gitRef);
         
@@ -60,7 +60,9 @@ public class VersionPackageService {
         vp.setDescription(description);
         vp.setStatus(VersionPackage.STATUS_READY);
         vp.setCreatedBy(createdBy);
-        
+        vp.setEnvId(envId);
+        vp.setExecUser(execUser);
+
         // 预设默认部署脚本模板
         vp.setDeployScript("#!/bin/bash\n" +
                 "echo \"[1/4] 审核检查...\"\n" +

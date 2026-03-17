@@ -82,6 +82,14 @@ public class VersionPackage {
     @Column(name = "deployed_at")
     private LocalDateTime deployedAt;
 
+    /** 投产环境ID */
+    @Column(name = "env_id")
+    private Long envId;
+
+    /** 执行用户(鉴权账号) */
+    @Column(name = "exec_user", length = 100)
+    private String execUser;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

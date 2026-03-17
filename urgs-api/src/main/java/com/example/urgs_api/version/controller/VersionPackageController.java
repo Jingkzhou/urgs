@@ -31,8 +31,10 @@ public class VersionPackageController {
         String gitRef = (String) params.get("gitRef");
         String description = (String) params.get("description");
         Long createdBy = params.get("createdBy") != null ? Long.valueOf(params.get("createdBy").toString()) : null;
+        Long envId = params.get("envId") != null ? Long.valueOf(params.get("envId").toString()) : null;
+        String execUser = (String) params.get("execUser");
 
-        return packageService.createPackage(repoId, ssoId, gitRef, description, createdBy);
+        return packageService.createPackage(repoId, ssoId, gitRef, description, createdBy, envId, execUser);
     }
 
     /**

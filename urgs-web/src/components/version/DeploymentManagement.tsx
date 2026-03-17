@@ -421,6 +421,14 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                                                         <GitBranch size={14} className="text-slate-400" />
                                                         <span>引用: {pkg.gitRef}</span>
                                                     </div>
+                                                    <div className="flex items-center gap-2 text-slate-600">
+                                                        <Server size={14} className="text-slate-400" />
+                                                        <span className="truncate">环境: {derivedEnvironments.find(e => String(e.id) === String(pkg.envId))?.name || '-'}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 text-slate-600">
+                                                        <ShieldCheck size={14} className="text-emerald-500" />
+                                                        <span>执行用户: {pkg.execUser || '-'}</span>
+                                                    </div>
                                                     <div className="col-span-2 flex items-start gap-2 text-slate-600">
                                                         <Info size={14} className="text-slate-400 mt-1" />
                                                         <span>说明: {pkg.description || '无'}</span>
