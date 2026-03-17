@@ -35,10 +35,10 @@ const ChatInput: React.FC<ChatInputProps> = ({ value, onChange, onSubmit, isGene
         <div className="w-full relative group max-w-4xl mx-auto">
             <motion.div
                 animate={{
-                    boxShadow: isFocused ? "0 4px 12px rgba(0,0,0,0.1)" : "0 2px 6px rgba(0,0,0,0.05)",
-                    backgroundColor: isFocused ? "#ffffff" : "#f0f4f9"
+                    boxShadow: isFocused ? "0 8px 30px rgba(0,0,0,0.06)" : "0 4px 20px rgba(0,0,0,0.03)",
+                    backgroundColor: "#f0f4f9"
                 }}
-                className="relative flex flex-col rounded-[28px] overflow-hidden transition-colors duration-300 ark-input-glow"
+                className="relative flex flex-col rounded-[32px] overflow-hidden transition-all duration-300 border border-transparent focus-within:border-[#e3e8ef]"
             >
                 <div className="flex items-end px-4 py-3">
                     {/* Attachment Button */}
@@ -54,10 +54,10 @@ const ChatInput: React.FC<ChatInputProps> = ({ value, onChange, onSubmit, isGene
                         onKeyDown={handleKeyDown}
                         onFocus={() => setIsFocused(true)}
                         onBlur={() => setIsFocused(false)}
-                        placeholder="输入消息..."
+                        placeholder="输入消息或通过 @ 提及 Agent..."
                         rows={1}
-                        className="flex-1 bg-transparent border-none outline-none text-[#1f1f1f] placeholder:text-slate-500 text-[16px] px-2 font-normal resize-none py-2.5 max-h-[200px] overflow-y-auto custom-scrollbar leading-[1.6]"
-                        style={{ minHeight: '48px' }}
+                        className="flex-1 bg-transparent border-none outline-none text-[#1f1f1f] placeholder:text-slate-500 text-[16px] px-2 font-normal resize-none py-3 max-h-[200px] overflow-y-auto custom-scrollbar leading-[1.6]"
+                        style={{ minHeight: '52px' }}
                     />
 
                     <div className="flex items-end gap-2 mb-1 flex-shrink-0 ml-2">
@@ -98,12 +98,12 @@ const ChatInput: React.FC<ChatInputProps> = ({ value, onChange, onSubmit, isGene
                                     }}
                                     onClick={onSubmit}
                                     className={`w-10 h-10 flex items-center justify-center rounded-full transition-all duration-200 ${value.trim()
-                                        ? 'text-white hover:bg-blue-700 shadow-md'
-                                        : 'text-slate-400 cursor-not-allowed hover:bg-transparent'
+                                        ? 'text-[#041e49] hover:bg-black/5'
+                                        : 'text-slate-400 cursor-not-allowed'
                                         }`}
                                     disabled={!value.trim()}
                                 >
-                                    <ArrowUp size={20} strokeWidth={3} />
+                                    <ArrowUp size={20} strokeWidth={2.5} />
                                 </motion.button>
                             )}
                         </AnimatePresence>

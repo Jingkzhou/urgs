@@ -6,6 +6,7 @@ export interface InfrastructureUser {
     id?: number;
     username: string;
     password?: string;
+    userType?: string;  // os(操作系统) / db(数据库)
     description?: string;
     createdAt?: string;
     updatedAt?: string;
@@ -23,6 +24,10 @@ export interface InfrastructureAsset {
     disk?: string;
     hardwareModel?: string;
     role?: string;
+    dbType?: string;
+    dbPort?: number;
+    dbName?: string;
+    dbServiceName?: string;
     appSystemId?: number;
     envId?: number;
     envType?: string;

@@ -25,8 +25,9 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '1-5-2', name: '错误日志', code: 'dash:dev:logs', type: 'button', path: '-', level: 2, parentId: '1-5' },
     { id: '1-5-3', name: 'API状态', code: 'dash:dev:api', type: 'button', path: '-', level: 2, parentId: '1-5' },
     { id: '7', name: 'Ark (方舟)', code: 'ark', type: 'menu', path: '/ark', level: 0, parentId: 'root' },
-    { id: '2', name: '公告管理', code: 'announcement', type: 'menu', path: '/announcement', level: 0, parentId: 'root' },
+    { id: '2', name: '公告', code: 'announcement', type: 'menu', path: '/announcement', level: 0, parentId: 'root' },
     { id: '2-1', name: '公告列表', code: 'announcement:list', type: 'menu', path: '/announcement/list', level: 1, parentId: '2' },
+    { id: '2-2', name: '更新日志', code: 'announcement:log', type: 'menu', path: '/announcement/log', level: 1, parentId: '2' },
     { id: '2-1-1', name: '发布公告', code: 'announcement:publish', type: 'button', path: '/announcement/publish', level: 2, parentId: '2-1' },
     { id: '2-1-2', name: '编辑公告', code: 'announcement:edit', type: 'button', path: '/announcement/edit', level: 2, parentId: '2-1' },
     { id: '2-1-3', name: '删除公告', code: 'announcement:del', type: 'button', path: '/announcement/del', level: 2, parentId: '2-1' },
@@ -90,6 +91,7 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '3-8-1-3', name: '下载日志', code: 'sys:docker:log:download', type: 'button', path: '-', level: 3, parentId: '3-8-1' },
 
     { id: '4', name: '版本管理', code: 'version', type: 'menu', path: '/version', level: 0, parentId: 'root' },
+    { id: '9', name: '工作市场', code: 'marketplace', type: 'menu', path: '/marketplace', level: 0, parentId: 'root' },
 
     // ================= Level 1 子菜单 =================
 
@@ -199,4 +201,11 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '8-3', name: '标签管理', code: 'knowledge:tag', type: 'menu', path: '/knowledge/tag', level: 1, parentId: '8' },
     { id: '8-3-1', name: '新建标签', code: 'knowledge:tag:create', type: 'button', path: '-', level: 2, parentId: '8-3' },
     { id: '8-3-2', name: '删除标签', code: 'knowledge:tag:delete', type: 'button', path: '-', level: 2, parentId: '8-3' },
+
+    // 共享空间权限
+    { id: '8-4', name: '共享空间', code: 'knowledge:shared', type: 'menu', path: '/knowledge/shared', level: 1, parentId: '8' },
+    { id: '8-4-1', name: '共享上传', code: 'knowledge:shared:upload', type: 'button', path: '-', level: 2, parentId: '8-4' },
+    { id: '8-4-2', name: '共享删除', code: 'knowledge:shared:delete', type: 'button', path: '-', level: 2, parentId: '8-4' },
+    { id: '8-4-3', name: '共享新建文件夹', code: 'knowledge:shared:folder:create', type: 'button', path: '-', level: 2, parentId: '8-4' },
+    { id: '8-4-4', name: '共享删除文件夹', code: 'knowledge:shared:folder:delete', type: 'button', path: '-', level: 2, parentId: '8-4' },
 ];

@@ -350,7 +350,31 @@ export interface Deployment {
     rollbackTo?: number;
     logs?: string;
     remark?: string;
+    packageId?: number; // 关联版本包ID
     createdAt?: string;
+}
+
+export interface VersionPackage {
+    id: number;
+    repoId: number;
+    ssoId: number;
+    version: string;
+    gitRef: string;
+    commitSha: string;
+    previousGitRef?: string;
+    previousCommitSha?: string;
+    packageName?: string;
+    packageUrl?: string;
+    packageSize?: number;
+    description?: string;
+    deployScript?: string;
+    rollbackScript?: string;
+    status: string;
+    createdBy?: number;
+    deployedBy?: number;
+    deployedAt?: string;
+    createdAt?: string;
+    updatedAt?: string;
 }
 
 // 环境管理
@@ -534,3 +558,47 @@ export const getAppActiveBranches = (systemId: string) =>
 
 
 
+// ========== 版本包管理 ==========
+
+/**
+ * 获取版本包列表
+ */
+export const getVersionPackages = (ssoId: number) =>
+    get<VersionPackage[]>('/api/version/deploy/packages', { ssoId });
+
+/**
+ * 创建版本包
+ */
+export const createVersionPackage = (params: {
+    repoId: number;
+    ssoId: number;
+    gitRef: string;
+    previousGitRef?: string;
+    assetId?: number;
+    execUser?: string;
+    description: string;
+    createdBy?: number;
+}) => post<VersionPackage>('/api/version/deploy/packages', params);
+
+/**
+ * 下载部署安装包
+ */
+export const downloadVersionPackage = (packageId: number) =>
+    get<Blob>(`/api/version/deploy/packages/${packageId}/download`, {}, { isBlob: true });
+
+/**
+ * 回填版本包部署状态
+ */
+export const updatePackageStatus = (packageId: number, status: string, operatorId?: number) =>
+    put<VersionPackage>(`/api/version/deploy/packages/${packageId}/status`, { status, operatorId });
+
+/**
+ * 关联版本包执行部署 (记录)
+ */
+export const deployWithPackage = (params: {
+    ssoId: number;
+    envId: number;
+    packageId: number;
+    deployedBy: number;
+    remark?: string;
+}) => post<Deployment>('/api/version/deploy/execute', params);

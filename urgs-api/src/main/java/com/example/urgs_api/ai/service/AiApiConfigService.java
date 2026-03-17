@@ -28,5 +28,5 @@ public interface AiApiConfigService extends IService<AiApiConfig> {
     /**
      * 测试 API 连接
      */
-    boolean testConnection(AiApiConfig config);
+    java.util.Map<String, Object> testConnection(AiApiConfig config);
 }

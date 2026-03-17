@@ -32,13 +32,28 @@ public class KnowledgeDocumentService {
     public IPage<KnowledgeDocument> listDocuments(Long userId, Long folderId, String keyword,
             Boolean favorite,
             int page, int size) {
+        return listDocuments(userId, folderId, keyword, favorite, page, size, "private");
+    }
+
+    /**
+     * 分页查询文档（指定空间）
+     * scope=shared 时不过滤 userId，scope=private 时按 userId 过滤
+     */
+    public IPage<KnowledgeDocument> listDocuments(Long userId, Long folderId, String keyword,
+            Boolean favorite,
+            int page, int size, String scope) {
         LambdaQueryWrapper<KnowledgeDocument> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(KnowledgeDocument::getUserId, userId);
+
+        if ("shared".equals(scope)) {
+            wrapper.eq(KnowledgeDocument::getScope, "shared");
+        } else {
+            wrapper.eq(KnowledgeDocument::getUserId, userId);
+            wrapper.eq(KnowledgeDocument::getScope, "private");
+        }
 
         if (folderId != null) {
             wrapper.eq(KnowledgeDocument::getFolderId, folderId);
         } else if (!StringUtils.hasText(keyword)) {
-            // 如果未指定文件夹且没有搜索关键词，则只查询根目录下的文件
             wrapper.isNull(KnowledgeDocument::getFolderId);
         }
         if (StringUtils.hasText(keyword)) {
@@ -129,6 +144,38 @@ public class KnowledgeDocumentService {
         doc.setUpdateTime(LocalDateTime.now());
         documentMapper.updateById(doc);
         return newStatus == 1;
+    }
+
+    /**
+     * 复制共享文档到个人空间
+     */
+    @Transactional
+    public KnowledgeDocument copyToPrivate(Long docId, Long userId) {
+        KnowledgeDocument source = documentMapper.selectById(docId);
+        if (source == null) {
+            throw new RuntimeException("文档不存在");
+        }
+        if (!"shared".equals(source.getScope())) {
+            throw new RuntimeException("只能从共享空间复制文档");
+        }
+
+        KnowledgeDocument copy = new KnowledgeDocument();
+        copy.setUserId(userId);
+        copy.setFolderId(null); // 复制到个人空间根目录
+        copy.setTitle(source.getTitle());
+        copy.setScope("private");
+        copy.setSourceDocId(source.getId());
+        copy.setFileUrl(source.getFileUrl());
+        copy.setFileName(source.getFileName());
+        copy.setFileSize(source.getFileSize());
+        copy.setIsFavorite(0);
+        copy.setViewCount(0);
+        copy.setCreateTime(LocalDateTime.now());
+        copy.setUpdateTime(LocalDateTime.now());
+        documentMapper.insert(copy);
+
+        log.info("用户 {} 从共享空间复制文档 {} 到个人空间", userId, docId);
+        return copy;
     }
 
     /**

@@ -1,0 +1,78 @@
+{
+    "dialect": "oracle",
+    "description": "多表 JOIN + WHERE 过滤 + GROUP BY + 聚合函数 (SUM/COUNT/MAX)",
+    "table_lineage": {
+        "sources": [
+            "ODS.CUSTOMERS",
+            "ODS.ORDERS"
+        ],
+        "targets": [
+            "DWD.CUSTOMER_SUMMARY"
+        ]
+    },
+    "column_lineage": [
+        {
+            "source_table": "ODS.CUSTOMERS",
+            "source_column": "CUSTOMER_ID",
+            "target_table": "DWD.CUSTOMER_SUMMARY",
+            "target_column": "CUSTOMER_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.CUSTOMERS",
+            "source_column": "CUSTOMER_NAME",
+            "target_table": "DWD.CUSTOMER_SUMMARY",
+            "target_column": "CUSTOMER_NAME",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.ORDERS",
+            "source_column": "AMOUNT",
+            "target_table": "DWD.CUSTOMER_SUMMARY",
+            "target_column": "TOTAL_AMOUNT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.ORDERS",
+            "source_column": "ORDER_ID",
+            "target_table": "DWD.CUSTOMER_SUMMARY",
+            "target_column": "ORDER_COUNT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.ORDERS",
+            "source_column": "ORDER_DATE",
+            "target_table": "DWD.CUSTOMER_SUMMARY",
+            "target_column": "LAST_ORDER_DATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.CUSTOMERS",
+            "source_column": "CUSTOMER_ID",
+            "target_table": "DWD.CUSTOMER_SUMMARY",
+            "target_column": "*",
+            "dependency_type": "join"
+        },
+        {
+            "source_table": "ODS.ORDERS",
+            "source_column": "CUSTOMER_ID",
+            "target_table": "DWD.CUSTOMER_SUMMARY",
+            "target_column": "*",
+            "dependency_type": "join"
+        },
+        {
+            "source_table": "ODS.ORDERS",
+            "source_column": "STATUS",
+            "target_table": "DWD.CUSTOMER_SUMMARY",
+            "target_column": "*",
+            "dependency_type": "fdr"
+        },
+        {
+            "source_table": "ODS.ORDERS",
+            "source_column": "ORDER_DATE",
+            "target_table": "DWD.CUSTOMER_SUMMARY",
+            "target_column": "*",
+            "dependency_type": "fdr"
+        }
+    ]
+}

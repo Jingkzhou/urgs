@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            width: 720pt;
+            height: 405pt;
+            margin: 0;
+            padding: 0;
+            background: #1C2833;
+            color: #F4F6F6;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            height: 60pt;
+            background: #2E4053;
+            border-bottom: 2pt solid #5D6D7E;
+            display: flex;
+            align-items: center;
+            padding-left: 30pt;
+        }
+
+        h1 {
+            font-size: 24pt;
+            margin: 0;
+        }
+
+        .content {
+            flex: 1;
+            padding: 30pt;
+            display: flex;
+            align-items: center;
+        }
+
+        .image-placeholder {
+            width: 300pt;
+            height: 200pt;
+            background: #283747;
+            border: 2pt dashed #5D6D7E;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10pt;
+        }
+
+        .info {
+            flex: 1;
+            padding-left: 40pt;
+        }
+
+        ul {
+            font-size: 16pt;
+            line-height: 1.8;
+        }
+
+        span.highlight {
+            color: #5DADE2;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>06 血缘分析引擎</h1>
+    </div>
+    <div class="content">
+        <div class="image-placeholder">
+            <p style="color: #5D6D7E; font-size: 20pt;">[血缘深度追踪示意]</p>
+        </div>
+        <div class="info">
+            <ul>
+                <li><span class="highlight">字段级</span>血缘追踪。</li>
+                <li>支持多方言（Oracle, Hive, MySQL 等）。</li>
+                <li>面向<span class="highlight">监管报送</span>场景深度优化。</li>
+                <li>上下游依赖关系全景展示。</li>
+            </ul>
+        </div>
+    </div>
+</body>
+
+</html>

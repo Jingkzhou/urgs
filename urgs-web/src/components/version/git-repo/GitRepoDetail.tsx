@@ -511,7 +511,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
         {
             key: 'deploy',
             label: <span className="flex items-center gap-1"><Rocket size={14} /> 部署管理</span>,
-            children: <DeploymentManagement ssoId={repo.ssoId} />
+            children: <DeploymentManagement ssoId={repo.ssoId} repoId={repo.id} />
         },
         {
             key: 'release',

@@ -6,14 +6,15 @@ URGS 是一个企业级统一资源治理与调度系统。它集成了任务调
 
 本项目采用微服务架构，包含以下核心模块：
 
-| 模块 | 目录 | 说明 | 技术栈 |
-| --- | --- | --- | --- |
-| **Backend API** | [urgs-api](./urgs-api) | 核心后端服务，负责业务逻辑、调度管理、Auth等 | Spring Boot 3, MyBatis-Plus, Quartz |
-| **Frontend** | [urgs-web](./urgs-web) | 现代化前端界面 | React 18, Vite, Ant Design, Tailwind |
-| **Executor** | [urgs-executor](./urgs-executor) | 独立任务执行引擎，支持分布式部署 | Spring Boot 3, ProcessBuilder |
-| **AI / RAG** | [urgs-rag](./urgs-rag) | 智能知识库与检索服务，支持 SQL 解释与问答 | Python 3.10, LangChain, ChromaDB |
-| **Lineage** | [sql-lineage-engine](./sql-lineage-engine) | SQL 血缘分析引擎 | Python, Java (GSP) |
-| **Presentation** | [urgs+-presentation-platform](./urgs+-presentation-platform) | 演示交互平台 | React, Vite, Tailwind |
+| 模块             | 目录                                                         | 说明                                         | 技术栈                                     |
+| ---------------- | ------------------------------------------------------------ | -------------------------------------------- | ------------------------------------------ |
+| **Backend API**  | [urgs-api](./urgs-api)                                       | 核心后端服务，负责业务逻辑、调度管理、Auth等 | Spring Boot 3, MyBatis-Plus, Quartz        |
+| **Frontend**     | [urgs-web](./urgs-web)                                       | 现代化前端界面                               | React 18, Vite, Ant Design, Tailwind       |
+| **Executor**     | [urgs-executor](./urgs-executor)                             | 独立任务执行引擎，支持分布式部署             | Spring Boot 3, ProcessBuilder              |
+| **AI / RAG**     | [urgs-rag](./urgs-rag)                                       | 智能知识库与检索服务，支持 SQL 解释与问答    | Python 3.10, LangChain, ChromaDB           |
+| **Lineage**      | [sql-lineage-engine](./sql-lineage-engine)                   | SQL 血缘分析引擎                             | Python, Java (GSP)                         |
+| **Presentation** | [urgs+-presentation-platform](./urgs+-presentation-platform) | 演示交互平台                                 | React, Vite, Tailwind                      |
+| **Dify AI**      | [urgs-dify](./urgs-dify)                                     | 全栈 LLM 应用开发平台 (Integrated)           | Python (Flask), Next.js, PostgreSQL, Redis |
 
 ## 🚀 快速开始 (Docker 部署)
 
@@ -36,14 +37,15 @@ docker-compose up -d
 
 启动成功后，各服务访问地址如下：
 
-| 服务 | 地址 | 默认账号/备注 |
-| --- | --- | --- |
-| **前端页面** | [http://localhost:3000](http://localhost:3000) | - |
-| **后端接口** | [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html) | API 文档 |
-| **RAG 文档** | [http://localhost:8001/doc](http://localhost:8001/doc) | AI 服务接口文档 |
-| **Neo4j** | [http://localhost:7474](http://localhost:7474) | neo4j / 12345678 |
-| **Presentation** | [http://localhost:3002](http://localhost:3002) | - |
-| **MySQL** | `localhost:3306` | root / a8548879 (库: urgs_dev) |
+| 服务             | 地址                                                                           | 默认账号/备注                  |
+| ---------------- | ------------------------------------------------------------------------------ | ------------------------------ |
+| **前端页面**     | [http://localhost:3000](http://localhost:3000)                                 | -                              |
+| **后端接口**     | [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html) | API 文档                       |
+| **RAG 文档**     | [http://localhost:8001/doc](http://localhost:8001/doc)                         | AI 服务接口文档                |
+| **Neo4j**        | [http://localhost:7474](http://localhost:7474)                                 | neo4j / 12345678               |
+| **Presentation** | [http://localhost:3002](http://localhost:3002)                                 | -                              |
+| **MySQL**        | `localhost:3306`                                                               | root / a8548879 (库: urgs_dev) |
+| **Dify 控制台**  | [http://localhost:5001](http://localhost:5001)                                 | 首次启动需设置管理员账号       |
 
 > 💡 **提示**: 
 > - 生产环境部署请参考下方 [环境配置](#️-环境配置) 章节。
@@ -59,9 +61,11 @@ docker-compose up -d
 docker-compose logs -f urgs-api
 docker-compose logs -f urgs-executor
 docker-compose logs -f urgs-rag
+docker-compose logs -f urgs-dify-api
 
 # 重启单个服务
 docker-compose restart urgs-api
+docker-compose restart urgs-dify-api
 ```
 
 #### sql-lineage-engine (SQL 血缘分析)
@@ -128,6 +132,14 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8001
 ```
 
+### 5. AI 应用平台 (urgs-dify)
+Dify 作为子模块引入，支持可视化编排：
+```bash
+# 启动 Dify 核心服务
+docker-compose up -d urgs-dify-api urgs-dify-web urgs-dify-worker
+```
+访问 `http://localhost:5001` 进行初始化。
+
 ---
 
 ## ⚙️ 环境配置
@@ -175,7 +187,7 @@ chmod +x package.sh
 - `install.sh`: 针对本次打包模块的一键安装/更新脚本
 - `docker-compose.yml` & `.env`: 必要的配置文件
 
-> 💡 **支持的模块名**: `api`, `web`, `executor`, `lineage`, `neo4j`, `presentation`
+> 💡 **支持的模块名**: `api`, `web`, `executor`, `lineage`, `neo4j`, `presentation`, `dify-api`, `dify-web`
 
 #### 2. 传输文件到生产服务器
 将打包生成的 `urgs-dist` 目录传输到生产服务器即可。

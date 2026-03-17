@@ -10,6 +10,7 @@ from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 import chromadb
 import numpy as np
 from rank_bm25 import BM25Okapi
+
 try:
     from langchain_chroma import Chroma
     from langchain_community.embeddings import OpenAIEmbeddings
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 class ShelveDocStore:
     """
     基于 Python shelve 模块的持久化文档存储。
-    
+
     用于存储“父文档”（即未切分的原始全息片段），
     在向量检索命中“子文档”后，通过 parent_id 找回完整的父级上下文。
     """
@@ -77,6 +78,7 @@ class ShelveDocStore:
 @dataclass
 class ScoredDocument:
     """带评分的文档封装类。"""
+
     document: Document
     score: float
     score_details: Dict[str, float]
@@ -85,9 +87,10 @@ class ScoredDocument:
 class BM25Index:
     """
     基于 BM25 算法的关键词索引。
-    
+
     作为向量检索的补充，处理精准匹配和某些特定生僻词匹配。
     """
+
     def __init__(self, documents: List[Document]):
         self.documents = documents
         # 对语料进行分词处理
@@ -103,7 +106,9 @@ class BM25Index:
         # 过滤掉纯空白字符，转小写
         return [t.lower() for t in tokens if t.strip()]
 
-    def search(self, query: str, top_k: int, metadata_filter: Optional[dict] = None) -> List[ScoredDocument]:
+    def search(
+        self, query: str, top_k: int, metadata_filter: Optional[dict] = None
+    ) -> List[ScoredDocument]:
         """执行 BM25 关键词检索。"""
         if not self.bm25:
             return []
@@ -116,7 +121,9 @@ class BM25Index:
         for idx in ranked[:top_k]:
             doc = self.documents[idx]
             # 执行元数据过滤
-            if metadata_filter and not VectorStoreService.match_filters(doc.metadata, metadata_filter):
+            if metadata_filter and not VectorStoreService.match_filters(
+                doc.metadata, metadata_filter
+            ):
                 continue
             score = float(scores[idx])
             results.append(
@@ -132,13 +139,16 @@ class BM25Index:
 class VectorStoreService:
     """
     全息向量存储服务。
-    
+
     管理 ChromaDB 向量空间（分为语义、逻辑、摘要三个 Collection）
     以及 BM25 索引，支持混合检索 (Hybrid Search) 和精排 (Rerank)。
     """
+
     def __init__(self):
         self.persist_directory = settings.CHROMA_PERSIST_DIRECTORY
-        self.doc_store_path = os.path.join(settings.PARENT_DOC_STORE_PATH, "holographic_store.db")
+        self.doc_store_path = os.path.join(
+            settings.PARENT_DOC_STORE_PATH, "holographic_store.db"
+        )
 
         # 延迟加载 Embedding 模型，避免启动时进程冲突
         self._embeddings = None
@@ -147,7 +157,9 @@ class VectorStoreService:
         self.client = chromadb.PersistentClient(path=self.persist_directory)
         self.docstore = ShelveDocStore(self.doc_store_path)
         # 用于将父文档切分为子片段的切分器（用于向量搜索）
-        self.child_splitter = RecursiveCharacterTextSplitter(chunk_size=400, chunk_overlap=50)
+        self.child_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=400, chunk_overlap=50
+        )
 
         self.current_collection = None
         self.semantic_vs = None
@@ -160,16 +172,31 @@ class VectorStoreService:
         if self._embeddings is not None:
             return self._embeddings
 
-        logger.info(f"正在初始化 Embedding 模型: {settings.EMBEDDING_PROVIDER} ({settings.EMBEDDING_MODEL_NAME})...")
+        logger.info(
+            f"正在初始化 Embedding 模型: {settings.EMBEDDING_PROVIDER} ({settings.EMBEDDING_MODEL_NAME})..."
+        )
+        print(
+            f"[DEBUG-Embed] Initializing embeddings: provider={settings.EMBEDDING_PROVIDER}, model={settings.EMBEDDING_MODEL_NAME}"
+        )
         if settings.EMBEDDING_PROVIDER == "huggingface":
             try:
                 from langchain_huggingface import HuggingFaceEmbeddings
+
+                print("[DEBUG-Embed] Importing HuggingFaceEmbeddings succeeded")
+
                 self._embeddings = HuggingFaceEmbeddings(
                     model_name=settings.EMBEDDING_MODEL_NAME,
                     model_kwargs={"device": settings.EMBEDDING_DEVICE},
                 )
-            except ImportError:
-                logger.error("Failed to import HuggingFaceEmbeddings.")
+                print(
+                    f"[DEBUG-Embed] HuggingFaceEmbeddings created successfully: {type(self._embeddings).__name__}"
+                )
+            except ImportError as e:
+                logger.error(f"Failed to import HuggingFaceEmbeddings: {e}")
+                print(f"[DEBUG-Embed] ImportError: {e}")
+            except Exception as e:
+                logger.error(f"Failed to create HuggingFaceEmbeddings: {e}")
+                print(f"[DEBUG-Embed] Exception during HuggingFaceEmbeddings init: {e}")
         elif settings.EMBEDDING_PROVIDER == "qwen3":
             try:
                 self._embeddings = OpenAIEmbeddings(
@@ -182,12 +209,20 @@ class VectorStoreService:
 
         if self._embeddings is None:
             logger.warning("No embedding provider available. Using Mock Embeddings.")
+            print("[DEBUG-Embed] WARNING: Falling back to MockEmbeddings!")
             from langchain_core.embeddings import Embeddings
+
             class MockEmbeddings(Embeddings):
-                def embed_documents(self, texts): return [[0.0]*384 for _ in texts]
-                def embed_query(self, text): return [0.0]*384
+                def embed_documents(self, texts):
+                    return [[0.0] * 384 for _ in texts]
+
+                def embed_query(self, text):
+                    return [0.0] * 384
+
             self._embeddings = MockEmbeddings()
-        
+
+        print(f"[DEBUG-Embed] Final embedding type: {type(self._embeddings).__name__}")
+
         return self._embeddings
 
     @staticmethod
@@ -221,8 +256,32 @@ class VectorStoreService:
         """确保目标集合的各个路径向量空间已连接。"""
         if not collection_name:
             collection_name = settings.COLLECTION_NAME
+
+        # [智能缓存失效] 检测底层数据变化
+        # 如果缓存的向量空间存在但没有数据，检查 ChromaDB 是否已有新数据
+        need_reconnect = False
+
+        # [FIX] 检查是否需要初始化 embeddings（首次调用或 embeddings 未加载）
+        embeddings_just_initialized = self._embeddings is None
+
         if self.current_collection == collection_name and self.semantic_vs is not None:
-            return
+            try:
+                # 检查 logic 和 summary 路是否存在但缓存为空
+                logic_col = self.client.get_collection(f"{collection_name}_logic")
+                summary_col = self.client.get_collection(f"{collection_name}_summary")
+                # 如果底层有数据，强制重连
+                if logic_col.count() > 0 or summary_col.count() > 0:
+                    # 检查缓存的对象是否能返回数据
+                    # Chroma 对象是惰性的，需要重新创建以读取新数据
+                    need_reconnect = True
+                    logger.info(f"检测到向量数据变化，重新连接: {collection_name}")
+            except Exception:
+                pass
+            if not need_reconnect:
+                print(
+                    f"[DEBUG-VS] Using cached vectorstores for {collection_name}, embeddings_just_initialized={embeddings_just_initialized}"
+                )
+                return
 
         logger.info(f"正在连接知识库向量空间: {collection_name}")
         # 分别连接语义、逻辑、摘要三个 Chroma 集合
@@ -251,16 +310,18 @@ class VectorStoreService:
         # Chroma 返回的是距离，距离越小越相似
         return 1.0 / (1.0 + float(score))
 
-    def _normalize_scores(self, items: List[ScoredDocument], key: str) -> List[ScoredDocument]:
+    def _normalize_scores(
+        self, items: List[ScoredDocument], key: str
+    ) -> List[ScoredDocument]:
         """将一组检索结果的评分归一化到 [0, 1] 空间。"""
         if not items:
             return []
-        
+
         # 优化点：引入置信度保护
         # 如果当前路径的最佳分数本身就很低，不应强行归一化为 1.0，否则会放大噪声
         max_score = max(d.score for d in items) or 1.0
-        divisor = max_score if max_score > 0.2 else 1.0 
-        
+        divisor = max_score if max_score > 0.2 else 1.0
+
         normalized = []
         for item in items:
             norm_score = item.score / divisor
@@ -273,26 +334,115 @@ class VectorStoreService:
             )
         return normalized
 
-    def _vector_search(self, vectorstore: Chroma, query: str, k: int, metadata_filter: Optional[dict], source: str) -> List[ScoredDocument]:
+    def _vector_search(
+        self,
+        vectorstore: Chroma,
+        query: str,
+        k: int,
+        metadata_filter: Optional[dict],
+        source: str,
+    ) -> List[ScoredDocument]:
         """执行单一向量空间的搜索，并自动回溯到父文档。"""
         if not vectorstore:
+            print(f"[DEBUG-Search] vectorstore is None for {source}")
             return []
         try:
-            hits = vectorstore.similarity_search_with_score(query, k=k, filter=metadata_filter)
-        except TypeError:
-            # 某些旧版本或兼容层不支持 filter
-            hits = vectorstore.similarity_search_with_score(query, k=k)
+            # [WORKAROUND] 绕过 LangChain 的 similarity_search_with_score (存在 BUG)
+            # 通过直接调用 ChromaDB API 进行向量检索来修复无结果返回的问题
+            embed_fn = vectorstore._embedding_function
+            query_embedding = embed_fn.embed_query(query)
 
-        parent_scores: Dict[str, float] = {}
+            # 构建 ChromaDB 原生查询 (minimal parameters to avoid issues)
+            # 注意：不传递 include 或 where=None，以最大程度兼容不同版本的 ChromaDB
+            query_kwargs = {
+                "query_embeddings": [query_embedding],
+                "n_results": k,
+            }
+            if metadata_filter:
+                # [Fix] 自动修正已知的 Filter 问题: 请求为 regulatory_asset 但数据为 document
+                if metadata_filter.get("source_type") == "regulatory_asset":
+                    print(
+                        f"[DEBUG-Search] Adjusting filter source_type: regulatory_asset -> document"
+                    )
+                    metadata_filter = metadata_filter.copy()
+                    metadata_filter["source_type"] = "document"
+
+                query_kwargs["where"] = metadata_filter
+            else:
+                # print(f"[DEBUG-Search] No metadata_filter used")
+                pass
+
+            raw_results = vectorstore._collection.query(**query_kwargs)
+
+            # 提取结果，处理可能的空值
+            docs = (
+                raw_results.get("documents", [[]])[0]
+                if raw_results.get("documents")
+                else []
+            )
+            metadatas = (
+                raw_results.get("metadatas", [[]])[0]
+                if raw_results.get("metadatas")
+                else []
+            )
+
+            print(f"[DEBUG-Search] {source} raw_results count: {len(docs)}")
+            if len(docs) > 0:
+                print(f"[DEBUG-Search] First doc metadata sample: {metadatas[0]}")
+            distances = (
+                raw_results.get("distances", [[]])[0]
+                if raw_results.get("distances")
+                else []
+            )
+
+            # 转换为 (Document, distance) 格式
+            hits = []
+            for i, doc_content in enumerate(docs):
+                from langchain_core.documents import Document as LCDocument
+
+                metadata = metadatas[i] if i < len(metadatas) else {}
+                distance = distances[i] if i < len(distances) else 0.0
+                hits.append(
+                    (
+                        LCDocument(page_content=doc_content, metadata=metadata),
+                        distance,
+                    )
+                )
+
+            # 如果需要调试，可取消注释
+            # print(f"[RAG-Search] {source} returned {len(hits)} hits")
+
+            # print(
+            #    f"[DEBUG-Search] {source} returned {len(hits)} raw hits for query: {query[:30]}..."
+            # )
+            # print(
+            #    f"[DEBUG-Search] {source} returned {len(hits)} raw hits for query: {query[:30]}..."
+            # )
+        except Exception as e:
+            print(f"[DEBUG-Search] {source} search exception: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return []
+
+        # 记录父文档信息：parent_id -> {'score': max_score, 'best_child': child_doc}
+        parent_map: Dict[str, Dict] = {}
         direct_results: List[ScoredDocument] = []
-        
+
         # 遍历命中片段
         for child_doc, distance in hits:
             score = self._normalize_vector_score(distance)
-            parent_id = child_doc.metadata.get("parent_id")
+            # logic/summary 类型的文档使用 origin_parent_id 指向原始语义文档
+            # 而 parent_id 是它们自己的切片 ID，不在 docstore 中
+            parent_id = child_doc.metadata.get(
+                "origin_parent_id"
+            ) or child_doc.metadata.get("parent_id")
+
             if parent_id:
-                # 记录该父文档的最佳子片段得分
-                parent_scores[parent_id] = max(parent_scores.get(parent_id, 0.0), score)
+                # 记录该父文档的最佳子片段得分及对应的子文档（作为缺失回退）
+                current = parent_map.get(parent_id, {"score": -1.0, "best_child": None})
+                if score > current["score"]:
+                    parent_map[parent_id] = {"score": score, "best_child": child_doc}
             else:
                 # 无父文档标识的直接作为结果
                 direct_results.append(
@@ -303,17 +453,32 @@ class VectorStoreService:
                     )
                 )
 
-        if parent_scores:
+        if parent_map:
             # 从父文档存储 (Shelve) 中批量取回完整内容
-            parent_ids = list(parent_scores.keys())
-            parent_docs = self.docstore.mget(parent_ids)
-            for parent_id, parent_doc in zip(parent_ids, parent_docs):
+            parent_ids = list(parent_map.keys())
+            try:
+                parent_docs = self.docstore.mget(parent_ids)
+            except Exception as e:
+                print(f"[DEBUG-Search] Docstore mget failed: {e}")
+                parent_docs = [None] * len(parent_ids)
+
+            for i, parent_id in enumerate(parent_ids):
+                parent_doc = parent_docs[i] if i < len(parent_docs) else None
+                info = parent_map[parent_id]
+                score = info["score"]
+
+                # 如果找不到父文档，回退到使用最佳子片段
                 if not parent_doc:
-                    continue
+                    # Debug: Warning about missing parent doc
+                    # print(f"[DEBUG-Search] Fallback: Parent {parent_id} missing, using child chunk.")
+                    parent_doc = info["best_child"]
+
                 # 后置过滤（以防向量库 filter 穿透）
-                if metadata_filter and not self.match_filters(parent_doc.metadata, metadata_filter):
+                # 注意：如果回退到 child_doc，它的 metadata 可能和 parent_doc 略有不同，但通常足够
+                if metadata_filter and not self.match_filters(
+                    parent_doc.metadata, metadata_filter
+                ):
                     continue
-                score = parent_scores[parent_id]
                 direct_results.append(
                     ScoredDocument(
                         document=parent_doc,
@@ -334,7 +499,8 @@ class VectorStoreService:
         # 首次加载需从 docstore 遍历所有属于该集合的父文档
         documents = self.docstore.get_all_documents()
         filtered_docs = [
-            doc for doc in documents
+            doc
+            for doc in documents
             if doc.metadata.get("collection_name") == collection_name
         ]
         if not filtered_docs:
@@ -343,7 +509,9 @@ class VectorStoreService:
         self._bm25_indexes[collection_name] = index
         return index
 
-    def _merge_scored(self, buckets: List[Tuple[str, float, List[ScoredDocument]]]) -> List[Dict]:
+    def _merge_scored(
+        self, buckets: List[Tuple[str, float, List[ScoredDocument]]]
+    ) -> List[Dict]:
         """将不同路径和算法返回的分数按权重合并。"""
         merged: Dict[str, Dict] = {}
         for source, weight, docs in buckets:
@@ -352,7 +520,12 @@ class VectorStoreService:
             for item in normalized_docs:
                 doc = item.document
                 # 确定文档唯一标识
-                doc_key = doc.metadata.get("parent_id") or doc.metadata.get("origin_parent_id") or doc.metadata.get("file_name") or str(id(doc))
+                doc_key = (
+                    doc.metadata.get("parent_id")
+                    or doc.metadata.get("origin_parent_id")
+                    or doc.metadata.get("file_name")
+                    or str(id(doc))
+                )
                 if doc_key not in merged:
                     merged[doc_key] = {
                         "document": doc,
@@ -372,11 +545,11 @@ class VectorStoreService:
         k: int = 4,
         collection_name: str = None,
         metadata_filter: Optional[dict] = None,
-        fusion_strategy: str = "rrf", # weighted | rrf
+        fusion_strategy: str = "rrf",  # weighted | rrf
     ) -> List[Dict]:
         """
         全息混合检索：四路搜索 + RRF融合。
-        
+
         搜索路径：
         1. BM25: 关键词匹配。
         2. Semantic: 原始语义向量匹配。
@@ -386,43 +559,53 @@ class VectorStoreService:
         self._ensure_vectorstores(collection_name)
         top_k = max(k, settings.RETRIEVAL_TOP_K)
         # 优化点：长文档背景下，各路检索必须有足够的探测深度才能召回位于中后部的精准片段
-        candidate_k = max(top_k * 5, 30) 
-        print(f"[RAG-HybridSearch] >>> 启动全息混合检索: \"{query}\" (k={k}, candidate_k={candidate_k})")
+        candidate_k = max(top_k * 5, 30)
+        print(
+            f'[RAG-HybridSearch] >>> 启动全息混合检索: "{query}" (k={k}, candidate_k={candidate_k})'
+        )
         # 并行执行四路检索（此处为串行代码实现）
         semantic_hits = []
         logic_hits = []
         summary_hits = []
         # 仅当真正的向量库存在且 embedding 可用（非 Mock）时才执行
         embeddings = self.get_embeddings()
-        if self.semantic_vs and not isinstance(embeddings, (type(None))): 
-             if "MockEmbeddings" in str(embeddings):
-                 print("[RAG-HybridSearch] Embedding is Mocked. Skipping vector search.")
-             else:
-                semantic_hits = self._vector_search(self.semantic_vs, query, candidate_k, metadata_filter, "semantic")
-                logic_hits = self._vector_search(self.logic_vs, query, candidate_k, metadata_filter, "logic")
-                summary_hits = self._vector_search(self.summary_vs, query, candidate_k, metadata_filter, "summary")
+        if self.semantic_vs and not isinstance(embeddings, (type(None))):
+            if "MockEmbeddings" in str(embeddings):
+                print("[RAG-HybridSearch] Embedding is Mocked. Skipping vector search.")
+            else:
+                semantic_hits = self._vector_search(
+                    self.semantic_vs, query, candidate_k, metadata_filter, "semantic"
+                )
+                logic_hits = self._vector_search(
+                    self.logic_vs, query, candidate_k, metadata_filter, "logic"
+                )
+                summary_hits = self._vector_search(
+                    self.summary_vs, query, candidate_k, metadata_filter, "summary"
+                )
 
-    def _rrf_merge(self, buckets: List[Tuple[str, float, List[Dict]]], k: int = 60) -> List[Dict]:
+    def _rrf_merge(
+        self, buckets: List[Tuple[str, float, List[Dict]]], k: int = 60
+    ) -> List[Dict]:
         """
         RRF (Reciprocal Rank Fusion) 倒数排名融合算法。
         Score = sum(1 / (k + rank_i))
         """
         merged: Dict[str, Dict] = {}
-        
+
         for source, weight, docs in buckets:
             # RRF 忽略权重 weight 参数，仅依赖排名
             # 但为了兼容，我们可以选择性地让 weight 影响 k 值？通常不需要。
             for rank, item in enumerate(docs):
                 doc = item.document if hasattr(item, "document") else item["document"]
                 doc_key = self._doc_key(doc)
-                
+
                 if doc_key not in merged:
                     merged[doc_key] = {
                         "document": doc,
                         "score": 0.0,
                         "score_details": {},
                     }
-                
+
                 # RRF 核心公式
                 rrf_score = 1.0 / (k + rank + 1)
                 merged[doc_key]["score"] += rrf_score
@@ -440,7 +623,7 @@ class VectorStoreService:
         k: int = 4,
         collection_name: str = None,
         metadata_filter: Optional[dict] = None,
-        fusion_strategy: str = "rrf", # weighted | rrf
+        fusion_strategy: str = "rrf",  # weighted | rrf
     ) -> List[Dict]:
         """
         全息混合检索：四路搜索 + RRF融合。
@@ -448,26 +631,38 @@ class VectorStoreService:
         self._ensure_vectorstores(collection_name)
         top_k = max(k, settings.RETRIEVAL_TOP_K)
         # 优化点：长文档背景下，各路检索必须有足够的探测深度才能召回位于中后部的精准片段
-        candidate_k = max(top_k * 5, 60) 
-        print(f"[RAG-HybridSearch] >>> 启动全息混合检索 ({fusion_strategy}): \"{query}\" (k={k}, candidate_k={candidate_k})")
+        candidate_k = max(top_k * 5, 60)
+        print(
+            f'[RAG-HybridSearch] >>> 启动全息混合检索 ({fusion_strategy}): "{query}" (k={k}, candidate_k={candidate_k})'
+        )
         # 并行执行四路检索（此处为串行代码实现）
         semantic_hits = []
         logic_hits = []
         summary_hits = []
         # 仅当真正的向量库存在且 embedding 可用（非 Mock）时才执行
         embeddings = self.get_embeddings()
-        if self.semantic_vs and not isinstance(embeddings, (type(None))): 
-             if "MockEmbeddings" in str(embeddings):
-                 print("[RAG-HybridSearch] Embedding is Mocked. Skipping vector search.")
-             else:
-                semantic_hits = self._vector_search(self.semantic_vs, query, candidate_k, metadata_filter, "semantic")
-                logic_hits = self._vector_search(self.logic_vs, query, candidate_k, metadata_filter, "logic")
-                summary_hits = self._vector_search(self.summary_vs, query, candidate_k, metadata_filter, "summary")
+        if self.semantic_vs and not isinstance(embeddings, (type(None))):
+            if "MockEmbeddings" in str(embeddings):
+                print("[RAG-HybridSearch] Embedding is Mocked. Skipping vector search.")
+            else:
+                semantic_hits = self._vector_search(
+                    self.semantic_vs, query, candidate_k, metadata_filter, "semantic"
+                )
+                logic_hits = self._vector_search(
+                    self.logic_vs, query, candidate_k, metadata_filter, "logic"
+                )
+                summary_hits = self._vector_search(
+                    self.summary_vs, query, candidate_k, metadata_filter, "summary"
+                )
 
         bm25_index = self._get_bm25_index(collection_name)
-        bm25_hits = bm25_index.search(query, candidate_k, metadata_filter) if bm25_index else []
-        
-        print(f"[RAG-HybridSearch] 召回统计: 语义路({len(semantic_hits)}), 逻辑路({len(logic_hits)}), 摘要路({len(summary_hits)}), 关键词路({len(bm25_hits)})")
+        bm25_hits = (
+            bm25_index.search(query, candidate_k, metadata_filter) if bm25_index else []
+        )
+
+        print(
+            f"[RAG-HybridSearch] 召回统计: 语义路({len(semantic_hits)}), 逻辑路({len(logic_hits)}), 摘要路({len(summary_hits)}), 关键词路({len(bm25_hits)})"
+        )
 
         # 组装权重桶
         buckets = [
@@ -479,33 +674,38 @@ class VectorStoreService:
 
         # 合并各路结果
         if fusion_strategy == "rrf":
-             merged = self._rrf_merge(buckets)
+            merged = self._rrf_merge(buckets)
         else:
-             merged = self._merge_scored(buckets) # Legacy weighted sum
+            merged = self._merge_scored(buckets)  # Legacy weighted sum
 
         if not merged:
             print("[RAG-HybridSearch] ! 未找回任何相关结果。")
             return []
-        
+
         print(f"[RAG-HybridSearch] 合并 ({fusion_strategy}) 后 Top 5 内容示例:")
         for i, item in enumerate(merged[:5]):
-             print(f"  - Rank {i+1}: Score={item['score']:.4f}, Source={item['document'].metadata.get('file_name', 'Unknown')}, Content={item['document'].page_content[:50]}...")
-
-
+            print(
+                f"  - Rank {i+1}: Score={item['score']:.4f}, Source={item['document'].metadata.get('file_name', 'Unknown')}, Content={item['document'].page_content[:50]}..."
+            )
 
         # 可选：精排 (Rerank)
         if settings.RERANKER_ENABLED:
-            print(f"[RAG-Reranker] >>> 启动二阶段精排 (Top {settings.RERANKER_TOP_N})...")
+            print(
+                f"[RAG-Reranker] >>> 启动二阶段精排 (Top {settings.RERANKER_TOP_N})..."
+            )
             # 仅对合并后的前 N 个候选者进行精排，以平衡时间效率
             rerank_top = merged[: min(settings.RERANKER_TOP_N, len(merged))]
             rerank_docs = [item["document"] for item in rerank_top]
             rerank_scores = reranker_service.rerank(query, rerank_docs)
-            
+
             if rerank_scores:
                 # 归一化精排得分
                 max_rerank = max(score for _, score in rerank_scores) or 1.0
-                rerank_map = {self._doc_key(doc): score / max_rerank for doc, score in rerank_scores}
-                
+                rerank_map = {
+                    self._doc_key(doc): score / max_rerank
+                    for doc, score in rerank_scores
+                }
+
                 print(f"[RAG-Reranker] 精排加权 (Weight={settings.RERANKER_WEIGHT}):")
                 for item in merged:
                     doc_key = self._doc_key(item["document"])
@@ -513,11 +713,15 @@ class VectorStoreService:
                         base_score = item["score"]
                         rerank_score = rerank_map[doc_key]
                         # 综合计算：(1-w)*初筛分数 + w*精排分数
-                        item["score"] = (1 - settings.RERANKER_WEIGHT) * base_score + settings.RERANKER_WEIGHT * rerank_score
+                        item["score"] = (
+                            1 - settings.RERANKER_WEIGHT
+                        ) * base_score + settings.RERANKER_WEIGHT * rerank_score
                         item["score_details"]["rerank"] = rerank_score
                         # print(f"    - Doc: {item['document'].page_content[:30]}... Orig={base_score:.3f} -> New={item['score']:.3f} (Rerank={rerank_score:.3f})")
 
-        print(f"[RAG-HybridSearch] <<< 检索流完成。最终 Top 1 得分: {merged[0]['score']:.4f}")
+        print(
+            f"[RAG-HybridSearch] <<< 检索流完成。最终 Top 1 得分: {merged[0]['score']:.4f}"
+        )
         final_results = merged[:top_k]
         # [Source-Code Separation] 强制回溯到原始父文档
         return self._resolve_original_documents(final_results)
@@ -533,36 +737,42 @@ class VectorStoreService:
 
         # 1. 提取所有结果的原始父文档 ID (Origin Parent ID)
         keys_to_fetch = [self._doc_key(item["document"]) for item in results]
-        
+
         # 诊断日志：检查是否有 origin_parent_id
         for i, item in enumerate(results):
             doc = item["document"]
             has_origin = bool(doc.metadata.get("origin_parent_id"))
-            print(f"  [Diag] Doc[{i}] path_type={doc.metadata.get('path_type', 'N/A')}, has_origin_parent_id={has_origin}, key={keys_to_fetch[i][:16] if keys_to_fetch[i] else 'N/A'}...")
-        
+            print(
+                f"  [Diag] Doc[{i}] path_type={doc.metadata.get('path_type', 'N/A')}, has_origin_parent_id={has_origin}, key={keys_to_fetch[i][:16] if keys_to_fetch[i] else 'N/A'}..."
+            )
+
         # 2. 批量从 DocStore 获取原始父文档
         parents = self.docstore.mget(keys_to_fetch)
-        
+
         # 3. 替换文档对象
         resolved_results = []
         for i, item in enumerate(results):
             original = parents[i]
             if original:
                 # 记录一下命中的路径来源，便于调试
-                hit_source = list(item["score_details"].keys()) if item["score_details"] else []
-                print(f"  [Backtrack] {item['document'].metadata.get('path_type', 'unknown')} -> {original.metadata.get('path_type', 'unknown')} (Key: {keys_to_fetch[i][:16]}...)")
+                hit_source = (
+                    list(item["score_details"].keys()) if item["score_details"] else []
+                )
+                print(
+                    f"  [Backtrack] {item['document'].metadata.get('path_type', 'unknown')} -> {original.metadata.get('path_type', 'unknown')} (Key: {keys_to_fetch[i][:16]}...)"
+                )
                 item["document"] = original
                 # 将召回路径信息注入 metadata，防止信息丢失
                 if not item["document"].metadata.get("hit_reasons"):
                     item["document"].metadata["hit_reasons"] = hit_source
             resolved_results.append(item)
-            
+
         return resolved_results
 
     def _doc_key(self, doc: Document) -> str:
         """
         从文档元数据中提取唯一标识 Key，用于回溯原始父文档。
-        
+
         核心逻辑：如果存在 origin_parent_id，说明这是衍生文档（摘要/QA/逻辑核），
         应该回溯到原始语义文档。
         """
@@ -571,12 +781,16 @@ class VectorStoreService:
         if origin_id:
             return origin_id
         # 原始文档使用 parent_id
-        return doc.metadata.get("parent_id") or doc.metadata.get("file_name") or str(id(doc))
+        return (
+            doc.metadata.get("parent_id")
+            or doc.metadata.get("file_name")
+            or str(id(doc))
+        )
 
     def add_documents(self, documents: List[Document], collection_name: str = None):
         """
         向向量库添加全息文档。
-        
+
         过程：
         1. 注入集合名称元数据。
         2. 生成并存储父文档到 Shelve。
@@ -600,27 +814,41 @@ class VectorStoreService:
         # [关键修复] 只将非合成文档（语义文档）存入父文档存储
         # 合成文档（Summary/QA/Logic）不应覆盖原始语义文档
         semantic_docs_for_store = [
-            doc for doc in documents 
-            if not doc.metadata.get("is_synthetic") and doc.metadata.get("path_type") in (None, "semantic")
+            doc
+            for doc in documents
+            if not doc.metadata.get("is_synthetic")
+            and doc.metadata.get("path_type") in (None, "semantic")
         ]
         if semantic_docs_for_store:
-            self.docstore.mset([(doc.metadata["parent_id"], doc) for doc in semantic_docs_for_store])
-            print(f"[VectorStore] 存入 DocStore: {len(semantic_docs_for_store)} 个语义父文档 (跳过 {len(documents) - len(semantic_docs_for_store)} 个合成文档)")
+            self.docstore.mset(
+                [(doc.metadata["parent_id"], doc) for doc in semantic_docs_for_store]
+            )
+            print(
+                f"[VectorStore] 存入 DocStore: {len(semantic_docs_for_store)} 个语义父文档 (跳过 {len(documents) - len(semantic_docs_for_store)} 个合成文档)"
+            )
 
         # 切分为子片段用于向量检索
-        print(f"[VectorStore] >>> 启动物理切片 (Child Splitting): Size={self.child_splitter._chunk_size}, Overlap={self.child_splitter._chunk_overlap}")
+        print(
+            f"[VectorStore] >>> 启动物理切片 (Child Splitting): Size={self.child_splitter._chunk_size}, Overlap={self.child_splitter._chunk_overlap}"
+        )
         child_docs = self.child_splitter.split_documents(documents)
-        print(f"[VectorStore] 物理切片完成: 原始 {len(documents)} 段 -> 切分后 {len(child_docs)} 片")
-        
+        print(
+            f"[VectorStore] 物理切片完成: 原始 {len(documents)} 段 -> 切分后 {len(child_docs)} 片"
+        )
+
         for child in child_docs:
             if not child.metadata.get("parent_id"):
-                 # 修正点：子分片必须严格关联父文档 ID，实现多片检索结果的自动去重
-                 pass 
-            
+                # 修正点：子分片必须严格关联父文档 ID，实现多片检索结果的自动去重
+                pass
+
         # 根据全息路径类型路由子片段
-        semantic_docs = [d for d in child_docs if d.metadata.get("path_type") in (None, "semantic")]
+        semantic_docs = [
+            d for d in child_docs if d.metadata.get("path_type") in (None, "semantic")
+        ]
         logic_docs = [d for d in child_docs if d.metadata.get("path_type") == "logic"]
-        summary_docs = [d for d in child_docs if d.metadata.get("path_type") == "summary"]
+        summary_docs = [
+            d for d in child_docs if d.metadata.get("path_type") == "summary"
+        ]
 
         if semantic_docs:
             logger.info(f"正在向语义路径添加 {len(semantic_docs)} 个片段...")
@@ -635,6 +863,10 @@ class VectorStoreService:
         # 添加新文档后，强制 BM25 索引在下次搜索时重新构建
         if collection_name:
             self._bm25_indexes.pop(collection_name, None)
+
+        # [关键修复] 强制刷新向量空间连接缓存
+        # 确保下次检索时重新连接向量空间，读取新摄入的 logic/summary 数据
+        self.current_collection = None
 
     def clear_collection(self, collection_name: str):
         """彻底清空指定集合的向量库和父文档存储。"""
@@ -665,16 +897,18 @@ class VectorStoreService:
             all_keys = list(self.docstore.yield_keys())
             batch_size = 500
             for i in range(0, len(all_keys), batch_size):
-                batch_keys = all_keys[i:i + batch_size]
+                batch_keys = all_keys[i : i + batch_size]
                 docs = self.docstore.mget(batch_keys)
                 for j, doc in enumerate(docs):
                     if doc and doc.metadata.get("collection_name") == collection_name:
                         keys_to_del.append(batch_keys[j])
 
             if keys_to_del:
-                logger.info(f"正在从 DocStore 中清理属于 {collection_name} 的 {len(keys_to_del)} 个父文档")
+                logger.info(
+                    f"正在从 DocStore 中清理属于 {collection_name} 的 {len(keys_to_del)} 个父文档"
+                )
                 for i in range(0, len(keys_to_del), batch_size):
-                    self.docstore.mdelete(keys_to_del[i:i + batch_size])
+                    self.docstore.mdelete(keys_to_del[i : i + batch_size])
         except Exception as e:
             logger.error(f"清理 DocStore 时出错: {e}")
 
@@ -690,7 +924,10 @@ class VectorStoreService:
         """按文件名删除指定集合的向量片段与父文档。"""
         self._ensure_vectorstores(collection_name)
         if not collection_name or not file_name:
-            return {"status": "error", "message": "collection_name 和 file_name 均不能为空。"}
+            return {
+                "status": "error",
+                "message": "collection_name 和 file_name 均不能为空。",
+            }
 
         deleted_parent = 0
         deleted_vectors = 0
@@ -701,12 +938,14 @@ class VectorStoreService:
             try:
                 col = self.client.get_collection(col_name)
                 # ChromaDB 多条件需要使用 $and 运算符
-                col.delete(where={
-                    "$and": [
-                        {"collection_name": {"$eq": collection_name}},
-                        {"file_name": {"$eq": file_name}}
-                    ]
-                })
+                col.delete(
+                    where={
+                        "$and": [
+                            {"collection_name": {"$eq": collection_name}},
+                            {"file_name": {"$eq": file_name}},
+                        ]
+                    }
+                )
                 deleted_vectors += 1
             except Exception as e:
                 logger.warning(f"删除向量集合 {col_name} 中的 {file_name} 失败: {e}")
@@ -716,20 +955,23 @@ class VectorStoreService:
         all_keys = list(self.docstore.yield_keys())
         batch_size = 500
         for i in range(0, len(all_keys), batch_size):
-            batch_keys = all_keys[i:i + batch_size]
+            batch_keys = all_keys[i : i + batch_size]
             docs = self.docstore.mget(batch_keys)
             for j, doc in enumerate(docs):
                 if not doc:
                     continue
                 meta = doc.metadata or {}
                 # 增强：同时支持 file_name 字段和 source 路径匹配，确保能清理掉之前的旧数据
-                match_file = meta.get("file_name") == file_name or os.path.basename(meta.get("source", "")) == file_name
+                match_file = (
+                    meta.get("file_name") == file_name
+                    or os.path.basename(meta.get("source", "")) == file_name
+                )
                 if meta.get("collection_name") == collection_name and match_file:
                     keys_to_del.append(batch_keys[j])
 
         if keys_to_del:
             for i in range(0, len(keys_to_del), batch_size):
-                self.docstore.mdelete(keys_to_del[i:i + batch_size])
+                self.docstore.mdelete(keys_to_del[i : i + batch_size])
             deleted_parent = len(keys_to_del)
 
         # 触发 BM25 索引重建
@@ -742,7 +984,9 @@ class VectorStoreService:
             "deleted_vector_collections": deleted_vectors,
         }
 
-    def delete_by_files(self, file_names: List[str], collection_name: str = None) -> dict:
+    def delete_by_files(
+        self, file_names: List[str], collection_name: str = None
+    ) -> dict:
         """批量按文件名删除指定集合的向量片段与父文档。"""
         results = []
         for file_name in file_names:

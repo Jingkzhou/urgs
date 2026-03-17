@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            width: 720pt;
+            height: 405pt;
+            margin: 0;
+            padding: 0;
+            background: #1C2833;
+            color: #F4F6F6;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            height: 60pt;
+            background: #2E4053;
+            border-bottom: 2pt solid #5D6D7E;
+            display: flex;
+            align-items: center;
+            padding-left: 30pt;
+        }
+
+        h1 {
+            font-size: 24pt;
+            margin: 0;
+        }
+
+        .content {
+            flex: 1;
+            padding: 30pt;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .feature-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 25pt;
+        }
+
+        .f-header {
+            border-bottom: 2pt solid #5DADE2;
+            margin-bottom: 5pt;
+        }
+
+        .f-item {
+            flex: 1;
+            margin: 0 10pt;
+        }
+
+        .f-item h2 {
+            font-size: 18pt;
+            margin: 0;
+        }
+
+        .f-item p {
+            font-size: 14pt;
+            color: #D5DBDB;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>05 元数据与数据源管理</h1>
+    </div>
+    <div class="content">
+        <div class="feature-row">
+            <div class="f-item">
+                <div class="f-header">
+                    <h2>数据源管理</h2>
+                </div>
+                <p>统一管理 RDBMS, NoSQL 与大数据源连接。</p>
+            </div>
+            <div class="f-item">
+                <div class="f-header">
+                    <h2>模型管理</h2>
+                </div>
+                <p>支持逻辑数据模型 (LDM) 与物理数据模型 (PDM) 关联。</p>
+            </div>
+        </div>
+        <div class="feature-row">
+            <div class="f-item">
+                <div class="f-header">
+                    <h2>SQL 解析</h2>
+                </div>
+                <p>多方言 SQL 深度解析，精准捕捉元数据特征。</p>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

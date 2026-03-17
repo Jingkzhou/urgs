@@ -32,6 +32,12 @@ public class Agent {
     // JSON string storing list of prompts
     private String prompts;
 
+    @TableField("dify_api_key")
+    private String difyApiKey;
+
+    @TableField("dify_api_base")
+    private String difyApiBase;
+
     @TableField("updated_at")
     private Date updatedAt;
 }

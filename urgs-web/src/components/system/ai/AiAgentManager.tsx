@@ -17,6 +17,8 @@ interface AgentConfig {
     status: number;
     prompts?: any; // String from backend, parsed to RecommendedPrompt[] in frontend
     knowledgeBase?: string;
+    difyApiKey?: string;
+    difyApiBase?: string;
     updatedAt: string;
 }
 
@@ -224,7 +226,7 @@ const AiAgentManager: React.FC = () => {
                     <Form.Item name="description" label="功能描述">
                         <Input.TextArea placeholder="简要描述该助手的用途" rows={2} />
                     </Form.Item>
-                    <Form.Item name="knowledgeBase" label="关联知识库">
+                    <Form.Item name="knowledgeBase" label="关联知识库 (传统模式)">
                         <Select placeholder="选择关联的知识库" allowClear>
                             {knowledgeBases.map(kb => (
                                 <Select.Option key={kb.id} value={String(kb.id)}>
@@ -233,6 +235,21 @@ const AiAgentManager: React.FC = () => {
                             ))}
                         </Select>
                     </Form.Item>
+
+                    <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 mb-4">
+                        <h4 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                            <RobotOutlined className="text-blue-500" /> Dify 引擎配置
+                        </h4>
+                        <p className="text-xs text-slate-500 mb-4">
+                            配置 Dify 后，该助手的所有对话和知识库检索将交由 Dify 引擎进行管理。
+                        </p>
+                        <Form.Item name="difyApiKey" label="Dify API Key (应用凭证)">
+                            <Input.Password placeholder="例如: app-xxxxxxxxxxxxxxxx" />
+                        </Form.Item>
+                        <Form.Item name="difyApiBase" label="Dify API Base URL (可选)">
+                            <Input placeholder="默认: https://api.dify.ai/v1" />
+                        </Form.Item>
+                    </div>
 
                     <Form.Item label="RAG 指令配置 (可选)">
                         <div className="flex gap-2 mb-2">
@@ -254,7 +271,7 @@ const AiAgentManager: React.FC = () => {
                         </div>
                     </Form.Item>
 
-                    <Form.Item name="systemPrompt" label="系统提示词 (System Prompt)" rules={[{ required: true }]}>
+                    <Form.Item name="systemPrompt" label="系统提示词 (传统模式)" rules={[{ required: false }]}>
                         <Input.TextArea placeholder="你是一个专业的..." rows={6} className="font-mono text-sm" />
                     </Form.Item>
                     <Form.Item name="status" label="启用状态" valuePropName="checked">

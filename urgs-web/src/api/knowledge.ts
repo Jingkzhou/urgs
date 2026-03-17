@@ -8,6 +8,7 @@ export interface KnowledgeFolder {
     userId: number;
     parentId: number | null;
     name: string;
+    scope: 'private' | 'shared';
     sortOrder: number;
     createTime: string;
     updateTime: string;
@@ -28,6 +29,8 @@ export interface KnowledgeDocument {
     userId: number;
     folderId: number | null;
     title: string;
+    scope: 'private' | 'shared';
+    sourceDocId: number | null;
     fileUrl: string | null;
     fileName: string | null;
     fileSize: number | null;
@@ -58,11 +61,11 @@ export interface PageResult<T> {
 // ==================== 文件夹 API ====================
 
 /** 获取文件夹树 */
-export const getFolderTree = () =>
-    get<FolderTreeNode[]>('/api/wiki/folders');
+export const getFolderTree = (scope?: 'private' | 'shared') =>
+    get<FolderTreeNode[]>('/api/wiki/folders', scope ? { scope } : undefined);
 
 /** 创建文件夹 */
-export const createFolder = (data: { name: string; parentId?: number }) =>
+export const createFolder = (data: { name: string; parentId?: number; scope?: string }) =>
     post<KnowledgeFolder>('/api/wiki/folders', data);
 
 /** 更新文件夹 */
@@ -86,17 +89,23 @@ export const listDocuments = (params: {
     favorite?: boolean;
     page?: number;
     size?: number;
+    scope?: string;
 }) => get<PageResult<KnowledgeDocument>>('/api/wiki/documents', params);
 
 /** 创建文档（附件上传后调用） */
 export const createDocument = (data: {
     folderId?: number;
     title: string;
+    scope?: string;
     fileUrl: string;
     fileName: string;
     fileSize: number;
     tagIds?: number[];
 }) => post<KnowledgeDocument>('/api/wiki/documents', data);
+
+/** 复制共享文档到个人空间 */
+export const copyToPrivate = (id: number) =>
+    post<KnowledgeDocument>(`/api/wiki/documents/${id}/copy-to-private`);
 
 /** 更新文档信息 */
 export const updateDocument = (id: number, data: {

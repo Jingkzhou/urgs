@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, MoreHorizontal, Eye, Trash2, Edit, LayoutGrid, List as ListIcon, Calendar, User, MessageCircle, ArrowUpRight, SearchSlash, ChevronLeft, ChevronRight, Clock } from 'lucide-react';
+import { Search, Filter, MoreHorizontal, Eye, Trash2, Edit, LayoutGrid, List as ListIcon, Calendar, User, MessageCircle, ArrowUpRight, SearchSlash, ChevronLeft, ChevronRight, Clock, CheckCircle } from 'lucide-react';
 import { message, Modal, Tooltip, Dropdown } from 'antd';
 import { motion, AnimatePresence } from 'framer-motion';
 import AnnouncementDetail from './AnnouncementDetail';
 
 interface AnnouncementListProps {
     onEdit?: (id: string) => void;
+    defaultSelectedId?: string | null;
+    forceCategory?: string;
 }
 
-const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit }) => {
+const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit, defaultSelectedId, forceCategory }) => {
     const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState<string>('all');
@@ -16,7 +18,32 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit }) => {
     const [loading, setLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
     const [total, setTotal] = useState(0);
-    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [selectedId, setSelectedId] = useState<string | null>(defaultSelectedId || null);
+
+    const handleMarkAllAsRead = async () => {
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch(`/api/announcement/read-all?category=${forceCategory || ''}`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                fetchNotices();
+                // Optionally notify other components via custom event
+                window.dispatchEvent(new CustomEvent('announcementRead'));
+                message.success('已全部标记为已读');
+            }
+        } catch (err) {
+            console.error("Failed to mark all as read", err);
+        }
+    };
+
+    // Sync selectedId when defaultSelectedId changes (e.g. from URL)
+    useEffect(() => {
+        if (defaultSelectedId) {
+            setSelectedId(defaultSelectedId);
+        }
+    }, [defaultSelectedId]);
 
     const fetchNotices = async () => {
         setLoading(true);
@@ -37,6 +64,10 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit }) => {
                 type: filterType,
                 keyword: searchTerm
             });
+            
+            if (forceCategory) {
+                queryParams.append('category', forceCategory);
+            }
 
             const res = await fetch(`/api/announcement/list?${queryParams.toString()}`, {
                 headers: {
@@ -198,20 +229,22 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit }) => {
 
                         <div className="h-8 w-px bg-slate-200 mx-1" />
 
-                        <div className="flex gap-2">
-                            {['all', 'urgent', 'normal', 'update'].map((type) => (
-                                <button
-                                    key={type}
-                                    onClick={() => setFilterType(type)}
-                                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border ${filterType === type
-                                            ? 'bg-violet-600 text-white border-violet-600 shadow-lg shadow-violet-200'
-                                            : 'bg-white text-slate-500 border-slate-200 hover:border-violet-300 hover:text-violet-600'
-                                        }`}
-                                >
-                                    {type === 'all' ? '全部' : typeConfig[type]?.label || type}
-                                </button>
-                            ))}
-                        </div>
+                        {(!forceCategory || forceCategory !== 'Log') && (
+                            <div className="flex gap-2">
+                                {['all', 'urgent', 'normal', 'update'].map((type) => (
+                                    <button
+                                        key={type}
+                                        onClick={() => setFilterType(type)}
+                                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border ${filterType === type
+                                                ? 'bg-violet-600 text-white border-violet-600 shadow-lg shadow-violet-200'
+                                                : 'bg-white text-slate-500 border-slate-200 hover:border-violet-300 hover:text-violet-600'
+                                            }`}
+                                    >
+                                        {type === 'all' ? '全部' : typeConfig[type]?.label || type}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -289,9 +322,27 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit }) => {
                                     </div>
 
                                     <div className="mb-6">
-                                        <h3 className="text-lg font-bold text-slate-800 line-clamp-2 leading-tight group-hover:text-violet-600 transition-colors mb-3">
+                                        <h3 className="text-lg font-bold text-slate-800 line-clamp-2 leading-tight group-hover:text-violet-600 transition-colors mb-2">
                                             {notice.title}
                                         </h3>
+                                        
+                                        {/* Systems Tags */}
+                                        <div className="flex flex-wrap gap-1.5 mb-3">
+                                            {(() => {
+                                                try {
+                                                    const sys = typeof notice.systems === 'string' ? JSON.parse(notice.systems) : notice.systems;
+                                                    if (Array.isArray(sys) && sys.length > 0) {
+                                                        return sys.map(s => (
+                                                            <span key={s} className="px-2 py-0.5 bg-slate-50 text-slate-400 rounded-lg text-[10px] font-bold border border-slate-100">
+                                                                {s}
+                                                            </span>
+                                                        ));
+                                                    }
+                                                } catch (e) { }
+                                                return <span className="text-[10px] text-slate-300 font-medium italic">全系统可见</span>;
+                                            })()}
+                                        </div>
+
                                         <p className="text-slate-500 text-sm line-clamp-2 leading-relaxed opacity-80">
                                             {notice.summary || '暂无摘要，点击查看详情...'}
                                         </p>
@@ -382,13 +433,30 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit }) => {
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    <div className="flex items-center gap-3">
-                                                        {!notice.hasRead && (
-                                                            <div className="w-2 h-2 rounded-full bg-red-500 shadow-sm shrink-0" />
-                                                        )}
-                                                        <span className="font-bold text-slate-700 group-hover:text-violet-600 transition-colors truncate max-w-md text-sm">
-                                                            {notice.title}
-                                                        </span>
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <div className="flex items-center gap-3">
+                                                            {!notice.hasRead && (
+                                                                <div className="w-2 h-2 rounded-full bg-red-500 shadow-sm shrink-0" />
+                                                            )}
+                                                            <span className="font-bold text-slate-700 group-hover:text-violet-600 transition-colors truncate max-w-sm text-sm">
+                                                                {notice.title}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-1 ml-5">
+                                                            {(() => {
+                                                                try {
+                                                                    const sys = typeof notice.systems === 'string' ? JSON.parse(notice.systems) : notice.systems;
+                                                                    if (Array.isArray(sys) && sys.length > 0) {
+                                                                        return sys.map(s => (
+                                                                            <span key={s} className="px-1.5 py-0.5 bg-slate-50 text-slate-400 rounded text-[9px] font-bold border border-slate-100">
+                                                                                {s}
+                                                                            </span>
+                                                                        ));
+                                                                    }
+                                                                } catch (e) { }
+                                                                return <span className="text-[9px] text-slate-300 italic">全系统</span>;
+                                                            })()}
+                                                        </div>
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4">
@@ -440,34 +508,40 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit }) => {
                 )}
             </AnimatePresence>
 
-            {/* Pagination Grid */}
+            {/* Pagination & Batch Actions */}
             {total > 0 && (
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-100">
-                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                        Running {Math.min(currentPage * 12, total)} of {total} items
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); window.scrollTo(0, 0); }}
-                            disabled={currentPage === 1 || loading}
-                            className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-500 hover:border-violet-300 hover:text-violet-600 disabled:opacity-50 disabled:hover:border-slate-200 disabled:hover:text-slate-500 transition-all shadow-sm"
-                        >
-                            <ChevronLeft size={18} />
-                        </button>
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pt-8 border-t border-slate-100 mt-8">
+                    <button
+                        onClick={(e) => { e.stopPropagation(); handleMarkAllAsRead(); }}
+                        className="flex items-center gap-2 px-5 py-2.5 text-[11px] font-black uppercase tracking-widest text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition-all group"
+                    >
+                        <CheckCircle size={15} className="group-hover:scale-110 transition-transform" />
+                        全部标记为已读
+                    </button>
 
-                        <div className="flex items-center px-4 py-2 bg-slate-50 rounded-xl border border-slate-100">
-                            <span className="text-violet-600 font-black">{currentPage}</span>
+                    <div className="flex items-center gap-4">
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                            <span className="text-violet-600">{currentPage}</span>
                             <span className="text-slate-300 mx-2">/</span>
-                            <span className="text-slate-500 font-bold">{Math.ceil(total / 12)}</span>
+                            <span className="text-slate-500">{Math.ceil(total / 12)}</span>
                         </div>
 
-                        <button
-                            onClick={() => { setCurrentPage(p => p + 1); window.scrollTo(0, 0); }}
-                            disabled={currentPage >= Math.ceil(total / 12) || loading}
-                            className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-500 hover:border-violet-300 hover:text-violet-600 disabled:opacity-50 disabled:hover:border-slate-200 disabled:hover:text-slate-500 transition-all shadow-sm"
-                        >
-                            <ChevronRight size={18} />
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); window.scrollTo(0, 0); }}
+                                disabled={currentPage === 1 || loading}
+                                className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-500 hover:border-violet-300 hover:text-violet-600 disabled:opacity-50 disabled:hover:border-slate-200 disabled:hover:text-slate-500 transition-all shadow-sm"
+                            >
+                                <ChevronLeft size={18} />
+                            </button>
+                            <button
+                                onClick={() => { setCurrentPage(p => p + 1); window.scrollTo(0, 0); }}
+                                disabled={currentPage >= Math.ceil(total / 12) || loading}
+                                className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-500 hover:border-violet-300 hover:text-violet-600 disabled:opacity-50 disabled:hover:border-slate-200 disabled:hover:text-slate-500 transition-all shadow-sm"
+                            >
+                                <ChevronRight size={18} />
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

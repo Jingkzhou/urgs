@@ -1,3 +1,9 @@
+DROP PROCEDURE IF EXISTS ExecuteIdempotent_V16;
+DELIMITER $$
+CREATE PROCEDURE ExecuteIdempotent_V16()
+BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION BEGIN END;
+
 -- V16__Add_Infrastructure_Asset_User_Table.sql
 -- Create table for storing infrastructure asset users/credentials
 
@@ -14,3 +20,9 @@ CREATE TABLE IF NOT EXISTS `t_infrastructure_user` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='基础设施资产用户表';
 
 CREATE INDEX `idx_infra_user_asset_id` ON `t_infrastructure_user` (`asset_id`);
+
+
+END$$
+DELIMITER ;
+CALL ExecuteIdempotent_V16();
+DROP PROCEDURE ExecuteIdempotent_V16;

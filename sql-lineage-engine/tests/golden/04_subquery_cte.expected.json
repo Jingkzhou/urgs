@@ -1,0 +1,50 @@
+{
+    "dialect": "oracle",
+    "description": "CTE (WITH 子句) + JOIN + 聚合，字段需穿透 CTE 追溯到物理表",
+    "table_lineage": {
+        "sources": [
+            "ODS.ORDERS",
+            "ODS.CUSTOMERS"
+        ],
+        "targets": [
+            "DWD.CUSTOMER_MONTHLY"
+        ]
+    },
+    "column_lineage": [
+        {
+            "source_table": "ODS.ORDERS",
+            "source_column": "CUSTOMER_ID",
+            "target_table": "DWD.CUSTOMER_MONTHLY",
+            "target_column": "CUSTOMER_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.ORDERS",
+            "source_column": "ORDER_DATE",
+            "target_table": "DWD.CUSTOMER_MONTHLY",
+            "target_column": "ORDER_MONTH",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.ORDERS",
+            "source_column": "AMOUNT",
+            "target_table": "DWD.CUSTOMER_MONTHLY",
+            "target_column": "MONTHLY_AMOUNT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.ORDERS",
+            "source_column": "ORDER_ID",
+            "target_table": "DWD.CUSTOMER_MONTHLY",
+            "target_column": "MONTHLY_COUNT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "ODS.CUSTOMERS",
+            "source_column": "CUSTOMER_NAME",
+            "target_table": "DWD.CUSTOMER_MONTHLY",
+            "target_column": "CUSTOMER_NAME",
+            "dependency_type": "fdd"
+        }
+    ]
+}

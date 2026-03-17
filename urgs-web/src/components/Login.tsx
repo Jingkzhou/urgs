@@ -121,102 +121,93 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     };
 
     return (
-        <div className="min-h-screen bg-slate-900 overflow-hidden relative font-sans flex items-center justify-center">
-            {/* 1. Dynamic Background Layer */}
-            <div className="absolute inset-0 z-0">
-                {/* Dark gradient base */}
-                <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900"></div>
+        <div className="min-h-screen bg-slate-50 overflow-hidden relative font-sans flex items-center justify-center p-6">
+            {/* 1. Light Dynamic Background Layer - Elegant & Airy */}
+            <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+                {/* Background Pattern */}
+                <div className="absolute inset-0 opacity-[0.4] bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:32px_32px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_90%)]"></div>
 
-                {/* Abstract Glowing Orbs (Bank Red/Gold Theme) */}
-                <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-red-900/40 rounded-full blur-[120px] animate-pulse"></div>
-                <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-900/30 rounded-full blur-[120px]"></div>
-                <div className="absolute top-[40%] left-[60%] w-[30%] h-[30%] bg-amber-700/20 rounded-full blur-[100px]"></div>
+                {/* Soft Airy Orbs */}
+                <div className="absolute top-[-10%] left-[-5%] w-[50%] h-[50%] bg-red-100/50 rounded-full blur-[120px] animate-[pulse_10s_ease-in-out_infinite]"></div>
+                <div className="absolute bottom-[-10%] right-[-5%] w-[40%] h-[40%] bg-indigo-100/40 rounded-full blur-[100px] animate-[pulse_12s_ease-in-out_infinite_reverse]"></div>
 
-                {/* Mesh Pattern Overlay */}
-                <div className="absolute inset-0 opacity-[0.03]" style={{
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
-                }}></div>
+                {/* Subtle Multi-color Fluid Gradient */}
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(244,63,94,0.05),transparent_40%),radial-gradient(circle_at_80%_70%,rgba(99,102,241,0.05),transparent_40%)]"></div>
             </div>
 
-            {/* 2. Main Container - Split Layout or Centered Card? -> Centered Floating Glass Card looks very premium */}
-            <div className={`relative z-10 w-full max-w-[440px] px-6 transition-all duration-1000 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-0 opacity-100'}`}>
+            {/* 2. Login Card - Sophisticated White Glass */}
+            <div className={`relative z-10 w-full max-w-[460px] transition-all duration-1000 transform ${animate ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}>
 
-                {/* Glass Card */}
-                <div className="backdrop-blur-xl bg-white/90 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] border border-white/50 rounded-2xl overflow-hidden">
+                {/* Soft Floating Shadow Decor */}
+                <div className="absolute -inset-10 bg-black/[0.02] rounded-[4rem] blur-[60px] pointer-events-none"></div>
+
+                <div className="backdrop-blur-[60px] bg-white/75 shadow-[0_40px_80px_-15px_rgba(0,0,0,0.08)] border border-white/60 rounded-[3rem] overflow-hidden group/card relative">
+                    {/* Top Accent Line */}
+                    <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-red-500 via-rose-500 to-red-600 opacity-80"></div>
 
                     {/* Header Section */}
-                    <div className="relative pt-10 pb-8 px-10 border-b border-slate-100/80 bg-gradient-to-b from-white to-slate-50/50">
-                        {/* Logo Container - Clean and Centered */}
-                        <div className="flex flex-col items-center justify-center">
-                            <div className="w-full flex justify-center mb-6 drop-shadow-sm">
-                                <img src={LOGO_URL} alt="Bank Logo" className="h-16 w-auto object-contain" />
+                    <div className="relative pt-16 pb-10 px-12 text-center">
+                        <div className="relative z-10">
+                            <div className="flex justify-center mb-8">
+                                <div className="relative p-2 bg-white rounded-[2rem] shadow-xl shadow-black/[0.03] border border-slate-100 group/logo">
+                                    <img src={LOGO_URL} alt="Bank Logo" className="h-[64px] w-auto object-contain group-hover/logo:scale-105 transition-transform duration-700" />
+                                </div>
                             </div>
-                            <div className="space-y-1 text-center">
-                                <h1 className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent tracking-tight">
-                                    监管报送一体化系统
-                                </h1>
-                                <p className="text-[10px] text-slate-400 font-medium tracking-[0.2em] uppercase">
-                                    Integrated Regulatory Reporting System
-                                </p>
+                            <h1 className="text-2xl font-black text-slate-800 tracking-tighter italic uppercase mb-2">
+                                监管报送一体化系统
+                            </h1>
+                            <div className="flex items-center justify-center gap-2">
+                                <span className="text-[10px] text-slate-400 font-black uppercase tracking-[0.25em] opacity-80">
+                                    Integrated Reporting Portal
+                                </span>
                             </div>
                         </div>
                     </div>
 
-                    {/* Form Section */}
-                    <div className="p-10 pt-8 bg-white/50">
+                    {/* Form Fields */}
+                    <div className="px-12 pb-12">
                         <form onSubmit={handleSubmit} className="space-y-6">
 
-                            {/* Username Input */}
-                            <div className="space-y-2 group">
-                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1 group-focus-within:text-red-600 transition-colors">
-                                    ID / Username
+                            {/* Input: ID */}
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] ml-2">
+                                    <User size={12} strokeWidth={3} className="text-red-500" /> Username
                                 </label>
-                                <div className="relative transform transition-all duration-300 group-focus-within:scale-[1.01]">
-                                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-red-500 transition-colors">
-                                        <User className="h-5 w-5" strokeWidth={2} />
-                                    </div>
+                                <div className="relative group/input">
                                     <input
                                         type="text"
                                         required
                                         value={username}
                                         onChange={(e) => setUsername(e.target.value)}
-                                        className="block w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all shadow-sm"
+                                        className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 text-slate-800 text-sm placeholder:text-slate-300 focus:outline-none focus:ring-4 focus:ring-red-500/5 focus:border-red-500/30 transition-all duration-500 shadow-inner group-hover/input:bg-white"
                                         placeholder="请输入您的工号"
                                     />
+                                    <div className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-200 group-focus-within/input:text-red-500 transition-colors">
+                                        <ChevronRight size={18} strokeWidth={3} />
+                                    </div>
                                 </div>
                             </div>
 
-                            {/* Password Input */}
-                            <div className="space-y-2 group">
-                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1 group-focus-within:text-red-600 transition-colors">
-                                    Password
+                            {/* Input: Password */}
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] ml-2">
+                                    <Lock size={12} strokeWidth={3} className="text-red-500" /> Password
                                 </label>
-                                <div className="relative transform transition-all duration-300 group-focus-within:scale-[1.01]">
-                                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-red-500 transition-colors">
-                                        <Lock className="h-5 w-5" strokeWidth={2} />
-                                    </div>
+                                <div className="relative group/input">
                                     <input
                                         type="password"
                                         required
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        className="block w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all shadow-sm"
+                                        className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 text-slate-800 text-sm placeholder:text-slate-300 focus:outline-none focus:ring-4 focus:ring-red-500/5 focus:border-red-500/30 transition-all duration-500 shadow-inner group-hover/input:bg-white"
                                         placeholder="请输入密码"
                                     />
                                 </div>
                             </div>
 
-                            {/* Error Message */}
-                            {error && (
-                                <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-100 text-red-600 text-sm animate-shake">
-                                    <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
-                                    {error}
-                                </div>
-                            )}
-
-                            {/* Actions */}
-                            <div className="flex items-center justify-between pt-2">
-                                <label className="flex items-center cursor-pointer group">
+                            {/* Actions Overlay */}
+                            <div className="flex items-center justify-between px-2 pt-1">
+                                <label className="flex items-center gap-3 cursor-pointer group/check">
                                     <div className="relative">
                                         <input
                                             type="checkbox"
@@ -224,53 +215,68 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                                             onChange={(e) => setRememberMe(e.target.checked)}
                                             className="peer sr-only"
                                         />
-                                        <div className="w-4 h-4 border-2 border-slate-300 rounded peer-checked:bg-red-600 peer-checked:border-red-600 transition-all"></div>
-                                        <div className="absolute inset-0 hidden peer-checked:flex items-center justify-center pointer-events-none">
-                                            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                            </svg>
+                                        <div className="w-5 h-5 bg-white border-2 border-slate-100 rounded-lg group-hover/check:border-red-200 transition-all peer-checked:bg-red-600 peer-checked:border-red-600 shadow-sm"></div>
+                                        <div className="absolute inset-0 flex items-center justify-center opacity-0 peer-checked:opacity-100 transition-opacity">
+                                            <ShieldCheck size={12} className="text-white" strokeWidth={3} />
                                         </div>
                                     </div>
-                                    <span className="ml-2.5 text-sm text-slate-500 group-hover:text-slate-700 transition-colors">记住我</span>
+                                    <span className="text-[11px] font-black text-slate-400 group-hover/check:text-slate-600 uppercase tracking-widest transition-colors">记住我</span>
                                 </label>
-                                <a href="#" className="text-sm font-medium text-red-600 hover:text-red-700 hover:underline transition-colors decoration-dashed decoration-1 underline-offset-4">
+                                <button type="button" className="text-[11px] font-black text-red-600/70 hover:text-red-600 uppercase tracking-widest transition-colors">
                                     忘记密码?
-                                </a>
+                                </button>
                             </div>
 
-                            {/* Submit Button */}
+                            {/* Error Tip */}
+                            {error && (
+                                <div className="p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-[11px] font-black text-red-600 uppercase tracking-widest animate-in fade-in slide-in-from-top-2 duration-300">
+                                    <div className="w-1 h-5 bg-red-500 rounded-full"></div>
+                                    {error}
+                                </div>
+                            )}
+
+                            {/* Submit Controller */}
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className={`group relative w-full flex items-center justify-center py-4 px-6 border border-transparent rounded-xl text-sm font-bold text-white overflow-hidden transition-all duration-300 shadow-lg shadow-red-600/30 ${loading
-                                    ? 'bg-slate-800 cursor-not-allowed'
-                                    : 'bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 transform hover:-translate-y-0.5'
+                                className={`w-full relative py-5 rounded-2xl overflow-hidden transition-all duration-500 ${loading
+                                        ? 'bg-slate-100 cursor-wait'
+                                        : 'bg-slate-900 hover:bg-black group/btn active:scale-95 shadow-xl shadow-slate-900/10'
                                     }`}
                             >
-                                {loading ? (
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                        <span className="tracking-wide">AUTHENTICATING...</span>
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center gap-2">
-                                        <span className="tracking-wide">安全登录</span>
-                                        <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-                                    </div>
-                                )}
+                                <div className="relative z-10 flex items-center justify-center gap-3">
+                                    {loading ? (
+                                        <>
+                                            <div className="w-5 h-5 border-2 border-slate-300 border-t-slate-800 rounded-full animate-spin"></div>
+                                            <span className="text-xs font-black text-slate-800 uppercase tracking-[0.2em]">Authenticating...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="text-xs font-black text-white uppercase tracking-[0.25em]">登 录</span>
+                                            <ArrowRight size={18} strokeWidth={3} className="text-red-500 group-hover/btn:translate-x-1 transition-transform" />
+                                        </>
+                                    )}
+                                </div>
+                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover/btn:opacity-100 transition-opacity duration-700"></div>
                             </button>
                         </form>
                     </div>
 
-                    {/* Footer */}
-                    <div className="bg-slate-50/80 p-4 border-t border-slate-100 flex items-center justify-center gap-2 text-xs text-slate-400">
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        <span className="font-medium">Secure Access • Bank of Jilin © 2026</span>
+                    {/* Footer Guard */}
+                    <div className="px-12 py-5 bg-slate-50/50 border-t border-slate-100 flex items-center justify-center gap-3">
+                        <ShieldCheck size={14} className="text-red-600" strokeWidth={3} />
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                            Verified Secure Portal • Bank of Jilin © 2026
+                        </span>
                     </div>
                 </div>
 
-                {/* Bottom Reflection/Glow */}
-                <div className="absolute -bottom-4 left-10 right-10 h-10 bg-white/20 blur-xl rounded-full z-[-1]"></div>
+                {/* Build Hint */}
+                <div className="mt-8 text-center text-slate-300 font-mono text-[9px] uppercase tracking-widest flex items-center justify-center gap-3">
+                    <span>V3.8.2-GA</span>
+                    <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
+                    <span>Service: Optimized</span>
+                </div>
             </div>
         </div>
     );

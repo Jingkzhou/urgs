@@ -315,6 +315,7 @@ public class TaskService {
         instance.setStatus("WAITING"); // Reset to WAITING
         instance.setStartTime(null);
         instance.setEndTime(null);
+        instance.setCreateTime(LocalDateTime.now());
         instance.setUpdateTime(LocalDateTime.now());
         taskInstanceMapper.updateById(instance);
     }
@@ -555,6 +556,7 @@ public class TaskService {
             existing.setStartTime(null);
             existing.setEndTime(null);
             existing.setLogContent(null);
+            existing.setCreateTime(LocalDateTime.now());
             existing.setUpdateTime(LocalDateTime.now());
             taskInstanceMapper.updateById(existing);
 

@@ -76,6 +76,26 @@ public class InfrastructureAsset {
     @ExcelProperty("角色")
     private String role;
 
+    /** 数据库类型 (Oracle, MySQL, gbase, etc.) */
+    @Column(name = "db_type", length = 50)
+    @ExcelProperty("数据库类型")
+    private String dbType;
+
+    /** 数据库端口 (Oracle: 1521, MySQL: 3306, etc.) */
+    @Column(name = "db_port")
+    @ExcelProperty("数据库端口")
+    private Integer dbPort;
+
+    /** 数据库名/Schema/SID (Oracle 的 SID, MySQL 的 database) */
+    @Column(name = "db_name", length = 100)
+    @ExcelProperty("数据库名")
+    private String dbName;
+
+    /** Oracle 服务名 (与 SID 二选一) */
+    @Column(name = "db_service_name", length = 100)
+    @ExcelProperty("数据库服务名")
+    private String dbServiceName;
+
     /** 关联应用系统ID */
     @Column(name = "app_system_id")
     @ExcelProperty("关联系统ID")

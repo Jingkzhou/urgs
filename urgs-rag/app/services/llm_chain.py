@@ -6,17 +6,19 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class LLMChainService:
     """
     LLM 链路管理服务。
-    
+
     统一屏蔽不同 LLM 厂商的 API 差异，提供文本清理、QA 对生成、
     知识增强以及结构化结果生成等核心能力。
     支持从 Java 后端动态拉取 API 配置并记录 Token 使用情况。
     """
+
     def __init__(self):
-        self._client = None          # OpenAI 兼容客户端实例
-        self._config = None          # 当前使用的配置缓存
+        self._client = None  # OpenAI 兼容客户端实例
+        self._config = None  # 当前使用的配置缓存
         self._last_config_check = 0  # 上次从后端同步配置的时间
         self._config_cache_ttl = 60  # 配置缓存有效期 (秒)
 
@@ -55,7 +57,11 @@ class LLMChainService:
                     # 配置变更时，重新初始化底层客户端
                     self._client = OpenAI(
                         api_key=config.get("apiKey"),
-                        base_url=config.get("endpoint") if config.get("endpoint").endswith("/") else f"{config.get('endpoint')}/"
+                        base_url=(
+                            config.get("endpoint")
+                            if config.get("endpoint").endswith("/")
+                            else f"{config.get('endpoint')}/"
+                        ),
                     )
                     return self._config
         except Exception as e:
@@ -64,12 +70,20 @@ class LLMChainService:
         # 若后端不可用或未配置，则退回到本地配置文件的默认设置
         if not self._client:
             self._client = OpenAI(
-                api_key=settings.LLM_API_KEY,
-                base_url=settings.LLM_API_BASE
+                api_key=settings.LLM_API_KEY, base_url=settings.LLM_API_BASE
             )
         return None
 
-    def _record_usage(self, config_id, model, prompt_tokens, completion_tokens, request_type, success, error_message=None):
+    def _record_usage(
+        self,
+        config_id,
+        model,
+        prompt_tokens,
+        completion_tokens,
+        request_type,
+        success,
+        error_message=None,
+    ):
         """
         将 Token 消耗情况上报至 Java 后端，用于审计、计费或统计。
         """
@@ -82,7 +96,7 @@ class LLMChainService:
                 "completionTokens": completion_tokens,
                 "requestType": f"rag_{request_type}",
                 "success": success,
-                "errorMessage": error_message
+                "errorMessage": error_message,
             }
             requests.post(url, json=payload, timeout=5)
         except Exception as e:
@@ -91,7 +105,7 @@ class LLMChainService:
     def clean_text_with_llm(self, raw_text: str) -> str:
         """
         利用 LLM 对原始文本进行清理。
-        
+
         主要任务：纠正 OCR 错误、去除无意义的页码/页眉、将散乱数据转为 Markdown 表格。
         """
         if not raw_text or len(raw_text) < 10:
@@ -115,17 +129,24 @@ class LLMChainService:
                 model=model,
                 messages=[
                     {"role": "system", "content": "你是一个专业的文本清理助手。"},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt},
                 ],
-                temperature=0.1
+                temperature=0.1,
             )
             cleaned = response.choices[0].message.content
-            
+
             # 记录 Token 消耗
-            usage = getattr(response, 'usage', None)
+            usage = getattr(response, "usage", None)
             if usage:
-                self._record_usage(config_id, model, usage.prompt_tokens, usage.completion_tokens, "clean", True)
-            
+                self._record_usage(
+                    config_id,
+                    model,
+                    usage.prompt_tokens,
+                    usage.completion_tokens,
+                    "clean",
+                    True,
+                )
+
             return cleaned.strip()
         except Exception as e:
             logger.error(f"LLM 文本清理失败: {e}")
@@ -156,28 +177,39 @@ class LLMChainService:
                 model=model,
                 messages=[
                     {"role": "system", "content": "你是一个知识工程助手。"},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt},
                 ],
-                temperature=0.3
+                temperature=0.3,
             )
             content = response.choices[0].message.content
-            
-            usage = getattr(response, 'usage', None)
+
+            usage = getattr(response, "usage", None)
             if usage:
-                self._record_usage(config_id, model, usage.prompt_tokens, usage.completion_tokens, "qa_gen", True)
-                
+                self._record_usage(
+                    config_id,
+                    model,
+                    usage.prompt_tokens,
+                    usage.completion_tokens,
+                    "qa_gen",
+                    True,
+                )
+
             # 清理回答中的特殊前缀符号
-            questions = [line.strip().lstrip("- ").lstrip("1234567890. ") for line in content.splitlines() if line.strip()]
+            questions = [
+                line.strip().lstrip("- ").lstrip("1234567890. ")
+                for line in content.splitlines()
+                if line.strip()
+            ]
             return questions
         except Exception as e:
             logger.error(f"QA 对生成失败: {e}")
             self._record_usage(config_id, model, 0, 0, "qa_gen", False, str(e))
             return []
 
-    def enrich_knowledge(self, text: str) -> dict:
+    def enrich_knowledge(self, text: str, custom_prompt: str = None) -> dict:
         """
         【全息增强】对原始文本进行深度加工。
-        
+
         加工内容包括：
         - 模拟问题 (Questions)
         - 逻辑核/思考范式 (Reasoning Kernel)
@@ -187,65 +219,108 @@ class LLMChainService:
         """
         # 仅跳过完全空白的文本
         if not text or not text.strip():
-            return {"questions": [], "reasoning": "", "tags": [], "summary": "", "keywords": []}
+            return {
+                "questions": [],
+                "reasoning": "",
+                "tags": [],
+                "summary": "",
+                "keywords": [],
+            }
 
         config = self._get_api_config()
         model = config.get("model") if config else settings.LLM_MODEL
         config_id = config.get("id") if config else None
 
-        prompt = (
-            "你是一个知识工程助手。请对以下知识片段进行深度加工。\n"
-            "任务要求：\n"
-            "1. 生成 5 个用户可能会问的问题，且必须能从文中找到答案。\n"
-            "2. 提取 '逻辑核'：简述这段知识背后的原理、逻辑或操作流程（为什么和怎么做）。\n"
-            "3. 打场景标签：标注适用业务场景（如：故障排查、产品介绍、业务合规等）。\n"
-            "4. 生成 1 段摘要（80-150 字）。\n"
-            "5. 提取 5-10 个关键词或实体（名词短语）。\n"
-            "输出格式要求（仅输出 JSON）：\n"
-            "{\n"
-            "  \"questions\": [\"问题1\", \"问题2\", ...],\n"
-            "  \"reasoning\": \"逻辑核内容\",\n"
-            "  \"tags\": [\"标签1\", \"标签2\"],\n"
-            "  \"summary\": \"摘要内容\",\n"
-            "  \"keywords\": [\"关键词1\", \"关键词2\"]\n"
-            "}\n\n"
-            f"片段内容：\n{text[:3000]}"
-        )
+        # 优先使用自定义提示词
+        if custom_prompt and len(custom_prompt.strip()) > 10:
+            prompt = (
+                f"{custom_prompt}\n\n输出格式要求（仅输出 JSON）：\n"
+                "{\n"
+                '  "questions": ["问题1", "问题2", ...],\n'
+                '  "reasoning": "逻辑核内容",\n'
+                '  "tags": ["标签1", "标签2"],\n'
+                '  "summary": "摘要内容",\n'
+                '  "keywords": ["关键词1", "关键词2"]\n'
+                "}\n\n"
+                f"片段内容：\n{text[:3000]}"
+            )
+        else:
+            prompt = (
+                "你是一位专业的银行监管报表知识工程师，专注于银监会 1104 报表体系。请对以下知识片段进行深度加工。\n"
+                "任务要求：\n"
+                "1. 生成 5 个高质量的模拟问题（确保问题类型多样化）：\n"
+                "   - 定义类：'XX科目的定义/含义是什么？'\n"
+                "   - 填报类：'XX情况应该填报在哪个科目？'\n"
+                "   - 口径类：'XX科目的统计口径/范围是什么？'\n"
+                "   - 勾稽类：'XX科目与YY科目的勾稽关系是什么？'\n"
+                "   - 区分类：'XX和YY的区别是什么？如何区分填报？'\n"
+                "2. 提取 '逻辑核'：归纳该科目的填报逻辑、判断标准或决策流程（便于推理）。\n"
+                "3. 打场景标签（从以下选取1-3个）：\n"
+                "   资产类科目, 负债类科目, 表外科目, 存款业务, 贷款业务, 同业业务, 投资业务, 外汇业务, 固定资产, 其他\n"
+                "4. 生成 1 段摘要（80-150 字），突出科目定义、填报范围、注意事项。\n"
+                "5. 提取 5-10 个关键词：科目名称、相关术语、关联科目等。\n"
+                "输出格式要求（仅输出 JSON）：\n"
+                "{\n"
+                '  "questions": ["问题1", "问题2", ...],\n'
+                '  "reasoning": "逻辑核内容",\n'
+                '  "tags": ["标签1", "标签2"],\n'
+                '  "summary": "摘要内容",\n'
+                '  "keywords": ["关键词1", "关键词2"]\n'
+                "}\n\n"
+                f"片段内容：\n{text[:3000]}"
+            )
 
         try:
             response = self._client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": "You are a professional knowledge engineer. Output ONLY valid JSON."},
-                    {"role": "user", "content": prompt}
+                    {
+                        "role": "system",
+                        "content": "You are a professional knowledge engineer. Output ONLY valid JSON.",
+                    },
+                    {"role": "user", "content": prompt},
                 ],
                 temperature=0.3,
-                response_format={"type": "json_object"}
+                response_format={"type": "json_object"},
             )
             import json
+
             content = response.choices[0].message.content
             result = json.loads(content)
-            
-            usage = getattr(response, 'usage', None)
+
+            usage = getattr(response, "usage", None)
             if usage:
-                self._record_usage(config_id, model, usage.prompt_tokens, usage.completion_tokens, "enrich", True)
-                
+                self._record_usage(
+                    config_id,
+                    model,
+                    usage.prompt_tokens,
+                    usage.completion_tokens,
+                    "enrich",
+                    True,
+                )
+
             return {
                 "questions": result.get("questions", []),
                 "reasoning": result.get("reasoning", ""),
                 "tags": result.get("tags", []),
                 "summary": result.get("summary", ""),
-                "keywords": result.get("keywords", [])
+                "keywords": result.get("keywords", []),
             }
         except Exception as e:
             logger.error(f"全息知识增强失败: {e}")
             self._record_usage(config_id, model, 0, 0, "enrich", False, str(e))
-            return {"questions": [], "reasoning": "", "tags": [], "summary": "", "keywords": []}
+            return {
+                "questions": [],
+                "reasoning": "",
+                "tags": [],
+                "summary": "",
+                "keywords": [],
+            }
 
     def analyze_query_intent(self, query: str) -> dict:
         """
         分析用户查询意图，进行分类、实体提取和检索重写。
-        
+
         Returns:
             dict: {
                 "intent": "WHAT|HOW|COMPARE|TROUBLESHOOT|GENERAL",
@@ -255,7 +330,12 @@ class LLMChainService:
             }
         """
         if not query:
-            return {"intent": "GENERAL", "entities": [], "rewritten_query": "", "keywords": []}
+            return {
+                "intent": "GENERAL",
+                "entities": [],
+                "rewritten_query": "",
+                "keywords": [],
+            }
 
         config = self._get_api_config()
         model = config.get("model") if config else settings.LLM_MODEL
@@ -276,10 +356,10 @@ class LLMChainService:
             "\n"
             "输出仅 JSON 格式：\n"
             "{\n"
-            "  \"intent\": \"类型\",\n"
-            "  \"entities\": [\"实体1\"],\n"
-            "  \"keywords\": [\"关键词1\"],\n"
-            "  \"rewritten_query\": \"改写后的Query\"\n"
+            '  "intent": "类型",\n'
+            '  "entities": ["实体1"],\n'
+            '  "keywords": ["关键词1"],\n'
+            '  "rewritten_query": "改写后的Query"\n'
             "}\n\n"
             f"用户查询：{query}"
         )
@@ -288,30 +368,46 @@ class LLMChainService:
             response = self._client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": "You are a search intent analyzer. Output valid JSON."},
-                    {"role": "user", "content": prompt}
+                    {
+                        "role": "system",
+                        "content": "You are a search intent analyzer. Output valid JSON.",
+                    },
+                    {"role": "user", "content": prompt},
                 ],
                 temperature=0.1,
-                response_format={"type": "json_object"}
+                response_format={"type": "json_object"},
             )
             import json
+
             content = response.choices[0].message.content
             result = json.loads(content)
-            
-            usage = getattr(response, 'usage', None)
+
+            usage = getattr(response, "usage", None)
             if usage:
-                self._record_usage(config_id, model, usage.prompt_tokens, usage.completion_tokens, "intent", True)
-                
+                self._record_usage(
+                    config_id,
+                    model,
+                    usage.prompt_tokens,
+                    usage.completion_tokens,
+                    "intent",
+                    True,
+                )
+
             return {
                 "intent": result.get("intent", "GENERAL"),
                 "entities": result.get("entities", []),
                 "rewritten_query": result.get("rewritten_query", query),
-                "keywords": result.get("keywords", [])
+                "keywords": result.get("keywords", []),
             }
         except Exception as e:
             logger.error(f"意图分析失败: {e}")
             self._record_usage(config_id, model, 0, 0, "intent", False, str(e))
-            return {"intent": "GENERAL", "entities": [], "rewritten_query": query, "keywords": []}
+            return {
+                "intent": "GENERAL",
+                "entities": [],
+                "rewritten_query": query,
+                "keywords": [],
+            }
 
     def generate_structured_answer(
         self,
@@ -320,11 +416,11 @@ class LLMChainService:
         reasoning_templates: list[str],
         tags: list[str],
         sources: list[dict],
-        min_confidence: float
+        min_confidence: float,
     ) -> dict:
         """
         生成最终的结构化回答，并包含证据绑定。
-        
+
         Args:
             query: 用户提问
             facts: 检索到的核心事实
@@ -342,12 +438,19 @@ class LLMChainService:
 
         # 拼接 Prompt
         facts_str = "\n".join([f"- {f}" for f in facts]) or "无直接事实参考"
-        templates_str = "\n".join([f"- {t}" for t in reasoning_templates]) or "无逻辑模板参考"
+        templates_str = (
+            "\n".join([f"- {t}" for t in reasoning_templates]) or "无逻辑模板参考"
+        )
         tags_str = ", ".join(tags) or "通用场景"
-        sources_str = "\n".join([
-            f"- source_id: {s.get('source_id')} | score: {s.get('score'):.3f} | snippet: {s.get('snippet')}"
-            for s in sources
-        ]) or "无可用证据"
+        sources_str = (
+            "\n".join(
+                [
+                    f"- source_id: {s.get('source_id')} | score: {s.get('score'):.3f} | snippet: {s.get('snippet')}"
+                    for s in sources
+                ]
+            )
+            or "无可用证据"
+        )
 
         prompt = (
             "你是一个专业的监管问答助手。请严格基于已给证据回答，避免编造。\n"
@@ -364,17 +467,17 @@ class LLMChainService:
             f"【用户问题】{query}\n\n"
             "Schema:\n"
             "{\n"
-            "  \"conclusion\": \"简明结论\",\n"
-            "  \"evidence\": [\n"
-            "    {\"source_id\": \"\", \"quote\": \"\", \"reason\": \"\"}\n"
+            '  "conclusion": "简明结论",\n'
+            '  "evidence": [\n'
+            '    {"source_id": "", "quote": "", "reason": ""}\n'
             "  ],\n"
-            "  \"suggestions\": [\n"
-            "    {\"action\": \"\", \"reason\": \"\", \"source_id\": \"\", \"type\": \"evidence|experience\"}\n"
+            '  "suggestions": [\n'
+            '    {"action": "", "reason": "", "source_id": "", "type": "evidence|experience"}\n'
             "  ],\n"
-            "  \"risks\": [\"\"],\n"
-            "  \"boundary\": \"适用边界\",\n"
-            "  \"clarifying_questions\": [\"\"],\n"
-            f"  \"confidence\": {min_confidence}\n"
+            '  "risks": [""],\n'
+            '  "boundary": "适用边界",\n'
+            '  "clarifying_questions": [""],\n'
+            f'  "confidence": {min_confidence}\n'
             "}\n"
         )
 
@@ -382,19 +485,30 @@ class LLMChainService:
             response = self._client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": "你是专业的合规与监管知识顾问，仅输出 JSON。"},
-                    {"role": "user", "content": prompt}
+                    {
+                        "role": "system",
+                        "content": "你是专业的合规与监管知识顾问，仅输出 JSON。",
+                    },
+                    {"role": "user", "content": prompt},
                 ],
                 temperature=0.2,
-                response_format={"type": "json_object"}
+                response_format={"type": "json_object"},
             )
             import json
+
             content = response.choices[0].message.content
             result = json.loads(content)
 
-            usage = getattr(response, 'usage', None)
+            usage = getattr(response, "usage", None)
             if usage:
-                self._record_usage(config_id, model, usage.prompt_tokens, usage.completion_tokens, "answer", True)
+                self._record_usage(
+                    config_id,
+                    model,
+                    usage.prompt_tokens,
+                    usage.completion_tokens,
+                    "answer",
+                    True,
+                )
 
             return result
         except Exception as e:
@@ -407,7 +521,7 @@ class LLMChainService:
                 "risks": [],
                 "boundary": "",
                 "clarifying_questions": ["请提供更具体的业务场景或报表口径信息。"],
-                "confidence": min_confidence
+                "confidence": min_confidence,
             }
 
     def chat(self, prompt: str, system_message: str = None) -> str:
@@ -415,11 +529,14 @@ class LLMChainService:
         通用聊天接口，支持自定义提示词和系统消息。
         用于那些不需要复杂特定处理的 LLM 调用场景，如文档结构检测、意图识别等。
         """
-        import time # Added for time.time()
+        import time  # Added for time.time()
+
         config = self._get_api_config()
-        client = self._client # Changed from self.client to self._client for consistency
+        client = (
+            self._client
+        )  # Changed from self.client to self._client for consistency
         model = config.get("model") if config else settings.LLM_MODEL
-        
+
         messages = []
         if system_message:
             messages.append({"role": "system", "content": system_message})
@@ -430,11 +547,11 @@ class LLMChainService:
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
-                temperature=0.1, # 默认低温度，适合确定性任务
-                max_tokens=600   
+                temperature=0.1,  # 默认低温度，适合确定性任务
+                max_tokens=600,
             )
             content = response.choices[0].message.content
-            
+
             # 记录 Token 使用
             if config:
                 usage = response.usage
@@ -444,13 +561,14 @@ class LLMChainService:
                     prompt_tokens=usage.prompt_tokens,
                     completion_tokens=usage.completion_tokens,
                     request_type="general_chat",
-                    success=True
+                    success=True,
                 )
-            
+
             return content
         except Exception as e:
             logger.error(f"LLM Chat 调用失败: {e}")
             raise e
+
 
 # 导出 LLM 服务实例
 llm_service = LLMChainService()

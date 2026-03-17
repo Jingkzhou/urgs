@@ -2,6 +2,18 @@ server:
   port: 8080
   
 spring:
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://127.0.0.1:3306/urgs_dev?useSSL=false&serverTimezone=UTC&characterEncoding=utf8&allowPublicKeyRetrieval=true}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:a8548879}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  neo4j:
+    uri: ${SPRING_NEO4J_URI:bolt://127.0.0.1:7687}
+    authentication:
+      username: ${SPRING_NEO4J_AUTHENTICATION_USERNAME:neo4j}
+      password: ${SPRING_NEO4J_AUTHENTICATION_PASSWORD:12345678}
   servlet:
     multipart:
       max-file-size: 2048MB
@@ -19,3 +31,7 @@ lineage:
   engine:
     workdir: "${LINEAGE_ENGINE_WORKDIR:${user.dir}/../sql-lineage-engine}"
     script: "./run.sh"
+
+deploy:
+  tool:
+    workdir: "${DEPLOY_TOOL_WORKDIR:classpath:db_deploy}"

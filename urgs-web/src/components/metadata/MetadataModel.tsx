@@ -662,7 +662,6 @@ const MetadataModel: React.FC = () => {
                                                             current={domainPage}
                                                             total={domainTotal}
                                                             pageSize={domainSize}
-                                                            simple={true}
                                                             onChange={(page) => setDomainPage(page)}
                                                         />
                                                     </div>

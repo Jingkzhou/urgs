@@ -10,6 +10,8 @@ get_image() {
         lineage) echo "sql-lineage-engine:latest" ;;
         neo4j) echo "neo4j:5.15.0" ;;
         presentation) echo "urgs-presentation:latest" ;;
+        dify-api) echo "urgs-dify-api:latest" ;;
+        dify-web) echo "urgs-dify-web:latest" ;;
         *) echo "" ;;
     esac
 }
@@ -23,11 +25,14 @@ get_service_name() {
         lineage) echo "sql-lineage-engine" ;;
         neo4j) echo "neo4j" ;;
         presentation) echo "urgs-presentation" ;;
+        dify-api) echo "urgs-dify-api" ;;
+        dify-web) echo "urgs-dify-web" ;;
+        dify-worker) echo "urgs-dify-worker" ;;
         *) echo "" ;;
     esac
 }
 
-ALL_MODULES=("api" "web" "executor" "lineage" "neo4j" "presentation")
+ALL_MODULES=("api" "web" "executor" "lineage" "neo4j" "presentation" "dify-api" "dify-web" "dify-worker")
 
 # Parse requested modules
 SELECTED_MODULES=()
@@ -47,6 +52,10 @@ else
     done
     echo "Starting URGS Partial Packaging for: ${SELECTED_MODULES[*]}"
 fi
+ 
+# 0. Sync Submodules
+echo "Syncing submodules (Dify)..."
+git submodule update --init --recursive
 
 # 1. Build selected images
 echo "Building Docker images..."

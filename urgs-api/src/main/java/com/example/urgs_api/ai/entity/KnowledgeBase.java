@@ -23,6 +23,21 @@ public class KnowledgeBase {
     @TableField("embedding_model")
     private String embeddingModel;
 
+    @TableField("enrich_prompt")
+    private String enrichPrompt;
+
+    @TableField("provider")
+    private String provider; // LOCAL, DIFY
+
+    @TableField("external_id")
+    private String externalId;
+
+    @TableField("external_url")
+    private String externalUrl;
+
+    @TableField("external_api_key")
+    private String externalApiKey;
+
     @TableField("created_at")
     private Date createdAt;
 }

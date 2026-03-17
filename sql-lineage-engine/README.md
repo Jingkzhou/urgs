@@ -66,6 +66,70 @@ sql-lineage-engine/
 
 ---
 
+## 🧪 测试
+
+项目使用 **黄金测试集** 对血缘解析的准确性进行量化度量，测试数据位于 `tests/golden/` 目录。
+
+### 运行全部测试
+
+```bash
+python -m pytest tests/test_golden_lineage.py -v
+```
+
+### 运行单个用例
+
+```bash
+# 按用例名筛选
+python -m pytest tests/test_golden_lineage.py -k "04_subquery_cte" -v
+
+# 只跑表级 / 字段级
+python -m pytest tests/test_golden_lineage.py::test_table_lineage -v
+python -m pytest tests/test_golden_lineage.py::test_column_lineage -v
+```
+
+### 生成准确率报告
+
+```bash
+# 输出到终端（Markdown 格式，含 Precision / Recall / F1）
+python scripts/run_golden_tests.py
+
+# 保存到文件
+python scripts/run_golden_tests.py -o report.md
+```
+
+### 添加新的测试用例
+
+在 `tests/golden/` 下添加一对文件即可自动发现：
+
+- `xxx.sql` 或 `xxx.prc` — 待测试的 SQL
+- `xxx.expected.json` — 人工标注的预期血缘
+
+预期 JSON 格式：
+
+```json
+{
+  "dialect": "oracle",
+  "description": "用例描述",
+  "table_lineage": {
+    "sources": ["源表"],
+    "targets": ["目标表"]
+  },
+  "column_lineage": [
+    {
+      "source_table": "源表",
+      "source_column": "源列",
+      "target_table": "目标表",
+      "target_column": "目标列",
+      "dependency_type": "fdd"
+    }
+  ]
+}
+```
+
+> `dependency_type` 可选值：`fdd`（直接数据流）、`fdr`（WHERE/HAVING 条件）、`join`（JOIN 关联）
+
+---
+
 ## 🛠️ 故障排除 (Troubleshooting)
 
 如果在容器环境（Docker/K8s）中运行遇到 `pthread_create failed (EPERM)` 或 `GC Thread#0` 启动失败，请参考以下方案：

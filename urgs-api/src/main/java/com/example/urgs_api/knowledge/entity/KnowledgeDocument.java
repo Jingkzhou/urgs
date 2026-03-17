@@ -26,6 +26,12 @@ public class KnowledgeDocument {
     /** 文档标题（文件名） */
     private String title;
 
+    /** 空间类型: private(私人)/shared(共享) */
+    private String scope = "private";
+
+    /** 来源文档ID（从共享空间复制时记录原始ID） */
+    private Long sourceDocId;
+
     /** 文件路径（type=file） */
     private String fileUrl;
 

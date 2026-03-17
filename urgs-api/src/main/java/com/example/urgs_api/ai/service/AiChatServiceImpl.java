@@ -55,18 +55,18 @@ public class AiChatServiceImpl implements AiChatService {
 
     @Override
     public String chat(String systemPrompt, String userPrompt) {
-        return chat(systemPrompt, userPrompt, "chat");
+        return chat(null, systemPrompt, userPrompt, "chat");
     }
 
     /**
      * 同步聊天（带请求类型）
      */
-    public String chat(String systemPrompt, String userPrompt, String requestType) {
+    public String chat(String sessionId, String systemPrompt, String userPrompt, String requestType) {
         List<Map<String, String>> messages = List.of(
                 Map.of("role", "system", "content", systemPrompt),
                 Map.of("role", "user", "content", userPrompt));
         StringBuilder result = new StringBuilder();
-        executeCoreStream(messages, requestType, result::append, () -> {
+        executeCoreStream(sessionId, messages, requestType, result::append, () -> {
         }, e -> {
             log.error("AI chat error", e);
             throw new RuntimeException("AI 响应失败: " + e.getMessage());
@@ -82,7 +82,7 @@ public class AiChatServiceImpl implements AiChatService {
         List<Map<String, String>> messages = List.of(
                 Map.of("role", "system", "content", systemPrompt),
                 Map.of("role", "user", "content", userPrompt));
-        streamChat(messages, requestType, emitter);
+        streamChat(null, messages, requestType, emitter);
     }
 
     /**
@@ -123,8 +123,9 @@ public class AiChatServiceImpl implements AiChatService {
                         systemPrompt = agent.getSystemPrompt();
                     }
 
-                    // 2. RAG Retrieval
-                    if (agent.getKnowledgeBase() != null && !agent.getKnowledgeBase().isBlank()) {
+                    // 2. RAG Retrieval (SKIP if Agent uses Dify, as Dify handles its own RAG)
+                    boolean useDify = agent.getDifyApiKey() != null && !agent.getDifyApiKey().isBlank();
+                    if (!useDify && agent.getKnowledgeBase() != null && !agent.getKnowledgeBase().isBlank()) {
                         java.util.List<String> collectionNames = new java.util.ArrayList<>();
                         String[] kbIds = agent.getKnowledgeBase().split(",");
                         for (String kbIdStr : kbIds) {
@@ -433,7 +434,7 @@ public class AiChatServiceImpl implements AiChatService {
 
         StringBuilder aiResponse = new StringBuilder();
 
-        streamChat(messages, "chat",
+        streamChat(sessionId, messages, "chat",
                 chunk -> {
                     aiResponse.append(chunk);
                     // Do NOT try-catch around emitter.send!
@@ -475,7 +476,7 @@ public class AiChatServiceImpl implements AiChatService {
                         try {
                             emitter.send(SseEmitter.event()
                                     .data(objectMapper.writeValueAsString(Map.of("error", e.getMessage()))));
-                            emitter.completeWithError(e);
+                            emitter.complete();
                         } catch (Exception ex) {
                             log.warn("Failed to send error event to emitter (client likely closed): {}",
                                     ex.getMessage());
@@ -550,7 +551,7 @@ public class AiChatServiceImpl implements AiChatService {
                 "需要压缩的旧对话:\n" + oldContent.toString();
 
         // 调用 AI 生成新摘要
-        String newSummary = chat(systemPrompt, userPrompt);
+        String newSummary = chat(sessionId, systemPrompt, userPrompt, "chat");
 
         // 更新数据库中的 summary 字段
         if (newSummary != null && !newSummary.isEmpty()) {
@@ -609,15 +610,15 @@ public class AiChatServiceImpl implements AiChatService {
         for (com.example.urgs_api.ai.entity.AiChatMessage msg : effectiveHistory) {
             messages.add(Map.of("role", msg.getRole(), "content", msg.getContent() != null ? msg.getContent() : ""));
         }
-
         return messages;
     }
 
     // Internal helper for SSE Emitter non-persistence
-    private void streamChat(List<Map<String, String>> messages, String requestType, SseEmitter emitter) {
+    private void streamChat(String sessionId, List<Map<String, String>> messages, String requestType,
+            SseEmitter emitter) {
         executor.submit(() -> {
             try {
-                streamChat(messages, requestType,
+                streamChat(sessionId, messages, requestType,
                         chunk -> {
                             try {
                                 emitter.send(SseEmitter.event()
@@ -638,14 +639,20 @@ public class AiChatServiceImpl implements AiChatService {
                             try {
                                 emitter.send(SseEmitter.event()
                                         .data(objectMapper.writeValueAsString(Map.of("error", e.getMessage()))));
-                                emitter.completeWithError(e);
+                                emitter.complete();
                             } catch (Exception ex) {
                                 log.error("Failed to send error event", ex);
                             }
                         });
             } catch (Exception e) {
                 log.error("Stream chat failed", e);
-                emitter.completeWithError(e);
+                try {
+                    emitter.send(
+                            SseEmitter.event().data(objectMapper.writeValueAsString(Map.of("error", e.getMessage()))));
+                } catch (Exception ex) {
+                    log.error("Failed to send error event", ex);
+                }
+                emitter.complete();
             }
         });
     }
@@ -659,7 +666,7 @@ public class AiChatServiceImpl implements AiChatService {
         List<Map<String, String>> messages = List.of(
                 Map.of("role", "system", "content", systemPrompt),
                 Map.of("role", "user", "content", userPrompt));
-        streamChat(messages, "chat", chunkConsumer, onComplete, onError);
+        streamChat(null, messages, "chat", chunkConsumer, onComplete, onError);
     }
 
     /**
@@ -672,23 +679,23 @@ public class AiChatServiceImpl implements AiChatService {
         List<Map<String, String>> messages = List.of(
                 Map.of("role", "system", "content", systemPrompt),
                 Map.of("role", "user", "content", userPrompt));
-        streamChat(messages, requestType, chunkConsumer, onComplete, onError);
+        streamChat(null, messages, requestType, chunkConsumer, onComplete, onError);
     }
 
     /**
      * Core streaming with full messages list
      */
-    public void streamChat(List<Map<String, String>> messages, String requestType,
+    public void streamChat(String sessionId, List<Map<String, String>> messages, String requestType,
             Consumer<String> chunkConsumer,
             Runnable onComplete,
             Consumer<Exception> onError) {
 
         executor.submit(() -> {
-            executeCoreStream(messages, requestType, chunkConsumer, onComplete, onError);
+            executeCoreStream(sessionId, messages, requestType, chunkConsumer, onComplete, onError);
         });
     }
 
-    private void executeCoreStream(List<Map<String, String>> messages, String requestType,
+    private void executeCoreStream(String sessionId, List<Map<String, String>> messages, String requestType,
             Consumer<String> chunkConsumer,
             Runnable onComplete,
             Consumer<Exception> onError) {
@@ -700,6 +707,161 @@ public class AiChatServiceImpl implements AiChatService {
         String errorMessage = null;
 
         try {
+            // Check if governed by Dify
+            boolean useDify = false;
+            String difyApiKey = null;
+            String difyApiBase = "https://api.dify.ai/v1";
+            com.example.urgs_api.ai.entity.AiChatSession sessionInfo = null;
+            com.example.urgs_api.ai.entity.Agent agent = null;
+
+            if (sessionId != null) {
+                sessionInfo = aiChatHistoryService.getSession(sessionId);
+                if (sessionInfo != null && sessionInfo.getAgentId() != null) {
+                    agent = agentRepository.selectById(sessionInfo.getAgentId());
+                    if (agent != null && agent.getDifyApiKey() != null && !agent.getDifyApiKey().isBlank()) {
+                        useDify = true;
+                        difyApiKey = agent.getDifyApiKey();
+                        if (agent.getDifyApiBase() != null && !agent.getDifyApiBase().isBlank()) {
+                            difyApiBase = agent.getDifyApiBase();
+                        }
+                    }
+                }
+            }
+
+            if (useDify) {
+                log.info("Delegating stream request to Dify API for session {}", sessionId);
+
+                boolean isWorkflowApp = false;
+                HttpURLConnection conn = null;
+                int responseCode = 0;
+                String errorBody = "";
+
+                for (int attempt = 0; attempt < 2; attempt++) {
+                    String difyEndpoint = difyApiBase;
+                    if (!difyEndpoint.endsWith("/"))
+                        difyEndpoint += "/";
+                    difyEndpoint += isWorkflowApp ? "workflows/run" : "chat-messages";
+
+                    String query = "";
+                    if (!messages.isEmpty()) {
+                        query = messages.get(messages.size() - 1).getOrDefault("content", "");
+                    }
+                    String difyConversationId = sessionInfo.getDifyConversationId();
+
+                    Map<String, Object> difyReq = new java.util.HashMap<>();
+                    difyReq.put("response_mode", "streaming");
+                    difyReq.put("user", sessionInfo != null && sessionInfo.getUserId() != null ? sessionInfo.getUserId()
+                            : "system");
+
+                    if (isWorkflowApp) {
+                        Map<String, Object> inputs = new java.util.HashMap<>();
+                        inputs.put("query", query);
+                        inputs.put("user_question", query);
+                        inputs.put("input", query);
+                        difyReq.put("inputs", inputs);
+                    } else {
+                        difyReq.put("inputs", new java.util.HashMap<>());
+                        difyReq.put("query", query);
+                        if (difyConversationId != null && !difyConversationId.isBlank()) {
+                            difyReq.put("conversation_id", difyConversationId);
+                        }
+                    }
+
+                    String jsonBody = objectMapper.writeValueAsString(difyReq);
+
+                    conn = (HttpURLConnection) URI.create(difyEndpoint).toURL().openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
+                    conn.setRequestProperty(HttpHeaders.AUTHORIZATION, "Bearer " + difyApiKey);
+                    conn.setRequestProperty(HttpHeaders.ACCEPT, "text/event-stream");
+                    conn.setDoOutput(true);
+                    conn.setConnectTimeout(30000);
+                    conn.setReadTimeout(120000);
+
+                    try (OutputStream os = conn.getOutputStream()) {
+                        os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
+                    } catch (Exception e) {
+                        // ignore
+                    }
+
+                    responseCode = conn.getResponseCode();
+                    if (responseCode == 200) {
+                        break; // Success
+                    } else {
+                        errorBody = new String(conn.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+                        if (!isWorkflowApp && responseCode == 400 && errorBody.contains("not_chat_app")) {
+                            log.info("Dify app is not a chat app, retrying as workflow app...");
+                            isWorkflowApp = true;
+                            continue;
+                        }
+                        throw new RuntimeException("Dify API 调用失败: " + responseCode + " - " + errorBody);
+                    }
+                }
+
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    boolean isFirstDetailedMessage = true;
+                    while ((line = reader.readLine()) != null) {
+                        if (line.startsWith("data: ")) {
+                            String data = line.substring(6).trim();
+                            if (data.isEmpty())
+                                continue;
+
+                            try {
+                                JsonNode node = objectMapper.readTree(data);
+                                String event = node.has("event") ? node.get("event").asText() : "";
+
+                                if (!isWorkflowApp) {
+                                    if ("message".equals(event) || "agent_message".equals(event)) {
+                                        if (node.has("answer")) {
+                                            String answer = node.get("answer").asText();
+                                            if (answer != null && !answer.isEmpty()) {
+                                                chunkConsumer.accept(answer);
+                                            }
+                                        }
+                                    } else if ("message_end".equals(event)) {
+                                        break;
+                                    }
+
+                                    // Capture conversation_id on the first meaningful message
+                                    if (isFirstDetailedMessage && node.has("conversation_id")) {
+                                        String newConvId = node.get("conversation_id").asText();
+                                        if (newConvId != null && !newConvId.isBlank() && sessionInfo != null
+                                                && (sessionInfo.getDifyConversationId() == null
+                                                        || sessionInfo.getDifyConversationId().isBlank())) {
+                                            sessionInfo.setDifyConversationId(newConvId);
+                                            aiChatHistoryService.updateSession(sessionInfo);
+                                            isFirstDetailedMessage = false;
+                                            log.info("Saved new Dify Conversation ID: {}", newConvId);
+                                        }
+                                    }
+                                } else {
+                                    // Workflow app parsing
+                                    if ("text_chunk".equals(event) || "node_chunk".equals(event)) {
+                                        if (node.has("data") && node.get("data").has("text")) {
+                                            String text = node.get("data").get("text").asText();
+                                            if (text != null && !text.isEmpty()) {
+                                                chunkConsumer.accept(text);
+                                            }
+                                        }
+                                    } else if ("workflow_finished".equals(event)) {
+                                        break;
+                                    }
+                                }
+                            } catch (Exception e) {
+                                log.warn("Failed to parse Dify SSE data: {} | Exception: {}", data, e.getMessage());
+                            }
+                        }
+                    }
+                }
+
+                success = true;
+                onComplete.run();
+                return;
+            }
+
+            // --- Fallback to standard OpenAI compatible API ---
             config = aiApiConfigService.getDefaultConfig();
             if (config == null) {
                 throw new RuntimeException("未配置默认 AI API，请在系统管理中配置");

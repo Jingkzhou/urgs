@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            width: 720pt;
+            height: 405pt;
+            margin: 0;
+            padding: 0;
+            background: #1C2833;
+            color: #F4F6F6;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            height: 60pt;
+            background: #2E4053;
+            border-bottom: 2pt solid #5D6D7E;
+            display: flex;
+            align-items: center;
+            padding-left: 30pt;
+        }
+
+        h1 {
+            font-size: 24pt;
+            margin: 0;
+        }
+
+        .content {
+            flex: 1;
+            padding: 20pt 30pt;
+        }
+
+        .feature-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15pt;
+            margin-top: 5pt;
+        }
+
+        .f-box {
+            width: 290pt;
+            background: #283747;
+            border: 1pt solid #2E86C1;
+            border-radius: 6pt;
+            padding: 12pt;
+        }
+
+        .f-box h2 {
+            font-size: 18pt;
+            margin: 0;
+            color: #5DADE2;
+        }
+
+        .f-box p {
+            font-size: 14pt;
+            margin: 5pt 0 0 0;
+            color: #D5DBDB;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>07 智能检索与问答 (RAG)</h1>
+    </div>
+    <div class="content">
+        <div class="feature-grid">
+            <div class="f-box">
+                <h2>语义检索</h2>
+                <p>向量检索与关键词混合召回。</p>
+            </div>
+            <div class="f-box">
+                <h2>SQL 业务解释</h2>
+                <p>基于知识库辅助解释复杂 SQL。</p>
+            </div>
+            <div class="f-box">
+                <h2>知识精炼</h2>
+                <p>自动生成 Q&A 索引提升召回率。</p>
+            </div>
+            <div class="f-box">
+                <h2>资产录入</h2>
+                <p>支持文档、SQL、血缘自动同步。</p>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

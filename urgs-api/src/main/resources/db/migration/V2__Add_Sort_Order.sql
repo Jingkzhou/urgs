@@ -21,16 +21,26 @@ CREATE PROCEDURE AddColumnIfNotExists(
     IN colDef VARCHAR(255)
 )
 BEGIN
-    IF NOT EXISTS (
-        SELECT * FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME = tableName
-        AND COLUMN_NAME = colName
-    ) THEN
-        SET @sql = CONCAT('ALTER TABLE `', tableName, '` ADD COLUMN `', colName, '` ', colDef);
-        PREPARE stmt FROM @sql;
-        EXECUTE stmt;
-        DEALLOCATE PREPARE stmt;
+    DECLARE tableExists INT DEFAULT 0;
+    
+    -- Check if table exists
+    SELECT COUNT(*) INTO tableExists 
+    FROM information_schema.TABLES 
+    WHERE TABLE_SCHEMA = DATABASE() 
+    AND TABLE_NAME = tableName;
+
+    IF tableExists > 0 THEN
+        IF NOT EXISTS (
+            SELECT * FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = tableName
+            AND COLUMN_NAME = colName
+        ) THEN
+            SET @sql = CONCAT('ALTER TABLE `', tableName, '` ADD COLUMN `', colName, '` ', colDef);
+            PREPARE stmt FROM @sql;
+            EXECUTE stmt;
+            DEALLOCATE PREPARE stmt;
+        END IF;
     END IF;
 END$$
 DELIMITER ;

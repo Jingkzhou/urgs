@@ -34,6 +34,28 @@ export const fetchBatchStatusStats = async (query: TaskStatsQuery = { onlyLatest
     }
 };
 
+export interface TaskRealtimeMonitor {
+    id: number;
+    systemCode: string;
+    systemName: string;
+    taskName: string;
+    taskStatus: string;
+    startTime: string;
+    endTime: string;
+    dataDate: string;
+}
+
+export const fetchRealtimeDetails = async (systemId?: string): Promise<TaskRealtimeMonitor[]> => {
+    try {
+        const url = systemId ? `/api/tasks/stats/realtime-details?systemId=${encodeURIComponent(systemId)}` : '/api/tasks/stats/realtime-details';
+        const data = await get<TaskRealtimeMonitor[]>(url);
+        return data || [];
+    } catch (error) {
+        console.error('Error fetching realtime details:', error);
+        return [];
+    }
+};
+
 export interface TaskInstanceStatsVO {
     total: number;
     success: number;

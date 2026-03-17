@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            width: 720pt;
+            height: 405pt;
+            margin: 0;
+            padding: 0;
+            background: #1C2833;
+            color: #F4F6F6;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            height: 60pt;
+            background: #2E4053;
+            border-bottom: 2pt solid #5D6D7E;
+            display: flex;
+            align-items: center;
+            padding-left: 30pt;
+        }
+
+        h1 {
+            font-size: 24pt;
+            margin: 0;
+        }
+
+        .content {
+            flex: 1;
+            padding: 30pt;
+            display: flex;
+            gap: 30pt;
+        }
+
+        .list-side {
+            flex: 1;
+        }
+
+        .info-side {
+            flex: 1;
+            background: #283747;
+            border-radius: 8pt;
+            padding: 20pt;
+            box-shadow: inset 0 0 10pt rgba(0, 0, 0, 0.5);
+        }
+
+        ul {
+            font-size: 16pt;
+            color: #D5DBDB;
+        }
+
+        li {
+            margin-bottom: 8pt;
+        }
+
+        .info-side h2 {
+            font-size: 20pt;
+            margin-top: 0;
+            color: #F39C12;
+        }
+
+        .info-side p {
+            font-size: 14pt;
+            color: #D5DBDB;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>03 任务调度与编排</h1>
+    </div>
+    <div class="content">
+        <div class="list-side">
+            <ul>
+                <li><b>任务管理</b>：支持 Shell, SQL, Python, DataX 等。</li>
+                <li><b>工作流编排</b>：基于 DAG 的可视化设计。</li>
+                <li><b>调度策略</b>：支持 Quartz Cron 定时调度。</li>
+            </ul>
+        </div>
+        <div class="info-side">
+            <h2>核心特性</h2>
+            <p>系统支持任务实例的状态流转、全日志记录、自动依赖检查与补数（Backfill）机制。</p>
+        </div>
+    </div>
+</body>
+
+</html>

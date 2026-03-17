@@ -1,197 +1,239 @@
-import React, { useEffect, useState } from 'react';
-import { Shield, BarChart2, FileText, Globe, Users, Database, Activity, Lock, AlertCircle } from 'lucide-react';
-import { getIcon } from '../../utils/icons';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Settings,
+  ShieldCheck,
+  Cpu,
+  Layout,
+  ArrowUpRight,
+  Sparkles,
+  Monitor,
+  ChevronRight,
+  ChevronLeft
+} from 'lucide-react';
+import { getSystemList } from '@/api/ops';
 
-// IconMap removed, using dynamic icons from backend
-
-interface SsoSystem {
-  id: string;
-  name: string;
-  status: string;
-  icon?: string;
+interface SystemLinksProps {
+  fullWidth?: boolean;
 }
 
-interface AuthUser {
-  system?: string;
-  roleName?: string;
-  // other properties
-}
-
-const SystemLinks: React.FC = () => {
-  const [systems, setSystems] = useState<SsoSystem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false); // Added isAdmin state
+const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
+  const [systems, setSystems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [columnsPerRow, setColumnsPerRow] = useState(6);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('auth_token');
-    const userStr = localStorage.getItem('auth_user');
-    let user: AuthUser | null = null;
-    let allowedSystems: string[] = [];
-
-    if (userStr && userStr !== "undefined") {
-      try {
-        user = JSON.parse(userStr);
-        if (user && user.roleName === 'admin') {
-          setIsAdmin(true);
-        }
-        allowedSystems = user?.system ? user.system.split(',') : [];
-      } catch (e) {
-        console.error("Failed to parse user info in SystemLinks", e);
-        // If parsing fails, treat as no user or no allowed systems
-        user = null;
-        allowedSystems = [];
-      }
-    }
-
-    fetch('/api/system', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-      .then(async res => {
-        if (!res.ok) {
-          throw new Error(`Sso list failed: ${res.status}`);
-        }
-        try {
-          return await res.json();
-        } catch (e) {
-          throw new Error('Invalid SSO JSON');
-        }
-      })
-      .then(data => {
-        const filtered = data.filter((sys: SsoSystem) => allowedSystems.includes(sys.name));
-        setSystems(filtered);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error('Failed to load systems', err);
-        setSystems([]);
-        setLoading(false);
-      });
+    fetchSystems();
   }, []);
 
-  const handleJump = async (id: string, name: string) => {
-    try {
-      const token = localStorage.getItem('auth_token');
-      const res = await fetch(`/api/system/${id}/jump`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!res.ok) throw new Error('Jump failed');
-      const data = await res.json();
-      // Open in new tab
-      window.open(data.targetUrl, '_blank');
-    } catch (err) {
-      alert(`无法跳转到 ${name}，请检查网络或联系管理员`);
+  // 全宽模式下动态计算每行能放多少列
+  const updateColumns = useCallback(() => {
+    if (!fullWidth || !gridRef.current) return;
+    const containerWidth = gridRef.current.offsetWidth;
+    // 每个卡片最小宽度约 160px，gap 16px
+    const cols = Math.max(3, Math.min(8, Math.floor((containerWidth + 16) / (160 + 16))));
+    setColumnsPerRow(cols);
+  }, [fullWidth]);
+
+  useEffect(() => {
+    if (!fullWidth) return;
+    updateColumns();
+    const observer = new ResizeObserver(updateColumns);
+    if (gridRef.current) observer.observe(gridRef.current);
+    return () => observer.disconnect();
+  }, [fullWidth, updateColumns]);
+
+  // 翻页时重置到有效范围
+  useEffect(() => {
+    if (fullWidth && systems.length > 0) {
+      const totalPages = Math.ceil(systems.length / columnsPerRow);
+      if (currentPage >= totalPages) setCurrentPage(totalPages - 1);
     }
+  }, [columnsPerRow, systems.length, fullWidth, currentPage]);
+
+  const fetchSystems = async () => {
+    setLoading(true);
+    try {
+      const data = await getSystemList();
+      setSystems(data || []);
+    } catch (err) {
+      console.error('Failed to fetch systems', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getSystemIcon = (name: string) => {
+    if (name.includes('RAG')) return <Cpu className="w-5 h-5" />;
+    if (name.includes('血缘')) return <Sparkles className="w-5 h-5" />;
+    if (name.includes('仓库')) return <Layout className="w-5 h-5" />;
+    if (name.includes('监管')) return <ShieldCheck className="w-5 h-5" />;
+    return <Monitor className="w-5 h-5" />;
+  };
+
+  const getSystemColor = (index: number) => {
+    const colors = [
+      'from-rose-500 to-red-600',
+      'from-indigo-500 to-blue-600',
+      'from-emerald-500 to-teal-600',
+      'from-amber-500 to-orange-600',
+      'from-violet-500 to-purple-600'
+    ];
+    return colors[index % colors.length];
   };
 
   if (loading) {
     return (
-      <div className="bg-white pt-6 pb-8 px-6 rounded-xl shadow-sm border border-slate-200 animate-pulse">
-        <div className="h-8 bg-slate-100 rounded w-1/3 mb-8"></div>
-        <div className="flex gap-8 overflow-hidden">
-          {[1, 2, 3, 4, 5].map(i => (
-            <div key={i} className="flex flex-col items-center gap-3">
-              <div className="w-12 h-12 bg-slate-100 rounded-full"></div>
-              <div className="w-16 h-4 bg-slate-100 rounded"></div>
-            </div>
+      <div className="bg-white/70 backdrop-blur-md rounded-2xl shadow-[0_25px_50px_-12px_rgba(0,0,0,0.08)] border border-slate-200/50 flex flex-col h-[600px] overflow-hidden p-6 gap-4">
+        <div className="h-8 bg-slate-100 rounded w-1/3 animate-pulse"></div>
+        <div className="grid grid-cols-2 gap-4">
+          {[1, 2, 3, 4, 5, 6].map(i => (
+            <div key={i} className="aspect-square bg-slate-100 rounded-3xl animate-pulse"></div>
           ))}
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="bg-white pt-6 pb-8 px-6 rounded-xl shadow-sm border border-slate-200">
-      <div className="flex items-center justify-between mb-8 border-b border-slate-100 pb-4">
-        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-          <div className="p-1.5 bg-red-100 rounded-md">
-            <Globe className="w-5 h-5 text-red-600" />
+  // 全宽分页逻辑
+  const totalPages = fullWidth ? Math.ceil(systems.length / columnsPerRow) : 1;
+  const visibleSystems = fullWidth
+    ? systems.slice(currentPage * columnsPerRow, (currentPage + 1) * columnsPerRow)
+    : systems;
+
+  // 渲染单个系统卡片
+  const renderCard = (system: any, idx: number, originalIndex: number) => (
+    <motion.div
+      key={system.id || originalIndex}
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ delay: idx * 0.05, type: 'spring', stiffness: 200 }}
+      whileHover={{ scale: 1.05, y: -5 }}
+      whileTap={{ scale: 0.95 }}
+      className={`relative cursor-pointer ${fullWidth ? '' : 'aspect-square'}`}
+      onClick={() => window.open(system.url, '_blank')}
+    >
+      <div className={`${fullWidth ? '' : 'absolute inset-0'} bg-white border border-slate-200/60 rounded-[1.75rem] shadow-[0_4px_12px_-4px_rgba(0,0,0,0.05)] overflow-hidden transition-all duration-500 group-hover:border-slate-300`}>
+        <div className={`absolute -inset-px opacity-0 hover:opacity-10 transition-opacity bg-gradient-to-br ${getSystemColor(originalIndex)}`} />
+        <div className={`w-full flex flex-col items-center justify-center relative z-10 ${fullWidth ? 'py-6 px-3' : 'h-full p-3'}`}>
+          <div className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${getSystemColor(originalIndex)} flex items-center justify-center text-white shadow-lg shadow-inherit/20 mb-3 transform transition-transform duration-500 group-hover:rotate-12 group-hover:scale-110`}>
+            {getSystemIcon(system.name)}
           </div>
-          系统跳转区 (System Navigation)
-        </h2>
-        <span className="text-xs font-medium text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200">
-          已接入: <span className="text-slate-900 font-bold">{systems.length}</span>
-        </span>
+          <span className="text-[11px] font-black text-slate-700 tracking-tight text-center leading-tight">
+            {system.name}
+          </span>
+          <span className="text-[8px] text-slate-400 font-bold tracking-widest uppercase mt-1.5 opacity-60">
+            {system.code || 'SVC'}
+          </span>
+        </div>
+        <div className="absolute bottom-2 right-2 opacity-0 hover:opacity-100 transition-opacity">
+          <ArrowUpRight className="w-3 h-3 text-slate-300" />
+        </div>
+      </div>
+    </motion.div>
+  );
+
+  return (
+    <div className={`relative bg-white/70 backdrop-blur-md pt-7 pb-8 px-6 rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.08)] border border-slate-200/50 overflow-hidden flex flex-col group transition-all duration-700 hover:shadow-[0_45px_90px_-20px_rgba(0,0,0,0.15)] ${fullWidth ? 'h-auto' : 'h-[600px]'}`}>
+      {/* Abstract Background Decoration */}
+      <div className="absolute -top-24 -right-24 w-64 h-64 bg-red-500/5 rounded-full blur-3xl pointer-events-none group-hover:bg-red-500/10 transition-colors duration-1000" />
+
+      {/* Header Area */}
+      <div className="flex items-center justify-between mb-8 relative z-10">
+        <div>
+          <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+            系统入口
+            <div className="flex items-center justify-center w-5 h-5 bg-red-50 rounded-md border border-red-100">
+              <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+            </div>
+          </h2>
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1.5">Launchpad Matrix</p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* 全宽模式下的翻页控件 */}
+          {fullWidth && totalPages > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+                disabled={currentPage === 0}
+                className="p-2 rounded-xl transition-all border border-slate-200/50 disabled:opacity-30 disabled:cursor-not-allowed bg-slate-100/50 hover:bg-slate-200/50 text-slate-500 hover:text-slate-800"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span className="text-[11px] font-bold text-slate-400 tabular-nums min-w-[3rem] text-center">
+                {currentPage + 1} / {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+                disabled={currentPage === totalPages - 1}
+                className="p-2 rounded-xl transition-all border border-slate-200/50 disabled:opacity-30 disabled:cursor-not-allowed bg-slate-100/50 hover:bg-slate-200/50 text-slate-500 hover:text-slate-800"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+
+          <button
+            onClick={() => window.location.href = '#/ops/system-list'}
+            className="p-2.5 bg-slate-100/50 hover:bg-slate-200/50 rounded-xl transition-all text-slate-500 hover:text-slate-800 border border-slate-200/50"
+          >
+            <Settings size={16} />
+          </button>
+        </div>
       </div>
 
-      {/* Horizontal Scroll Layout */}
-      <div className="w-full overflow-x-auto custom-scrollbar pb-4 -mx-2 px-2">
-        <div className="flex flex-nowrap gap-3">
-          {systems.map((link) => {
-            const Icon = getIcon(link.icon);
-            const isMaintenance = link.status === 'maintenance';
-            const isInactive = link.status === 'inactive';
-            const isDisabled = isMaintenance || isInactive;
+      {/* Grid Content */}
+      <div ref={gridRef} className={`relative z-10 ${fullWidth ? '' : 'flex-1 overflow-y-auto custom-scrollbar pr-1'}`}>
+        {fullWidth ? (
+          /* 全宽模式：单行 + 翻页 */
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentPage}
+              initial={{ opacity: 0, x: 30 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -30 }}
+              transition={{ duration: 0.25 }}
+              className="grid gap-4"
+              style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` }}
+            >
+              {visibleSystems.map((system, idx) => renderCard(system, idx, currentPage * columnsPerRow + idx))}
+            </motion.div>
+          </AnimatePresence>
+        ) : (
+          /* 窄列模式：原始滚动网格 */
+          <div className="grid grid-cols-2 gap-4 pb-4">
+            {systems.map((system, idx) => renderCard(system, idx, idx))}
 
-            return (
-              <div
-                key={link.id}
-                onClick={() => !isDisabled && handleJump(link.id, link.name)}
-                className={`
-                  group relative flex flex-col p-3 rounded-xl border transition-all duration-300 min-w-[160px] w-40 shrink-0
-                  ${isDisabled
-                    ? 'bg-slate-50 border-slate-100 cursor-not-allowed grayscale'
-                    : 'bg-white border-slate-200 cursor-pointer hover:shadow-lg hover:shadow-red-500/5 hover:-translate-y-1 hover:border-red-100 active:scale-[0.97]'
-                  }
-                `}
-              >
-                {/* Background Glow on Hover */}
-                {!isDisabled && (
-                  <div className="absolute inset-0 bg-gradient-to-br from-red-50/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-xl duration-500" />
-                )}
-
-                <div className="relative flex items-start justify-between mb-2">
-                  <div className={`
-                    flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-300
-                    ${isDisabled
-                      ? 'bg-slate-200 text-slate-400'
-                      : 'bg-red-50 text-red-600 group-hover:bg-red-600 group-hover:text-white shadow-sm'
-                    }
-                  `}>
-                    <Icon strokeWidth={2} className="w-5 h-5" />
-                  </div>
-
-                  {link.status !== 'active' && (
-                    <div className={`
-                      flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold
-                      ${link.status === 'maintenance'
-                        ? 'bg-amber-50 text-amber-600 border border-amber-100'
-                        : 'bg-slate-100 text-slate-500 border border-slate-200'
-                      }
-                    `}>
-                      <div className={`w-1 h-1 rounded-full ${link.status === 'maintenance' ? 'bg-amber-500 animate-pulse' : 'bg-slate-400'}`} />
-                      {link.status === 'maintenance' ? '维护' : '停用'}
-                    </div>
-                  )}
-                </div>
-
-                <div className="relative">
-                  <h3 className={`
-                    text-sm font-bold truncate transition-colors duration-300
-                    ${isDisabled ? 'text-slate-400' : 'text-slate-800 group-hover:text-red-700'}
-                  `}>
-                    {link.name}
-                  </h3>
-                  <p className={`
-                    text-[10px] mt-0.5 line-clamp-1 transition-colors duration-300
-                    ${isDisabled ? 'text-slate-300' : 'text-slate-400'}
-                  `}>
-                    进入系统办理业务
-                  </p>
-                </div>
-
-                <div className={`
-                  flex items-center gap-0.5 mt-2.5 text-[9px] font-extrabold transition-all duration-300
-                  ${isDisabled ? 'hidden' : 'text-red-600 opacity-0 group-hover:opacity-100 translate-x-[-4px] group-hover:translate-x-0'}
-                `}>
-                  <span>进入</span>
-                  <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                  </svg>
-                </div>
+            {/* More Action */}
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              className="border-2 border-dashed border-slate-200 rounded-[1.75rem] flex flex-col items-center justify-center aspect-square text-slate-400 hover:border-red-200 hover:text-red-500 transition-all cursor-pointer bg-slate-50/50"
+              onClick={() => window.location.href = '#/ops/system-list'}
+            >
+              <div className="p-2 rounded-full bg-white shadow-sm mb-1">
+                <ChevronRight className="w-4 h-4" />
               </div>
-            );
-          })}
+              <span className="text-[9px] font-bold uppercase tracking-widest">More</span>
+            </motion.div>
+          </div>
+        )}
+      </div>
+
+      {/* Control Status Footer */}
+      <div className="mt-4 pt-5 border-t border-slate-100/80 flex items-center justify-between text-slate-400 relative z-10">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-xl font-black text-slate-800 leading-none">{systems.length}</span>
+          <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Total Units</span>
+        </div>
+        <div className="flex flex-col items-end gap-0.5">
+          <div className="flex items-center gap-1.5 text-emerald-500">
+            <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+            <span className="text-[10px] font-black leading-none">Healthy</span>
+          </div>
+          <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Active Node</span>
         </div>
       </div>
     </div>

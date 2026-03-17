@@ -4,7 +4,7 @@ import { Card, Tag, Button, Avatar, Divider, Input, message, List, Space, Mentio
 import { User, Clock, Calendar, MessageSquare, Reply, ArrowLeft, Download, Paperclip, Share2, Heart, MoreVertical, Megaphone, FileText } from 'lucide-react';
 import { debounce } from 'lodash';
 
-const { Option } = Mentions;
+
 
 interface Comment {
     id: string;
@@ -200,13 +200,12 @@ const AnnouncementDetail: React.FC<AnnouncementDetailProps> = ({ id, onBack }) =
                                     placeholder={`回复 ${item.userName || item.userId}...`}
                                     className="rounded-xl border-slate-200 focus:border-violet-500 min-h-[60px]"
                                     prefix={['@']}
-                                >
-                                    {mentionOptions.map(user => (
-                                        <Option key={user.id} value={user.name + '#' + user.empId + ' '}>
-                                            {user.name}
-                                        </Option>
-                                    ))}
-                                </Mentions>
+                                    options={mentionOptions.map(user => ({
+                                        key: user.id,
+                                        value: user.name + '#' + user.empId + ' ',
+                                        label: user.name
+                                    }))}
+                                />
                                 <div className="flex justify-end gap-2">
                                     <Button size="small" onClick={() => setReplyTo(null)} type="text">取消</Button>
                                     <Button size="small" type="primary" className="bg-violet-600" onClick={() => handleComment(item.id)}>回复</Button>
@@ -371,16 +370,14 @@ const AnnouncementDetail: React.FC<AnnouncementDetailProps> = ({ id, onBack }) =
                                     onChange={(text) => { if (!replyTo) setReplyContent(text); }}
                                     onSearch={handleSearchUsers}
                                     loading={mentionLoading}
-                                    disabled={!!replyTo}
                                     prefix={['@']}
                                     className="w-full rounded-[1.5rem] border-slate-200 p-4 focus:ring-4 focus:ring-violet-500/10 focus:border-violet-500 transition-all text-sm shadow-inner bg-slate-50/30"
-                                >
-                                    {mentionOptions.map(user => (
-                                        <Option key={user.id} value={user.name + '#' + user.empId + ' '}>
-                                            {user.name}
-                                        </Option>
-                                    ))}
-                                </Mentions>
+                                    options={mentionOptions.map(user => ({
+                                        key: user.id,
+                                        value: user.name + '#' + user.empId + ' ',
+                                        label: user.name
+                                    }))}
+                                />
                                 <div className="mt-4 flex justify-between items-center">
                                     <div className="flex gap-2">
                                         <button className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-200 transition-colors">@</button>

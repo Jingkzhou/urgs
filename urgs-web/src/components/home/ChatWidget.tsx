@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { getAvatarUrl } from '../../utils/avatarUtils';
-import { MessageCircle, X, Search, Plus, Minus } from 'lucide-react';
+import { MessageCircle, X, Search, Plus, Minus, MoreHorizontal } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SessionList from '../im/SessionList';
 import ChatWindow from '../im/ChatWindow';
@@ -526,84 +526,96 @@ const ChatWidget: React.FC = () => {
             <AnimatePresence>
                 {isOpen && (
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                        initial={{ opacity: 0, scale: 0.96, y: 15 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                        className="mb-6 bg-white/85 backdrop-blur-2xl rounded-2xl shadow-2xl border border-white/50 w-[950px] h-[700px] flex overflow-hidden ring-1 ring-black/5"
+                        exit={{ opacity: 0, scale: 0.96, y: 15 }}
+                        transition={{ duration: 0.2, ease: "easeOut" }}
+                        className="mb-6 bg-white rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] border border-slate-200 w-[940px] h-[min(650px,calc(100vh-140px))] flex overflow-hidden ring-1 ring-black/[0.03]"
                     >
 
-                        {/* Sidebar */}
-                        <div className="w-80 bg-slate-50/50 backdrop-blur-md border-r border-slate-200/60 flex flex-col flex-shrink-0">
-                            {/* Header */}
-                            <div className="h-16 px-5 flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-slate-50/50 to-white/50">
-                                <div className="flex items-center gap-3">
-                                    <div className="relative">
-                                        <img
-                                            src={getAvatarUrl(currentUser?.avatarUrl, currentUser?.name || currentUser?.wxId || 'Me')}
-                                            className="w-9 h-9 rounded-full object-cover ring-2 ring-white shadow-sm"
-                                            alt="My Profile"
-                                        />
-                                        <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full"></div>
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="font-bold text-slate-800 text-sm tracking-tight">{currentUser?.name || currentUser?.wxId || '消息'}</span>
-                                        <span className="text-[10px] text-slate-500 font-medium">在线</span>
-                                    </div>
-                                </div>
-                                <div className="relative">
-                                    <button
-                                        onClick={() => setShowMenu(!showMenu)}
-                                        className="w-8 h-8 flex items-center justify-center hover:bg-slate-200/80 rounded-full text-slate-600 transition-colors"
-                                    >
-                                        <Plus size={18} strokeWidth={2.5} />
-                                    </button>
-
-                                    {/* Backdrop */}
-                                    {showMenu && (
-                                        <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
-                                    )}
-
-                                    {/* Dropdown Menu */}
-                                    <AnimatePresence>
-                                        {showMenu && (
-                                            <motion.div
-                                                initial={{ opacity: 0, y: -10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                exit={{ opacity: 0, y: -10 }}
-                                                className="absolute right-0 top-10 w-48 bg-white/90 backdrop-blur-xl rounded-xl shadow-xl border border-white/50 py-1.5 z-50 ring-1 ring-black/5"
-                                            >
-                                                <button
-                                                    className="w-full text-left px-4 py-2.5 hover:bg-slate-100/80 text-sm text-slate-700 font-medium transition-colors flex items-center gap-2"
-                                                    onClick={handleOpenAddFriend}
-                                                >
-                                                    <div className="w-6 h-6 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600"><Plus size={14} /></div>
-                                                    添加好友
-                                                </button>
-                                                <button
-                                                    className="w-full text-left px-4 py-2.5 hover:bg-slate-100/80 text-sm text-slate-700 font-medium transition-colors flex items-center gap-2"
-                                                    onClick={handleOpenCreateGroup}
-                                                >
-                                                    <div className="w-6 h-6 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600"><MessageCircle size={14} /></div>
-                                                    发起群聊
-                                                </button>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                </div>
-                            </div>
-
-                            {/* Search */}
-                            <div className="p-4">
-                                <div className="relative group">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 transition-colors group-focus-within:text-indigo-500" />
-                                    <input
-                                        type="text"
-                                        placeholder="搜索联系人、群组"
-                                        className="w-full pl-9 pr-4 py-2.5 bg-white/60 border border-slate-200/60 rounded-xl text-sm placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500/50 transition-all shadow-sm"
+                            {/* 1. Left Navigation Bar (Slim) */}
+                            <div className="w-[68px] bg-slate-900 border-r border-slate-800 flex flex-col items-center py-6 flex-shrink-0 z-10 rounded-l-2xl relative">
+                                {/* Current User Avatar */}
+                                <div className="relative mb-8 group cursor-pointer">
+                                    <img
+                                        src={getAvatarUrl(currentUser?.avatarUrl, currentUser?.name || currentUser?.wxId || 'Me')}
+                                        className="w-10 h-10 rounded-xl object-cover ring-1 ring-white/10 group-hover:ring-white/30 transition-all"
+                                        alt="My Profile"
                                     />
+                                    <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-500 border-2 border-slate-900 rounded-full"></div>
+                                </div>
+
+                                {/* Nav Icons */}
+                                <div className="flex-1 flex flex-col gap-4 w-full px-2">
+                                    <button className="w-full aspect-square flex items-center justify-center rounded-xl bg-white/10 text-white relative group">
+                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1/2 bg-white rounded-r"></div>
+                                        <MessageCircle size={22} strokeWidth={2} />
+                                    </button>
+                                    <button 
+                                        onClick={handleOpenAddFriend}
+                                        className="w-full aspect-square flex items-center justify-center rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                                    >
+                                        <Plus size={22} strokeWidth={2} />
+                                    </button>
+                                </div>
+
+                                {/* Settings / Menu icon at bottom */}
+                                <div className="mt-auto pt-4 border-t border-slate-800 w-full px-2">
+                                    <div className="relative">
+                                        <button
+                                            onClick={() => setShowMenu(!showMenu)}
+                                            className="w-full aspect-square flex items-center justify-center rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                                        >
+                                            <MoreHorizontal size={22} strokeWidth={2} />
+                                        </button>
+
+                                        {/* Dropdown Menu */}
+                                        <AnimatePresence>
+                                            {showMenu && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, y: 5, scale: 0.95 }}
+                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                    exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                                                    transition={{ duration: 0.15 }}
+                                                    className="absolute left-full bottom-0 ml-4 w-48 bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-slate-100 py-1.5 z-50 origin-bottom-left"
+                                                >
+                                                    <button
+                                                        className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[13px] text-slate-700 font-medium transition-colors flex items-center gap-2"
+                                                        onClick={handleOpenAddFriend}
+                                                    >
+                                                        <Plus size={16} className="text-slate-400" />添加联系人
+                                                    </button>
+                                                    <button
+                                                        className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[13px] text-slate-700 font-medium transition-colors flex items-center gap-2"
+                                                        onClick={handleOpenCreateGroup}
+                                                    >
+                                                        <MessageCircle size={16} className="text-slate-400" />发起群聊
+                                                    </button>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                        
+                                        {/* Backdrop */}
+                                        {showMenu && (
+                                            <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
+                                        )}
+                                    </div>
                                 </div>
                             </div>
+
+                            {/* 2. Session List (Middle) */}
+                            <div className="w-[280px] bg-slate-50/50 border-r border-slate-200 flex flex-col flex-shrink-0 z-10">
+                                {/* Search */}
+                                <div className="h-[68px] px-4 flex items-center border-b border-transparent">
+                                    <div className="relative w-full group">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
+                                        <input
+                                            type="text"
+                                            placeholder="搜索..."
+                                            className="w-full pl-9 pr-4 py-1.5 bg-slate-200/50 hover:bg-slate-200/80 border border-transparent rounded-md text-[13px] placeholder-slate-400 focus:bg-white focus:border-indigo-500/30 focus:ring-2 focus:ring-indigo-500/10 transition-all outline-none"
+                                        />
+                                    </div>
+                                </div>
 
                             <SessionList
                                 sessions={sessions}
@@ -614,21 +626,21 @@ const ChatWidget: React.FC = () => {
 
                         </div>
 
-                        {/* Main Chat Area */}
-                        <div className="flex-1 bg-white/40 flex flex-col relative w-full">
-                            {/* Global Close Button */}
-                            <div className="absolute top-0 right-0 h-16 flex items-center pr-6 z-20">
-                                <button
-                                    onClick={() => {
-                                        setIsOpen(false);
-                                        setActiveSessionId(null);
-                                    }}
-                                    className="p-2 hover:bg-white/50 rounded-xl text-slate-500 hover:text-red-600 transition-colors"
-                                    title="关闭"
-                                >
-                                    <X size={22} />
-                                </button>
-                            </div>
+                            {/* 3. Main Chat Area (Right) */}
+                            <div className="flex-1 bg-white flex flex-col relative w-full z-0 rounded-r-2xl overflow-hidden">
+                                {/* Global Close Button (Float top right) */}
+                                <div className="absolute top-0 right-0 h-[68px] flex items-center pr-4 z-20">
+                                    <button
+                                        onClick={() => {
+                                            setIsOpen(false);
+                                            setActiveSessionId(null);
+                                        }}
+                                        className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-600 transition-colors"
+                                        title="关闭"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </div>
 
                             {activeSessionId && activeSession ? (
                                 <ChatWindow
@@ -640,220 +652,178 @@ const ChatWidget: React.FC = () => {
                                     onShowDetails={handleShowGroupDetails}
                                 />
                             ) : (
-                                <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-slate-50/30">
-                                    <div className="w-24 h-24 bg-gradient-to-tr from-indigo-50 to-purple-50 rounded-3xl flex items-center justify-center mb-6 shadow-sm border border-white">
-                                        <MessageCircle size={40} className="text-indigo-200" />
+                                <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-slate-50">
+                                    <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6 border border-slate-200">
+                                        <MessageCircle size={32} strokeWidth={1.5} className="text-slate-300" />
                                     </div>
-                                    <h3 className="text-slate-600 font-semibold text-lg mb-2">欢迎使用 URGS 消息</h3>
-                                    <p className="text-slate-400 text-sm max-w-xs leading-relaxed">选择左侧会话开始聊天，或点击 <span className="inline-flex items-center justify-center w-5 h-5 bg-slate-200 rounded-full text-xs text-slate-500 mx-1"><Plus size={10} /></span> 发起新的对话</p>
+                                    <h3 className="text-slate-800 font-semibold text-lg mb-2 tracking-tight">
+                                        URGS Messenger
+                                    </h3>
+                                    <p className="text-slate-400 text-[13px] max-w-[240px] leading-relaxed">
+                                        Select a conversation from the sidebar to start messaging.
+                                    </p>
                                 </div>
                             )}
                         </div>
-
                     </motion.div>
                 )}
             </AnimatePresence>
 
             {/* Modals */}
-            {
-                showAddFriend && (
-                    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center">
-                        <div className="bg-white p-6 rounded-lg w-96 shadow-xl max-h-[80vh] flex flex-col">
-                            <h3 className="font-bold mb-4">添加好友</h3>
-                            <div className="mb-4 relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                                <input
-                                    className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm"
-                                    placeholder="通过名称或ID搜索..."
-                                    value={searchTerm}
-                                    onChange={(e) => handleSearchUsers(e.target.value)}
-                                />
-                            </div>
-                            <div className="flex-1 overflow-y-auto border rounded p-2 mb-4">
-                                {availableUsers.map(u => (
-                                    <div key={u.userId} className="flex items-center gap-2 p-2 hover:bg-slate-50">
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedUserIds.includes(u.userId)}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setSelectedUserIds(prev => [...prev, u.userId]);
-                                                } else {
-                                                    setSelectedUserIds(prev => prev.filter(id => id !== u.userId));
-                                                }
-                                            }}
-                                        />
-                                        <img src={getAvatarUrl(u.avatarUrl, u.userId)} className="w-8 h-8 rounded-full" />
-                                        <span>{u.wxId} (ID: {u.userId})</span>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="flex justify-end gap-2">
-                                <button onClick={() => setShowAddFriend(false)} className="px-3 py-1 text-slate-500">取消</button>
-                                <button onClick={handleAddFriend} className="px-3 py-1 bg-indigo-600 text-white rounded">添加</button>
-                            </div>
+            {/* Modals */}
+            {showAddFriend && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        className="bg-white p-6 rounded-xl w-full max-w-md shadow-2xl border border-slate-100 flex flex-col"
+                    >
+                        <h3 className="text-base font-semibold text-slate-900 mb-4">添加好友</h3>
+                        <div className="mb-4 relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                            <input
+                                className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-md text-[13px] focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                                placeholder="通过名称或ID搜索..."
+                                value={searchTerm}
+                                onChange={(e) => handleSearchUsers(e.target.value)}
+                            />
                         </div>
-                    </div>
-                )
-            }
-
-            {/* Group Details Modal */}
-            {
-                showGroupDetails && (
-                    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center">
-                        <div className="bg-white p-6 rounded-lg w-96 shadow-xl max-h-[80vh] flex flex-col">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="font-bold">群聊详情</h3>
-                                <button onClick={() => setShowGroupDetails(false)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
-                            </div>
-                            <div className="flex-1 overflow-y-auto">
-                                <h4 className="text-xs font-semibold text-slate-400 mb-3">成员 ({groupMembers.length})</h4>
-                                <div className="grid grid-cols-5 gap-2">
-                                    {/* Add Button */}
-                                    <div
-                                        className="flex flex-col items-center gap-1 cursor-pointer hover:bg-slate-50 p-1 rounded"
-                                        onClick={() => {
-                                            setShowAddMember(true);
-                                            setSelectedUserIds([]); // Reset selection
-                                        }}
-                                    >
-                                        <div className="w-10 h-10 border-2 border-dashed border-slate-300 rounded-lg flex items-center justify-center text-slate-400">
-                                            <Plus size={20} />
-                                        </div>
-                                        <span className="text-[10px] text-slate-500 truncate w-full text-center">添加</span>
-                                    </div>
-
-                                    {/* Remove Button */}
-                                    <div
-                                        className={`flex flex-col items-center gap-1 cursor-pointer p-1 rounded hover:bg-slate-50 ${isDeleteMode ? 'bg-red-50' : ''}`}
-                                        onClick={() => {
-                                            setIsDeleteMode(!isDeleteMode);
-                                        }}
-                                    >
-                                        <div className={`w-10 h-10 border-2 border-dashed rounded-lg flex items-center justify-center ${isDeleteMode ? 'border-red-400 text-red-500' : 'border-slate-300 text-slate-400'}`}>
-                                            <Minus size={20} />
-                                        </div>
-                                        <span className={`text-[10px] truncate w-full text-center ${isDeleteMode ? 'text-red-500' : 'text-slate-500'}`}>
-                                            {isDeleteMode ? '完成' : '移除'}
-                                        </span>
-                                    </div>
-                                    {/* Members */}
-                                    {groupMembers.map(m => (
-                                        <div key={m.userId} className="relative flex flex-col items-center gap-1 group/member">
-                                            {isDeleteMode && m.userId !== currentUser.userId && (
-                                                <button
-                                                    className="absolute -top-1 -right-1 z-10 bg-red-500 text-white rounded-full p-0.5 shadow-sm hover:bg-red-600 transition-colors animate-in zoom-in duration-200"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleRemoveMemberSingle(m.userId);
-                                                    }}
-                                                >
-                                                    <Minus size={12} strokeWidth={3} />
-                                                </button>
-                                            )}
-                                            <img
-                                                src={getAvatarUrl(m.avatarUrl, m.userId)}
-                                                className={`w-10 h-10 rounded-lg object-cover transition-all ${isDeleteMode ? 'shake-animation opacity-90' : ''}`}
-                                                alt={m.wxId}
-                                            />
-                                            <span className="text-[10px] text-slate-500 truncate w-full text-center">{m.wxId || ('用户 ' + m.userId)}</span>
-                                        </div>
-                                    ))}
+                        <div className="flex-1 overflow-y-auto border border-slate-100 rounded-md p-1 mb-6 max-h-[300px]">
+                            {availableUsers.map(u => (
+                                <div key={u.userId} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer" onClick={() => {
+                                    if (selectedUserIds.includes(u.userId)) {
+                                        setSelectedUserIds(prev => prev.filter(id => id !== u.userId));
+                                    } else {
+                                        setSelectedUserIds(prev => [...prev, u.userId]);
+                                    }
+                                }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedUserIds.includes(u.userId)}
+                                        readOnly
+                                        className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                                    />
+                                    <img src={getAvatarUrl(u.avatarUrl, u.userId)} className="w-8 h-8 rounded-full object-cover" />
+                                    <span className="text-[13px] text-slate-700">{u.wxId} (ID: {u.userId})</span>
                                 </div>
-                            </div>
+                            ))}
+                            {availableUsers.length === 0 && <div className="text-center p-4 text-slate-400 text-sm">暂无结果</div>}
                         </div>
-                    </div>
-                )
-            }
+                        <div className="flex justify-end gap-3 font-medium">
+                            <button onClick={() => setShowAddFriend(false)} className="px-4 py-1.5 text-sm text-slate-600 hover:bg-slate-50 rounded border border-transparent">取消</button>
+                            <button onClick={handleAddFriend} className="px-4 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors shadow-sm">添加</button>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
 
-            {/* Existing Modals */}
-            {
-                showCreateGroup && (
-                    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center">
-                        <div className="bg-white p-6 rounded-lg w-96 shadow-xl max-h-[80vh] flex flex-col">
-                            <h3 className="font-bold mb-4">发起群聊</h3>
-                            <div className="mb-4">
-                                <label className="text-xs text-slate-500 mb-1 block">群名称 (选填)</label>
-                                <input
-                                    className="w-full border p-2 rounded text-sm"
-                                    placeholder="例如：项目组"
-                                    value={groupNameInput}
-                                    onChange={e => setGroupNameInput(e.target.value)}
-                                />
-                            </div>
+            {showGroupDetails && (
+                <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center">
+                    <div className="bg-white p-6 rounded-lg w-96 shadow-xl max-h-[80vh] flex flex-col">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold">群聊详情</h3>
+                            <button onClick={() => setShowGroupDetails(false)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto">
+                            <h4 className="text-xs font-semibold text-slate-400 mb-3">成员 ({groupMembers.length})</h4>
+                            <div className="grid grid-cols-5 gap-2">
+                                <div
+                                    className="flex flex-col items-center gap-1 cursor-pointer hover:bg-slate-50 p-1 rounded"
+                                    onClick={() => {
+                                        setShowAddMember(true);
+                                        setSelectedUserIds([]);
+                                    }}
+                                >
+                                    <div className="w-10 h-10 border-2 border-dashed border-slate-300 rounded-lg flex items-center justify-center text-slate-400">
+                                        <Plus size={20} />
+                                    </div>
+                                    <span className="text-[10px] text-slate-500 truncate w-full text-center">添加</span>
+                                </div>
 
-                            <div className="flex-1 overflow-y-auto border rounded p-2 mb-4">
-                                <h4 className="text-xs font-semibold text-slate-400 mb-2 px-2">选择联系人</h4>
-                                {availableUsers.map(u => (
-                                    <div key={u.userId} className="flex items-center gap-2 p-2 hover:bg-slate-50 cursor-pointer" onClick={() => {
-                                        if (selectedUserIds.includes(u.userId)) {
-                                            setSelectedUserIds(prev => prev.filter(id => id !== u.userId));
-                                        } else {
-                                            setSelectedUserIds(prev => [...prev, u.userId]);
-                                        }
-                                    }}>
-                                        <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedUserIds.includes(u.userId) ? 'bg-[#07C160] border-[#07C160]' : 'border-slate-300'}`}>
-                                            {selectedUserIds.includes(u.userId) && <div className="w-2 h-2 bg-white rounded-full" />}
-                                        </div>
-                                        <img src={getAvatarUrl(u.avatarUrl, u.userId)} className="w-8 h-8 rounded-full" />
-                                        <span>{u.wxId || ('用户 ' + u.userId)}</span>
+                                <div
+                                    className={`flex flex-col items-center gap-1 cursor-pointer p-1 rounded hover:bg-slate-50 ${isDeleteMode ? 'bg-red-50' : ''}`}
+                                    onClick={() => setIsDeleteMode(!isDeleteMode)}
+                                >
+                                    <div className={`w-10 h-10 border-2 border-dashed rounded-lg flex items-center justify-center ${isDeleteMode ? 'border-red-400 text-red-500' : 'border-slate-300 text-slate-400'}`}>
+                                        <Minus size={20} />
+                                    </div>
+                                    <span className={`text-[10px] truncate w-full text-center ${isDeleteMode ? 'text-red-500' : 'text-slate-500'}`}>
+                                        {isDeleteMode ? '完成' : '移除'}
+                                    </span>
+                                </div>
+
+                                {groupMembers.map(m => (
+                                    <div key={m.userId} className="relative flex flex-col items-center gap-1 group/member">
+                                        {isDeleteMode && m.userId !== currentUser.userId && (
+                                            <button
+                                                className="absolute -top-1 -right-1 z-10 bg-red-500 text-white rounded-full p-0.5 shadow-sm hover:bg-red-600"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleRemoveMemberSingle(m.userId);
+                                                }}
+                                            >
+                                                <Minus size={12} strokeWidth={3} />
+                                            </button>
+                                        )}
+                                        <img
+                                            src={getAvatarUrl(m.avatarUrl, m.userId)}
+                                            className={`w-10 h-10 rounded-lg object-cover ${isDeleteMode ? 'opacity-90' : ''}`}
+                                            alt={m.wxId}
+                                        />
                                     </div>
                                 ))}
                             </div>
+                        </div>
 
-                            <div className="flex justify-end gap-2">
-                                <button onClick={() => { setShowCreateGroup(false); setSelectedUserIds([]); }} className="px-3 py-1 text-slate-500">取消</button>
-                                <button
-                                    onClick={handleCreateGroup}
-                                    disabled={selectedUserIds.length === 0}
-                                    className={`px-3 py-1 text-white rounded transition-colors ${selectedUserIds.length > 0 ? 'bg-[#07C160]' : 'bg-slate-300 cursor-not-allowed'}`}
-                                >
-                                    创建 ({selectedUserIds.length})
-                                </button>
-                            </div>
+                        <div className="flex justify-between items-center bg-slate-50 p-2 rounded-2xl border border-slate-100 mt-4">
+                            <button onClick={() => { setShowGroupDetails(false); setSelectedUserIds([]); }} className="px-6 py-2.5 text-[11px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors">关闭</button>
                         </div>
                     </div>
-                )
-            }
-            {/* Add Member Modal */}
-            {
-                showAddMember && (
-                    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center">
-                        <div className="bg-white p-6 rounded-lg w-96 shadow-xl max-h-[80vh] flex flex-col">
-                            <h3 className="font-bold mb-4">邀请好友</h3>
-                            <div className="flex-1 overflow-y-auto border rounded p-2 mb-4">
-                                <h4 className="text-xs font-semibold text-slate-400 mb-2 px-2">选择联系人</h4>
-                                {availableUsers.map(u => (
-                                    <div key={u.userId} className="flex items-center gap-2 p-2 hover:bg-slate-50 cursor-pointer" onClick={() => {
-                                        if (selectedUserIds.includes(u.userId)) {
-                                            setSelectedUserIds(prev => prev.filter(id => id !== u.userId));
-                                        } else {
-                                            setSelectedUserIds(prev => [...prev, u.userId]);
-                                        }
-                                    }}>
-                                        <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedUserIds.includes(u.userId) ? 'bg-[#07C160] border-[#07C160]' : 'border-slate-300'}`}>
-                                            {selectedUserIds.includes(u.userId) && <div className="w-2 h-2 bg-white rounded-full" />}
-                                        </div>
-                                        <img src={getAvatarUrl(u.avatarUrl, u.userId)} className="w-8 h-8 rounded-full" />
-                                        <span>{u.wxId || ('用户 ' + u.userId)}</span>
-                                    </div>
-                                ))}
-                            </div>
+                </div>
+            )}
 
-                            <div className="flex justify-end gap-2">
-                                <button onClick={() => { setShowAddMember(false); setSelectedUserIds([]); }} className="px-3 py-1 text-slate-500">取消</button>
-                                <button
-                                    onClick={handleAddMembers}
-                                    disabled={selectedUserIds.length === 0}
-                                    className={`px-3 py-1 text-white rounded transition-colors ${selectedUserIds.length > 0 ? 'bg-[#07C160]' : 'border-slate-300 cursor-not-allowed'}`}
-                                >
-                                    邀请 ({selectedUserIds.length})
-                                </button>
-                            </div>
+            {showAddMember && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        className="bg-white p-6 rounded-xl w-full max-w-md shadow-2xl border border-slate-100 flex flex-col"
+                    >
+                        <h3 className="text-base font-semibold text-slate-900 mb-4">邀请好友</h3>
+                        <div className="flex-1 overflow-y-auto border border-slate-100 rounded-md p-1 mb-6 max-h-[300px]">
+                            <h4 className="text-[11px] font-semibold text-slate-400 mb-2 px-2 uppercase">选择联系人</h4>
+                            {availableUsers.map(u => (
+                                <div key={u.userId} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer" onClick={() => {
+                                    if (selectedUserIds.includes(u.userId)) {
+                                        setSelectedUserIds(prev => prev.filter(id => id !== u.userId));
+                                    } else {
+                                        setSelectedUserIds(prev => [...prev, u.userId]);
+                                    }
+                                }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedUserIds.includes(u.userId)}
+                                        readOnly
+                                        className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                                    />
+                                    <img src={getAvatarUrl(u.avatarUrl, u.userId)} className="w-8 h-8 rounded-full object-cover" alt={u.wxId} />
+                                    <span className="text-[13px] text-slate-700">{u.wxId || ('用户 ' + u.userId)} (ID: {u.userId})</span>
+                                </div>
+                            ))}
                         </div>
-                    </div>
-                )
-            }
+                        <div className="flex justify-end gap-3 font-medium">
+                            <button onClick={() => { setShowAddMember(false); setSelectedUserIds([]); }} className="px-4 py-1.5 text-sm text-slate-600 hover:bg-slate-50 rounded border border-transparent">取消</button>
+                            <button
+                                onClick={handleAddMembers}
+                                disabled={selectedUserIds.length === 0}
+                                className={`px-4 py-1.5 text-sm text-white rounded transition-colors shadow-sm ${selectedUserIds.length > 0 ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-slate-300 cursor-not-allowed border-transparent'}`}
+                            >
+                                邀请 ({selectedUserIds.length})
+                            </button>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
 
             {/* Floating Action Button */}
             <motion.button
@@ -863,37 +833,39 @@ const ChatWidget: React.FC = () => {
                 onClick={() => {
                     const newState = !isOpen;
                     setIsOpen(newState);
-                    if (!newState) {
-                        setActiveSessionId(null);
-                    }
+                    if (!newState) setActiveSessionId(null);
                 }}
                 className={`
-                    ${isOpen ? 'bg-gradient-to-r from-red-500 to-red-600' : 'bg-gradient-to-r from-indigo-500 to-purple-600'} 
-                    ${!isOpen && totalUnread > 0 ? 'animate-pulse ring-4 ring-red-400/50' : ''}
-                    text-white p-4 rounded-full shadow-xl shadow-indigo-500/30 hover:shadow-2xl hover:shadow-indigo-500/40 
-                    transition-all duration-300 flex items-center justify-center relative group backdrop-blur-sm z-50
+                    ${isOpen
+                        ? 'bg-slate-800 hover:bg-slate-900 shadow-xl'
+                        : 'bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-600/30'
+                    }
+                    ${!isOpen && totalUnread > 0 ? 'ring-4 ring-indigo-500/20' : ''}
+                    text-white w-[56px] h-[56px] rounded-2xl flex items-center justify-center relative z-50 transition-colors duration-200
                 `}
             >
-                <div className="relative z-10">
-                    {isOpen ? <X size={26} /> : <MessageCircle size={26} fill="currentColor" className="text-white/20" strokeWidth={1.5} />}
-                    {!isOpen && <MessageCircle size={26} className="absolute inset-0 text-white" strokeWidth={2} />}
+                <div className="relative z-10 flex items-center justify-center w-full h-full">
+                    {isOpen ? (
+                        <X size={24} strokeWidth={2.5} className="text-white" />
+                    ) : (
+                        <MessageCircle size={24} className="text-white drop-shadow-md" strokeWidth={2.5} />
+                    )}
                 </div>
-
-                {/* Unread Indicator */}
+                <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
                 <AnimatePresence>
                     {!isOpen && totalUnread > 0 && (
                         <motion.span
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            exit={{ scale: 0 }}
-                            className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white px-1 shadow-sm"
+                            initial={{ scale: 0, y: 10 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0, y: 10 }}
+                            className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] bg-red-500 text-white text-[11px] font-black flex items-center justify-center rounded-full border-[3px] border-white shadow-[0_4px_10px_rgba(239,68,68,0.4)] px-1"
                         >
                             {totalUnread}
                         </motion.span>
                     )}
                 </AnimatePresence>
             </motion.button>
-        </div >
+        </div>
     );
 };
 
