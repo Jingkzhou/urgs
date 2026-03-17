@@ -25,4 +25,10 @@ public interface KnowledgeFolderMapper extends BaseMapper<KnowledgeFolder> {
      */
     @Select("SELECT * FROM knowledge_folder WHERE parent_id = #{parentId} ORDER BY sort_order, id")
     List<KnowledgeFolder> findByParentId(@Param("parentId") Long parentId);
+
+    /**
+     * 查询指定空间的所有文件夹（共享空间不过滤用户）
+     */
+    @Select("SELECT * FROM knowledge_folder WHERE scope = #{scope} ORDER BY sort_order, id")
+    List<KnowledgeFolder> findByScope(@Param("scope") String scope);
 }

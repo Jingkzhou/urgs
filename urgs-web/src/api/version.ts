@@ -361,6 +361,8 @@ export interface VersionPackage {
     version: string;
     gitRef: string;
     commitSha: string;
+    previousGitRef?: string;
+    previousCommitSha?: string;
     packageName?: string;
     packageUrl?: string;
     packageSize?: number;
@@ -573,6 +575,9 @@ export const createVersionPackage = (params: {
     repoId: number;
     ssoId: number;
     gitRef: string;
+    previousGitRef?: string;
+    assetId?: number;
+    execUser?: string;
     description: string;
     createdBy?: number;
     envId?: number;

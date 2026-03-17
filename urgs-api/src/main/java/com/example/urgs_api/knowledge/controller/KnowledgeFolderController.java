@@ -30,9 +30,11 @@ public class KnowledgeFolderController {
      * 获取当前用户的文件夹树
      */
     @GetMapping
-    public ResponseEntity<List<FolderTreeNode>> getFolderTree(HttpServletRequest request) {
+    public ResponseEntity<List<FolderTreeNode>> getFolderTree(
+            HttpServletRequest request,
+            @RequestParam(defaultValue = "private") String scope) {
         Long userId = getUserId(request);
-        return ResponseEntity.ok(folderService.getFolderTree(userId));
+        return ResponseEntity.ok(folderService.getFolderTree(userId, scope));
     }
 
     /**
@@ -43,7 +45,8 @@ public class KnowledgeFolderController {
             HttpServletRequest request,
             @RequestBody CreateFolderRequest req) {
         Long userId = getUserId(request);
-        return ResponseEntity.ok(folderService.createFolder(userId, req.getName(), req.getParentId()));
+        String scope = req.getScope() != null ? req.getScope() : "private";
+        return ResponseEntity.ok(folderService.createFolder(userId, req.getName(), req.getParentId(), scope));
     }
 
     /**
@@ -114,6 +117,7 @@ public class KnowledgeFolderController {
     public static class CreateFolderRequest {
         private String name;
         private Long parentId;
+        private String scope;
     }
 
     @Data

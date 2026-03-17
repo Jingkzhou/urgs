@@ -141,6 +141,24 @@ public class GitPlatformService {
     }
 
     /**
+     * 比较两个 ref (tag/branch/commit) 之间的文件差异
+     */
+    public List<GitCommitDiff> compareRefs(Long repoId, String fromRef, String toRef) {
+        GitRepository repo = gitRepositoryService.findById(repoId)
+                .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
+
+        try {
+            return switch (repo.getPlatform().toLowerCase()) {
+                case "gitlab" -> compareGitLabRefs(repo, fromRef, toRef);
+                default -> throw new RuntimeException("compareRefs 暂不支持平台: " + repo.getPlatform());
+            };
+        } catch (Exception e) {
+            log.error("比较 ref 失败: repoId={}, from={}, to={}", repoId, fromRef, toRef, e);
+            throw new RuntimeException("比较 ref 失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 获取最新提交
      */
     public GitCommit getLatestCommit(Long repoId, String ref) {
@@ -1659,6 +1677,33 @@ public class GitPlatformService {
                 .committedAt(commit.path("committed_date").asText())
                 .diffs(diffs)
                 .build();
+    }
+
+    private List<GitCommitDiff> compareGitLabRefs(GitRepository repo, String fromRef, String toRef) throws Exception {
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
+        String encodedFrom = java.net.URLEncoder.encode(fromRef, "UTF-8");
+        String encodedTo = java.net.URLEncoder.encode(toRef, "UTF-8");
+        String url = String.format("%s/projects/%s/repository/compare?from=%s&to=%s",
+                apiBase, projectId, encodedFrom, encodedTo);
+
+        JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
+        JsonNode diffsNode = response.path("diffs");
+
+        List<GitCommitDiff> diffs = new ArrayList<>();
+        if (diffsNode.isArray()) {
+            for (JsonNode file : diffsNode) {
+                diffs.add(GitCommitDiff.builder()
+                        .newPath(file.path("new_path").asText())
+                        .oldPath(file.path("old_path").asText())
+                        .newFile(file.path("new_file").asBoolean())
+                        .renamedFile(file.path("renamed_file").asBoolean())
+                        .deletedFile(file.path("deleted_file").asBoolean())
+                        .diff(file.path("diff").asText())
+                        .build());
+            }
+        }
+        return diffs;
     }
 
     private void createGitLabBranch(GitRepository repo, String branchName, String ref, String token) throws Exception {

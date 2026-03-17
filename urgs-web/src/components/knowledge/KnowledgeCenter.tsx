@@ -40,6 +40,8 @@ import {
     FileSpreadsheet,
     FileBarChart,
     FileType,
+    Users,
+    Lock,
 } from 'lucide-react';
 import type { UploadProps } from 'antd';
 import * as api from '../../api/knowledge';
@@ -51,6 +53,7 @@ import type {
 } from '../../api/knowledge';
 import { getFileIcon } from '../../utils/fileIcons';
 import { UploadProgressPanel, UploadFileItem } from './UploadProgressPanel';
+import { hasPermission } from '../../utils/permission';
 
 
 const KnowledgeCenter: React.FC = () => {
@@ -62,6 +65,14 @@ const KnowledgeCenter: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [searchKeyword, setSearchKeyword] = useState('');
     const [layoutMode, setLayoutMode] = useState<'grid' | 'list'>('grid');
+    const [scope, setScope] = useState<'private' | 'shared'>('private');
+
+    // 共享空间权限
+    const isShared = scope === 'shared';
+    const canSharedUpload = hasPermission('knowledge:shared:upload');
+    const canSharedDelete = hasPermission('knowledge:shared:delete');
+    const canSharedFolderCreate = hasPermission('knowledge:shared:folder:create');
+    const canSharedFolderDelete = hasPermission('knowledge:shared:folder:delete');
 
     // 上传状态管理器
     const [uploadFiles, setUploadFiles] = useState<UploadFileItem[]>([]);
@@ -83,12 +94,12 @@ const KnowledgeCenter: React.FC = () => {
     // 加载文件夹
     const loadFolders = useCallback(async () => {
         try {
-            const data = await api.getFolderTree();
+            const data = await api.getFolderTree(scope);
             setFolders(data);
         } catch (error) {
             console.error('加载文件夹失败:', error);
         }
-    }, []);
+    }, [scope]);
 
     // 加载文档
     const loadDocuments = useCallback(async () => {
@@ -99,6 +110,7 @@ const KnowledgeCenter: React.FC = () => {
                 keyword: searchKeyword || undefined,
                 page: 1,
                 size: 200,
+                scope,
             });
             setDocuments(result.records || []);
         } catch (error) {
@@ -107,7 +119,7 @@ const KnowledgeCenter: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [selectedFolderId, searchKeyword]);
+    }, [selectedFolderId, searchKeyword, scope]);
 
     const loadTags = useCallback(async () => {
         try {
@@ -168,6 +180,23 @@ const KnowledgeCenter: React.FC = () => {
         return currentNode?.children || [];
     }, [folders, selectedFolderId]);
 
+    // 空间切换
+    const handleScopeChange = (val: 'private' | 'shared') => {
+        setScope(val);
+        setSelectedFolderId(null);
+        setSearchKeyword('');
+    };
+
+    // 添加到我的空间
+    const handleCopyToPrivate = async (docId: number) => {
+        try {
+            await api.copyToPrivate(docId);
+            message.success('已添加到我的空间');
+        } catch (error) {
+            message.error('添加失败');
+        }
+    };
+
     // 交互操作
     const handleFolderDoubleClick = (id: number) => {
         setSelectedFolderId(id);
@@ -190,6 +219,7 @@ const KnowledgeCenter: React.FC = () => {
                 await api.createFolder({
                     name: values.name,
                     parentId: selectedFolderId ?? undefined,
+                    scope,
                 });
                 message.success('文件夹创建成功');
             }
@@ -232,25 +262,34 @@ const KnowledgeCenter: React.FC = () => {
         }
     };
 
-    // 空白区域右键菜单
-    const containerMenuItems = [
-        {
-            key: 'upload',
-            label: '上传文件',
-            icon: <UploadIcon size={16} />,
-            onClick: () => document.getElementById('hidden-context-upload')?.click()
-        },
-        {
-            key: 'newFolder',
-            label: '新建文件夹',
-            icon: <FolderPlus size={16} />,
-            onClick: () => {
-                setEditingFolder(null);
-                folderForm.resetFields();
-                setFolderModalOpen(true);
-            }
-        },
-    ];
+    // 空白区域右键菜单（根据空间和权限动态生成）
+    const containerMenuItems = useMemo(() => {
+        const items: any[] = [];
+        const canUpload = !isShared || canSharedUpload;
+        const canCreateFolder = !isShared || canSharedFolderCreate;
+
+        if (canUpload) {
+            items.push({
+                key: 'upload',
+                label: '上传文件',
+                icon: <UploadIcon size={16} />,
+                onClick: () => document.getElementById('hidden-context-upload')?.click()
+            });
+        }
+        if (canCreateFolder) {
+            items.push({
+                key: 'newFolder',
+                label: '新建文件夹',
+                icon: <FolderPlus size={16} />,
+                onClick: () => {
+                    setEditingFolder(null);
+                    folderForm.resetFields();
+                    setFolderModalOpen(true);
+                }
+            });
+        }
+        return items;
+    }, [isShared, canSharedUpload, canSharedFolderCreate]);
 
     // 确保路径存在
     const ensureDirectoryPath = async (baseFolderId: number | null, fullPath: string): Promise<number | null> => {
@@ -402,6 +441,7 @@ const KnowledgeCenter: React.FC = () => {
                             fileName: name,
                             fileSize: file.size,
                             folderId: targetFolderId ?? undefined,
+                            scope,
                         });
 
                         setUploadFiles(prev => prev.map(f => {
@@ -601,10 +641,23 @@ const KnowledgeCenter: React.FC = () => {
             }
         };
 
-        const menuItems = [
+        const menuItems: any[] = [
             { key: 'open', label: '打开', onClick: onEnter },
             { key: 'download', label: isDoc ? '下载' : '打包下载', onClick: handleDownload },
-            {
+        ];
+
+        // 共享空间: 添加"添加到我的空间"
+        if (isShared && isDoc) {
+            menuItems.push({
+                key: 'copyToPrivate',
+                label: '添加到我的空间',
+                icon: <Lock size={14} />,
+                onClick: () => handleCopyToPrivate(id),
+            });
+        }
+
+        if (!isShared) {
+            menuItems.push({
                 key: 'edit',
                 label: '重命名',
                 onClick: () => {
@@ -616,10 +669,17 @@ const KnowledgeCenter: React.FC = () => {
                         message.info('暂不支持重命名附件');
                     }
                 }
-            },
-            { key: 'favorite', label: isFavorite ? '取消收藏' : '添加收藏', onClick: (e: any) => onToggleFavorite(e, doc!) },
-            { key: 'delete', label: '删除', danger: true, onClick: () => isDoc ? handleDeleteDocument(id) : onDeleteFolder(id) },
-        ];
+            });
+            menuItems.push({ key: 'favorite', label: isFavorite ? '取消收藏' : '添加收藏', onClick: (e: any) => onToggleFavorite(e, doc!) });
+        }
+
+        // 删除权限检查
+        const canDelete = isShared
+            ? (isDoc ? canSharedDelete : canSharedFolderDelete)
+            : true;
+        if (canDelete) {
+            menuItems.push({ key: 'delete', label: '删除', danger: true, onClick: () => isDoc ? handleDeleteDocument(id) : onDeleteFolder(id) });
+        }
 
         if (isGrid) {
             return (
@@ -693,6 +753,16 @@ const KnowledgeCenter: React.FC = () => {
             {/* 顶部工具栏 & 面包屑 */}
             <header className="h-14 bg-white border-b border-slate-200 flex items-center px-4 justify-between flex-shrink-0">
                 <div className="flex items-center gap-4">
+                    {/* 空间切换 */}
+                    <Segmented
+                        value={scope}
+                        onChange={val => handleScopeChange(val as 'private' | 'shared')}
+                        options={[
+                            { value: 'private', icon: <Lock size={12} />, label: '我的空间' },
+                            { value: 'shared', icon: <Users size={12} />, label: '共享空间' },
+                        ]}
+                    />
+                    <div className="w-px h-6 bg-slate-200"></div>
                     <Button
                         icon={<ArrowLeft size={16} />}
                         disabled={selectedFolderId === null}
@@ -719,14 +789,18 @@ const KnowledgeCenter: React.FC = () => {
                         onChange={e => setSearchKeyword(e.target.value)}
                     />
                     <Space size={8} className="ml-2">
-                        <Upload {...uploadProps}>
-                            <Button type="primary" icon={<UploadIcon size={18} />} className="bg-emerald-600 hover:bg-emerald-700 border-none">
-                                上传文件
+                        {(!isShared || canSharedUpload) && (
+                            <Upload {...uploadProps}>
+                                <Button type="primary" icon={<UploadIcon size={18} />} className="bg-emerald-600 hover:bg-emerald-700 border-none">
+                                    上传文件
+                                </Button>
+                            </Upload>
+                        )}
+                        {(!isShared || canSharedFolderCreate) && (
+                            <Button icon={<FolderPlus size={18} />} onClick={() => { setEditingFolder(null); folderForm.resetFields(); setFolderModalOpen(true); }}>
+                                新建文件夹
                             </Button>
-                        </Upload>
-                        <Button icon={<FolderPlus size={18} />} onClick={() => { setEditingFolder(null); folderForm.resetFields(); setFolderModalOpen(true); }}>
-                            新建文件夹
-                        </Button>
+                        )}
                         <div className="w-px h-6 bg-slate-200 mx-1"></div>
                         <Segmented
                             value={layoutMode}

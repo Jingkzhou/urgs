@@ -30,11 +30,13 @@ public class VersionPackageController {
         Long ssoId = Long.valueOf(params.get("ssoId").toString());
         String gitRef = (String) params.get("gitRef");
         String description = (String) params.get("description");
+        String previousGitRef = (String) params.get("previousGitRef");
+        Long assetId = params.get("assetId") != null ? Long.valueOf(params.get("assetId").toString()) : null;
+        String execUser = (String) params.get("execUser");
         Long createdBy = params.get("createdBy") != null ? Long.valueOf(params.get("createdBy").toString()) : null;
         Long envId = params.get("envId") != null ? Long.valueOf(params.get("envId").toString()) : null;
-        String execUser = (String) params.get("execUser");
 
-        return packageService.createPackage(repoId, ssoId, gitRef, description, createdBy, envId, execUser);
+        return packageService.createPackage(repoId, ssoId, gitRef, previousGitRef, assetId, execUser, description, createdBy, envId);
     }
 
     /**

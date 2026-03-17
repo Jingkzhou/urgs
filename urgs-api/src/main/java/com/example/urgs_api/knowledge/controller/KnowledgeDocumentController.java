@@ -32,10 +32,11 @@ public class KnowledgeDocumentController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Boolean favorite,
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "private") String scope) {
         Long userId = getUserId(request);
         return ResponseEntity
-                .ok(documentService.listDocuments(userId, folderId, keyword, favorite, page, size));
+                .ok(documentService.listDocuments(userId, folderId, keyword, favorite, page, size, scope));
     }
 
     /**
@@ -50,11 +51,23 @@ public class KnowledgeDocumentController {
         KnowledgeDocument doc = new KnowledgeDocument();
         doc.setFolderId(req.getFolderId());
         doc.setTitle(req.getTitle());
+        doc.setScope(req.getScope() != null ? req.getScope() : "private");
         doc.setFileUrl(req.getFileUrl());
         doc.setFileName(req.getFileName());
         doc.setFileSize(req.getFileSize());
 
         return ResponseEntity.ok(documentService.createDocument(userId, doc, req.getTagIds()));
+    }
+
+    /**
+     * 复制共享文档到个人空间
+     */
+    @PostMapping("/{id}/copy-to-private")
+    public ResponseEntity<KnowledgeDocument> copyToPrivate(
+            HttpServletRequest request,
+            @PathVariable Long id) {
+        Long userId = getUserId(request);
+        return ResponseEntity.ok(documentService.copyToPrivate(id, userId));
     }
 
     /**
@@ -121,6 +134,7 @@ public class KnowledgeDocumentController {
     public static class CreateDocumentRequest {
         private Long folderId;
         private String title;
+        private String scope;
         private String fileUrl;
         private String fileName;
         private Long fileSize;

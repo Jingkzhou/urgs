@@ -37,7 +37,20 @@ public class KnowledgeFolderService {
      * 获取用户的文件夹树结构
      */
     public List<FolderTreeNode> getFolderTree(Long userId) {
-        List<KnowledgeFolder> folders = folderMapper.findByUserId(userId);
+        return getFolderTree(userId, "private");
+    }
+
+    /**
+     * 获取指定空间的文件夹树结构
+     * scope=private 时按 userId 过滤；scope=shared 时查询所有共享文件夹
+     */
+    public List<FolderTreeNode> getFolderTree(Long userId, String scope) {
+        List<KnowledgeFolder> folders;
+        if ("shared".equals(scope)) {
+            folders = folderMapper.findByScope("shared");
+        } else {
+            folders = folderMapper.findByUserId(userId);
+        }
         return buildTree(folders, null);
     }
 
@@ -80,15 +93,24 @@ public class KnowledgeFolderService {
      */
     @Transactional
     public KnowledgeFolder createFolder(Long userId, String name, Long parentId) {
+        return createFolder(userId, name, parentId, "private");
+    }
+
+    /**
+     * 创建文件夹（指定空间）
+     */
+    @Transactional
+    public KnowledgeFolder createFolder(Long userId, String name, Long parentId, String scope) {
         KnowledgeFolder folder = new KnowledgeFolder();
         folder.setUserId(userId);
         folder.setName(name);
         folder.setParentId(parentId);
+        folder.setScope(scope != null ? scope : "private");
         folder.setSortOrder(0);
         folder.setCreateTime(LocalDateTime.now());
         folder.setUpdateTime(LocalDateTime.now());
         folderMapper.insert(folder);
-        log.info("用户 {} 创建文件夹: {}", userId, name);
+        log.info("用户 {} 在 {} 空间创建文件夹: {}", userId, scope, name);
         return folder;
     }
 

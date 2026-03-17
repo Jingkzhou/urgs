@@ -15,4 +15,6 @@ public interface InfrastructureAssetRepository extends JpaRepository<Infrastruct
     List<InfrastructureAsset> findByAppSystemIdAndEnvId(Long appSystemId, Long envId);
 
     List<InfrastructureAsset> findByEnvType(String envType);
+
+    List<InfrastructureAsset> findByEnvIdAndRole(Long envId, String role);
 }

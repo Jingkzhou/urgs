@@ -201,4 +201,11 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '8-3', name: '标签管理', code: 'knowledge:tag', type: 'menu', path: '/knowledge/tag', level: 1, parentId: '8' },
     { id: '8-3-1', name: '新建标签', code: 'knowledge:tag:create', type: 'button', path: '-', level: 2, parentId: '8-3' },
     { id: '8-3-2', name: '删除标签', code: 'knowledge:tag:delete', type: 'button', path: '-', level: 2, parentId: '8-3' },
+
+    // 共享空间权限
+    { id: '8-4', name: '共享空间', code: 'knowledge:shared', type: 'menu', path: '/knowledge/shared', level: 1, parentId: '8' },
+    { id: '8-4-1', name: '共享上传', code: 'knowledge:shared:upload', type: 'button', path: '-', level: 2, parentId: '8-4' },
+    { id: '8-4-2', name: '共享删除', code: 'knowledge:shared:delete', type: 'button', path: '-', level: 2, parentId: '8-4' },
+    { id: '8-4-3', name: '共享新建文件夹', code: 'knowledge:shared:folder:create', type: 'button', path: '-', level: 2, parentId: '8-4' },
+    { id: '8-4-4', name: '共享删除文件夹', code: 'knowledge:shared:folder:delete', type: 'button', path: '-', level: 2, parentId: '8-4' },
 ];

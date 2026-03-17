@@ -469,24 +469,43 @@ const InfrastructureManagement: React.FC = () => {
                     <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.role !== currentValues.role}>
                         {({ getFieldValue }) =>
                             getFieldValue('role') === 'db' ? (
-                                <Row gutter={16}>
-                                    <Col span={24}>
-                                        <Form.Item
-                                            name="dbType"
-                                            label="数据库类型"
-                                            rules={[{ required: true, message: '请选择数据库类型' }]}
-                                        >
-                                            <Select placeholder="选择数据库类型">
-                                                <Option value="Oracle">Oracle</Option>
-                                                <Option value="MySQL">MySQL</Option>
-                                                <Option value="gbase">gbase</Option>
-                                                <Option value="达梦">达梦</Option>
-                                                <Option value="hive">hive</Option>
-                                                <Option value="云树">云树</Option>
-                                            </Select>
-                                        </Form.Item>
-                                    </Col>
-                                </Row>
+                                <>
+                                    <Row gutter={16}>
+                                        <Col span={12}>
+                                            <Form.Item
+                                                name="dbType"
+                                                label="数据库类型"
+                                                rules={[{ required: true, message: '请选择数据库类型' }]}
+                                            >
+                                                <Select placeholder="选择数据库类型">
+                                                    <Option value="Oracle">Oracle</Option>
+                                                    <Option value="MySQL">MySQL</Option>
+                                                    <Option value="gbase">gbase</Option>
+                                                    <Option value="达梦">达梦</Option>
+                                                    <Option value="hive">hive</Option>
+                                                    <Option value="云树">云树</Option>
+                                                </Select>
+                                            </Form.Item>
+                                        </Col>
+                                        <Col span={12}>
+                                            <Form.Item name="dbPort" label="数据库端口">
+                                                <Input type="number" placeholder="Oracle:1521 / MySQL:3306" />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
+                                    <Row gutter={16}>
+                                        <Col span={12}>
+                                            <Form.Item name="dbName" label="数据库名/SID">
+                                                <Input placeholder="Oracle SID 或 MySQL database" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col span={12}>
+                                            <Form.Item name="dbServiceName" label="服务名 (Oracle)">
+                                                <Input placeholder="Oracle 服务名（与SID二选一）" />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
+                                </>
                             ) : null
                         }
                     </Form.Item>
@@ -584,16 +603,27 @@ const InfrastructureManagement: React.FC = () => {
                                     <div key={key} className="flex gap-2 items-start mb-2 last:mb-0">
                                         <Form.Item
                                             {...restField}
+                                            name={[name, 'userType']}
+                                            className="mb-0 w-[80px]"
+                                            initialValue="os"
+                                        >
+                                            <Select size="small" placeholder="类型">
+                                                <Option value="os">OS</Option>
+                                                <Option value="db">DB</Option>
+                                            </Select>
+                                        </Form.Item>
+                                        <Form.Item
+                                            {...restField}
                                             name={[name, 'username']}
                                             rules={[{ required: true, message: 'Required' }]}
-                                            className="mb-0 w-1/4"
+                                            className="mb-0 flex-1"
                                         >
                                             <Input placeholder="用户名" size="small" />
                                         </Form.Item>
                                         <Form.Item
                                             {...restField}
                                             name={[name, 'password']}
-                                            className="mb-0 w-1/4"
+                                            className="mb-0 flex-1"
                                         >
                                             <Input.Password placeholder="密码" size="small" />
                                         </Form.Item>
@@ -795,7 +825,14 @@ const InfrastructureManagement: React.FC = () => {
                                                     <Terminal size={14} className="text-blue-400" />
                                                 </div>
                                                 <div className="flex-1">
-                                                    <div className="text-white font-medium font-mono">{user.username}</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-white font-medium font-mono">{user.username}</span>
+                                                        {user.userType && (
+                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${user.userType === 'db' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                                                                {user.userType === 'db' ? 'DB' : 'OS'}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     {user.description && (
                                                         <div className="text-slate-400 text-xs mt-0.5">{user.description}</div>
                                                     )}
