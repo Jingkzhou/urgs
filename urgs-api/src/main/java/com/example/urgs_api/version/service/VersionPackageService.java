@@ -90,7 +90,12 @@ public class VersionPackageService {
         vp.setDescription(description);
         vp.setStatus(VersionPackage.STATUS_READY);
         vp.setCreatedBy(createdBy);
-        vp.setEnvId(envId);
+        // 若前端未传 envId，从关联的服务器资产自动推导
+        if (envId != null) {
+            vp.setEnvId(envId);
+        } else if (assetId != null) {
+            assetRepository.findById(assetId).ifPresent(a -> vp.setEnvId(a.getEnvId()));
+        }
 
         return packageRepository.save(vp);
     }
@@ -183,8 +188,15 @@ public class VersionPackageService {
             String manifestJson = generateManifest(vp, procedureNames, connections);
             addToZip(zos, "manifest.json", manifestJson.getBytes("UTF-8"), checksumBuilder);
 
-            // 6. 打包 db_deploy 工具
-            addToolToZip(zos, checksumBuilder);
+            // 6. 打包 db_deploy 工具（按 dbType 选入对应驱动）
+            String dbType = null;
+            if (vp.getAssetId() != null) {
+                InfrastructureAsset asset = assetRepository.findById(vp.getAssetId()).orElse(null);
+                if (asset != null && asset.getDbType() != null) {
+                    dbType = asset.getDbType().toLowerCase();
+                }
+            }
+            addToolToZip(zos, checksumBuilder, dbType);
 
             // 7. 写入 checksum.sha256
             zos.putNextEntry(new ZipEntry("checksum.sha256"));
@@ -311,6 +323,10 @@ public class VersionPackageService {
                     connConfig.put("dsn", String.format("%s:%d/%s", host, port, serviceName));
                 } else if (sid != null && !sid.isBlank()) {
                     connConfig.put("dsn", String.format("%s:%d:%s", host, port, sid));
+                } else {
+                    connConfig.put("dsn", null);
+                    connConfig.put("_warning", "服务器未配置 dbServiceName 或 dbName，dsn 无法生成，请在基础设施管理中补充后重新创建版本包");
+                    log.error("资产 {} (id={}) 未配置 dbServiceName/dbName，manifest.json 中 dsn 将为空", asset.getHostname(), asset.getId());
                 }
                 break;
             case "mysql":
@@ -444,7 +460,7 @@ public class VersionPackageService {
 
     // ===================== 工具方法 =====================
 
-    private void addToolToZip(ZipOutputStream zos, StringBuilder checksumBuilder) throws IOException {
+    private void addToolToZip(ZipOutputStream zos, StringBuilder checksumBuilder, String dbType) throws IOException {
         ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
         String pattern = dbDeployPath.endsWith("/") ? dbDeployPath + "**/*" : dbDeployPath + "/**/*";
         Resource[] resources = resolver.getResources(pattern);
@@ -452,6 +468,9 @@ public class VersionPackageService {
         String prefix = dbDeployPath.replace("classpath:", "");
         if (prefix.startsWith("/")) prefix = prefix.substring(1);
         if (!prefix.endsWith("/")) prefix = prefix + "/";
+
+        // 确定要包含的驱动目录：默认 oracle
+        String targetDriverDir = "/drivers/" + (dbType != null ? dbType : "oracle") + "/";
 
         for (Resource resource : resources) {
             if (!resource.isReadable()) continue;
@@ -465,6 +484,12 @@ public class VersionPackageService {
             if (index == -1) continue;
 
             String zipPath = "bin/" + filename.substring(index);
+
+            // 驱动目录过滤：只打入匹配 dbType 的驱动子目录，跳过其他类型
+            if (zipPath.contains("/drivers/") && !zipPath.contains(targetDriverDir)) {
+                continue;
+            }
+
             byte[] content = StreamUtils.copyToByteArray(resource.getInputStream());
             addToZip(zos, zipPath, content, checksumBuilder);
         }
