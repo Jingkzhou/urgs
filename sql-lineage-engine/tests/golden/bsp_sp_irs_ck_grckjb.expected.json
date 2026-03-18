@@ -1,0 +1,544 @@
+{
+    "dialect": "oracle",
+    "description": "bsp_sp_irs_ck_grckjb 存储过程血缘（自动生成）",
+    "table_lineage": {
+        "sources": [
+            "DATACORE_IE_CK_GRCKJB",
+            "DATACORE_IE_CK_GRCKJB_TMP2",
+            "SMTMODS.L_ACCT_DEPOSIT"
+        ],
+        "targets": [
+            "DATACORE_IE_CK_GRCKJB",
+            "DATACORE_IE_CK_GRCKJB_TMP2",
+            "IE_CK_GRCKJC"
+        ],
+        "relationships": [
+            {
+                "source": "DATACORE_IE_CK_GRCKJB",
+                "target": "IE_CK_GRCKJC"
+            },
+            {
+                "source": "DATACORE_IE_CK_GRCKJB_TMP2",
+                "target": "DATACORE_IE_CK_GRCKJB"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_DEPOSIT",
+                "target": "DATACORE_IE_CK_GRCKJB"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_DEPOSIT",
+                "target": "DATACORE_IE_CK_GRCKJB_TMP2"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_DEPOSIT",
+                "target": "IE_CK_GRCKJC"
+            }
+        ]
+    },
+    "column_lineage": [
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_CLDATE",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_NUM",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_OPDATE",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_TYPE",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "DEPOSIT_NUM",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "GL_ITEM_CODE",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "INT_RATE",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "MATUR_DATE",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "POC_INDEX_CODE",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "Pboc_Base_Rate",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ST_INT_DT",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "source_column": "ACCT_NUM",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "ACCT_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_NUM",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "ACCT_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_TYPE",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "ACCT_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "Pboc_Base_Rate",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "BASERATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "DEPOSIT_NUM",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "DEPOSIT_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "GL_ITEM_CODE",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "GL_ITEM_CODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "MATUR_DATE",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "MATUR_DATE2",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "ORG_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "POC_INDEX_CODE",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "POC_INDEX_CODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "INT_RATE",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "REALRATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ST_INT_DT",
+            "target_table": "DATACORE_IE_CK_GRCKJB",
+            "target_column": "ST_INT_DT2",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_CLDATE",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_NUM",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_OPDATE",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_TYPE",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "DEPOSIT_NUM",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "GL_ITEM_CODE",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "INT_RATE",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "MATUR_DATE",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "POC_INDEX_CODE",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "Pboc_Base_Rate",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ST_INT_DT",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_NUM",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "ACCT_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_TYPE",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "ACCT_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "Pboc_Base_Rate",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "BASERATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "DEPOSIT_NUM",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "DEPOSIT_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "GL_ITEM_CODE",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "GL_ITEM_CODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "MATUR_DATE",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "MATUR_DATE2",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "ORG_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "POC_INDEX_CODE",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "POC_INDEX_CODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "INT_RATE",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "REALRATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ST_INT_DT",
+            "target_table": "DATACORE_IE_CK_GRCKJB_TMP2",
+            "target_column": "ST_INT_DT2",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "ACCT_NUM",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "ACCDEPCODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "END_DATE",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "ACTUALDUEDATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "ACCT_BALANCE_FLAG",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "AMTDEPFLG",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "BASE_RATE",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "BASERATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "PBOC_BASE_RATE",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "BASERATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "OPEN_CHANNEL",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "BUSICHANNEL",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "ST_INT_DT",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "CONBGNDATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "MATUR_DATE",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "CONDUEDATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "ORG_NUM",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "CORPID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "CUST_ID",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "CUSTID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "DATA_DATE",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "DATADATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "DEPOSIT_NUM",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "DEPAGRSEQNO",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "PROD_TYPE",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "DEPPRODUCTTYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "LLFD_RATE",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "FLOATFREQ",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "MAX_YILED_RATE",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "HIGHESTYIELDRATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "GUARANTEED_RETURN_RATE",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "LOWESTYIELDRATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "ORG_NUM",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "NBJGH",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "DJJZ_TYPE",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "PRICINGTYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "INT_RATE_TYP",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "RATETYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "INT_RATE",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "REALRATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "INT_RATE",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "REALRATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_GRCKJB",
+            "source_column": "REMOTE_DEPOSIT_FLAG",
+            "target_table": "IE_CK_GRCKJC",
+            "target_column": "REMOTEDEPFLG",
+            "dependency_type": "fdd"
+        }
+    ]
+}

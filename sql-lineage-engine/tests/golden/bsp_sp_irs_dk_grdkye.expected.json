@@ -1,0 +1,169 @@
+{
+    "dialect": "oracle",
+    "description": "bsp_sp_irs_dk_grdkye 存储过程血缘（自动生成）",
+    "table_lineage": {
+        "sources": [
+            "DATACORE_IE_DK_GRDKYE",
+            "DATACORE_IE_DK_GRDKYE_TEMP",
+            "SMTMODS.L_ACCT_LOAN"
+        ],
+        "targets": [
+            "DATACORE_IE_DK_GRDKYE",
+            "DATACORE_IE_DK_GRDKYE_TEMP",
+            "IE_DK_GRDKYE"
+        ],
+        "relationships": [
+            {
+                "source": "DATACORE_IE_DK_GRDKYE",
+                "target": "IE_DK_GRDKYE"
+            },
+            {
+                "source": "DATACORE_IE_DK_GRDKYE_TEMP",
+                "target": "DATACORE_IE_DK_GRDKYE"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_LOAN",
+                "target": "DATACORE_IE_DK_GRDKYE"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_LOAN",
+                "target": "DATACORE_IE_DK_GRDKYE_TEMP"
+            }
+        ]
+    },
+    "column_lineage": [
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "CURR_CD",
+            "target_table": "DATACORE_IE_DK_GRDKYE",
+            "target_column": "CURR_CD",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_GRDKYE_TEMP",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DK_GRDKYE",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DK_GRDKYE",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "LOAN_ACCT_BAL",
+            "target_table": "DATACORE_IE_DK_GRDKYE",
+            "target_column": "LOAN_ACCT_BAL",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "LOAN_NUM",
+            "target_table": "DATACORE_IE_DK_GRDKYE",
+            "target_column": "LOAN_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_DK_GRDKYE",
+            "target_column": "ORG_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "CURR_CD",
+            "target_table": "DATACORE_IE_DK_GRDKYE_TEMP",
+            "target_column": "CURR_CD",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DK_GRDKYE_TEMP",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "LOAN_ACCT_BAL",
+            "target_table": "DATACORE_IE_DK_GRDKYE_TEMP",
+            "target_column": "LOAN_ACCT_BAL",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "LOAN_NUM",
+            "target_table": "DATACORE_IE_DK_GRDKYE_TEMP",
+            "target_column": "LOAN_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_DK_GRDKYE_TEMP",
+            "target_column": "ORG_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_GRDKYE",
+            "source_column": "LOAN_ACCT_BAL",
+            "target_table": "IE_DK_GRDKYE",
+            "target_column": "balance",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_GRDKYE",
+            "source_column": "IS_DATE",
+            "target_table": "IE_DK_GRDKYE",
+            "target_column": "cjrq",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_GRDKYE",
+            "source_column": "ORG_NUM",
+            "target_table": "IE_DK_GRDKYE",
+            "target_column": "corpid",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_GRDKYE",
+            "source_column": "CUST_ID",
+            "target_table": "IE_DK_GRDKYE",
+            "target_column": "custid",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_GRDKYE",
+            "source_column": "VS_TEXT",
+            "target_table": "IE_DK_GRDKYE",
+            "target_column": "datadate",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_GRDKYE",
+            "source_column": "LOAN_NUM",
+            "target_table": "IE_DK_GRDKYE",
+            "target_column": "loannum",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_GRDKYE",
+            "source_column": "CURR_CD",
+            "target_table": "IE_DK_GRDKYE",
+            "target_column": "moneysymb",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_GRDKYE",
+            "source_column": "ORG_NUM",
+            "target_table": "IE_DK_GRDKYE",
+            "target_column": "nbjgh",
+            "dependency_type": "fdd"
+        }
+    ]
+}

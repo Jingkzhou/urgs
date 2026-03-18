@@ -548,15 +548,23 @@ class SqlSplitter:
     def extract_procedure_body(sql: str) -> List[str]:
         """
         If the SQL is a CREATE PROCEDURE/FUNCTION, extract the body (content between BEGIN/END).
-        Returns a list of statements found in the body.
+        Returns a list of meaningful DML statements found in the body.
         If not a procedure or extraction fails, returns [sql].
         """
         match = re.search(r"(?i)\bBEGIN\b(.*)\bEND\b", sql, re.DOTALL)
         if match:
             body = match.group(1).strip()
-            # Now split the body as if it were a script
-            return SqlSplitter.split(body)
-            
+            # Split by semicolon as before
+            raw_stmts = SqlSplitter.split(body)
+            # Filter out control-flow-only fragments:
+            # END IF / END LOOP / END CASE / END WHILE / bare END
+            # These appear because split() cuts on every ';'
+            _CONTROL_ONLY = re.compile(
+                r"^\s*END\s*(IF|LOOP|CASE|WHILE|FOR)?\s*\w*\s*$", re.IGNORECASE
+            )
+            meaningful = [s for s in raw_stmts if not _CONTROL_ONLY.match(s)]
+            return meaningful if meaningful else [sql]
+
         return [sql]
 
     @staticmethod
