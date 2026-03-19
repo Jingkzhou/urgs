@@ -17,12 +17,6 @@ public class MetricController {
     @Autowired
     private MetricService metricService;
 
-    @GetMapping("/systems")
-    public List<SysSystem> getSystems(HttpServletRequest request) {
-        Long userId = (Long) request.getAttribute("userId");
-        return metricService.getSystemsWithMetrics(userId);
-    }
-
     @GetMapping("/types")
     public List<MetricTypeVO> getMetricTypes(@RequestParam String systemId) {
         return metricService.getMetricTypes(systemId);
@@ -31,5 +25,11 @@ public class MetricController {
     @GetMapping("/trend")
     public List<MetricTrendVO> getTrend(MetricTrendQuery query) {
         return metricService.getTrend(query);
+    }
+
+    @GetMapping("/systems")
+    public List<SysSystem> getSystems(HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("userId");
+        return metricService.getSystemsWithMetrics(userId);
     }
 }

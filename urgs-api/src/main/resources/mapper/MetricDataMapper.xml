@@ -6,8 +6,8 @@
         SELECT
             DATE_FORMAT(metric_time, #{datePattern}) AS timeLabel,
             AVG(metric_value) AS avgValue,
-            MAX(metric_value) AS maxValue,
-            MIN(metric_value) AS minValue
+            MAX(metric_value) AS `maxValue`,
+            MIN(metric_value) AS `minValue`
         FROM t_metric_data
         WHERE system_id = #{systemId}
           AND type_code = #{typeCode}

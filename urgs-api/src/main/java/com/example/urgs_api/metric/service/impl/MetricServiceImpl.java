@@ -1,24 +1,22 @@
 package com.example.urgs_api.metric.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.urgs_api.metric.dto.MetricTrendQuery;
 import com.example.urgs_api.metric.dto.MetricTrendVO;
 import com.example.urgs_api.metric.dto.MetricTypeVO;
 import com.example.urgs_api.metric.entity.MetricType;
+import com.example.urgs_api.metric.entity.MetricData;
 import com.example.urgs_api.metric.mapper.MetricDataMapper;
 import com.example.urgs_api.metric.mapper.MetricTypeMapper;
 import com.example.urgs_api.metric.service.MetricService;
 import com.example.urgs_api.system.model.SysSystem;
 import com.example.urgs_api.system.service.SysSystemService;
-import com.example.urgs_api.user.model.User;
-import com.example.urgs_api.user.service.UserService;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -35,9 +33,6 @@ public class MetricServiceImpl implements MetricService {
 
     @Autowired
     private SysSystemService sysSystemService;
-
-    @Autowired
-    private UserService userService;
 
     private static final DateTimeFormatter DT_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -81,11 +76,13 @@ public class MetricServiceImpl implements MetricService {
 
     @Override
     public List<SysSystem> getSystemsWithMetrics(Long userId) {
-        // Get all system_ids that have metric types
-        List<String> metricSystemIds = metricTypeMapper.selectDistinctSystemIds();
-        if (metricSystemIds.isEmpty()) {
+        // Get all system_ids that have actual metric data
+        List<Object> objs = metricDataMapper.selectObjs(new QueryWrapper<MetricData>().select("DISTINCT system_id"));
+        if (objs.isEmpty()) {
             return Collections.emptyList();
         }
+        
+        List<String> metricSystemIds = objs.stream().map(Object::toString).collect(Collectors.toList());
 
         // Get user's accessible systems
         List<SysSystem> accessibleSystems = sysSystemService.getSystems(userId, false);
@@ -96,10 +93,6 @@ public class MetricServiceImpl implements MetricService {
                 .filter(s -> metricIdSet.contains(s.getClientId()))
                 .collect(Collectors.toList());
 
-        // If user has no accessible systems with metrics but there is metric data, return all metric systems
-        if (result.isEmpty()) {
-            return sysSystemService.list(new QueryWrapper<SysSystem>().in("client_id", metricSystemIds));
-        }
         return result;
     }
 }

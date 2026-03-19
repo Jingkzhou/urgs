@@ -421,7 +421,7 @@ export const TrendAnalysisChart: React.FC = () => {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // 1. Load systems (only systems that have metric data)
+  // 1. Load systems (use existing system management API with user permissions)
   useEffect(() => {
     const loadSystems = async () => {
       try {
@@ -553,7 +553,7 @@ export const TrendAnalysisChart: React.FC = () => {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.8, ease: 'easeOut' }}
-      className="relative bg-white/80 backdrop-blur-xl border border-slate-200/60 rounded-[3rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] flex flex-col overflow-hidden group transition-all duration-700 hover:shadow-[0_48px_96px_-24px_rgba(0,0,0,0.12)] hover:-translate-y-1"
+      className="relative bg-white/80 backdrop-blur-xl border border-slate-200/60 rounded-[3rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] flex flex-col group transition-all duration-700 hover:shadow-[0_48px_96px_-24px_rgba(0,0,0,0.12)] hover:-translate-y-1"
     >
       {/* Dynamic Background Elements */}
       <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full blur-[80px] transition-colors duration-1000 pointer-events-none" style={{ backgroundColor: `${chartColor}08` }} />
@@ -631,7 +631,7 @@ export const TrendAnalysisChart: React.FC = () => {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -8, scale: 0.96 }}
                     transition={{ duration: 0.2 }}
-                    className="absolute right-0 top-full mt-2 bg-white/95 backdrop-blur-xl border border-slate-200 rounded-2xl shadow-2xl py-2 min-w-[180px] z-50 overflow-hidden"
+                    className="absolute right-0 top-full mt-2 bg-white/95 backdrop-blur-xl border border-slate-200 rounded-2xl shadow-2xl py-2 min-w-[180px] max-h-[320px] overflow-y-auto z-50"
                   >
                     {systems.map((sys) => (
                       <button
