@@ -469,7 +469,8 @@ export const TrendAnalysisChart: React.FC = () => {
     } catch (err) {
       console.error('Failed to load trend data', err);
     } finally {
-      setLoading(false);
+      // 保证 loading 状态能够恢复
+      setTimeout(() => setLoading(false), 300);
     }
   }, [selectedSystemId, selectedTypeCode, timeRange]);
 
@@ -545,22 +546,22 @@ export const TrendAnalysisChart: React.FC = () => {
     return null;
   };
 
-  const gradientId = `metric-gradient-${selectedTypeCode || 'default'}`;
-  const glowId = `metric-glow-${selectedTypeCode || 'default'}`;
+  const gradientId = `metric-gradient-${selectedSystemId}-${selectedTypeCode || 'default'}`;
+  const glowId = `metric-glow-${selectedSystemId}-${selectedTypeCode || 'default'}`;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.8, ease: 'easeOut' }}
-      className="relative bg-white/80 backdrop-blur-xl border border-slate-200/60 rounded-[3rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] flex flex-col group transition-all duration-700 hover:shadow-[0_48px_96px_-24px_rgba(0,0,0,0.12)] hover:-translate-y-1"
+      className="relative bg-white/80 backdrop-blur-xl border border-slate-200/60 rounded-[3rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] flex flex-col group transition-all duration-700 hover:shadow-[0_48px_96px_-24px_rgba(0,0,0,0.12)] hover:-translate-y-1 min-h-[480px] h-full"
     >
       {/* Dynamic Background Elements */}
       <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full blur-[80px] transition-colors duration-1000 pointer-events-none" style={{ backgroundColor: `${chartColor}08` }} />
       <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-amber-500/5 rounded-full blur-[80px] group-hover:bg-amber-500/10 transition-colors duration-1000 pointer-events-none" />
 
       {/* Header Section */}
-      <div className="flex items-center justify-between px-9 pt-8 pb-4 relative z-10">
+      <div className="flex items-center justify-between px-9 pt-8 pb-4 relative z-50">
         <div className="flex items-center gap-6">
           <div className="relative">
             <motion.div
@@ -760,9 +761,9 @@ export const TrendAnalysisChart: React.FC = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.4 }}
-              className="w-full h-full"
+              className="w-full h-[320px]"
             >
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height={320}>
                 <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -794,8 +795,7 @@ export const TrendAnalysisChart: React.FC = () => {
                     dataKey="value"
                     stroke="none"
                     fill={`url(#${glowId})`}
-                    animationDuration={3000}
-                    animationBegin={500}
+                    isAnimationActive={false}
                   />
                   <Area
                     type="monotone"
@@ -804,7 +804,7 @@ export const TrendAnalysisChart: React.FC = () => {
                     strokeWidth={4}
                     strokeLinecap="round"
                     fill={`url(#${gradientId})`}
-                    animationDuration={2500}
+                    isAnimationActive={false}
                     dot={(props: any) => {
                       const { cx, cy, index } = props;
                       if (index === chartData.length - 1) {

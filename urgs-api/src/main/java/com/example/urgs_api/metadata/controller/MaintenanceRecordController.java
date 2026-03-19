@@ -47,6 +47,7 @@ public class MaintenanceRecordController {
             @RequestParam(required = false) String plannedDate,
             @RequestParam(required = false) String modTypes,
             @RequestParam(required = false) String reqId,
+            @RequestParam(required = false) String operator,
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer size) {
         LambdaQueryWrapper<MaintenanceRecord> query = new LambdaQueryWrapper<>();
@@ -59,7 +60,8 @@ public class MaintenanceRecordController {
                     .or().like(MaintenanceRecord::getFieldName, keyword)
                     .or().like(MaintenanceRecord::getFieldCnName, keyword)
                     .or().like(MaintenanceRecord::getReqId, keyword)
-                    .or().like(MaintenanceRecord::getDescription, keyword));
+                    .or().like(MaintenanceRecord::getDescription, keyword)
+                    .or().like(MaintenanceRecord::getOperator, keyword));
         }
 
         // Table Name Logic
@@ -89,6 +91,9 @@ public class MaintenanceRecordController {
         }
         if (StringUtils.hasText(reqId)) {
             query.like(MaintenanceRecord::getReqId, reqId);
+        }
+        if (StringUtils.hasText(operator)) {
+            query.like(MaintenanceRecord::getOperator, operator);
         }
 
         if (StringUtils.hasText(modTypes)) {

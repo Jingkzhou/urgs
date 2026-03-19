@@ -84,6 +84,7 @@ const MaintenanceRecord: React.FC = () => {
             if (filters.fieldName) params.append('fieldName', filters.fieldName);
             if (filters.modTypes.length > 0) params.append('modTypes', filters.modTypes.join(','));
             if (filters.reqId) params.append('reqId', filters.reqId);
+            if (filters.operator) params.append('operator', filters.operator);
             if (filters.dateRange) {
                 if (filters.dateRange[0]) params.append('startDate', filters.dateRange[0]);
                 if (filters.dateRange[1]) params.append('endDate', filters.dateRange[1]);
@@ -344,6 +345,15 @@ const MaintenanceRecord: React.FC = () => {
                                         placeholder="如: REQ-2024..."
                                         value={filters.reqId}
                                         onChange={e => setFilters(prev => ({ ...prev, reqId: e.target.value }))}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">操作人</label>
+                                    <input
+                                        className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                                        placeholder="输入操作人..."
+                                        value={filters.operator}
+                                        onChange={e => setFilters(prev => ({ ...prev, operator: e.target.value }))}
                                     />
                                 </div>
                             </div>
