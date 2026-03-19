@@ -325,7 +325,7 @@ const TaskInstance: React.FC = () => {
         setLogLoading(true);
         try {
             const response = await get<{ content: string }>(`/api/task/instance/log/${instance.id}`);
-            setLogContent(response?.content || 'No log content available.');
+            setLogContent(response?.content || '');
         } catch (error) {
             console.error('Failed to fetch log', error);
             setLogContent('Failed to load log.');

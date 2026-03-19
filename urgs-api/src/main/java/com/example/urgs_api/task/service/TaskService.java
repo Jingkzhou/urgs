@@ -329,8 +329,9 @@ public class TaskService {
         instance.setStatus("FORCE_SUCCESS");
         instance.setEndTime(LocalDateTime.now());
         instance.setUpdateTime(LocalDateTime.now());
+        String existingLog = instance.getLogContent() != null ? instance.getLogContent() : "";
         instance.setLogContent(
-                instance.getLogContent() + "\n[System] Manually marked as success at " + LocalDateTime.now());
+                existingLog + "\n[System] Manually marked as success at " + LocalDateTime.now());
         taskInstanceMapper.updateById(instance);
 
         // Trigger downstream tasks
@@ -392,12 +393,27 @@ public class TaskService {
 
     public String getTaskLog(String id) {
         TaskInstance instance = taskInstanceMapper.selectById(id);
-        if (instance != null) {
-            log.info("Retrieved log for task {}. Content length: {}", id,
-                    instance.getLogContent() != null ? instance.getLogContent().length() : "null");
+        if (instance == null) {
+            return "Log not found";
+        }
+        if (instance.getLogContent() != null && !instance.getLogContent().isEmpty()) {
+            log.info("Retrieved log for task {}. Content length: {}", id, instance.getLogContent().length());
             return instance.getLogContent();
         }
-        return "Log not found";
+        // 无执行日志时，返回实例状态摘要
+        StringBuilder sb = new StringBuilder();
+        sb.append("[System] Task Instance ID: ").append(instance.getId()).append("\n");
+        sb.append("[System] Task ID: ").append(instance.getTaskId()).append("\n");
+        sb.append("[System] Status: ").append(instance.getStatus()).append("\n");
+        if (instance.getCreateTime() != null) {
+            sb.append("[System] Created at: ").append(instance.getCreateTime()).append("\n");
+        }
+        if (instance.getStartTime() != null) {
+            sb.append("[System] Started at: ").append(instance.getStartTime()).append("\n");
+        } else {
+            sb.append("[System] Waiting to be dispatched by executor...\n");
+        }
+        return sb.toString();
     }
 
     public com.example.urgs_api.task.vo.TaskInstanceStatsVO getDailyStats(String date) {

@@ -80,6 +80,8 @@ public class TaskExecutor {
         QueryWrapper<ExecutorTaskInstance> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("status", ExecutorTaskInstance.STATUS_WAITING);
         queryWrapper.ne("task_type", "DEPENDENT"); // 排除影子任务，影子任务通过状态同步处理
+        queryWrapper.orderByDesc("priority");
+        queryWrapper.orderByAsc("create_time");
         queryWrapper.last("LIMIT " + limit);
         List<ExecutorTaskInstance> waitingTasks = taskInstanceMapper.selectList(queryWrapper);
 
