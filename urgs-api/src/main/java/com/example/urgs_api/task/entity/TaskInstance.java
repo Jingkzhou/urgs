@@ -35,6 +35,7 @@ public class TaskInstance {
 
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+    private Integer priority;
     @com.baomidou.mybatisplus.annotation.TableField("log_content")
     private String logContent;
 }

@@ -159,7 +159,8 @@ public class TaskGeneratorJob implements Job {
                 QueryWrapper<ExecutorTaskInstance> preInstanceWrapper = new QueryWrapper<>();
                 preInstanceWrapper.eq("task_id", dep.getPreTaskId());
                 preInstanceWrapper.eq("data_date", dataDateStr);
-                ExecutorTaskInstance preInstance = taskInstanceMapper.selectOne(preInstanceWrapper);
+                List<ExecutorTaskInstance> preInstances = taskInstanceMapper.selectList(preInstanceWrapper);
+                ExecutorTaskInstance preInstance = preInstances.isEmpty() ? null : preInstances.get(0);
 
                 // 如果上游实例不存在，或者尚未成功，则当前任务需处于 PENDING 状态等待
                 if (preInstance == null ||
@@ -179,7 +180,8 @@ public class TaskGeneratorJob implements Job {
         QueryWrapper<ExecutorTaskInstance> checkWrapper = new QueryWrapper<>();
         checkWrapper.eq("task_id", task.getId());
         checkWrapper.eq("data_date", dataDateStr);
-        ExecutorTaskInstance existingInstance = taskInstanceMapper.selectOne(checkWrapper);
+        List<ExecutorTaskInstance> existingInstances = taskInstanceMapper.selectList(checkWrapper);
+        ExecutorTaskInstance existingInstance = existingInstances.isEmpty() ? null : existingInstances.get(0);
 
         if (existingInstance != null) {
             log.info("TaskInstance already exists for task {} date {}. Updating existing instance.", task.getName(),

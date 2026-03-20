@@ -3,7 +3,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { Modal, Button, message } from 'antd';
 import {
     Play, FileText, AlertTriangle, CheckCircle, XCircle, RotateCw,
-    Boxes, Code2, Database, Flame, Globe2, HardDrive, Save, Terminal, Settings, ListChecks, Link
+    Boxes, Code2, Database, Flame, Globe2, HardDrive, Save, Terminal, Settings, ListChecks, Link,
+    ArrowRight, ArrowDown, Search
 } from 'lucide-react';
 import ReactFlow, {
     ReactFlowProvider,
@@ -17,6 +18,7 @@ import ReactFlow, {
     MarkerType,
     Node,
     useReactFlow,
+    MiniMap,
     Panel,
     BackgroundVariant,
     Handle,
@@ -36,7 +38,12 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'LR') => 
     dagreGraph.setDefaultEdgeLabel(() => ({}));
 
     const isHorizontal = direction === 'LR';
-    dagreGraph.setGraph({ rankdir: direction });
+    dagreGraph.setGraph({
+        rankdir: direction,
+        nodesep: 80,
+        ranksep: 120,
+        edgesep: 30,
+    });
 
     nodes.forEach((node) => {
         dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
@@ -68,7 +75,8 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'LR') => 
         };
     });
 
-    return { nodes: layoutedNodes, edges };
+    const layoutedEdges = edges.map(e => ({ ...e, type: 'smoothstep' as const }));
+    return { nodes: layoutedNodes, edges: layoutedEdges };
 };
 
 // ... (inside FlowEditor component)
@@ -120,8 +128,8 @@ const initialNodes: Node[] = [
 ];
 
 const initialEdges: Edge[] = [
-    { id: 'e1-2', source: '1', target: '2', animated: true, type: 'default', style: { stroke: '#94a3b8' } },
-    { id: 'e1-3', source: '1', target: '3', animated: true, type: 'default', style: { stroke: '#94a3b8' } },
+    { id: 'e1-2', source: '1', target: '2', animated: true, type: 'smoothstep', style: { stroke: '#94a3b8' } },
+    { id: 'e1-3', source: '1', target: '3', animated: true, type: 'smoothstep', style: { stroke: '#94a3b8' } },
 ];
 
 interface WorkflowDefinitionProps {
@@ -252,6 +260,9 @@ const FlowEditor: React.FC<WorkflowDefinitionProps> = ({ onTurnToIssue, initialN
     const [selectedNode, setSelectedNode] = useState<Node | null>(null);
     const [editingNode, setEditingNode] = useState<Node | null>(null);
 
+    const [layoutDirection, setLayoutDirection] = useState<'LR' | 'TB'>('LR');
+    const [searchTerm, setSearchTerm] = useState('');
+
     const nodeTypes = useMemo(() => ({ taskNode: TaskNode }), []);
     const edgeTypes = useMemo(() => ({}), []);
 
@@ -294,7 +305,7 @@ const FlowEditor: React.FC<WorkflowDefinitionProps> = ({ onTurnToIssue, initialN
             // 1. Add Edge
             setEdges((eds) => addEdge({
                 ...params,
-                type: 'default',
+                type: 'smoothstep',
                 markerEnd: { type: MarkerType.ArrowClosed },
                 style: { stroke: '#94a3b8' }
             }, eds));
@@ -419,43 +430,49 @@ const FlowEditor: React.FC<WorkflowDefinitionProps> = ({ onTurnToIssue, initialN
 
     const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
         setSelectedNode(node);
-        // Single click only selects, doesn't open edit panel (clears editing state if open)
         setEditingNode(null);
 
-        // 1. Identify Neighbors
+        // BFS: 遍历完整上游依赖链
         const upstreamNodeIds = new Set<string>();
+        const queue: string[] = [];
+        edges.forEach(e => { if (e.target === node.id) queue.push(e.source); });
+        while (queue.length > 0) {
+            const curr = queue.shift()!;
+            if (upstreamNodeIds.has(curr)) continue;
+            upstreamNodeIds.add(curr);
+            edges.forEach(e => { if (e.target === curr) queue.push(e.source); });
+        }
+
+        // BFS: 遍历完整下游依赖链
         const downstreamNodeIds = new Set<string>();
+        const queue2: string[] = [];
+        edges.forEach(e => { if (e.source === node.id) queue2.push(e.target); });
+        while (queue2.length > 0) {
+            const curr = queue2.shift()!;
+            if (downstreamNodeIds.has(curr)) continue;
+            downstreamNodeIds.add(curr);
+            edges.forEach(e => { if (e.source === curr) queue2.push(e.target); });
+        }
 
-        edges.forEach(edge => {
-            if (edge.target === node.id) {
-                upstreamNodeIds.add(edge.source);
-            }
-            if (edge.source === node.id) {
-                downstreamNodeIds.add(edge.target);
-            }
-        });
-
-        // 2. Update Nodes with Highlight Status
+        // 更新节点高亮
         setNodes((nds) => nds.map(n => {
-            let highlight = undefined;
+            let highlight: string | undefined = undefined;
             if (upstreamNodeIds.has(n.id)) highlight = 'upstream';
             if (downstreamNodeIds.has(n.id)) highlight = 'downstream';
-
-            // Clear highlight if not related, or set new highlight
             if (n.data.highlight !== highlight) {
                 return { ...n, data: { ...n.data, highlight } };
             }
             return n;
         }));
 
-        // 3. Highlight Edges
+        // 高亮整条依赖链路上的边
+        const allRelatedNodeIds = new Set([node.id, ...upstreamNodeIds, ...downstreamNodeIds]);
         setEdges((eds) =>
             eds.map((edge) => {
-                const isConnected = edge.source === node.id || edge.target === node.id;
-                if (isConnected) {
-                    return { ...edge, style: { stroke: '#2563eb', strokeWidth: 2 }, animated: true };
-                }
-                return { ...edge, style: { stroke: '#94a3b8', strokeWidth: 1 }, animated: false };
+                const isOnPath = allRelatedNodeIds.has(edge.source) && allRelatedNodeIds.has(edge.target);
+                return isOnPath
+                    ? { ...edge, style: { stroke: '#2563eb', strokeWidth: 2 }, animated: true }
+                    : { ...edge, style: { stroke: '#94a3b8', strokeWidth: 1 }, animated: false };
             })
         );
     }, [edges, setNodes, setEdges]);
@@ -506,6 +523,24 @@ const FlowEditor: React.FC<WorkflowDefinitionProps> = ({ onTurnToIssue, initialN
         },
         [nodes, edges, setNodes, setEdges, fitView]
     );
+
+    // 节点搜索定位
+    const handleSearch = useCallback(() => {
+        if (!searchTerm.trim()) return;
+        const matchedNode = nodes.find(n =>
+            n.data.label?.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+        if (matchedNode) {
+            setNodes(nds => nds.map(n => ({
+                ...n,
+                data: { ...n.data, highlight: n.id === matchedNode.id ? 'downstream' : undefined }
+            })));
+            fitView({ nodes: [matchedNode], padding: 0.5, duration: 500 });
+            setSelectedNode(matchedNode);
+        } else {
+            message.warning('未找到匹配的节点');
+        }
+    }, [searchTerm, nodes, setNodes, fitView]);
 
     // Handle node data change from form
     const handleNodeDataChange = (newData: any) => {
@@ -564,7 +599,7 @@ const FlowEditor: React.FC<WorkflowDefinitionProps> = ({ onTurnToIssue, initialN
                         id: `e${actualSourceId}-${currentTargetId}`,
                         source: actualSourceId,
                         target: currentTargetId,
-                        type: 'default',
+                        type: 'smoothstep',
                         markerEnd: { type: MarkerType.ArrowClosed },
                         style: { stroke: '#94a3b8' }
                     };
@@ -627,10 +662,44 @@ const FlowEditor: React.FC<WorkflowDefinitionProps> = ({ onTurnToIssue, initialN
                 >
                     <Background color="#94a3b8" gap={50} size={1} variant={BackgroundVariant.Dots} />
                     <Controls className="bg-white/90 backdrop-blur-sm border border-slate-200 shadow-sm rounded-lg !m-4">
-                        <div className="react-flow__controls-button" onClick={() => onLayout('LR')} title="自动整理布局">
-                            <RotateCw size={12} />
+                        <div className="react-flow__controls-button" onClick={() => { setLayoutDirection('LR'); onLayout('LR'); }} title="水平布局（左→右）" style={{ fontWeight: layoutDirection === 'LR' ? 'bold' : 'normal' }}>
+                            <ArrowRight size={12} />
+                        </div>
+                        <div className="react-flow__controls-button" onClick={() => { setLayoutDirection('TB'); onLayout('TB'); }} title="垂直布局（上→下）" style={{ fontWeight: layoutDirection === 'TB' ? 'bold' : 'normal' }}>
+                            <ArrowDown size={12} />
                         </div>
                     </Controls>
+                    <MiniMap
+                        nodeStrokeColor="#94a3b8"
+                        nodeColor={(n: any) => {
+                            if (n.data?.highlight === 'upstream') return '#fb923c';
+                            if (n.data?.highlight === 'downstream') return '#60a5fa';
+                            if (n.data?.status === 'SUCCESS') return '#22c55e';
+                            if (n.data?.status === 'FAIL' || n.data?.status === 'FAILURE') return '#ef4444';
+                            if (n.data?.status === 'RUNNING') return '#3b82f6';
+                            return '#e2e8f0';
+                        }}
+                        className="!bg-white/80 !border !border-slate-200 !rounded-lg !shadow-sm"
+                        maskColor="rgba(0,0,0,0.08)"
+                        pannable
+                        zoomable
+                    />
+                    <Panel position="top-right" className="flex gap-2 items-center">
+                        <input
+                            className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg bg-white/90 backdrop-blur-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-48"
+                            placeholder="搜索节点..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                        />
+                        <button
+                            className="px-2 py-1.5 bg-white/90 border border-slate-300 rounded-lg shadow-sm hover:bg-slate-50 text-slate-600"
+                            onClick={handleSearch}
+                            title="搜索"
+                        >
+                            <Search size={14} />
+                        </button>
+                    </Panel>
                 </ReactFlow>
             </div>
 

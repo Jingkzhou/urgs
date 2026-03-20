@@ -317,6 +317,11 @@ public class TaskService {
         instance.setEndTime(null);
         instance.setCreateTime(LocalDateTime.now());
         instance.setUpdateTime(LocalDateTime.now());
+        // Refresh priority from task
+        Task task = taskMapper.selectById(instance.getTaskId());
+        if (task != null) {
+            instance.setPriority(task.getPriority());
+        }
         taskInstanceMapper.updateById(instance);
     }
 
@@ -566,6 +571,7 @@ public class TaskService {
                 existing.setSystemId(task.getSystemId());
                 existing.setTaskType(task.getType());
                 existing.setContentSnapshot(task.getContent());
+                existing.setPriority(task.getPriority());
             }
 
             existing.setStatus("PENDING"); // Wait for dependencies
@@ -595,6 +601,7 @@ public class TaskService {
             instance.setSystemId(task.getSystemId());
             instance.setTaskType(task.getType());
             instance.setContentSnapshot(task.getContent());
+            instance.setPriority(task.getPriority());
         }
 
         instance.setCreateTime(LocalDateTime.now());
