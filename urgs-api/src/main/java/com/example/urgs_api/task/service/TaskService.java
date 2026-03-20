@@ -87,8 +87,11 @@ public class TaskService {
         delWrapper.eq("task_id", task.getId());
         taskDependencyMapper.delete(delWrapper);
 
-        // 2. Insert new
+        // 2. Cycle detection + Insert new
         if (preTaskIds != null && !preTaskIds.isEmpty()) {
+            if (hasCircularDependency(task.getId(), preTaskIds)) {
+                throw new IllegalArgumentException("检测到循环依赖，无法保存");
+            }
             for (String preId : preTaskIds) {
                 TaskDependency dep = new TaskDependency();
                 dep.setTaskId(task.getId());
@@ -694,6 +697,31 @@ public class TaskService {
 
         result.sort(java.util.Comparator.comparingInt(UpstreamDependencyVO::getLevel));
         return result;
+    }
+
+    /**
+     * Detect circular dependency: BFS from each preTaskId upstream,
+     * if taskId is reachable, adding these dependencies would create a cycle.
+     */
+    private boolean hasCircularDependency(String taskId, List<String> preTaskIds) {
+        java.util.Set<String> visited = new java.util.HashSet<>();
+        java.util.Queue<String> queue = new java.util.LinkedList<>(preTaskIds);
+
+        while (!queue.isEmpty()) {
+            String cur = queue.poll();
+            if (cur.equals(taskId)) return true;
+            if (visited.contains(cur)) continue;
+            visited.add(cur);
+
+            QueryWrapper<TaskDependency> qw = new QueryWrapper<>();
+            qw.eq("task_id", cur);
+            for (TaskDependency dep : taskDependencyMapper.selectList(qw)) {
+                if (!visited.contains(dep.getPreTaskId())) {
+                    queue.offer(dep.getPreTaskId());
+                }
+            }
+        }
+        return false;
     }
 
     private String extractTaskIdFromContent(String content) {

@@ -252,6 +252,33 @@ const TaskNode = ({ data, selected, sourcePosition = Position.Right, targetPosit
 
 
 
+/**
+ * Check if adding an edge from source to target would create a cycle.
+ * Uses DFS: from target, follow existing edges; if we can reach source, it's a cycle.
+ */
+const wouldCreateCycle = (source: string, target: string, currentEdges: Edge[]): boolean => {
+    if (source === target) return true;
+
+    const adj = new Map<string, string[]>();
+    for (const edge of currentEdges) {
+        if (!adj.has(edge.source)) adj.set(edge.source, []);
+        adj.get(edge.source)!.push(edge.target);
+    }
+
+    const visited = new Set<string>();
+    const stack = [target];
+    while (stack.length > 0) {
+        const node = stack.pop()!;
+        if (node === source) return true;
+        if (visited.has(node)) continue;
+        visited.add(node);
+        for (const next of (adj.get(node) || [])) {
+            stack.push(next);
+        }
+    }
+    return false;
+};
+
 const FlowEditor: React.FC<WorkflowDefinitionProps> = ({ onTurnToIssue, initialNodes: propNodes, initialEdges: propEdges, onChange, autoLayoutOnMount, readOnly, onNodeContextMenu, showStatus = false }) => {
     const reactFlowWrapper = useRef<HTMLDivElement>(null);
     const [nodes, setNodes, onNodesChange] = useNodesState(propNodes || initialNodes);
@@ -302,6 +329,14 @@ const FlowEditor: React.FC<WorkflowDefinitionProps> = ({ onTurnToIssue, initialN
 
     const onConnect = useCallback(
         (params: Connection) => {
+            const { source, target } = params;
+
+            // Cycle detection: block connection if it would create a cycle
+            if (source && target && wouldCreateCycle(source, target, edges)) {
+                message.error('此连线会导致循环依赖，已阻止');
+                return;
+            }
+
             // 1. Add Edge
             setEdges((eds) => addEdge({
                 ...params,
@@ -311,7 +346,6 @@ const FlowEditor: React.FC<WorkflowDefinitionProps> = ({ onTurnToIssue, initialN
             }, eds));
 
             // 2. Update Target Node Data (Sync dependency)
-            const { source, target } = params;
             if (source && target) {
                 setNodes((nds) => {
                     const sourceNode = nds.find((n) => n.id === source);
@@ -346,7 +380,7 @@ const FlowEditor: React.FC<WorkflowDefinitionProps> = ({ onTurnToIssue, initialN
                 });
             }
         },
-        [setEdges, setNodes],
+        [setEdges, setNodes, edges],
     );
 
     const onDragStart = (event: React.DragEvent, nodeType: string, label: string) => {
