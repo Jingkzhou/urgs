@@ -638,15 +638,15 @@ const WorkflowDefinition: React.FC = () => {
 
     if (viewMode === 'canvas') {
         return (
-            <div className={`flex flex - col bg - white transition - all duration - 300 ${isMaximized ? 'fixed inset-0 z-50 h-screen' : 'h-full'} `}>
+            <div className={`flex flex-col bg-white transition-all duration-300 ${isMaximized ? 'fixed inset-0 z-50 h-screen' : 'h-full'}`}>
                 <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-slate-200">
                     <div className="flex items-center gap-2">
                         <button
                             onClick={handleBackToList}
                             disabled={isSaving}
-                            className={`text-slate-500 hover:text-slate-700 text-sm ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:text-slate-900 hover:border-slate-400 transition-colors shadow-sm ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
-                            &larr; 返回
+                            &larr; 返回列表
                         </button>
                         <div className="h-4 w-px bg-slate-200 mx-2"></div>
                         <h2 className="font-bold text-slate-800">

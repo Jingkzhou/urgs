@@ -39,6 +39,16 @@ interface Workflow {
 }
 
 // Sub-component for Detailed View
+interface UpstreamDependency {
+    taskId: string;
+    taskName: string;
+    status: string | null;
+    instanceId: number | null;
+    startTime: string | null;
+    endTime: string | null;
+    level: number;
+}
+
 const InstanceDetailDrawer: React.FC<{
     visible: boolean;
     onClose: () => void;
@@ -47,7 +57,29 @@ const InstanceDetailDrawer: React.FC<{
     workflowName?: string;
     systemName?: string;
     onViewLog: (inst: TaskInstance) => void;
-}> = ({ visible, onClose, instance, task, workflowName, systemName, onViewLog }) => {
+    onShowDependencyGraph?: (inst: TaskInstance) => void;
+}> = ({ visible, onClose, instance, task, workflowName, systemName, onViewLog, onShowDependencyGraph }) => {
+    const [upstreamDeps, setUpstreamDeps] = useState<UpstreamDependency[]>([]);
+    const [depsLoading, setDepsLoading] = useState(false);
+
+    useEffect(() => {
+        if (visible && instance) {
+            setDepsLoading(true);
+            get<UpstreamDependency[]>('/api/task/instance/upstream-dependencies', {
+                taskId: instance.taskId,
+                dataDate: instance.dataDate
+            }).then(data => {
+                setUpstreamDeps(data || []);
+            }).catch(() => {
+                setUpstreamDeps([]);
+            }).finally(() => {
+                setDepsLoading(false);
+            });
+        } else {
+            setUpstreamDeps([]);
+        }
+    }, [visible, instance?.id]);
+
     if (!instance) return null;
 
     const statusMap: Record<string, { color: string, label: string }> = {
@@ -162,6 +194,90 @@ const InstanceDetailDrawer: React.FC<{
                             </div>
                         </div>
                     </div>
+
+                    {/* Upstream Dependencies */}
+                    {(upstreamDeps.length > 0 || depsLoading) && (() => {
+                        const completed = upstreamDeps.filter(d => d.status === 'SUCCESS' || d.status === 'FORCE_SUCCESS').length;
+                        const total = upstreamDeps.length;
+                        const directDeps = upstreamDeps.filter(d => d.level === 1);
+                        const indirectDeps = upstreamDeps.filter(d => d.level > 1);
+
+                        const renderDepRow = (dep: UpstreamDependency) => {
+                            const depStatus = dep.status ? (statusMap[dep.status] || { color: '#94a3b8', label: dep.status }) : { color: '#d1d5db', label: '未生成' };
+                            return (
+                                <div key={dep.taskId} className="px-5 py-2.5 flex items-center justify-between">
+                                    <div className="flex-1 min-w-0 mr-3">
+                                        <div className="text-sm text-slate-700 font-medium truncate">{dep.taskName}</div>
+                                        {dep.startTime && (
+                                            <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                                                {dayjs(dep.startTime).format('HH:mm:ss')}
+                                                {dep.endTime ? ` - ${dayjs(dep.endTime).format('HH:mm:ss')}` : ' ...'}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <Tag
+                                        color={depStatus.color}
+                                        className="m-0 text-[11px] font-bold border-0 rounded-md"
+                                        style={{ backgroundColor: `${depStatus.color}18`, color: depStatus.color }}
+                                    >
+                                        {depStatus.label}
+                                    </Tag>
+                                </div>
+                            );
+                        };
+
+                        return (
+                            <div className="bg-white rounded-2xl overflow-hidden border border-slate-200/60 shadow-sm">
+                                <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/50 text-xs font-bold text-slate-500 uppercase tracking-tight flex items-center justify-between">
+                                    <span className="flex items-center gap-2">
+                                        <ArrowUpCircle size={14} /> 上游依赖状态
+                                        {!depsLoading && total > 0 && (
+                                            <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold normal-case ${completed === total ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
+                                                {completed}/{total}
+                                            </span>
+                                        )}
+                                    </span>
+                                    {onShowDependencyGraph && (
+                                        <button
+                                            onClick={() => onShowDependencyGraph(instance)}
+                                            className="text-[10px] text-blue-500 hover:text-blue-700 font-medium normal-case cursor-pointer flex items-center gap-1"
+                                        >
+                                            <Eye size={12} /> 依赖图
+                                        </button>
+                                    )}
+                                </div>
+                                {depsLoading ? (
+                                    <div className="p-4 text-center text-slate-400 text-sm">
+                                        <RotateCw size={14} className="animate-spin inline mr-2" />
+                                        加载中...
+                                    </div>
+                                ) : (
+                                    <div>
+                                        {directDeps.length > 0 && (
+                                            <div>
+                                                <div className="px-5 py-1.5 bg-slate-50/80 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                                    直接依赖
+                                                </div>
+                                                <div className="divide-y divide-slate-100">
+                                                    {directDeps.map(renderDepRow)}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {indirectDeps.length > 0 && (
+                                            <div>
+                                                <div className="px-5 py-1.5 bg-slate-50/80 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-t border-slate-100">
+                                                    间接依赖
+                                                </div>
+                                                <div className="divide-y divide-slate-100">
+                                                    {indirectDeps.map(renderDepRow)}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
 
                     {/* Task Content Preview */}
                     {task?.content && (
@@ -880,6 +996,7 @@ const TaskInstance: React.FC = () => {
                 systemName={detailInstance ? systems.find(s => String(s.id) === String(detailInstance.systemId))?.name : undefined}
                 workflowName={detailInstance ? taskToWorkflowMap[detailInstance.taskId] : undefined}
                 onViewLog={handleViewLog}
+                onShowDependencyGraph={(inst) => handleDependencyView(inst, 'upstream')}
             />
 
             {/* Log Console Modal */}

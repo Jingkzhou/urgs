@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
+import com.example.urgs_api.task.vo.UpstreamDependencyVO;
 import com.example.urgs_api.task.vo.WorkflowStatsVO;
 import com.example.urgs_api.task.vo.TaskDefinitionStatsVO;
 import com.example.urgs_api.workflow.entity.Workflow;
@@ -623,6 +624,61 @@ public class TaskService {
         }
 
         return String.valueOf(instance.getId());
+    }
+
+    public List<UpstreamDependencyVO> getUpstreamDependencies(String taskId, String dataDate) {
+        List<UpstreamDependencyVO> result = new ArrayList<>();
+        java.util.Set<String> visited = new java.util.HashSet<>();
+        java.util.Queue<String[]> queue = new java.util.LinkedList<>();
+
+        // Initialize: direct upstream of the given task
+        QueryWrapper<TaskDependency> initQuery = new QueryWrapper<>();
+        initQuery.eq("task_id", taskId);
+        for (TaskDependency dep : taskDependencyMapper.selectList(initQuery)) {
+            queue.add(new String[]{dep.getPreTaskId(), "1"});
+        }
+
+        while (!queue.isEmpty()) {
+            String[] item = queue.poll();
+            String curTaskId = item[0];
+            int level = Integer.parseInt(item[1]);
+
+            if (visited.contains(curTaskId)) continue;
+            visited.add(curTaskId);
+
+            UpstreamDependencyVO vo = new UpstreamDependencyVO();
+            vo.setTaskId(curTaskId);
+            vo.setLevel(level);
+
+            Task preTask = taskMapper.selectById(curTaskId);
+            vo.setTaskName(preTask != null ? preTask.getName() : curTaskId);
+
+            QueryWrapper<TaskInstance> instQuery = new QueryWrapper<>();
+            instQuery.eq("task_id", curTaskId);
+            instQuery.eq("data_date", dataDate);
+            TaskInstance preInstance = taskInstanceMapper.selectOne(instQuery);
+
+            if (preInstance != null) {
+                vo.setStatus(preInstance.getStatus());
+                vo.setInstanceId(preInstance.getId());
+                vo.setStartTime(preInstance.getStartTime() != null ? preInstance.getStartTime().toString() : null);
+                vo.setEndTime(preInstance.getEndTime() != null ? preInstance.getEndTime().toString() : null);
+            }
+
+            result.add(vo);
+
+            // BFS: continue to this task's upstream
+            QueryWrapper<TaskDependency> nextQuery = new QueryWrapper<>();
+            nextQuery.eq("task_id", curTaskId);
+            for (TaskDependency dep : taskDependencyMapper.selectList(nextQuery)) {
+                if (!visited.contains(dep.getPreTaskId())) {
+                    queue.add(new String[]{dep.getPreTaskId(), String.valueOf(level + 1)});
+                }
+            }
+        }
+
+        result.sort(java.util.Comparator.comparingInt(UpstreamDependencyVO::getLevel));
+        return result;
     }
 
     public TaskDefinitionStatsVO getTaskGlobalStats() {
