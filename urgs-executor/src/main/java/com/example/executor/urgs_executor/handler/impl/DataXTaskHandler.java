@@ -129,7 +129,8 @@ public class DataXTaskHandler implements TaskHandler {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     log.info("[DataX-{}] {}", instance.getId(), line);
-                    logBuilder.append(line).append("\n");
+                    String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                    logBuilder.append("[").append(ts).append("] ").append(line).append("\n");
                 }
             }
 

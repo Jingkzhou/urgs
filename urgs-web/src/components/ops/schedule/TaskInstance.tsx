@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, RotateCw, StopCircle, FileText, CheckCircle, X, RefreshCw, Terminal, Eye, EyeOff, Play, ArrowUpCircle, ArrowDownCircle, Boxes, ClipboardList, LayoutGrid, List, Activity, XCircle, Clock, ChevronUp, ChevronDown, Filter } from 'lucide-react';
 import { message, DatePicker, Modal, Drawer, Tag, Divider, Empty, Badge } from 'antd';
 import dayjs from 'dayjs';
@@ -1001,8 +1002,8 @@ const TaskInstance: React.FC = () => {
 
             {/* Log Console Modal */}
             {
-                showLog && (
-                    <div className="absolute inset-0 z-[3000] flex items-center justify-center bg-slate-200/20 backdrop-blur-sm">
+                showLog && createPortal(
+                    <div className="fixed inset-0 z-[3200] flex items-center justify-center bg-slate-200/20 backdrop-blur-sm">
                         <div className="w-[850px] h-[650px] bg-white rounded-3xl shadow-2xl border border-slate-200/60 flex flex-col overflow-hidden animate-scale-in">
                             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
                                 <div className="flex items-center gap-3 text-slate-700">
@@ -1029,14 +1030,15 @@ const TaskInstance: React.FC = () => {
                                 )}
                             </div>
                         </div>
-                    </div>
+                    </div>,
+                    document.body
                 )
             }
 
             {/* Rerun Options Modal */}
             {
-                rerunModalVisible && (
-                    <div className="absolute inset-0 z-[3000] flex items-center justify-center animate-fade-in">
+                rerunModalVisible && createPortal(
+                    <div className="fixed inset-0 z-[3200] flex items-center justify-center animate-fade-in">
                         <div className="bg-white rounded-xl shadow-2xl w-[400px] overflow-hidden animate-scale-in border border-slate-100">
                             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                                 <h3 className="font-semibold text-slate-800 flex items-center gap-2">
@@ -1125,14 +1127,15 @@ const TaskInstance: React.FC = () => {
                                 </button>
                             </div>
                         </div>
-                    </div>
+                    </div>,
+                    document.body
                 )
             }
 
             {/* Force Success Modal */}
             {
-                forceSuccessModalVisible && forceSuccessTargetInstance && (
-                    <div className="absolute inset-0 z-[3000] flex items-center justify-center animate-fade-in">
+                forceSuccessModalVisible && forceSuccessTargetInstance && createPortal(
+                    <div className="fixed inset-0 z-[3200] flex items-center justify-center animate-fade-in">
                         <div className="bg-white rounded-xl shadow-2xl w-[400px] overflow-hidden animate-scale-in border border-slate-100">
                             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-green-50/50">
                                 <h3 className="font-semibold text-slate-800 flex items-center gap-2">
@@ -1188,7 +1191,8 @@ const TaskInstance: React.FC = () => {
                                 </button>
                             </div>
                         </div>
-                    </div>
+                    </div>,
+                    document.body
                 )
             }
 
@@ -1203,9 +1207,9 @@ const TaskInstance: React.FC = () => {
 
             {/* Context Menu */}
             {
-                contextMenu.visible && contextMenu.node && (
+                contextMenu.visible && contextMenu.node && createPortal(
                     <div
-                        className="fixed z-[2000] bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-[160px] animate-scale-in"
+                        className="fixed z-[3200] bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-[160px] animate-scale-in"
                         style={{ left: contextMenu.x, top: contextMenu.y }}
                         onClick={(e) => e.stopPropagation()}
                     >
@@ -1289,7 +1293,8 @@ const TaskInstance: React.FC = () => {
                                 <CheckCircle size={14} /> 强制成功
                             </button>
                         )}
-                    </div>
+                    </div>,
+                    document.body
                 )
             }
         </div >
@@ -1379,10 +1384,13 @@ const LogViewer: React.FC<{ content: string }> = ({ content }) => {
                             const isError = line.toLowerCase().includes('error') || line.toLowerCase().includes('exception') || line.toLowerCase().includes('fail');
                             const isWarn = line.toLowerCase().includes('warn');
 
-                            // Extract Timestamp if present (Simple ISO-like check or HH:mm:ss)
-                            const timeMatch = line.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2})/) || line.match(/(\d{2}:\d{2}:\d{2}\.\d{3})/);
-                            const timestamp = timeMatch ? timeMatch[0] : '';
-                            const rest = timestamp ? line.replace(timestamp, '') : line;
+                            // Extract Timestamp if present (Support ISO, yyyy-MM-dd HH:mm:ss, HH:mm:ss with optional brackets)
+                            const timeMatch = line.match(/\[?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:[+-]\d{2}:\d{2}|Z)?)\]?/) || 
+                                              line.match(/\[?(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}(?:\.\d{3})?)\]?/) ||
+                                              line.match(/\[?(\d{2}:\d{2}:\d{2}(?:\.\d{3})?)\]?/);
+                            const rawMatch = timeMatch ? timeMatch[0] : '';
+                            const timestamp = timeMatch ? timeMatch[1] : '';
+                            const rest = rawMatch ? line.replace(rawMatch, '').trimStart() : line;
 
                             return (
                                 <div key={lIdx} className={`flex items-start gap-3 hover:bg-white/5 px-2 rounded ${isError ? 'text-red-400' : isWarn ? 'text-amber-400' : ''}`}>

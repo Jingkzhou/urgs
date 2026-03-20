@@ -16,6 +16,7 @@ public class DependentTaskHandler implements TaskHandler {
         // Logic gate: if it reached here, it means all dependencies are met (handled by
         // Executor logic).
         // So we just finish successfully.
-        return "Dependent Task (Logic Gate) Passed.\nAll upstream dependencies met.";
+        String ts = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        return "[" + ts + "] Dependent Task (Logic Gate) Passed.\n[" + ts + "] All upstream dependencies met.";
     }
 }
