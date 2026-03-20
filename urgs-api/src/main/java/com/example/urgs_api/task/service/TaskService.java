@@ -675,6 +675,9 @@ public class TaskService {
                 vo.setInstanceId(preInstance.getId());
                 vo.setStartTime(preInstance.getStartTime() != null ? preInstance.getStartTime().toString() : null);
                 vo.setEndTime(preInstance.getEndTime() != null ? preInstance.getEndTime().toString() : null);
+            } else {
+                // No instance found: default to WAITING (等待下发), consistent with dependency graph
+                vo.setStatus("WAITING");
             }
 
             result.add(vo);
