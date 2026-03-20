@@ -313,17 +313,20 @@ public class TaskService {
     }
 
     private void resetInstance(TaskInstance instance) {
-        instance.setStatus("WAITING"); // Reset to WAITING
-        instance.setStartTime(null);
-        instance.setEndTime(null);
-        instance.setCreateTime(LocalDateTime.now());
-        instance.setUpdateTime(LocalDateTime.now());
-        // Refresh priority from task
+        UpdateWrapper<TaskInstance> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", instance.getId());
+        updateWrapper.set("status", "WAITING");
+        updateWrapper.set("start_time", null);
+        updateWrapper.set("end_time", null);
+        updateWrapper.set("log_content", null);
+        updateWrapper.set("create_time", LocalDateTime.now());
+        updateWrapper.set("update_time", LocalDateTime.now());
+        
         Task task = taskMapper.selectById(instance.getTaskId());
         if (task != null) {
-            instance.setPriority(task.getPriority());
+            updateWrapper.set("priority", task.getPriority());
         }
-        taskInstanceMapper.updateById(instance);
+        taskInstanceMapper.update(null, updateWrapper);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -646,11 +649,20 @@ public class TaskService {
             if (visited.contains(curTaskId)) continue;
             visited.add(curTaskId);
 
+            Task preTask = taskMapper.selectById(curTaskId);
+
+            // Skip DEPENDENT proxy tasks: resolve to real task via content.taskId
+            if (preTask != null && "DEPENDENT".equals(preTask.getType())) {
+                String realTaskId = extractTaskIdFromContent(preTask.getContent());
+                if (realTaskId != null && !visited.contains(realTaskId)) {
+                    queue.add(new String[]{realTaskId, String.valueOf(level)});
+                }
+                continue;
+            }
+
             UpstreamDependencyVO vo = new UpstreamDependencyVO();
             vo.setTaskId(curTaskId);
             vo.setLevel(level);
-
-            Task preTask = taskMapper.selectById(curTaskId);
             vo.setTaskName(preTask != null ? preTask.getName() : curTaskId);
 
             QueryWrapper<TaskInstance> instQuery = new QueryWrapper<>();
@@ -679,6 +691,18 @@ public class TaskService {
 
         result.sort(java.util.Comparator.comparingInt(UpstreamDependencyVO::getLevel));
         return result;
+    }
+
+    private String extractTaskIdFromContent(String content) {
+        if (content == null || content.isBlank()) return null;
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode node = om.readTree(content);
+            com.fasterxml.jackson.databind.JsonNode taskIdNode = node.get("taskId");
+            return taskIdNode != null && !taskIdNode.isNull() ? taskIdNode.asText() : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     public TaskDefinitionStatsVO getTaskGlobalStats() {
