@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 知识标签 Mapper 接口
@@ -33,4 +34,18 @@ public interface KnowledgeTagMapper extends BaseMapper<KnowledgeTag> {
             "INNER JOIN knowledge_document_tag dt ON t.id = dt.tag_id " +
             "WHERE dt.document_id = #{documentId}")
     List<KnowledgeTag> findByDocumentId(@Param("documentId") Long documentId);
+
+    /**
+     * 批量查询多个文档的标签（返回带 document_id 的结果）
+     */
+    @Select("<script>" +
+            "SELECT dt.document_id, t.id, t.user_id, t.name, t.color, t.create_time " +
+            "FROM knowledge_tag t " +
+            "INNER JOIN knowledge_document_tag dt ON t.id = dt.tag_id " +
+            "WHERE dt.document_id IN " +
+            "<foreach item='id' collection='documentIds' open='(' separator=',' close=')'>" +
+            "#{id}" +
+            "</foreach>" +
+            "</script>")
+    List<Map<String, Object>> findTagsByDocumentIds(@Param("documentIds") List<Long> documentIds);
 }

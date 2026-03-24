@@ -11,29 +11,31 @@ interface DocumentListProps {
     permissions: { canSharedDelete: boolean; canSharedFolderDelete: boolean };
     selectionMode: boolean;
     selectedItems: Set<string>;
+    emptyText?: string;
     onFolderEnter: (id: number) => void;
     onPreview: (doc: KnowledgeDocument) => void;
     onDelete: (id: number, type: 'folder' | 'doc') => void;
     onRename: (id: number, name: string) => void;
-    onToggleFavorite: (e: React.MouseEvent, doc: KnowledgeDocument) => void;
+    onToggleFavorite: (doc: KnowledgeDocument) => void;
     onCopyToPrivate: (id: number) => void;
     onDownloadDoc: (doc: KnowledgeDocument) => void;
     onDownloadFolder: (id: number, title: string) => void;
     onSelect: (key: string, e: React.MouseEvent) => void;
+    onTagDocument?: (doc: KnowledgeDocument) => void;
 }
 
 const DocumentList: React.FC<DocumentListProps> = ({
     folders, documents, loading, isShared, permissions,
-    selectionMode, selectedItems,
+    selectionMode, selectedItems, emptyText,
     onFolderEnter, onPreview, onDelete, onRename, onToggleFavorite,
-    onCopyToPrivate, onDownloadDoc, onDownloadFolder, onSelect,
+    onCopyToPrivate, onDownloadDoc, onDownloadFolder, onSelect, onTagDocument,
 }) => {
     const hasItems = folders.length > 0 || documents.length > 0;
 
     if (!hasItems && !loading) {
         return (
             <div className="h-full flex items-center justify-center py-20">
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这是一个空文件夹" />
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText || "这是一个空文件夹"} />
             </div>
         );
     }
@@ -89,6 +91,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
                         onToggleFavorite={onToggleFavorite}
                         onCopyToPrivate={onCopyToPrivate}
                         onDownload={() => onDownloadDoc(d)}
+                        onTagDocument={onTagDocument}
                         selectionMode={selectionMode}
                         selected={selectedItems.has(`doc-${d.id}`)}
                         onSelect={(e) => onSelect(`doc-${d.id}`, e)}

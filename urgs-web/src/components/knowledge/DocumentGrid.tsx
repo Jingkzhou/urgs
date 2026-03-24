@@ -1,7 +1,6 @@
 import React from 'react';
 import { Empty, Spin } from 'antd';
 import ItemEntry from './ItemEntry';
-import type { ItemEntryProps } from './ItemEntry';
 import type { FolderTreeNode, KnowledgeDocument } from '../../api/knowledge';
 
 interface DocumentGridProps {
@@ -12,27 +11,29 @@ interface DocumentGridProps {
     permissions: { canSharedDelete: boolean; canSharedFolderDelete: boolean };
     selectionMode: boolean;
     selectedItems: Set<string>;
+    emptyText?: string;
     onFolderEnter: (id: number) => void;
     onPreview: (doc: KnowledgeDocument) => void;
     onDelete: (id: number, type: 'folder' | 'doc') => void;
     onRename: (id: number, name: string) => void;
-    onToggleFavorite: (e: React.MouseEvent, doc: KnowledgeDocument) => void;
+    onToggleFavorite: (doc: KnowledgeDocument) => void;
     onCopyToPrivate: (id: number) => void;
     onDownloadDoc: (doc: KnowledgeDocument) => void;
     onDownloadFolder: (id: number, title: string) => void;
     onSelect: (key: string, e: React.MouseEvent) => void;
+    onTagDocument?: (doc: KnowledgeDocument) => void;
 }
 
 const DocumentGrid: React.FC<DocumentGridProps> = ({
     folders, documents, loading, isShared, permissions,
-    selectionMode, selectedItems,
+    selectionMode, selectedItems, emptyText,
     onFolderEnter, onPreview, onDelete, onRename, onToggleFavorite,
-    onCopyToPrivate, onDownloadDoc, onDownloadFolder, onSelect,
+    onCopyToPrivate, onDownloadDoc, onDownloadFolder, onSelect, onTagDocument,
 }) => {
     if (folders.length === 0 && documents.length === 0 && !loading) {
         return (
             <div className="h-full flex items-center justify-center py-20">
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这是一个空文件夹" />
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText || "这是一个空文件夹"} />
             </div>
         );
     }
@@ -77,6 +78,7 @@ const DocumentGrid: React.FC<DocumentGridProps> = ({
                         onToggleFavorite={onToggleFavorite}
                         onCopyToPrivate={onCopyToPrivate}
                         onDownload={() => onDownloadDoc(d)}
+                        onTagDocument={onTagDocument}
                         selectionMode={selectionMode}
                         selected={selectedItems.has(`doc-${d.id}`)}
                         onSelect={(e) => onSelect(`doc-${d.id}`, e)}

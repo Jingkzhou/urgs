@@ -38,6 +38,8 @@ export interface KnowledgeDocument {
     viewCount: number;
     createTime: string;
     updateTime: string;
+    /** 前端填充的标签列表 */
+    tags?: KnowledgeTag[];
 }
 
 /** 标签 */
@@ -164,3 +166,7 @@ export const batchMoveDocuments = (ids: number[], folderId: number | null) =>
 /** 批量给文档打标签 */
 export const batchTagDocuments = (ids: number[], tagIds: number[]) =>
     post<{ count: number }>('/api/wiki/documents/batch-tag', { ids, tagIds });
+
+/** 批量获取文档的标签映射 */
+export const getDocumentTagsMap = (ids: number[]) =>
+    post<Record<number, KnowledgeTag[]>>('/api/wiki/documents/tags-map', { ids });

@@ -2,7 +2,9 @@ package com.example.urgs_api.knowledge.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.example.urgs_api.knowledge.entity.KnowledgeDocument;
+import com.example.urgs_api.knowledge.entity.KnowledgeTag;
 import com.example.urgs_api.knowledge.service.KnowledgeDocumentService;
+import com.example.urgs_api.knowledge.service.KnowledgeTagService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +23,7 @@ import java.util.Map;
 public class KnowledgeDocumentController {
 
     private final KnowledgeDocumentService documentService;
+    private final KnowledgeTagService tagService;
 
     /**
      * 分页查询文档
@@ -150,6 +153,15 @@ public class KnowledgeDocumentController {
             @RequestBody BatchTagRequest req) {
         int count = documentService.batchTagDocuments(req.getIds(), req.getTagIds());
         return ResponseEntity.ok(Map.of("count", count));
+    }
+
+    /**
+     * 批量获取文档的标签映射
+     */
+    @PostMapping("/tags-map")
+    public ResponseEntity<Map<Long, List<KnowledgeTag>>> getDocumentTagsMap(
+            @RequestBody BatchIdsRequest req) {
+        return ResponseEntity.ok(tagService.getDocumentTagsMap(req.getIds()));
     }
 
     private Long getUserId(HttpServletRequest request) {

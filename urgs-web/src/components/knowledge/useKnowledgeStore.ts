@@ -12,9 +12,12 @@ interface KnowledgeState {
     tags: KnowledgeTag[];
     selectedFolderId: number | null;
     scope: 'private' | 'shared';
+    viewMode: 'browse' | 'favorites';
     searchKeyword: string;
     layoutMode: 'grid' | 'list';
     loading: boolean;
+    // 标签筛选
+    filterTagId: number | null;
     // Phase 3: 批量选择
     selectedItems: Set<string>;
     selectionMode: boolean;
@@ -27,9 +30,11 @@ const initialState: KnowledgeState = {
     tags: [],
     selectedFolderId: null,
     scope: 'private',
+    viewMode: 'browse',
     searchKeyword: '',
     layoutMode: 'grid',
     loading: false,
+    filterTagId: null,
     selectedItems: new Set(),
     selectionMode: false,
     lastSelectedIndex: null,
@@ -46,6 +51,8 @@ type KnowledgeAction =
     | { type: 'SET_SEARCH'; payload: string }
     | { type: 'SET_LAYOUT'; payload: 'grid' | 'list' }
     | { type: 'SET_LOADING'; payload: boolean }
+    | { type: 'SET_VIEW_MODE'; payload: 'browse' | 'favorites' }
+    | { type: 'SET_FILTER_TAG'; payload: number | null }
     // Phase 3: 批量选择
     | { type: 'TOGGLE_SELECT'; payload: string }
     | { type: 'SELECT_RANGE'; payload: string[] }
@@ -67,19 +74,33 @@ function reducer(state: KnowledgeState, action: KnowledgeAction): KnowledgeState
             return {
                 ...state,
                 scope: action.payload,
+                viewMode: 'browse',
                 selectedFolderId: null,
                 searchKeyword: '',
+                filterTagId: null,
+                selectedItems: new Set(),
+                selectionMode: false,
+            };
+        case 'SET_VIEW_MODE':
+            return {
+                ...state,
+                viewMode: action.payload,
+                selectedFolderId: null,
+                searchKeyword: '',
+                filterTagId: null,
                 selectedItems: new Set(),
                 selectionMode: false,
             };
         case 'SET_SELECTED_FOLDER':
-            return { ...state, selectedFolderId: action.payload };
+            return { ...state, selectedFolderId: action.payload, viewMode: 'browse' };
         case 'SET_SEARCH':
             return { ...state, searchKeyword: action.payload };
         case 'SET_LAYOUT':
             return { ...state, layoutMode: action.payload };
         case 'SET_LOADING':
             return { ...state, loading: action.payload };
+        case 'SET_FILTER_TAG':
+            return { ...state, filterTagId: action.payload };
         case 'TOGGLE_SELECT': {
             const next = new Set(state.selectedItems);
             if (next.has(action.payload)) {
@@ -136,21 +157,46 @@ export function useKnowledgeStore() {
     const loadDocuments = useCallback(async () => {
         dispatch({ type: 'SET_LOADING', payload: true });
         try {
-            const result = await api.listDocuments({
-                folderId: state.selectedFolderId ?? undefined,
-                keyword: state.searchKeyword || undefined,
-                page: 1,
-                size: 200,
-                scope: state.scope,
-            });
-            dispatch({ type: 'SET_DOCUMENTS', payload: result.records || [] });
+            let docs: KnowledgeDocument[];
+            if (state.viewMode === 'favorites') {
+                const data = await api.getFavoriteDocuments();
+                docs = state.searchKeyword
+                    ? data.filter(d => d.title.includes(state.searchKeyword))
+                    : data;
+            } else {
+                const result = await api.listDocuments({
+                    folderId: state.selectedFolderId ?? undefined,
+                    keyword: state.searchKeyword || undefined,
+                    page: 1,
+                    size: 200,
+                    scope: state.scope,
+                });
+                docs = result.records || [];
+            }
+
+            // 批量获取文档标签
+            if (docs.length > 0) {
+                try {
+                    const tagsMap = await api.getDocumentTagsMap(docs.map(d => d.id));
+                    docs.forEach(d => { d.tags = tagsMap[d.id] || []; });
+                } catch {
+                    // 标签获取失败不影响文档展示
+                }
+            }
+
+            // 标签筛选（客户端过滤）
+            if (state.filterTagId) {
+                docs = docs.filter(d => d.tags?.some(t => t.id === state.filterTagId));
+            }
+
+            dispatch({ type: 'SET_DOCUMENTS', payload: docs });
         } catch (error) {
             console.error('加载文档失败:', error);
             dispatch({ type: 'SET_DOCUMENTS', payload: [] });
         } finally {
             dispatch({ type: 'SET_LOADING', payload: false });
         }
-    }, [state.selectedFolderId, state.searchKeyword, state.scope]);
+    }, [state.selectedFolderId, state.searchKeyword, state.scope, state.viewMode, state.filterTagId]);
 
     const loadTags = useCallback(async () => {
         try {
@@ -205,9 +251,11 @@ export function useKnowledgeStore() {
     // ---- 操作 ----
     const actions = useMemo(() => ({
         setScope: (val: 'private' | 'shared') => dispatch({ type: 'SET_SCOPE', payload: val }),
+        setViewMode: (val: 'browse' | 'favorites') => dispatch({ type: 'SET_VIEW_MODE', payload: val }),
         setSelectedFolderId: (id: number | null) => dispatch({ type: 'SET_SELECTED_FOLDER', payload: id }),
         setSearchKeyword: (val: string) => dispatch({ type: 'SET_SEARCH', payload: val }),
         setLayoutMode: (val: 'grid' | 'list') => dispatch({ type: 'SET_LAYOUT', payload: val }),
+        setFilterTagId: (id: number | null) => dispatch({ type: 'SET_FILTER_TAG', payload: id }),
         loadFolders,
         loadDocuments,
         loadTags,
@@ -260,8 +308,7 @@ export function useKnowledgeStore() {
             }
         },
 
-        onToggleFavorite: async (e: React.MouseEvent, doc: KnowledgeDocument) => {
-            e.stopPropagation();
+        onToggleFavorite: async (doc: KnowledgeDocument) => {
             try {
                 const result = await api.toggleFavorite(doc.id);
                 message.success(result.favorite ? '已收藏' : '已取消收藏');
