@@ -21,6 +21,7 @@
     "antd": "^6.0.0",
     "axios": "^1.13.2",
     "dagre": "^0.8.5",
+    "dayjs": "^1.11.13",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.23.26",
     "highlight.js": "^11.11.1",
