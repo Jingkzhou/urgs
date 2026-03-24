@@ -60,12 +60,14 @@ public class MetricServiceImpl implements MetricService {
             return Collections.emptyList();
         }
 
-        LocalDateTime startTime = LocalDateTime.parse(query.getStartTime(), DT_FORMATTER);
-        LocalDateTime endTime = LocalDateTime.parse(query.getEndTime(), DT_FORMATTER);
+        String startTime = query.getStartTime();
+        String endTime = query.getEndTime();
 
         String datePattern;
         if ("DAY".equalsIgnoreCase(query.getGranularity())) {
             datePattern = "%Y-%m-%d";
+        } else if ("MONTH".equalsIgnoreCase(query.getGranularity())) {
+            datePattern = "%Y-%m";
         } else {
             datePattern = "%Y-%m-%d %H:00";
         }

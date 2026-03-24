@@ -61,111 +61,111 @@ BEGIN
             -- ==================== 核心银行 ====================
 
             -- 交易量: 白天高峰(8-18点) 800-2000笔, 夜间 100-500笔
-            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time) VALUES
+            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time, data_date) VALUES
             ('CORE_BANK', 'txn_volume',
                 CASE
                     WHEN v_hour BETWEEN 8 AND 18 THEN ROUND(800 + v_rand * 1200 + IF(v_hour BETWEEN 10 AND 14, 500, 0), 0)
                     WHEN v_hour BETWEEN 6 AND 7 THEN ROUND(300 + v_rand * 400, 0)
                     ELSE ROUND(100 + v_rand * 400, 0)
                 END,
-                v_datetime);
+                v_datetime, v_date);
 
             -- 成功率: 正常 98.5-99.9%, 偶尔低谷
-            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time) VALUES
+            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time, data_date) VALUES
             ('CORE_BANK', 'success_rate',
                 CASE
                     WHEN v_rand < 0.05 THEN ROUND(95 + RAND() * 3, 2)
                     ELSE ROUND(98.5 + RAND() * 1.4, 2)
                 END,
-                v_datetime);
+                v_datetime, v_date);
 
             -- 平均耗时: 白天 80-200ms, 夜间 30-80ms
-            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time) VALUES
+            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time, data_date) VALUES
             ('CORE_BANK', 'avg_latency',
                 CASE
                     WHEN v_hour BETWEEN 9 AND 17 THEN ROUND(80 + v_rand * 120 + IF(v_hour BETWEEN 11 AND 13, 50, 0), 1)
                     ELSE ROUND(30 + v_rand * 50, 1)
                 END,
-                v_datetime);
+                v_datetime, v_date);
 
             -- 活跃用户: 白天 200-800, 夜间 10-50
-            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time) VALUES
+            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time, data_date) VALUES
             ('CORE_BANK', 'active_users',
                 CASE
                     WHEN v_hour BETWEEN 8 AND 20 THEN ROUND(200 + v_rand * 600 + IF(v_hour BETWEEN 9 AND 11, 300, 0), 0)
                     ELSE ROUND(10 + v_rand * 40, 0)
                 END,
-                v_datetime);
+                v_datetime, v_date);
 
             -- ==================== 信贷系统 ====================
 
             -- 放款笔数: 工作时间 20-80笔, 其他时间 0-5笔
-            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time) VALUES
+            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time, data_date) VALUES
             ('CREDIT_SYS', 'loan_count',
                 CASE
                     WHEN v_hour BETWEEN 9 AND 17 THEN ROUND(20 + v_rand * 60, 0)
                     ELSE ROUND(v_rand * 5, 0)
                 END,
-                v_datetime);
+                v_datetime, v_date);
 
             -- 放款金额: 与笔数相关, 单笔 5-50万
-            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time) VALUES
+            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time, data_date) VALUES
             ('CREDIT_SYS', 'loan_amount',
                 CASE
                     WHEN v_hour BETWEEN 9 AND 17 THEN ROUND((20 + v_rand * 60) * (5 + RAND() * 45), 2)
                     ELSE ROUND(v_rand * 5 * (5 + RAND() * 20), 2)
                 END,
-                v_datetime);
+                v_datetime, v_date);
 
             -- 审批通过率: 60-85%
-            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time) VALUES
+            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time, data_date) VALUES
             ('CREDIT_SYS', 'approval_rate',
                 ROUND(60 + v_rand * 25, 2),
-                v_datetime);
+                v_datetime, v_date);
 
             -- 逾期率: 1.2-3.5%
-            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time) VALUES
+            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time, data_date) VALUES
             ('CREDIT_SYS', 'overdue_rate',
                 ROUND(1.2 + v_rand * 2.3, 2),
-                v_datetime);
+                v_datetime, v_date);
 
             -- ==================== 支付中心 ====================
 
             -- 支付笔数: 白天 500-3000, 夜间 50-300
-            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time) VALUES
+            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time, data_date) VALUES
             ('PAY_CENTER', 'pay_volume',
                 CASE
                     WHEN v_hour BETWEEN 8 AND 22 THEN ROUND(500 + v_rand * 2500 + IF(v_hour BETWEEN 11 AND 13, 800, 0) + IF(v_hour BETWEEN 19 AND 21, 600, 0), 0)
                     ELSE ROUND(50 + v_rand * 250, 0)
                 END,
-                v_datetime);
+                v_datetime, v_date);
 
             -- 支付金额: 单笔平均 0.3-2万
-            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time) VALUES
+            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time, data_date) VALUES
             ('PAY_CENTER', 'pay_amount',
                 CASE
                     WHEN v_hour BETWEEN 8 AND 22 THEN ROUND((500 + v_rand * 2500) * (0.3 + RAND() * 1.7), 2)
                     ELSE ROUND((50 + v_rand * 250) * (0.3 + RAND() * 1), 2)
                 END,
-                v_datetime);
+                v_datetime, v_date);
 
             -- 支付耗时: 50-300ms
-            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time) VALUES
+            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time, data_date) VALUES
             ('PAY_CENTER', 'pay_latency',
                 CASE
                     WHEN v_hour BETWEEN 10 AND 14 THEN ROUND(120 + v_rand * 180, 1)
                     ELSE ROUND(50 + v_rand * 100, 1)
                 END,
-                v_datetime);
+                v_datetime, v_date);
 
             -- 渠道在线: 8-12个渠道
-            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time) VALUES
+            INSERT INTO t_metric_data (system_id, type_code, metric_value, metric_time, data_date) VALUES
             ('PAY_CENTER', 'channel_count',
                 CASE
                     WHEN v_rand < 0.03 THEN ROUND(6 + RAND() * 2, 0)
                     ELSE ROUND(10 + RAND() * 2, 0)
                 END,
-                v_datetime);
+                v_datetime, v_date);
 
             SET v_hour = v_hour + 1;
         END WHILE;

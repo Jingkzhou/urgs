@@ -16,5 +16,6 @@ public class MetricData {
     private String typeCode;
     private BigDecimal metricValue;
     private LocalDateTime metricTime;
+    private java.time.LocalDate dataDate;
     private LocalDateTime createdAt;
 }

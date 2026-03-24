@@ -4,14 +4,14 @@
 
     <select id="queryTrend" resultType="com.example.urgs_api.metric.dto.MetricTrendVO">
         SELECT
-            DATE_FORMAT(metric_time, #{datePattern}) AS timeLabel,
+            DATE_FORMAT(data_date, #{datePattern}) AS timeLabel,
             AVG(metric_value) AS avgValue,
             MAX(metric_value) AS `maxValue`,
             MIN(metric_value) AS `minValue`
         FROM t_metric_data
         WHERE system_id = #{systemId}
           AND type_code = #{typeCode}
-          AND metric_time BETWEEN #{startTime} AND #{endTime}
+          AND data_date BETWEEN #{startTime} AND #{endTime}
         GROUP BY timeLabel
         ORDER BY timeLabel
     </select>

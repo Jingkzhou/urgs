@@ -13,7 +13,7 @@ public interface MetricDataMapper extends BaseMapper<MetricData> {
 
     List<MetricTrendVO> queryTrend(@Param("systemId") String systemId,
                                    @Param("typeCode") String typeCode,
-                                   @Param("startTime") LocalDateTime startTime,
-                                   @Param("endTime") LocalDateTime endTime,
+                                   @Param("startTime") String startTime,
+                                   @Param("endTime") String endTime,
                                    @Param("datePattern") String datePattern);
 }

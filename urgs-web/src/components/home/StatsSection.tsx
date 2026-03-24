@@ -342,35 +342,7 @@ export const BatchStatusChart: React.FC<ChartProps & { data: TaskStatsVO[], onRe
 // 2. TrendAnalysisChart - Dynamic Metrics Trend with System Switching
 // ----------------------------------------------------------------------
 
-type TimeRange = 'today' | '7d' | '30d';
-
-const TIME_RANGE_OPTIONS: { key: TimeRange; label: string }[] = [
-  { key: 'today', label: '今日' },
-  { key: '7d', label: '7天' },
-  { key: '30d', label: '30天' },
-];
-
-function getTimeRange(range: TimeRange): { startTime: string; endTime: string; granularity: string } {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  const endTime = fmt(now);
-
-  if (range === 'today') {
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return { startTime: fmt(start), endTime, granularity: 'HOUR' };
-  } else if (range === '7d') {
-    const start = new Date(now);
-    start.setDate(start.getDate() - 7);
-    start.setHours(0, 0, 0, 0);
-    return { startTime: fmt(start), endTime, granularity: 'DAY' };
-  } else {
-    const start = new Date(now);
-    start.setDate(start.getDate() - 30);
-    start.setHours(0, 0, 0, 0);
-    return { startTime: fmt(start), endTime, granularity: 'DAY' };
-  }
-}
+// Time range is now custom picked by the user
 
 function formatNumber(val: number): string {
   if (val >= 10000) return (val / 10000).toFixed(1) + 'w';
@@ -384,7 +356,8 @@ export const TrendAnalysisChart: React.FC = () => {
   const [metricTypes, setMetricTypes] = useState<MetricTypeVO[]>([]);
   const [selectedTypeCode, setSelectedTypeCode] = useState<string>('');
   const [trendData, setTrendData] = useState<MetricTrendVO[]>([]);
-  const [timeRange, setTimeRange] = useState<TimeRange>('today');
+  const [startDate, setStartDate] = useState<string>(`${new Date().getFullYear()}-01-01`);
+  const [endDate, setEndDate] = useState<string>(`${new Date().getFullYear()}-12-31`);
   const [loading, setLoading] = useState(false);
   const [systemDropdownOpen, setSystemDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -457,13 +430,12 @@ export const TrendAnalysisChart: React.FC = () => {
     if (!selectedSystemId || !selectedTypeCode) return;
     setLoading(true);
     try {
-      const { startTime, endTime, granularity } = getTimeRange(timeRange);
       const data = await fetchMetricTrend({
         systemId: selectedSystemId,
         typeCode: selectedTypeCode,
-        startTime,
-        endTime,
-        granularity,
+        startTime: startDate,
+        endTime: endDate,
+        granularity: 'MONTH',
       });
       setTrendData(data);
     } catch (err) {
@@ -472,7 +444,7 @@ export const TrendAnalysisChart: React.FC = () => {
       // 保证 loading 状态能够恢复
       setTimeout(() => setLoading(false), 300);
     }
-  }, [selectedSystemId, selectedTypeCode, timeRange]);
+  }, [selectedSystemId, selectedTypeCode, startDate, endDate]);
 
   useEffect(() => {
     loadTrend();
@@ -492,12 +464,12 @@ export const TrendAnalysisChart: React.FC = () => {
   const chartData = useMemo(
     () =>
       trendData.map((d) => ({
-        name: timeRange === 'today' ? d.timeLabel.slice(11, 16) : d.timeLabel.slice(5, 10),
+        name: d.timeLabel, // Backend now returns 'YYYY-MM'
         value: d.avgValue,
         max: d.maxValue,
         min: d.minValue,
       })),
-    [trendData, timeRange]
+    [trendData]
   );
 
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -705,20 +677,20 @@ export const TrendAnalysisChart: React.FC = () => {
         </div>
 
         {/* Time range */}
-        <div className="flex items-center bg-slate-100/60 rounded-xl p-0.5 border border-slate-200/40 shrink-0 ml-4">
-          {TIME_RANGE_OPTIONS.map((opt) => (
-            <button
-              key={opt.key}
-              onClick={() => setTimeRange(opt.key)}
-              className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-300 ${
-                timeRange === opt.key
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 bg-slate-100/60 rounded-xl p-1 border border-slate-200/40 shrink-0 ml-4">
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="px-2 py-1 text-[11px] font-black text-slate-600 bg-transparent border-none outline-none cursor-pointer"
+          />
+          <span className="text-slate-400 text-[10px] font-black">-</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="px-2 py-1 text-[11px] font-black text-slate-600 bg-transparent border-none outline-none cursor-pointer"
+          />
         </div>
       </div>
 
@@ -756,7 +728,7 @@ export const TrendAnalysisChart: React.FC = () => {
             </motion.div>
           ) : (
             <motion.div
-              key={`chart-${selectedTypeCode}-${timeRange}`}
+              key={`chart-${selectedTypeCode}-${startDate}-${endDate}`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
