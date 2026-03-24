@@ -150,3 +150,17 @@ export const deleteTag = (id: number) =>
 
 // 文件夹下载
 export const getFolderDownloadUrl = (id: number) => `/api/wiki/folders/${id}/download`;
+
+// ==================== 批量操作 API ====================
+
+/** 批量删除文档 */
+export const batchDeleteDocuments = (ids: number[]) =>
+    post<{ count: number }>('/api/wiki/documents/batch-delete', { ids });
+
+/** 批量移动文档到目标文件夹 */
+export const batchMoveDocuments = (ids: number[], folderId: number | null) =>
+    post<{ count: number }>('/api/wiki/documents/batch-move', { ids, folderId });
+
+/** 批量给文档打标签 */
+export const batchTagDocuments = (ids: number[], tagIds: number[]) =>
+    post<{ count: number }>('/api/wiki/documents/batch-tag', { ids, tagIds });

@@ -122,6 +122,36 @@ public class KnowledgeDocumentController {
         return ResponseEntity.ok(documentService.getFavoriteDocuments(userId));
     }
 
+    /**
+     * 批量删除文档
+     */
+    @PostMapping("/batch-delete")
+    public ResponseEntity<Map<String, Integer>> batchDeleteDocuments(
+            @RequestBody BatchIdsRequest req) {
+        int count = documentService.batchDeleteDocuments(req.getIds());
+        return ResponseEntity.ok(Map.of("count", count));
+    }
+
+    /**
+     * 批量移动文档到目标文件夹
+     */
+    @PostMapping("/batch-move")
+    public ResponseEntity<Map<String, Integer>> batchMoveDocuments(
+            @RequestBody BatchMoveRequest req) {
+        int count = documentService.batchMoveDocuments(req.getIds(), req.getFolderId());
+        return ResponseEntity.ok(Map.of("count", count));
+    }
+
+    /**
+     * 批量给文档打标签
+     */
+    @PostMapping("/batch-tag")
+    public ResponseEntity<Map<String, Integer>> batchTagDocuments(
+            @RequestBody BatchTagRequest req) {
+        int count = documentService.batchTagDocuments(req.getIds(), req.getTagIds());
+        return ResponseEntity.ok(Map.of("count", count));
+    }
+
     private Long getUserId(HttpServletRequest request) {
         Object userId = request.getAttribute("userId");
         if (userId == null) {
@@ -145,6 +175,23 @@ public class KnowledgeDocumentController {
     public static class UpdateDocumentRequest {
         private Long folderId;
         private String title;
+        private List<Long> tagIds;
+    }
+
+    @Data
+    public static class BatchIdsRequest {
+        private List<Long> ids;
+    }
+
+    @Data
+    public static class BatchMoveRequest {
+        private List<Long> ids;
+        private Long folderId;
+    }
+
+    @Data
+    public static class BatchTagRequest {
+        private List<Long> ids;
         private List<Long> tagIds;
     }
 }

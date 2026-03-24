@@ -179,6 +179,64 @@ public class KnowledgeDocumentService {
     }
 
     /**
+     * 批量删除文档
+     */
+    @Transactional
+    public int batchDeleteDocuments(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) return 0;
+        for (Long id : ids) {
+            documentMapper.deleteDocumentTags(id);
+        }
+        int count = documentMapper.deleteBatchIds(ids);
+        log.info("批量删除文档: {} 个", count);
+        return count;
+    }
+
+    /**
+     * 批量移动文档到目标文件夹
+     */
+    @Transactional
+    public int batchMoveDocuments(List<Long> ids, Long folderId) {
+        if (ids == null || ids.isEmpty()) return 0;
+        int count = 0;
+        for (Long id : ids) {
+            KnowledgeDocument doc = documentMapper.selectById(id);
+            if (doc != null) {
+                doc.setFolderId(folderId);
+                doc.setUpdateTime(LocalDateTime.now());
+                documentMapper.updateById(doc);
+                count++;
+            }
+        }
+        log.info("批量移动文档到文件夹 {}: {} 个", folderId, count);
+        return count;
+    }
+
+    /**
+     * 批量给文档打标签
+     */
+    @Transactional
+    public int batchTagDocuments(List<Long> ids, List<Long> tagIds) {
+        if (ids == null || ids.isEmpty() || tagIds == null || tagIds.isEmpty()) return 0;
+        int count = 0;
+        for (Long docId : ids) {
+            KnowledgeDocument doc = documentMapper.selectById(docId);
+            if (doc != null) {
+                for (Long tagId : tagIds) {
+                    // 避免重复关联：先查再加
+                    List<Long> existingTags = documentMapper.findTagIdsByDocumentId(docId);
+                    if (!existingTags.contains(tagId)) {
+                        documentMapper.addDocumentTag(docId, tagId);
+                    }
+                }
+                count++;
+            }
+        }
+        log.info("批量打标签: {} 个文档, {} 个标签", count, tagIds.size());
+        return count;
+    }
+
+    /**
      * 获取最近访问的文档
      */
     public List<KnowledgeDocument> getRecentDocuments(Long userId, int limit) {
