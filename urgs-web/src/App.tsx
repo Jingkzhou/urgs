@@ -282,7 +282,7 @@ const App: React.FC = () => {
                                 label={item.label}
                                 active={activeTab === item.id}
                                 isOpen={sidebarOpen}
-                                onClick={() => setActiveTab(item.id)}
+                                onClick={() => { setActiveTab(item.id); window.location.hash = '#/' + item.id; }}
                             />
                         ))}
                     </nav>
@@ -392,7 +392,7 @@ const App: React.FC = () => {
                                                     return (
                                                         <button
                                                             key={item.id}
-                                                            onClick={() => setActiveTab(item.id)}
+                                                            onClick={() => { setActiveTab(item.id); window.location.hash = '#/' + item.id; }}
                                                             className={`relative flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300 z-10
                                                             ${isActive ? 'text-red-600' : 'text-slate-500 hover:text-slate-800'}
                                                         `}
@@ -444,6 +444,7 @@ const App: React.FC = () => {
                                                                             key={item.id}
                                                                             onClick={() => {
                                                                                 setActiveTab(item.id);
+                                                                                window.location.hash = '#/' + item.id;
                                                                                 setShowMoreNavMenu(false);
                                                                             }}
                                                                             className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left transition-all hover:bg-slate-50 hover:text-red-600 group"

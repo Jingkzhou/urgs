@@ -7,6 +7,7 @@ import org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfigurat
 import org.springframework.boot.autoconfigure.data.neo4j.Neo4jReactiveDataAutoConfiguration;
 import org.springframework.boot.autoconfigure.data.neo4j.Neo4jReactiveRepositoriesAutoConfiguration;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication(exclude = {
 		MongoAutoConfiguration.class,
@@ -15,6 +16,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
 		Neo4jReactiveRepositoriesAutoConfiguration.class
 })
 @EnableAsync
+@EnableScheduling
 public class UrgsApiApplication {
 
 	public static void main(String[] args) {

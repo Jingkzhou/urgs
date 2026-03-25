@@ -9,26 +9,32 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.net.ftp.FTPClient;
 import org.apache.commons.net.ftp.FTPReply;
+import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
+@Slf4j
 @Service
-public class DynamicDataSourceService {
+public class DynamicDataSourceService implements DisposableBean {
+
+    private static final long CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ConcurrentHashMap<Long, CachedDataSource> dataSourceCache = new ConcurrentHashMap<>();
 
     @Autowired
     private DataSourceConfigMapper configMapper;
@@ -36,12 +42,118 @@ public class DynamicDataSourceService {
     @Autowired
     private DataSourceMetaMapper metaMapper;
 
-    public JdbcTemplate getJdbcTemplate(Long dataSourceId) {
+    private static class CachedDataSource {
+        final HikariDataSource dataSource;
+        final JdbcTemplate jdbcTemplate;
+        final long createdAt;
+
+        CachedDataSource(HikariDataSource ds) {
+            this.dataSource = ds;
+            this.jdbcTemplate = new JdbcTemplate(ds);
+            this.createdAt = System.currentTimeMillis();
+        }
+    }
+
+    /**
+     * 获取数据源的数据库类型代码（如 mysql, postgresql, oracle, sqlserver, db2, clickhouse）
+     */
+    public String getDbType(Long dataSourceId) {
         DataSourceConfig config = configMapper.selectById(dataSourceId);
         if (config == null) {
             throw new IllegalArgumentException("DataSource not found: " + dataSourceId);
         }
-        return buildJdbcTemplate(config);
+        DataSourceMeta meta = metaMapper.selectById(config.getMetaId());
+        if (meta == null) {
+            throw new IllegalArgumentException("DataSource Meta not found for ID: " + config.getMetaId());
+        }
+        return meta.getCode() == null ? "" : meta.getCode().toLowerCase();
+    }
+
+    public JdbcTemplate getJdbcTemplate(Long dataSourceId) {
+        CachedDataSource cached = dataSourceCache.get(dataSourceId);
+
+        // 检查缓存是否过期
+        if (cached != null && System.currentTimeMillis() - cached.createdAt > CACHE_TTL_MS) {
+            dataSourceCache.remove(dataSourceId);
+            try { cached.dataSource.close(); } catch (Exception e) { log.warn("Error closing expired pool: {}", e.getMessage()); }
+            cached = null;
+        }
+
+        if (cached == null) {
+            cached = dataSourceCache.computeIfAbsent(dataSourceId, this::createCachedDataSource);
+        }
+
+        return cached.jdbcTemplate;
+    }
+
+    private CachedDataSource createCachedDataSource(Long dataSourceId) {
+        DataSourceConfig config = configMapper.selectById(dataSourceId);
+        if (config == null) {
+            throw new IllegalArgumentException("DataSource not found: " + dataSourceId);
+        }
+
+        DataSourceMeta meta = metaMapper.selectById(config.getMetaId());
+        if (meta == null) {
+            throw new IllegalArgumentException("DataSource Meta not found for ID: " + config.getMetaId());
+        }
+
+        Map<String, Object> params = config.getConnectionParams();
+        String type = meta.getCode();
+
+        String url = buildJdbcUrl(type, params);
+        String driverClass = buildDriverClass(type, params);
+
+        if (url.isEmpty()) {
+            throw new UnsupportedOperationException("Unsupported or non-JDBC data source type: " + type);
+        }
+
+        HikariConfig hikariConfig = new HikariConfig();
+        hikariConfig.setJdbcUrl(url);
+        hikariConfig.setDriverClassName(driverClass);
+        hikariConfig.setUsername(getString(params, "username"));
+        hikariConfig.setPassword(getString(params, "password"));
+        hikariConfig.setMaximumPoolSize(5);
+        hikariConfig.setMinimumIdle(1);
+        hikariConfig.setIdleTimeout(300_000);     // 5 minutes
+        hikariConfig.setMaxLifetime(600_000);     // 10 minutes
+        hikariConfig.setConnectionTimeout(10_000); // 10 seconds
+        hikariConfig.setPoolName("dynamic-ds-" + dataSourceId);
+
+        log.info("Creating connection pool for dataSourceId={}, type={}", dataSourceId, type);
+        return new CachedDataSource(new HikariDataSource(hikariConfig));
+    }
+
+    /**
+     * 清除指定数据源的缓存连接池（数据源配置更新/删除时调用）
+     */
+    public void evict(Long dataSourceId) {
+        CachedDataSource removed = dataSourceCache.remove(dataSourceId);
+        if (removed != null) {
+            try { removed.dataSource.close(); } catch (Exception e) { log.warn("Error closing evicted pool: {}", e.getMessage()); }
+            log.info("Evicted connection pool for dataSourceId={}", dataSourceId);
+        }
+    }
+
+    @Scheduled(fixedRate = 60_000)
+    public void evictExpiredPools() {
+        long now = System.currentTimeMillis();
+        dataSourceCache.entrySet().removeIf(entry -> {
+            if (now - entry.getValue().createdAt > CACHE_TTL_MS) {
+                try { entry.getValue().dataSource.close(); } catch (Exception e) { log.warn("Error closing expired pool: {}", e.getMessage()); }
+                log.info("Evicted expired connection pool for dataSourceId={}", entry.getKey());
+                return true;
+            }
+            return false;
+        });
+    }
+
+    @Override
+    public void destroy() {
+        log.info("Shutting down {} dynamic connection pools", dataSourceCache.size());
+        dataSourceCache.values().forEach(c -> {
+            try { c.dataSource.close(); } catch (Exception e) { log.warn("Error closing pool on shutdown: {}", e.getMessage()); }
+        });
+        dataSourceCache.clear();
     }
 
     public void testConnection(DataSourceConfig config) {
@@ -82,34 +194,23 @@ public class DynamicDataSourceService {
                 return;
             }
 
-            JdbcTemplate jdbcTemplate = buildJdbcTemplate(config);
-            // Short timeout for testing
-            jdbcTemplate.getDataSource().getConnection().close();
+            // JDBC test: use a temporary connection (not from pool)
+            String url = buildJdbcUrl(type, params);
+            String driverClass = buildDriverClass(type, params);
+            org.springframework.jdbc.datasource.DriverManagerDataSource ds = new org.springframework.jdbc.datasource.DriverManagerDataSource();
+            ds.setDriverClassName(driverClass);
+            ds.setUrl(url);
+            ds.setUsername(getString(params, "username"));
+            ds.setPassword(getString(params, "password"));
+            ds.getConnection().close();
         } catch (Exception e) {
             throw new RuntimeException("Connection failed: " + e.getMessage(), e);
         }
     }
 
-    private JdbcTemplate buildJdbcTemplate(DataSourceConfig config) {
-        DataSourceMeta meta = metaMapper.selectById(config.getMetaId());
-        if (meta == null) {
-            throw new IllegalArgumentException("DataSource Meta not found for ID: " + config.getMetaId());
-        }
-
-        Map<String, Object> params = config.getConnectionParams();
-        String type = meta.getCode();
-
-        DriverManagerDataSource dataSource = new DriverManagerDataSource();
-
-        // Basic RDBMS support
+    private String buildJdbcUrl(String type, Map<String, Object> params) {
         String host = getString(params, "host");
         String database = getString(params, "database");
-        String username = getString(params, "username");
-        String password = getString(params, "password");
-
-        // Handle JDBC URL construction based on type
-        String url = "";
-        String driverClass = "";
 
         if ("mysql".equalsIgnoreCase(type) || "drds".equalsIgnoreCase(type)) {
             int port = getInt(params, "port", 3306);
@@ -117,44 +218,46 @@ public class DynamicDataSourceService {
             if (jdbcParams == null || jdbcParams.isBlank()) {
                 jdbcParams = "useSSL=false&serverTimezone=UTC";
             }
-            url = String.format("jdbc:mysql://%s:%d/%s?%s", host, port, database, jdbcParams);
-            driverClass = "com.mysql.cj.jdbc.Driver";
+            return String.format("jdbc:mysql://%s:%d/%s?%s", host, port, database, jdbcParams);
         } else if ("postgresql".equalsIgnoreCase(type)) {
             int port = getInt(params, "port", 5432);
-            url = String.format("jdbc:postgresql://%s:%d/%s", host, port, database);
-            driverClass = "org.postgresql.Driver";
+            return String.format("jdbc:postgresql://%s:%d/%s", host, port, database);
         } else if ("oracle".equalsIgnoreCase(type)) {
             int port = getInt(params, "port", 1521);
             String serviceName = getString(params, "serviceName");
-            url = String.format("jdbc:oracle:thin:@%s:%d:%s", host, port, serviceName);
-            driverClass = "oracle.jdbc.OracleDriver";
+            return String.format("jdbc:oracle:thin:@%s:%d:%s", host, port, serviceName);
         } else if ("sqlserver".equalsIgnoreCase(type)) {
             int port = getInt(params, "port", 1433);
-            url = String.format("jdbc:sqlserver://%s:%d;databaseName=%s", host, port, database);
-            driverClass = "com.microsoft.sqlserver.jdbc.SQLServerDriver";
+            return String.format("jdbc:sqlserver://%s:%d;databaseName=%s", host, port, database);
         } else if ("db2".equalsIgnoreCase(type)) {
             int port = getInt(params, "port", 50000);
-            url = String.format("jdbc:db2://%s:%d/%s", host, port, database);
-            driverClass = "com.ibm.db2.jcc.DB2Driver";
+            return String.format("jdbc:db2://%s:%d/%s", host, port, database);
         } else if ("clickhouse".equalsIgnoreCase(type)) {
             int port = getInt(params, "port", 8123);
-            url = String.format("jdbc:clickhouse://%s:%d/%s", host, port, database);
-            driverClass = "com.clickhouse.jdbc.ClickHouseDriver";
+            return String.format("jdbc:clickhouse://%s:%d/%s", host, port, database);
         } else if ("generic".equalsIgnoreCase(type)) {
-            url = getString(params, "jdbcUrl");
-            driverClass = getString(params, "driverClass");
+            return getString(params, "jdbcUrl");
         }
+        return "";
+    }
 
-        if (url.isEmpty()) {
-            throw new UnsupportedOperationException("Unsupported or non-JDBC data source type: " + type);
+    private String buildDriverClass(String type, Map<String, Object> params) {
+        if ("mysql".equalsIgnoreCase(type) || "drds".equalsIgnoreCase(type)) {
+            return "com.mysql.cj.jdbc.Driver";
+        } else if ("postgresql".equalsIgnoreCase(type)) {
+            return "org.postgresql.Driver";
+        } else if ("oracle".equalsIgnoreCase(type)) {
+            return "oracle.jdbc.OracleDriver";
+        } else if ("sqlserver".equalsIgnoreCase(type)) {
+            return "com.microsoft.sqlserver.jdbc.SQLServerDriver";
+        } else if ("db2".equalsIgnoreCase(type)) {
+            return "com.ibm.db2.jcc.DB2Driver";
+        } else if ("clickhouse".equalsIgnoreCase(type)) {
+            return "com.clickhouse.jdbc.ClickHouseDriver";
+        } else if ("generic".equalsIgnoreCase(type)) {
+            return getString(params, "driverClass");
         }
-
-        dataSource.setDriverClassName(driverClass);
-        dataSource.setUrl(url);
-        dataSource.setUsername(username);
-        dataSource.setPassword(password);
-
-        return new JdbcTemplate(dataSource);
+        return "";
     }
 
     private String getString(Map<String, Object> params, String key) {
@@ -272,8 +375,6 @@ public class DynamicDataSourceService {
             session.setPassword(password);
         }
 
-        // Fix for "Auth fail": Explicitly allow keyboard-interactive and password
-        // Some servers behave differently or default to one over the other
         java.util.Properties config = new java.util.Properties();
         config.put("StrictHostKeyChecking", "no");
         config.put("PreferredAuthentications", "publickey,keyboard-interactive,password");
@@ -304,11 +405,7 @@ public class DynamicDataSourceService {
         if (password != null && !password.isBlank()) {
             session.setPassword(password);
         }
-        if (password != null && !password.isBlank()) {
-            session.setPassword(password);
-        }
 
-        // Fix for "Auth fail": Explicitly allow keyboard-interactive and password
         java.util.Properties config = new java.util.Properties();
         config.put("StrictHostKeyChecking", "no");
         config.put("PreferredAuthentications", "publickey,keyboard-interactive,password");
