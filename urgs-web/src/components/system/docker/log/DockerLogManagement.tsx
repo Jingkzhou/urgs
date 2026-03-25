@@ -1,26 +1,40 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
     Box,
     Terminal,
     Search,
     RefreshCw,
     Download,
-    Database,
     Activity,
-    Filter,
     ChevronRight,
     Server,
-    AlertCircle,
     FileText,
     Clock,
-    ExternalLink,
     Cpu,
-    Zap
+    Zap,
+    Play,
+    Square,
+    RotateCcw,
+    Wifi,
+    WifiOff,
+    MoreVertical,
+    Trash2
 } from 'lucide-react';
-import { message, Tooltip, Input, Select, Button, Tag, Empty } from 'antd';
+import { message, Tooltip, Modal, Dropdown } from 'antd';
+import type { MenuProps } from 'antd';
 import dayjs from 'dayjs';
 import Auth from '../../../Auth';
-import { getDockerContainers, getDockerLogs, DockerContainer, DockerLog } from '@/api/ops';
+import {
+    getDockerContainers,
+    getDockerLogs,
+    DockerContainer,
+    DockerLog,
+    getAllContainerStats,
+    startDockerContainer,
+    stopDockerContainer,
+    restartDockerContainer
+} from '@/api/ops';
+import { useDockerLogStream, StreamLogEntry } from '@/hooks/useDockerLogStream';
 
 // --- Types ---
 interface Container {
@@ -37,114 +51,131 @@ interface Container {
 interface LogEntry {
     id: string;
     timestamp: string;
-    level: string; // Changed from union to string for API compatibility
+    level: string;
     message: string;
     source: string;
 }
 
-// --- Mock Data ---
-const MOCK_CONTAINERS: Container[] = [
-    { id: 'c1', name: 'urgs-api-server', image: 'urgs-api:latest', status: 'running', ip: '172.18.0.2', cpu: '1.2%', memory: '256MB', uptime: '12d 4h' },
-    { id: 'c2', name: 'urgs-web-portal', image: 'urgs-web:v1.2.0', status: 'running', ip: '172.18.0.5', cpu: '0.5%', memory: '128MB', uptime: '5d 2h' },
-    { id: 'c3', name: 'mysql-db-01', image: 'mysql:8.0', status: 'running', ip: '172.18.0.3', cpu: '2.5%', memory: '1.2GB', uptime: '30d 12h' },
-    { id: 'c4', name: 'redis-cache-master', image: 'redis:7-alpine', status: 'running', ip: '172.18.0.4', cpu: '0.8%', memory: '64MB', uptime: '30d 12h' },
-    { id: 'c5', name: 'nginx-ingress', image: 'nginx:stable-alpine', status: 'stopped', ip: '172.18.0.1', cpu: '0%', memory: '0MB', uptime: '-' },
-    { id: 'c6', name: 'elasticsearch-node-1', image: 'elasticsearch:8.10.0', status: 'restarting', ip: '172.18.0.8', cpu: '-', memory: '-', uptime: '-' },
-];
-
-const GENERATE_MOCK_LOGS = (containerName: string): LogEntry[] => {
-    const levels: ('info' | 'warn' | 'error' | 'debug')[] = ['info', 'info', 'info', 'warn', 'error', 'debug'];
-    const messages = [
-        'Connection established with upstream service',
-        'Executing batch task #8821...',
-        'Incoming request: GET /api/v1/metadata/lineage',
-        'Indexing documents into core_index_01',
-        'Memory usage spiked to 85%',
-        'Database connection pool reached maximum capacity',
-        'Worker process 12 exited normally',
-        'Failed to parse incoming payload: invalid JSON',
-        'Heartbeat mission successful',
-        'Starting health check routine...'
-    ];
-
-    return Array.from({ length: 50 }).map((_, i) => ({
-        id: `log-${i}`,
-        timestamp: dayjs().subtract(i * 30, 'second').format('YYYY-MM-DD HH:mm:ss.SSS'),
-        level: levels[Math.floor(Math.random() * levels.length)],
-        message: messages[Math.floor(Math.random() * messages.length)],
-        source: containerName
-    })).reverse();
-};
-
 const DockerLogManagement: React.FC = () => {
-    const [containers, setContainers] = useState<Container[]>(MOCK_CONTAINERS);
-    const [selectedContainerId, setSelectedContainerId] = useState<string>(MOCK_CONTAINERS[0].id);
-    const [logs, setLogs] = useState<LogEntry[]>([]);
+    const [containers, setContainers] = useState<Container[]>([]);
+    const [selectedContainerId, setSelectedContainerId] = useState<string>('');
+    const [restLogs, setRestLogs] = useState<LogEntry[]>([]);
     const [searchText, setSearchText] = useState('');
     const [logFilter, setLogFilter] = useState('ALL');
     const [autoScroll, setAutoScroll] = useState(true);
     const [loading, setLoading] = useState(false);
+    const [useWebSocket, setUseWebSocket] = useState(true);
+    const [operationLoading, setOperationLoading] = useState<string | null>(null);
     const logEndRef = useRef<HTMLDivElement>(null);
+
+    // WebSocket log stream
+    const wsContainerIds = useMemo(
+        () => (useWebSocket && selectedContainerId ? [selectedContainerId] : []),
+        [useWebSocket, selectedContainerId]
+    );
+    const { logs: wsLogs, isConnected, connectionState, error: wsError, reconnect, clearLogs } =
+        useDockerLogStream(wsContainerIds, { enabled: useWebSocket });
 
     const selectedContainer = useMemo(() =>
         containers.find(c => c.id === selectedContainerId),
         [containers, selectedContainerId]);
 
-    useEffect(() => {
-        const fetchContainers = async () => {
-            try {
-                const data = await getDockerContainers();
-                if (data && data.length > 0) {
-                    setContainers(data);
-                    if (!selectedContainerId) {
-                        setSelectedContainerId(data[0].id);
-                    }
+    // Fetch containers
+    const fetchContainers = useCallback(async () => {
+        try {
+            const data = await getDockerContainers();
+            if (data && data.length > 0) {
+                setContainers(data);
+                if (!selectedContainerId || !data.find(c => c.id === selectedContainerId)) {
+                    setSelectedContainerId(data[0].id);
                 }
-            } catch (error) {
-                console.warn('Backend API not available, using mock containers');
             }
-        };
+        } catch (error) {
+            console.warn('Backend API not available for containers');
+        }
+    }, [selectedContainerId]);
+
+    useEffect(() => {
         fetchContainers();
     }, []);
 
+    // Poll container stats every 10s
     useEffect(() => {
-        if (selectedContainerId) {
+        const pollStats = async () => {
+            try {
+                const stats = await getAllContainerStats();
+                if (stats && stats.length > 0) {
+                    setContainers(prev => prev.map(c => {
+                        const stat = stats.find(s => s.containerId === c.id);
+                        if (stat) {
+                            return { ...c, cpu: stat.cpuPercent, memory: stat.memUsage };
+                        }
+                        return c;
+                    }));
+                }
+            } catch {
+                // silently fail
+            }
+        };
+
+        pollStats();
+        const interval = setInterval(pollStats, 10000);
+        return () => clearInterval(interval);
+    }, []);
+
+    // Fetch REST logs as fallback when WebSocket is not used
+    useEffect(() => {
+        if (!useWebSocket && selectedContainerId) {
             const fetchLogs = async () => {
                 setLoading(true);
                 try {
                     const data = await getDockerLogs(selectedContainerId);
                     if (data) {
-                        setLogs(data.map((l: any, i: number) => ({
+                        setRestLogs(data.map((l: any, i: number) => ({
                             id: `log-${i}`,
                             ...l,
                             source: selectedContainer?.name || ''
                         })));
                     }
                 } catch (error) {
-                    console.warn('Backend API not available, using mock logs');
-                    setLogs(GENERATE_MOCK_LOGS(selectedContainer?.name || 'container'));
+                    console.warn('Backend API not available, no logs');
+                    setRestLogs([]);
                 } finally {
                     setLoading(false);
                 }
             };
             fetchLogs();
         }
-    }, [selectedContainerId]);
+    }, [selectedContainerId, useWebSocket]);
+
+    // Combine logs: use WebSocket logs if connected, else REST logs
+    const activeLogs = useMemo(() => {
+        if (useWebSocket) {
+            return wsLogs.map(l => ({
+                id: l.id,
+                timestamp: l.timestamp,
+                level: l.level,
+                message: l.message,
+                source: l.source,
+            }));
+        }
+        return restLogs;
+    }, [useWebSocket, wsLogs, restLogs]);
 
     useEffect(() => {
         if (autoScroll && logEndRef.current) {
             logEndRef.current.scrollIntoView({ behavior: 'smooth' });
         }
-    }, [logs, autoScroll]);
+    }, [activeLogs, autoScroll]);
 
     const filteredLogs = useMemo(() => {
-        return logs.filter(log => {
+        return activeLogs.filter(log => {
             const matchesSearch = log.message.toLowerCase().includes(searchText.toLowerCase()) ||
                 log.level.toLowerCase().includes(searchText.toLowerCase());
             const matchesLevel = logFilter === 'ALL' || log.level.toUpperCase() === logFilter;
             return matchesSearch && matchesLevel;
         });
-    }, [logs, searchText, logFilter]);
+    }, [activeLogs, searchText, logFilter]);
 
     const handleDownload = () => {
         if (!selectedContainer) return;
@@ -155,6 +186,7 @@ const DockerLogManagement: React.FC = () => {
         link.href = url;
         link.download = `${selectedContainer.name}_logs_${dayjs().format('YYYYMMDD_HHmm')}.txt`;
         link.click();
+        URL.revokeObjectURL(url);
         message.success('日志下载成功');
     };
 
@@ -163,11 +195,89 @@ const DockerLogManagement: React.FC = () => {
         message.success({ content: '已复制到剪切板', duration: 1, style: { marginTop: '10vh' } });
     };
 
-    const statusColors = {
+    const handleContainerOperation = async (containerId: string, operation: 'start' | 'stop' | 'restart') => {
+        const operationNames = { start: '启动', stop: '停止', restart: '重启' };
+        const container = containers.find(c => c.id === containerId);
+
+        Modal.confirm({
+            title: `确认${operationNames[operation]}`,
+            content: `确定要${operationNames[operation]}容器 "${container?.name || containerId}" 吗？`,
+            okText: '确认',
+            cancelText: '取消',
+            onOk: async () => {
+                setOperationLoading(containerId);
+                try {
+                    const fn = { start: startDockerContainer, stop: stopDockerContainer, restart: restartDockerContainer };
+                    const result = await fn[operation](containerId);
+                    if (result?.success) {
+                        message.success(`容器${operationNames[operation]}成功`);
+                        fetchContainers();
+                    } else {
+                        message.error(result?.message || `容器${operationNames[operation]}失败`);
+                    }
+                } catch (error) {
+                    message.error(`容器${operationNames[operation]}失败`);
+                } finally {
+                    setOperationLoading(null);
+                }
+            }
+        });
+    };
+
+    const getContainerMenuItems = (container: Container): MenuProps['items'] => {
+        const items: MenuProps['items'] = [];
+        if (container.status === 'stopped') {
+            items.push({
+                key: 'start',
+                icon: <Play size={14} />,
+                label: '启动',
+                onClick: () => handleContainerOperation(container.id, 'start'),
+            });
+        }
+        if (container.status === 'running') {
+            items.push({
+                key: 'stop',
+                icon: <Square size={14} />,
+                label: '停止',
+                onClick: () => handleContainerOperation(container.id, 'stop'),
+            });
+        }
+        items.push({
+            key: 'restart',
+            icon: <RotateCcw size={14} />,
+            label: '重启',
+            onClick: () => handleContainerOperation(container.id, 'restart'),
+        });
+        return items;
+    };
+
+    const statusColors: Record<string, string> = {
         running: 'bg-emerald-500',
         stopped: 'bg-slate-400',
         restarting: 'bg-amber-500'
     };
+
+    const connectionIndicator = useMemo(() => {
+        if (!useWebSocket) return null;
+        switch (connectionState) {
+            case 'connected':
+                return { color: 'bg-green-500', text: 'LIVE', textColor: 'text-green-600', bgColor: 'bg-green-50', borderColor: 'border-green-100' };
+            case 'connecting':
+                return { color: 'bg-yellow-500', text: 'CONNECTING', textColor: 'text-yellow-600', bgColor: 'bg-yellow-50', borderColor: 'border-yellow-100' };
+            case 'disconnected':
+                return { color: 'bg-red-500', text: 'OFFLINE', textColor: 'text-red-600', bgColor: 'bg-red-50', borderColor: 'border-red-100' };
+        }
+    }, [connectionState, useWebSocket]);
+
+    // Log level stats
+    const logStats = useMemo(() => {
+        const stats = { info: 0, warn: 0, error: 0, debug: 0 };
+        activeLogs.forEach(l => {
+            const level = l.level.toLowerCase();
+            if (level in stats) stats[level as keyof typeof stats]++;
+        });
+        return stats;
+    }, [activeLogs]);
 
     return (
         <div className="flex h-[calc(100vh-140px)] bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm font-sans selection:bg-blue-100">
@@ -182,7 +292,10 @@ const DockerLogManagement: React.FC = () => {
                     </div>
                     <Auth code="sys:docker:log:list">
                         <Tooltip title="刷新列表">
-                            <button className="p-2 text-slate-400 hover:text-blue-600 transition-colors hover:bg-blue-50 rounded-lg">
+                            <button
+                                onClick={fetchContainers}
+                                className="p-2 text-slate-400 hover:text-blue-600 transition-colors hover:bg-blue-50 rounded-lg"
+                            >
                                 <RefreshCw size={16} />
                             </button>
                         </Tooltip>
@@ -193,27 +306,50 @@ const DockerLogManagement: React.FC = () => {
                     {containers.map((c) => (
                         <div
                             key={c.id}
-                            onClick={() => setSelectedContainerId(c.id)}
+                            onClick={() => {
+                                if (useWebSocket) clearLogs();
+                                setSelectedContainerId(c.id);
+                            }}
                             className={`group relative p-3.5 rounded-xl cursor-pointer transition-all duration-300 border ${selectedContainerId === c.id
                                 ? 'bg-white border-blue-200 shadow-sm shadow-blue-100 ring-1 ring-blue-50'
                                 : 'border-transparent hover:bg-slate-200/50 hover:border-slate-200/50'
                                 }`}
                         >
                             <div className="flex items-start justify-between mb-2">
-                                <div className="flex items-center gap-2.5 overflow-hidden">
+                                <div className="flex items-center gap-2.5 overflow-hidden flex-1">
                                     <div className={`w-2 h-2 rounded-full ${statusColors[c.status]} ${c.status === 'running' ? 'animate-pulse' : ''}`} />
                                     <span className={`font-bold truncate text-sm tracking-wide ${selectedContainerId === c.id ? 'text-blue-700' : 'text-slate-600 group-hover:text-slate-900'}`}>
                                         {c.name}
                                     </span>
                                 </div>
-                                {selectedContainerId === c.id && (
-                                    <ChevronRight size={14} className="text-blue-500" />
-                                )}
+                                <div className="flex items-center gap-1">
+                                    <Auth code="sys:docker:container:start">
+                                        <Dropdown menu={{ items: getContainerMenuItems(c) }} trigger={['click']}>
+                                            <button
+                                                onClick={(e) => e.stopPropagation()}
+                                                className={`p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors ${operationLoading === c.id ? 'animate-spin' : ''}`}
+                                            >
+                                                <MoreVertical size={14} />
+                                            </button>
+                                        </Dropdown>
+                                    </Auth>
+                                    {selectedContainerId === c.id && (
+                                        <ChevronRight size={14} className="text-blue-500" />
+                                    )}
+                                </div>
                             </div>
                             <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium">
                                 <div className="flex items-center gap-1">
                                     <Terminal size={10} />
                                     {c.image.split(':')[0]}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <Cpu size={10} />
+                                    {c.cpu}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <Zap size={10} />
+                                    {c.memory}
                                 </div>
                                 <div className="flex items-center gap-1">
                                     <Activity size={10} />
@@ -222,6 +358,9 @@ const DockerLogManagement: React.FC = () => {
                             </div>
                         </div>
                     ))}
+                    {containers.length === 0 && (
+                        <div className="text-center text-slate-400 text-sm py-10">暂无容器</div>
+                    )}
                 </div>
             </div>
 
@@ -233,7 +372,18 @@ const DockerLogManagement: React.FC = () => {
                         <div className="flex flex-col">
                             <div className="flex items-center gap-2">
                                 <h1 className="text-lg font-black text-slate-800 tracking-widest uppercase">
-                                    Terminal <span className="text-blue-600 font-medium px-2 py-0.5 rounded bg-blue-50 text-xs ml-2 tracking-normal border border-blue-100">LIVE</span>
+                                    Terminal
+                                    {connectionIndicator && (
+                                        <span className={`${connectionIndicator.textColor} font-medium px-2 py-0.5 rounded ${connectionIndicator.bgColor} text-xs ml-2 tracking-normal border ${connectionIndicator.borderColor} inline-flex items-center gap-1.5`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${connectionIndicator.color} ${connectionState === 'connected' ? 'animate-pulse' : ''}`} />
+                                            {connectionIndicator.text}
+                                        </span>
+                                    )}
+                                    {!useWebSocket && (
+                                        <span className="text-slate-500 font-medium px-2 py-0.5 rounded bg-slate-50 text-xs ml-2 tracking-normal border border-slate-200">
+                                            REST
+                                        </span>
+                                    )}
                                 </h1>
                             </div>
                             <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5 font-mono">
@@ -277,6 +427,62 @@ const DockerLogManagement: React.FC = () => {
                             </div>
                         </Auth>
 
+                        {/* WebSocket toggle */}
+                        <Tooltip title={useWebSocket ? '切换到 REST 模式' : '切换到实时流模式'}>
+                            <button
+                                onClick={() => setUseWebSocket(!useWebSocket)}
+                                className={`p-1.5 rounded-lg border transition-all ${useWebSocket
+                                    ? 'bg-green-50 text-green-600 border-green-200'
+                                    : 'bg-slate-50 text-slate-400 border-slate-200'
+                                    }`}
+                            >
+                                {useWebSocket ? <Wifi size={14} /> : <WifiOff size={14} />}
+                            </button>
+                        </Tooltip>
+
+                        {/* Reconnect button */}
+                        {useWebSocket && connectionState === 'disconnected' && (
+                            <Tooltip title="重新连接">
+                                <button
+                                    onClick={reconnect}
+                                    className="p-1.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
+                                >
+                                    <RefreshCw size={14} />
+                                </button>
+                            </Tooltip>
+                        )}
+
+                        {/* Clear logs */}
+                        {useWebSocket && (
+                            <Tooltip title="清空日志">
+                                <button
+                                    onClick={clearLogs}
+                                    className="p-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-400 hover:text-slate-600 transition-all"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
+                            </Tooltip>
+                        )}
+
+                        {/* REST refresh */}
+                        {!useWebSocket && (
+                            <Tooltip title="刷新日志">
+                                <button
+                                    onClick={() => {
+                                        if (selectedContainerId) {
+                                            setLoading(true);
+                                            getDockerLogs(selectedContainerId).then(data => {
+                                                if (data) setRestLogs(data.map((l: any, i: number) => ({ id: `log-${i}`, ...l, source: selectedContainer?.name || '' })));
+                                            }).finally(() => setLoading(false));
+                                        }
+                                    }}
+                                    className="p-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-400 hover:text-slate-600 transition-all"
+                                >
+                                    <RefreshCw size={14} />
+                                </button>
+                            </Tooltip>
+                        )}
+
                         <Auth code="sys:docker:log:download">
                             <button
                                 onClick={handleDownload}
@@ -300,7 +506,7 @@ const DockerLogManagement: React.FC = () => {
                         <div className="space-y-1">
                             {filteredLogs.map((log, idx) => (
                                 <div
-                                    key={idx}
+                                    key={log.id || idx}
                                     className="flex gap-4 group/line hover:bg-slate-200/50 transition-all py-1 px-2 rounded-lg relative"
                                     onClick={() => handleCopyLog(`[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`)}
                                 >
@@ -329,7 +535,10 @@ const DockerLogManagement: React.FC = () => {
                     ) : (
                         <div className="h-full flex flex-col items-center justify-center py-20 opacity-40">
                             <FileText size={48} className="text-slate-300 mb-4" />
-                            <p className="text-slate-400 text-sm">暂无匹配日志</p>
+                            <p className="text-slate-400 text-sm">
+                                {selectedContainerId ? '暂无匹配日志' : '请选择一个容器'}
+                            </p>
+                            {wsError && <p className="text-red-400 text-xs mt-2">{wsError}</p>}
                         </div>
                     )}
 
@@ -352,15 +561,22 @@ const DockerLogManagement: React.FC = () => {
                 <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-[10px] font-bold text-slate-500">
                     <div className="flex items-center gap-4 uppercase tracking-wider">
                         <div className="flex items-center gap-1.5">
-                            <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                            Stream Quality: Nominal
+                            <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500' : useWebSocket ? 'bg-red-500' : 'bg-slate-400'}`} />
+                            {useWebSocket
+                                ? (isConnected ? 'Stream: Connected' : connectionState === 'connecting' ? 'Stream: Reconnecting...' : 'Stream: Disconnected')
+                                : 'Mode: REST Poll'
+                            }
                         </div>
                         <div className="opacity-30">|</div>
-                        <div>Buffer size: 50/1000</div>
+                        <div>Buffer: {activeLogs.length}/5000</div>
+                        <div className="opacity-30">|</div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-blue-500">INFO:{logStats.info}</span>
+                            <span className="text-amber-500">WARN:{logStats.warn}</span>
+                            <span className="text-red-500">ERR:{logStats.error}</span>
+                        </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <span className="hover:text-slate-700 cursor-pointer transition-colors">v2.4.0-STABLE</span>
-                        <span className="opacity-30">|</span>
                         <Clock size={10} />
                         {dayjs().format('HH:mm:ss')} (LOCAL)
                     </div>
@@ -404,7 +620,7 @@ const DockerLogManagement: React.FC = () => {
         .animate-spin-slow {
           animation: spin-slow 8s linear infinite;
         }
-        
+
         @keyframes scale-in {
           from { transform: scale(0.95); opacity: 0; }
           to { transform: scale(1); opacity: 1; }

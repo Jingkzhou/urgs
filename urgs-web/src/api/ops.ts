@@ -302,6 +302,23 @@ export interface DockerLog {
     message: string;
 }
 
+export interface DockerContainerStats {
+    containerId: string;
+    containerName: string;
+    cpuPercent: string;
+    memUsage: string;
+    memLimit: string;
+    netIO: string;
+    blockIO: string;
+}
+
+export interface DockerOperationResult {
+    success: boolean;
+    containerId: string;
+    operation: string;
+    message: string;
+}
+
 export const getDockerContainers = () =>
     get<DockerContainer[]>('/api/ops/docker/containers');
 
@@ -310,3 +327,18 @@ export const getDockerLogs = (containerId: string, params?: { lines?: number; ta
 
 export const downloadDockerLogs = (containerId: string) =>
     get<Blob>(`/api/ops/docker/containers/${containerId}/logs/download`, undefined, { isBlob: true });
+
+export const getContainerStats = (containerId: string) =>
+    get<DockerContainerStats>(`/api/ops/docker/containers/${containerId}/stats`);
+
+export const getAllContainerStats = () =>
+    get<DockerContainerStats[]>('/api/ops/docker/containers/stats');
+
+export const startDockerContainer = (containerId: string) =>
+    post<DockerOperationResult>(`/api/ops/docker/containers/${containerId}/start`);
+
+export const stopDockerContainer = (containerId: string) =>
+    post<DockerOperationResult>(`/api/ops/docker/containers/${containerId}/stop`);
+
+export const restartDockerContainer = (containerId: string) =>
+    post<DockerOperationResult>(`/api/ops/docker/containers/${containerId}/restart`);

@@ -1,7 +1,9 @@
 package com.example.urgs_api.ops.service.impl;
 
 import com.example.urgs_api.ops.entity.DockerContainerDTO;
+import com.example.urgs_api.ops.entity.DockerContainerStatsDTO;
 import com.example.urgs_api.ops.entity.DockerLogDTO;
+import com.example.urgs_api.ops.entity.DockerOperationResultDTO;
 import com.example.urgs_api.ops.service.DockerService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -13,7 +15,9 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -205,5 +209,124 @@ public class DockerServiceImpl implements DockerService {
                     .append(log.getMessage()).append("\n");
         }
         return sb.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public DockerContainerStatsDTO getContainerStats(String containerId) {
+        try {
+            Process process = new ProcessBuilder("docker", "stats", "--no-stream", "--format",
+                    "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.BlockIO}}", containerId).start();
+            if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                return null;
+            }
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line = reader.readLine();
+                if (line != null) {
+                    String[] parts = line.split("\\|");
+                    if (parts.length >= 5) {
+                        String memUsage = parts[2];
+                        String memUse = memUsage;
+                        String memLim = "";
+                        if (memUsage.contains("/")) {
+                            String[] memParts = memUsage.split("/");
+                            memUse = memParts[0].trim();
+                            memLim = memParts[1].trim();
+                        }
+                        return DockerContainerStatsDTO.builder()
+                                .containerId(containerId)
+                                .containerName(parts[0].trim())
+                                .cpuPercent(parts[1].trim())
+                                .memUsage(memUse)
+                                .memLimit(memLim)
+                                .netIO(parts[3].trim())
+                                .blockIO(parts[4].trim())
+                                .build();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error getting container stats for {}", containerId, e);
+        }
+        return null;
+    }
+
+    @Override
+    public List<DockerContainerStatsDTO> getAllContainerStats() {
+        List<DockerContainerDTO> containers = listContainers();
+        List<DockerContainerDTO> running = containers.stream()
+                .filter(c -> "running".equals(c.getStatus()))
+                .collect(Collectors.toList());
+
+        List<CompletableFuture<DockerContainerStatsDTO>> futures = running.stream()
+                .map(c -> CompletableFuture.supplyAsync(() -> getContainerStats(c.getId())))
+                .collect(Collectors.toList());
+
+        return futures.stream()
+                .map(CompletableFuture::join)
+                .filter(s -> s != null)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public DockerOperationResultDTO startContainer(String containerId) {
+        return executeDockerCommand("start", containerId, 30);
+    }
+
+    @Override
+    public DockerOperationResultDTO stopContainer(String containerId) {
+        return executeDockerCommand("stop", containerId, 15);
+    }
+
+    @Override
+    public DockerOperationResultDTO restartContainer(String containerId) {
+        return executeDockerCommand("restart", containerId, 30);
+    }
+
+    private DockerOperationResultDTO executeDockerCommand(String operation, String containerId, int timeoutSeconds) {
+        try {
+            Process process = new ProcessBuilder("docker", operation, containerId).start();
+            boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+
+            if (!finished) {
+                process.destroyForcibly();
+                return DockerOperationResultDTO.builder()
+                        .success(false)
+                        .containerId(containerId)
+                        .operation(operation)
+                        .message("Operation timed out after " + timeoutSeconds + " seconds")
+                        .build();
+            }
+
+            String output;
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                output = reader.lines().collect(Collectors.joining("\n"));
+            }
+
+            String errorOutput;
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
+                errorOutput = reader.lines().collect(Collectors.joining("\n"));
+            }
+
+            boolean success = process.exitValue() == 0;
+            return DockerOperationResultDTO.builder()
+                    .success(success)
+                    .containerId(containerId)
+                    .operation(operation)
+                    .message(success ? "Container " + operation + " successful" : errorOutput)
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Error executing docker {} for container {}", operation, containerId, e);
+            return DockerOperationResultDTO.builder()
+                    .success(false)
+                    .containerId(containerId)
+                    .operation(operation)
+                    .message("Error: " + e.getMessage())
+                    .build();
+        }
     }
 }

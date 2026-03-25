@@ -1,7 +1,9 @@
 package com.example.urgs_api.ops.controller;
 
 import com.example.urgs_api.ops.entity.DockerContainerDTO;
+import com.example.urgs_api.ops.entity.DockerContainerStatsDTO;
 import com.example.urgs_api.ops.entity.DockerLogDTO;
+import com.example.urgs_api.ops.entity.DockerOperationResultDTO;
 import com.example.urgs_api.ops.service.DockerService;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -43,5 +45,30 @@ public class DockerController {
 
         response.getOutputStream().write(content);
         response.flushBuffer();
+    }
+
+    @GetMapping("/containers/{containerId}/stats")
+    public DockerContainerStatsDTO getContainerStats(@PathVariable String containerId) {
+        return dockerService.getContainerStats(containerId);
+    }
+
+    @GetMapping("/containers/stats")
+    public List<DockerContainerStatsDTO> getAllContainerStats() {
+        return dockerService.getAllContainerStats();
+    }
+
+    @PostMapping("/containers/{containerId}/start")
+    public DockerOperationResultDTO startContainer(@PathVariable String containerId) {
+        return dockerService.startContainer(containerId);
+    }
+
+    @PostMapping("/containers/{containerId}/stop")
+    public DockerOperationResultDTO stopContainer(@PathVariable String containerId) {
+        return dockerService.stopContainer(containerId);
+    }
+
+    @PostMapping("/containers/{containerId}/restart")
+    public DockerOperationResultDTO restartContainer(@PathVariable String containerId) {
+        return dockerService.restartContainer(containerId);
     }
 }
