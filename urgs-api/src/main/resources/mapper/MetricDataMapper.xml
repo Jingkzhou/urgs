@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.urgs_api.metric.mapper.MetricDataMapper">
+
+    <select id="queryTrend" resultType="com.example.urgs_api.metric.dto.MetricTrendVO">
+        SELECT
+            DATE_FORMAT(data_date, #{datePattern}) AS timeLabel,
+            AVG(metric_value) AS avgValue,
+            MAX(metric_value) AS `maxValue`,
+            MIN(metric_value) AS `minValue`
+        FROM t_metric_data
+        WHERE system_id = #{systemId}
+          AND type_code = #{typeCode}
+          AND data_date BETWEEN #{startTime} AND #{endTime}
+        GROUP BY timeLabel
+        ORDER BY timeLabel
+    </select>
+
+</mapper>

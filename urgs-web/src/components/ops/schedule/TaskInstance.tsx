@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, RotateCw, StopCircle, FileText, CheckCircle, X, RefreshCw, Terminal, Eye, EyeOff, Play, ArrowUpCircle, ArrowDownCircle, Boxes, ClipboardList, LayoutGrid, List, Activity, XCircle, Clock, ChevronUp, ChevronDown, Filter } from 'lucide-react';
 import { message, DatePicker, Modal, Drawer, Tag, Divider, Empty, Badge } from 'antd';
 import dayjs from 'dayjs';
@@ -39,6 +40,16 @@ interface Workflow {
 }
 
 // Sub-component for Detailed View
+interface UpstreamDependency {
+    taskId: string;
+    taskName: string;
+    status: string | null;
+    instanceId: number | null;
+    startTime: string | null;
+    endTime: string | null;
+    level: number;
+}
+
 const InstanceDetailDrawer: React.FC<{
     visible: boolean;
     onClose: () => void;
@@ -47,7 +58,29 @@ const InstanceDetailDrawer: React.FC<{
     workflowName?: string;
     systemName?: string;
     onViewLog: (inst: TaskInstance) => void;
-}> = ({ visible, onClose, instance, task, workflowName, systemName, onViewLog }) => {
+    onShowDependencyGraph?: (inst: TaskInstance) => void;
+}> = ({ visible, onClose, instance, task, workflowName, systemName, onViewLog, onShowDependencyGraph }) => {
+    const [upstreamDeps, setUpstreamDeps] = useState<UpstreamDependency[]>([]);
+    const [depsLoading, setDepsLoading] = useState(false);
+
+    useEffect(() => {
+        if (visible && instance) {
+            setDepsLoading(true);
+            get<UpstreamDependency[]>('/api/task/instance/upstream-dependencies', {
+                taskId: instance.taskId,
+                dataDate: instance.dataDate
+            }).then(data => {
+                setUpstreamDeps(data || []);
+            }).catch(() => {
+                setUpstreamDeps([]);
+            }).finally(() => {
+                setDepsLoading(false);
+            });
+        } else {
+            setUpstreamDeps([]);
+        }
+    }, [visible, instance?.id]);
+
     if (!instance) return null;
 
     const statusMap: Record<string, { color: string, label: string }> = {
@@ -162,6 +195,90 @@ const InstanceDetailDrawer: React.FC<{
                             </div>
                         </div>
                     </div>
+
+                    {/* Upstream Dependencies */}
+                    {(upstreamDeps.length > 0 || depsLoading) && (() => {
+                        const completed = upstreamDeps.filter(d => d.status === 'SUCCESS' || d.status === 'FORCE_SUCCESS').length;
+                        const total = upstreamDeps.length;
+                        const directDeps = upstreamDeps.filter(d => d.level === 1);
+                        const indirectDeps = upstreamDeps.filter(d => d.level > 1);
+
+                        const renderDepRow = (dep: UpstreamDependency) => {
+                            const depStatus = dep.status ? (statusMap[dep.status] || { color: '#94a3b8', label: dep.status }) : { color: '#d1d5db', label: '未生成' };
+                            return (
+                                <div key={dep.taskId} className="px-5 py-2.5 flex items-center justify-between">
+                                    <div className="flex-1 min-w-0 mr-3">
+                                        <div className="text-sm text-slate-700 font-medium truncate">{dep.taskName}</div>
+                                        {dep.startTime && (
+                                            <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                                                {dayjs(dep.startTime).format('HH:mm:ss')}
+                                                {dep.endTime ? ` - ${dayjs(dep.endTime).format('HH:mm:ss')}` : ' ...'}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <Tag
+                                        color={depStatus.color}
+                                        className="m-0 text-[11px] font-bold border-0 rounded-md"
+                                        style={{ backgroundColor: `${depStatus.color}18`, color: depStatus.color }}
+                                    >
+                                        {depStatus.label}
+                                    </Tag>
+                                </div>
+                            );
+                        };
+
+                        return (
+                            <div className="bg-white rounded-2xl overflow-hidden border border-slate-200/60 shadow-sm">
+                                <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/50 text-xs font-bold text-slate-500 uppercase tracking-tight flex items-center justify-between">
+                                    <span className="flex items-center gap-2">
+                                        <ArrowUpCircle size={14} /> 上游依赖状态
+                                        {!depsLoading && total > 0 && (
+                                            <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold normal-case ${completed === total ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
+                                                {completed}/{total}
+                                            </span>
+                                        )}
+                                    </span>
+                                    {onShowDependencyGraph && (
+                                        <button
+                                            onClick={() => onShowDependencyGraph(instance)}
+                                            className="text-[10px] text-blue-500 hover:text-blue-700 font-medium normal-case cursor-pointer flex items-center gap-1"
+                                        >
+                                            <Eye size={12} /> 依赖图
+                                        </button>
+                                    )}
+                                </div>
+                                {depsLoading ? (
+                                    <div className="p-4 text-center text-slate-400 text-sm">
+                                        <RotateCw size={14} className="animate-spin inline mr-2" />
+                                        加载中...
+                                    </div>
+                                ) : (
+                                    <div>
+                                        {directDeps.length > 0 && (
+                                            <div>
+                                                <div className="px-5 py-1.5 bg-slate-50/80 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                                    直接依赖
+                                                </div>
+                                                <div className="divide-y divide-slate-100">
+                                                    {directDeps.map(renderDepRow)}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {indirectDeps.length > 0 && (
+                                            <div>
+                                                <div className="px-5 py-1.5 bg-slate-50/80 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-t border-slate-100">
+                                                    间接依赖
+                                                </div>
+                                                <div className="divide-y divide-slate-100">
+                                                    {indirectDeps.map(renderDepRow)}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
 
                     {/* Task Content Preview */}
                     {task?.content && (
@@ -325,7 +442,7 @@ const TaskInstance: React.FC = () => {
         setLogLoading(true);
         try {
             const response = await get<{ content: string }>(`/api/task/instance/log/${instance.id}`);
-            setLogContent(response?.content || 'No log content available.');
+            setLogContent(response?.content || '');
         } catch (error) {
             console.error('Failed to fetch log', error);
             setLogContent('Failed to load log.');
@@ -880,12 +997,13 @@ const TaskInstance: React.FC = () => {
                 systemName={detailInstance ? systems.find(s => String(s.id) === String(detailInstance.systemId))?.name : undefined}
                 workflowName={detailInstance ? taskToWorkflowMap[detailInstance.taskId] : undefined}
                 onViewLog={handleViewLog}
+                onShowDependencyGraph={(inst) => handleDependencyView(inst, 'upstream')}
             />
 
             {/* Log Console Modal */}
             {
-                showLog && (
-                    <div className="absolute inset-0 z-[3000] flex items-center justify-center bg-slate-200/20 backdrop-blur-sm">
+                showLog && createPortal(
+                    <div className="fixed inset-0 z-[3200] flex items-center justify-center bg-slate-200/20 backdrop-blur-sm">
                         <div className="w-[850px] h-[650px] bg-white rounded-3xl shadow-2xl border border-slate-200/60 flex flex-col overflow-hidden animate-scale-in">
                             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
                                 <div className="flex items-center gap-3 text-slate-700">
@@ -912,14 +1030,15 @@ const TaskInstance: React.FC = () => {
                                 )}
                             </div>
                         </div>
-                    </div>
+                    </div>,
+                    document.body
                 )
             }
 
             {/* Rerun Options Modal */}
             {
-                rerunModalVisible && (
-                    <div className="absolute inset-0 z-[3000] flex items-center justify-center animate-fade-in">
+                rerunModalVisible && createPortal(
+                    <div className="fixed inset-0 z-[3200] flex items-center justify-center animate-fade-in">
                         <div className="bg-white rounded-xl shadow-2xl w-[400px] overflow-hidden animate-scale-in border border-slate-100">
                             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                                 <h3 className="font-semibold text-slate-800 flex items-center gap-2">
@@ -1008,14 +1127,15 @@ const TaskInstance: React.FC = () => {
                                 </button>
                             </div>
                         </div>
-                    </div>
+                    </div>,
+                    document.body
                 )
             }
 
             {/* Force Success Modal */}
             {
-                forceSuccessModalVisible && forceSuccessTargetInstance && (
-                    <div className="absolute inset-0 z-[3000] flex items-center justify-center animate-fade-in">
+                forceSuccessModalVisible && forceSuccessTargetInstance && createPortal(
+                    <div className="fixed inset-0 z-[3200] flex items-center justify-center animate-fade-in">
                         <div className="bg-white rounded-xl shadow-2xl w-[400px] overflow-hidden animate-scale-in border border-slate-100">
                             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-green-50/50">
                                 <h3 className="font-semibold text-slate-800 flex items-center gap-2">
@@ -1071,7 +1191,8 @@ const TaskInstance: React.FC = () => {
                                 </button>
                             </div>
                         </div>
-                    </div>
+                    </div>,
+                    document.body
                 )
             }
 
@@ -1086,9 +1207,9 @@ const TaskInstance: React.FC = () => {
 
             {/* Context Menu */}
             {
-                contextMenu.visible && contextMenu.node && (
+                contextMenu.visible && contextMenu.node && createPortal(
                     <div
-                        className="fixed z-[2000] bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-[160px] animate-scale-in"
+                        className="fixed z-[3200] bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-[160px] animate-scale-in"
                         style={{ left: contextMenu.x, top: contextMenu.y }}
                         onClick={(e) => e.stopPropagation()}
                     >
@@ -1172,7 +1293,8 @@ const TaskInstance: React.FC = () => {
                                 <CheckCircle size={14} /> 强制成功
                             </button>
                         )}
-                    </div>
+                    </div>,
+                    document.body
                 )
             }
         </div >
@@ -1262,10 +1384,13 @@ const LogViewer: React.FC<{ content: string }> = ({ content }) => {
                             const isError = line.toLowerCase().includes('error') || line.toLowerCase().includes('exception') || line.toLowerCase().includes('fail');
                             const isWarn = line.toLowerCase().includes('warn');
 
-                            // Extract Timestamp if present (Simple ISO-like check or HH:mm:ss)
-                            const timeMatch = line.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2})/) || line.match(/(\d{2}:\d{2}:\d{2}\.\d{3})/);
-                            const timestamp = timeMatch ? timeMatch[0] : '';
-                            const rest = timestamp ? line.replace(timestamp, '') : line;
+                            // Extract Timestamp if present (Support ISO, yyyy-MM-dd HH:mm:ss, HH:mm:ss with optional brackets)
+                            const timeMatch = line.match(/\[?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:[+-]\d{2}:\d{2}|Z)?)\]?/) || 
+                                              line.match(/\[?(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}(?:\.\d{3})?)\]?/) ||
+                                              line.match(/\[?(\d{2}:\d{2}:\d{2}(?:\.\d{3})?)\]?/);
+                            const rawMatch = timeMatch ? timeMatch[0] : '';
+                            const timestamp = timeMatch ? timeMatch[1] : '';
+                            const rest = rawMatch ? line.replace(rawMatch, '').trimStart() : line;
 
                             return (
                                 <div key={lIdx} className={`flex items-start gap-3 hover:bg-white/5 px-2 rounded ${isError ? 'text-red-400' : isWarn ? 'text-amber-400' : ''}`}>

@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
+import com.example.urgs_api.task.vo.UpstreamDependencyVO;
 import com.example.urgs_api.task.vo.WorkflowStatsVO;
 import com.example.urgs_api.task.vo.TaskDefinitionStatsVO;
 import com.example.urgs_api.workflow.entity.Workflow;
@@ -86,8 +87,11 @@ public class TaskService {
         delWrapper.eq("task_id", task.getId());
         taskDependencyMapper.delete(delWrapper);
 
-        // 2. Insert new
+        // 2. Cycle detection + Insert new
         if (preTaskIds != null && !preTaskIds.isEmpty()) {
+            if (hasCircularDependency(task.getId(), preTaskIds)) {
+                throw new IllegalArgumentException("检测到循环依赖，无法保存");
+            }
             for (String preId : preTaskIds) {
                 TaskDependency dep = new TaskDependency();
                 dep.setTaskId(task.getId());
@@ -312,12 +316,20 @@ public class TaskService {
     }
 
     private void resetInstance(TaskInstance instance) {
-        instance.setStatus("WAITING"); // Reset to WAITING
-        instance.setStartTime(null);
-        instance.setEndTime(null);
-        instance.setCreateTime(LocalDateTime.now());
-        instance.setUpdateTime(LocalDateTime.now());
-        taskInstanceMapper.updateById(instance);
+        UpdateWrapper<TaskInstance> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", instance.getId());
+        updateWrapper.set("status", "WAITING");
+        updateWrapper.set("start_time", null);
+        updateWrapper.set("end_time", null);
+        updateWrapper.set("log_content", null);
+        updateWrapper.set("create_time", LocalDateTime.now());
+        updateWrapper.set("update_time", LocalDateTime.now());
+        
+        Task task = taskMapper.selectById(instance.getTaskId());
+        if (task != null) {
+            updateWrapper.set("priority", task.getPriority());
+        }
+        taskInstanceMapper.update(null, updateWrapper);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -329,8 +341,9 @@ public class TaskService {
         instance.setStatus("FORCE_SUCCESS");
         instance.setEndTime(LocalDateTime.now());
         instance.setUpdateTime(LocalDateTime.now());
+        String existingLog = instance.getLogContent() != null ? instance.getLogContent() : "";
         instance.setLogContent(
-                instance.getLogContent() + "\n[System] Manually marked as success at " + LocalDateTime.now());
+                existingLog + "\n[System] Manually marked as success at " + LocalDateTime.now());
         taskInstanceMapper.updateById(instance);
 
         // Trigger downstream tasks
@@ -392,12 +405,27 @@ public class TaskService {
 
     public String getTaskLog(String id) {
         TaskInstance instance = taskInstanceMapper.selectById(id);
-        if (instance != null) {
-            log.info("Retrieved log for task {}. Content length: {}", id,
-                    instance.getLogContent() != null ? instance.getLogContent().length() : "null");
+        if (instance == null) {
+            return "Log not found";
+        }
+        if (instance.getLogContent() != null && !instance.getLogContent().isEmpty()) {
+            log.info("Retrieved log for task {}. Content length: {}", id, instance.getLogContent().length());
             return instance.getLogContent();
         }
-        return "Log not found";
+        // 无执行日志时，返回实例状态摘要
+        StringBuilder sb = new StringBuilder();
+        sb.append("[System] Task Instance ID: ").append(instance.getId()).append("\n");
+        sb.append("[System] Task ID: ").append(instance.getTaskId()).append("\n");
+        sb.append("[System] Status: ").append(instance.getStatus()).append("\n");
+        if (instance.getCreateTime() != null) {
+            sb.append("[System] Created at: ").append(instance.getCreateTime()).append("\n");
+        }
+        if (instance.getStartTime() != null) {
+            sb.append("[System] Started at: ").append(instance.getStartTime()).append("\n");
+        } else {
+            sb.append("[System] Waiting to be dispatched by executor...\n");
+        }
+        return sb.toString();
     }
 
     public com.example.urgs_api.task.vo.TaskInstanceStatsVO getDailyStats(String date) {
@@ -550,6 +578,7 @@ public class TaskService {
                 existing.setSystemId(task.getSystemId());
                 existing.setTaskType(task.getType());
                 existing.setContentSnapshot(task.getContent());
+                existing.setPriority(task.getPriority());
             }
 
             existing.setStatus("PENDING"); // Wait for dependencies
@@ -579,6 +608,7 @@ public class TaskService {
             instance.setSystemId(task.getSystemId());
             instance.setTaskType(task.getType());
             instance.setContentSnapshot(task.getContent());
+            instance.setPriority(task.getPriority());
         }
 
         instance.setCreateTime(LocalDateTime.now());
@@ -600,6 +630,110 @@ public class TaskService {
         }
 
         return String.valueOf(instance.getId());
+    }
+
+    public List<UpstreamDependencyVO> getUpstreamDependencies(String taskId, String dataDate) {
+        List<UpstreamDependencyVO> result = new ArrayList<>();
+        java.util.Set<String> visited = new java.util.HashSet<>();
+        java.util.Queue<String[]> queue = new java.util.LinkedList<>();
+
+        // Initialize: direct upstream of the given task
+        QueryWrapper<TaskDependency> initQuery = new QueryWrapper<>();
+        initQuery.eq("task_id", taskId);
+        for (TaskDependency dep : taskDependencyMapper.selectList(initQuery)) {
+            queue.add(new String[]{dep.getPreTaskId(), "1"});
+        }
+
+        while (!queue.isEmpty()) {
+            String[] item = queue.poll();
+            String curTaskId = item[0];
+            int level = Integer.parseInt(item[1]);
+
+            if (visited.contains(curTaskId)) continue;
+            visited.add(curTaskId);
+
+            Task preTask = taskMapper.selectById(curTaskId);
+
+            // Skip DEPENDENT proxy tasks: resolve to real task via content.taskId
+            if (preTask != null && "DEPENDENT".equals(preTask.getType())) {
+                String realTaskId = extractTaskIdFromContent(preTask.getContent());
+                if (realTaskId != null && !visited.contains(realTaskId)) {
+                    queue.add(new String[]{realTaskId, String.valueOf(level)});
+                }
+                continue;
+            }
+
+            UpstreamDependencyVO vo = new UpstreamDependencyVO();
+            vo.setTaskId(curTaskId);
+            vo.setLevel(level);
+            vo.setTaskName(preTask != null ? preTask.getName() : curTaskId);
+
+            QueryWrapper<TaskInstance> instQuery = new QueryWrapper<>();
+            instQuery.eq("task_id", curTaskId);
+            instQuery.eq("data_date", dataDate);
+            TaskInstance preInstance = taskInstanceMapper.selectOne(instQuery);
+
+            if (preInstance != null) {
+                vo.setStatus(preInstance.getStatus());
+                vo.setInstanceId(preInstance.getId());
+                vo.setStartTime(preInstance.getStartTime() != null ? preInstance.getStartTime().toString() : null);
+                vo.setEndTime(preInstance.getEndTime() != null ? preInstance.getEndTime().toString() : null);
+            } else {
+                // No instance found: default to WAITING (等待下发), consistent with dependency graph
+                vo.setStatus("WAITING");
+            }
+
+            result.add(vo);
+
+            // BFS: continue to this task's upstream
+            QueryWrapper<TaskDependency> nextQuery = new QueryWrapper<>();
+            nextQuery.eq("task_id", curTaskId);
+            for (TaskDependency dep : taskDependencyMapper.selectList(nextQuery)) {
+                if (!visited.contains(dep.getPreTaskId())) {
+                    queue.add(new String[]{dep.getPreTaskId(), String.valueOf(level + 1)});
+                }
+            }
+        }
+
+        result.sort(java.util.Comparator.comparingInt(UpstreamDependencyVO::getLevel));
+        return result;
+    }
+
+    /**
+     * Detect circular dependency: BFS from each preTaskId upstream,
+     * if taskId is reachable, adding these dependencies would create a cycle.
+     */
+    private boolean hasCircularDependency(String taskId, List<String> preTaskIds) {
+        java.util.Set<String> visited = new java.util.HashSet<>();
+        java.util.Queue<String> queue = new java.util.LinkedList<>(preTaskIds);
+
+        while (!queue.isEmpty()) {
+            String cur = queue.poll();
+            if (cur.equals(taskId)) return true;
+            if (visited.contains(cur)) continue;
+            visited.add(cur);
+
+            QueryWrapper<TaskDependency> qw = new QueryWrapper<>();
+            qw.eq("task_id", cur);
+            for (TaskDependency dep : taskDependencyMapper.selectList(qw)) {
+                if (!visited.contains(dep.getPreTaskId())) {
+                    queue.offer(dep.getPreTaskId());
+                }
+            }
+        }
+        return false;
+    }
+
+    private String extractTaskIdFromContent(String content) {
+        if (content == null || content.isBlank()) return null;
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode node = om.readTree(content);
+            com.fasterxml.jackson.databind.JsonNode taskIdNode = node.get("taskId");
+            return taskIdNode != null && !taskIdNode.isNull() ? taskIdNode.asText() : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     public TaskDefinitionStatsVO getTaskGlobalStats() {

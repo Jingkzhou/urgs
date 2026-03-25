@@ -2,7 +2,9 @@ package com.example.urgs_api.knowledge.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.example.urgs_api.knowledge.entity.KnowledgeDocument;
+import com.example.urgs_api.knowledge.entity.KnowledgeTag;
 import com.example.urgs_api.knowledge.service.KnowledgeDocumentService;
+import com.example.urgs_api.knowledge.service.KnowledgeTagService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +23,7 @@ import java.util.Map;
 public class KnowledgeDocumentController {
 
     private final KnowledgeDocumentService documentService;
+    private final KnowledgeTagService tagService;
 
     /**
      * 分页查询文档
@@ -122,6 +125,45 @@ public class KnowledgeDocumentController {
         return ResponseEntity.ok(documentService.getFavoriteDocuments(userId));
     }
 
+    /**
+     * 批量删除文档
+     */
+    @PostMapping("/batch-delete")
+    public ResponseEntity<Map<String, Integer>> batchDeleteDocuments(
+            @RequestBody BatchIdsRequest req) {
+        int count = documentService.batchDeleteDocuments(req.getIds());
+        return ResponseEntity.ok(Map.of("count", count));
+    }
+
+    /**
+     * 批量移动文档到目标文件夹
+     */
+    @PostMapping("/batch-move")
+    public ResponseEntity<Map<String, Integer>> batchMoveDocuments(
+            @RequestBody BatchMoveRequest req) {
+        int count = documentService.batchMoveDocuments(req.getIds(), req.getFolderId());
+        return ResponseEntity.ok(Map.of("count", count));
+    }
+
+    /**
+     * 批量给文档打标签
+     */
+    @PostMapping("/batch-tag")
+    public ResponseEntity<Map<String, Integer>> batchTagDocuments(
+            @RequestBody BatchTagRequest req) {
+        int count = documentService.batchTagDocuments(req.getIds(), req.getTagIds());
+        return ResponseEntity.ok(Map.of("count", count));
+    }
+
+    /**
+     * 批量获取文档的标签映射
+     */
+    @PostMapping("/tags-map")
+    public ResponseEntity<Map<Long, List<KnowledgeTag>>> getDocumentTagsMap(
+            @RequestBody BatchIdsRequest req) {
+        return ResponseEntity.ok(tagService.getDocumentTagsMap(req.getIds()));
+    }
+
     private Long getUserId(HttpServletRequest request) {
         Object userId = request.getAttribute("userId");
         if (userId == null) {
@@ -145,6 +187,23 @@ public class KnowledgeDocumentController {
     public static class UpdateDocumentRequest {
         private Long folderId;
         private String title;
+        private List<Long> tagIds;
+    }
+
+    @Data
+    public static class BatchIdsRequest {
+        private List<Long> ids;
+    }
+
+    @Data
+    public static class BatchMoveRequest {
+        private List<Long> ids;
+        private Long folderId;
+    }
+
+    @Data
+    public static class BatchTagRequest {
+        private List<Long> ids;
         private List<Long> tagIds;
     }
 }

@@ -767,39 +767,42 @@ const TaskDefinition: React.FC = () => {
 
 
             {/* Content Area */}
-            <div className="flex-1 overflow-auto px-6 py-6">
+            <div className="flex-1 overflow-hidden px-6 py-6 flex flex-col min-h-0">
                 {listViewMode === 'card' ? (
                     /* Card Grid View */
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                        {loading && (
-                            <div className="col-span-full py-20 text-center text-slate-500">
-                                加载中...
-                            </div>
-                        )}
-                        {!loading && tasks.length === 0 && (
-                            <div className="col-span-full py-20 text-center text-slate-500">
-                                暂无数据
-                            </div>
-                        )}
-                        {!loading && tasks.map((task) => (
-                            <TaskCard
-                                key={task.id}
-                                task={{
-                                    ...task,
-                                    systemName: systems.find(s => String(s.id) === String(task.systemId))?.name,
-                                    workflowName: getWorkflowName(task.id),
-                                    cronExpression: task.cronExpression
-                                }}
-                                onEdit={handleEditTask}
-                                onShowDependencies={(id) => handleShowDependencies(tasks.find(t => t.id === id), 'upstream')}
-                            />
-                        ))}
+                    <div className="flex-1 overflow-y-auto min-h-0 pb-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                            {loading && (
+                                <div className="col-span-full py-20 text-center text-slate-500">
+                                    加载中...
+                                </div>
+                            )}
+                            {!loading && tasks.length === 0 && (
+                                <div className="col-span-full py-20 text-center text-slate-500">
+                                    暂无数据
+                                </div>
+                            )}
+                            {!loading && tasks.map((task) => (
+                                <TaskCard
+                                    key={task.id}
+                                    task={{
+                                        ...task,
+                                        systemName: systems.find(s => String(s.id) === String(task.systemId))?.name,
+                                        workflowName: getWorkflowName(task.id),
+                                        cronExpression: task.cronExpression
+                                    }}
+                                    onEdit={handleEditTask}
+                                    onShowDependencies={(id) => handleShowDependencies(tasks.find(t => t.id === id), 'upstream')}
+                                />
+                            ))}
+                        </div>
                     </div>
                 ) : (
                     /* Table List View */
-                    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                        <table className="w-full text-sm text-left">
-                            <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
+                    <div className="flex-1 bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm flex flex-col min-h-0">
+                        <div className="flex-1 overflow-auto">
+                            <table className="w-full min-w-[1200px] text-sm text-left">
+                                <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
                                 <tr>
                                     <th className="px-6 py-3 font-medium whitespace-nowrap w-10">
                                         <Checkbox
@@ -828,14 +831,14 @@ const TaskDefinition: React.FC = () => {
                             <tbody className="divide-y divide-slate-100 relative">
                                 {loading && (
                                     <tr>
-                                        <td colSpan={8} className="py-20 text-center text-slate-500">
+                                        <td colSpan={10} className="py-20 text-center text-slate-500">
                                             加载中...
                                         </td>
                                     </tr>
                                 )}
                                 {!loading && tasks.length === 0 && (
                                     <tr>
-                                        <td colSpan={8} className="py-20 text-center text-slate-500">
+                                        <td colSpan={10} className="py-20 text-center text-slate-500">
                                             暂无数据
                                         </td>
                                     </tr>
@@ -885,7 +888,7 @@ const TaskDefinition: React.FC = () => {
                                         <td className="px-6 py-2 text-slate-600">{task.group}</td>
                                         <td className="px-6 py-2 text-slate-500 text-xs">{task.updateTime}</td>
                                         <td className="px-6 py-2 text-right whitespace-nowrap">
-                                            <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <div className="flex items-center justify-end gap-2">
 
                                                 <button className="p-1 text-slate-400 hover:text-blue-600" title="编辑" onClick={() => handleEditTask(task)}>
                                                     <Edit size={16} />
@@ -906,18 +909,30 @@ const TaskDefinition: React.FC = () => {
                                 ))}
                             </tbody>
                         </table>
+                        </div>
+                        <div className="p-4 border-t border-slate-200 bg-white flex justify-end shrink-0">
+                            <Pagination
+                                current={pagination.current}
+                                total={pagination.total}
+                                pageSize={pagination.pageSize}
+                                onChange={(page, size) => fetchTasks(page, size)}
+                                showSizeChanger
+                            />
+                        </div>
                     </div>
                 )}
-            </div>
-
-            <div className="p-4 border-t border-slate-200 bg-white">
-                <Pagination
-                    current={pagination.current}
-                    total={pagination.total}
-                    pageSize={pagination.pageSize}
-                    onChange={(page, size) => fetchTasks(page, size)}
-                    showSizeChanger
-                />
+                
+                {listViewMode === 'card' && (
+                    <div className="p-4 border border-slate-200 bg-white shadow-sm rounded-xl mt-4 flex justify-end shrink-0">
+                        <Pagination
+                            current={pagination.current}
+                            total={pagination.total}
+                            pageSize={pagination.pageSize}
+                            onChange={(page, size) => fetchTasks(page, size)}
+                            showSizeChanger
+                        />
+                    </div>
+                )}
             </div>
 
             <DependencyGraphModal

@@ -58,3 +58,38 @@
 - 前端：`urgs-web/`（React + TypeScript + Vite + Ant Design）
 - 数据库迁移：`urgs-api/src/main/resources/db/migration/`
 - 工作流文档：`.agent/workflows/`
+
+## gstack — 虚拟工程团队技能集
+
+本项目已集成 [gstack](https://github.com/garrytan/gstack)，提供一套完整的开发流程斜杠命令。
+
+**所有网页浏览操作必须使用 `/browse` 技能，严禁使用 `mcp__claude-in-chrome__*` 工具。**
+
+如果 gstack 技能无法使用，请运行：`cd .claude/skills/gstack && ./setup`（需要先安装 bun）
+
+### 可用技能
+
+| 技能命令 | 说明 |
+|---------|------|
+| `/office-hours` | 产品思维 — 在写代码前重构问题框架 |
+| `/plan-ceo-review` | CEO 视角 — 产品战略评审 |
+| `/plan-eng-review` | 架构评审 — 数据流、边界情况、测试计划 |
+| `/plan-design-review` | 设计评审 — 审查计划中的设计维度 |
+| `/design-consultation` | 设计咨询 — 从零构建设计系统 |
+| `/review` | 代码审查 — 发现生产级 bug |
+| `/investigate` | 调试 — 系统性定位根本原因 |
+| `/design-review` | 视觉审查 — 审查并修复 UI 设计问题 |
+| `/qa` | QA 测试 — 真实浏览器测试并修复 bug |
+| `/qa-only` | QA 报告 — 只报告不修改 |
+| `/ship` | 发布 — 同步主干、运行测试、创建 PR |
+| `/document-release` | 文档更新 — 发布后同步所有文档 |
+| `/retro` | 回顾 — 周度开发指标统计 |
+| `/browse` | 浏览器 — 真实 Chromium 网页操作 |
+| `/codex` | 第二意见 — OpenAI 独立代码审查 |
+| `/careful` | 安全防护 — 危险命令二次确认 |
+| `/freeze` | 编辑锁定 — 限制编辑范围到指定目录 |
+| `/guard` | 最高安全 — careful + freeze 组合 |
+| `/unfreeze` | 解锁 — 移除 freeze 限制 |
+| `/gstack-upgrade` | 升级 — 更新 gstack 至最新版本 |
+
+详细使用说明见 `.agent/workflows/gstack-guide.md`

@@ -13,6 +13,7 @@ export interface MaintenanceRecordItem {
     operator: string;
     time: string;
     reqId?: string;
+    reqName?: string;
     plannedDate?: string;
     script?: string;
     systemCode?: string;

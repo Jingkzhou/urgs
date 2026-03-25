@@ -26,6 +26,7 @@ public class MaintenanceRecord {
     private LocalDate plannedDate;
     private String operator;
     private String reqId;
+    private String reqName;
     private String description;
     private String script;
     private String systemCode;
@@ -112,6 +113,14 @@ public class MaintenanceRecord {
 
     public void setReqId(String reqId) {
         this.reqId = reqId;
+    }
+
+    public String getReqName() {
+        return reqName;
+    }
+
+    public void setReqName(String reqName) {
+        this.reqName = reqName;
     }
 
     public String getDescription() {

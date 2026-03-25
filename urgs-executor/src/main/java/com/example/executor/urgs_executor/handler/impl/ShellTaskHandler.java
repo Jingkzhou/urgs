@@ -159,7 +159,8 @@ public class ShellTaskHandler implements TaskHandler {
                 long lastUpdate = System.currentTimeMillis();
                 while ((line = reader.readLine()) != null) {
                     log.info("[Shell-{}-Remote] {}", instance.getId(), line);
-                    logBuilder.append(line).append("\n");
+                    String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                    logBuilder.append("[").append(ts).append("] ").append(line).append("\n");
                     if (System.currentTimeMillis() - lastUpdate > 1000) {
                         updateLog(instance, logBuilder.toString());
                         lastUpdate = System.currentTimeMillis();
@@ -168,7 +169,8 @@ public class ShellTaskHandler implements TaskHandler {
 
                 while ((line = errReader.readLine()) != null) {
                     log.error("[Shell-{}-Remote-Err] {}", instance.getId(), line);
-                    logBuilder.append("ERR: ").append(line).append("\n");
+                    String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                    logBuilder.append("[").append(ts).append("] ERR: ").append(line).append("\n");
                     if (System.currentTimeMillis() - lastUpdate > 1000) {
                         updateLog(instance, logBuilder.toString());
                         lastUpdate = System.currentTimeMillis();
@@ -222,7 +224,8 @@ public class ShellTaskHandler implements TaskHandler {
             long lastUpdate = System.currentTimeMillis();
             while ((line = reader.readLine()) != null) {
                 log.info("[Shell-{}] {}", instance.getId(), line);
-                logBuilder.append(line).append("\n");
+                String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                logBuilder.append("[").append(ts).append("] ").append(line).append("\n");
                 // 每隔一秒钟更新一次数据库中的日志，避免高频操作导致的压力
                 if (System.currentTimeMillis() - lastUpdate > 1000) {
                     updateLog(instance, logBuilder.toString());

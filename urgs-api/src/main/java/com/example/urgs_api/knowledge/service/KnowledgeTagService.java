@@ -9,7 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 知识标签服务
@@ -93,5 +94,29 @@ public class KnowledgeTagService {
      */
     public List<KnowledgeTag> getDocumentTags(Long documentId) {
         return tagMapper.findByDocumentId(documentId);
+    }
+
+    /**
+     * 批量获取多个文档的标签映射
+     */
+    public Map<Long, List<KnowledgeTag>> getDocumentTagsMap(List<Long> documentIds) {
+        if (documentIds == null || documentIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Map<String, Object>> rows = tagMapper.findTagsByDocumentIds(documentIds);
+        Map<Long, List<KnowledgeTag>> result = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            Long docId = ((Number) row.get("document_id")).longValue();
+            KnowledgeTag tag = new KnowledgeTag();
+            tag.setId(((Number) row.get("id")).longValue());
+            tag.setUserId(((Number) row.get("user_id")).longValue());
+            tag.setName((String) row.get("name"));
+            tag.setColor((String) row.get("color"));
+            if (row.get("create_time") instanceof LocalDateTime) {
+                tag.setCreateTime((LocalDateTime) row.get("create_time"));
+            }
+            result.computeIfAbsent(docId, k -> new ArrayList<>()).add(tag);
+        }
+        return result;
     }
 }

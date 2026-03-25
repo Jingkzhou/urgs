@@ -82,6 +82,13 @@ public class TaskInstanceController {
         return taskService.getWorkflowStats(date);
     }
 
+    @GetMapping("/upstream-dependencies")
+    public java.util.List<com.example.urgs_api.task.vo.UpstreamDependencyVO> getUpstreamDependencies(
+            @RequestParam String taskId,
+            @RequestParam String dataDate) {
+        return taskService.getUpstreamDependencies(taskId, dataDate);
+    }
+
     @PostMapping("/create")
     public org.springframework.http.ResponseEntity<?> createInstance(@RequestParam String taskId,
             @RequestParam String dataDate) {

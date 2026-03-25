@@ -27,6 +27,7 @@ const AddMaintenanceModal: React.FC<AddMaintenanceModalProps> = ({ onClose, onSu
         modType: '新增字段',
         description: '',
         reqId: '',
+        reqName: '',
         plannedDate: '',
         script: '',
         operator: ''
@@ -45,6 +46,7 @@ const AddMaintenanceModal: React.FC<AddMaintenanceModalProps> = ({ onClose, onSu
                 modType: initialData.modType || '新增字段',
                 description: initialData.description || '',
                 reqId: initialData.reqId || '',
+                reqName: initialData.reqName || '',
                 plannedDate: initialData.plannedDate || '',
                 script: initialData.script || '',
                 operator: initialData.operator || ''
@@ -212,6 +214,25 @@ const AddMaintenanceModal: React.FC<AddMaintenanceModalProps> = ({ onClose, onSu
                                 </div>
                             </div>
 
+                            {/* 需求名称 */}
+                            <div>
+                                <label className="block text-xs font-medium text-amber-800/80 mb-1.5">
+                                    需求名称
+                                </label>
+                                <div className="relative">
+                                    <FileText size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="如: 新增余额字段"
+                                        className="w-full pl-9 pr-3 py-2 text-sm border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-200 bg-white"
+                                        value={form.reqName}
+                                        onChange={(e) => setForm({ ...form, reqName: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4">
                             {/* 计划上线时间 */}
                             <div>
                                 <label className="block text-xs font-medium text-amber-800/80 mb-1.5">

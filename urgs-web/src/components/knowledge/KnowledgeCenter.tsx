@@ -1,272 +1,207 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import {
-    Input,
-    Button,
-    Card,
-    Tag,
-    Space,
-    Modal,
-    Form,
-    message,
-    Dropdown,
-    Empty,
-    Spin,
-    Tooltip,
-    Upload,
-    Segmented,
-    Breadcrumb,
-} from 'antd';
-import {
-    Folder,
-    File,
-    Star,
-    Plus,
-    Search,
-    Trash2,
-    Upload as UploadIcon,
-    Tags,
-    ChevronLeft,
-    MoreVertical,
-    FolderPlus,
-    ArrowLeft,
-    LayoutGrid,
-    List as ListIcon,
-    FileText,
-    Image as ImageIcon,
-    FileCode,
-    Music,
-    Video,
-    FileArchive,
-    FileSpreadsheet,
-    FileBarChart,
-    FileType,
-    Users,
-    Lock,
-} from 'lucide-react';
-import type { UploadProps } from 'antd';
+import React, { useState, useMemo, useCallback } from 'react';
+import { Dropdown, Upload, Modal, Checkbox, message } from 'antd';
+import { FolderPlus, Upload as UploadIcon, Tags } from 'lucide-react';
+import type { KnowledgeTag } from '../../api/knowledge';
+import type { FolderTreeNode, KnowledgeDocument } from '../../api/knowledge';
+import { useKnowledgeStore } from './useKnowledgeStore';
+import { useUpload } from './useUpload';
+import KnowledgeToolbar from './KnowledgeToolbar';
+import DocumentGrid from './DocumentGrid';
+import DocumentList from './DocumentList';
+import FolderModal from './FolderModal';
+import TagManagerModal from './TagManagerModal';
+import FilePreviewModal from './FilePreviewModal';
+import BatchActionBar from './BatchActionBar';
+import { UploadProgressPanel } from './UploadProgressPanel';
 import * as api from '../../api/knowledge';
 
-import type {
-    FolderTreeNode,
-    KnowledgeDocument,
-    KnowledgeTag,
-} from '../../api/knowledge';
-import { getFileIcon } from '../../utils/fileIcons';
-import { UploadProgressPanel, UploadFileItem } from './UploadProgressPanel';
-import { hasPermission } from '../../utils/permission';
-
-
 const KnowledgeCenter: React.FC = () => {
-    // 状态
-    const [folders, setFolders] = useState<FolderTreeNode[]>([]);
-    const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
-    const [tags, setTags] = useState<KnowledgeTag[]>([]);
-    const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [searchKeyword, setSearchKeyword] = useState('');
-    const [layoutMode, setLayoutMode] = useState<'grid' | 'list'>('grid');
-    const [scope, setScope] = useState<'private' | 'shared'>('private');
+    const { state, actions, derived, permissions } = useKnowledgeStore();
+    const { currentBreadcrumbs, currentSubFolders } = derived;
 
-    // 共享空间权限
-    const isShared = scope === 'shared';
-    const canSharedUpload = hasPermission('knowledge:shared:upload');
-    const canSharedDelete = hasPermission('knowledge:shared:delete');
-    const canSharedFolderCreate = hasPermission('knowledge:shared:folder:create');
-    const canSharedFolderDelete = hasPermission('knowledge:shared:folder:delete');
-
-    // 上传状态管理器
-    const [uploadFiles, setUploadFiles] = useState<UploadFileItem[]>([]);
-    const [uploadPanelVisible, setUploadPanelVisible] = useState(false);
-    const lastLoadedMap = React.useRef<Map<string, { loaded: number, time: number }>>(new Map());
+    // 上传
+    const upload = useUpload({
+        selectedFolderId: state.selectedFolderId,
+        scope: state.scope,
+        onDocumentsChanged: actions.loadDocuments,
+        onFoldersChanged: actions.loadFolders,
+    });
 
     // 弹窗状态
     const [folderModalOpen, setFolderModalOpen] = useState(false);
-    const [tagModalOpen, setTagModalOpen] = useState(false);
     const [editingFolder, setEditingFolder] = useState<FolderTreeNode | null>(null);
+    const [tagModalOpen, setTagModalOpen] = useState(false);
 
-    // 文件夹创建缓存（防止并发上传时重复创建）
-    const folderCreationCache = React.useRef<Map<string, Promise<number>>>(new Map());
+    // 预览状态
+    const [previewDoc, setPreviewDoc] = useState<KnowledgeDocument | null>(null);
 
-    // 表单
-    const [folderForm] = Form.useForm();
-    const [tagForm] = Form.useForm();
+    // 单文档打标签状态
+    const [tagTargetDoc, setTagTargetDoc] = useState<KnowledgeDocument | null>(null);
+    const [tagSelectedIds, setTagSelectedIds] = useState<number[]>([]);
 
-    // 加载文件夹
-    const loadFolders = useCallback(async () => {
-        try {
-            const data = await api.getFolderTree(scope);
-            setFolders(data);
-        } catch (error) {
-            console.error('加载文件夹失败:', error);
+    const previewIndex = useMemo(() => {
+        if (!previewDoc) return -1;
+        return state.documents.findIndex(d => d.id === previewDoc.id);
+    }, [previewDoc, state.documents]);
+
+    const handlePreviewNext = useCallback(() => {
+        if (previewIndex >= 0 && previewIndex < state.documents.length - 1) {
+            setPreviewDoc(state.documents[previewIndex + 1]);
         }
-    }, [scope]);
+    }, [previewIndex, state.documents]);
 
-    // 加载文档
-    const loadDocuments = useCallback(async () => {
-        setLoading(true);
-        try {
-            const result = await api.listDocuments({
-                folderId: selectedFolderId ?? undefined,
-                keyword: searchKeyword || undefined,
-                page: 1,
-                size: 200,
-                scope,
-            });
-            setDocuments(result.records || []);
-        } catch (error) {
-            console.error('加载文档失败:', error);
-            setDocuments([]);
-        } finally {
-            setLoading(false);
+    const handlePreviewPrev = useCallback(() => {
+        if (previewIndex > 0) {
+            setPreviewDoc(state.documents[previewIndex - 1]);
         }
-    }, [selectedFolderId, searchKeyword, scope]);
-
-    const loadTags = useCallback(async () => {
-        try {
-            const data = await api.listTags();
-            setTags(data);
-        } catch (error) {
-            console.error('加载标签失败:', error);
-        }
-    }, []);
-
-    useEffect(() => {
-        loadFolders();
-        loadTags();
-    }, [loadFolders, loadTags]);
-
-    useEffect(() => {
-        loadDocuments();
-    }, [loadDocuments]);
-
-    // 计算当前路径和面包屑
-    const currentBreadcrumbs = useMemo(() => {
-        const path: Array<{ id: number | null, name: string }> = [{ id: null, name: '根目录' }];
-        if (!selectedFolderId) return path;
-
-        const resultPath: Array<{ id: number, name: string }> = [];
-        const findFullPath = (nodes: FolderTreeNode[], targetId: number, acc: Array<{ id: number, name: string }>) => {
-            for (const node of nodes) {
-                const newAcc = [...acc, { id: node.id, name: node.name }];
-                if (node.id === targetId) {
-                    resultPath.push(...newAcc);
-                    return true;
-                }
-                if (node.children && findFullPath(node.children, targetId, newAcc)) return true;
-            }
-            return false;
-        };
-
-        findFullPath(folders, selectedFolderId, []);
-        return [...path, ...resultPath];
-    }, [folders, selectedFolderId]);
-
-    // 获取当前文件夹下的子文件夹
-    const currentSubFolders = useMemo(() => {
-        if (!selectedFolderId) return folders;
-
-        const findNode = (nodes: FolderTreeNode[], targetId: number): FolderTreeNode | null => {
-            for (const node of nodes) {
-                if (node.id === targetId) return node;
-                if (node.children) {
-                    const found = findNode(node.children, targetId);
-                    if (found) return found;
-                }
-            }
-            return null;
-        };
-
-        const currentNode = findNode(folders, selectedFolderId);
-        return currentNode?.children || [];
-    }, [folders, selectedFolderId]);
-
-    // 空间切换
-    const handleScopeChange = (val: 'private' | 'shared') => {
-        setScope(val);
-        setSelectedFolderId(null);
-        setSearchKeyword('');
-    };
-
-    // 添加到我的空间
-    const handleCopyToPrivate = async (docId: number) => {
-        try {
-            await api.copyToPrivate(docId);
-            message.success('已添加到我的空间');
-        } catch (error) {
-            message.error('添加失败');
-        }
-    };
-
-    // 交互操作
-    const handleFolderDoubleClick = (id: number) => {
-        setSelectedFolderId(id);
-    };
-
-    const handleBack = () => {
-        if (currentBreadcrumbs.length > 1) {
-            const parent = currentBreadcrumbs[currentBreadcrumbs.length - 2];
-            setSelectedFolderId(parent.id);
-        }
-    };
+    }, [previewIndex, state.documents]);
 
     // 文件夹操作
-    const onSaveFolder = async (values: { name: string }) => {
-        try {
-            if (editingFolder) {
-                await api.updateFolder(editingFolder.id, { name: values.name });
-                message.success('重命名成功');
-            } else {
-                await api.createFolder({
-                    name: values.name,
-                    parentId: selectedFolderId ?? undefined,
-                    scope,
-                });
-                message.success('文件夹创建成功');
-            }
+    const handleNewFolder = () => {
+        setEditingFolder(null);
+        setFolderModalOpen(true);
+    };
+
+    const handleSaveFolder = async (values: { name: string }) => {
+        const success = await actions.onSaveFolder(values, editingFolder);
+        if (success) {
             setFolderModalOpen(false);
-            folderForm.resetFields();
-            loadFolders();
-        } catch (error) {
-            message.error('操作失败');
         }
     };
 
-    const onDeleteFolder = async (id: number) => {
-        try {
-            await api.deleteFolder(id);
-            message.success('删除成功');
-            loadFolders();
-        } catch (error) {
-            message.error('删除失败');
+    const handleRename = (id: number, name: string) => {
+        setEditingFolder({ id, name } as FolderTreeNode);
+        setFolderModalOpen(true);
+    };
+
+    const handleDelete = (id: number, type: 'folder' | 'doc') => {
+        if (type === 'folder') {
+            actions.onDeleteFolder(id);
+        } else {
+            actions.handleDeleteDocument(id);
         }
     };
 
-    const handleDeleteDocument = async (id: number) => {
-        try {
-            await api.deleteDocument(id);
-            message.success('附件已删除');
-            loadDocuments();
-        } catch (error) {
-            message.error('删除失败');
-        }
-    }
+    // 单文档打标签
+    const handleOpenTagEditor = (doc: KnowledgeDocument) => {
+        setTagTargetDoc(doc);
+        setTagSelectedIds(doc.tags?.map(t => t.id) || []);
+    };
 
-    const onToggleFavorite = async (e: React.MouseEvent, doc: KnowledgeDocument) => {
-        e.stopPropagation();
+    const handleSaveDocTags = async () => {
+        if (!tagTargetDoc) return;
         try {
-            const result = await api.toggleFavorite(doc.id);
-            message.success(result.favorite ? '已收藏' : '已取消收藏');
-            loadDocuments();
-        } catch (error) {
-            message.error('操作失败');
+            await api.updateDocument(tagTargetDoc.id, { tagIds: tagSelectedIds });
+            message.success('标签已更新');
+            setTagTargetDoc(null);
+            actions.loadDocuments();
+        } catch {
+            message.error('更新标签失败');
         }
     };
 
-    // 空白区域右键菜单（根据空间和权限动态生成）
+    // 选择操作
+    const handleSelect = (key: string, e: React.MouseEvent) => {
+        if (e.shiftKey && state.lastSelectedIndex !== null) {
+            // 范围选择
+            const allKeys = [
+                ...currentSubFolders.map(f => `folder-${f.id}`),
+                ...state.documents.map(d => `doc-${d.id}`),
+            ];
+            const currentIdx = allKeys.indexOf(key);
+            if (currentIdx >= 0) {
+                const start = Math.min(state.lastSelectedIndex, currentIdx);
+                const end = Math.max(state.lastSelectedIndex, currentIdx);
+                actions.selectRange(allKeys.slice(start, end + 1));
+            }
+        } else {
+            actions.toggleSelect(key);
+        }
+        // 记录最后选择索引
+        const allKeys = [
+            ...currentSubFolders.map(f => `folder-${f.id}`),
+            ...state.documents.map(d => `doc-${d.id}`),
+        ];
+        actions.setLastSelectedIndex(allKeys.indexOf(key));
+    };
+
+    // 批量操作
+    const allItemKeys = useMemo(() => [
+        ...currentSubFolders.map(f => `folder-${f.id}`),
+        ...state.documents.map(d => `doc-${d.id}`),
+    ], [currentSubFolders, state.documents]);
+
+    const handleSelectAll = () => actions.selectAll(allItemKeys);
+
+    const getSelectedDocIds = useCallback((): number[] => {
+        return Array.from(state.selectedItems)
+            .filter(key => key.startsWith('doc-'))
+            .map(key => parseInt(key.replace('doc-', ''), 10));
+    }, [state.selectedItems]);
+
+    const handleBatchDownload = useCallback(() => {
+        const docIds = getSelectedDocIds();
+        const docs = state.documents.filter(d => docIds.includes(d.id));
+        docs.forEach((doc, i) => {
+            setTimeout(() => actions.handleDownloadItem(doc), i * 100);
+        });
+        message.success(`正在下载 ${docs.length} 个文件`);
+        actions.exitSelectionMode();
+    }, [getSelectedDocIds, state.documents, actions]);
+
+    const handleBatchDelete = useCallback(async () => {
+        const docIds = getSelectedDocIds();
+        if (docIds.length === 0) {
+            message.warning('请选择文档');
+            return;
+        }
+        try {
+            await api.batchDeleteDocuments(docIds);
+            message.success(`已删除 ${docIds.length} 个文档`);
+            actions.exitSelectionMode();
+            actions.loadDocuments();
+        } catch {
+            message.error('批量删除失败');
+        }
+    }, [getSelectedDocIds, actions]);
+
+    const handleBatchMove = useCallback(async (folderId: number | null) => {
+        const docIds = getSelectedDocIds();
+        if (docIds.length === 0) {
+            message.warning('请选择文档');
+            return;
+        }
+        try {
+            await api.batchMoveDocuments(docIds, folderId);
+            message.success(`已移动 ${docIds.length} 个文档`);
+            actions.exitSelectionMode();
+            actions.loadDocuments();
+        } catch {
+            message.error('批量移动失败');
+        }
+    }, [getSelectedDocIds, actions]);
+
+    const handleBatchTag = useCallback(async (tagIds: number[]) => {
+        const docIds = getSelectedDocIds();
+        if (docIds.length === 0) {
+            message.warning('请选择文档');
+            return;
+        }
+        try {
+            await api.batchTagDocuments(docIds, tagIds);
+            message.success(`已为 ${docIds.length} 个文档添加标签`);
+            actions.exitSelectionMode();
+            actions.loadDocuments();
+        } catch {
+            message.error('批量打标签失败');
+        }
+    }, [getSelectedDocIds, actions]);
+
+    // 空白区域右键菜单
     const containerMenuItems = useMemo(() => {
         const items: any[] = [];
-        const canUpload = !isShared || canSharedUpload;
-        const canCreateFolder = !isShared || canSharedFolderCreate;
+        const canUpload = !permissions.isShared || permissions.canSharedUpload;
+        const canCreateFolder = !permissions.isShared || permissions.canSharedFolderCreate;
 
         if (canUpload) {
             items.push({
@@ -281,670 +216,185 @@ const KnowledgeCenter: React.FC = () => {
                 key: 'newFolder',
                 label: '新建文件夹',
                 icon: <FolderPlus size={16} />,
-                onClick: () => {
-                    setEditingFolder(null);
-                    folderForm.resetFields();
-                    setFolderModalOpen(true);
-                }
+                onClick: handleNewFolder,
             });
         }
         return items;
-    }, [isShared, canSharedUpload, canSharedFolderCreate]);
+    }, [permissions]);
 
-    // 确保路径存在
-    const ensureDirectoryPath = async (baseFolderId: number | null, fullPath: string): Promise<number | null> => {
-        // fullPath 类似 "root/sub/file.txt"
-        const parts = fullPath.split('/');
-        // 移除文件名，只保留目录部分
-        parts.pop();
-
-        if (parts.length === 0) return baseFolderId;
-
-        let currentParentId = baseFolderId;
-
-        for (const part of parts) {
-            // 构建缓存 key: "parentId/folderName"
-            const parentKey = currentParentId === null ? 'root' : currentParentId.toString();
-            const cacheKey = `${parentKey}/${part}`;
-
-            let folderPromise = folderCreationCache.current.get(cacheKey);
-
-            if (!folderPromise) {
-                // 如果缓存中没有，发起创建请求（后端 getOrCreate 会处理幂等）
-                folderPromise = api.ensureFolder({
-                    name: part,
-                    parentId: currentParentId ?? undefined,
-                    scope: scope
-                }).then(folder => folder.id);
-
-                folderCreationCache.current.set(cacheKey, folderPromise);
-            }
-
-            try {
-                currentParentId = await folderPromise;
-            } catch (e) {
-                console.error(`Failed to ensure folder ${part}`, e);
-                // 出错时移除缓存，允许重试
-                folderCreationCache.current.delete(cacheKey);
-                throw e;
-            }
-        }
-
-        return currentParentId;
-    };
-
-    // 统一上传核心逻辑
-    const performUpload = async (file: File, relativePath: string = '') => {
-        const uid = (file as any).uid || Math.random().toString(36).slice(2);
-
-        // 2GB check
-        if (file.size > 2 * 1024 * 1024 * 1024) {
-            message.error(`${file.name} 超过 2GB 限制`);
-            // Add error entry to list so user sees it
-            setUploadFiles(prev => [{
-                uid,
-                name: file.name,
-                size: file.size,
-                status: 'error',
-                progress: 0,
-                errorMsg: '超过 2GB 限制'
-            }, ...prev]);
-            setUploadPanelVisible(true);
-            return;
-        }
-
-        // Init file in list
-        setUploadFiles(prev => {
-            const exists = prev.find(f => f.uid === uid);
-            if (exists) return prev;
-            return [{
-                uid,
-                name: file.name,
-                size: file.size,
-                status: 'pending',
-                progress: 0
-            }, ...prev];
-        });
-        setUploadPanelVisible(true);
-
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const startTime = Date.now();
-        lastLoadedMap.current.set(uid, { loaded: 0, time: startTime });
-
-        return new Promise<void>((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', '/api/common/upload', true);
-            xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('auth_token')}`);
-
-            xhr.upload.onprogress = (e) => {
-                if (e.lengthComputable) {
-                    const now = Date.now();
-                    const progress = Math.min((e.loaded / e.total) * 98, 98); // Reserve 100% for final processing
-
-                    const last = lastLoadedMap.current.get(uid) || { loaded: 0, time: startTime };
-                    const timeDiff = (now - last.time) / 1000;
-
-                    let speed = '';
-                    // Calculate speed every 200ms or if significant progress
-                    if (timeDiff > 0.5 || progress === 100) {
-                        const bytesDiff = e.loaded - last.loaded;
-                        const speedBytes = bytesDiff / timeDiff; // bytes/s
-
-                        // Format speed
-                        const k = 1024;
-                        const sizes = ['B/s', 'KB/s', 'MB/s'];
-                        const i = Math.floor(Math.log(speedBytes) / Math.log(k));
-                        speed = (speedBytes / Math.pow(k, i)).toFixed(1) + ' ' + (sizes[i] || 'MB/s');
-
-                        lastLoadedMap.current.set(uid, { loaded: e.loaded, time: now });
-
-                        setUploadFiles(prev => prev.map(f => {
-                            if (f.uid === uid) {
-                                return { ...f, status: 'uploading', progress: Number(progress.toFixed(2)), speed };
-                            }
-                            return f;
-                        }));
-                    } else {
-                        // Update progress only
-                        setUploadFiles(prev => prev.map(f => {
-                            if (f.uid === uid) {
-                                return { ...f, status: 'uploading', progress: Number(progress.toFixed(2)) };
-                            }
-                            return f;
-                        }));
-                    }
-                }
-            };
-
-            xhr.onload = async () => {
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    try {
-                        const { url, name } = JSON.parse(xhr.responseText);
-
-                        // 确保目录
-                        let targetFolderId = selectedFolderId;
-                        if (relativePath) {
-                            // 注意：ensureDirectoryPath 是 async，但这里我们在 promise 内部
-                            // 为了简化，我们假设 createDocument 可以处理或者我们需要 await
-                            // 由于 xhr 是回调，我们需要 async function 包装
-                            try {
-                                targetFolderId = (await ensureDirectoryPath(selectedFolderId, relativePath)) ?? null;
-                            } catch (e) {
-                                console.warn("Folder creation failed", e);
-                            }
-                        }
-
-                        await api.createDocument({
-                            title: name,
-                            fileUrl: url,
-                            fileName: name,
-                            fileSize: file.size,
-                            folderId: targetFolderId ?? undefined,
-                            scope,
-                        });
-
-                        setUploadFiles(prev => prev.map(f => {
-                            if (f.uid === uid) return { ...f, status: 'success', progress: 100, speed: '' };
-                            return f;
-                        }));
-                        resolve();
-                    } catch (err) {
-                        setUploadFiles(prev => prev.map(f => {
-                            if (f.uid === uid) return { ...f, status: 'error', errorMsg: '处理失败' };
-                            return f;
-                        }));
-                        reject(err);
-                    }
-                } else {
-                    setUploadFiles(prev => prev.map(f => {
-                        if (f.uid === uid) return { ...f, status: 'error', errorMsg: '上传失败' };
-                        return f;
-                    }));
-                    reject(new Error('Upload failed'));
-                }
-            };
-
-            xhr.onerror = () => {
-                setUploadFiles(prev => prev.map(f => {
-                    if (f.uid === uid) return { ...f, status: 'error', errorMsg: '网络错误' };
-                    return f;
-                }));
-                reject(new Error('Network error'));
-            };
-
-            xhr.send(formData);
-        });
-    };
-
-    // 文件上传自定义请求
-    const customUploadRequest = async (options: any) => {
-        const { file, onSuccess, onError } = options;
-        const relativePath = file.webkitRelativePath || '';
-        try {
-            await performUpload(file, relativePath);
-            onSuccess("Ok");
-
-            // 刷新列表（防抖优化可略，因为 performUpload 是并行的，但 loadDocuments 应该在所有完成后或者单个完成后刷新）
-            // 简单策略：每个成功都刷一次，或者做一个 ref 计数
-            loadDocuments();
-            // loadFolders is heavy, maybe only if relativePath exists
-            if (relativePath) loadFolders();
-        } catch (err) {
-            onError(err);
-        }
-    };
-
-
-    // 普通文件上传配置
-    const uploadProps: UploadProps = {
-        name: 'file',
-        multiple: true,
-        customRequest: customUploadRequest,
-        showUploadList: false,
-    };
-
-    // 递归扫描文件项
-    const scanFiles = async (entry: any, path: string = ''): Promise<Array<{ file: File, path: string }>> => {
-        if (entry.isFile) {
-            return new Promise((resolve) => {
-                entry.file((file: File) => {
-                    resolve([{ file, path: path }]);
-                });
-            });
-        } else if (entry.isDirectory) {
-            const dirReader = entry.createReader();
-            const entries: any[] = [];
-
-            const readEntries = async () => {
-                return new Promise<void>((resolve, reject) => {
-                    dirReader.readEntries(async (results: any[]) => {
-                        if (results.length > 0) {
-                            entries.push(...results);
-                            await readEntries();
-                        } else {
-                            resolve();
-                        }
-                    }, reject);
-                });
-            };
-
-            await readEntries();
-
-            let files: Array<{ file: File, path: string }> = [];
-            for (const childEntry of entries) {
-                // 递归路径：当前路径/文件夹名
-                const childPath = path ? `${path}/${entry.name}` : entry.name;
-                files = files.concat(await scanFiles(childEntry, childPath));
-            }
-            return files;
-        }
-        return [];
-    };
-
-    // 拖拽上传处理
-    const handleDrop = async (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        const items = e.dataTransfer.items;
-        if (!items) return;
-
-        const queue: Promise<any>[] = [];
-
-        for (let i = 0; i < items.length; i++) {
-            const item = items[i];
-            // webkitGetAsEntry 是标准但在 TS 类型中可能未定义，需断言
-            const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
-
-            if (entry) {
-                queue.push(scanFiles(entry));
-            }
-        }
-
-        try {
-            message.loading({ content: '正在解析文件...', key: 'uploading' });
-            const results = await Promise.all(queue);
-            const allFiles = results.flat();
-
-            if (allFiles.length === 0) return;
-
-            message.loading({ content: `正在上传 ${allFiles.length} 个文件...`, key: 'uploading' });
-
-            // 批量上传
-            const uploadPromises = [];
-            for (const { file, path } of allFiles) {
-                uploadPromises.push(performUpload(file, path));
-            }
-
-            Promise.allSettled(uploadPromises).then(() => {
-                loadDocuments();
-                loadFolders();
-                folderCreationCache.current.clear();
-            });
-
-        } catch (error) {
-            console.error('拖拽上传失败', error);
-            message.error({ content: '解析出错', key: 'uploading' });
-        }
-    };
-
-    const handleDownloadItem = (doc: KnowledgeDocument) => {
-        if (doc.fileUrl) {
-            const link = document.createElement('a');
-            link.href = doc.fileUrl;
-            link.download = doc.fileName || doc.title;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
-    };
-
-    // 桌面图标组件
-    const ItemEntry = ({
-        type,
-        title,
-        id,
-        doc,
-        onEnter
-    }: {
-        type: 'folder' | 'doc',
-        title: string,
-        id: number,
-        doc?: KnowledgeDocument,
-        onEnter: () => void
-    }) => {
-        const isDoc = type === 'doc';
-        const isGrid = layoutMode === 'grid';
-        const isFavorite = doc?.isFavorite === 1;
-
-        const handleDownload = () => {
-            if (isDoc) {
-                if (doc?.fileUrl) {
-                    const link = document.createElement('a');
-                    link.href = doc.fileUrl;
-                    link.download = doc.fileName || doc.title;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                }
-            } else {
-                // 文件夹打包下载
-                const url = api.getFolderDownloadUrl(id);
-                const link = document.createElement('a');
-                link.href = url;
-                link.setAttribute('download', `${title}.zip`);
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                message.loading('正在打包文件夹...', 2);
-            }
-        };
-
-        const menuItems: any[] = [
-            { key: 'open', label: '打开', onClick: onEnter },
-            { key: 'download', label: isDoc ? '下载' : '打包下载', onClick: handleDownload },
-        ];
-
-        // 共享空间: 添加"添加到我的空间"
-        if (isShared && isDoc) {
-            menuItems.push({
-                key: 'copyToPrivate',
-                label: '添加到我的空间',
-                icon: <Lock size={14} />,
-                onClick: () => handleCopyToPrivate(id),
-            });
-        }
-
-        if (!isShared) {
-            menuItems.push({
-                key: 'edit',
-                label: '重命名',
-                onClick: () => {
-                    if (!isDoc) {
-                        setEditingFolder({ id, name: title } as any);
-                        folderForm.setFieldsValue({ name: title });
-                        setFolderModalOpen(true);
-                    } else {
-                        message.info('暂不支持重命名附件');
-                    }
-                }
-            });
-            menuItems.push({ key: 'favorite', label: isFavorite ? '取消收藏' : '添加收藏', onClick: (e: any) => onToggleFavorite(e, doc!) });
-        }
-
-        // 删除权限检查
-        const canDelete = isShared
-            ? (isDoc ? canSharedDelete : canSharedFolderDelete)
-            : true;
-        if (canDelete) {
-            menuItems.push({ key: 'delete', label: '删除', danger: true, onClick: () => isDoc ? handleDeleteDocument(id) : onDeleteFolder(id) });
-        }
-
-        if (isGrid) {
-            return (
-                <Dropdown menu={{ items: menuItems }} trigger={['contextMenu']}>
-                    <div
-                        className="flex flex-col items-center p-2 rounded-lg cursor-pointer transition-all hover:bg-slate-200 group relative"
-                        style={{ width: 100, height: 110 }}
-                        onDoubleClick={onEnter}
-                        onContextMenu={(e) => e.stopPropagation()}
-                    >
-                        <div className="mb-2 relative">
-                            {isDoc ? (
-                                <div className="w-14 h-14 bg-white rounded-xl flex items-center justify-center text-slate-500 shadow-sm border border-slate-100 group-hover:shadow-md transition-shadow">
-                                    {getFileIcon(doc?.fileName || title, 32)}
-                                </div>
-                            ) : (
-                                <div className="w-14 h-14 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500 shadow-sm border border-amber-100 group-hover:shadow-md transition-shadow">
-                                    <Folder size={32} className="fill-amber-500/20" />
-                                </div>
-                            )}
-                            {isFavorite && (
-                                <div className="absolute -top-1 -right-1 bg-white rounded-full shadow-sm">
-                                    <Star size={14} className="text-amber-500 fill-amber-500" />
-                                </div>
-                            )}
-                        </div>
-                        <span className="text-xs text-center line-clamp-2 px-1 break-all text-slate-700 font-medium group-hover:text-slate-900 leading-tight">
-                            {title}
-                        </span>
-                    </div>
-                </Dropdown>
-            );
-        }
-
-        return (
-            <Dropdown menu={{ items: menuItems }} trigger={['contextMenu']}>
-                <div
-                    className="flex items-center px-4 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-100 group text-sm"
-                    onDoubleClick={onEnter}
-                    onContextMenu={(e) => e.stopPropagation()}
-                >
-                    <div className="w-8 flex-shrink-0 flex items-center justify-center">
-                        {isDoc ? (
-                            getFileIcon(doc?.fileName || title, 18)
-                        ) : (
-                            <Folder size={18} className="text-amber-400 fill-amber-400" />
-                        )}
-                    </div>
-                    <div className="flex-1 truncate font-medium text-slate-700 group-hover:text-blue-600 mr-4">
-                        {title}
-                    </div>
-                    <div className="w-32 text-slate-400 text-xs text-center">
-                        {isDoc ? '附件' : '文件夹'}
-                    </div>
-                    <div className="w-44 text-slate-400 text-xs">
-                        {isDoc ? new Date(doc.updateTime).toLocaleString() : '-'}
-                    </div>
-                    <div className="w-24 text-slate-400 text-xs text-right">
-                        {isDoc && doc.fileSize ? `${(doc.fileSize / 1024).toFixed(1)} KB` : '-'}
-                    </div>
-                    <div className="w-10 flex justify-end ml-4">
-                        {isFavorite && <Star size={14} className="text-amber-500 fill-amber-500" />}
-                    </div>
-                </div>
-            </Dropdown>
-        );
+    // 共享 props
+    const isFavoritesView = state.viewMode === 'favorites';
+    const viewProps = {
+        folders: isFavoritesView ? [] as FolderTreeNode[] : currentSubFolders,
+        documents: state.documents,
+        emptyText: isFavoritesView ? "暂无收藏的文件" : undefined,
+        loading: state.loading,
+        isShared: permissions.isShared,
+        permissions: {
+            canSharedDelete: permissions.canSharedDelete,
+            canSharedFolderDelete: permissions.canSharedFolderDelete,
+        },
+        selectionMode: state.selectionMode,
+        selectedItems: state.selectedItems,
+        onFolderEnter: actions.setSelectedFolderId,
+        onPreview: (doc: KnowledgeDocument) => setPreviewDoc(doc),
+        onDelete: handleDelete,
+        onRename: handleRename,
+        onToggleFavorite: actions.onToggleFavorite,
+        onCopyToPrivate: actions.handleCopyToPrivate,
+        onDownloadDoc: actions.handleDownloadItem,
+        onDownloadFolder: actions.handleDownloadFolder,
+        onSelect: handleSelect,
+        onTagDocument: handleOpenTagEditor,
     };
 
     return (
         <div className="flex flex-col h-full bg-slate-50 overflow-hidden font-sans">
-            {/* 顶部工具栏 & 面包屑 */}
-            <header className="h-14 bg-white border-b border-slate-200 flex items-center px-4 justify-between flex-shrink-0">
-                <div className="flex items-center gap-4">
-                    {/* 空间切换 */}
-                    <Segmented
-                        value={scope}
-                        onChange={val => handleScopeChange(val as 'private' | 'shared')}
-                        options={[
-                            { value: 'private', icon: <Lock size={12} />, label: '我的空间' },
-                            { value: 'shared', icon: <Users size={12} />, label: '共享空间' },
-                        ]}
-                    />
-                    <div className="w-px h-6 bg-slate-200"></div>
-                    <Button
-                        icon={<ArrowLeft size={16} />}
-                        disabled={selectedFolderId === null}
-                        onClick={handleBack}
-                        type="text"
-                        className="hover:bg-slate-100"
-                    />
-                    <Breadcrumb
-                        className="text-sm font-medium"
-                        items={currentBreadcrumbs.map((b) => ({
-                            title: b.name,
-                            onClick: () => setSelectedFolderId(b.id),
-                            className: "cursor-pointer hover:text-blue-600 transition-colors"
-                        }))}
-                    />
-                </div>
+            <KnowledgeToolbar
+                scope={state.scope}
+                viewMode={state.viewMode}
+                onScopeChange={actions.setScope}
+                onViewModeChange={actions.setViewMode}
+                selectedFolderId={state.selectedFolderId}
+                breadcrumbs={currentBreadcrumbs}
+                onBreadcrumbClick={actions.setSelectedFolderId}
+                onBack={actions.handleBack}
+                searchKeyword={state.searchKeyword}
+                onSearch={actions.setSearchKeyword}
+                layoutMode={state.layoutMode}
+                onLayoutChange={actions.setLayoutMode}
+                uploadProps={upload.uploadProps}
+                canUpload={!permissions.isShared || permissions.canSharedUpload}
+                canCreateFolder={!permissions.isShared || permissions.canSharedFolderCreate}
+                onNewFolder={handleNewFolder}
+                tags={state.tags}
+                filterTagId={state.filterTagId}
+                onFilterTag={actions.setFilterTagId}
+                selectionMode={state.selectionMode}
+                onEnterSelectionMode={actions.enterSelectionMode}
+                onExitSelectionMode={actions.exitSelectionMode}
+            />
 
-                <div className="flex items-center gap-2">
-                    <Input
-                        prefix={<Search size={14} className="text-slate-400" />}
-                        placeholder="搜索文件..."
-                        className="w-48 sm:w-64 rounded-full bg-slate-100 border-none px-4"
-                        value={searchKeyword}
-                        onChange={e => setSearchKeyword(e.target.value)}
-                    />
-                    <Space size={8} className="ml-2">
-                        {(!isShared || canSharedUpload) && (
-                            <Upload {...uploadProps}>
-                                <Button type="primary" icon={<UploadIcon size={18} />} className="bg-emerald-600 hover:bg-emerald-700 border-none">
-                                    上传文件
-                                </Button>
-                            </Upload>
-                        )}
-                        {(!isShared || canSharedFolderCreate) && (
-                            <Button icon={<FolderPlus size={18} />} onClick={() => { setEditingFolder(null); folderForm.resetFields(); setFolderModalOpen(true); }}>
-                                新建文件夹
-                            </Button>
-                        )}
-                        <div className="w-px h-6 bg-slate-200 mx-1"></div>
-                        <Segmented
-                            value={layoutMode}
-                            onChange={val => setLayoutMode(val as any)}
-                            options={[
-                                { value: 'grid', icon: <LayoutGrid size={14} /> },
-                                { value: 'list', icon: <ListIcon size={14} /> },
-                            ]}
-                        />
-                    </Space>
-                </div>
-            </header>
-
-            {/* 图标展示区 */}
             <main
                 className="flex-1 bg-white flex flex-col relative overflow-hidden"
                 onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                onDrop={handleDrop}
+                onDrop={upload.handleDrop}
             >
                 <Dropdown menu={{ items: containerMenuItems }} trigger={['contextMenu']}>
                     <div className="flex-1 flex flex-col overflow-auto h-full">
-                        {layoutMode === 'list' && (currentSubFolders.length > 0 || documents.length > 0) && (
-                            <div className="flex items-center px-4 py-2 border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-400 uppercase tracking-wider sticky top-0 z-10">
-                                <div className="w-8"></div>
-                                <div className="flex-1">名称</div>
-                                <div className="w-32 text-center">类型</div>
-                                <div className="w-44">最后修改</div>
-                                <div className="w-24 text-right">大小</div>
-                                <div className="w-10 ml-4"></div>
-                            </div>
-                        )}
-
                         <div className="flex-1 p-4 relative h-full min-h-[400px]">
-                            <Spin spinning={loading}>
-                                {(currentSubFolders.length === 0 && documents.length === 0) ? (
-                                    <div className="h-full flex items-center justify-center py-20">
-                                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这是一个空文件夹" />
-                                    </div>
-                                ) : (
-                                    <div className={layoutMode === 'grid' ? "flex flex-wrap gap-4 content-start" : "flex flex-col"}>
-                                        {/* 文件夹 */}
-                                        {currentSubFolders.map(f => (
-                                            <ItemEntry
-                                                key={`folder-${f.id}`}
-                                                type="folder"
-                                                title={f.name}
-                                                id={f.id}
-                                                onEnter={() => handleFolderDoubleClick(f.id)}
-                                            />
-                                        ))}
-                                        {/* 文档 */}
-                                        {documents.map(d => (
-                                            <ItemEntry
-                                                key={`doc-${d.id}`}
-                                                type="doc"
-                                                title={d.title}
-                                                id={d.id}
-                                                doc={d}
-                                                onEnter={() => handleDownloadItem(d)}
-                                            />
-                                        ))}
-                                    </div>
-                                )}
-                            </Spin>
+                            {state.layoutMode === 'grid'
+                                ? <DocumentGrid {...viewProps} />
+                                : <DocumentList {...viewProps} />
+                            }
                         </div>
                     </div>
                 </Dropdown>
 
                 {/* 底部信息栏 */}
-                <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white/80 backdrop-blur shadow-lg border border-slate-200 rounded-full px-4 py-1.5 flex items-center gap-4 text-[10px] text-slate-500 uppercase tracking-widest font-bold z-20">
-                    <span>{documents.length + currentSubFolders.length} 个项目</span>
-                    <div className="w-1 h-1 bg-slate-300 rounded-full"></div>
-                    <span className="flex items-center gap-1 cursor-pointer hover:text-blue-500" onClick={() => setTagModalOpen(true)}>
-                        <Tags size={10} /> 标签管理
-                    </span>
-                </div>
+                {!state.selectionMode && (
+                    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white/80 backdrop-blur shadow-lg border border-slate-200 rounded-full px-4 py-1.5 flex items-center gap-4 text-[10px] text-slate-500 uppercase tracking-widest font-bold z-20">
+                        <span>{isFavoritesView ? `${state.documents.length} 个收藏` : `${state.documents.length + currentSubFolders.length} 个项目`}</span>
+                        <div className="w-1 h-1 bg-slate-300 rounded-full"></div>
+                        <span className="flex items-center gap-1 cursor-pointer hover:text-blue-500" onClick={() => setTagModalOpen(true)}>
+                            <Tags size={10} /> 标签管理
+                        </span>
+                    </div>
+                )}
             </main>
 
-            {/* 新建文件夹 Modal */}
-            <Modal
-                title={editingFolder ? '重命名文件夹' : '新建文件夹'}
+            <FolderModal
                 open={folderModalOpen}
+                editingFolder={editingFolder}
+                onSave={handleSaveFolder}
                 onCancel={() => setFolderModalOpen(false)}
-                onOk={() => folderForm.submit()}
-                destroyOnHidden
-            >
-                <Form form={folderForm} layout="vertical" onFinish={onSaveFolder}>
-                    <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
-                        <Input placeholder="文件夹名称" autoFocus />
-                    </Form.Item>
-                </Form>
-            </Modal>
+            />
 
-            {/* 标签管理弹窗 */}
-            <Modal
-                title="标签管理"
+            <TagManagerModal
                 open={tagModalOpen}
-                onCancel={() => setTagModalOpen(false)}
-                footer={null}
-            >
-                <div className="mb-6">
-                    <Form form={tagForm} layout="inline" onFinish={async (v) => {
-                        await api.createTag(v);
-                        tagForm.resetFields();
-                        loadTags();
-                    }}>
-                        <Form.Item name="name" rules={[{ required: true }]} style={{ flex: 1 }}>
-                            <Input placeholder="新标签名称" />
-                        </Form.Item>
-                        <Form.Item name="color" initialValue="#3b82f6">
-                            <Input type="color" className="w-12 p-0 h-8 border-none" />
-                        </Form.Item>
-                        <Form.Item>
-                            <Button type="primary" htmlType="submit" icon={<Plus size={14} />} />
-                        </Form.Item>
-                    </Form>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                    {tags.map(t => (
-                        <Tag
-                            key={t.id}
-                            color={t.color}
-                            closable
-                            onClose={() => api.deleteTag(t.id).then(loadTags)}
-                            className="px-3 py-1 rounded-full border-none shadow-sm"
-                        >
-                            {t.name}
-                        </Tag>
-                    ))}
-                </div>
-            </Modal>
-            {/* 隐藏的右键上传触发器 (文件) */}
-            <Upload {...uploadProps} style={{ display: 'none' }}>
+                tags={state.tags}
+                onClose={() => setTagModalOpen(false)}
+                onCreateTag={async (v) => { await api.createTag(v); actions.loadTags(); }}
+                onDeleteTag={async (id) => { await api.deleteTag(id); actions.loadTags(); }}
+            />
+
+            {/* 隐藏的右键上传触发器 */}
+            <Upload {...upload.uploadProps} style={{ display: 'none' }}>
                 <span id="hidden-context-upload" />
             </Upload>
 
-            {/* 上传进度面板 */}
             <UploadProgressPanel
-                visible={uploadPanelVisible}
-                files={uploadFiles}
-                onClose={() => setUploadPanelVisible(false)}
+                visible={upload.uploadPanelVisible}
+                files={upload.uploadFiles}
+                onClose={() => upload.setUploadPanelVisible(false)}
             />
-        </div >
+
+            <BatchActionBar
+                visible={state.selectionMode}
+                selectedCount={state.selectedItems.size}
+                totalCount={allItemKeys.length}
+                onSelectAll={handleSelectAll}
+                onDeselectAll={actions.deselectAll}
+                onBatchDownload={handleBatchDownload}
+                onBatchDelete={handleBatchDelete}
+                onBatchMove={handleBatchMove}
+                onBatchTag={handleBatchTag}
+                onCancel={actions.exitSelectionMode}
+                folders={state.folders}
+                tags={state.tags}
+            />
+
+            <FilePreviewModal
+                open={!!previewDoc}
+                document={previewDoc}
+                onClose={() => setPreviewDoc(null)}
+                onDownload={actions.handleDownloadItem}
+                onNext={handlePreviewNext}
+                onPrev={handlePreviewPrev}
+                hasNext={previewIndex >= 0 && previewIndex < state.documents.length - 1}
+                hasPrev={previewIndex > 0}
+            />
+
+            {/* 单文档打标签弹窗 */}
+            <Modal
+                open={!!tagTargetDoc}
+                title={`为「${tagTargetDoc?.title || ''}」设置标签`}
+                onCancel={() => setTagTargetDoc(null)}
+                onOk={handleSaveDocTags}
+                okText="保存"
+                cancelText="取消"
+                width={360}
+            >
+                <div className="space-y-1 max-h-64 overflow-auto py-2">
+                    {state.tags.length === 0 ? (
+                        <p className="text-slate-400 text-sm text-center py-4">
+                            暂无标签，请先在标签管理中创建
+                        </p>
+                    ) : (
+                        state.tags.map(t => (
+                            <div
+                                key={t.id}
+                                className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded-lg cursor-pointer transition-colors"
+                                onClick={() => {
+                                    setTagSelectedIds(prev =>
+                                        prev.includes(t.id)
+                                            ? prev.filter(x => x !== t.id)
+                                            : [...prev, t.id]
+                                    );
+                                }}
+                            >
+                                <Checkbox checked={tagSelectedIds.includes(t.id)} />
+                                <div
+                                    className="w-3 h-3 rounded-full flex-shrink-0"
+                                    style={{ backgroundColor: t.color }}
+                                />
+                                <span className="text-sm text-slate-700">{t.name}</span>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </Modal>
+        </div>
     );
 };
 

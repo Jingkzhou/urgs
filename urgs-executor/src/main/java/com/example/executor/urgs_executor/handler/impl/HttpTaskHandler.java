@@ -100,8 +100,20 @@ public class HttpTaskHandler implements TaskHandler {
 
             String result = response.getBody();
             log.info("HTTP Result: {}", result);
-            return "HTTP Request to " + url + "\nMethod: " + method + "\nStatus: " + response.getStatusCode()
-                    + "\nResult:\n" + result;
+            
+            String ts = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            StringBuilder logStr = new StringBuilder();
+            logStr.append("[").append(ts).append("] HTTP Request to ").append(url).append("\n");
+            logStr.append("[").append(ts).append("] Method: ").append(method).append("\n");
+            logStr.append("[").append(ts).append("] Status: ").append(response.getStatusCode()).append("\n");
+            logStr.append("[").append(ts).append("] Result:\n");
+            
+            if (result != null) {
+                for (String rLine : result.split("\n")) {
+                    logStr.append("[").append(ts).append("] ").append(rLine).append("\n");
+                }
+            }
+            return logStr.toString();
         } catch (Exception e) {
             log.error("HTTP Task failed", e);
             throw new RuntimeException("HTTP request failed: " + e.getMessage());

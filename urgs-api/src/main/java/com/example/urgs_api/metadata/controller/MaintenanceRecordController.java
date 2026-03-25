@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.urgs_api.metadata.model.MaintenanceRecord;
 import com.example.urgs_api.metadata.model.MaintenanceRecordStatsVO;
+import com.example.urgs_api.metadata.model.MaintenanceStatsDetailVO;
+import com.example.urgs_api.metadata.model.ReqSummaryVO;
 import com.example.urgs_api.metadata.service.MaintenanceRecordService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
@@ -47,6 +49,7 @@ public class MaintenanceRecordController {
             @RequestParam(required = false) String plannedDate,
             @RequestParam(required = false) String modTypes,
             @RequestParam(required = false) String reqId,
+            @RequestParam(required = false) String operator,
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer size) {
         LambdaQueryWrapper<MaintenanceRecord> query = new LambdaQueryWrapper<>();
@@ -59,7 +62,8 @@ public class MaintenanceRecordController {
                     .or().like(MaintenanceRecord::getFieldName, keyword)
                     .or().like(MaintenanceRecord::getFieldCnName, keyword)
                     .or().like(MaintenanceRecord::getReqId, keyword)
-                    .or().like(MaintenanceRecord::getDescription, keyword));
+                    .or().like(MaintenanceRecord::getDescription, keyword)
+                    .or().like(MaintenanceRecord::getOperator, keyword));
         }
 
         // Table Name Logic
@@ -89,6 +93,9 @@ public class MaintenanceRecordController {
         }
         if (StringUtils.hasText(reqId)) {
             query.like(MaintenanceRecord::getReqId, reqId);
+        }
+        if (StringUtils.hasText(operator)) {
+            query.like(MaintenanceRecord::getOperator, operator);
         }
 
         if (StringUtils.hasText(modTypes)) {
@@ -132,5 +139,33 @@ public class MaintenanceRecordController {
     @GetMapping("/stats")
     public MaintenanceRecordStatsVO getStats() {
         return maintenanceRecordService.getStats();
+    }
+
+    /**
+     * 获取详细统计数据（按系统、操作人、类型分组 + 趋势）
+     *
+     * @param startDate 开始日期 (yyyy-MM-dd)，默认本月
+     * @param endDate   结束日期 (yyyy-MM-dd)，默认本月
+     * @return 详细统计
+     */
+    @GetMapping("/stats/detail")
+    public MaintenanceStatsDetailVO getStatsDetail(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        return maintenanceRecordService.getStatsDetail(startDate, endDate);
+    }
+
+    /**
+     * 获取需求变更汇总列表
+     *
+     * @param startDate 开始日期 (yyyy-MM-dd)，默认本月
+     * @param endDate   结束日期 (yyyy-MM-dd)，默认本月
+     * @return 需求汇总列表
+     */
+    @GetMapping("/stats/req-summary")
+    public java.util.List<ReqSummaryVO> getReqSummary(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        return maintenanceRecordService.getReqSummary(startDate, endDate);
     }
 }

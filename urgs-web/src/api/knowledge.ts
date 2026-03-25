@@ -38,6 +38,8 @@ export interface KnowledgeDocument {
     viewCount: number;
     createTime: string;
     updateTime: string;
+    /** 前端填充的标签列表 */
+    tags?: KnowledgeTag[];
 }
 
 /** 标签 */
@@ -150,3 +152,21 @@ export const deleteTag = (id: number) =>
 
 // 文件夹下载
 export const getFolderDownloadUrl = (id: number) => `/api/wiki/folders/${id}/download`;
+
+// ==================== 批量操作 API ====================
+
+/** 批量删除文档 */
+export const batchDeleteDocuments = (ids: number[]) =>
+    post<{ count: number }>('/api/wiki/documents/batch-delete', { ids });
+
+/** 批量移动文档到目标文件夹 */
+export const batchMoveDocuments = (ids: number[], folderId: number | null) =>
+    post<{ count: number }>('/api/wiki/documents/batch-move', { ids, folderId });
+
+/** 批量给文档打标签 */
+export const batchTagDocuments = (ids: number[], tagIds: number[]) =>
+    post<{ count: number }>('/api/wiki/documents/batch-tag', { ids, tagIds });
+
+/** 批量获取文档的标签映射 */
+export const getDocumentTagsMap = (ids: number[]) =>
+    post<Record<number, KnowledgeTag[]>>('/api/wiki/documents/tags-map', { ids });

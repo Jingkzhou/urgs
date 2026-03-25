@@ -98,7 +98,8 @@ public class ProcedureTaskHandler implements TaskHandler {
                             row.append(rs.getObject(i)).append("\t");
                         }
                         log.info("[Procedure-{}] {}", instance.getId(), row);
-                        logBuilder.append(row).append("\n");
+                        String ts = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                        logBuilder.append("[").append(ts).append("] ").append(row).append("\n");
                     }
                 }
             } else {

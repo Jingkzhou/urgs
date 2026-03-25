@@ -3,6 +3,7 @@ import { Search, Plus, Filter, Database, MoreHorizontal, ChevronRight, LayoutLis
 import Pagination from '../common/Pagination';
 import AddMaintenanceModal from './AddMaintenanceModal';
 import MaintenanceDetailPanel, { MaintenanceRecordItem } from './MaintenanceDetailPanel';
+import MaintenanceStats from './MaintenanceStats';
 import Auth from '../Auth';
 
 // 模拟统计数据（后续对接API）
@@ -39,6 +40,9 @@ const defaultFilters: MaintenanceFilters = {
 const MOD_TYPE_OPTIONS = ['新增资产', '修改调整', '删除资产'];
 
 const MaintenanceRecord: React.FC = () => {
+    // 子页面状态
+    const [subPage, setSubPage] = useState<'list' | 'stats'>('list');
+
     // 状态
     const [stats, setStats] = useState(MOCK_STATS);
     const [viewMode, setViewMode] = useState<'TABLE' | 'TIMELINE'>('TABLE');
@@ -84,6 +88,7 @@ const MaintenanceRecord: React.FC = () => {
             if (filters.fieldName) params.append('fieldName', filters.fieldName);
             if (filters.modTypes.length > 0) params.append('modTypes', filters.modTypes.join(','));
             if (filters.reqId) params.append('reqId', filters.reqId);
+            if (filters.operator) params.append('operator', filters.operator);
             if (filters.dateRange) {
                 if (filters.dateRange[0]) params.append('startDate', filters.dateRange[0]);
                 if (filters.dateRange[1]) params.append('endDate', filters.dateRange[1]);
@@ -211,6 +216,15 @@ const MaintenanceRecord: React.FC = () => {
         return 'bg-blue-50 text-blue-600 border-blue-200'; // Default for UPDATE / 修改
     };
 
+    // 统计子页面
+    if (subPage === 'stats') {
+        return (
+            <div className="flex flex-col h-full bg-slate-50 relative overflow-hidden p-4">
+                <MaintenanceStats onBack={() => setSubPage('list')} />
+            </div>
+        );
+    }
+
     return (
         <div className="flex flex-col h-full bg-slate-50 relative overflow-hidden">
             {/* 1. 统计概览卡片区 */}
@@ -271,6 +285,14 @@ const MaintenanceRecord: React.FC = () => {
                                 <ChevronDown size={14} className={`transition-transform ${showAdvancedFilter ? 'rotate-180' : ''}`} />
                             </button>
                             <div className="h-6 w-px bg-slate-200 mx-1"></div>
+                            <button
+                                onClick={() => setSubPage('stats')}
+                                className="px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 font-medium text-sm flex items-center gap-2 transition-colors"
+                                title="数据统计"
+                            >
+                                <BarChart3 size={16} />
+                                数据统计
+                            </button>
                             <button onClick={() => fetchRecords()} className="p-2.5 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="刷新">
                                 <RefreshCw size={18} />
                             </button>
@@ -344,6 +366,15 @@ const MaintenanceRecord: React.FC = () => {
                                         placeholder="如: REQ-2024..."
                                         value={filters.reqId}
                                         onChange={e => setFilters(prev => ({ ...prev, reqId: e.target.value }))}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">操作人</label>
+                                    <input
+                                        className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                                        placeholder="输入操作人..."
+                                        value={filters.operator}
+                                        onChange={e => setFilters(prev => ({ ...prev, operator: e.target.value }))}
                                     />
                                 </div>
                             </div>

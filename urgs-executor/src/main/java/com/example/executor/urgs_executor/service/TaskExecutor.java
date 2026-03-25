@@ -80,6 +80,8 @@ public class TaskExecutor {
         QueryWrapper<ExecutorTaskInstance> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("status", ExecutorTaskInstance.STATUS_WAITING);
         queryWrapper.ne("task_type", "DEPENDENT"); // 排除影子任务，影子任务通过状态同步处理
+        queryWrapper.orderByDesc("priority");
+        queryWrapper.orderByAsc("create_time");
         queryWrapper.last("LIMIT " + limit);
         List<ExecutorTaskInstance> waitingTasks = taskInstanceMapper.selectList(queryWrapper);
 
@@ -192,14 +194,16 @@ public class TaskExecutor {
                         && !ExecutorTaskInstance.STATUS_FORCE_SUCCESS.equals(shadow.getStatus())) {
                     newStatus = ExecutorTaskInstance.STATUS_SUCCESS;
                     shadow.setEndTime(upstream.getEndTime());
-                    shadow.setLogContent("Shadow Task: Upstream " + upstreamTaskId + " Succeeded.");
+                    String ts = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                    shadow.setLogContent("[" + ts + "] Shadow Task: Upstream " + upstreamTaskId + " Succeeded.");
                     changed = true;
                 }
             } else if (ExecutorTaskInstance.STATUS_FAIL.equals(upstreamStatus)) {
                 if (!ExecutorTaskInstance.STATUS_FAIL.equals(shadow.getStatus())) {
                     newStatus = ExecutorTaskInstance.STATUS_FAIL;
                     shadow.setEndTime(upstream.getEndTime());
-                    shadow.setLogContent("Shadow Task: Upstream " + upstreamTaskId + " Failed.");
+                    String ts = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                    shadow.setLogContent("[" + ts + "] Shadow Task: Upstream " + upstreamTaskId + " Failed.");
                     changed = true;
                 }
             }
@@ -273,6 +277,9 @@ public class TaskExecutor {
                 java.io.PrintWriter pw = new java.io.PrintWriter(sw);
                 e.printStackTrace(pw);
                 String stackTrace = sw.toString();
+                
+                String timeErr = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                stackTrace = "[" + timeErr + "] ERROR Task Execution Failed\n" + stackTrace;
 
                 // 字段长度保护（截断过长的堆栈防止数据库字段溢出）
                 if (stackTrace.length() > 10000) {
