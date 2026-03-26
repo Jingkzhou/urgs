@@ -66,6 +66,7 @@ const DockerLogManagement: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [useWebSocket, setUseWebSocket] = useState(true);
     const [operationLoading, setOperationLoading] = useState<string | null>(null);
+    const [wsAutoDisabled, setWsAutoDisabled] = useState(false);
     const logEndRef = useRef<HTMLDivElement>(null);
 
     // WebSocket log stream
@@ -75,6 +76,15 @@ const DockerLogManagement: React.FC = () => {
     );
     const { logs: wsLogs, isConnected, connectionState, error: wsError, reconnect, clearLogs } =
         useDockerLogStream(wsContainerIds, { enabled: useWebSocket });
+
+    // Auto-fallback: if WebSocket fails (max retries reached), switch to REST mode
+    useEffect(() => {
+        if (useWebSocket && wsError && wsError.includes('Max reconnection')) {
+            setUseWebSocket(false);
+            setWsAutoDisabled(true);
+            console.warn('WebSocket unavailable, falling back to REST mode');
+        }
+    }, [wsError, useWebSocket]);
 
     const selectedContainer = useMemo(() =>
         containers.find(c => c.id === selectedContainerId),

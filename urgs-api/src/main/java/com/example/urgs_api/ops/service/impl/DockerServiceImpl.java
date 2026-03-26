@@ -28,13 +28,20 @@ public class DockerServiceImpl implements DockerService {
         List<DockerContainerDTO> containers = new ArrayList<>();
         try {
             // Check if docker is available
-            Process checkProcess = new ProcessBuilder("docker", "-v").start();
-            if (!checkProcess.waitFor(2, TimeUnit.SECONDS)) {
-                log.warn("Docker command not reachable or timeout");
+            Process checkProcess = new ProcessBuilder("docker", "-v")
+                    .redirectErrorStream(true).start();
+            boolean finished = checkProcess.waitFor(5, TimeUnit.SECONDS);
+            if (!finished) {
+                log.warn("Docker version check timed out after 5 seconds");
                 return mockContainers();
             }
             if (checkProcess.exitValue() != 0) {
-                log.warn("Docker check failed");
+                String errorOutput;
+                try (BufferedReader r = new BufferedReader(
+                        new InputStreamReader(checkProcess.getInputStream(), StandardCharsets.UTF_8))) {
+                    errorOutput = r.lines().collect(Collectors.joining("\n"));
+                }
+                log.warn("Docker check failed with exit code {}: {}", checkProcess.exitValue(), errorOutput);
                 return mockContainers();
             }
 
