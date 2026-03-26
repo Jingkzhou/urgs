@@ -50,7 +50,14 @@ public class RegElement {
     private String dataType;
 
     @ExcelProperty(value = "长度", index = 6)
-    private Integer length;
+    private String length;
+
+    /**
+     * 是否脱敏 (0: 否, 1: 是)
+     */
+    @TableField("is_desensitized")
+    @ExcelProperty(value = "是否脱敏", index = 28)
+    private Integer isDesensitized;
 
     @TableField("is_pk")
     @ExcelProperty(value = "是否主键", index = 7)

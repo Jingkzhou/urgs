@@ -6,6 +6,7 @@ import com.example.urgs_api.ops.entity.DockerLogDTO;
 import com.example.urgs_api.ops.entity.DockerOperationResultDTO;
 import com.example.urgs_api.ops.service.DockerService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
@@ -23,12 +24,30 @@ import java.util.stream.Collectors;
 @Slf4j
 public class DockerServiceImpl implements DockerService {
 
+    /**
+     * Docker API version negotiation.
+     * When the container's docker-cli is newer than the host daemon,
+     * we must pin DOCKER_API_VERSION to the host's max supported version.
+     * Override via application.yml: docker.api-version=1.39
+     */
+    @Value("${docker.api-version:1.39}")
+    private String dockerApiVersion;
+
+    /**
+     * Create a ProcessBuilder for docker commands with DOCKER_API_VERSION set.
+     */
+    private ProcessBuilder dockerProcess(String... args) {
+        ProcessBuilder pb = new ProcessBuilder(args);
+        pb.environment().put("DOCKER_API_VERSION", dockerApiVersion);
+        return pb;
+    }
+
     @Override
     public List<DockerContainerDTO> listContainers() {
         List<DockerContainerDTO> containers = new ArrayList<>();
         try {
             // Check if docker is available
-            Process checkProcess = new ProcessBuilder("docker", "-v")
+            Process checkProcess = dockerProcess("docker", "-v")
                     .redirectErrorStream(true).start();
             boolean finished = checkProcess.waitFor(5, TimeUnit.SECONDS);
             if (!finished) {
@@ -46,8 +65,9 @@ public class DockerServiceImpl implements DockerService {
             }
 
             // Run docker ps
-            Process process = new ProcessBuilder("docker", "ps", "-a", "--format",
-                    "{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}|{{.RunningFor}}").start();
+            Process process = dockerProcess("docker", "ps", "-a", "--format",
+                    "{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}|{{.RunningFor}}")
+                    .redirectErrorStream(true).start();
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
@@ -65,7 +85,7 @@ public class DockerServiceImpl implements DockerService {
                         if (statusStr.startsWith("Up")) {
                             status = "running";
                             if (statusStr.contains("Paused"))
-                                status = "stopped"; // Map paused to stopped for simplicity or add paused
+                                status = "stopped";
                         } else if (statusStr.contains("Restarting")) {
                             status = "restarting";
                         }
@@ -73,7 +93,6 @@ public class DockerServiceImpl implements DockerService {
                         // Extract IP/Port roughly
                         String ip = "0.0.0.0";
                         if (ports.contains(":")) {
-                            // 0.0.0.0:8080->80/tcp
                             try {
                                 ip = ports.split("->")[0];
                             } catch (Exception e) {
@@ -86,8 +105,6 @@ public class DockerServiceImpl implements DockerService {
                                 .image(image)
                                 .status(status)
                                 .ip(ip)
-                                // Mock CPU/Mem as docker ps doesn't provide valuable real-time stats easily
-                                // without docker stats which is slow
                                 .cpu(String.format("%.1f%%", Math.random() * 5))
                                 .memory(String.format("%dMi", (int) (Math.random() * 500 + 100)))
                                 .uptime(uptime)
@@ -111,7 +128,6 @@ public class DockerServiceImpl implements DockerService {
     }
 
     private List<DockerContainerDTO> mockContainers() {
-        // Fallback for demo if no docker is running
         List<DockerContainerDTO> list = new ArrayList<>();
         list.add(DockerContainerDTO.builder().id("mock-1").name("nginx-proxy").image("nginx:latest").status("running")
                 .ip("127.0.0.1:8080").cpu("0.5%").memory("128Mi").uptime("2 days").build());
@@ -130,30 +146,25 @@ public class DockerServiceImpl implements DockerService {
         }
 
         try {
-            // docker logs --tail n -t containerId
-            Process process = new ProcessBuilder("docker", "logs", "--tail", String.valueOf(lines), "-t", containerId)
-                    .start();
+            Process process = dockerProcess("docker", "logs", "--tail", String.valueOf(lines), "-t", containerId)
+                    .redirectErrorStream(true).start();
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
                 int idx = 0;
                 while ((line = reader.readLine()) != null) {
-                    // Docker assigns timestamp at start if -t is used:
-                    // 2024-05-20T10:00:00.000000000Z message content
                     String timestamp = "";
                     String message = line;
 
                     int firstSpace = line.indexOf(' ');
                     if (firstSpace > 0) {
                         timestamp = line.substring(0, firstSpace);
-                        if (timestamp.length() > 30) { // likely a timestamp
-                            // Trucate nanoseconds for readability
+                        if (timestamp.length() > 30) {
                             if (timestamp.contains(".")) {
                                 timestamp = timestamp.substring(0, timestamp.indexOf(".") + 4) + "Z";
                             }
                             message = line.substring(firstSpace + 1);
                         } else {
-                            // Maybe not a timestamp, reset
                             timestamp = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
                             message = line;
                         }
@@ -161,7 +172,6 @@ public class DockerServiceImpl implements DockerService {
                         timestamp = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
                     }
 
-                    // Guess log level
                     String level = "info";
                     String upperMsg = message.toUpperCase();
                     if (upperMsg.contains("ERROR") || upperMsg.contains("EXCEPTION") || upperMsg.contains("FAIL")) {
@@ -207,7 +217,6 @@ public class DockerServiceImpl implements DockerService {
 
     @Override
     public byte[] downloadContainerLogs(String containerId) {
-        // Retrieve all logs (or limit to a large number)
         List<DockerLogDTO> logs = getContainerLogs(containerId, 5000);
         StringBuilder sb = new StringBuilder();
         for (DockerLogDTO log : logs) {
@@ -221,8 +230,9 @@ public class DockerServiceImpl implements DockerService {
     @Override
     public DockerContainerStatsDTO getContainerStats(String containerId) {
         try {
-            Process process = new ProcessBuilder("docker", "stats", "--no-stream", "--format",
-                    "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.BlockIO}}", containerId).start();
+            Process process = dockerProcess("docker", "stats", "--no-stream", "--format",
+                    "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.BlockIO}}", containerId)
+                    .redirectErrorStream(true).start();
             if (!process.waitFor(5, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
                 return null;
@@ -293,7 +303,7 @@ public class DockerServiceImpl implements DockerService {
 
     private DockerOperationResultDTO executeDockerCommand(String operation, String containerId, int timeoutSeconds) {
         try {
-            Process process = new ProcessBuilder("docker", operation, containerId).start();
+            Process process = dockerProcess("docker", operation, containerId).start();
             boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
 
             if (!finished) {

@@ -870,7 +870,7 @@ public class RegTableController {
                     el.setName(elementName);
                     el.setCnName(getCellValue(row.getCell(3)));
                     el.setDataType(getCellValue(row.getCell(4)));
-                    el.setLength(getIntValue(row.getCell(5)));
+                    el.setLength(getCellValue(row.getCell(5)));
                     el.setIsPk(getIntValue(row.getCell(6)));
                     el.setNullable(getIntValue(row.getCell(7)));
                     el.setFormula(getCellValue(row.getCell(8)));

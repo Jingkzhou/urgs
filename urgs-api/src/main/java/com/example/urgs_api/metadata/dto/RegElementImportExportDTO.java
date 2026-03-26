@@ -26,7 +26,10 @@ public class RegElementImportExportDTO {
     private String dataType;
 
     @ExcelProperty(value = "长度", index = 5)
-    private Integer length;
+    private String length;
+
+    @ExcelProperty(value = "是否脱敏", index = 26)
+    private Integer isDesensitized;
 
     @ExcelProperty(value = "是否主键", index = 6)
     private Integer isPk;

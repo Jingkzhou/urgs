@@ -66,10 +66,17 @@ export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode,
                     {isField && (
                         <>
                             <FormField label="数据类型" value={form.dataType} onChange={v => setForm({ ...form, dataType: v })} />
-                            <FormField label="长度" value={String(form.length || '')} onChange={v => setForm({ ...form, length: v ? parseInt(v) : undefined })} />
+                            <FormField label="长度" value={form.length || ''} onChange={v => setForm({ ...form, length: v || undefined })} />
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">是否主键</label>
                                 <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.isPk || 0} onChange={e => setForm({ ...form, isPk: parseInt(e.target.value) })}>
+                                    <option value={0}>否</option>
+                                    <option value={1}>是</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">是否脱敏</label>
+                                <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.isDesensitized ?? 0} onChange={e => setForm({ ...form, isDesensitized: parseInt(e.target.value) })}>
                                     <option value={0}>否</option>
                                     <option value={1}>是</option>
                                 </select>

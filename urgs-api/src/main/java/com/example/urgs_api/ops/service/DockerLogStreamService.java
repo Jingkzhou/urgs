@@ -3,6 +3,7 @@ package com.example.urgs_api.ops.service;
 import com.example.urgs_api.ops.entity.DockerLogDTO;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
@@ -23,12 +24,28 @@ import java.util.function.Consumer;
 @Slf4j
 public class DockerLogStreamService {
 
+    /**
+     * Docker API version negotiation.
+     * Must match DockerServiceImpl to avoid "client version too new" errors.
+     */
+    @Value("${docker.api-version:1.39}")
+    private String dockerApiVersion;
+
     private final ExecutorService executor = Executors.newFixedThreadPool(10);
     private final Map<String, StreamHandle> activeStreams = new ConcurrentHashMap<>();
     private final AtomicInteger idCounter = new AtomicInteger(0);
 
     // Check if Docker is available (cached after first check)
     private volatile Boolean dockerAvailable = null;
+
+    /**
+     * Create a ProcessBuilder for docker commands with DOCKER_API_VERSION set.
+     */
+    private ProcessBuilder dockerProcess(String... args) {
+        ProcessBuilder pb = new ProcessBuilder(args);
+        pb.environment().put("DOCKER_API_VERSION", dockerApiVersion);
+        return pb;
+    }
 
     public static class StreamHandle {
         private final Process process; // null for mock streams
@@ -62,7 +79,7 @@ public class DockerLogStreamService {
         }
 
         try {
-            ProcessBuilder pb = new ProcessBuilder(
+            ProcessBuilder pb = dockerProcess(
                     "docker", "logs", "--follow", "--tail", "100", "-t", containerId);
             pb.redirectErrorStream(true);
             Process process = pb.start();
@@ -166,7 +183,7 @@ public class DockerLogStreamService {
     private boolean isDockerAvailable() {
         if (dockerAvailable != null) return dockerAvailable;
         try {
-            Process check = new ProcessBuilder("docker", "info")
+            Process check = dockerProcess("docker", "info")
                     .redirectErrorStream(true).start();
             boolean done = check.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
             if (!done) {

@@ -196,6 +196,7 @@ export const AssetDetailSidebar: React.FC<AssetDetailSidebarProps> = ({ isOpen, 
                                         <DetailRow label="数据类型" value={element.dataType} />
                                         <DetailRow label="长度" value={element.length} />
                                         <DetailRow label="是否主键" value={element.isPk ? '是' : '否'} icon={<Shield size={14} />} />
+                                        <DetailRow label="是否脱敏" value={element.isDesensitized ? '是' : '否'} />
                                         <DetailRow label="允许为空" value={element.nullable ? '是' : '否'} />
                                         <DetailRow label="校验规则" value={element.validationRule} fullWidth />
                                     </>
