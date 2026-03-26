@@ -52,6 +52,7 @@ export interface RegElement {
     dataType?: string;
     length?: string;
     isDesensitized?: number;
+    desensitizeType?: string;
     isPk?: number;
     nullable?: number;
     formula?: string;

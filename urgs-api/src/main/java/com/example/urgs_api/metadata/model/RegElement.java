@@ -59,6 +59,13 @@ public class RegElement {
     @ExcelProperty(value = "是否脱敏", index = 28)
     private Integer isDesensitized;
 
+    /**
+     * 脱敏字段类型 (公司名称/姓名/统一社会信用代码/地址/身份证号/电话号/邮箱)
+     */
+    @TableField("desensitize_type")
+    @ExcelProperty(value = "脱敏字段类型", index = 29)
+    private String desensitizeType;
+
     @TableField("is_pk")
     @ExcelProperty(value = "是否主键", index = 7)
     private Integer isPk;

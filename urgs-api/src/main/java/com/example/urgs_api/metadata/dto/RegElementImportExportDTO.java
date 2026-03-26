@@ -31,6 +31,9 @@ public class RegElementImportExportDTO {
     @ExcelProperty(value = "是否脱敏", index = 26)
     private Integer isDesensitized;
 
+    @ExcelProperty(value = "脱敏字段类型", index = 27)
+    private String desensitizeType;
+
     @ExcelProperty(value = "是否主键", index = 6)
     private Integer isPk;
 

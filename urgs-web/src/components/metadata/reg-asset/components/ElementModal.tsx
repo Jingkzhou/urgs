@@ -76,11 +76,29 @@ export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode,
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">是否脱敏</label>
-                                <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.isDesensitized ?? 0} onChange={e => setForm({ ...form, isDesensitized: parseInt(e.target.value) })}>
+                                <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.isDesensitized ?? 0} onChange={e => {
+                                    const val = parseInt(e.target.value);
+                                    setForm({ ...form, isDesensitized: val, desensitizeType: val === 0 ? undefined : form.desensitizeType });
+                                }}>
                                     <option value={0}>否</option>
                                     <option value={1}>是</option>
                                 </select>
                             </div>
+                            {form.isDesensitized === 1 && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">脱敏字段类型 *</label>
+                                    <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.desensitizeType || ''} onChange={e => setForm({ ...form, desensitizeType: e.target.value || undefined })}>
+                                        <option value="">-- 请选择 --</option>
+                                        <option value="公司名称">公司名称</option>
+                                        <option value="姓名">姓名</option>
+                                        <option value="统一社会信用代码">统一社会信用代码</option>
+                                        <option value="地址">地址</option>
+                                        <option value="身份证号">身份证号</option>
+                                        <option value="电话号">电话号</option>
+                                        <option value="邮箱">邮箱</option>
+                                    </select>
+                                </div>
+                            )}
                         </>
                     )}
                     {!isField && (
@@ -231,7 +249,13 @@ export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode,
                 </div>
                 <div className="p-4 border-t border-slate-200 flex justify-end gap-2 bg-slate-50 rounded-b-xl">
                     <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg">取消</button>
-                    <button onClick={() => onSave(form)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200">保存</button>
+                    <button onClick={() => {
+                        if (form.isDesensitized === 1 && !form.desensitizeType) {
+                            alert('请选择脱敏字段类型');
+                            return;
+                        }
+                        onSave(form);
+                    }} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200">保存</button>
                 </div>
             </div>
         </div>
