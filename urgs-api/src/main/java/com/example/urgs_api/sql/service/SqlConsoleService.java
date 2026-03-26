@@ -119,7 +119,7 @@ public class SqlConsoleService {
         } catch (Exception e) {
             log.error("SQL execution error for dataSourceId={}: {}", dataSourceId, e.getMessage(), e);
             response.setSuccess(false);
-            response.setError("查询执行失败，请检查 SQL 语法和数据源连接");
+            response.setError("查询执行失败：" + e.getMessage());
         }
         return response;
     }
@@ -221,16 +221,30 @@ public class SqlConsoleService {
         return templateToUse.execute((ConnectionCallback<SchemaMetadataResponse>) con -> {
             DatabaseMetaData meta = con.getMetaData();
             String catalog = con.getCatalog();
+            String product = meta.getDatabaseProductName() == null ? "" : meta.getDatabaseProductName().toLowerCase();
+
+            // Oracle 无 catalog 概念，需用连接用户名限定 schema，否则 JDBC 驱动遍历所有 schema 触发 ORA-00942
+            String schemaPattern = null;
+            if (product.contains("oracle")) {
+                try {
+                    schemaPattern = meta.getUserName();
+                } catch (Exception ignored) {
+                }
+            }
+
             SchemaMetadataResponse response = new SchemaMetadataResponse();
             List<SchemaMetadataResponse.TableMeta> tables = new ArrayList<>();
 
-            try (ResultSet rs = meta.getTables(catalog, null, "%", new String[]{"TABLE", "VIEW"})) {
+            try (ResultSet rs = meta.getTables(catalog, schemaPattern, "%", new String[]{"TABLE", "VIEW"})) {
                 while (rs.next()) {
                     SchemaMetadataResponse.TableMeta table = new SchemaMetadataResponse.TableMeta();
                     table.setTableName(rs.getString("TABLE_NAME"));
+                    String tableSchema = rs.getString("TABLE_SCHEM");
 
                     List<SchemaMetadataResponse.ColumnMeta> cols = new ArrayList<>();
-                    try (ResultSet colRs = meta.getColumns(catalog, null, table.getTableName(), "%")) {
+                    // 用 TABLE_SCHEM 精确匹配，避免跨 schema 触发权限错误
+                    String colSchema = tableSchema != null ? tableSchema : schemaPattern;
+                    try (ResultSet colRs = meta.getColumns(catalog, colSchema, table.getTableName(), "%")) {
                         while (colRs.next()) {
                             SchemaMetadataResponse.ColumnMeta col = new SchemaMetadataResponse.ColumnMeta();
                             col.setColumnName(colRs.getString("COLUMN_NAME"));

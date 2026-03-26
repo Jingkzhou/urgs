@@ -30,6 +30,8 @@ export interface TableMeta {
 }
 
 export interface SchemaMetadataResponse {
+    success?: boolean;
+    error?: string;
     tables: TableMeta[];
 }
 

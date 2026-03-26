@@ -581,7 +581,6 @@ export const createVersionPackage = (params: {
     description: string;
     createdBy?: number;
     envId?: number;
-    execUser?: string;
 }) => post<VersionPackage>('/api/version/deploy/packages', params);
 
 /**

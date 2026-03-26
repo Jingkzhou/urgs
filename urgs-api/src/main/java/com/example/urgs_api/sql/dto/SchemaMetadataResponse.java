@@ -6,6 +6,8 @@ import java.util.List;
 
 @Data
 public class SchemaMetadataResponse {
+    private boolean success = true;
+    private String error;
     private List<TableMeta> tables;
 
     @Data

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Editor, { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 import { Play, AlertCircle, CheckCircle2, Database, ChevronLeft, ChevronRight, History, Download, X, Trash2, Star, StarOff } from 'lucide-react';
+import { message } from 'antd';
 import { get } from '@/utils/request';
 import { executeSql, fetchSchemaMetadata, SqlExecuteResponse, TableMeta } from '@/api/sql';
 import { useSqlHistory } from '@/hooks/useSqlHistory';
@@ -71,9 +72,15 @@ const SqlConsole: React.FC = () => {
         try {
             const dsId = selectedSourceId ? Number(selectedSourceId) : undefined;
             const data = await fetchSchemaMetadata(dsId);
-            schemaRef.current = data?.tables || [];
-        } catch (err) {
-            console.error('Failed to load schema:', err);
+            if (data?.success === false && data?.error) {
+                message.error(`Schema 加载失败：${data.error}`);
+                schemaRef.current = [];
+            } else {
+                schemaRef.current = data?.tables || [];
+            }
+        } catch (err: any) {
+            const reason = err?.message || String(err);
+            message.error(`Schema 加载失败：${reason}`);
             schemaRef.current = [];
         }
     };

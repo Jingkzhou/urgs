@@ -31,6 +31,7 @@ const GraphNode: React.FC<GraphNodeProps> = ({
     dimmedColumnIds,
     onColumnHover,
     onColumnSelect,
+    onNodeSelect,
     isCollapsed,
     onToggleCollapse,
     onMouseDown
