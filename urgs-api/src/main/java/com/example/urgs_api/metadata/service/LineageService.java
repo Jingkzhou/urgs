@@ -23,12 +23,41 @@ import com.example.urgs_api.metadata.dto.LineageExportDTO;
  */
 public class LineageService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(LineageService.class);
+
     // 所有血缘关系类型
     private static final List<String> ALL_LINEAGE_RELATION_TYPES = Arrays.asList(
             "DERIVES_TO", "FILTERS", "JOINS", "GROUPS", "ORDERS", "CALLS", "REFERENCES", "CASE_WHEN");
 
     @Autowired
     private Driver driver;
+
+    /**
+     * 清空 Neo4j 数据库中的所有节点和关系
+     */
+    public Map<String, Object> clearAll() {
+        Map<String, Object> result = new HashMap<>();
+        try (Session session = driver.session()) {
+            // 分批删除避免内存溢出
+            String deleteQuery = "MATCH (n) WITH n LIMIT 10000 DETACH DELETE n RETURN count(*) AS deleted";
+            long totalDeleted = 0;
+            while (true) {
+                Result res = session.run(deleteQuery);
+                long deleted = res.single().get("deleted").asLong();
+                totalDeleted += deleted;
+                if (deleted == 0) break;
+            }
+            log.info("Neo4j 数据库已清空，共删除 {} 个节点", totalDeleted);
+            result.put("success", true);
+            result.put("message", "数据库已清空，共删除 " + totalDeleted + " 个节点");
+            result.put("deletedCount", totalDeleted);
+        } catch (Exception e) {
+            log.error("清空 Neo4j 数据库失败", e);
+            result.put("success", false);
+            result.put("message", "清空失败: " + e.getMessage());
+        }
+        return result;
+    }
 
     /**
      * 搜索表

@@ -49,6 +49,9 @@ public class LineageEngineService {
     @Value("${lineage.engine.stop-timeout-seconds:10}")
     private int stopTimeoutSeconds;
 
+    @Value("${docker.api-version:1.39}")
+    private String dockerApiVersion;
+
     private final Object lock = new Object();
     private Process process;
     private Instant lastStartedAt;
@@ -145,6 +148,7 @@ public class LineageEngineService {
 
                 ProcessBuilder builder = new ProcessBuilder(command);
                 builder.directory(workingDir.toFile());
+                builder.environment().put("DOCKER_API_VERSION", dockerApiVersion);
                 builder.redirectErrorStream(true);
                 builder.redirectOutput(ProcessBuilder.Redirect.appendTo(logPath.toFile()));
 
@@ -379,6 +383,7 @@ public class LineageEngineService {
 
                     ProcessBuilder builder = new ProcessBuilder(command);
                     builder.directory(workingDir.toFile());
+                    builder.environment().put("DOCKER_API_VERSION", dockerApiVersion);
                     builder.redirectErrorStream(true); // 合并 stdout 和 stderr
                     Process killProcess = builder.start();
 

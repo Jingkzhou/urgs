@@ -1,6 +1,9 @@
 #!/bin/sh
 # 转发命令到 urgs-sql-lineage-engine-1 容器执行
 # 注意：容器名称需要与 docker-compose 生成的一致
+# Pin Docker API version to avoid "client version too new" errors
+export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.39}"
+
 # Dynamically find the running container name for sql-lineage-engine
 CONTAINER_NAME=$(docker ps --format "{{.Names}}" | grep "sql-lineage-engine" | head -n 1)
 

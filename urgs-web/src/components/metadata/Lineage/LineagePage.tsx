@@ -10,6 +10,7 @@ import {
     PlayCircleOutlined,
     ReloadOutlined,
     PoweroffOutlined,
+    DeleteOutlined,
 } from '@ant-design/icons';
 import dagre from 'dagre';
 import {
@@ -21,6 +22,7 @@ import {
     restartLineageEngine,
     stopLineageEngine,
     getLineageEngineLogs,
+    clearLineageDatabase,
 } from '@/api/lineage';
 import { hasPermission } from '@/utils/permission';
 import LineageDiagramImpact from './analysis/components/LineageDiagram';
@@ -284,6 +286,31 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
         setShowLogModal(true);
         setShowLogModal(true);
         fetchEngineLogs(false);
+    };
+
+    const handleClearDatabase = () => {
+        Modal.confirm({
+            title: '确认清空数据库',
+            content: '此操作将删除 Neo4j 中的所有血缘数据，且不可恢复。确定要继续吗？',
+            okText: '确认清空',
+            okType: 'danger',
+            cancelText: '取消',
+            onOk: async () => {
+                setEngineActionLoading('clear' as any);
+                try {
+                    const res = await clearLineageDatabase();
+                    if (res?.success === false) {
+                        message.error(res.message || '清空失败');
+                    } else {
+                        message.success(res?.message || '数据库已清空');
+                    }
+                } catch (error) {
+                    message.error('清空数据库失败');
+                } finally {
+                    setEngineActionLoading(null);
+                }
+            },
+        });
     };
 
     const handleSearch = async (page: number = 1) => {
@@ -878,6 +905,16 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                             {canViewEngineLogs ? (
                                 <Button icon={<FileTextOutlined />} onClick={handleOpenLogs}>
                                     查看日志
+                                </Button>
+                            ) : null}
+                            {canStopEngine ? (
+                                <Button
+                                    danger
+                                    icon={<DeleteOutlined />}
+                                    loading={engineActionLoading === ('clear' as any)}
+                                    onClick={handleClearDatabase}
+                                >
+                                    清空数据
                                 </Button>
                             ) : null}
                         </Space>

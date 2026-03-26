@@ -211,3 +211,7 @@ export const getLineageEngineLogs = (lines: number = 200) => {
 export const checkLineageVersionConsistency = (repoId: number, ref?: string) => {
     return get('/api/metadata/lineage/engine/version-check', { repoId: String(repoId), ref: ref || '' });
 };
+
+export const clearLineageDatabase = () => {
+    return post('/api/metadata/lineage/engine/clear-database', {});
+};

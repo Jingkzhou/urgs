@@ -3,6 +3,7 @@ package com.example.urgs_api.metadata.controller;
 import com.example.urgs_api.auth.annotation.RequirePermission;
 import com.example.urgs_api.metadata.dto.StartEngineRequest;
 import com.example.urgs_api.metadata.service.LineageEngineService;
+import com.example.urgs_api.metadata.service.LineageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,6 +15,7 @@ import java.util.Map;
 public class LineageEngineController {
 
     private final LineageEngineService lineageEngineService;
+    private final LineageService lineageService;
 
     @GetMapping("/status")
     @RequirePermission("metadata:lineage:engine:logs")
@@ -50,5 +52,11 @@ public class LineageEngineController {
     @RequirePermission("metadata:lineage:engine:logs")
     public Map<String, Object> checkVersion(@RequestParam Long repoId, @RequestParam(required = false) String ref) {
         return lineageEngineService.checkVersionConsistency(repoId, ref);
+    }
+
+    @PostMapping("/clear-database")
+    @RequirePermission("metadata:lineage:engine:stop")
+    public Map<String, Object> clearDatabase() {
+        return lineageService.clearAll();
     }
 }
