@@ -71,3 +71,9 @@ urgs-rag/data/
 urgs-rag/doc_store/
 urgs-rag/.venv_312/
 urgs-agent/urgs_agent.egg-info/
+
+# AI 工具配置（仅本地保留）
+.agent/
+.agents/
+.claude/
+.codex/
