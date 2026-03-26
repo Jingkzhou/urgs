@@ -15,8 +15,8 @@ class LineageParser:
         self.dialect = dialect
         self.default_schema = default_schema
         self.parser = GSPParser()
-        self.indirect_parser = IndirectFlowParser(dialect)  # sqlglot 补充解析器
         self.resolver = MetadataResolver()
+        self.indirect_parser = IndirectFlowParser(dialect, resolver=self.resolver)  # 注入共享实例
 
     def parse(self, sql: str, source_file: str = None) -> Dict[str, Any]:
         """
@@ -35,8 +35,10 @@ class LineageParser:
         # Let's split always for "script" support.
 
         # Auto-detect dialect if default 'mysql' is used but content looks like specific dialect
+        from utils.dialect_detector import detect_dialect
+
         current_dialect = self.dialect
-        detected_dialect = self._detect_dialect(sql)
+        detected_dialect = detect_dialect(sql)
         detected_switch = False
 
         if current_dialect == "mysql" and detected_dialect:
@@ -137,27 +139,27 @@ class LineageParser:
                         "gsp_json": result.get("gsp_json"),
                     }
 
-                # Extract sources/targets/relationships
-                if "sources" in result and result["sources"]:
-                    sources.update(result["sources"])
-                    gsp_tables.update(result["sources"])  # 记录 GSP 表名
-                    stmt_info["sources"] = result["sources"]
-                    has_lineage = True
-                if "targets" in result and result["targets"]:
-                    targets.update(result["targets"])
-                    gsp_tables.update(result["targets"])  # 记录 GSP 表名
-                    stmt_info["targets"] = result["targets"]
-                    has_lineage = True
-                if "relationships" in result and result["relationships"]:
-                    relations.extend(result["relationships"])
-                    stmt_info["relationships"] = result["relationships"]
-                    has_lineage = True
+                    # Extract sources/targets/relationships
+                    if "sources" in result and result["sources"]:
+                        sources.update(result["sources"])
+                        gsp_tables.update(result["sources"])  # 记录 GSP 表名
+                        stmt_info["sources"] = result["sources"]
+                        has_lineage = True
+                    if "targets" in result and result["targets"]:
+                        targets.update(result["targets"])
+                        gsp_tables.update(result["targets"])  # 记录 GSP 表名
+                        stmt_info["targets"] = result["targets"]
+                        has_lineage = True
+                    if "relationships" in result and result["relationships"]:
+                        relations.extend(result["relationships"])
+                        stmt_info["relationships"] = result["relationships"]
+                        has_lineage = True
 
-                # Only add to detailed output if lineage exists
-                if has_lineage:
-                    if "gsp_json" in result:
-                        gsp_json_list.append(result["gsp_json"])
-                    detailed_statements.append(stmt_info)
+                    # Only add to detailed output if lineage exists
+                    if has_lineage:
+                        if "gsp_json" in result:
+                            gsp_json_list.append(result["gsp_json"])
+                        detailed_statements.append(stmt_info)
 
         # ===== 2. Indirect Dependencies (SQLGlot) - Run After GSP =====
         try:
@@ -291,50 +293,6 @@ class LineageParser:
             "gsp_json": gsp_json_list,
         }
 
-    def _detect_dialect(self, sql: str) -> str:
-        """
-        Heuristic to detect SQL dialect (Oracle/Gbase, Hive, etc.)
-        Returns 'oracle', 'hive', or None (keep default).
-        """
-        import re
-
-        sql_upper = sql.upper()
-
-        # 1. Oracle / GBase (PL/SQL features)
-        oracle_keywords = [
-            r"\bNVL\s*\(",
-            r"\bDECODE\s*\(",
-            r"\bTO_CHAR\s*\(",
-            r"\bTO_DATE\s*\(",
-            r"\bSYSDATE\b",
-            r"\bFROM\s+DUAL\b",
-            r"CREATE\s+(?:OR\s+REPLACE\s+)?PROCEDURE",
-            r"\bVARCHAR2\b",
-            r"\bDBMS_OUTPUT\b",
-            r"\bBEGIN\s*$",
-            r"\bEND\s*;\s*$",
-        ]
-        for pattern in oracle_keywords:
-            if re.search(pattern, sql_upper):
-                return "oracle"
-
-        # 2. Hive / SparkSQL (Big Data features)
-        hive_keywords = [
-            r"\bPARTITIONED\s+BY\b",
-            r"\bCLUSTERED\s+BY\b",
-            r"\bROW\s+FORMAT\b",
-            r"\bSTORED\s+AS\b",
-            r"\bLATERAL\s+VIEW\b",
-            r"\bEXPLODE\s*\(",
-            r"\bASC\s+NULLS\s+(?:FIRST|LAST)\b",
-            r"(?s)^\s*FROM\s+.*\bINSERT\s+INTO\b",  # Hive Multi-Table Insert syntax
-        ]
-        for pattern in hive_keywords:
-            if re.search(pattern, sql_upper):
-                return "hive"
-
-        return None
-
     def get_column_lineage(
         self, sql: str, source_file: str = None
     ) -> List[Dict[str, str]]:
@@ -353,8 +311,10 @@ class LineageParser:
         from utils.normalize import normalize_table_name
 
         # Auto-detect dialect if default 'mysql' is used but content looks like specific dialect
+        from utils.dialect_detector import detect_dialect
+
         current_dialect = self.dialect
-        detected_dialect = self._detect_dialect(sql)
+        detected_dialect = detect_dialect(sql)
         detected_switch = False
 
         if current_dialect == "mysql" and detected_dialect:
@@ -762,53 +722,49 @@ class LineageParser:
     ) -> Tuple[set, set, list, list]:
         """
         在表级血缘结果中将 CTE 别名替换为物理表名。
+        当CTE对应多个物理表时，展开为多条关系记录。
         """
         from utils.normalize import normalize_table_name
 
-        # 替换 sources 中的 CTE 别名
+        def resolve_table(table_name: str) -> set:
+            """将表名解析为物理表集合（如果是 CTE 别名则展开）"""
+            t_norm = normalize_table_name(table_name)
+            t_upper = t_norm.upper()
+            if t_upper in cte_registry and cte_registry[t_upper]["physical_tables"]:
+                return cte_registry[t_upper]["physical_tables"]
+            return {table_name}
+
+        # 展开 sources（CTE 别名 → 物理表集合）
         new_sources = set()
         for s in sources:
-            s_norm = normalize_table_name(s)
-            s_upper = s_norm.upper()
-            if s_upper in cte_registry:
-                new_sources.update(cte_registry[s_upper]["physical_tables"])
-            else:
-                new_sources.add(s)
+            new_sources.update(resolve_table(s))
 
-        # targets 通常不会是 CTE 别名，但以防万一
+        # targets 通常不是 CTE，但保持一致处理
         new_targets = set()
         for t in targets:
-            t_norm = normalize_table_name(t)
-            t_upper = t_norm.upper()
-            if t_upper in cte_registry:
-                new_targets.update(cte_registry[t_upper]["physical_tables"])
-            else:
-                new_targets.add(t)
+            new_targets.update(resolve_table(t))
 
-        # 替换 relations 中的 CTE 别名
+        # 展开 relations：一条记录可能扩展为多条
         new_relations = []
         for rel in relations:
-            rel = dict(rel)  # 复制
-            for key in ["source", "source_table"]:
-                if key in rel:
-                    val_upper = (rel[key] or "").upper()
-                    if val_upper in cte_registry:
-                        # 替换为物理表（取第一个，如果有多个需要展开）
-                        phys = cte_registry[val_upper]["physical_tables"]
-                        if len(phys) == 1:
-                            rel[key] = next(iter(phys))
-                        else:
-                            # 多个物理表 - 保留原始，后续字段级会处理
-                            rel[key] = next(iter(phys))
-            for key in ["target", "target_table"]:
-                if key in rel:
-                    val_upper = (rel[key] or "").upper()
-                    if val_upper in cte_registry:
-                        phys = cte_registry[val_upper]["physical_tables"]
-                        rel[key] = next(iter(phys)) if phys else rel[key]
-            new_relations.append(rel)
+            rel = dict(rel)
+            src_tables = resolve_table(rel.get("source_table") or rel.get("source", ""))
+            tgt_tables = resolve_table(rel.get("target_table") or rel.get("target", ""))
 
-        # 替换 detailed_statements
+            for src in src_tables:
+                for tgt in tgt_tables:
+                    new_rel = dict(rel)
+                    if "source_table" in new_rel:
+                        new_rel["source_table"] = src
+                    if "source" in new_rel:
+                        new_rel["source"] = src
+                    if "target_table" in new_rel:
+                        new_rel["target_table"] = tgt
+                    if "target" in new_rel:
+                        new_rel["target"] = tgt
+                    new_relations.append(new_rel)
+
+        # 替换 detailed_statements（保持原有逻辑，只取第一个物理表）
         for stmt in detailed_statements:
             stmt["sources"] = [
                 (

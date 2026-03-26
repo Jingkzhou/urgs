@@ -237,12 +237,24 @@ class GSPParser:
 
     def _get_vendor(self, db_type: str, EDbVendor):
         db_type = db_type.lower()
-        if db_type == "mysql": return EDbVendor.dbvmysql
-        if db_type == "hive": return EDbVendor.dbvhive
-        if db_type == "oracle": return EDbVendor.dbvoracle
-        if db_type == "postgresql": return EDbVendor.dbvpostgresql
-        if db_type == "sqlserver": return EDbVendor.dbvsqlserver
-        if db_type == "gbase": return EDbVendor.dbvoracle
+        vendor_map = {
+            "mysql":      "dbvmysql",
+            "hive":       "dbvhive",
+            "oracle":     "dbvoracle",
+            "gbase":      "dbvoracle",
+            "postgresql": "dbvpostgresql",
+            "sqlserver":  "dbvsqlserver",
+            "tsql":       "dbvsqlserver",
+        }
+        attr_name = vendor_map.get(db_type)
+        if attr_name:
+            if hasattr(EDbVendor, attr_name):
+                return getattr(EDbVendor, attr_name)
+            else:
+                logging.warning(
+                    f"GSP vendor '{attr_name}' not found in this GSP version "
+                    f"(dialect='{db_type}'), falling back to dbvmysql."
+                )
         return EDbVendor.dbvmysql
 
     def _map_to_lineage_format(self, gsp_json: Dict, sql: str, source_file: str = None) -> Dict[str, Any]:

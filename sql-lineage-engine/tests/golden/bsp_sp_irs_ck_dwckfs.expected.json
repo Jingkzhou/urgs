@@ -1,0 +1,294 @@
+{
+    "dialect": "oracle",
+    "description": "bsp_sp_irs_ck_dwckfs 存储过程血缘（自动生成）",
+    "table_lineage": {
+        "sources": [
+            "DATACORE_IE_CK_DWCKFS_INC",
+            "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "SMTMODS.L_ACCT_DEPOSIT",
+            "SMTMODS.L_TRAN_TX",
+            "smtmods.l_acct_deposit"
+        ],
+        "targets": [
+            "DATACORE_IE_CK_DWCKFS_INC",
+            "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "IE_CK_DWCKFS_INC"
+        ],
+        "relationships": [
+            {
+                "source": "DATACORE_IE_CK_DWCKFS_INC",
+                "target": "IE_CK_DWCKFS_INC"
+            },
+            {
+                "source": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+                "target": "DATACORE_IE_CK_DWCKFS_INC"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_DEPOSIT",
+                "target": "DATACORE_IE_CK_DWCKFS_INC_TMP2"
+            },
+            {
+                "source": "SMTMODS.L_TRAN_TX",
+                "target": "DATACORE_IE_CK_DWCKFS_INC_TMP2"
+            },
+            {
+                "source": "smtmods.l_acct_deposit",
+                "target": "IE_CK_DWCKFS_INC"
+            }
+        ]
+    },
+    "column_lineage": [
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "source_column": "CUSTID",
+            "target_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "target_column": "CUSTID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_TRAN_TX",
+            "source_column": "ACCOUNT_CODE",
+            "target_table": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "target_column": "ACCDEPCODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_CLDATE",
+            "target_table": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "target_column": "ACCT_CLDATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "PBOC_BASE_RATE",
+            "target_table": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "target_column": "BASERATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "target_column": "CORPID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_TRAN_TX",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "target_column": "CUSTID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "DEPOSIT_NUM",
+            "target_table": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "target_column": "DEPAGRSEQNO",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "GL_ITEM_CODE",
+            "target_table": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "target_column": "GL_ITEM_CODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "MATUR_DATE",
+            "target_table": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "target_column": "MATUR_DATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_TRAN_TX",
+            "source_column": "CURRENCY",
+            "target_table": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "target_column": "MONEYSYMB",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "target_column": "NBJGH",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "INT_RATE",
+            "target_table": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "target_column": "REALRATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_TRAN_TX",
+            "source_column": "REFERENCE_NUM",
+            "target_table": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "target_column": "SERIALNO",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_TRAN_TX",
+            "source_column": "TRANS_AMT",
+            "target_table": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "target_column": "TRANSAMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_TRAN_TX",
+            "source_column": "CHANNEL",
+            "target_table": "DATACORE_IE_CK_DWCKFS_INC_TMP2",
+            "target_column": "TRANSCHANNEL",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "ACCDEPCODE",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "ACCDEPCODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "AMTDEPFLG",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "AMTDEPFLG",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "BASERATE",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "BASERATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "smtmods.l_acct_deposit",
+            "source_column": "PBOC_BASE_RATE",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "BASERATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "BIZ_LINE_ID",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "BIZ_LINE_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "CJRQ",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "CJRQ",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "CORPID",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "CORPID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "CUSTID",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "CUSTID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "DATADATE",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "DATADATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "DEPAGRSEQNO",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "DEPAGRSEQNO",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "DIFF_TYPE",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "DIFF_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "LAST_DATA_DATE",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "LAST_DATA_DATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "MONEYSYMB",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "MONEYSYMB",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "NBJGH",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "NBJGH",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "REALRATE",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "REALRATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "smtmods.l_acct_deposit",
+            "source_column": "INT_RATE",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "REALRATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "SERIALNO",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "SERIALNO",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "TRANSACTIONDATE",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "TRANSACTIONDATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "TRANSAMT",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "TRANSAMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "TRANSCHANNEL",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "TRANSCHANNEL",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_DWCKFS_INC",
+            "source_column": "TRANSDIRECT",
+            "target_table": "IE_CK_DWCKFS_INC",
+            "target_column": "TRANSDIRECT",
+            "dependency_type": "fdd"
+        }
+    ]
+}

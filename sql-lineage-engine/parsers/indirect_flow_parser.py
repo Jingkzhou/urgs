@@ -37,10 +37,13 @@ class IndirectFlowParser:
         "snowflake": "snowflake",
     }
     
-    def __init__(self, dialect: str = "mysql"):
+    def __init__(self, dialect: str = "mysql", resolver=None):
         self.dialect = self.DIALECT_MAP.get(dialect.lower(), None)
-        from utils.metadata_resolver import MetadataResolver
-        self.resolver = MetadataResolver()
+        if resolver is not None:
+            self.resolver = resolver
+        else:
+            from utils.metadata_resolver import MetadataResolver
+            self.resolver = MetadataResolver()
     
     def parse(self, sql: str, source_file: str = None) -> List[Dict[str, Any]]:
         """解析 SQL 并使用 Scope 提取间接依赖关系。"""
@@ -316,24 +319,22 @@ class IndirectFlowParser:
                 # 获取所有来源物理表
                 for src in scope.sources.values():
                     possible_tables.update(self._resolve_source_to_physical(src))
-                
+
                 # 在这些可能物理表中查找该列
                 matched_tables = set()
                 for pt in possible_tables:
                     try:
                         val = self.resolver.validate_column(pt, col.name)
-                        # 如果高度匹配或者模糊匹配到了，我们认为是正确来源表
-                        if val.get("exists") and val.get("confidence") in ["HIGH", "MEDIUM"]:
+                        # 只有明确存在（HIGH）才加入，MEDIUM 且无 exists 标志视为不可达
+                        if val.get("exists") is True and val.get("confidence") in ["HIGH", "MEDIUM"]:
                             matched_tables.add(pt)
-                    except Exception as e:
-                        logging.debug(f"Resolver validation failed for table {pt}, column {col.name}: {e}")
-                
-                # 如果只匹配到一个表，明确绑定
-                if len(matched_tables) == 1:
+                    except Exception:
+                        pass  # API 不可达，跳过此表，不做推断
+
+                # API 完全不可达时 matched_tables 为空，返回空集合（宁缺毋滥）
+                if matched_tables:
                     tables.update(matched_tables)
-                # 如果匹配到多个表（可能是重名列引发笛卡尔积/歧义语义），全加上或者保持空，这里选择全加上
-                elif len(matched_tables) > 1:
-                    tables.update(matched_tables)
+                # else: 无法确定来源，不产生血缘（避免假阳性）
 
         return tables
 

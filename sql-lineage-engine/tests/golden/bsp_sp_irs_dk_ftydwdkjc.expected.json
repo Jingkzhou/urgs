@@ -1,0 +1,255 @@
+{
+    "dialect": "oracle",
+    "description": "bsp_sp_irs_dk_ftydwdkjc 存储过程血缘（自动生成）",
+    "table_lineage": {
+        "sources": [
+            "DATACORE_IE_DK_FTYDWDKJC",
+            "SMTMODS.L_ACCT_LOAN",
+            "SMTMODS.L_AGRE_LOAN_CONTRACT"
+        ],
+        "targets": [
+            "DATACORE_IE_DK_FTYDWDKJC",
+            "IE_DK_DWDKJC"
+        ],
+        "relationships": [
+            {
+                "source": "DATACORE_IE_DK_FTYDWDKJC",
+                "target": "IE_DK_DWDKJC"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_LOAN",
+                "target": "DATACORE_IE_DK_FTYDWDKJC"
+            },
+            {
+                "source": "SMTMODS.L_AGRE_LOAN_CONTRACT",
+                "target": "DATACORE_IE_DK_FTYDWDKJC"
+            }
+        ]
+    },
+    "column_lineage": [
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "ACCT_NUM",
+            "target_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "target_column": "ACCT_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "BASE_INT_RAT",
+            "target_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "target_column": "BASE_INT_RAT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_AGRE_LOAN_CONTRACT",
+            "source_column": "BASE_INT_RAT",
+            "target_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "target_column": "BASE_INT_RAT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "FINISH_DT",
+            "target_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "target_column": "FINISH_DT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "DRAWDOWN_DT",
+            "target_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "target_column": "LOAN_DATE_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "MATURITY_DT",
+            "target_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "target_column": "LOAN_DATE_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "MATURITY_DT",
+            "target_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "target_column": "LOAN_DUE_DATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "DRAWDOWN_DT",
+            "target_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "target_column": "LOAN_GRANT_DATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "LOAN_NUM",
+            "target_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "target_column": "LOAN_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "LOAN_PURPOSE_CD",
+            "target_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "target_column": "LOAN_PURPOSE_CD",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "target_column": "ORG_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "REAL_INT_RAT",
+            "target_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "target_column": "REAL_INT_RAT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "BUSI_CHANNEL",
+            "target_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "target_column": "dkblqd",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "LOAN_PURPOSE_CD",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "LOANPURPOSECD",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "FINISH_DT",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "actualduedate",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "BASE_INT_RAT",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "baserate",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "DKBLQD",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "busichannel",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "IS_DATE",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "cjrq",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "ACCT_NUM",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "contractnum",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "ORG_NUM",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "corpid",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "CUST_ID",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "custid",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "VS_TEXT",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "datadate",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "LOAN_GRANT_DATE",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "drawdowndt",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "LLFD",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "floatfreq",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "LOAN_NUM",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "loannum",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "PRODUCT_TYPE",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "loanproducttype",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "LOAN_DUE_DATE",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "maturitydt",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "ORG_NUM",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "nbjgh",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "PRI_BENCH_MARK",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "pricingtype",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "INT_RATE_TYP",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "ratetype",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DK_FTYDWDKJC",
+            "source_column": "REAL_INT_RAT",
+            "target_table": "IE_DK_DWDKJC",
+            "target_column": "realrate",
+            "dependency_type": "fdd"
+        }
+    ]
+}

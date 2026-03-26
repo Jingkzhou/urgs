@@ -1,0 +1,1451 @@
+{
+    "dialect": "oracle",
+    "description": "BSP_SP_IRS_DW_DGDWKHXX 存储过程 — 对公客户信息加工，生成 IE_KH_DGKHXX 接口表和 GMJJBM_BL 审核表",
+    "table_lineage": {
+        "sources": [
+            "DATACORE_IE_DW_DGDWKHXX",
+            "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "DATACORE_IE_DW_DGDWKHXX_TEMP6",
+            "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "DATACORE_IE_DW_DGDWKHXX_TEMP9",
+            "DATACORE_NBJGH",
+            "DATACORE_TMP_DGKH_QYGM",
+            "DATACORE_XZQHDM",
+            "DATACORE_tmp_dgkh_gmjjbm",
+            "DATACORE_tmp_dgkh_sshy",
+            "IE_KH_DGKHXX",
+            "SMTMODS.L_ACCT_DEPOSIT",
+            "SMTMODS.L_ACCT_FUND_MMFUND",
+            "SMTMODS.L_ACCT_LOAN",
+            "SMTMODS.L_ACCT_LOAN_ENTRUST",
+            "SMTMODS.L_AGRE_CREDITLINE",
+            "SMTMODS.L_AGRE_LOAN_CONTRACT",
+            "SMTMODS.L_CUST_ALL",
+            "SMTMODS.L_CUST_C",
+            "SMTMODS.L_PUBL_RATE"
+        ],
+        "targets": [
+            "DATACORE_IE_DW_DGDWKHXX",
+            "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "DATACORE_IE_DW_DGDWKHXX_TEMP10",
+            "DATACORE_IE_DW_DGDWKHXX_TEMP11",
+            "DATACORE_IE_DW_DGDWKHXX_TEMP3",
+            "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "DATACORE_IE_DW_DGDWKHXX_TEMP6",
+            "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "DATACORE_IE_DW_DGDWKHXX_TEMP9",
+            "GMJJBM_BL",
+            "IE_KH_DGKHXX"
+        ],
+        "relationships": [
+            {
+                "source": "DATACORE_IE_DW_DGDWKHXX",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP7"
+            },
+            {
+                "source": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP5"
+            },
+            {
+                "source": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+                "target": "DATACORE_IE_DW_DGDWKHXX"
+            },
+            {
+                "source": "DATACORE_IE_DW_DGDWKHXX_TEMP6",
+                "target": "DATACORE_IE_DW_DGDWKHXX"
+            },
+            {
+                "source": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+                "target": "IE_KH_DGKHXX"
+            },
+            {
+                "source": "DATACORE_IE_DW_DGDWKHXX_TEMP9",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP7"
+            },
+            {
+                "source": "DATACORE_NBJGH",
+                "target": "IE_KH_DGKHXX"
+            },
+            {
+                "source": "DATACORE_TMP_DGKH_QYGM",
+                "target": "IE_KH_DGKHXX"
+            },
+            {
+                "source": "DATACORE_XZQHDM",
+                "target": "IE_KH_DGKHXX"
+            },
+            {
+                "source": "DATACORE_tmp_dgkh_gmjjbm",
+                "target": "IE_KH_DGKHXX"
+            },
+            {
+                "source": "DATACORE_tmp_dgkh_sshy",
+                "target": "IE_KH_DGKHXX"
+            },
+            {
+                "source": "IE_KH_DGKHXX",
+                "target": "GMJJBM_BL"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_DEPOSIT",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP10"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_DEPOSIT",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP4"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_FUND_MMFUND",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP4"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_LOAN",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP1"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_LOAN",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP11"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_LOAN",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP3"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_LOAN",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP4"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_LOAN",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP9"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_LOAN_ENTRUST",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP3"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_LOAN_ENTRUST",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP4"
+            },
+            {
+                "source": "SMTMODS.L_AGRE_CREDITLINE",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP6"
+            },
+            {
+                "source": "SMTMODS.L_AGRE_LOAN_CONTRACT",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP4"
+            },
+            {
+                "source": "SMTMODS.L_CUST_ALL",
+                "target": "DATACORE_IE_DW_DGDWKHXX"
+            },
+            {
+                "source": "SMTMODS.L_CUST_ALL",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP5"
+            },
+            {
+                "source": "SMTMODS.L_CUST_ALL",
+                "target": "GMJJBM_BL"
+            },
+            {
+                "source": "SMTMODS.L_CUST_C",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP5"
+            },
+            {
+                "source": "SMTMODS.L_PUBL_RATE",
+                "target": "DATACORE_IE_DW_DGDWKHXX_TEMP6"
+            }
+        ]
+    },
+    "column_lineage": [
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "source_column": "CORP_HOLD_TYPE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX",
+            "target_column": "CORP_HOLD_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "source_column": "DEPT_TYPE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX",
+            "target_column": "DEPT_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "source_column": "CORP_SCALE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX",
+            "target_column": "ENT_SCALE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "source_column": "FKJE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX",
+            "target_column": "FACILITY_AMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP6",
+            "source_column": "FACILITY_AMT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX",
+            "target_column": "FACILITY_AMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "source_column": "CORP_BUSINSESS_TYPE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX",
+            "target_column": "INDUSTRY_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_ALL",
+            "source_column": "INLANDORRSHORE_FLG",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX",
+            "target_column": "JNJW_FLAG",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX",
+            "target_column": "NBJGH",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "source_column": "FKJE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX",
+            "target_column": "USED_FACILITY_AMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP6",
+            "source_column": "FACILITY_AMT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX",
+            "target_column": "USED_FACILITY_AMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP6",
+            "source_column": "UNDRAW_FACILITY_AMT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX",
+            "target_column": "USED_FACILITY_AMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "source_column": "REGION_CD",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX",
+            "target_column": "XZQGHM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "source_column": "REG_ADDRESS",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX",
+            "target_column": "ZCDZ",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "DRAWDOWN_AMT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "DRAWDOWN_DT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "LOAN_ACCT_BAL",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP10",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP10",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP11",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP11",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP3",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN_ENTRUST",
+            "source_column": "TRUSTOR_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP3",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "LOAN_NUM",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP3",
+            "target_column": "LOAN_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_BALANCE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ST_INT_DT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_FUND_MMFUND",
+            "source_column": "BALANCE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_FUND_MMFUND",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "DRAWDOWN_DT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN_ENTRUST",
+            "source_column": "TRUSTOR_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_AGRE_LOAN_CONTRACT",
+            "source_column": "CONTRACT_EFF_DT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_AGRE_LOAN_CONTRACT",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_AGRE_LOAN_CONTRACT",
+            "source_column": "RQ",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_FUND_MMFUND",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_AGRE_LOAN_CONTRACT",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ST_INT_DT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "RQ",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "DRAWDOWN_DT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "RQ",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_AGRE_LOAN_CONTRACT",
+            "source_column": "CONTRACT_EFF_DT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "RQ",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN_ENTRUST",
+            "source_column": "TRUSTOR_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP4",
+            "target_column": "TRUSTOR_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "source_column": "CORP_BUSINSESS_TYPE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "CORP_BUSINSESS_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_ALL",
+            "source_column": "CORP_BUSINSESS_TYPE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "CORP_BUSINSESS_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "CORP_BUSINSESS_TYPE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "CORP_BUSINSESS_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "source_column": "CORP_HOLD_TYPE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "CORP_HOLD_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_ALL",
+            "source_column": "CORP_HOLD_TYPE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "CORP_HOLD_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "CORP_HOLD_TYPE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "CORP_HOLD_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "source_column": "CORP_SCALE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "CORP_SCALE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_ALL",
+            "source_column": "CORP_SCALE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "CORP_SCALE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "CORP_SCALE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "CORP_SCALE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_ALL",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "source_column": "IS_DATE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "DATA_DATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_ALL",
+            "source_column": "IS_DATE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "DATA_DATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "IS_DATE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "DATA_DATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "source_column": "DEPT_TYPE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "DEPT_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_ALL",
+            "source_column": "DEPT_TYPE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "DEPT_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "DEPT_TYPE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "DEPT_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "source_column": "FKJE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "FKJE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_ALL",
+            "source_column": "FKJE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "FKJE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "FKJE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "FKJE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "source_column": "ID_NO",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "ID_NO",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_ALL",
+            "source_column": "ID_NO",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "ID_NO",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "ID_NO",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "ID_NO",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "ORG_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_ALL",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "ORG_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "CORE_ORG_NUM",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "ORG_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "ORG_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "source_column": "REGION_CD",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "REGION_CD",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_ALL",
+            "source_column": "REGION_CD",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "REGION_CD",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "ID_NO",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "REGION_CD",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "ORG_AREA",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "REGION_CD",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "REGION_CD",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "REGION_CD",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP1",
+            "source_column": "BORROWER_REGISTER_ADDR",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "REG_ADDRESS",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_ALL",
+            "source_column": "BORROWER_REGISTER_ADDR",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "REG_ADDRESS",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "BORROWER_REGISTER_ADDR",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP5",
+            "target_column": "REG_ADDRESS",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_AGRE_CREDITLINE",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP6",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_AGRE_CREDITLINE",
+            "source_column": "FACILITY_AMT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP6",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_AGRE_CREDITLINE",
+            "source_column": "USED_FACILITY_AMT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP6",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_PUBL_RATE",
+            "source_column": "CCY_RATE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP6",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_AGRE_CREDITLINE",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP6",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_AGRE_CREDITLINE",
+            "source_column": "FACILITY_AMT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP6",
+            "target_column": "FACILITY_AMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_PUBL_RATE",
+            "source_column": "CCY_RATE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP6",
+            "target_column": "FACILITY_AMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_AGRE_CREDITLINE",
+            "source_column": "USED_FACILITY_AMT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP6",
+            "target_column": "UNDRAW_FACILITY_AMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_PUBL_RATE",
+            "source_column": "CCY_RATE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP6",
+            "target_column": "UNDRAW_FACILITY_AMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX",
+            "source_column": "CJRQ",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "CJRQ",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP9",
+            "source_column": "CJRQ",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "CJRQ",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX",
+            "source_column": "CORP_HOLD_TYPE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "CORP_HOLD_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP9",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX",
+            "source_column": "DATA_DATE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "DATA_DATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP9",
+            "source_column": "DATA_DATE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "DATA_DATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX",
+            "source_column": "DEPT_TYPE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "DEPT_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX",
+            "source_column": "ENT_SCALE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "ENT_SCALE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX",
+            "source_column": "FACILITY_AMT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "FACILITY_AMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX",
+            "source_column": "INDUSTRY_TYPE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "INDUSTRY_TYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX",
+            "source_column": "JNJW_FLAG",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "JNJW_FLAG",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP9",
+            "source_column": "JNJW_FLAG",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "JNJW_FLAG",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX",
+            "source_column": "JRJGBM",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "JRJGBM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX",
+            "source_column": "NBJGH",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "NBJGH",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP9",
+            "source_column": "NBJGH",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "NBJGH",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX",
+            "source_column": "USED_FACILITY_AMT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "USED_FACILITY_AMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX",
+            "source_column": "XZQGHM",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "XZQGHM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX",
+            "source_column": "ZCDZ",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "target_column": "ZCDZ",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "IS_DATE",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP9",
+            "target_column": "CJRQ",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP9",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP9",
+            "target_column": "DATA_DATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "VS_TEXT",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP9",
+            "target_column": "DATA_DATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "JNJW_FLAG",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP9",
+            "target_column": "JNJW_FLAG",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_LOAN",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_DW_DGDWKHXX_TEMP9",
+            "target_column": "NBJGH",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "IE_KH_DGKHXX",
+            "source_column": "CUSTID",
+            "target_table": "GMJJBM_BL",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_ALL",
+            "source_column": "CUST_NAM",
+            "target_table": "GMJJBM_BL",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "IE_KH_DGKHXX",
+            "source_column": "CUSTID",
+            "target_table": "GMJJBM_BL",
+            "target_column": "CUSTID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_ALL",
+            "source_column": "CUST_NAM",
+            "target_table": "GMJJBM_BL",
+            "target_column": "CUST_NAM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "DQDM",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "AREACODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "XZQGHM",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "AREACODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "DQDM",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "AREACODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_XZQHDM",
+            "source_column": "DQDM",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "AREACODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_XZQHDM",
+            "source_column": "NEW_XZQUHM",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "AREACODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "DQDM",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "AREACODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "FLAG",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "AREATYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "FLAG",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "AREATYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_XZQHDM",
+            "source_column": "FLAG",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "AREATYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "FARMING_FLAG",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "AREATYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "FLAG",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "AREATYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "NBJGH",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "CORPID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "NBJGH",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "CORPID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "NEW_NBJGH",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "CORPID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_XZQHDM",
+            "source_column": "NBJGH",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "CORPID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "NBJGH",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "CORPID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "FACILITY_AMT",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "CRDTLMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "FACILITY_AMT",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "CRDTLMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_XZQHDM",
+            "source_column": "FACILITY_AMT",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "CRDTLMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "FACILITY_AMT",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "CRDTLMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "CUST_ID",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "CUSTID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "CUST_ID",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "CUSTID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_XZQHDM",
+            "source_column": "CUST_ID",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "CUSTID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "CUST_ID",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "CUSTID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "DEPT_TYPE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "DEPTTYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "DEPT_TYPE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "DEPTTYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_XZQHDM",
+            "source_column": "DEPT_TYPE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "DEPTTYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_tmp_dgkh_gmjjbm",
+            "source_column": "NEW_GMJJBM",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "DEPTTYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "DEPT_TYPE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "DEPTTYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "JNJW_FLAG",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "DOOVFLG",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "JNJW_FLAG",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "DOOVFLG",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_XZQHDM",
+            "source_column": "JNJW_FLAG",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "DOOVFLG",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "JNJW_FLAG",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "DOOVFLG",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "ENT_SCALE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "ENTSCALE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "ENT_SCALE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "ENTSCALE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_TMP_DGKH_QYGM",
+            "source_column": "NEW_QYGM",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "ENTSCALE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_XZQHDM",
+            "source_column": "ENT_SCALE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "ENTSCALE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "ENT_SCALE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "ENTSCALE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "CORP_HOLD_TYPE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "HOLDTYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "CORP_HOLD_TYPE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "HOLDTYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_XZQHDM",
+            "source_column": "CORP_HOLD_TYPE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "HOLDTYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "CORP_HOLD_TYPE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "HOLDTYPE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "INDUSTRY_TYPE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "INDNO",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "INDUSTRY_TYPE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "INDNO",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_XZQHDM",
+            "source_column": "INDUSTRY_TYPE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "INDNO",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_tmp_dgkh_sshy",
+            "source_column": "NEW_SSHY",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "INDNO",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "INDUSTRY_TYPE",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "INDNO",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "NBJGH",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "NBJGH",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "NBJGH2",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "NBJGH",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "NBJGH2",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "NBJGH",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "NEW_NBJGH",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "NBJGH",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_XZQHDM",
+            "source_column": "NBJGH2",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "NBJGH",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "NBJGH2",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "NBJGH",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "JRJGBM",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "ORGTPTPCODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "JRJGBM",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "ORGTPTPCODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_XZQHDM",
+            "source_column": "JRJGBM",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "ORGTPTPCODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "JRJGBM",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "ORGTPTPCODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "ZCDZ",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "REGADDRESS",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "ZCDZ",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "REGADDRESS",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_XZQHDM",
+            "source_column": "ZCDZ",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "REGADDRESS",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "ZCDZ",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "REGADDRESS",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_DW_DGDWKHXX_TEMP7",
+            "source_column": "USED_FACILITY_AMT",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "USEDLMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_NBJGH",
+            "source_column": "USED_FACILITY_AMT",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "USEDLMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_XZQHDM",
+            "source_column": "USED_FACILITY_AMT",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "USEDLMT",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_CUST_C",
+            "source_column": "USED_FACILITY_AMT",
+            "target_table": "IE_KH_DGKHXX",
+            "target_column": "USEDLMT",
+            "dependency_type": "fdd"
+        }
+    ]
+}

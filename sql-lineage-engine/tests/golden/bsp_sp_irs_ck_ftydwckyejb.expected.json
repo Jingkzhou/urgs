@@ -1,0 +1,173 @@
+{
+    "dialect": "oracle",
+    "description": "bsp_sp_irs_ck_ftydwckyejb 存储过程血缘（自动生成）",
+    "table_lineage": {
+        "sources": [
+            "DATACORE_IE_CK_FTYDWCKYEJB",
+            "SMTMODS.L_ACCT_DEPOSIT"
+        ],
+        "targets": [
+            "DATACORE_IE_CK_FTYDWCKYEJB",
+            "IE_CK_DWCKYE"
+        ],
+        "relationships": [
+            {
+                "source": "DATACORE_IE_CK_FTYDWCKYEJB",
+                "target": "IE_CK_DWCKYE"
+            },
+            {
+                "source": "SMTMODS.L_ACCT_DEPOSIT",
+                "target": "DATACORE_IE_CK_FTYDWCKYEJB"
+            }
+        ]
+    },
+    "column_lineage": [
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_BALANCE",
+            "target_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_NUM",
+            "target_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "CURR_CD",
+            "target_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "DEPOSIT_NUM",
+            "target_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "target_column": "*",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_BALANCE",
+            "target_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "target_column": "ACCT_BALANCE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ACCT_NUM",
+            "target_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "target_column": "ACCT_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "CURR_CD",
+            "target_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "target_column": "CURR_CD",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "CUST_ID",
+            "target_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "target_column": "CUST_ID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "DEPOSIT_NUM",
+            "target_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "target_column": "DEPOSIT_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "SMTMODS.L_ACCT_DEPOSIT",
+            "source_column": "ORG_NUM",
+            "target_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "target_column": "ORG_NUM",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "source_column": "ACCT_NUM",
+            "target_table": "IE_CK_DWCKYE",
+            "target_column": "ACCDEPCODE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "source_column": "ACCT_BALANCE",
+            "target_table": "IE_CK_DWCKYE",
+            "target_column": "BALANCE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "source_column": "IS_DATE",
+            "target_table": "IE_CK_DWCKYE",
+            "target_column": "CJRQ",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "source_column": "ORG_NUM",
+            "target_table": "IE_CK_DWCKYE",
+            "target_column": "CORPID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "source_column": "CUST_ID",
+            "target_table": "IE_CK_DWCKYE",
+            "target_column": "CUSTID",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "source_column": "DATA_DATE",
+            "target_table": "IE_CK_DWCKYE",
+            "target_column": "DATADATE",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "source_column": "DEPOSIT_NUM",
+            "target_table": "IE_CK_DWCKYE",
+            "target_column": "DEPAGRSEQNO",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "source_column": "CURR_CD",
+            "target_table": "IE_CK_DWCKYE",
+            "target_column": "MONEYSYMB",
+            "dependency_type": "fdd"
+        },
+        {
+            "source_table": "DATACORE_IE_CK_FTYDWCKYEJB",
+            "source_column": "ORG_NUM",
+            "target_table": "IE_CK_DWCKYE",
+            "target_column": "NBJGH",
+            "dependency_type": "fdd"
+        }
+    ]
+}

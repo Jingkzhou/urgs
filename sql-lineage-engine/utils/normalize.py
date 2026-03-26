@@ -7,39 +7,30 @@
 
 def normalize_table_name(name: str) -> str:
     """
-    标准化表名，将 GSP 错误拆分的表名还原为正确格式
-    
+    标准化表名，去除引号并过滤空 part。
+
     处理场景：
-    1. `G12_11`.``.`B` -> G12_11..B  (GSP 错误拆分)
-    2. `schema`.`table` -> schema.table  (正常带引号)
-    3. G12_11..B -> G12_11..B  (已正确，保持不变)
-    4. SMTMODS_L_ACCT_LOAN -> SMTMODS_L_ACCT_LOAN  (普通表名不变)
-    
+    - `schema`.`table`   → schema.table
+    - `G12_11`.``.`B`    → G12_11.B
+    - schema.table       → schema.table（不变）
+    - plain_table        → plain_table（不变）
+
     Args:
         name: 原始表名
-        
+
     Returns:
         标准化后的表名
     """
     if not name:
         return name
-    
-    # 移除反引号
-    clean = name.replace('`', '')
-    
-    # 如果没有反引号，直接返回（已经是标准格式或普通表名）
+
+    # 去除所有引号（反引号、双引号）
+    clean = name.replace('`', '').replace('"', '').strip()
+
+    # 如果去除引号后与原始相同（普通表名），直接返回
     if clean == name:
         return name
-    
-    # 按 . 分割
-    parts = clean.split('.')
-    
-    # 重组：处理空部分（代表原始的 ..）
-    result = []
-    for p in parts:
-        if p:
-            result.append(p)
-        elif result:  # 空部分且前面有内容，说明是 ..
-            result[-1] += '.'  # 追加点号到前一个部分
-    
-    return '.'.join(result) if result else name
+
+    # 过滤空 part，重新组装
+    parts = [p.strip() for p in clean.split('.') if p.strip()]
+    return '.'.join(parts) if parts else name

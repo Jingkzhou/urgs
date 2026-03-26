@@ -219,9 +219,17 @@ def test_table_lineage(test_id, sql_path, expected_path, mock_metadata_resolver)
         )
 
     expected_tl = expected_data.get("table_lineage", {})
-    expected_table_pairs = make_table_lineage_set(
-        expected_tl.get("sources", []), expected_tl.get("targets", [])
-    )
+    # 优先使用精确 relationships 列表，没有时降级到 sources × targets 笛卡尔积
+    if expected_tl.get("relationships"):
+        expected_table_pairs = set(
+            (normalize_name(r["source"]), normalize_name(r["target"]))
+            for r in expected_tl["relationships"]
+            if r.get("source") and r.get("target")
+        )
+    else:
+        expected_table_pairs = make_table_lineage_set(
+            expected_tl.get("sources", []), expected_tl.get("targets", [])
+        )
 
     # 5. 计算指标
     metrics = calculate_metrics(actual_table_pairs, expected_table_pairs)
@@ -359,9 +367,16 @@ def test_golden_summary_report(mock_metadata_resolver):
             )
 
         expected_tl = expected_data.get("table_lineage", {})
-        expected_table_pairs = make_table_lineage_set(
-            expected_tl.get("sources", []), expected_tl.get("targets", [])
-        )
+        if expected_tl.get("relationships"):
+            expected_table_pairs = set(
+                (normalize_name(r["source"]), normalize_name(r["target"]))
+                for r in expected_tl["relationships"]
+                if r.get("source") and r.get("target")
+            )
+        else:
+            expected_table_pairs = make_table_lineage_set(
+                expected_tl.get("sources", []), expected_tl.get("targets", [])
+            )
         table_metrics = calculate_metrics(actual_table_pairs, expected_table_pairs)
 
         total_table_tp += len(table_metrics["true_positives"])
