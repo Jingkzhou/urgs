@@ -409,13 +409,33 @@ public class TaskExecutor {
             instanceWrapper.eq("data_date", completedInstance.getDataDate());
             ExecutorTaskInstance downstreamInstance = taskInstanceMapper.selectOne(instanceWrapper);
 
-            // 如果下游任务目前处于 PENDING（等待依赖）状态
-            if (downstreamInstance != null
-                    && ExecutorTaskInstance.STATUS_PENDING.equals(downstreamInstance.getStatus())) {
-                // 3. 递归检查该下游任务的所有上游依赖是否都已达成
+            if (downstreamInstance == null) continue;
+
+            // DEPENDENT 影子任务：直接镜像上游状态并递归传播
+            if ("DEPENDENT".equals(downstreamInstance.getTaskType())) {
+                if (!ExecutorTaskInstance.STATUS_SUCCESS.equals(downstreamInstance.getStatus())
+                        && !ExecutorTaskInstance.STATUS_FORCE_SUCCESS.equals(downstreamInstance.getStatus())) {
+                    downstreamInstance.setStatus(ExecutorTaskInstance.STATUS_SUCCESS);
+                    downstreamInstance.setEndTime(completedInstance.getEndTime());
+                    downstreamInstance.setUpdateTime(LocalDateTime.now());
+                    String ts = LocalDateTime.now()
+                            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                    downstreamInstance.setLogContent(
+                            "[" + ts + "] 影子任务: 上游任务 " + completedInstance.getTaskId() + " 已成功");
+                    taskInstanceMapper.updateById(downstreamInstance);
+                    log.info("影子任务 {} 已同步为 SUCCESS（上游: {}）", downstreamInstance.getId(),
+                            completedInstance.getId());
+                    // 递归：继续传播影子任务的下游
+                    checkDownstreamTasks(downstreamInstance);
+                }
+                continue;
+            }
+
+            // 普通任务：PENDING → WAITING
+            if (ExecutorTaskInstance.STATUS_PENDING.equals(downstreamInstance.getStatus())) {
                 if (areAllDependenciesMet(downstreamTaskId, completedInstance.getDataDate())) {
-                    // 满足条件，将其状态提升至 WAITING，等待调度执行
                     downstreamInstance.setStatus(ExecutorTaskInstance.STATUS_WAITING);
+                    downstreamInstance.setUpdateTime(LocalDateTime.now());
                     taskInstanceMapper.updateById(downstreamInstance);
                     log.info("下游任务 {} 依赖已满足，状态提升为 WAITING", downstreamInstance.getId());
                 }

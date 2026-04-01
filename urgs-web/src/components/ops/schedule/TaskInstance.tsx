@@ -39,6 +39,21 @@ interface Workflow {
     content: string;
 }
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+    if (error instanceof Error && error.message) {
+        try {
+            const parsed = JSON.parse(error.message);
+            if (parsed?.message) {
+                return parsed.message as string;
+            }
+        } catch {
+            return error.message;
+        }
+        return error.message;
+    }
+    return fallback;
+};
+
 // Sub-component for Detailed View
 interface UpstreamDependency {
     taskId: string;
@@ -581,7 +596,7 @@ const TaskInstance: React.FC = () => {
             await fetchInstances();
         } catch (e) {
             console.error(e);
-            message.error('重跑请求失败');
+            message.error(getErrorMessage(e, '重跑请求失败'));
         } finally {
             setRerunModalVisible(false);
             setRerunTargetInstance(null);

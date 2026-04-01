@@ -317,8 +317,14 @@ public class TaskService {
 
     private void resetInstance(TaskInstance instance) {
         LocalDateTime now = LocalDateTime.now();
+        Task task = requireTaskForRerun(instance);
+
         UpdateWrapper<TaskInstance> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("id", instance.getId());
+        updateWrapper.set("task_type", task.getType());
+        updateWrapper.set("system_id", task.getSystemId());
+        updateWrapper.set("content_snapshot", task.getContent());
+        updateWrapper.set("priority", task.getPriority());
         updateWrapper.set("status", "WAITING");
         updateWrapper.set("retry_count", 0);
         updateWrapper.set("start_time", null);
@@ -326,12 +332,16 @@ public class TaskService {
         updateWrapper.set("log_content", null);
         updateWrapper.set("create_time", now);
         updateWrapper.set("update_time", now);
-
-        Task task = taskMapper.selectById(instance.getTaskId());
-        if (task != null) {
-            updateWrapper.set("priority", task.getPriority());
-        }
         taskInstanceMapper.update(null, updateWrapper);
+    }
+
+    private Task requireTaskForRerun(TaskInstance instance) {
+        Task task = taskMapper.selectById(instance.getTaskId());
+        if (task == null) {
+            throw new RuntimeException(
+                    "任务实例 " + instance.getId() + " 对应的任务 " + instance.getTaskId() + " 已不存在，无法重跑");
+        }
+        return task;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -353,7 +363,7 @@ public class TaskService {
     }
 
     private void checkAndPromoteDownstream(TaskInstance completedInstance) {
-        // 1. Find downstream tasks
+        // 1. 查找所有以该任务为前置依赖的下游任务
         QueryWrapper<TaskDependency> depWrapper = new QueryWrapper<>();
         depWrapper.eq("pre_task_id", completedInstance.getTaskId());
         List<TaskDependency> downstreamDeps = taskDependencyMapper.selectList(depWrapper);
@@ -361,19 +371,41 @@ public class TaskService {
         for (TaskDependency dep : downstreamDeps) {
             String downstreamTaskId = dep.getTaskId();
 
-            // 2. Find downstream instance for the same data_date
+            // 2. 找到同业务日期的下游任务实例
             QueryWrapper<TaskInstance> instanceWrapper = new QueryWrapper<>();
             instanceWrapper.eq("task_id", downstreamTaskId);
             instanceWrapper.eq("data_date", completedInstance.getDataDate());
             TaskInstance downstreamInstance = taskInstanceMapper.selectOne(instanceWrapper);
 
-            if (downstreamInstance != null && "PENDING".equals(downstreamInstance.getStatus())) {
-                // 3. Check if ALL upstream dependencies are met
+            if (downstreamInstance == null) continue;
+
+            // DEPENDENT 影子任务：直接镜像上游状态并递归传播
+            if ("DEPENDENT".equals(downstreamInstance.getTaskType())) {
+                if (!"SUCCESS".equals(downstreamInstance.getStatus())
+                        && !"FORCE_SUCCESS".equals(downstreamInstance.getStatus())) {
+                    downstreamInstance.setStatus("SUCCESS");
+                    downstreamInstance.setEndTime(LocalDateTime.now());
+                    downstreamInstance.setUpdateTime(LocalDateTime.now());
+                    String ts = LocalDateTime.now()
+                            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                    downstreamInstance.setLogContent(
+                            "[" + ts + "] 影子任务: 上游任务 " + completedInstance.getTaskId() + " 已成功");
+                    taskInstanceMapper.updateById(downstreamInstance);
+                    log.info("影子任务 {} 已同步为 SUCCESS（上游: {}）", downstreamInstance.getId(),
+                            completedInstance.getId());
+                    // 递归：继续传播影子任务的下游
+                    checkAndPromoteDownstream(downstreamInstance);
+                }
+                continue;
+            }
+
+            // 普通任务：PENDING → WAITING
+            if ("PENDING".equals(downstreamInstance.getStatus())) {
                 if (areAllDependenciesMet(downstreamTaskId, completedInstance.getDataDate())) {
                     downstreamInstance.setStatus("WAITING");
                     downstreamInstance.setUpdateTime(LocalDateTime.now());
                     taskInstanceMapper.updateById(downstreamInstance);
-                    log.info("Downstream task {} promoted to WAITING due to force success of {}",
+                    log.info("下游任务 {} 依赖已满足，状态提升为 WAITING（因 {} 强制成功）",
                             downstreamInstance.getId(), completedInstance.getId());
                 }
             }
