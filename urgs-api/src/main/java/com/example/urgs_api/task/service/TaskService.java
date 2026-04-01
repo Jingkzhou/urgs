@@ -316,15 +316,17 @@ public class TaskService {
     }
 
     private void resetInstance(TaskInstance instance) {
+        LocalDateTime now = LocalDateTime.now();
         UpdateWrapper<TaskInstance> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("id", instance.getId());
         updateWrapper.set("status", "WAITING");
+        updateWrapper.set("retry_count", 0);
         updateWrapper.set("start_time", null);
         updateWrapper.set("end_time", null);
         updateWrapper.set("log_content", null);
-        updateWrapper.set("create_time", LocalDateTime.now());
-        updateWrapper.set("update_time", LocalDateTime.now());
-        
+        updateWrapper.set("create_time", now);
+        updateWrapper.set("update_time", now);
+
         Task task = taskMapper.selectById(instance.getTaskId());
         if (task != null) {
             updateWrapper.set("priority", task.getPriority());

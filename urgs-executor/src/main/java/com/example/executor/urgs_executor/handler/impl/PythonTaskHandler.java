@@ -4,7 +4,10 @@ import com.example.executor.urgs_executor.entity.DataSourceConfig;
 import com.example.executor.urgs_executor.entity.ExecutorTaskInstance;
 import com.example.executor.urgs_executor.handler.TaskHandler;
 import com.example.executor.urgs_executor.mapper.DataSourceConfigMapper;
+import com.example.executor.urgs_executor.mapper.ExecutorTaskInstanceMapper;
+import com.example.executor.urgs_executor.util.LogStreamReader;
 import com.example.executor.urgs_executor.util.PlaceholderUtils;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jcraft.jsch.ChannelExec;
@@ -31,6 +34,17 @@ public class PythonTaskHandler implements TaskHandler {
     @Autowired
     private DataSourceConfigMapper dataSourceConfigMapper;
 
+    @Autowired
+    private ExecutorTaskInstanceMapper taskInstanceMapper;
+
+    private void updateLog(ExecutorTaskInstance instance, String content) {
+        UpdateWrapper<ExecutorTaskInstance> update = new UpdateWrapper<>();
+        update.eq("id", instance.getId());
+        update.set("log_content", content);
+        taskInstanceMapper.update(null, update);
+        instance.setLogContent(content);
+    }
+
     @Override
     public String execute(ExecutorTaskInstance instance) throws Exception {
         String script = "";
@@ -50,13 +64,13 @@ public class PythonTaskHandler implements TaskHandler {
         }
 
         if (script.isEmpty()) {
-            throw new RuntimeException("Python task " + instance.getId() + " has no script content");
+            throw new RuntimeException("Python 任务 " + instance.getId() + " 脚本内容为空");
         }
 
-        // Replace $dataDate with actual date
+        // 将 $dataDate 替换为实际业务日期
         script = PlaceholderUtils.replaceDataDate(script, instance.getDataDate());
 
-        log.info("Executing Python Task {}: {}", instance.getId(), script);
+        log.info("开始执行 Python 任务 {}: {}", instance.getId(), script);
 
         if (resourceId != null && !resourceId.isEmpty()) {
             return executeRemote(instance, script, resourceId);
@@ -68,7 +82,7 @@ public class PythonTaskHandler implements TaskHandler {
     private String executeRemote(ExecutorTaskInstance instance, String script, String resourceId) throws Exception {
         DataSourceConfig config = dataSourceConfigMapper.selectById(resourceId);
         if (config == null) {
-            throw new RuntimeException("Resource not found: " + resourceId);
+            throw new RuntimeException("未找到资源节点: " + resourceId);
         }
 
         Map<String, Object> params = config.getConnectionParams();
@@ -78,17 +92,17 @@ public class PythonTaskHandler implements TaskHandler {
         String password = (String) params.get("password");
 
         if (host == null || username == null) {
-            throw new RuntimeException("Invalid SSH connection parameters for resource: " + resourceId);
+            throw new RuntimeException("资源节点 SSH 连接参数无效: " + resourceId);
         }
         if (port == null)
             port = 22;
 
         StringBuilder logBuilder = new StringBuilder();
         String timeStart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-        logBuilder.append("[").append(timeStart).append("] ").append("Executing Remote Python Task ")
+        logBuilder.append("[").append(timeStart).append("] ").append("开始远程执行 Python 任务 ")
                 .append(instance.getId()).append("\n");
-        logBuilder.append("Target: ").append(username).append("@").append(host).append(":").append(port).append("\n");
-        logBuilder.append("Script: ").append(script).append("\n\n");
+        logBuilder.append("目标: ").append(username).append("@").append(host).append(":").append(port).append("\n");
+        logBuilder.append("脚本: ").append(script).append("\n\n");
 
         JSch jsch = new JSch();
         Session session = null;
@@ -103,31 +117,6 @@ public class PythonTaskHandler implements TaskHandler {
             session.connect(30000);
 
             channel = (ChannelExec) session.openChannel("exec");
-            // Execute python3 with the script content passed via -c
-            // Note: Complex scripts with single/double quotes might need better escaping or
-            // file transfer
-            // For now, we assume simple scripts or user handles escaping, or we could wrap
-            // in a HEREDOC if shell allows
-            // A safer approach for complex scripts is to upload a file, but -c is
-            // requested/implied for simplicity first.
-            // Let's try to escape single quotes if we wrap in single quotes, or just pass
-            // as is if we trust the content?
-            // The safest quick way for -c is to wrap in single quotes and escape single
-            // quotes inside.
-            // But rawScript might be multi-line.
-            // Let's try a HEREDOC approach: python3 -c "$(cat << 'EOF' ... EOF)" but that's
-            // shell specific.
-            // Or just: python3 -c "..."
-            // Let's stick to the same pattern as ShellTaskHandler for now, but prepending
-            // python3 -c
-            // Actually, if it's a raw script, maybe we should just run it?
-            // If the user provided a python script, they expect it to run.
-            // If we use "python3 -c 'script'", we need to escape.
-            // Let's try to just run the script string as a command if it's a shell command
-            // that invokes python?
-            // No, the user provides Python code.
-            // So we MUST wrap it.
-            // Let's use a simple escaping strategy: replace ' with '\'' and wrap in '
             String escapedScript = script.replace("'", "'\\''");
             String command = "python3 -c '" + escapedScript + "'";
 
@@ -141,31 +130,25 @@ public class PythonTaskHandler implements TaskHandler {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
                     BufferedReader errReader = new BufferedReader(new InputStreamReader(err, StandardCharsets.UTF_8))) {
 
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    log.info("[Python-{}-Remote] {}", instance.getId(), line);
-                    String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                    logBuilder.append("[").append(ts).append("] ").append(line).append("\n");
-                }
-
-                while ((line = errReader.readLine()) != null) {
-                    log.error("[Python-{}-Remote-Err] {}", instance.getId(), line);
-                    String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                    logBuilder.append("[").append(ts).append("] ERR: ").append(line).append("\n");
-                }
+                LogStreamReader.readAndFlush(
+                        reader, errReader,
+                        channel::isClosed,
+                        logBuilder,
+                        "Python-" + instance.getId() + "-Remote",
+                        content -> updateLog(instance, content));
             }
 
             int exitCode = channel.getExitStatus();
             if (exitCode != 0) {
                 String timeErr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                logBuilder.append("\n[").append(timeErr).append("] ").append("Remote process exited with code ")
+                logBuilder.append("\n[").append(timeErr).append("] ").append("远程进程异常退出，退出码: ")
                         .append(exitCode);
                 throw new RuntimeException(
-                        "Remote python script exited with code " + exitCode + "\nLogs:\n" + logBuilder.toString());
+                        "远程 Python 脚本执行失败，退出码: " + exitCode + "\n日志:\n" + logBuilder.toString());
             }
 
             String timeEnd = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-            logBuilder.append("\n[").append(timeEnd).append("] ").append("Remote Python Task success.");
+            logBuilder.append("\n[").append(timeEnd).append("] ").append("远程 Python 任务执行成功");
 
         } finally {
             if (channel != null)
@@ -184,38 +167,38 @@ public class PythonTaskHandler implements TaskHandler {
 
         StringBuilder logBuilder = new StringBuilder();
         String timeStart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-        logBuilder.append("[").append(timeStart).append("] ").append("Executing Local Python Task ")
+        logBuilder.append("[").append(timeStart).append("] ").append("开始本地执行 Python 任务 ")
                 .append(instance.getId()).append("\n");
-        logBuilder.append("Script: ").append(script).append("\n\n");
+        logBuilder.append("脚本: ").append(script).append("\n\n");
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                log.info("[Python-{}] {}", instance.getId(), line);
-                String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                logBuilder.append("[").append(ts).append("] ").append(line).append("\n");
-            }
+            LogStreamReader.readAndFlush(
+                    reader, null,
+                    () -> !process.isAlive(),
+                    logBuilder,
+                    "Python-" + instance.getId(),
+                    content -> updateLog(instance, content));
         }
 
         try {
             int exitCode = process.waitFor();
             if (exitCode != 0) {
                 String timeErr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                logBuilder.append("\n[").append(timeErr).append("] ").append("Process exited with code ")
+                logBuilder.append("\n[").append(timeErr).append("] ").append("进程异常退出，退出码: ")
                         .append(exitCode);
                 throw new RuntimeException(
-                        "Python script exited with code " + exitCode + "\nLogs:\n" + logBuilder.toString());
+                        "Python 脚本执行失败，退出码: " + exitCode + "\n日志:\n" + logBuilder.toString());
             }
         } catch (InterruptedException e) {
-            log.warn("Python task {} interrupted, killing process...", instance.getId());
+            log.warn("Python 任务 {} 被中断，正在终止进程...", instance.getId());
             process.destroy();
             String timeErr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-            logBuilder.append("\n[").append(timeErr).append("] ").append("Process interrupted and killed.");
+            logBuilder.append("\n[").append(timeErr).append("] ").append("进程已被中断并终止");
             throw e;
         }
 
         String timeEnd = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-        logBuilder.append("\n[").append(timeEnd).append("] ").append("Local Python Task success.");
+        logBuilder.append("\n[").append(timeEnd).append("] ").append("本地 Python 任务执行成功");
 
         return logBuilder.toString();
     }

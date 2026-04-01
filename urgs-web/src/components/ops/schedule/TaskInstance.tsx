@@ -20,9 +20,9 @@ interface TaskInstance {
     dataDate: string;
     status: string;
     retryCount: number;
-    startTime: string;
-    endTime: string;
-    createTime: string;
+    startTime: string | null;
+    endTime: string | null;
+    createTime: string | null;
     systemId: number;
 }
 
@@ -401,11 +401,45 @@ const TaskInstance: React.FC = () => {
         }
     };
 
+    const applyRerunReset = (instanceIds: string[], createTime: string) => {
+        if (instanceIds.length === 0) return;
+
+        const resetIds = new Set(instanceIds.map(String));
+        const resetInstance = (instance: TaskInstance): TaskInstance => ({
+            ...instance,
+            status: 'WAITING',
+            retryCount: 0,
+            createTime,
+            startTime: null,
+            endTime: null
+        });
+
+        setInstances(prev => prev.map(inst => resetIds.has(String(inst.id)) ? resetInstance(inst) : inst));
+        setDetailInstance(prev => prev && resetIds.has(String(prev.id)) ? resetInstance(prev) : prev);
+        setSelectedInstance(prev => prev && resetIds.has(String(prev.id)) ? resetInstance(prev) : prev);
+    };
+
     useEffect(() => {
         fetchInstances();
         setCurrentPage(1); // Reset to first page on filter change
         setSelectedRowKeys([]); // Reset selection
     }, [statusFilter, dataDateFilter, executionDateFilter]);
+
+    useEffect(() => {
+        if (detailInstance) {
+            const latestDetail = instances.find(inst => String(inst.id) === String(detailInstance.id));
+            if (latestDetail && latestDetail !== detailInstance) {
+                setDetailInstance(latestDetail);
+            }
+        }
+
+        if (selectedInstance) {
+            const latestSelected = instances.find(inst => String(inst.id) === String(selectedInstance.id));
+            if (latestSelected && latestSelected !== selectedInstance) {
+                setSelectedInstance(latestSelected);
+            }
+        }
+    }, [instances, detailInstance?.id, selectedInstance?.id]);
 
     // Filter instances client-side for Workflow (since API doesn't support it yet)
     const filteredInstances = useMemo(() => {
@@ -529,6 +563,8 @@ const TaskInstance: React.FC = () => {
         }
 
         try {
+            const rerunIds = rerunTargetInstance ? [rerunTargetInstance.id] : selectedRowKeys;
+
             if (rerunTargetInstance) {
                 // Single Rerun
                 const url = `/api/task/instance/rerun/${rerunTargetInstance.id}${withDownstream ? '?withDownstream=true' : ''}`;
@@ -541,7 +577,8 @@ const TaskInstance: React.FC = () => {
                 message.success(`批量重跑请求已发送 (${selectedRowKeys.length} 个任务)`);
                 setSelectedRowKeys([]);
             }
-            fetchInstances();
+            applyRerunReset(rerunIds, dayjs().toISOString());
+            await fetchInstances();
         } catch (e) {
             console.error(e);
             message.error('重跑请求失败');

@@ -47,28 +47,20 @@ public class HttpTaskHandler implements TaskHandler {
                 resourceId = node.get("resource").asText();
         }
 
-        // Replace $dataDate with actual date
-        // Replace $dataDate with actual date
+        // 将 $dataDate 替换为实际业务日期
         url = PlaceholderUtils.replaceDataDate(url, instance.getDataDate());
         body = PlaceholderUtils.replaceDataDate(body, instance.getDataDate());
 
-        // If resource is provided, use it as base configuration
+        // 如果配置了资源节点，用作基础配置
         if (resourceId != null && !resourceId.isEmpty()) {
             DataSourceConfig config = dataSourceConfigMapper.selectById(resourceId);
             if (config == null) {
-                throw new RuntimeException("Resource not found: " + resourceId);
+                throw new RuntimeException("未找到资源节点: " + resourceId);
             }
             Map<String, Object> params = config.getConnectionParams();
 
-            // Override or prepend base URL
             if (params.containsKey("url")) {
                 String baseUrl = (String) params.get("url");
-                // If the task specific URL is relative (starts with /), append it
-                // If task URL is empty, use base URL
-                // If task URL is absolute, use it (ignoring base? or maybe error?)
-                // For simplicity: if task URL is present, treat it as full URL or relative
-                // path?
-                // Let's assume task URL is relative path if resource is present.
                 if (url.startsWith("/")) {
                     url = baseUrl.replaceAll("/$", "") + url;
                 } else if (url.isEmpty()) {
@@ -76,22 +68,18 @@ public class HttpTaskHandler implements TaskHandler {
                 }
             }
 
-            if (params.containsKey("method") && method.equals("GET")) { // Only override default
+            if (params.containsKey("method") && method.equals("GET")) {
                 method = ((String) params.get("method")).toUpperCase();
             }
         }
 
         if (url.isEmpty()) {
-            throw new IllegalArgumentException("HTTP task missing URL");
+            throw new IllegalArgumentException("HTTP 任务缺少 URL 配置");
         }
 
-        log.info("Executing HTTP Task {}: {} {}", instance.getId(), method, url);
+        log.info("开始执行 HTTP 任务 {}: {} {}", instance.getId(), method, url);
 
         HttpHeaders headers = new HttpHeaders();
-        // Add default headers or headers from config if needed
-        // For now, we assume simple requests.
-        // If we want headers from config, we'd need to parse them from params.
-
         HttpEntity<String> entity = new HttpEntity<>(body, headers);
 
         try {
@@ -99,15 +87,15 @@ public class HttpTaskHandler implements TaskHandler {
                     String.class);
 
             String result = response.getBody();
-            log.info("HTTP Result: {}", result);
-            
+            log.info("HTTP 响应结果: {}", result);
+
             String ts = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
             StringBuilder logStr = new StringBuilder();
-            logStr.append("[").append(ts).append("] HTTP Request to ").append(url).append("\n");
-            logStr.append("[").append(ts).append("] Method: ").append(method).append("\n");
-            logStr.append("[").append(ts).append("] Status: ").append(response.getStatusCode()).append("\n");
-            logStr.append("[").append(ts).append("] Result:\n");
-            
+            logStr.append("[").append(ts).append("] HTTP 请求地址: ").append(url).append("\n");
+            logStr.append("[").append(ts).append("] 请求方法: ").append(method).append("\n");
+            logStr.append("[").append(ts).append("] 响应状态: ").append(response.getStatusCode()).append("\n");
+            logStr.append("[").append(ts).append("] 响应内容:\n");
+
             if (result != null) {
                 for (String rLine : result.split("\n")) {
                     logStr.append("[").append(ts).append("] ").append(rLine).append("\n");
@@ -115,8 +103,8 @@ public class HttpTaskHandler implements TaskHandler {
             }
             return logStr.toString();
         } catch (Exception e) {
-            log.error("HTTP Task failed", e);
-            throw new RuntimeException("HTTP request failed: " + e.getMessage());
+            log.error("HTTP 任务执行失败", e);
+            throw new RuntimeException("HTTP 请求失败: " + e.getMessage());
         }
     }
 }

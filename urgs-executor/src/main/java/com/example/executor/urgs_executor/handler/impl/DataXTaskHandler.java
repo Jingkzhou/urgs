@@ -6,7 +6,10 @@ import com.example.executor.urgs_executor.entity.ExecutorTaskInstance;
 import com.example.executor.urgs_executor.handler.TaskHandler;
 import com.example.executor.urgs_executor.mapper.DataSourceConfigMapper;
 import com.example.executor.urgs_executor.mapper.DataSourceMetaMapper;
+import com.example.executor.urgs_executor.mapper.ExecutorTaskInstanceMapper;
+import com.example.executor.urgs_executor.util.LogStreamReader;
 import com.example.executor.urgs_executor.util.PlaceholderUtils;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -42,6 +45,17 @@ public class DataXTaskHandler implements TaskHandler {
     @Autowired
     private DataSourceMetaMapper dataSourceMetaMapper;
 
+    @Autowired
+    private ExecutorTaskInstanceMapper taskInstanceMapper;
+
+    private void updateLog(ExecutorTaskInstance instance, String content) {
+        UpdateWrapper<ExecutorTaskInstance> update = new UpdateWrapper<>();
+        update.eq("id", instance.getId());
+        update.set("log_content", content);
+        taskInstanceMapper.update(null, update);
+        instance.setLogContent(content);
+    }
+
     /**
      * DataX 安装目录，默认从配置文件读取，默认为 /opt/datax
      */
@@ -50,7 +64,6 @@ public class DataXTaskHandler implements TaskHandler {
 
     @Override
     public String execute(ExecutorTaskInstance instance) throws Exception {
-        log.info(">>>> CODE VERSION: SQL-FIX-V5-FILE-VERIFY STARTING EXECUTION <<<<");
         log.info("开始执行 DataX 任务: {}", instance.getId());
 
         // 验证任务内容是否存在
@@ -64,13 +77,13 @@ public class DataXTaskHandler implements TaskHandler {
 
         // 解析任务内容的 JSON 配置
         JsonNode contentNode = objectMapper.readTree(contentSnapshot);
-        log.info("[Debug] Raw content snapshot: {}", contentSnapshot);
+        log.info("[调试] 原始内容快照: {}", contentSnapshot);
 
         // 兼容前端扁平化结构：如果 contentNode 中没有 reader/writer，则尝试从 flattened fields 构建
         if (!contentNode.has("reader") || !contentNode.has("writer")) {
             contentNode = normalizeContent(contentNode);
         }
-        log.info("[Debug] Normalized content node: {}", contentNode);
+        log.info("[调试] 标准化后的内容: {}", contentNode);
 
         // 1. 构建 DataX JSON 配置文件结构
         ObjectNode jobConfig = objectMapper.createObjectNode();
@@ -109,7 +122,7 @@ public class DataXTaskHandler implements TaskHandler {
         Path tempFile = Files.createTempFile("datax-job-" + instance.getId() + "-" + UUID.randomUUID(), ".json");
         Files.write(tempFile, jsonString.getBytes());
 
-        log.info("生成的 DataX 配置 (Local): \n{}", jsonString);
+        log.info("生成的 DataX 配置（本地）: \n{}", jsonString);
 
         // 3. 开启子进程执行 DataX (调用 python datax.py)
         StringBuilder logBuilder = new StringBuilder();
@@ -124,14 +137,14 @@ public class DataXTaskHandler implements TaskHandler {
             pb.redirectErrorStream(true); // 合并标准输出和错误输出流
             Process process = pb.start();
 
-            // 实时读取并打印 DataX 日志输出
+            // 非阻塞读取并定时刷新 DataX 日志到数据库
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    log.info("[DataX-{}] {}", instance.getId(), line);
-                    String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                    logBuilder.append("[").append(ts).append("] ").append(line).append("\n");
-                }
+                LogStreamReader.readAndFlush(
+                        reader, null,
+                        () -> !process.isAlive(),
+                        logBuilder,
+                        "DataX-" + instance.getId(),
+                        content -> updateLog(instance, content));
             }
 
             // 等待进程结束并获取退出状态码
@@ -190,22 +203,21 @@ public class DataXTaskHandler implements TaskHandler {
                     password);
 
             // 1. 上传 JSON 配置文件
-            log.info("不再本地生成文件，直接上传配置到远程: {}", remoteTempFile);
-            log.info("[Debug] Generated DataX Config (Remote): \n{}", jsonString);
+            log.info("直接上传配置到远程: {}", remoteTempFile);
+            log.info("[调试] 生成的 DataX 配置（远程）: \n{}", jsonString);
             com.example.executor.urgs_executor.util.SshUtils.scpTo(session, jsonString, remoteTempFile);
 
             // DEBUG: Read back the file to verify what was actually written
             String verifyCmd = "cat " + remoteTempFile;
             String fileContent = com.example.executor.urgs_executor.util.SshUtils.exec(session, verifyCmd);
-            log.info("[Debug] ACTUAL FILE CONTENT on remote server: \n{}", fileContent);
+            log.info("[调试] 远程服务器上的实际文件内容: \n{}", fileContent);
 
             // 2. 执行 DataX 命令
             String command = String.format("python3 %s/bin/datax.py %s", remoteDataxHome, remoteTempFile);
             log.info("远程执行命令: {}", command);
 
-            // 注意：SshUtils.exec 目前是等待执行完毕并一次性返回，对于 DataX 这种长任务可能不适合实时日志。
-            // 简单起见，我们暂且认为 log 可以在结束后一次性获取，或者后续优化 SshUtils 支持流式读取。
-            // 但为了兼容现有接口契约，我们这里等待结果。
+            // 注意：SshUtils.exec 目前是等待执行完毕并一次性返回，对于 DataX 这种长任务可能不适合实时日志
+            // 后续优化可支持流式读取
             String output = com.example.executor.urgs_executor.util.SshUtils.exec(session, command);
             logBuilder.append(output);
 

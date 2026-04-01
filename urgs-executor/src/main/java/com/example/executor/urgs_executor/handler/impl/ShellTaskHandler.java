@@ -16,6 +16,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import com.example.executor.urgs_executor.util.LogStreamReader;
+
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -42,7 +44,7 @@ public class ShellTaskHandler implements TaskHandler {
 
     /**
      * 同步更新任务实例的日志内容
-     * 
+     *
      * @param instance 任务实例
      * @param content  日志内容
      */
@@ -57,7 +59,7 @@ public class ShellTaskHandler implements TaskHandler {
 
     /**
      * 执行 Shell 任务的主入口
-     * 
+     *
      * @param instance 任务实例信息
      * @return 执行产生的日志内容
      */
@@ -82,15 +84,15 @@ public class ShellTaskHandler implements TaskHandler {
 
         // 2. 校验脚本是否为空
         if (script.isEmpty()) {
-            log.error("Shell task {} script is empty. Content Snapshot: {}", instance.getId(),
+            log.error("Shell 任务 {} 脚本内容为空，内容快照: {}", instance.getId(),
                     instance.getContentSnapshot());
-            throw new RuntimeException("Shell task " + instance.getId() + " has no script content");
+            throw new RuntimeException("Shell 任务 " + instance.getId() + " 脚本内容为空");
         }
 
         // 3. 变量替换：将 $dataDate 替换为实例对应的业务日期
         script = PlaceholderUtils.replaceDataDate(script, instance.getDataDate());
 
-        log.info("Executing Shell Task {}: {}", instance.getId(), script);
+        log.info("开始执行 Shell 任务 {}: {}", instance.getId(), script);
 
         // 4. 根据是否配置了 resourceId 决定是远程执行还是本地执行
         if (resourceId != null && !resourceId.isEmpty()) {
@@ -107,7 +109,7 @@ public class ShellTaskHandler implements TaskHandler {
         // 获取远程服务器的配置信息
         DataSourceConfig config = dataSourceConfigMapper.selectById(resourceId);
         if (config == null) {
-            throw new RuntimeException("Resource not found: " + resourceId);
+            throw new RuntimeException("未找到资源节点: " + resourceId);
         }
 
         Map<String, Object> params = config.getConnectionParams();
@@ -117,17 +119,17 @@ public class ShellTaskHandler implements TaskHandler {
         String password = (String) params.get("password");
 
         if (host == null || username == null) {
-            throw new RuntimeException("Invalid SSH connection parameters for resource: " + resourceId);
+            throw new RuntimeException("资源节点 SSH 连接参数无效: " + resourceId);
         }
         if (port == null)
             port = 22;
 
         StringBuilder logBuilder = new StringBuilder();
         String timeStart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-        logBuilder.append("[").append(timeStart).append("] ").append("Executing Remote Shell Task ")
+        logBuilder.append("[").append(timeStart).append("] ").append("开始远程执行 Shell 任务 ")
                 .append(instance.getId()).append("\n");
-        logBuilder.append("Target: ").append(username).append("@").append(host).append(":").append(port).append("\n");
-        logBuilder.append("Script: ").append(script).append("\n\n");
+        logBuilder.append("目标: ").append(username).append("@").append(host).append(":").append(port).append("\n");
+        logBuilder.append("脚本: ").append(script).append("\n\n");
 
         JSch jsch = new JSch();
         Session session = null;
@@ -151,46 +153,30 @@ public class ShellTaskHandler implements TaskHandler {
 
             channel.connect();
 
-            // 实时读取输出日志并存入数据库
+            // 非阻塞读取输出日志并定时刷新到数据库
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
                     BufferedReader errReader = new BufferedReader(new InputStreamReader(err, StandardCharsets.UTF_8))) {
 
-                String line;
-                long lastUpdate = System.currentTimeMillis();
-                while ((line = reader.readLine()) != null) {
-                    log.info("[Shell-{}-Remote] {}", instance.getId(), line);
-                    String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                    logBuilder.append("[").append(ts).append("] ").append(line).append("\n");
-                    if (System.currentTimeMillis() - lastUpdate > 1000) {
-                        updateLog(instance, logBuilder.toString());
-                        lastUpdate = System.currentTimeMillis();
-                    }
-                }
-
-                while ((line = errReader.readLine()) != null) {
-                    log.error("[Shell-{}-Remote-Err] {}", instance.getId(), line);
-                    String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                    logBuilder.append("[").append(ts).append("] ERR: ").append(line).append("\n");
-                    if (System.currentTimeMillis() - lastUpdate > 1000) {
-                        updateLog(instance, logBuilder.toString());
-                        lastUpdate = System.currentTimeMillis();
-                    }
-                }
-                updateLog(instance, logBuilder.toString());
+                LogStreamReader.readAndFlush(
+                        reader, errReader,
+                        channel::isClosed,
+                        logBuilder,
+                        "Shell-" + instance.getId() + "-Remote",
+                        content -> updateLog(instance, content));
             }
 
             // 检查退出码
             int exitCode = channel.getExitStatus();
             if (exitCode != 0) {
                 String timeErr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                logBuilder.append("\n[").append(timeErr).append("] ").append("Remote process exited with code ")
+                logBuilder.append("\n[").append(timeErr).append("] ").append("远程进程异常退出，退出码: ")
                         .append(exitCode);
                 throw new RuntimeException(
-                        "Remote shell script exited with code " + exitCode + "\nLogs:\n" + logBuilder.toString());
+                        "远程 Shell 脚本执行失败，退出码: " + exitCode + "\n日志:\n" + logBuilder.toString());
             }
 
             String timeEnd = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-            logBuilder.append("\n[").append(timeEnd).append("] ").append("Remote Shell Task success.");
+            logBuilder.append("\n[").append(timeEnd).append("] ").append("远程 Shell 任务执行成功");
 
         } finally {
             // 资源释放
@@ -214,25 +200,18 @@ public class ShellTaskHandler implements TaskHandler {
 
         StringBuilder logBuilder = new StringBuilder();
         String timeStart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-        logBuilder.append("[").append(timeStart).append("] ").append("Executing Local Shell Task ")
+        logBuilder.append("[").append(timeStart).append("] ").append("开始本地执行 Shell 任务 ")
                 .append(instance.getId()).append("\n");
-        logBuilder.append("Script: ").append(script).append("\n\n");
+        logBuilder.append("脚本: ").append(script).append("\n\n");
 
-        // 异步读取脚本执行产生的输出并更新到数据库
+        // 非阻塞读取脚本执行产生的输出并定时刷新到数据库
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-            String line;
-            long lastUpdate = System.currentTimeMillis();
-            while ((line = reader.readLine()) != null) {
-                log.info("[Shell-{}] {}", instance.getId(), line);
-                String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                logBuilder.append("[").append(ts).append("] ").append(line).append("\n");
-                // 每隔一秒钟更新一次数据库中的日志，避免高频操作导致的压力
-                if (System.currentTimeMillis() - lastUpdate > 1000) {
-                    updateLog(instance, logBuilder.toString());
-                    lastUpdate = System.currentTimeMillis();
-                }
-            }
-            updateLog(instance, logBuilder.toString());
+            LogStreamReader.readAndFlush(
+                    reader, null,
+                    () -> !process.isAlive(),
+                    logBuilder,
+                    "Shell-" + instance.getId(),
+                    content -> updateLog(instance, content));
         }
 
         try {
@@ -240,21 +219,21 @@ public class ShellTaskHandler implements TaskHandler {
             int exitCode = process.waitFor();
             if (exitCode != 0) {
                 String timeErr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                logBuilder.append("\n[").append(timeErr).append("] ").append("Process exited with code ")
+                logBuilder.append("\n[").append(timeErr).append("] ").append("进程异常退出，退出码: ")
                         .append(exitCode);
                 throw new RuntimeException(
-                        "Shell script exited with code " + exitCode + "\nLogs:\n" + logBuilder.toString());
+                        "Shell 脚本执行失败，退出码: " + exitCode + "\n日志:\n" + logBuilder.toString());
             }
         } catch (InterruptedException e) {
-            log.warn("Shell task {} interrupted, killing process...", instance.getId());
+            log.warn("Shell 任务 {} 被中断，正在终止进程...", instance.getId());
             process.destroy(); // 任务被中断时（如应用关闭），确保子进程被杀死
             String timeErr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-            logBuilder.append("\n[").append(timeErr).append("] ").append("Process interrupted and killed.");
+            logBuilder.append("\n[").append(timeErr).append("] ").append("进程已被中断并终止");
             throw e;
         }
 
         String timeEnd = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-        logBuilder.append("\n[").append(timeEnd).append("] ").append("Local Shell Task success.");
+        logBuilder.append("\n[").append(timeEnd).append("] ").append("本地 Shell 任务执行成功");
 
         return logBuilder.toString();
     }

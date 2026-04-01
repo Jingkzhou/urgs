@@ -10,6 +10,6 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface ExecutorTaskInstanceMapper extends BaseMapper<ExecutorTaskInstance> {
 
-    @Update("UPDATE sys_task_instance SET status = 'RUNNING', start_time = NOW(), end_time = NULL, update_time = NOW() WHERE id = #{id} AND status = 'WAITING'")
+    @Update("UPDATE sys_task_instance SET status = 'RUNNING', start_time = NOW(), end_time = NULL, create_time = NOW(), update_time = NOW() WHERE id = #{id} AND status = 'WAITING'")
     int tryLockTask(@Param("id") Long id);
 }
