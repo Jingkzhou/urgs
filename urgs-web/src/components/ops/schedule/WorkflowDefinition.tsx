@@ -471,31 +471,6 @@ const WorkflowDefinition: React.FC = () => {
             // Pass 1: Save tasks to get IDs (ignoring dependencies for now to avoid foreign key errors or bad references)
             for (const node of currentNodes) {
                 if (node.data) {
-                    // Auto-populate DEPENDENT node configuration
-                    if (node.data.taskType === 'DEPENDENT' && node.data.taskId) {
-                        try {
-                            const targetRes = await fetch(`/api/task/list?keyword=${node.data.taskId}&size=1`, {
-                                headers: { 'Authorization': `Bearer ${token}` }
-                            });
-                            if (targetRes.ok) {
-                                const targetData = await targetRes.json();
-                                const targetTask = Array.isArray(targetData) ? targetData[0] : (targetData.records && targetData.records[0]);
-
-                                if (targetTask) {
-                                    const targetContent = JSON.parse(targetTask.content || '{}');
-                                    // Update node data with target task's cron and offset
-                                    node.data.cronExpression = targetTask.cronExpression || targetContent.cronExpression;
-                                    node.data.offset = targetContent.offset || 0;
-                                    // Also update content if needed
-                                    if (!node.data.content) node.data.content = {};
-                                    // Ensure these fields are in data root as well for consistency
-                                }
-                            }
-                        } catch (e) {
-                            console.warn('Failed to auto-populate dependent task info:', e);
-                        }
-                    }
-
                     // Store original dependencies
                     originalDependentTasksMap.set(node.id, node.data.dependentTasks || []);
 
@@ -504,7 +479,8 @@ const WorkflowDefinition: React.FC = () => {
                         name: node.data.name || node.data.label || 'Task',
                         type: node.data.taskType || 'SHELL',
                         status: node.data.runFlag === 'FORBIDDEN' ? 0 : 1,
-                        cronExpression: node.data.cronExpression,
+                        // DEPENDENT 是纯虚拟 DAG 边，不需要 cron 调度
+                        cronExpression: node.data.taskType === 'DEPENDENT' ? null : node.data.cronExpression,
                         content: JSON.stringify(node.data),
                         preTaskIds: [] // Pass 1: Send empty dependencies
                     };
@@ -554,6 +530,14 @@ const WorkflowDefinition: React.FC = () => {
                     // Map dependencies to new IDs
                     const newDeps = originalDeps.map(depId => idMapping[depId] || depId);
 
+                    // DEPENDENT 节点：将母体 taskId 加入 preTaskIds，确保 sys_task_dependency 包含跨工作流关系
+                    if (node.data.taskType === 'DEPENDENT' && node.data.taskId) {
+                        const motherTaskId = idMapping[node.data.taskId] || node.data.taskId;
+                        if (!newDeps.includes(motherTaskId)) {
+                            newDeps.push(motherTaskId);
+                        }
+                    }
+
                     // Update node data in memory
                     node.data.dependentTasks = newDeps;
 
@@ -563,7 +547,8 @@ const WorkflowDefinition: React.FC = () => {
                         name: node.data.name || node.data.label || 'Task',
                         type: node.data.taskType || 'SHELL',
                         status: node.data.runFlag === 'FORBIDDEN' ? 0 : 1,
-                        cronExpression: node.data.cronExpression,
+                        // DEPENDENT 是纯虚拟 DAG 边，不需要 cron 调度
+                        cronExpression: node.data.taskType === 'DEPENDENT' ? null : node.data.cronExpression,
                         content: JSON.stringify(node.data), // Update content with new dependentTasks
                         preTaskIds: newDeps // Pass 2: Send correct dependencies
                     };

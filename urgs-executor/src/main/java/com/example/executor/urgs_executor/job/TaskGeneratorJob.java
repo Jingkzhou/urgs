@@ -73,6 +73,11 @@ public class TaskGeneratorJob implements Job {
      * 处理单个任务定义的逻辑，判断其是否到达触发时间
      */
     private void processTask(Task task, Date now) {
+        // DEPENDENT 任务是纯虚拟 DAG 边，永不创建实例
+        if ("DEPENDENT".equals(task.getType())) {
+            return;
+        }
+
         log.info("Processing Task: ID={}, Name={}, ContentLen={}", task.getId(), task.getName(),
                 task.getContent() == null ? "NULL" : task.getContent().length());
 
@@ -124,6 +129,26 @@ public class TaskGeneratorJob implements Job {
     }
 
     /**
+     * 如果 taskId 指向 DEPENDENT 任务，递归穿透到真实母体任务 ID。
+     */
+    private String resolveRealUpstreamTaskId(String taskId) {
+        Task taskDef = taskMapper.selectById(taskId);
+        if (taskDef != null && "DEPENDENT".equals(taskDef.getType()) && taskDef.getContent() != null) {
+            try {
+                JsonNode contentNode = objectMapper.readTree(taskDef.getContent());
+                JsonNode taskIdNode = contentNode.get("taskId");
+                if (taskIdNode != null && !taskIdNode.isNull() && !taskIdNode.asText().isEmpty()) {
+                    // 递归处理链式 DEPENDENT
+                    return resolveRealUpstreamTaskId(taskIdNode.asText());
+                }
+            } catch (Exception e) {
+                log.warn("解析 DEPENDENT 任务 {} 的 content JSON 失败: {}", taskId, e.getMessage());
+            }
+        }
+        return taskId;
+    }
+
+    /**
      * 实际执行任务触发逻辑：创建或更新任务实例
      */
     private void triggerTask(Task task, Date triggerTime) {
@@ -155,9 +180,13 @@ public class TaskGeneratorJob implements Job {
         if (dependencies != null && !dependencies.isEmpty()) {
             boolean allDependenciesMet = true;
             for (TaskDependency dep : dependencies) {
+                // DEPENDENT 上游：穿透到母体任务
+                String preTaskId = dep.getPreTaskId();
+                preTaskId = resolveRealUpstreamTaskId(preTaskId);
+
                 // 查找同业务日期的上游任务实例状态
                 QueryWrapper<ExecutorTaskInstance> preInstanceWrapper = new QueryWrapper<>();
-                preInstanceWrapper.eq("task_id", dep.getPreTaskId());
+                preInstanceWrapper.eq("task_id", preTaskId);
                 preInstanceWrapper.eq("data_date", dataDateStr);
                 List<ExecutorTaskInstance> preInstances = taskInstanceMapper.selectList(preInstanceWrapper);
                 ExecutorTaskInstance preInstance = preInstances.isEmpty() ? null : preInstances.get(0);
