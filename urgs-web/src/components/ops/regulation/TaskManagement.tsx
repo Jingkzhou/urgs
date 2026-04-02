@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AutoComplete, Checkbox, Drawer, Dropdown, Form, Input, InputNumber, Modal, Popover, Select, Tag, message } from 'antd';
+import { AutoComplete, Checkbox, DatePicker, Drawer, Dropdown, Form, Input, InputNumber, Modal, Popover, Select, Tag, message } from 'antd';
 import type { MenuProps } from 'antd';
 import { Calendar, ChevronDown, Clock3, FileCog, FileText, MoreHorizontal, PauseCircle, Play, PlayCircle, Plus, Search, Settings2, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
+import zhCN from 'antd/es/date-picker/locale/zh_CN';
 import Editor from '@monaco-editor/react';
 import { QuartzTask } from './mockData';
 import CronPicker from '../schedule/forms/components/CronPicker';
@@ -221,6 +222,9 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
     const [selectedTask, setSelectedTask] = useState<QuartzTask | null>(null);
     const [modalVisible, setModalVisible] = useState(false);
     const [editingTask, setEditingTask] = useState<QuartzTask | null>(null);
+    const [startTaskModalVisible, setStartTaskModalVisible] = useState(false);
+    const [pendingStartTask, setPendingStartTask] = useState<QuartzTask | null>(null);
+    const [startDataDate, setStartDataDate] = useState(dayjs().format('YYYY-MM-DD'));
     const [dataSources, setDataSources] = useState<DataSourceOption[]>([]);
     const [dataSourceLoading, setDataSourceLoading] = useState(false);
     const [dependencySelectorOpen, setDependencySelectorOpen] = useState(false);
@@ -443,7 +447,20 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
     };
 
     const handleStartTask = (task: QuartzTask) => {
-        message.success(`前端稿占位：已触发任务 ${task.task_name} 立即开始`);
+        setPendingStartTask(task);
+        setStartDataDate(dayjs().format('YYYY-MM-DD'));
+        setStartTaskModalVisible(true);
+    };
+
+    const handleConfirmStartTask = () => {
+        if (!pendingStartTask || !startDataDate) {
+            message.error('请选择数据日期');
+            return;
+        }
+
+        message.success(`前端稿占位：已触发任务 ${pendingStartTask.task_name} 在 ${startDataDate} 立即开始`);
+        setStartTaskModalVisible(false);
+        setPendingStartTask(null);
     };
 
     const handlePauseTask = (task: QuartzTask) => {
@@ -833,6 +850,35 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
                     </div>
                 </div>
             </div>
+
+            <Modal
+                title={pendingStartTask ? `立即开始 · ${pendingStartTask.task_name}` : '立即开始'}
+                open={startTaskModalVisible}
+                onCancel={() => {
+                    setStartTaskModalVisible(false);
+                    setPendingStartTask(null);
+                }}
+                onOk={handleConfirmStartTask}
+                okText="确认执行"
+                cancelText="取消"
+                destroyOnClose
+            >
+                <div className="space-y-4 py-2">
+                    <div className="text-sm text-slate-500">
+                        为当前任务选择本次立即执行的数据日期。
+                    </div>
+                    <div>
+                        <div className="mb-2 text-sm font-medium text-slate-700">数据日期</div>
+                        <DatePicker
+                            value={startDataDate ? dayjs(startDataDate) : null}
+                            onChange={(value) => setStartDataDate(value ? value.format('YYYY-MM-DD') : '')}
+                            locale={zhCN}
+                            className="w-full"
+                            allowClear={false}
+                        />
+                    </div>
+                </div>
+            </Modal>
 
             <Modal
                 title={null}

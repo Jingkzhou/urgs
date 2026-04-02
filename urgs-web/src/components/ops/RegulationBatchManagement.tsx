@@ -59,85 +59,78 @@ const RegulationBatchManagement: React.FC = () => {
     };
 
     return (
-        <div className="h-[calc(100vh-140px)] w-full bg-slate-50 rounded-xl shadow-sm border border-slate-200 overflow-hidden flex relative animate-fade-in">
-            <aside className="w-52 border-r border-slate-200 bg-white flex flex-col shrink-0">
-                <div className="px-4 py-4 border-b border-slate-200 bg-slate-50/70">
-                    <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4 text-red-600" />
-                        监管批量
-                    </h2>
-                    <p className="mt-1 text-xs text-slate-500">监管任务、实例状态与失败消息总览</p>
-                </div>
-                <div className="p-2.5 space-y-1">
-                    {navItems.map(item => {
-                        const isActive = activeView === item.id;
-                        return (
-                            <button
-                                key={item.id}
-                                onClick={() => handleSwitchView(item.id)}
-                                className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all ${isActive
-                                    ? 'bg-red-50 text-red-700 border border-red-100 shadow-sm font-semibold'
-                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
-                                    }`}
-                            >
-                                <item.icon className={`w-4 h-4 ${isActive ? 'text-red-600' : 'text-slate-400'}`} />
-                                {item.label}
-                            </button>
-                        );
-                    })}
-                </div>
-            </aside>
+        <div className="h-[calc(100vh-140px)] w-full bg-slate-50 rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col relative animate-fade-in">
+            <div className="border-b border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(248,250,252,0.94)_100%)] backdrop-blur px-5 py-4">
+                <div className="space-y-4">
+                    <div className="flex flex-wrap gap-2">
+                        {navItems.map(item => {
+                            const isActive = activeView === item.id;
+                            return (
+                                <button
+                                    key={item.id}
+                                    onClick={() => handleSwitchView(item.id)}
+                                    className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm transition-all ${isActive
+                                        ? 'bg-red-50 text-red-700 border border-red-100 shadow-[0_8px_24px_-18px_rgba(220,38,38,0.7)] font-semibold'
+                                        : 'bg-white/90 text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-slate-200/80'
+                                        }`}
+                                >
+                                    <item.icon className={`w-3.5 h-3.5 ${isActive ? 'text-red-600' : 'text-slate-400'}`} />
+                                    {item.label}
+                                </button>
+                            );
+                        })}
+                    </div>
 
-            <main className="flex-1 overflow-hidden flex flex-col bg-slate-50">
-                <div className="border-b border-slate-200 bg-white/90 backdrop-blur px-6 py-5">
-                    <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-5">
-                        <div>
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="min-w-0">
                             <div className="flex items-center gap-2 text-slate-800">
-                                <Activity size={20} className="text-red-600" />
-                                <h2 className="text-2xl font-bold">监管批量</h2>
+                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 ring-1 ring-red-100">
+                                    <Activity size={16} className="text-red-600" />
+                                </div>
+                                <h2 className="text-xl font-bold tracking-tight">监管批量</h2>
                             </div>
-                            <p className="mt-2 text-sm text-slate-500">
+                            <p className="mt-1.5 max-w-2xl text-sm text-slate-500">
                                 面向监管批处理链路的任务定义与实例跟踪前端稿，字段按 `t_quartz_task` 和 `t_quartz_task_status` 映射。
                             </p>
                         </div>
 
-                        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 min-w-0 xl:min-w-[620px]">
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                                <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400">
-                                    <ClipboardList size={14} />
+                        <div className="flex flex-wrap gap-2.5 xl:justify-end">
+                            <div className="min-w-[128px] rounded-full border border-slate-200/90 bg-white/90 px-3.5 py-2.5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.45)]">
+                                <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400">
+                                    <ClipboardList size={12} />
                                     任务总数
                                 </div>
-                                <div className="mt-3 text-2xl font-bold text-slate-800">{stats.totalTasks}</div>
+                                <div className="mt-1 text-2xl font-bold leading-none text-slate-800">{stats.totalTasks}</div>
                             </div>
-                            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4">
-                                <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-emerald-500">
-                                    <ShieldCheck size={14} />
+                            <div className="min-w-[128px] rounded-full border border-emerald-100 bg-emerald-50/85 px-3.5 py-2.5 shadow-[0_10px_30px_-24px_rgba(5,150,105,0.5)]">
+                                <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-600">
+                                    <ShieldCheck size={12} />
                                     正常任务
                                 </div>
-                                <div className="mt-3 text-2xl font-bold text-emerald-700">{stats.enabledTasks}</div>
+                                <div className="mt-1 text-2xl font-bold leading-none text-emerald-700">{stats.enabledTasks}</div>
                             </div>
-                            <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4">
-                                <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-blue-500">
-                                    <DatabaseZap size={14} />
+                            <div className="min-w-[128px] rounded-full border border-blue-100 bg-blue-50/85 px-3.5 py-2.5 shadow-[0_10px_30px_-24px_rgba(37,99,235,0.5)]">
+                                <div className="flex items-center gap-1.5 text-[11px] font-medium text-blue-600">
+                                    <DatabaseZap size={12} />
                                     当日实例
                                 </div>
-                                <div className="mt-3 text-2xl font-bold text-blue-700">{stats.todayInstances}</div>
+                                <div className="mt-1 text-2xl font-bold leading-none text-blue-700">{stats.todayInstances}</div>
                             </div>
-                            <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-4">
-                                <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-red-500">
-                                    <TimerReset size={14} />
+                            <div className="min-w-[128px] rounded-full border border-red-100 bg-red-50/85 px-3.5 py-2.5 shadow-[0_10px_30px_-24px_rgba(239,68,68,0.5)]">
+                                <div className="flex items-center gap-1.5 text-[11px] font-medium text-red-600">
+                                    <TimerReset size={12} />
                                     失败实例
                                 </div>
-                                <div className="mt-3 text-2xl font-bold text-red-700">{stats.failedInstances}</div>
+                                <div className="mt-1 text-2xl font-bold leading-none text-red-700">{stats.failedInstances}</div>
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <div className="flex-1 overflow-auto p-4">
-                    {renderContent()}
-                </div>
-            </main>
+            <div className="flex-1 overflow-auto p-4">
+                {renderContent()}
+            </div>
 
             <Modal
                 title={selectedLogTask.name ? `执行日志 · ${selectedLogTask.name}` : '执行日志'}
