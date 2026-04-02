@@ -319,13 +319,24 @@ public class TaskService {
         LocalDateTime now = LocalDateTime.now();
         Task task = requireTaskForRerun(instance);
 
+        String taskType = task.getType();
+        String initialStatus;
+
+        if ("DEPENDENT".equals(taskType)) {
+            // DEPENDENT 影子任务：查母体任务状态，直接镜像
+            initialStatus = resolveParentStatus(instance.getTaskId(), instance.getDataDate());
+        } else {
+            // 普通任务：先设 PENDING，检查依赖后再决定
+            initialStatus = "PENDING";
+        }
+
         UpdateWrapper<TaskInstance> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("id", instance.getId());
         updateWrapper.set("task_type", task.getType());
         updateWrapper.set("system_id", task.getSystemId());
         updateWrapper.set("content_snapshot", task.getContent());
         updateWrapper.set("priority", task.getPriority());
-        updateWrapper.set("status", "WAITING");
+        updateWrapper.set("status", initialStatus);
         updateWrapper.set("retry_count", 0);
         updateWrapper.set("start_time", null);
         updateWrapper.set("end_time", null);
@@ -333,6 +344,51 @@ public class TaskService {
         updateWrapper.set("create_time", now);
         updateWrapper.set("update_time", now);
         taskInstanceMapper.update(null, updateWrapper);
+
+        // DEPENDENT 影子任务如果母体已成功，递归传播下游
+        if ("DEPENDENT".equals(taskType)
+                && ("SUCCESS".equals(initialStatus) || "FORCE_SUCCESS".equals(initialStatus))) {
+            // 重新查询更新后的实例用于传播
+            TaskInstance updated = taskInstanceMapper.selectById(instance.getId());
+            if (updated != null) {
+                checkAndPromoteDownstream(updated);
+            }
+        }
+
+        // 非 DEPENDENT 任务：检查依赖是否满足，满足则提升为 WAITING
+        if (!"DEPENDENT".equals(taskType)
+                && areAllDependenciesMet(instance.getTaskId(), instance.getDataDate())) {
+            UpdateWrapper<TaskInstance> statusUpdate = new UpdateWrapper<>();
+            statusUpdate.eq("id", instance.getId());
+            statusUpdate.set("status", "WAITING");
+            taskInstanceMapper.update(null, statusUpdate);
+        }
+    }
+
+    /**
+     * 查询 DEPENDENT 影子任务的母体（第一个上游依赖）状态，直接镜像
+     */
+    private String resolveParentStatus(String taskId, String dataDate) {
+        QueryWrapper<TaskDependency> depWrapper = new QueryWrapper<>();
+        depWrapper.eq("task_id", taskId);
+        List<TaskDependency> deps = taskDependencyMapper.selectList(depWrapper);
+
+        if (deps.isEmpty()) {
+            return "WAITING";
+        }
+
+        // 取第一个上游作为母体（与 syncShadowTasks 逻辑一致）
+        String parentTaskId = deps.get(0).getPreTaskId();
+        QueryWrapper<TaskInstance> parentWrapper = new QueryWrapper<>();
+        parentWrapper.eq("task_id", parentTaskId);
+        parentWrapper.eq("data_date", dataDate);
+        TaskInstance parent = taskInstanceMapper.selectOne(parentWrapper);
+
+        if (parent == null) {
+            return "PENDING";
+        }
+
+        return parent.getStatus();
     }
 
     private Task requireTaskForRerun(TaskInstance instance) {
