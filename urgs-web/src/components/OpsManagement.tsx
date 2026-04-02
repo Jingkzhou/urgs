@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Timer, AlertTriangle, Activity, Server } from 'lucide-react';
+import { Timer, AlertTriangle, Activity, Server, ShieldCheck } from 'lucide-react';
 import Auth from './Auth';
 import ScheduleManagement from './ops/ScheduleManagement';
 import IssueTracking from './ops/IssueTracking';
 import InfrastructureManagement from './ops/InfrastructureManagement';
+import RegulationBatchManagement from './ops/RegulationBatchManagement';
 
-type SubModule = 'schedule' | 'issue' | 'infra';
+type SubModule = 'schedule' | 'issue' | 'infra' | 'regulation';
 
 const OpsManagement: React.FC = () => {
     const [activeModule, setActiveModule] = useState<SubModule>('schedule');
@@ -23,7 +24,7 @@ const OpsManagement: React.FC = () => {
 
     const tabs = [
         { id: 'infra', label: '基础设施管理', icon: Server, permission: 'ops:infra:view' },
-        { id: 'schedule', label: '调度管理', icon: Timer, permission: 'ops:schedule' },
+        { id: 'regulation', label: '监管批量', icon: ShieldCheck, permission: 'ops:regulation:view' },
         { id: 'issue', label: '生产问题登记', icon: AlertTriangle, permission: 'ops:issue' },
     ];
 
@@ -70,6 +71,11 @@ const OpsManagement: React.FC = () => {
                 {activeModule === 'schedule' && (
                     <Auth code="ops:schedule">
                         <ScheduleManagement onTurnToIssue={handleTurnToIssue} />
+                    </Auth>
+                )}
+                {activeModule === 'regulation' && (
+                    <Auth code="ops:regulation:view">
+                        <RegulationBatchManagement />
                     </Auth>
                 )}
                 {activeModule === 'issue' && (
