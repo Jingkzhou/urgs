@@ -135,16 +135,10 @@ public class TaskExecutor {
         List<ExecutorTaskInstance> shadowTasks = taskInstanceMapper.selectList(queryWrapper);
 
         for (ExecutorTaskInstance shadow : shadowTasks) {
-            // 2. 确定上游依赖项
-            QueryWrapper<TaskDependency> depWrapper = new QueryWrapper<>();
-            depWrapper.eq("task_id", shadow.getTaskId());
-            List<TaskDependency> deps = taskDependencyMapper.selectList(depWrapper);
-
-            if (deps.isEmpty())
-                continue;
-
-            // 获取第一个基准上游任务ID
-            String upstreamTaskId = deps.get(0).getPreTaskId();
+            // 2. 确定母体任务ID：优先从任务定义的 content JSON 中获取 taskId（跨工作流依赖），
+            //    如果不存在则回退到 sys_task_dependency 表
+            String upstreamTaskId = resolveUpstreamTaskId(shadow.getTaskId());
+            if (upstreamTaskId == null) continue;
 
             // 3. 查找同业务日期的上游任务实例
             QueryWrapper<ExecutorTaskInstance> upstreamWrapper = new QueryWrapper<>();
@@ -395,7 +389,7 @@ public class TaskExecutor {
      * 当一个任务实例运行成功后，检查并尝试通过其下游依赖项
      */
     private void checkDownstreamTasks(ExecutorTaskInstance completedInstance) {
-        // 1. 查找所有以该任务为前置依赖的下游任务
+        // 1. 查找 sys_task_dependency 中以该任务为前置依赖的下游任务
         QueryWrapper<TaskDependency> depWrapper = new QueryWrapper<>();
         depWrapper.eq("pre_task_id", completedInstance.getTaskId());
         List<TaskDependency> downstreamDeps = taskDependencyMapper.selectList(depWrapper);
@@ -403,7 +397,6 @@ public class TaskExecutor {
         for (TaskDependency dep : downstreamDeps) {
             String downstreamTaskId = dep.getTaskId();
 
-            // 2. 找到同业务日期的下游任务实例
             QueryWrapper<ExecutorTaskInstance> instanceWrapper = new QueryWrapper<>();
             instanceWrapper.eq("task_id", downstreamTaskId);
             instanceWrapper.eq("data_date", completedInstance.getDataDate());
@@ -413,21 +406,7 @@ public class TaskExecutor {
 
             // DEPENDENT 影子任务：直接镜像上游状态并递归传播
             if ("DEPENDENT".equals(downstreamInstance.getTaskType())) {
-                if (!ExecutorTaskInstance.STATUS_SUCCESS.equals(downstreamInstance.getStatus())
-                        && !ExecutorTaskInstance.STATUS_FORCE_SUCCESS.equals(downstreamInstance.getStatus())) {
-                    downstreamInstance.setStatus(ExecutorTaskInstance.STATUS_SUCCESS);
-                    downstreamInstance.setEndTime(completedInstance.getEndTime());
-                    downstreamInstance.setUpdateTime(LocalDateTime.now());
-                    String ts = LocalDateTime.now()
-                            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                    downstreamInstance.setLogContent(
-                            "[" + ts + "] 影子任务: 上游任务 " + completedInstance.getTaskId() + " 已成功");
-                    taskInstanceMapper.updateById(downstreamInstance);
-                    log.info("影子任务 {} 已同步为 SUCCESS（上游: {}）", downstreamInstance.getId(),
-                            completedInstance.getId());
-                    // 递归：继续传播影子任务的下游
-                    checkDownstreamTasks(downstreamInstance);
-                }
+                promoteShadowAndPropagate(downstreamInstance, completedInstance);
                 continue;
             }
 
@@ -441,6 +420,73 @@ public class TaskExecutor {
                 }
             }
         }
+
+        // 2. 查找通过 content JSON 引用了该任务的 DEPENDENT 影子任务（跨工作流依赖）
+        promoteShadowTasksByContentRef(completedInstance);
+    }
+
+    /**
+     * 查找 content JSON 中 taskId 指向已完成任务的 DEPENDENT 影子任务，同步状态并递归传播。
+     * 这是跨工作流依赖的关键：DEPENDENT 影子任务的母体关系存储在 content JSON 的 taskId 字段中，
+     * 而不在 sys_task_dependency 表中。
+     */
+    private void promoteShadowTasksByContentRef(ExecutorTaskInstance completedInstance) {
+        try {
+            // 查找所有 DEPENDENT 类型的任务定义
+            QueryWrapper<Task> taskQuery = new QueryWrapper<>();
+            taskQuery.eq("type", "DEPENDENT");
+            List<Task> dependentTasks = taskMapper.selectList(taskQuery);
+
+            ObjectMapper mapper = new ObjectMapper();
+            for (Task depTask : dependentTasks) {
+                if (depTask.getContent() == null) continue;
+                try {
+                    JsonNode contentNode = mapper.readTree(depTask.getContent());
+                    JsonNode taskIdNode = contentNode.get("taskId");
+                    if (taskIdNode == null) continue;
+
+                    // 检查该影子任务是否引用了当前完成的任务
+                    if (completedInstance.getTaskId().equals(taskIdNode.asText())) {
+                        // 找到同业务日期的影子任务实例
+                        QueryWrapper<ExecutorTaskInstance> shadowWrapper = new QueryWrapper<>();
+                        shadowWrapper.eq("task_id", depTask.getId());
+                        shadowWrapper.eq("data_date", completedInstance.getDataDate());
+                        ExecutorTaskInstance shadowInstance = taskInstanceMapper.selectOne(shadowWrapper);
+
+                        if (shadowInstance != null) {
+                            promoteShadowAndPropagate(shadowInstance, completedInstance);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("解析 DEPENDENT 任务 {} 的 content JSON 失败: {}", depTask.getId(), e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.error("查找跨工作流 DEPENDENT 影子任务失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 将影子任务同步为 SUCCESS 并递归传播下游
+     */
+    private void promoteShadowAndPropagate(ExecutorTaskInstance shadowInstance,
+            ExecutorTaskInstance completedInstance) {
+        if (ExecutorTaskInstance.STATUS_SUCCESS.equals(shadowInstance.getStatus())
+                || ExecutorTaskInstance.STATUS_FORCE_SUCCESS.equals(shadowInstance.getStatus())) {
+            return; // 已经是成功状态，无需处理
+        }
+        shadowInstance.setStatus(ExecutorTaskInstance.STATUS_SUCCESS);
+        shadowInstance.setEndTime(completedInstance.getEndTime());
+        shadowInstance.setUpdateTime(LocalDateTime.now());
+        String ts = LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        shadowInstance.setLogContent(
+                "[" + ts + "] 影子任务: 上游任务 " + completedInstance.getTaskId() + " 已成功");
+        taskInstanceMapper.updateById(shadowInstance);
+        log.info("影子任务 {} 已同步为 SUCCESS（上游: {}）", shadowInstance.getId(),
+                completedInstance.getId());
+        // 递归：继续传播影子任务的下游
+        checkDownstreamTasks(shadowInstance);
     }
 
     /**
@@ -470,5 +516,37 @@ public class TaskExecutor {
             }
         }
         return true;
+    }
+
+    /**
+     * 解析 DEPENDENT 影子任务的母体任务ID。
+     * 优先从 sys_task 的 content JSON 中获取 taskId（跨工作流依赖），
+     * 如果不存在则回退到 sys_task_dependency 表。
+     */
+    private String resolveUpstreamTaskId(String shadowTaskId) {
+        // 1. 优先从任务定义的 content JSON 获取 taskId
+        Task taskDef = taskMapper.selectById(shadowTaskId);
+        if (taskDef != null && taskDef.getContent() != null) {
+            try {
+                ObjectMapper mapper = new ObjectMapper();
+                JsonNode contentNode = mapper.readTree(taskDef.getContent());
+                JsonNode taskIdNode = contentNode.get("taskId");
+                if (taskIdNode != null && !taskIdNode.isNull() && !taskIdNode.asText().isEmpty()) {
+                    return taskIdNode.asText();
+                }
+            } catch (Exception e) {
+                log.warn("解析任务 {} 的 content JSON 失败: {}", shadowTaskId, e.getMessage());
+            }
+        }
+
+        // 2. 回退：从 sys_task_dependency 获取
+        QueryWrapper<TaskDependency> depWrapper = new QueryWrapper<>();
+        depWrapper.eq("task_id", shadowTaskId);
+        List<TaskDependency> deps = taskDependencyMapper.selectList(depWrapper);
+        if (!deps.isEmpty()) {
+            return deps.get(0).getPreTaskId();
+        }
+
+        return null;
     }
 }

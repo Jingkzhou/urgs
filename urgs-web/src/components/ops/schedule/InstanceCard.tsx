@@ -107,7 +107,7 @@ const InstanceCard: React.FC<InstanceCardProps> = ({
     const isRunning = instance.status === 'RUNNING';
     const canRerun = ['SUCCESS', 'FAIL', 'FORCE_SUCCESS', 'STOPPED'].includes(instance.status);
     const canStop = ['RUNNING', 'WAITING', 'PENDING'].includes(instance.status);
-    const canForceSuccess = ['FAIL', 'RUNNING', 'WAITING', 'PENDING'].includes(instance.status);
+    const canForceSuccess = ['FAIL', 'STOPPED'].includes(instance.status);
 
     return (
         <div
@@ -194,6 +194,15 @@ const InstanceCard: React.FC<InstanceCardProps> = ({
                         >
                             <XCircle size={14} />
                             停止
+                        </button>
+                    )}
+                    {canForceSuccess && onForceSuccess && (
+                        <button
+                            onClick={() => onForceSuccess(instance)}
+                            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-600 hover:text-white rounded-xl transition-all shadow-sm shadow-emerald-100"
+                        >
+                            <CheckCircle size={14} />
+                            置为成功
                         </button>
                     )}
                 </div>

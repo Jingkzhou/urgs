@@ -527,6 +527,7 @@ const TaskInstance: React.FC = () => {
     };
 
     const isSelectable = (inst: TaskInstance) => ['FAIL', 'SUCCESS', 'STOPPED', 'FORCE_SUCCESS'].includes(inst.status);
+    const canForceSuccess = (status: string) => ['FAIL', 'STOPPED'].includes(status);
 
     const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.checked) {
@@ -870,6 +871,7 @@ const TaskInstance: React.FC = () => {
                                 onViewLog={handleViewLog}
                                 onRerun={handleRerunClick}
                                 onStop={handleStop}
+                                onForceSuccess={handleForceSuccess}
                                 onShowDetail={(inst) => {
                                     setDetailInstance(inst);
                                     setIsDetailOpen(true);
@@ -1002,7 +1004,7 @@ const TaskInstance: React.FC = () => {
                                                                 <RotateCw size={14} />
                                                             </button>
                                                         )}
-                                                        {inst.status === 'FAIL' && (
+                                                        {canForceSuccess(inst.status) && (
                                                             <button onClick={() => handleForceSuccess(inst)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="置为成功">
                                                                 <CheckCircle size={14} />
                                                             </button>
@@ -1328,7 +1330,7 @@ const TaskInstance: React.FC = () => {
                         )}
 
                         {/* Force Success */}
-                        {['FAIL'].includes(contextMenu.node.data.status) && (
+                        {canForceSuccess(contextMenu.node.data.status) && (
                             <button
                                 onClick={() => {
                                     const instanceId = contextMenu.node.data.instanceId || contextMenu.node.id;
