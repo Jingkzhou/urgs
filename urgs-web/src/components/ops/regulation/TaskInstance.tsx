@@ -562,6 +562,10 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     }, [rowContextMenu]);
 
     const visibleInstanceIds = useMemo(() => pagedInstances.map(instance => instance.id), [pagedInstances]);
+    const selectedInstances = useMemo(
+        () => instanceList.filter(instance => selectedInstanceIds.includes(instance.id)),
+        [instanceList, selectedInstanceIds]
+    );
     const allVisibleSelected = visibleInstanceIds.length > 0 && visibleInstanceIds.every(id => selectedInstanceIds.includes(id));
 
     const toggleSelectAllVisible = (checked: boolean) => {
@@ -703,6 +707,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
             <TaskInstanceTableView
                 filteredInstances={filteredInstances}
                 pagedInstances={pagedInstances}
+                selectedInstances={selectedInstances}
                 taskMap={taskMap}
                 taskNameMap={taskNameMap}
                 taskSystemOptions={taskSystemOptions}

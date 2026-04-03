@@ -16,6 +16,7 @@ import { RowContextMenuState } from './types';
 interface TaskInstanceTableViewProps {
     filteredInstances: QuartzTaskStatus[];
     pagedInstances: QuartzTaskStatus[];
+    selectedInstances: QuartzTaskStatus[];
     taskMap: Map<number, QuartzTask>;
     taskNameMap: Map<number, string>;
     taskSystemOptions: string[];
@@ -53,6 +54,7 @@ interface TaskInstanceTableViewProps {
 const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     filteredInstances,
     pagedInstances,
+    selectedInstances,
     taskMap,
     taskNameMap,
     taskSystemOptions,
@@ -86,6 +88,10 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     onOpenInstanceDetail,
     onPageChange,
 }) => {
+    const canBatchExecute = selectedInstances.length > 0 && selectedInstances.every(instance => instance.status === 3 || instance.status === 4);
+    const canBatchForceStop = selectedInstances.length > 0 && selectedInstances.every(instance => instance.status === 1 || instance.status === 2);
+    const canBatchForcePass = selectedInstances.length > 0 && selectedInstances.every(instance => instance.status === 4);
+
     return (
         <div className="space-y-4">
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
@@ -216,21 +222,24 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                         <div className="flex flex-wrap items-center gap-2">
                             <button
                                 onClick={onBatchExecute}
-                                className={`${batchActionClass} border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100`}
+                                disabled={!canBatchExecute}
+                                className={`${batchActionClass} border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-blue-50`}
                             >
                                 <Play size={14} />
                                 批量执行任务
                             </button>
                             <button
                                 onClick={onBatchForceStop}
-                                className={`${batchActionClass} border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100`}
+                                disabled={!canBatchForceStop}
+                                className={`${batchActionClass} border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-amber-50`}
                             >
                                 <Square size={14} />
                                 批量强制停止
                             </button>
                             <button
                                 onClick={onBatchForcePass}
-                                className={`${batchActionClass} border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100`}
+                                disabled={!canBatchForcePass}
+                                className={`${batchActionClass} border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-emerald-50`}
                             >
                                 <CheckCircle2 size={14} />
                                 批量强制通过
@@ -271,7 +280,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                         <div className="my-1 h-px bg-slate-100" />
                         <button
                             onClick={() => onInvokeRowContextAction('execute')}
-                            disabled={rowContextMenu.instance.status === 2}
+                            disabled={rowContextMenu.instance.status !== 3 && rowContextMenu.instance.status !== 4}
                             className={contextMenuItemClass}
                         >
                             <Play size={14} className="text-blue-600" />
@@ -279,7 +288,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                         </button>
                         <button
                             onClick={() => onInvokeRowContextAction('stop')}
-                            disabled={rowContextMenu.instance.status === 3 || rowContextMenu.instance.status === 4}
+                            disabled={rowContextMenu.instance.status !== 1 && rowContextMenu.instance.status !== 2}
                             className={contextMenuItemClass}
                         >
                             <Square size={14} className="text-amber-600" />
@@ -287,7 +296,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                         </button>
                         <button
                             onClick={() => onInvokeRowContextAction('pass')}
-                            disabled={rowContextMenu.instance.status === 3}
+                            disabled={rowContextMenu.instance.status !== 4}
                             className={contextMenuItemClass}
                         >
                             <CheckCircle2 size={14} className="text-emerald-600" />
