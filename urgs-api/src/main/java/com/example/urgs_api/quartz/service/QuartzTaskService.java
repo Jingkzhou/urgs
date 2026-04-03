@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import com.example.urgs_api.quartz.support.constant.ResponseCodeConst;
 import com.example.urgs_api.quartz.support.domain.PageResultDTO;
 import com.example.urgs_api.quartz.support.domain.ResponseDTO;
+import com.example.urgs_api.quartz.constant.TaskExeStatusEnum;
 import com.example.urgs_api.quartz.constant.TaskStatusEnum;
 import com.example.urgs_api.quartz.dao.QuartzTaskDao;
 import com.example.urgs_api.quartz.dao.QuartzTaskLogDao;
@@ -36,6 +37,9 @@ public class QuartzTaskService {
 
     @Autowired
     private QuartzTaskLogDao quartzTaskLogDao;
+
+    @Autowired
+    private ExecutorClientService executorClientService;
 
     public ResponseDTO<PageResultDTO<QuartzTaskVO>> query(QuartzQueryDTO queryDTO) {
         Page<QuartzTaskVO> pageParam = SmartPageUtil.convert2QueryPage(queryDTO);
@@ -164,6 +168,66 @@ public class QuartzTaskService {
         }
 
         quartzTaskStatusDao.batchResetToWaiting(statusIds, "实例已批量重置为等待执行。");
+        return ResponseDTO.succ();
+    }
+
+    @Transactional(rollbackFor = Throwable.class)
+    public ResponseDTO<String> batchForceStopTaskStatus(QuartzBatchForceStopDTO batchForceStopDTO) {
+        List<Long> statusIds = batchForceStopDTO.getStatusIds() == null
+                ? Collections.emptyList()
+                : batchForceStopDTO.getStatusIds().stream().filter(Objects::nonNull).distinct().collect(Collectors.toList());
+        if (statusIds.isEmpty()) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "请选择需要强制停止的实例");
+        }
+
+        List<QuartzTaskStatusEntity> statusList = quartzTaskStatusDao.selectByIds(statusIds);
+        if (statusList.size() != statusIds.size()) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "部分任务实例不存在或已被删除，请刷新后重试");
+        }
+
+        List<Long> invalidIds = statusList.stream()
+                .filter(item -> item.getStatus() != TaskExeStatusEnum.WAITING.getCode()
+                        && item.getStatus() != TaskExeStatusEnum.RUNNING.getCode())
+                .map(QuartzTaskStatusEntity::getId)
+                .collect(Collectors.toList());
+        if (!invalidIds.isEmpty()) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "强制停止仅支持等待中或执行中实例，存在非法状态实例: " + invalidIds);
+        }
+
+        for (QuartzTaskStatusEntity statusEntity : statusList) {
+            ResponseDTO<String> stopResult = executorClientService.stopTask(statusEntity.getPlanId(), statusEntity.getDataDate());
+            if (!stopResult.isSuccess()) {
+                return stopResult;
+            }
+        }
+
+        quartzTaskStatusDao.batchForceStop(statusIds, "实例已被强制停止。");
+        return ResponseDTO.succ();
+    }
+
+    @Transactional(rollbackFor = Throwable.class)
+    public ResponseDTO<String> batchForcePassTaskStatus(QuartzBatchForcePassDTO batchForcePassDTO) {
+        List<Long> statusIds = batchForcePassDTO.getStatusIds() == null
+                ? Collections.emptyList()
+                : batchForcePassDTO.getStatusIds().stream().filter(Objects::nonNull).distinct().collect(Collectors.toList());
+        if (statusIds.isEmpty()) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "请选择需要强制通过的实例");
+        }
+
+        List<QuartzTaskStatusEntity> statusList = quartzTaskStatusDao.selectByIds(statusIds);
+        if (statusList.size() != statusIds.size()) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "部分任务实例不存在或已被删除，请刷新后重试");
+        }
+
+        List<Long> invalidIds = statusList.stream()
+                .filter(item -> item.getStatus() != TaskExeStatusEnum.FAILED.getCode())
+                .map(QuartzTaskStatusEntity::getId)
+                .collect(Collectors.toList());
+        if (!invalidIds.isEmpty()) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "强制通过仅支持失败实例，存在非法状态实例: " + invalidIds);
+        }
+
+        quartzTaskStatusDao.batchForcePass(statusIds, "实例已被强制通过。");
         return ResponseDTO.succ();
     }
 

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { message } from 'antd';
 import dayjs from 'dayjs';
-import { batchExecuteQuartzTaskStatus, queryQuartzTaskLog, queryQuartzTasks, queryQuartzTaskStatus } from '@/api/ops';
+import { batchExecuteQuartzTaskStatus, batchForcePassQuartzTaskStatus, batchForceStopQuartzTaskStatus, queryQuartzTaskLog, queryQuartzTasks, queryQuartzTaskStatus } from '@/api/ops';
 import { QuartzTask, QuartzTaskExecutionLog, QuartzTaskStatus } from './mockData';
 import { blockingStatusRank, incompleteInstanceStatuses } from './task-instance/constants';
 import TaskInstanceDetailDrawer from './task-instance/TaskInstanceDetailDrawer';
@@ -456,18 +456,66 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     };
 
     const handleExecuteInstance = (instance: QuartzTaskStatus) => {
-        updateInstance(instance.id, markInstanceWaiting);
-        message.success(`已执行实例 #${instance.id}`);
+        if (instance.status !== 3 && instance.status !== 4) {
+            message.error('执行任务仅支持失败或已完成实例，请检查当前实例状态');
+            return;
+        }
+
+        batchExecuteQuartzTaskStatus([instance.id])
+            .then(async (response) => {
+                if (!response?.success) {
+                    throw new Error(response?.msg || '执行任务失败');
+                }
+                updateInstance(instance.id, markInstanceWaiting);
+                setSelectedInstanceIds(prev => prev.filter(id => id !== instance.id));
+                await loadInstances();
+                message.success(`已执行实例 #${instance.id}`);
+            })
+            .catch((error: any) => {
+                message.error(error?.message || '执行任务失败');
+            });
     };
 
     const handleForceStopInstance = (instance: QuartzTaskStatus) => {
-        updateInstance(instance.id, markInstanceStopped);
-        message.success(`已强制停止实例 #${instance.id}`);
+        if (instance.status !== 1 && instance.status !== 2) {
+            message.error('强制停止仅支持等待中或执行中实例，请检查当前实例状态');
+            return;
+        }
+
+        batchForceStopQuartzTaskStatus([instance.id])
+            .then(async (response) => {
+                if (!response?.success) {
+                    throw new Error(response?.msg || '强制停止失败');
+                }
+                updateInstance(instance.id, markInstanceStopped);
+                setSelectedInstanceIds(prev => prev.filter(id => id !== instance.id));
+                await loadInstances();
+                message.success(`已强制停止实例 #${instance.id}`);
+            })
+            .catch((error: any) => {
+                message.error(error?.message || '强制停止失败');
+            });
     };
 
     const handleForcePassInstance = (instance: QuartzTaskStatus) => {
-        updateInstance(instance.id, markInstancePassed);
-        message.success(`已强制通过实例 #${instance.id}`);
+        if (instance.status !== 4) {
+            message.error('强制通过仅支持失败实例，请检查当前实例状态');
+            return;
+        }
+
+        batchForcePassQuartzTaskStatus([instance.id])
+            .then(async (response) => {
+                if (!response?.success) {
+                    throw new Error(response?.msg || '强制通过失败');
+                }
+                updateInstance(instance.id, markInstancePassed);
+                setSelectedInstanceIds(prev => prev.filter(id => id !== instance.id));
+                await loadInstances();
+                message.success(`已强制通过实例 #${instance.id}`);
+            })
+            .catch((error: any) => {
+                message.error(error?.message || '强制通过失败');
+            });
     };
 
     const closeRowContextMenu = () => {
@@ -556,14 +604,52 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
 
     const handleBatchForceStop = () => {
         if (selectedInstanceIds.length === 0) return;
-        updateInstances(selectedInstanceIds, markInstanceStopped);
-        message.success(`已批量强制停止 ${selectedInstanceIds.length} 条实例`);
+
+        const selectedInstances = instanceList.filter(instance => selectedInstanceIds.includes(instance.id));
+        const invalidInstances = selectedInstances.filter(instance => instance.status !== 1 && instance.status !== 2);
+        if (invalidInstances.length > 0) {
+            message.error('批量强制停止仅支持等待中或执行中实例，当前选择中包含非允许状态，请检查后重试');
+            return;
+        }
+
+        batchForceStopQuartzTaskStatus(selectedInstanceIds)
+            .then(async (response) => {
+                if (!response?.success) {
+                    throw new Error(response?.msg || '批量强制停止失败');
+                }
+                updateInstances(selectedInstanceIds, markInstanceStopped);
+                setSelectedInstanceIds([]);
+                await loadInstances();
+                message.success(`已批量强制停止 ${selectedInstances.length} 条实例`);
+            })
+            .catch((error: any) => {
+                message.error(error?.message || '批量强制停止失败');
+            });
     };
 
     const handleBatchForcePass = () => {
         if (selectedInstanceIds.length === 0) return;
-        updateInstances(selectedInstanceIds, markInstancePassed);
-        message.success(`已批量强制通过 ${selectedInstanceIds.length} 条实例`);
+
+        const selectedInstances = instanceList.filter(instance => selectedInstanceIds.includes(instance.id));
+        const invalidInstances = selectedInstances.filter(instance => instance.status !== 4);
+        if (invalidInstances.length > 0) {
+            message.error('批量强制通过仅支持失败实例，当前选择中包含非允许状态，请检查后重试');
+            return;
+        }
+
+        batchForcePassQuartzTaskStatus(selectedInstanceIds)
+            .then(async (response) => {
+                if (!response?.success) {
+                    throw new Error(response?.msg || '批量强制通过失败');
+                }
+                updateInstances(selectedInstanceIds, markInstancePassed);
+                setSelectedInstanceIds([]);
+                await loadInstances();
+                message.success(`已批量强制通过 ${selectedInstances.length} 条实例`);
+            })
+            .catch((error: any) => {
+                message.error(error?.message || '批量强制通过失败');
+            });
     };
 
     const toggleImpactTaskExpanded = (taskId: number) => {

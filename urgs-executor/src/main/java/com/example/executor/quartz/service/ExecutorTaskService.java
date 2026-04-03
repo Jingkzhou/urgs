@@ -51,8 +51,16 @@ public class ExecutorTaskService {
         return quartzTaskDao.selectById(taskId);
     }
 
+    public boolean isTaskRunning(Long planId, String dataDate) {
+        return taskExecutorPool.hasTask(buildTaskKey(planId, dataDate));
+    }
+
+    public boolean stopTask(Long planId, String dataDate) {
+        return taskExecutorPool.cancelTask(buildTaskKey(planId, dataDate));
+    }
+
     public void submitTaskToPool(QuartzTaskEntity task, String dataDate) {
-        String taskKey = task.getId() + "_" + dataDate;
+        String taskKey = buildTaskKey(task.getId(), dataDate);
         taskExecutorPool.submitTask(taskKey, () -> {
             try {
                 DruidDataSource ds = task.getTaskType() == 2 ? dataSourceCacheManager.getOrCreate(task) : null;
@@ -168,7 +176,7 @@ public class ExecutorTaskService {
         Map<String, String> procReturn = new HashMap<>();
         JdbcTemplate jdbcTemplate = new JdbcTemplate();
         jdbcTemplate.setDataSource(druidDataSource);
-        String taskKey = task.getId() + "_" + dataDate;
+        String taskKey = buildTaskKey(task.getId(), dataDate);
         try {
             procReturn = jdbcTemplate.execute(
                     new CallableStatementCreator() {
@@ -213,7 +221,7 @@ public class ExecutorTaskService {
         ChannelExec execChannel = null;
         InputStream in = null;
         String lastLine = null;
-        String taskKey = task.getId() + "_" + dataDate;
+        String taskKey = buildTaskKey(task.getId(), dataDate);
 
         try {
             JSch jsch = new JSch();
@@ -281,6 +289,10 @@ public class ExecutorTaskService {
             }
         }
         return returnMap;
+    }
+
+    private String buildTaskKey(Long planId, String dataDate) {
+        return planId + "_" + dataDate;
     }
 
     private String taskTag(QuartzTaskEntity task, String dataDate) {

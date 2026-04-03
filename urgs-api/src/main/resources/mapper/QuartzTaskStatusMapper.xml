@@ -201,4 +201,28 @@
         </foreach>
     </update>
 
+    <update id="batchForceStop">
+        UPDATE t_quartz_task_status
+        SET status = 4,
+            end_time = NOW(),
+            msg = #{msg},
+            update_time = NOW()
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+
+    <update id="batchForcePass">
+        UPDATE t_quartz_task_status
+        SET status = 3,
+            end_time = NOW(),
+            msg = #{msg},
+            update_time = NOW()
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+
 </mapper>

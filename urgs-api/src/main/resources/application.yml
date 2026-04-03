@@ -35,3 +35,6 @@ lineage:
 deploy:
   tool:
     workdir: "${DEPLOY_TOOL_WORKDIR:classpath:db_deploy}"
+
+executor:
+  base-url: "${EXECUTOR_BASE_URL:http://127.0.0.1:8081}"

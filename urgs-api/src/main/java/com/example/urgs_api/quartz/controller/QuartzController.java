@@ -76,6 +76,18 @@ public class QuartzController {
         return quartzTaskService.batchExecuteTaskStatus(batchExecuteDTO);
     }
 
+    @PostMapping("/quartz/task/status/batchForceStop")
+    @ApiOperation(value = "批量强制停止任务实例")
+    public ResponseDTO<String> batchForceStopStatus(@RequestBody @Valid QuartzBatchForceStopDTO batchForceStopDTO){
+        return quartzTaskService.batchForceStopTaskStatus(batchForceStopDTO);
+    }
+
+    @PostMapping("/quartz/task/status/batchForcePass")
+    @ApiOperation(value = "批量强制通过任务实例")
+    public ResponseDTO<String> batchForcePassStatus(@RequestBody @Valid QuartzBatchForcePassDTO batchForcePassDTO){
+        return quartzTaskService.batchForcePassTaskStatus(batchForcePassDTO);
+    }
+
 
     @PostMapping("/quartz/task/queryLog")
     @ApiOperation(value = "查询任务运行日志")

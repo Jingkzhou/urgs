@@ -72,4 +72,14 @@ public interface QuartzTaskStatusDao extends BaseMapper<QuartzTaskStatusEntity> 
      */
     int batchResetToWaiting(@Param("ids") List<Long> ids, @Param("msg") String msg);
 
+    /**
+     * 按实例ID批量更新为失败状态（强制停止）
+     */
+    int batchForceStop(@Param("ids") List<Long> ids, @Param("msg") String msg);
+
+    /**
+     * 按实例ID批量更新为成功状态（强制通过）
+     */
+    int batchForcePass(@Param("ids") List<Long> ids, @Param("msg") String msg);
+
 }

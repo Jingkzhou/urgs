@@ -86,6 +86,10 @@ public class TaskExecutorPool {
         return runningTasks.containsKey(taskKey);
     }
 
+    public boolean hasTask(String taskKey) {
+        return runningTasks.containsKey(taskKey);
+    }
+
     public Map<String, Object> getPoolStats() {
         Map<String, Object> stats = new HashMap<>();
         stats.put("activeCount", executor.getActiveCount());

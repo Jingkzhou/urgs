@@ -435,6 +435,12 @@ export const queryQuartzTaskStatus = (params: QuartzTaskStatusQueryParams) =>
 export const batchExecuteQuartzTaskStatus = (statusIds: number[]) =>
     post<ApiResponse<string>>('/api/quartz/task/status/batchExecute', { statusIds });
 
+export const batchForceStopQuartzTaskStatus = (statusIds: number[]) =>
+    post<ApiResponse<string>>('/api/quartz/task/status/batchForceStop', { statusIds });
+
+export const batchForcePassQuartzTaskStatus = (statusIds: number[]) =>
+    post<ApiResponse<string>>('/api/quartz/task/status/batchForcePass', { statusIds });
+
 export const queryQuartzTaskLog = (taskId: number, pageNum: number = 1, pageSize: number = 200) =>
     post<ApiResponse<PageResult<QuartzTaskLogApiModel>>>('/api/quartz/task/queryLog', { taskId, pageNum, pageSize });
 
