@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AutoComplete, Checkbox, DatePicker, Drawer, Dropdown, Form, Input, InputNumber, Modal, Popover, Select, Tag, message } from 'antd';
+import { DatePicker, Drawer, Dropdown, Form, Modal, Tag, message } from 'antd';
 import type { MenuProps } from 'antd';
-import { Calendar, ChevronDown, Clock3, FileCog, FileText, MoreHorizontal, PauseCircle, Play, PlayCircle, Plus, Search, Settings2, Trash2 } from 'lucide-react';
+import { Calendar, Clock3, FileCog, FileText, MoreHorizontal, PauseCircle, Play, PlayCircle, Plus, Search, Settings2, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import zhCN from 'antd/es/date-picker/locale/zh_CN';
 import Editor from '@monaco-editor/react';
 import { QuartzTask } from './mockData';
-import CronPicker from '../schedule/forms/components/CronPicker';
+import TaskEditorModal from './TaskEditorModal';
 import Pagination from '@/components/common/Pagination';
 import {
     deleteQuartzTask,
@@ -17,8 +17,6 @@ import {
     resumeQuartzTask,
     saveOrUpdateQuartzTask
 } from '@/api/ops';
-
-const { TextArea } = Input;
 
 interface TaskManagementProps {
     onViewExecutionLog?: (task: QuartzTask) => void;
@@ -66,8 +64,6 @@ const detailItemClass = 'rounded-xl border border-slate-200 bg-slate-50/70 px-4 
 const actionButtonClass = 'inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition';
 const enabledActionClass = 'border-slate-200 text-slate-600 hover:bg-slate-50';
 const primaryActionClass = 'border-slate-200 bg-white text-slate-700 shadow-sm hover:-translate-y-0.5 hover:shadow-md';
-const modalCardClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm';
-
 const emptyToNull = (value?: string) => {
     if (typeof value !== 'string') return null;
     const trimmed = value.trim();
@@ -78,12 +74,6 @@ const normalizeScript = (value?: string) => {
     if (typeof value !== 'string') return null;
     if (value.trim() === '') return null;
     return value.replace(/\r\n/g, '\n');
-};
-
-const compactValue = (value?: string | number | null, fallback: string = '待补充') => {
-    if (value === undefined || value === null) return fallback;
-    const normalized = String(value).trim();
-    return normalized === '' ? fallback : normalized;
 };
 
 const weekLabelMap: Record<string, string> = {
@@ -184,23 +174,6 @@ const describeDataSourceConnection = (params?: Record<string, any>, typeCode?: s
     return typeCode ? `${typeCode} 数据源` : '连接信息待补充';
 };
 
-const summarizeScript = (script?: string | null, taskType?: string | null) => {
-    if (!script || script.trim() === '') {
-        return taskType === 'SQL' ? '待编写 SQL 脚本' : '待编写 Shell 脚本';
-    }
-
-    const firstMeaningfulLine = script
-        .split('\n')
-        .map(line => line.trim())
-        .find(line => line.length > 0);
-
-    if (!firstMeaningfulLine) {
-        return taskType === 'SQL' ? '待编写 SQL 脚本' : '待编写 Shell 脚本';
-    }
-
-    return firstMeaningfulLine.length > 56 ? `${firstMeaningfulLine.slice(0, 56)}...` : firstMeaningfulLine;
-};
-
 const getInitialFormValues = (task?: QuartzTask | null): TaskFormValues => ({
     task_name: task?.task_name || '',
     task_type: task?.task_type || 'SHELL',
@@ -261,7 +234,6 @@ const normalizeQuartzTask = (item: QuartzTaskApiModel): QuartzTask => {
 const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) => {
     const [taskList, setTaskList] = useState<QuartzTask[]>([]);
     const [form] = Form.useForm<TaskFormValues>();
-    const watchedFormValues = Form.useWatch([], form) as Partial<TaskFormValues> | undefined;
     const [keyword, setKeyword] = useState('');
     const [statusFilter, setStatusFilter] = useState<string>('');
     const [typeFilter, setTypeFilter] = useState<string>('');
@@ -275,10 +247,6 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
     const [startDataDate, setStartDataDate] = useState(dayjs().format('YYYY-MM-DD'));
     const [dataSources, setDataSources] = useState<DataSourceOption[]>([]);
     const [dataSourceLoading, setDataSourceLoading] = useState(false);
-    const [dependencySelectorOpen, setDependencySelectorOpen] = useState(false);
-    const [dependencyKeyword, setDependencyKeyword] = useState('');
-    const [dependencySystemFilter, setDependencySystemFilter] = useState<string>('');
-    const [dependencyTypeFilter, setDependencyTypeFilter] = useState<string>('');
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
 
@@ -396,39 +364,8 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
         return dataSources.length > 0 ? dataSources : fallbackDataSources;
     }, [dataSources, fallbackDataSources]);
 
-    const selectedDependencyIds = useMemo(() => {
-        const raw = watchedFormValues?.depend_id;
-        if (!raw) return [] as string[];
-        return raw
-            .split(',')
-            .map(item => item.trim())
-            .filter(Boolean);
-    }, [watchedFormValues?.depend_id]);
-
-    const availableDependencyTasks = useMemo(() => {
-        return taskList.filter(task => task.id !== editingTask?.id);
-    }, [taskList, editingTask?.id]);
-
-    const filteredDependencyTasks = useMemo(() => {
-        return availableDependencyTasks.filter(task => {
-            const matchesKeyword = !dependencyKeyword || [
-                task.task_name,
-                task.task_system,
-                task.theme,
-                task.remark,
-            ].some(value => value?.toLowerCase().includes(dependencyKeyword.toLowerCase()));
-            const matchesSystem = dependencySystemFilter === '' || task.task_system === dependencySystemFilter;
-            const matchesType = dependencyTypeFilter === '' || task.task_type === dependencyTypeFilter;
-            return matchesKeyword && matchesSystem && matchesType;
-        });
-    }, [availableDependencyTasks, dependencyKeyword, dependencySystemFilter, dependencyTypeFilter]);
-
     const openTaskModal = (task?: QuartzTask | null) => {
         setEditingTask(task || null);
-        setDependencySelectorOpen(false);
-        setDependencyKeyword('');
-        setDependencySystemFilter('');
-        setDependencyTypeFilter('');
         form.resetFields();
         form.setFieldsValue(getInitialFormValues(task));
         setModalVisible(true);
@@ -437,22 +374,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
     const closeTaskModal = () => {
         setModalVisible(false);
         setEditingTask(null);
-        setDependencySelectorOpen(false);
-        setDependencyKeyword('');
-        setDependencySystemFilter('');
-        setDependencyTypeFilter('');
         form.resetFields();
-    };
-
-    const updateDependencySelection = (ids: string[]) => {
-        form.setFieldValue('depend_id', ids.length > 0 ? ids.join(',') : undefined);
-    };
-
-    const toggleDependencyTask = (taskId: string, checked: boolean) => {
-        const nextIds = checked
-            ? Array.from(new Set([...selectedDependencyIds, taskId]))
-            : selectedDependencyIds.filter(id => id !== taskId);
-        updateDependencySelection(nextIds);
     };
 
     const handleSaveTask = async () => {
@@ -598,149 +520,6 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             onClick: () => handleDeleteTask(task),
         },
     ];
-
-    const portrait = useMemo(() => {
-        const current = watchedFormValues || {};
-        const currentDataSource = datasourceOptions.find(item => item.id === current.datasource_id);
-        const resolvedTaskType = current.task_type || editingTask?.task_type || 'SHELL';
-        const executionSegments = [
-            `脚本 ${summarizeScript(current.script ?? editingTask?.script, resolvedTaskType)}`,
-            currentDataSource?.name || editingTask?.datasource_name ? `数据源 ${currentDataSource?.name || editingTask?.datasource_name}` : null,
-        ].filter(Boolean);
-
-        return {
-            taskName: compactValue(current.task_name, editingTask ? editingTask.task_name : '未命名任务'),
-            system: compactValue(current.task_system, '未绑定系统'),
-            theme: compactValue(current.theme, '未设置主题'),
-            taskType: compactValue(current.task_type, '未定义类型'),
-            schedule: describeCron(current.task_cron || editingTask?.task_cron, current.offset ?? editingTask?.offset ?? 0),
-            dependency: current.depend_id ? `依赖 ${current.depend_id}` : '独立执行',
-            execution: executionSegments.length > 0 ? executionSegments.join(' · ') : '待配置脚本或数据源',
-            notify: current.notification_failed || current.notification_completed ? '已配置通知策略' : '暂未配置通知',
-        };
-    }, [watchedFormValues, editingTask, datasourceOptions]);
-
-    const dependencySummary = useMemo(() => {
-        if (selectedDependencyIds.length === 0) {
-            return '请选择依赖任务';
-        }
-
-        const labels = selectedDependencyIds
-            .map(id => availableDependencyTasks.find(item => String(item.id) === id)?.task_name || `任务 ${id}`)
-            .slice(0, 2);
-
-        if (selectedDependencyIds.length <= 2) {
-            return labels.join('，');
-        }
-
-        return `${labels.join('，')} 等 ${selectedDependencyIds.length} 项`;
-    }, [availableDependencyTasks, selectedDependencyIds]);
-
-    const dependencySelectorContent = (
-        <div className="w-[760px] max-w-[calc(100vw-120px)] space-y-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <div className="text-sm font-semibold text-slate-800">依赖任务列表</div>
-                    <div className="mt-1 text-xs text-slate-500">按名称、系统、类型筛选后勾选前置任务。</div>
-                </div>
-                <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                        已选 {selectedDependencyIds.length} 项
-                    </span>
-                    {selectedDependencyIds.length > 0 && (
-                        <button
-                            type="button"
-                            onClick={() => updateDependencySelection([])}
-                            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500 transition hover:bg-slate-50"
-                        >
-                            清空
-                        </button>
-                    )}
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_0.8fr_0.8fr]">
-                <label className="relative">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                        value={dependencyKeyword}
-                        onChange={(event) => setDependencyKeyword(event.target.value)}
-                        placeholder="搜索任务名称 / 系统 / 主题"
-                        className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-700 outline-none transition focus:border-red-300"
-                    />
-                </label>
-                <select
-                    value={dependencySystemFilter}
-                    onChange={(event) => setDependencySystemFilter(event.target.value)}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300"
-                >
-                    <option value="">全部系统</option>
-                    {systems.map(system => (
-                        <option key={system} value={system}>{system}</option>
-                    ))}
-                </select>
-                <select
-                    value={dependencyTypeFilter}
-                    onChange={(event) => setDependencyTypeFilter(event.target.value)}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300"
-                >
-                    <option value="">全部类型</option>
-                    {taskTypes.map(type => (
-                        <option key={type} value={type}>{type}</option>
-                    ))}
-                </select>
-            </div>
-
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                <div className="grid grid-cols-[52px_minmax(0,1.3fr)_minmax(0,0.9fr)_110px_180px] items-center gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                    <span>勾选</span>
-                    <span>任务名称</span>
-                    <span>系统 / 主题</span>
-                    <span>状态</span>
-                    <span>Cron</span>
-                </div>
-                <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
-                    {filteredDependencyTasks.length === 0 ? (
-                        <div className="px-4 py-10 text-center text-sm text-slate-500">
-                            当前筛选条件下没有可选任务
-                        </div>
-                    ) : filteredDependencyTasks.map(task => {
-                        const taskId = String(task.id);
-                        const checked = selectedDependencyIds.includes(taskId);
-                        const mappedStatus = statusMap[task.task_status] || statusMap[0];
-
-                        return (
-                            <label
-                                key={task.id}
-                                className={`grid cursor-pointer grid-cols-[52px_minmax(0,1.3fr)_minmax(0,0.9fr)_110px_180px] items-center gap-3 px-4 py-3 transition ${checked ? 'bg-red-50/50' : 'hover:bg-slate-50'}`}
-                            >
-                                <Checkbox
-                                    checked={checked}
-                                    onChange={(event) => toggleDependencyTask(taskId, event.target.checked)}
-                                />
-                                <div className="min-w-0">
-                                    <div className="truncate text-sm font-semibold text-slate-800">{task.task_name}</div>
-                                    <div className="mt-1 text-xs text-slate-400">#{task.id}</div>
-                                </div>
-                                <div className="min-w-0">
-                                    <div className="truncate text-sm text-slate-700">{task.task_system || '-'}</div>
-                                    <div className="mt-1 truncate text-xs text-slate-400">{task.theme || '未设置主题'}</div>
-                                </div>
-                                <div>
-                                    <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${mappedStatus.className}`}>
-                                        {mappedStatus.label}
-                                    </span>
-                                </div>
-                                <div className="truncate font-mono text-xs text-slate-500">
-                                    {task.task_cron}
-                                </div>
-                            </label>
-                        );
-                    })}
-                </div>
-            </div>
-        </div>
-    );
 
     return (
         <>
@@ -971,339 +750,22 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 </div>
             </Modal>
 
-            <Modal
-                title={null}
+            <TaskEditorModal
                 open={modalVisible}
-                width={1120}
-                onOk={handleSaveTask}
+                editingTask={editingTask}
+                form={form}
+                taskList={taskList}
+                taskTypes={taskTypes}
+                systems={systems}
+                themes={themes}
+                datasourceOptions={datasourceOptions}
+                dataSourceLoading={dataSourceLoading}
+                editorLanguageMap={editorLanguageMap}
+                getInitialFormValues={getInitialFormValues}
+                describeCron={describeCron}
                 onCancel={closeTaskModal}
-                destroyOnHidden
-                styles={{ body: { padding: 0 }, footer: { padding: '18px 24px' } }}
-                footer={
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left">
-                            <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
-                                当前状态
-                            </div>
-                            <div className="mt-1 text-sm font-semibold text-slate-700">
-                                {editingTask ? '编辑已有监管任务' : '待创建新的监管任务'}
-                            </div>
-                            <div className="mt-1 text-xs text-slate-500">
-                                {portrait.schedule}
-                            </div>
-                        </div>
-                        <div className="flex items-center justify-end gap-3">
-                            <button
-                                onClick={closeTaskModal}
-                                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
-                            >
-                                取消
-                            </button>
-                            <button
-                                onClick={handleSaveTask}
-                                className="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-red-700 hover:shadow-md"
-                            >
-                                {editingTask ? '保存修改' : '创建任务'}
-                            </button>
-                        </div>
-                    </div>
-                }
-            >
-                <Form
-                    form={form}
-                    layout="vertical"
-                    initialValues={getInitialFormValues(editingTask)}
-                    className="p-6"
-                >
-                    <div className="space-y-6">
-                        <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(239,68,68,0.18),_transparent_30%),linear-gradient(135deg,#fff7f7_0%,#ffffff_48%,#f8fafc_100%)] shadow-sm">
-                            <div className="grid gap-6 px-6 py-6 lg:grid-cols-[1.3fr_0.9fr]">
-                                <div>
-                                    <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-red-500 shadow-sm">
-                                        <FileCog size={14} />
-                                        Task Portrait
-                                    </div>
-                                    <div className="mt-4 text-2xl font-bold text-slate-900">
-                                        {editingTask ? '编辑监管任务' : '新建监管任务'}
-                                    </div>
-                                    <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                                        不是把字段填满，而是先把任务画像搭出来。先明确任务属于哪个系统、承担什么主题、按什么节奏触发，再补齐执行和通知细节。
-                                    </p>
-                                    <div className="mt-5 flex flex-wrap gap-2">
-                                        <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-                                            {portrait.system}
-                                        </span>
-                                        <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-                                            {portrait.theme}
-                                        </span>
-                                        <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-                                            {portrait.taskType}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-                                    <div className="rounded-2xl border border-white/70 bg-white/90 p-4 shadow-sm backdrop-blur">
-                                        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">任务画像</div>
-                                        <div className="mt-2 text-lg font-semibold text-slate-800">{portrait.taskName}</div>
-                                        <div className="mt-2 text-sm text-slate-600">{portrait.schedule}</div>
-                                    </div>
-                                    <div className="rounded-2xl border border-white/70 bg-white/90 p-4 shadow-sm backdrop-blur">
-                                        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">运行保障</div>
-                                        <div className="mt-2 text-sm text-slate-700">{portrait.execution}</div>
-                                        <div className="mt-1 text-sm text-slate-500">{portrait.dependency}</div>
-                                        <div className="mt-1 text-sm text-slate-500">{portrait.notify}</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.08fr_0.92fr]">
-                            <div className="space-y-6">
-                                <section className={modalCardClass}>
-                                    <div className="border-b border-slate-100 px-5 py-4">
-                                        <div className="text-base font-semibold text-slate-900">任务核心</div>
-                                        <div className="mt-1 text-sm text-slate-500">
-                                            先定义任务是什么，为谁服务，属于哪个系统和主题。
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
-                                        <Form.Item
-                                            name="task_name"
-                                            label="任务名称"
-                                            rules={[{ required: true, message: '请填写任务名称' }]}
-                                            className="md:col-span-2"
-                                        >
-                                            <Input
-                                                placeholder="例如：监管报送日切任务"
-                                                className="h-11 rounded-xl text-base"
-                                            />
-                                        </Form.Item>
-                                        <Form.Item
-                                            name="task_type"
-                                            label="任务类型"
-                                            rules={[{ required: true, message: '请选择任务类型' }]}
-                                        >
-                                            <Select
-                                                placeholder="请选择任务类型"
-                                                options={taskTypes.map(type => ({ label: type, value: type }))}
-                                            />
-                                        </Form.Item>
-                                        <Form.Item
-                                            name="task_status"
-                                            label="初始状态"
-                                            rules={[{ required: true, message: '请选择任务状态' }]}
-                                        >
-                                            <Select
-                                                options={[
-                                                    { label: '正常', value: 0 },
-                                                    { label: '暂停', value: 1 },
-                                                ]}
-                                            />
-                                        </Form.Item>
-                                        <Form.Item name="task_system" label="所属系统">
-                                            <AutoComplete
-                                                options={systems.map(system => ({ value: system }))}
-                                                placeholder="例如：监管报送平台"
-                                                filterOption={(inputValue, option) =>
-                                                    (option?.value ?? '').toUpperCase().includes(inputValue.toUpperCase())
-                                                }
-                                            />
-                                        </Form.Item>
-                                        <Form.Item name="theme" label="任务主题">
-                                            <AutoComplete
-                                                options={themes.map(theme => ({ value: theme }))}
-                                                placeholder="例如：日报 / 月报 / 回执"
-                                                filterOption={(inputValue, option) =>
-                                                    (option?.value ?? '').toUpperCase().includes(inputValue.toUpperCase())
-                                                }
-                                            />
-                                        </Form.Item>
-                                        <Form.Item name="remark" label="任务备注" className="md:col-span-2">
-                                            <TextArea
-                                                rows={4}
-                                                placeholder="用自然语言说明这个任务解决什么问题，什么时候需要关注它。"
-                                            />
-                                        </Form.Item>
-                                    </div>
-                                </section>
-
-                                <section className={modalCardClass}>
-                                    <div className="border-b border-slate-100 px-5 py-4">
-                                        <div className="flex items-center gap-2 text-base font-semibold text-slate-900">
-                                            <Clock3 size={17} className="text-red-500" />
-                                            运行节奏
-                                        </div>
-                                        <div className="mt-1 text-sm text-slate-500">
-                                            这里决定任务何时触发、是否依赖前置任务，以及失败后多久轮询。
-                                        </div>
-                                    </div>
-                                    <div className="space-y-4 p-5">
-                                        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                                            <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
-                                                调度面板
-                                            </div>
-                                            <Form.Item label="Cron 表达式" required className="mb-0">
-                                                <Form.Item
-                                                    noStyle
-                                                    shouldUpdate={(prevValues, currentValues) =>
-                                                        prevValues.task_cron !== currentValues.task_cron || prevValues.offset !== currentValues.offset
-                                                    }
-                                                >
-                                                    {() => (
-                                                        <CronPicker
-                                                            value={form.getFieldValue('task_cron') || '0 0 * * * ?'}
-                                                            onChange={(value) => form.setFieldValue('task_cron', value)}
-                                                            offset={form.getFieldValue('offset') ?? 0}
-                                                            onOffsetChange={(value) => form.setFieldValue('offset', value)}
-                                                        />
-                                                    )}
-                                                </Form.Item>
-                                                <Form.Item
-                                                    name="task_cron"
-                                                    hidden
-                                                    rules={[{ required: true, message: '请选择 Cron 表达式' }]}
-                                                >
-                                                    <Input />
-                                                </Form.Item>
-                                                <Form.Item name="offset" hidden>
-                                                    <InputNumber />
-                                                </Form.Item>
-                                            </Form.Item>
-                                        </div>
-                                        <div className="grid grid-cols-1 gap-4 md:grid-cols-[1.3fr_0.7fr]">
-                                            <Form.Item label="依赖任务" className="mb-0">
-                                                <Popover
-                                                    content={dependencySelectorContent}
-                                                    trigger="click"
-                                                    placement="bottomLeft"
-                                                    open={dependencySelectorOpen}
-                                                    onOpenChange={setDependencySelectorOpen}
-                                                >
-                                                    <button
-                                                        type="button"
-                                                        className="flex min-h-[46px] w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-left transition hover:border-red-200 hover:bg-red-50/30"
-                                                    >
-                                                        <div className="min-w-0">
-                                                            <div className={`truncate text-sm font-medium ${selectedDependencyIds.length > 0 ? 'text-slate-800' : 'text-slate-400'}`}>
-                                                                {dependencySummary}
-                                                            </div>
-                                                            <div className="mt-1 text-xs text-slate-400">
-                                                                {selectedDependencyIds.length > 0 ? `已关联 ${selectedDependencyIds.length} 个前置任务` : '点击选择前置任务'}
-                                                            </div>
-                                                        </div>
-                                                        <ChevronDown
-                                                            size={16}
-                                                            className={`shrink-0 text-slate-400 transition-transform ${dependencySelectorOpen ? 'rotate-180' : ''}`}
-                                                        />
-                                                    </button>
-                                                </Popover>
-                                                <Form.Item name="depend_id" hidden>
-                                                    <Input />
-                                                </Form.Item>
-                                            </Form.Item>
-                                            <Form.Item name="period" label="失败轮询间隔">
-                                                <InputNumber className="w-full" min={0} placeholder="例如：300000" />
-                                            </Form.Item>
-                                        </div>
-                                    </div>
-                                </section>
-                            </div>
-
-                            <div className="space-y-6">
-                                <section className={modalCardClass}>
-                                    <div className="border-b border-slate-100 px-5 py-4">
-                                        <div className="flex items-center gap-2 text-base font-semibold text-slate-900">
-                                            <Settings2 size={17} className="text-blue-500" />
-                                            执行资源
-                                        </div>
-                                        <div className="mt-1 text-sm text-slate-500">
-                                            任务真正运行依赖的脚本内容和系统管理中的数据源，在这里统一绑定。
-                                        </div>
-                                    </div>
-                                    <div className="space-y-4 p-5">
-                                        <Form.Item
-                                            name="script"
-                                            label="脚本"
-                                            rules={[{ required: true, message: '请填写脚本内容' }]}
-                                            getValueFromEvent={(value) => value ?? ''}
-                                        >
-                                            <Editor
-                                                height="260px"
-                                                language={editorLanguageMap[watchedFormValues?.task_type || editingTask?.task_type || 'SHELL'] || 'shell'}
-                                                theme="vs"
-                                                options={{
-                                                    minimap: { enabled: false },
-                                                    scrollBeyondLastLine: false,
-                                                    automaticLayout: true,
-                                                    fontSize: 13,
-                                                    wordWrap: 'on',
-                                                    tabSize: 2,
-                                                    padding: { top: 12, bottom: 12 },
-                                                }}
-                                            />
-                                        </Form.Item>
-                                        <Form.Item name="datasource_id" label="数据源">
-                                            <Select
-                                                showSearch
-                                                allowClear
-                                                loading={dataSourceLoading}
-                                                placeholder="请选择系统管理中的数据源"
-                                                optionFilterProp="label"
-                                                options={datasourceOptions.map(item => ({
-                                                    value: item.id,
-                                                    label: item.name,
-                                                    typeName: item.typeName,
-                                                    typeCode: item.typeCode,
-                                                    category: item.category,
-                                                    connectionInfo: item.connectionInfo,
-                                                    searchLabel: [item.name, item.typeName, item.category, item.typeCode, item.connectionInfo].filter(Boolean).join(' '),
-                                                }))}
-                                                filterOption={(input, option) =>
-                                                    (option?.searchLabel ?? option?.label ?? '')
-                                                        .toString()
-                                                        .toLowerCase()
-                                                        .includes(input.toLowerCase())
-                                                }
-                                                optionRender={(option) => (
-                                                    <div className="flex items-center justify-between gap-3">
-                                                        <div className="min-w-0">
-                                                            <div className="truncate text-sm font-medium text-slate-800">{option.data.label}</div>
-                                                            <div className="mt-1 truncate text-xs text-slate-400">
-                                                                {option.data.connectionInfo || [option.data.typeName, option.data.category, option.data.typeCode].filter(Boolean).join(' · ') || '连接信息待补充'}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                notFoundContent={dataSourceLoading ? '数据源加载中...' : '系统管理中暂无可用数据源'}
-                                            />
-                                        </Form.Item>
-                                    </div>
-                                </section>
-
-                                <section className={modalCardClass}>
-                                    <div className="border-b border-slate-100 px-5 py-4">
-                                        <div className="flex items-center gap-2 text-base font-semibold text-slate-900">
-                                            <Calendar size={17} className="text-emerald-500" />
-                                            通知与托底
-                                        </div>
-                                        <div className="mt-1 text-sm text-slate-500">
-                                            任务跑完之后要通知谁，失败的时候要先叫醒谁，这里一次配好。
-                                        </div>
-                                    </div>
-                                    <div className="space-y-4 p-5">
-                                        <Form.Item name="notification_completed" label="完成时通知">
-                                            <TextArea rows={3} placeholder="多个通知对象使用英文逗号分隔" />
-                                        </Form.Item>
-                                        <Form.Item name="notification_failed" label="失败时通知">
-                                            <TextArea rows={3} placeholder="多个通知对象使用英文逗号分隔" />
-                                        </Form.Item>
-                                    </div>
-                                </section>
-                            </div>
-                        </div>
-                    </div>
-                </Form>
-            </Modal>
+                onSubmit={handleSaveTask}
+            />
 
             <Drawer
                 title={selectedTask ? `任务详情 · ${selectedTask.task_name}` : '任务详情'}

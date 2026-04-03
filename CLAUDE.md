@@ -22,11 +22,15 @@
 
 ### 3. 编译验证（自检门禁）
 
-**每次代码变更后，必须执行编译验证，确认无语法错误后再 commit。**
+**代码变更后需要编译验证，但前端不要求每次改动都执行编译。**
 
-- 后端：`cd urgs-api && mvn clean compile -DskipTests`
-- 前端：`cd urgs-web && npx tsc --noEmit`（仅检查类型，不打包）
-- 若编译失败，必须修复后才能提交，严禁跳过
+- 后端改动：必须执行 `cd urgs-api && mvn clean compile -DskipTests`
+- 前端改动：默认不强制每次执行编译/类型检查
+- 以下前端场景必须执行一次验证（`npx tsc --noEmit` 或 `npm run build`）：
+  - 修改构建配置（如 `vite.config.ts`、`tsconfig*.json`）
+  - 修改全局依赖、路由装配、公共类型定义、API 基础封装
+  - 用户明确要求“编译通过/构建验证”
+- 若执行了编译且失败，必须修复后再提交
 
 ### 4. 禁止使用 Unicode 弯引号（全角引号）
 
