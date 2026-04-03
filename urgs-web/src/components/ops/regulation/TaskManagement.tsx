@@ -861,7 +861,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
                 onOk={handleConfirmStartTask}
                 okText="确认执行"
                 cancelText="取消"
-                destroyOnClose
+                destroyOnHidden
             >
                 <div className="space-y-4 py-2">
                     <div className="text-sm text-slate-500">
@@ -886,7 +886,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
                 width={1120}
                 onOk={handleSaveTask}
                 onCancel={closeTaskModal}
-                destroyOnClose
+                destroyOnHidden
                 styles={{ body: { padding: 0 }, footer: { padding: '18px 24px' } }}
                 footer={
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1217,7 +1217,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
             <Drawer
                 title={selectedTask ? `任务详情 · ${selectedTask.task_name}` : '任务详情'}
                 placement="right"
-                width={620}
+                size={620}
                 onClose={() => setSelectedTask(null)}
                 open={!!selectedTask}
             >

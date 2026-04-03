@@ -736,6 +736,8 @@ public class RegTableController {
                     dto.setIsMergeFormula(el.getIsMergeFormula());
                     dto.setIsFillBusiness(el.getIsFillBusiness());
                     dto.setCodeSnippet(safeTruncate(el.getCodeSnippet()));
+                    dto.setIsDesensitized(el.getIsDesensitized());
+                    dto.setDesensitizeType(el.getDesensitizeType());
                     return dto;
                 }).collect(Collectors.toList());
 
@@ -899,6 +901,12 @@ public class RegTableController {
                     el.setIsMergeFormula(getIntValue(row.getCell(23)));
                     el.setIsFillBusiness(getIntValue(row.getCell(24)));
                     el.setCodeSnippet(getCellValue(row.getCell(25)));
+                    Integer isDesensitized = getIntValue(row.getCell(26));
+                    el.setIsDesensitized(isDesensitized == null ? 0 : isDesensitized);
+                    el.setDesensitizeType(getCellValue(row.getCell(27)));
+                    if (el.getIsDesensitized() == 0) {
+                        el.setDesensitizeType(null);
+                    }
 
                     if (el.getSortOrder() == null)
                         el.setSortOrder(0);
@@ -955,9 +963,21 @@ public class RegTableController {
             if (cell.getCellType() == CellType.NUMERIC) {
                 return (int) cell.getNumericCellValue();
             }
+            if (cell.getCellType() == CellType.BOOLEAN) {
+                return cell.getBooleanCellValue() ? 1 : 0;
+            }
             String val = cell.getStringCellValue();
             if (val != null && !val.trim().isEmpty()) {
-                return Integer.parseInt(val.trim());
+                String normalized = val.trim().toLowerCase();
+                if ("是".equals(normalized) || "yes".equals(normalized) || "y".equals(normalized)
+                        || "true".equals(normalized)) {
+                    return 1;
+                }
+                if ("否".equals(normalized) || "no".equals(normalized) || "n".equals(normalized)
+                        || "false".equals(normalized)) {
+                    return 0;
+                }
+                return Integer.parseInt(normalized);
             }
         } catch (Exception ignored) {
         }

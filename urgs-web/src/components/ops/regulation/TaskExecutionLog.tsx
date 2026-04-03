@@ -242,7 +242,7 @@ const TaskExecutionLog: React.FC<TaskExecutionLogProps> = ({
             <Drawer
                 title={selectedLog ? `执行日志 · #${selectedLog.id}` : '执行日志'}
                 placement="right"
-                width={700}
+                size={700}
                 onClose={() => setSelectedLog(null)}
                 open={!!selectedLog}
             >
