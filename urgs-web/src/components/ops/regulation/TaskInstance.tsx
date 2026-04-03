@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Drawer, Tag, Tabs, message } from 'antd';
 import { Activity, AlertCircle, ArrowDownCircle, ArrowUpCircle, CalendarRange, CheckCircle2, Clock3, Eye, GitBranch, Play, Search, Square } from 'lucide-react';
 import dayjs from 'dayjs';
@@ -19,6 +19,12 @@ interface DependencyRelationItem {
     missingTask?: boolean;
 }
 
+interface RowContextMenuState {
+    x: number;
+    y: number;
+    instance: QuartzTaskStatus;
+}
+
 const statusMap: Record<number, { label: string; className: string; color: string }> = {
     0: { label: '等待中', className: 'bg-slate-100 text-slate-600 border-slate-200', color: 'default' },
     1: { label: '运行中', className: 'bg-blue-50 text-blue-600 border-blue-200', color: 'processing' },
@@ -34,8 +40,8 @@ const headerCellClass = 'px-4 py-3 font-semibold whitespace-nowrap';
 const tableCellClass = 'px-4 py-3 align-middle';
 const monoCellClass = `${tableCellClass} font-mono text-xs text-slate-600`;
 const batchActionClass = 'inline-flex h-9 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-semibold shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow';
-const rowActionIconClass = 'inline-flex h-7 w-7 items-center justify-center rounded-lg border transition-all duration-150 enabled:hover:-translate-y-0.5 enabled:hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-45';
 const relationCardClass = 'rounded-2xl border border-slate-200 bg-white p-4 shadow-sm';
+const contextMenuItemClass = 'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45';
 
 const parseDependIds = (dependId?: string | null): number[] => {
     if (!dependId) return [];
@@ -58,16 +64,14 @@ const formatDuration = (durationMs?: number | null) => {
 const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) => {
     const [instanceList, setInstanceList] = useState<QuartzTaskStatus[]>(instances);
     const [searchKeyword, setSearchKeyword] = useState('');
-    const [taskNameFilter, setTaskNameFilter] = useState('');
     const [taskSystemFilter, setTaskSystemFilter] = useState('');
     const [dataDateFilter, setDataDateFilter] = useState('');
     const [createDateFilter, setCreateDateFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState<string>('');
     const [selectedInstance, setSelectedInstance] = useState<QuartzTaskStatus | null>(null);
     const [selectedInstanceIds, setSelectedInstanceIds] = useState<number[]>([]);
-    const [dependencyInstance, setDependencyInstance] = useState<QuartzTaskStatus | null>(null);
-    const [dependencyTabKey, setDependencyTabKey] = useState<'upstream' | 'downstream'>('upstream');
-    const [instanceDetailTabKey, setInstanceDetailTabKey] = useState<'overview' | 'task' | 'schedule' | 'execution' | 'runtimeLog' | 'notify'>('overview');
+    const [instanceDetailTabKey, setInstanceDetailTabKey] = useState<'overview' | 'task' | 'schedule' | 'dependency' | 'execution' | 'runtimeLog' | 'notify'>('overview');
+    const [rowContextMenu, setRowContextMenu] = useState<RowContextMenuState | null>(null);
 
     const taskNameMap = useMemo(
         () => new Map(tasks.map(task => [task.id, task.task_name])),
@@ -75,10 +79,6 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
     );
     const taskMap = useMemo(
         () => new Map(tasks.map(task => [task.id, task])),
-        [tasks]
-    );
-    const taskNameOptions = useMemo(
-        () => Array.from(new Set(tasks.map(task => task.task_name).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
         [tasks]
     );
     const taskSystemOptions = useMemo(
@@ -99,15 +99,14 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
                 task?.remark || '',
                 instance.msg || '',
             ].some(item => item.toLowerCase().includes(keyword));
-            const matchesTaskName = !taskNameFilter || (task?.task_name || '') === taskNameFilter;
             const matchesTaskSystem = !taskSystemFilter || (task?.task_system || '') === taskSystemFilter;
             const matchesDataDate = !dataDateFilter || instance.data_date === dataDateFilter;
             const matchesCreateDate = !createDateFilter || instance.create_date === createDateFilter.replaceAll('-', '');
             const matchesStatus = statusFilter === '' || String(instance.status ?? '') === statusFilter;
 
-            return matchesKeyword && matchesTaskName && matchesTaskSystem && matchesDataDate && matchesCreateDate && matchesStatus;
+            return matchesKeyword && matchesTaskSystem && matchesDataDate && matchesCreateDate && matchesStatus;
         });
-    }, [createDateFilter, dataDateFilter, instanceList, searchKeyword, statusFilter, taskMap, taskNameFilter, taskSystemFilter]);
+    }, [createDateFilter, dataDateFilter, instanceList, searchKeyword, statusFilter, taskMap, taskSystemFilter]);
 
     const instanceByPlanDate = useMemo(() => {
         const map = new Map<string, QuartzTaskStatus>();
@@ -145,11 +144,11 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
     }, [instanceList]);
 
     const dependencyPanelData = useMemo(() => {
-        if (!dependencyInstance) return null;
+        if (!selectedInstance) return null;
 
-        const selectedTask = taskMap.get(dependencyInstance.plan_id);
+        const selectedTask = taskMap.get(selectedInstance.plan_id);
         const pickRelatedInstance = (taskId: number) => {
-            return instanceByPlanDate.get(`${taskId}_${dependencyInstance.data_date}`) || latestInstanceByPlan.get(taskId);
+            return instanceByPlanDate.get(`${taskId}_${selectedInstance.data_date}`) || latestInstanceByPlan.get(taskId);
         };
 
         const upstream: DependencyRelationItem[] = parseDependIds(selectedTask?.depend_id).map(taskId => {
@@ -165,7 +164,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
         });
 
         const downstream: DependencyRelationItem[] = tasks
-            .filter(task => parseDependIds(task.depend_id).includes(dependencyInstance.plan_id))
+            .filter(task => parseDependIds(task.depend_id).includes(selectedInstance.plan_id))
             .map(task => ({
                 taskId: task.id,
                 taskName: task.task_name,
@@ -179,7 +178,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
             upstream,
             downstream,
         };
-    }, [dependencyInstance, instanceByPlanDate, latestInstanceByPlan, taskMap, tasks]);
+    }, [instanceByPlanDate, latestInstanceByPlan, selectedInstance, taskMap, tasks]);
 
     const updateInstance = (instanceId: number, updater: (instance: QuartzTaskStatus) => QuartzTaskStatus) => {
         setInstanceList(prev => prev.map(instance => instance.id === instanceId ? updater(instance) : instance));
@@ -243,9 +242,17 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
         message.success(`已强制通过实例 #${instance.id}`);
     };
 
-    const handleOpenDependency = (instance: QuartzTaskStatus) => {
-        setDependencyInstance(instance);
-        setDependencyTabKey('upstream');
+    const closeRowContextMenu = () => {
+        setRowContextMenu(null);
+    };
+
+    const openRowContextMenu = (instance: QuartzTaskStatus, event: React.MouseEvent<HTMLTableRowElement>) => {
+        event.preventDefault();
+        setRowContextMenu({
+            x: event.clientX,
+            y: event.clientY,
+            instance,
+        });
     };
 
     const handleOpenInstanceDetail = (instance: QuartzTaskStatus, tab: typeof instanceDetailTabKey = 'overview') => {
@@ -256,8 +263,22 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
     const locateInstanceFromDependency = (instance: QuartzTaskStatus) => {
         setSelectedInstance(instance);
         setInstanceDetailTabKey('overview');
-        setDependencyInstance(null);
     };
+
+    useEffect(() => {
+        if (!rowContextMenu) return;
+
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                closeRowContextMenu();
+            }
+        };
+
+        window.addEventListener('keydown', handleEscape);
+        return () => {
+            window.removeEventListener('keydown', handleEscape);
+        };
+    }, [rowContextMenu]);
 
     const visibleInstanceIds = useMemo(() => filteredInstances.map(instance => instance.id), [filteredInstances]);
     const allVisibleSelected = visibleInstanceIds.length > 0 && visibleInstanceIds.every(id => selectedInstanceIds.includes(id));
@@ -345,7 +366,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
                                     系统：{item.taskSystem} · 主题：{item.theme}
                                 </div>
                                 <div className="mt-2 text-xs text-slate-500">
-                                    数据日期：{item.relatedInstance?.data_date || dependencyInstance?.data_date || '-'}
+                                    数据日期：{item.relatedInstance?.data_date || selectedInstance?.data_date || '-'}
                                 </div>
                                 {item.relatedInstance?.msg && (
                                     <div className="mt-1 truncate text-xs text-slate-500" title={item.relatedInstance.msg || ''}>
@@ -381,6 +402,30 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
             .filter(log => log.task_id === selectedInstance.plan_id && log.data_date === selectedInstance.data_date)
             .sort((a, b) => dayjs(a.create_time).valueOf() - dayjs(b.create_time).valueOf());
     }, [logs, selectedInstance]);
+    const rowContextMenuStyle = rowContextMenu ? {
+        left: Math.max(12, Math.min(rowContextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : rowContextMenu.x) - 244)),
+        top: Math.max(12, Math.min(rowContextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : rowContextMenu.y) - 208)),
+    } : undefined;
+
+    const invokeRowContextAction = (action: 'execute' | 'stop' | 'pass' | 'detail') => {
+        if (!rowContextMenu) return;
+        const { instance } = rowContextMenu;
+        closeRowContextMenu();
+
+        if (action === 'execute') {
+            handleExecuteInstance(instance);
+            return;
+        }
+        if (action === 'stop') {
+            handleForceStopInstance(instance);
+            return;
+        }
+        if (action === 'pass') {
+            handleForcePassInstance(instance);
+            return;
+        }
+        handleOpenInstanceDetail(instance);
+    };
 
     return (
         <>
@@ -418,21 +463,6 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
                                     className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
                                 />
                             </div>
-                        </label>
-                        <label className="space-y-1">
-                            <div className="text-xs font-medium text-slate-500">任务名称</div>
-                            <select
-                                value={taskNameFilter}
-                                onChange={(event) => setTaskNameFilter(event.target.value)}
-                                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
-                            >
-                                <option value="">全部任务</option>
-                                {taskNameOptions.map(item => (
-                                    <option key={item} value={item}>
-                                        {item}
-                                    </option>
-                                ))}
-                            </select>
                         </label>
                         <label className="space-y-1">
                             <div className="text-xs font-medium text-slate-500">系统主体</div>
@@ -521,26 +551,80 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
                     )}
                 </div>
 
+                {rowContextMenu && (
+                    <>
+                        <div
+                            className="fixed inset-0 z-40"
+                            onClick={closeRowContextMenu}
+                            onContextMenu={(event) => {
+                                event.preventDefault();
+                                closeRowContextMenu();
+                            }}
+                        />
+                        <div
+                            className="fixed z-50 w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_50px_rgba(15,23,42,0.18)]"
+                            style={rowContextMenuStyle}
+                            onClick={(event) => event.stopPropagation()}
+                            onContextMenu={(event) => event.preventDefault()}
+                        >
+                            <div className="px-3 py-2">
+                                <div className="text-xs font-semibold text-slate-500">实例 #{rowContextMenu.instance.id}</div>
+                                <div className="mt-1 truncate text-sm font-medium text-slate-800">
+                                    {taskNameMap.get(rowContextMenu.instance.plan_id) || '任务详情'}
+                                </div>
+                            </div>
+                            <div className="my-1 h-px bg-slate-100" />
+                            <button
+                                onClick={() => invokeRowContextAction('execute')}
+                                disabled={rowContextMenu.instance.status === 1}
+                                className={contextMenuItemClass}
+                            >
+                                <Play size={14} className="text-blue-600" />
+                                执行任务
+                            </button>
+                            <button
+                                onClick={() => invokeRowContextAction('stop')}
+                                disabled={rowContextMenu.instance.status === 2 || rowContextMenu.instance.status === 3}
+                                className={contextMenuItemClass}
+                            >
+                                <Square size={14} className="text-amber-600" />
+                                强制停止
+                            </button>
+                            <button
+                                onClick={() => invokeRowContextAction('pass')}
+                                disabled={rowContextMenu.instance.status === 2}
+                                className={contextMenuItemClass}
+                            >
+                                <CheckCircle2 size={14} className="text-emerald-600" />
+                                强制通过
+                            </button>
+                            <button
+                                onClick={() => invokeRowContextAction('detail')}
+                                className={contextMenuItemClass}
+                            >
+                                <Eye size={14} className="text-slate-600" />
+                                查看详情
+                            </button>
+                        </div>
+                    </>
+                )}
+
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="overflow-x-auto">
-                        <table className="w-full min-w-[1760px] table-fixed text-sm text-left">
+                        <table className="w-full min-w-[1692px] table-fixed text-sm text-left">
                             <colgroup>
                                 <col style={{ width: 56 }} />
-                                <col style={{ width: 90 }} />
                                 <col style={{ width: 96 }} />
                                 <col style={{ width: 180 }} />
                                 <col style={{ width: 110 }} />
                                 <col style={{ width: 110 }} />
-                                <col style={{ width: 240 }} />
                                 <col style={{ width: 112 }} />
                                 <col style={{ width: 96 }} />
                                 <col style={{ width: 168 }} />
                                 <col style={{ width: 168 }} />
                                 <col style={{ width: 168 }} />
                                 <col style={{ width: 168 }} />
-                                <col style={{ width: 122 }} />
                                 <col style={{ width: 260 }} />
-                                <col style={{ width: 196 }} />
                             </colgroup>
                             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
                                 <tr>
@@ -552,27 +636,23 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
                                             className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
                                         />
                                     </th>
-                                    <th className={headerCellClass}>实例ID</th>
                                     <th className={headerCellClass}>计划ID</th>
                                     <th className={headerCellClass}>任务名称</th>
                                     <th className={headerCellClass}>系统</th>
                                     <th className={headerCellClass}>主题</th>
-                                    <th className={headerCellClass}>备注</th>
                                     <th className={headerCellClass}>数据日期</th>
                                     <th className={headerCellClass}>状态</th>
                                     <th className={headerCellClass}>开始时间</th>
                                     <th className={headerCellClass}>更新时间</th>
                                     <th className={headerCellClass}>结束时间</th>
                                     <th className={headerCellClass}>创建时间</th>
-                                    <th className={headerCellClass}>创建批次</th>
                                     <th className={headerCellClass}>消息摘要</th>
-                                    <th className={`${headerCellClass} text-right`}>操作</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {filteredInstances.length === 0 ? (
                                     <tr>
-                                        <td colSpan={16} className="px-6 py-16 text-center text-slate-500">
+                                        <td colSpan={12} className="px-6 py-16 text-center text-slate-500">
                                             未找到符合条件的任务实例。
                                         </td>
                                     </tr>
@@ -582,17 +662,24 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
                                     const task = taskMap.get(instance.plan_id);
 
                                     return (
-                                        <tr key={instance.id} className="h-14 hover:bg-slate-50/80 transition-colors">
+                                        <tr
+                                            key={instance.id}
+                                            onClick={() => handleOpenInstanceDetail(instance)}
+                                            onContextMenu={(event) => openRowContextMenu(instance, event)}
+                                            className="h-14 cursor-pointer hover:bg-slate-50/80 transition-colors"
+                                            title="点击整行查看详情"
+                                        >
                                             <td className={tableCellClass}>
                                                 <input
                                                     type="checkbox"
                                                     checked={selectedInstanceIds.includes(instance.id)}
-                                                    onChange={(event) => toggleSelectInstance(instance.id, event.target.checked)}
+                                                    onClick={(event) => event.stopPropagation()}
+                                                    onChange={(event) => {
+                                                        event.stopPropagation();
+                                                        toggleSelectInstance(instance.id, event.target.checked);
+                                                    }}
                                                     className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
                                                 />
-                                            </td>
-                                            <td className={monoCellClass}>
-                                                <div className="truncate">{instance.id}</div>
                                             </td>
                                             <td className={monoCellClass}>
                                                 <div className="truncate">{instance.plan_id}</div>
@@ -610,11 +697,6 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
                                             <td className={tableCellClass}>
                                                 <div className="truncate text-slate-700" title={task?.theme || '-'}>
                                                     {task?.theme || '-'}
-                                                </div>
-                                            </td>
-                                            <td className={tableCellClass}>
-                                                <div className="truncate text-slate-600" title={task?.remark || '-'}>
-                                                    {task?.remark || '-'}
                                                 </div>
                                             </td>
                                             <td className={monoCellClass}>
@@ -641,59 +723,9 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
                                             <td className={`${monoCellClass} text-slate-500`}>
                                                 <div className="truncate">{instance.create_time}</div>
                                             </td>
-                                            <td className={`${monoCellClass} text-slate-500`}>
-                                                <div className="truncate">{instance.create_date}</div>
-                                            </td>
                                             <td className={`${tableCellClass} text-slate-600`}>
                                                 <div className="truncate" title={instance.msg || '-'}>
                                                     {instance.msg || '-'}
-                                                </div>
-                                            </td>
-                                            <td className={`${tableCellClass} text-right`}>
-                                                <div className="inline-flex items-center justify-end gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
-                                                    <button
-                                                        onClick={() => handleExecuteInstance(instance)}
-                                                        disabled={instance.status === 1}
-                                                        title="执行任务"
-                                                        className={`${rowActionIconClass} border-blue-200 bg-blue-50 text-blue-700 enabled:hover:bg-blue-100`}
-                                                    >
-                                                        <Play size={14} />
-                                                        <span className="sr-only">执行任务</span>
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleForceStopInstance(instance)}
-                                                        disabled={instance.status === 2 || instance.status === 3}
-                                                        title="强制停止"
-                                                        className={`${rowActionIconClass} border-amber-200 bg-amber-50 text-amber-700 enabled:hover:bg-amber-100`}
-                                                    >
-                                                        <Square size={14} />
-                                                        <span className="sr-only">强制停止</span>
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleForcePassInstance(instance)}
-                                                        disabled={instance.status === 2}
-                                                        title="强制通过"
-                                                        className={`${rowActionIconClass} border-emerald-200 bg-emerald-50 text-emerald-700 enabled:hover:bg-emerald-100`}
-                                                    >
-                                                        <CheckCircle2 size={14} />
-                                                        <span className="sr-only">强制通过</span>
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleOpenInstanceDetail(instance)}
-                                                        title="查看详情"
-                                                        className={`${rowActionIconClass} border-slate-200 bg-white text-slate-600 enabled:hover:border-red-200 enabled:hover:bg-red-50 enabled:hover:text-red-600`}
-                                                    >
-                                                        <Eye size={14} />
-                                                        <span className="sr-only">查看详情</span>
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleOpenDependency(instance)}
-                                                        title="查看依赖"
-                                                        className={`${rowActionIconClass} border-cyan-200 bg-cyan-50 text-cyan-700 enabled:hover:bg-cyan-100`}
-                                                    >
-                                                        <GitBranch size={14} />
-                                                        <span className="sr-only">查看依赖</span>
-                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -704,81 +736,6 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
                     </div>
                 </div>
             </div>
-
-            <Drawer
-                title={dependencyInstance ? `任务依赖 · #${dependencyInstance.plan_id}` : '任务依赖'}
-                placement="right"
-                size={720}
-                onClose={() => setDependencyInstance(null)}
-                open={!!dependencyInstance}
-            >
-                {dependencyInstance && dependencyPanelData && (
-                    <div className="space-y-4">
-                        <div className="rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-cyan-50/50 p-4">
-                            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                    <div className="text-sm font-semibold text-slate-800">
-                                        {dependencyPanelData.selectedTask?.task_name || taskNameMap.get(dependencyInstance.plan_id) || '-'}
-                                    </div>
-                                    <div className="mt-1 font-mono text-xs text-slate-500">
-                                        任务ID #{dependencyInstance.plan_id} · 数据日期 {dependencyInstance.data_date}
-                                    </div>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2 text-xs">
-                                    <span className="inline-flex items-center rounded-full bg-cyan-50 px-3 py-1 text-cyan-700">
-                                        上游 {dependencyPanelData.upstream.length}
-                                    </span>
-                                    <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-blue-700">
-                                        下游 {dependencyPanelData.downstream.length}
-                                    </span>
-                                    {renderRelationStatus(dependencyInstance)}
-                                </div>
-                            </div>
-                        </div>
-
-                        <Tabs
-                            activeKey={dependencyTabKey}
-                            onChange={(key) => setDependencyTabKey(key as 'upstream' | 'downstream')}
-                            items={[
-                                {
-                                    key: 'upstream',
-                                    label: (
-                                        <span className="inline-flex items-center gap-1.5">
-                                            <ArrowUpCircle size={14} />
-                                            我依赖了谁
-                                        </span>
-                                    ),
-                                    children: (
-                                        <div className="space-y-3">
-                                            <div className="text-xs text-slate-500">
-                                                当前任务依赖的前置任务。前置任务成功后，当前任务通常才应进入执行。
-                                            </div>
-                                            {renderDependencyList(dependencyPanelData.upstream, '当前任务未配置前置依赖，属于独立执行任务。')}
-                                        </div>
-                                    ),
-                                },
-                                {
-                                    key: 'downstream',
-                                    label: (
-                                        <span className="inline-flex items-center gap-1.5">
-                                            <ArrowDownCircle size={14} />
-                                            谁依赖了我
-                                        </span>
-                                    ),
-                                    children: (
-                                        <div className="space-y-3">
-                                            <div className="text-xs text-slate-500">
-                                                依赖当前任务的后续任务。当前任务状态会影响这些任务的触发时机。
-                                            </div>
-                                            {renderDependencyList(dependencyPanelData.downstream, '当前任务暂时没有被其他任务依赖。')}
-                                        </div>
-                                    ),
-                                },
-                            ]}
-                        />
-                    </div>
-                )}
-            </Drawer>
 
             <Drawer
                 title={selectedInstance ? `实例详情 · #${selectedInstance.id}` : '实例详情'}
@@ -1061,6 +1018,92 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
                                                     </div>
                                                 </div>
                                             </section>
+                                        </div>
+                                    ),
+                                },
+                                {
+                                    key: 'dependency',
+                                    label: (
+                                        <span className="inline-flex items-center gap-1.5">
+                                            <GitBranch size={14} />
+                                            任务依赖
+                                        </span>
+                                    ),
+                                    children: dependencyPanelData ? (
+                                        <div className="space-y-4">
+                                            <section className={detailSectionClass}>
+                                                <div className={detailSectionHeaderClass}>
+                                                    <div className="text-sm font-semibold text-slate-800">依赖总览</div>
+                                                    <div className="mt-1 text-xs text-slate-500">同一页签内查看当前任务依赖了谁，以及谁依赖了当前任务。</div>
+                                                </div>
+                                                <div className={detailSectionBodyClass}>
+                                                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-cyan-50/50 p-4">
+                                                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                                            <div>
+                                                                <div className="text-sm font-semibold text-slate-800">
+                                                                    {dependencyPanelData.selectedTask?.task_name || selectedTask?.task_name || taskNameMap.get(selectedInstance.plan_id) || '-'}
+                                                                </div>
+                                                                <div className="mt-1 font-mono text-xs text-slate-500">
+                                                                    任务ID #{selectedInstance.plan_id} · 数据日期 {selectedInstance.data_date}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                                                                <span className="inline-flex items-center rounded-full bg-cyan-50 px-3 py-1 text-cyan-700">
+                                                                    上游 {dependencyPanelData.upstream.length}
+                                                                </span>
+                                                                <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-blue-700">
+                                                                    下游 {dependencyPanelData.downstream.length}
+                                                                </span>
+                                                                {renderRelationStatus(selectedInstance)}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </section>
+
+                                            <Tabs
+                                                defaultActiveKey="upstream"
+                                                items={[
+                                                    {
+                                                        key: 'upstream',
+                                                        label: (
+                                                            <span className="inline-flex items-center gap-1.5">
+                                                                <ArrowUpCircle size={14} />
+                                                                我依赖了谁
+                                                            </span>
+                                                        ),
+                                                        children: (
+                                                            <div className="space-y-3">
+                                                                <div className="text-xs text-slate-500">
+                                                                    当前任务依赖的前置任务。前置任务成功后，当前任务通常才应进入执行。
+                                                                </div>
+                                                                {renderDependencyList(dependencyPanelData.upstream, '当前任务未配置前置依赖，属于独立执行任务。')}
+                                                            </div>
+                                                        ),
+                                                    },
+                                                    {
+                                                        key: 'downstream',
+                                                        label: (
+                                                            <span className="inline-flex items-center gap-1.5">
+                                                                <ArrowDownCircle size={14} />
+                                                                谁依赖了我
+                                                            </span>
+                                                        ),
+                                                        children: (
+                                                            <div className="space-y-3">
+                                                                <div className="text-xs text-slate-500">
+                                                                    依赖当前任务的后续任务。当前任务状态会影响这些任务的触发时机。
+                                                                </div>
+                                                                {renderDependencyList(dependencyPanelData.downstream, '当前任务暂时没有被其他任务依赖。')}
+                                                            </div>
+                                                        ),
+                                                    },
+                                                ]}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-12 text-center text-sm text-slate-500">
+                                            暂无任务依赖信息。
                                         </div>
                                     ),
                                 },
