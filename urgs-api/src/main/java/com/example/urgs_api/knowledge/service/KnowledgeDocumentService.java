@@ -103,6 +103,8 @@ public class KnowledgeDocumentService {
 
         if (updates.getTitle() != null)
             doc.setTitle(updates.getTitle());
+        if (updates.getFileName() != null)
+            doc.setFileName(updates.getFileName());
         if (updates.getFolderId() != null)
             doc.setFolderId(updates.getFolderId());
 

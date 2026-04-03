@@ -82,6 +82,7 @@ public class KnowledgeDocumentController {
             @RequestBody UpdateDocumentRequest req) {
         KnowledgeDocument updates = new KnowledgeDocument();
         updates.setTitle(req.getTitle());
+        updates.setFileName(req.getFileName());
         updates.setFolderId(req.getFolderId());
 
         return ResponseEntity.ok(documentService.updateDocument(id, updates, req.getTagIds()));
@@ -187,6 +188,7 @@ public class KnowledgeDocumentController {
     public static class UpdateDocumentRequest {
         private Long folderId;
         private String title;
+        private String fileName;
         private List<Long> tagIds;
     }
 

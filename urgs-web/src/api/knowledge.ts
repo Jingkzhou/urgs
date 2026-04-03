@@ -113,6 +113,7 @@ export const copyToPrivate = (id: number) =>
 export const updateDocument = (id: number, data: {
     folderId?: number;
     title?: string;
+    fileName?: string;
     tagIds?: number[];
 }) => put<KnowledgeDocument>(`/api/wiki/documents/${id}`, data);
 

@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { Dropdown, Upload, Modal, Checkbox, message } from 'antd';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { Dropdown, Upload, Modal, Checkbox, Form, Input, message } from 'antd';
 import { FolderPlus, Upload as UploadIcon, Tags } from 'lucide-react';
 import type { KnowledgeTag } from '../../api/knowledge';
 import type { FolderTreeNode, KnowledgeDocument } from '../../api/knowledge';
@@ -15,9 +15,39 @@ import BatchActionBar from './BatchActionBar';
 import { UploadProgressPanel } from './UploadProgressPanel';
 import * as api from '../../api/knowledge';
 
+const DOCUMENT_TITLE_MAX_LENGTH = 200;
+const DOCUMENT_FILE_NAME_MAX_LENGTH = 255;
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+    if (error instanceof Error && error.message) {
+        try {
+            const parsed = JSON.parse(error.message);
+            if (parsed?.message) {
+                return parsed.message as string;
+            }
+        } catch {
+            return error.message;
+        }
+        return error.message;
+    }
+    return fallback;
+};
+
+const splitFileNameForRename = (fileName: string) => {
+    const lastDotIndex = fileName.lastIndexOf('.');
+    if (lastDotIndex <= 0 || lastDotIndex === fileName.length - 1) {
+        return { baseName: fileName, extension: '' };
+    }
+    return {
+        baseName: fileName.slice(0, lastDotIndex),
+        extension: fileName.slice(lastDotIndex),
+    };
+};
+
 const KnowledgeCenter: React.FC = () => {
     const { state, actions, derived, permissions } = useKnowledgeStore();
     const { currentBreadcrumbs, currentSubFolders } = derived;
+    const [docRenameForm] = Form.useForm<{ baseName: string }>();
 
     // 上传
     const upload = useUpload({
@@ -30,6 +60,7 @@ const KnowledgeCenter: React.FC = () => {
     // 弹窗状态
     const [folderModalOpen, setFolderModalOpen] = useState(false);
     const [editingFolder, setEditingFolder] = useState<FolderTreeNode | null>(null);
+    const [renamingDoc, setRenamingDoc] = useState<KnowledgeDocument | null>(null);
     const [tagModalOpen, setTagModalOpen] = useState(false);
 
     // 预览状态
@@ -73,6 +104,57 @@ const KnowledgeCenter: React.FC = () => {
         setEditingFolder({ id, name } as FolderTreeNode);
         setFolderModalOpen(true);
     };
+
+    const handleRenameDoc = (id: number, title: string) => {
+        const targetDoc = state.documents.find(doc => doc.id === id);
+        setRenamingDoc(targetDoc || ({
+            id,
+            title,
+        } as KnowledgeDocument));
+    };
+
+    useEffect(() => {
+        if (renamingDoc) {
+            const originalFileName = renamingDoc.fileName || renamingDoc.title;
+            const { baseName } = splitFileNameForRename(originalFileName);
+            docRenameForm.setFieldsValue({ baseName });
+        } else {
+            docRenameForm.resetFields();
+        }
+    }, [renamingDoc, docRenameForm]);
+
+    const handleSaveDocRename = async () => {
+        if (!renamingDoc) return;
+        try {
+            const values = await docRenameForm.validateFields();
+            const originalFileName = renamingDoc.fileName || renamingDoc.title;
+            const { extension } = splitFileNameForRename(originalFileName);
+            const nextFileName = `${values.baseName}${extension}`;
+            await api.updateDocument(renamingDoc.id, {
+                title: nextFileName,
+                fileName: nextFileName,
+            });
+            message.success('附件重命名成功');
+            setRenamingDoc(null);
+            actions.loadDocuments();
+            if (previewDoc?.id === renamingDoc.id) {
+                setPreviewDoc(prev => prev ? { ...prev, title: nextFileName, fileName: nextFileName } : prev);
+            }
+        } catch (error) {
+            // Form validation errors are handled by antd on the field itself.
+            if (error && typeof error === 'object' && 'errorFields' in error) {
+                return;
+            }
+            message.error(getErrorMessage(error, '附件重命名失败'));
+        }
+    };
+
+    const renamingFileName = renamingDoc?.fileName || renamingDoc?.title || '';
+    const renamingFileParts = splitFileNameForRename(renamingFileName);
+    const renameBaseNameMaxLength = Math.max(
+        1,
+        Math.min(DOCUMENT_TITLE_MAX_LENGTH, DOCUMENT_FILE_NAME_MAX_LENGTH) - renamingFileParts.extension.length
+    );
 
     const handleDelete = (id: number, type: 'folder' | 'doc') => {
         if (type === 'folder') {
@@ -239,7 +321,13 @@ const KnowledgeCenter: React.FC = () => {
         onFolderEnter: actions.setSelectedFolderId,
         onPreview: (doc: KnowledgeDocument) => setPreviewDoc(doc),
         onDelete: handleDelete,
-        onRename: handleRename,
+        onRename: ({ id, name, type }: { id: number; name: string; type: 'folder' | 'doc' }) => {
+            if (type === 'doc') {
+                handleRenameDoc(id, name);
+                return;
+            }
+            handleRename(id, name);
+        },
         onToggleFavorite: actions.onToggleFavorite,
         onCopyToPrivate: actions.handleCopyToPrivate,
         onDownloadDoc: actions.handleDownloadItem,
@@ -309,6 +397,47 @@ const KnowledgeCenter: React.FC = () => {
                 onSave={handleSaveFolder}
                 onCancel={() => setFolderModalOpen(false)}
             />
+
+            <Modal
+                open={!!renamingDoc}
+                title="重命名附件"
+                onCancel={() => setRenamingDoc(null)}
+                onOk={handleSaveDocRename}
+                okText="保存"
+                cancelText="取消"
+                destroyOnHidden
+            >
+                <Form form={docRenameForm} layout="vertical" onFinish={handleSaveDocRename}>
+                    <Form.Item
+                        name="baseName"
+                        label="名称"
+                        rules={[
+                            { required: true, message: '请输入名称' },
+                            {
+                                validator: async (_, value?: string) => {
+                                    if (!value) return;
+                                    const nextFileName = `${value}${renamingFileParts.extension}`;
+                                    if (nextFileName.length > DOCUMENT_TITLE_MAX_LENGTH) {
+                                        throw new Error(`完整名称不能超过 ${DOCUMENT_TITLE_MAX_LENGTH} 个字符`);
+                                    }
+                                    if (nextFileName.length > DOCUMENT_FILE_NAME_MAX_LENGTH) {
+                                        throw new Error(`原始文件名不能超过 ${DOCUMENT_FILE_NAME_MAX_LENGTH} 个字符`);
+                                    }
+                                }
+                            },
+                        ]}
+                        extra={renamingFileParts.extension ? `扩展名 ${renamingFileParts.extension} 将保持不变` : undefined}
+                    >
+                        <Input
+                            placeholder="附件名称"
+                            autoFocus
+                            maxLength={renameBaseNameMaxLength}
+                            showCount
+                            addonAfter={renamingFileParts.extension || undefined}
+                        />
+                    </Form.Item>
+                </Form>
+            </Modal>
 
             <TagManagerModal
                 open={tagModalOpen}

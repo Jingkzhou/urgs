@@ -1,5 +1,5 @@
 import React from 'react';
-import { Dropdown, message } from 'antd';
+import { Dropdown } from 'antd';
 import { Folder, Star, Lock, Tags } from 'lucide-react';
 import type { KnowledgeDocument } from '../../api/knowledge';
 import { getFileIcon } from '../../utils/fileIcons';
@@ -15,7 +15,7 @@ export interface ItemEntryProps {
     onEnter: () => void;
     onPreview?: (doc: KnowledgeDocument) => void;
     onDelete: (id: number) => void;
-    onRename: (id: number, name: string) => void;
+    onRename: (item: { id: number; name: string; type: 'folder' | 'doc' }) => void;
     onToggleFavorite: (doc: KnowledgeDocument) => void;
     onCopyToPrivate: (id: number) => void;
     onDownload: () => void;
@@ -72,13 +72,7 @@ const ItemEntry: React.FC<ItemEntryProps> = ({
         menuItems.push({
             key: 'edit',
             label: '重命名',
-            onClick: () => {
-                if (!isDoc) {
-                    onRename(id, title);
-                } else {
-                    message.info('暂不支持重命名附件');
-                }
-            }
+            onClick: () => onRename({ id, name: title, type }),
         });
         if (isDoc && doc) {
             menuItems.push({

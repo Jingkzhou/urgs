@@ -15,7 +15,7 @@ interface DocumentListProps {
     onFolderEnter: (id: number) => void;
     onPreview: (doc: KnowledgeDocument) => void;
     onDelete: (id: number, type: 'folder' | 'doc') => void;
-    onRename: (id: number, name: string) => void;
+    onRename: (item: { id: number; name: string; type: 'folder' | 'doc' }) => void;
     onToggleFavorite: (doc: KnowledgeDocument) => void;
     onCopyToPrivate: (id: number) => void;
     onDownloadDoc: (doc: KnowledgeDocument) => void;
