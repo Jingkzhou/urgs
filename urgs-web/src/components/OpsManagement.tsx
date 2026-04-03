@@ -9,7 +9,7 @@ import RegulationBatchManagement from './ops/RegulationBatchManagement';
 type SubModule = 'schedule' | 'issue' | 'infra' | 'regulation';
 
 const OpsManagement: React.FC = () => {
-    const [activeModule, setActiveModule] = useState<SubModule>('schedule');
+    const [activeModule, setActiveModule] = useState<SubModule>('regulation');
     const [initialIssueData, setInitialIssueData] = useState<any>(null);
 
     const handleTurnToIssue = (task: any) => {

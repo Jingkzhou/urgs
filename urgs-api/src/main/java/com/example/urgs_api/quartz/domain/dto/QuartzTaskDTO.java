@@ -52,7 +52,6 @@ public class QuartzTaskDTO {
     private String dependId;
 
     @ApiModelProperty("执行文件")
-    @NotNull(message = "执行文件不能为空")
     private String exePath;
 
     @ApiModelProperty("url")
@@ -66,11 +65,9 @@ public class QuartzTaskDTO {
     private Long period;
 
     @ApiModelProperty("用户名")
-    @NotNull(message = "用户名不能为空")
     private String username;
 
     @ApiModelProperty("密码")
-    @NotNull(message = "密码不能为空")
     private String password;
 
     @ApiModelProperty("驱动")
@@ -83,7 +80,7 @@ public class QuartzTaskDTO {
     private String theme;
 
     @ApiModelProperty("偏移量")
-    private int offset;
+    private Integer offset;
 
     @ApiModelProperty("失败时发送")
     private String notificationFailed;

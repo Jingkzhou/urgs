@@ -283,6 +283,153 @@ export const getDatasourceMeta = () =>
 export const getDatasourceConfig = () =>
     get<any>('/api/datasource/config');
 
+// ===== Quartz Task API =====
+
+export interface ApiResponse<T> {
+    success: boolean;
+    code: number;
+    msg: string;
+    data: T;
+}
+
+export interface PageResult<T> {
+    pageNum: number;
+    pageSize: number;
+    total: number;
+    pages: number;
+    list: T[];
+}
+
+export interface QuartzTaskApiModel {
+    id?: number;
+    taskName: string;
+    taskBean?: string | null;
+    taskParams?: string | null;
+    taskCron: string;
+    taskStatus?: number;
+    remark?: string | null;
+    updateTime?: string | null;
+    createTime?: string | null;
+    taskType?: number;
+    url?: string | null;
+    exePath?: string | null;
+    dependId?: string | null;
+    username?: string | null;
+    password?: string | null;
+    driver?: string | null;
+    period?: number | null;
+    taskSystem?: string | null;
+    theme?: string | null;
+    offset?: number | null;
+    dataDate?: string | null;
+    jobKey?: string | null;
+    notificationCompleted?: string | null;
+    notificationFailed?: string | null;
+}
+
+export interface QuartzTaskQueryParams {
+    pageNum?: number;
+    pageSize?: number;
+    id?: number;
+    taskName?: string;
+    taskSystem?: string;
+    theme?: string;
+}
+
+export interface QuartzTaskSavePayload {
+    id?: number;
+    taskName: string;
+    taskBean?: string | null;
+    taskParams?: string | null;
+    taskCron: string;
+    taskStatus?: number;
+    remark?: string | null;
+    dependId?: string | null;
+    exePath?: string | null;
+    url?: string | null;
+    taskType: number;
+    period?: number | null;
+    username?: string | null;
+    password?: string | null;
+    driver?: string | null;
+    taskSystem?: string | null;
+    theme?: string | null;
+    offset?: number;
+    notificationFailed?: string | null;
+    notificationCompleted?: string | null;
+}
+
+export const queryQuartzTasks = (params: QuartzTaskQueryParams) =>
+    post<ApiResponse<PageResult<QuartzTaskApiModel>>>('/api/quartz/task/query', params);
+
+export const saveOrUpdateQuartzTask = (payload: QuartzTaskSavePayload) =>
+    post<ApiResponse<string>>('/api/quartz/task/saveOrUpdate', payload);
+
+export const pauseQuartzTask = (taskId: number) =>
+    get<ApiResponse<string>>(`/api/quartz/task/pause/${taskId}`);
+
+export const resumeQuartzTask = (taskId: number) =>
+    get<ApiResponse<string>>(`/api/quartz/task/resume/${taskId}`);
+
+export const deleteQuartzTask = (taskId: number) =>
+    get<ApiResponse<string>>(`/api/quartz/task/delete/${taskId}`);
+
+export interface QuartzTaskStatusApiModel {
+    id: number;
+    planId: number;
+    taskName?: string;
+    dataDate: string;
+    dependId?: string | null;
+    taskType?: string | number | null;
+    taskCron?: string | null;
+    exePath?: string | null;
+    url?: string | null;
+    period?: string | number | null;
+    username?: string | null;
+    password?: string | null;
+    driver?: string | null;
+    status?: string | number | null;
+    beginTime?: string | null;
+    endTime?: string | null;
+    updateTime?: string | null;
+    theme?: string | null;
+    taskSystem?: string | null;
+    remark?: string | null;
+    msg?: string | null;
+    jobKey?: string | null;
+    createTime?: string | null;
+}
+
+export interface QuartzTaskStatusQueryParams {
+    pageNum?: number;
+    pageSize?: number;
+    dataDate?: string;
+    id?: number;
+    taskName?: string;
+    taskSystem?: string;
+    theme?: string;
+    status?: string;
+    beginDate?: string;
+}
+
+export interface QuartzTaskLogApiModel {
+    id: number;
+    taskId: number;
+    taskName?: string | null;
+    taskParams?: string | null;
+    processStatus?: number | null;
+    processDuration?: number | null;
+    processLog?: string | null;
+    createTime?: string | null;
+    ipAddress?: string | null;
+}
+
+export const queryQuartzTaskStatus = (params: QuartzTaskStatusQueryParams) =>
+    post<ApiResponse<PageResult<QuartzTaskStatusApiModel>>>('/api/quartz/task/status/query', params);
+
+export const queryQuartzTaskLog = (taskId: number, pageNum: number = 1, pageSize: number = 200) =>
+    post<ApiResponse<PageResult<QuartzTaskLogApiModel>>>('/api/quartz/task/queryLog', { taskId, pageNum, pageSize });
+
 // ===== Docker Management API =====
 
 export interface DockerContainer {

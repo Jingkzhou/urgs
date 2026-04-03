@@ -72,7 +72,7 @@ public class QuartzTaskService {
 
     private ResponseDTO<String> saveTask(QuartzTaskDTO quartzTaskDTO) {
         QuartzTaskEntity taskEntity = SmartBeanUtil.copy(quartzTaskDTO, QuartzTaskEntity.class);
-        taskEntity.setTaskStatus(TaskStatusEnum.NORMAL.getStatus());
+        taskEntity.setTaskStatus(quartzTaskDTO.getTaskStatus() == null ? TaskStatusEnum.NORMAL.getStatus() : quartzTaskDTO.getTaskStatus());
         taskEntity.setUpdateTime(new Date());
         taskEntity.setCreateTime(new Date());
         quartzTaskDao.insert(taskEntity);
@@ -215,7 +215,8 @@ public class QuartzTaskService {
                         CronExpression cron = new CronExpression(task.getTaskCron());
                         Calendar triggerCal = Calendar.getInstance();
                         triggerCal.setTime(currentDay);
-                        triggerCal.add(Calendar.DATE, -task.getOffset());
+                        int offset = task.getOffset() == null ? 0 : task.getOffset();
+                        triggerCal.add(Calendar.DATE, -offset);
                         Date triggerDay = triggerCal.getTime();
 
                         Calendar dayStartCal = Calendar.getInstance();
@@ -316,7 +317,7 @@ public class QuartzTaskService {
         vo.setTheme(task.getTheme());
         vo.setTaskCron(task.getTaskCron());
         vo.setDependId(task.getDependId());
-        vo.setTaskType(task.getTaskType());
+        vo.setTaskType(task.getTaskType() == null ? 1 : task.getTaskType());
         vo.setExpectedDate(expectedDate);
         vo.setMissedStatus(missedStatus);
         vo.setWaitingMinutes(waitingMinutes);

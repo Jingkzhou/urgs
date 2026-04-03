@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.urgs_api.quartz.dao.QuartzTaskLogDao">
+
+    <select id="queryList" resultType="com.example.urgs_api.quartz.domain.dto.QuartzTaskLogVO">
+        SELECT
+            tl.id AS id,
+            tl.task_id AS taskId,
+            tl.task_name AS taskName,
+            tl.task_params AS taskParams,
+            tl.process_status AS processStatus,
+            tl.process_duration AS processDuration,
+            tl.process_log AS processLog,
+            tl.ip_address AS ipAddress,
+            tl.update_time AS updateTime,
+            tl.create_time AS createTime
+        FROM t_quartz_task_log tl
+        <where>
+            <if test="queryDTO.taskId != null">
+                AND tl.task_id = #{queryDTO.taskId}
+            </if>
+        </where>
+        ORDER BY tl.create_time DESC
+    </select>
+
+</mapper>

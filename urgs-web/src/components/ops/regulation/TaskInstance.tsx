@@ -1,14 +1,17 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Drawer, Tag, Tabs, message } from 'antd';
 import { Activity, AlertCircle, ArrowDownCircle, ArrowUpCircle, CalendarRange, CheckCircle2, Clock3, Eye, GitBranch, Play, Search, Square } from 'lucide-react';
 import dayjs from 'dayjs';
 import { QuartzTask, QuartzTaskExecutionLog, QuartzTaskStatus } from './mockData';
-
-interface TaskInstanceProps {
-    tasks: QuartzTask[];
-    instances: QuartzTaskStatus[];
-    logs: QuartzTaskExecutionLog[];
-}
+import Pagination from '@/components/common/Pagination';
+import {
+    queryQuartzTaskLog,
+    queryQuartzTasks,
+    queryQuartzTaskStatus,
+    QuartzTaskApiModel,
+    QuartzTaskLogApiModel,
+    QuartzTaskStatusApiModel
+} from '@/api/ops';
 
 interface DependencyRelationItem {
     taskId: number;
@@ -61,8 +64,83 @@ const formatDuration = (durationMs?: number | null) => {
     return remainSeconds === 0 ? `${minutes} 分钟` : `${minutes} 分 ${remainSeconds} 秒`;
 };
 
-const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) => {
-    const [instanceList, setInstanceList] = useState<QuartzTaskStatus[]>(instances);
+const toTaskTypeLabel = (taskType?: number | null) => {
+    if (taskType === 2) return 'SQL';
+    if (taskType === 1) return 'SHELL';
+    return 'SHELL';
+};
+
+const normalizeTask = (item: QuartzTaskApiModel): QuartzTask => {
+    const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+    return {
+        id: Number(item.id),
+        task_name: item.taskName || '',
+        task_bean: item.taskBean ?? null,
+        task_params: item.taskParams ?? null,
+        task_cron: item.taskCron || '',
+        task_status: Number(item.taskStatus ?? 0) as 0 | 1,
+        remark: item.remark ?? null,
+        update_time: item.updateTime || now,
+        create_time: item.createTime || now,
+        task_type: toTaskTypeLabel(item.taskType),
+        url: item.url ?? null,
+        script: item.exePath ?? null,
+        depend_id: item.dependId ?? null,
+        username: item.username ?? null,
+        password: item.password ?? null,
+        driver: item.driver ?? null,
+        datasource_id: null,
+        datasource_name: null,
+        period: item.period ?? null,
+        task_system: item.taskSystem ?? null,
+        theme: item.theme ?? null,
+        offset: item.offset ?? null,
+        data_date: item.dataDate ?? null,
+        job_key: item.jobKey ?? null,
+        notification_completed: item.notificationCompleted ?? null,
+        notification_failed: item.notificationFailed ?? null,
+    };
+};
+
+const normalizeStatus = (item: QuartzTaskStatusApiModel): QuartzTaskStatus => {
+    const createTime = item.createTime || dayjs().format('YYYY-MM-DD HH:mm:ss');
+    return {
+        id: Number(item.id),
+        plan_id: Number(item.planId),
+        data_date: item.dataDate || '',
+        status: item.status === null || item.status === undefined ? null : Number(item.status),
+        begin_time: item.beginTime || null,
+        update_time: item.updateTime || null,
+        end_time: item.endTime || null,
+        msg: item.msg || null,
+        create_time: createTime,
+        create_date: dayjs(createTime).format('YYYYMMDD'),
+    };
+};
+
+const normalizeLog = (item: QuartzTaskLogApiModel): QuartzTaskExecutionLog => {
+    const processStatus = Number(item.processStatus ?? 0);
+    const mappedStatus = processStatus === 3 ? 2 : processStatus === 4 ? 3 : 0;
+    return {
+        id: Number(item.id),
+        task_id: Number(item.taskId),
+        instance_id: null,
+        data_date: null,
+        status: (mappedStatus as 0 | 1 | 2 | 3),
+        trigger_type: '定时触发',
+        begin_time: null,
+        end_time: null,
+        duration_ms: item.processDuration ?? null,
+        summary: item.taskName || null,
+        content: item.processLog || '',
+        create_time: item.createTime || dayjs().format('YYYY-MM-DD HH:mm:ss'),
+    };
+};
+
+const TaskInstance: React.FC = () => {
+    const [taskList, setTaskList] = useState<QuartzTask[]>([]);
+    const [instanceList, setInstanceList] = useState<QuartzTaskStatus[]>([]);
+    const [logList, setLogList] = useState<QuartzTaskExecutionLog[]>([]);
     const [searchKeyword, setSearchKeyword] = useState('');
     const [taskSystemFilter, setTaskSystemFilter] = useState('');
     const [dataDateFilter, setDataDateFilter] = useState('');
@@ -72,18 +150,75 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
     const [selectedInstanceIds, setSelectedInstanceIds] = useState<number[]>([]);
     const [instanceDetailTabKey, setInstanceDetailTabKey] = useState<'overview' | 'task' | 'schedule' | 'dependency' | 'execution' | 'runtimeLog' | 'notify'>('overview');
     const [rowContextMenu, setRowContextMenu] = useState<RowContextMenuState | null>(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
+
+    const loadTasks = useCallback(async () => {
+        try {
+            const response = await queryQuartzTasks({ pageNum: 1, pageSize: 1000 });
+            if (!response?.success) {
+                throw new Error(response?.msg || '加载任务失败');
+            }
+            setTaskList((response.data?.list || []).map(normalizeTask));
+        } catch (error: any) {
+            message.error(error?.message || '加载任务失败');
+        }
+    }, []);
+
+    const loadInstances = useCallback(async () => {
+        try {
+            const response = await queryQuartzTaskStatus({ pageNum: 1, pageSize: 2000 });
+            if (!response?.success) {
+                throw new Error(response?.msg || '加载实例失败');
+            }
+            setInstanceList((response.data?.list || []).map(normalizeStatus));
+        } catch (error: any) {
+            message.error(error?.message || '加载实例失败');
+        }
+    }, []);
+
+    useEffect(() => {
+        loadTasks();
+        loadInstances();
+    }, [loadInstances, loadTasks]);
+
+    useEffect(() => {
+        const taskId = selectedInstance?.plan_id;
+        if (!taskId) {
+            return;
+        }
+        let canceled = false;
+        const loadLogs = async () => {
+            try {
+                const response = await queryQuartzTaskLog(taskId, 1, 200);
+                if (!response?.success) {
+                    throw new Error(response?.msg || '加载执行日志失败');
+                }
+                if (canceled) return;
+                const mapped = (response.data?.list || []).map(normalizeLog);
+                setLogList(mapped);
+            } catch (error: any) {
+                if (canceled) return;
+                message.error(error?.message || '加载执行日志失败');
+            }
+        };
+        loadLogs();
+        return () => {
+            canceled = true;
+        };
+    }, [selectedInstance?.plan_id]);
 
     const taskNameMap = useMemo(
-        () => new Map(tasks.map(task => [task.id, task.task_name])),
-        [tasks]
+        () => new Map(taskList.map(task => [task.id, task.task_name])),
+        [taskList]
     );
     const taskMap = useMemo(
-        () => new Map(tasks.map(task => [task.id, task])),
-        [tasks]
+        () => new Map(taskList.map(task => [task.id, task])),
+        [taskList]
     );
     const taskSystemOptions = useMemo(
-        () => Array.from(new Set(tasks.map(task => task.task_system).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
-        [tasks]
+        () => Array.from(new Set(taskList.map(task => task.task_system).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
+        [taskList]
     );
 
     const filteredInstances = useMemo(() => {
@@ -107,6 +242,22 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
             return matchesKeyword && matchesTaskSystem && matchesDataDate && matchesCreateDate && matchesStatus;
         });
     }, [createDateFilter, dataDateFilter, instanceList, searchKeyword, statusFilter, taskMap, taskSystemFilter]);
+
+    const pagedInstances = useMemo(() => {
+        const start = (currentPage - 1) * pageSize;
+        return filteredInstances.slice(start, start + pageSize);
+    }, [filteredInstances, currentPage, pageSize]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchKeyword, taskSystemFilter, statusFilter, dataDateFilter, createDateFilter]);
+
+    useEffect(() => {
+        const totalPages = Math.max(1, Math.ceil(filteredInstances.length / pageSize));
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [filteredInstances.length, pageSize, currentPage]);
 
     const instanceByPlanDate = useMemo(() => {
         const map = new Map<string, QuartzTaskStatus>();
@@ -163,7 +314,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
             };
         });
 
-        const downstream: DependencyRelationItem[] = tasks
+        const downstream: DependencyRelationItem[] = taskList
             .filter(task => parseDependIds(task.depend_id).includes(selectedInstance.plan_id))
             .map(task => ({
                 taskId: task.id,
@@ -178,7 +329,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
             upstream,
             downstream,
         };
-    }, [instanceByPlanDate, latestInstanceByPlan, selectedInstance, taskMap, tasks]);
+    }, [instanceByPlanDate, latestInstanceByPlan, selectedInstance, taskList, taskMap]);
 
     const updateInstance = (instanceId: number, updater: (instance: QuartzTaskStatus) => QuartzTaskStatus) => {
         setInstanceList(prev => prev.map(instance => instance.id === instanceId ? updater(instance) : instance));
@@ -280,7 +431,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
         };
     }, [rowContextMenu]);
 
-    const visibleInstanceIds = useMemo(() => filteredInstances.map(instance => instance.id), [filteredInstances]);
+    const visibleInstanceIds = useMemo(() => pagedInstances.map(instance => instance.id), [pagedInstances]);
     const allVisibleSelected = visibleInstanceIds.length > 0 && visibleInstanceIds.every(id => selectedInstanceIds.includes(id));
 
     const toggleSelectAllVisible = (checked: boolean) => {
@@ -394,14 +545,14 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
     const selectedTask = selectedInstance ? taskMap.get(selectedInstance.plan_id) : null;
     const selectedInstanceLogs = useMemo(() => {
         if (!selectedInstance) return [] as QuartzTaskExecutionLog[];
-        const exactLogs = logs.filter(log => log.instance_id === selectedInstance.id);
+        const exactLogs = logList.filter(log => log.instance_id === selectedInstance.id);
         if (exactLogs.length > 0) {
             return [...exactLogs].sort((a, b) => dayjs(a.create_time).valueOf() - dayjs(b.create_time).valueOf());
         }
-        return logs
+        return logList
             .filter(log => log.task_id === selectedInstance.plan_id && log.data_date === selectedInstance.data_date)
             .sort((a, b) => dayjs(a.create_time).valueOf() - dayjs(b.create_time).valueOf());
-    }, [logs, selectedInstance]);
+    }, [logList, selectedInstance]);
     const rowContextMenuStyle = rowContextMenu ? {
         left: Math.max(12, Math.min(rowContextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : rowContextMenu.x) - 244)),
         top: Math.max(12, Math.min(rowContextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : rowContextMenu.y) - 208)),
@@ -656,7 +807,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
                                             未找到符合条件的任务实例。
                                         </td>
                                     </tr>
-                                ) : filteredInstances.map(instance => {
+                                ) : pagedInstances.map(instance => {
                                     const mappedStatus = statusMap[instance.status ?? -1];
                                     const taskName = taskNameMap.get(instance.plan_id) || '-';
                                     const task = taskMap.get(instance.plan_id);
@@ -734,6 +885,18 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ tasks, instances, logs }) =
                             </tbody>
                         </table>
                     </div>
+                </div>
+                <div className="px-5">
+                    <Pagination
+                        current={currentPage}
+                        total={filteredInstances.length}
+                        pageSize={pageSize}
+                        showSizeChanger
+                        onChange={(page, size) => {
+                            setCurrentPage(page);
+                            setPageSize(size);
+                        }}
+                    />
                 </div>
             </div>
 

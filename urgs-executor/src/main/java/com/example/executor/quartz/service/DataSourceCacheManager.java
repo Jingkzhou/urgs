@@ -2,10 +2,9 @@ package com.example.executor.quartz.service;
 
 import com.alibaba.druid.pool.DruidDataSource;
 import com.example.executor.quartz.domain.entity.QuartzTaskEntity;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-
-import javax.annotation.PreDestroy;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j

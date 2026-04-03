@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AutoComplete, Checkbox, DatePicker, Drawer, Dropdown, Form, Input, InputNumber, Modal, Popover, Select, Tag, message } from 'antd';
 import type { MenuProps } from 'antd';
 import { Calendar, ChevronDown, Clock3, FileCog, FileText, MoreHorizontal, PauseCircle, Play, PlayCircle, Plus, Search, Settings2, Trash2 } from 'lucide-react';
@@ -7,12 +7,20 @@ import zhCN from 'antd/es/date-picker/locale/zh_CN';
 import Editor from '@monaco-editor/react';
 import { QuartzTask } from './mockData';
 import CronPicker from '../schedule/forms/components/CronPicker';
-import { getDatasourceConfig } from '@/api/ops';
+import Pagination from '@/components/common/Pagination';
+import {
+    deleteQuartzTask,
+    getDatasourceConfig,
+    pauseQuartzTask,
+    queryQuartzTasks,
+    QuartzTaskApiModel,
+    resumeQuartzTask,
+    saveOrUpdateQuartzTask
+} from '@/api/ops';
 
 const { TextArea } = Input;
 
 interface TaskManagementProps {
-    tasks: QuartzTask[];
     onViewExecutionLog?: (task: QuartzTask) => void;
 }
 
@@ -210,8 +218,48 @@ const getInitialFormValues = (task?: QuartzTask | null): TaskFormValues => ({
     notification_failed: task?.notification_failed || undefined,
 });
 
-const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionLog }) => {
-    const [taskList, setTaskList] = useState<QuartzTask[]>(tasks);
+const toTaskTypeCode = (taskType?: string | null) => (taskType === 'SQL' ? 2 : 1);
+
+const toTaskTypeLabel = (taskType?: number | null) => {
+    if (taskType === 2) return 'SQL';
+    if (taskType === 1) return 'SHELL';
+    return 'SHELL';
+};
+
+const normalizeQuartzTask = (item: QuartzTaskApiModel): QuartzTask => {
+    const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+    return {
+        id: Number(item.id),
+        task_name: item.taskName || '',
+        task_bean: item.taskBean ?? null,
+        task_params: item.taskParams ?? null,
+        task_cron: item.taskCron || '',
+        task_status: Number(item.taskStatus ?? 0) as 0 | 1,
+        remark: item.remark ?? null,
+        update_time: item.updateTime || now,
+        create_time: item.createTime || now,
+        task_type: toTaskTypeLabel(item.taskType),
+        url: item.url ?? null,
+        script: item.exePath ?? null,
+        depend_id: item.dependId ?? null,
+        username: item.username ?? null,
+        password: item.password ?? null,
+        driver: item.driver ?? null,
+        datasource_id: null,
+        datasource_name: null,
+        period: item.period ?? null,
+        task_system: item.taskSystem ?? null,
+        theme: item.theme ?? null,
+        offset: item.offset ?? null,
+        data_date: item.dataDate ?? null,
+        job_key: item.jobKey ?? null,
+        notification_completed: item.notificationCompleted ?? null,
+        notification_failed: item.notificationFailed ?? null,
+    };
+};
+
+const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) => {
+    const [taskList, setTaskList] = useState<QuartzTask[]>([]);
     const [form] = Form.useForm<TaskFormValues>();
     const watchedFormValues = Form.useWatch([], form) as Partial<TaskFormValues> | undefined;
     const [keyword, setKeyword] = useState('');
@@ -231,6 +279,8 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
     const [dependencyKeyword, setDependencyKeyword] = useState('');
     const [dependencySystemFilter, setDependencySystemFilter] = useState<string>('');
     const [dependencyTypeFilter, setDependencyTypeFilter] = useState<string>('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
 
     const taskTypes = useMemo(() => [...supportedTaskTypes], []);
     const systems = useMemo(
@@ -278,6 +328,23 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
         };
     }, []);
 
+    const loadTasks = useCallback(async () => {
+        try {
+            const response = await queryQuartzTasks({ pageNum: 1, pageSize: 1000 });
+            if (!response?.success) {
+                throw new Error(response?.msg || '任务查询失败');
+            }
+            const list = (response.data?.list || []).map(normalizeQuartzTask);
+            setTaskList(list);
+        } catch (error: any) {
+            message.error(error?.message || '加载任务失败');
+        }
+    }, []);
+
+    useEffect(() => {
+        loadTasks();
+    }, [loadTasks]);
+
     const filteredTasks = useMemo(() => {
         return taskList.filter(task => {
             const matchesKeyword = !keyword || [
@@ -293,9 +360,21 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
         });
     }, [keyword, statusFilter, systemFilter, taskList, themeFilter, typeFilter]);
 
-    const nextTaskId = useMemo(() => {
-        return taskList.reduce((max, task) => Math.max(max, task.id), 0) + 1;
-    }, [taskList]);
+    const pagedTasks = useMemo(() => {
+        const start = (currentPage - 1) * pageSize;
+        return filteredTasks.slice(start, start + pageSize);
+    }, [filteredTasks, currentPage, pageSize]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [keyword, statusFilter, typeFilter, systemFilter, themeFilter]);
+
+    useEffect(() => {
+        const totalPages = Math.max(1, Math.ceil(filteredTasks.length / pageSize));
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [filteredTasks.length, pageSize, currentPage]);
 
     const fallbackDataSources = useMemo(() => {
         return taskList.reduce<DataSourceOption[]>((acc, task) => {
@@ -344,11 +423,6 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
         });
     }, [availableDependencyTasks, dependencyKeyword, dependencySystemFilter, dependencyTypeFilter]);
 
-    const updateTask = (taskId: number, updater: (task: QuartzTask) => QuartzTask) => {
-        setTaskList(prev => prev.map(task => task.id === taskId ? updater(task) : task));
-        setSelectedTask(prev => prev && prev.id === taskId ? updater(prev) : prev);
-    };
-
     const openTaskModal = (task?: QuartzTask | null) => {
         setEditingTask(task || null);
         setDependencySelectorOpen(false);
@@ -384,46 +458,34 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
     const handleSaveTask = async () => {
         try {
             const values = await form.validateFields();
-            const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
-            const selectedDataSource = datasourceOptions.find(item => item.id === values.datasource_id);
-            const payload: QuartzTask = {
-                id: editingTask?.id ?? nextTaskId,
-                task_name: values.task_name.trim(),
-                task_bean: editingTask?.task_bean ?? null,
-                task_params: editingTask?.task_params ?? null,
-                task_cron: values.task_cron.trim(),
-                task_status: values.task_status,
+            const payload = {
+                id: editingTask?.id,
+                taskName: values.task_name.trim(),
+                taskBean: editingTask?.task_bean ?? null,
+                taskParams: editingTask?.task_params ?? null,
+                taskCron: values.task_cron.trim(),
+                taskStatus: values.task_status,
                 remark: emptyToNull(values.remark),
-                update_time: now,
-                create_time: editingTask?.create_time ?? now,
-                task_type: emptyToNull(values.task_type || undefined),
+                taskType: toTaskTypeCode(values.task_type),
                 url: editingTask?.url ?? null,
-                script: normalizeScript(values.script),
-                depend_id: emptyToNull(values.depend_id),
+                exePath: normalizeScript(values.script),
+                dependId: emptyToNull(values.depend_id),
                 username: editingTask?.username ?? null,
                 password: editingTask?.password ?? null,
                 driver: editingTask?.driver ?? null,
-                datasource_id: values.datasource_id ?? null,
-                datasource_name: selectedDataSource?.name ?? editingTask?.datasource_name ?? null,
                 period: values.period ?? null,
-                task_system: emptyToNull(values.task_system || undefined),
+                taskSystem: emptyToNull(values.task_system || undefined),
                 theme: emptyToNull(values.theme || undefined),
-                offset: values.offset ?? null,
-                data_date: editingTask?.data_date ?? null,
-                job_key: editingTask?.job_key ?? null,
-                notification_completed: emptyToNull(values.notification_completed),
-                notification_failed: emptyToNull(values.notification_failed),
+                offset: values.offset ?? 0,
+                notificationCompleted: emptyToNull(values.notification_completed),
+                notificationFailed: emptyToNull(values.notification_failed),
             };
-
-            if (editingTask) {
-                setTaskList(prev => prev.map(task => task.id === editingTask.id ? payload : task));
-                setSelectedTask(prev => prev?.id === editingTask.id ? payload : prev);
-                message.success(`已更新任务 ${payload.task_name}`);
-            } else {
-                setTaskList(prev => [payload, ...prev]);
-                message.success(`已创建任务 ${payload.task_name}`);
+            const response = await saveOrUpdateQuartzTask(payload);
+            if (!response?.success) {
+                throw new Error(response?.msg || '保存任务失败');
             }
-
+            await loadTasks();
+            message.success(editingTask ? `已更新任务 ${values.task_name}` : `已创建任务 ${values.task_name}`);
             closeTaskModal();
         } catch (error: any) {
             if (error?.errorFields) {
@@ -432,7 +494,9 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
                     .filter(Boolean)
                     .join('、');
                 message.error(labels ? `请检查表单：${labels}` : '请完善表单信息');
+                return;
             }
+            message.error(error?.message || '保存任务失败');
         }
     };
 
@@ -440,10 +504,18 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
         openTaskModal(task);
     };
 
-    const handleDeleteTask = (task: QuartzTask) => {
-        setTaskList(prev => prev.filter(item => item.id !== task.id));
-        setSelectedTask(prev => prev?.id === task.id ? null : prev);
-        message.success(`已删除任务 ${task.task_name}`);
+    const handleDeleteTask = async (task: QuartzTask) => {
+        try {
+            const response = await deleteQuartzTask(task.id);
+            if (!response?.success) {
+                throw new Error(response?.msg || '删除任务失败');
+            }
+            await loadTasks();
+            setSelectedTask(prev => prev?.id === task.id ? null : prev);
+            message.success(`已删除任务 ${task.task_name}`);
+        } catch (error: any) {
+            message.error(error?.message || '删除任务失败');
+        }
     };
 
     const handleStartTask = (task: QuartzTask) => {
@@ -457,30 +529,37 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
             message.error('请选择数据日期');
             return;
         }
-
-        message.success(`前端稿占位：已触发任务 ${pendingStartTask.task_name} 在 ${startDataDate} 立即开始`);
+        message.info('当前后端未开放立即执行接口，请在执行器侧手工下发或补充 API');
         setStartTaskModalVisible(false);
         setPendingStartTask(null);
     };
 
-    const handlePauseTask = (task: QuartzTask) => {
+    const handlePauseTask = async (task: QuartzTask) => {
         if (task.task_status === 1) return;
-        updateTask(task.id, current => ({
-            ...current,
-            task_status: 1,
-            update_time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-        }));
-        message.success(`已暂停任务 ${task.task_name}`);
+        try {
+            const response = await pauseQuartzTask(task.id);
+            if (!response?.success) {
+                throw new Error(response?.msg || '暂停任务失败');
+            }
+            await loadTasks();
+            message.success(`已暂停任务 ${task.task_name}`);
+        } catch (error: any) {
+            message.error(error?.message || '暂停任务失败');
+        }
     };
 
-    const handleResumeTask = (task: QuartzTask) => {
+    const handleResumeTask = async (task: QuartzTask) => {
         if (task.task_status === 0) return;
-        updateTask(task.id, current => ({
-            ...current,
-            task_status: 0,
-            update_time: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-        }));
-        message.success(`已恢复任务 ${task.task_name}`);
+        try {
+            const response = await resumeQuartzTask(task.id);
+            if (!response?.success) {
+                throw new Error(response?.msg || '恢复任务失败');
+            }
+            await loadTasks();
+            message.success(`已恢复任务 ${task.task_name}`);
+        } catch (error: any) {
+            message.error(error?.message || '恢复任务失败');
+        }
     };
 
     const handleViewExecutionLog = (task: QuartzTask) => {
@@ -770,7 +849,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
                                             未找到符合条件的监管任务。
                                         </td>
                                     </tr>
-                                ) : filteredTasks.map(task => {
+                                ) : pagedTasks.map(task => {
                                     const mappedStatus = statusMap[task.task_status] || statusMap[0];
 
                                     return (
@@ -848,6 +927,18 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ tasks, onViewExecutionL
                             </tbody>
                         </table>
                     </div>
+                </div>
+                <div className="px-5">
+                    <Pagination
+                        current={currentPage}
+                        total={filteredTasks.length}
+                        pageSize={pageSize}
+                        showSizeChanger
+                        onChange={(page, size) => {
+                            setCurrentPage(page);
+                            setPageSize(size);
+                        }}
+                    />
                 </div>
             </div>
 

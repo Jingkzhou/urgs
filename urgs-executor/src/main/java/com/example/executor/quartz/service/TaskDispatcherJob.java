@@ -3,14 +3,16 @@ package com.example.executor.quartz.service;
 import com.alibaba.druid.pool.DruidDataSource;
 import com.example.executor.quartz.constant.TaskStatusEnum;
 import com.example.executor.quartz.domain.entity.QuartzTaskEntity;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import org.quartz.CronExpression;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.PostConstruct;
 import java.text.SimpleDateFormat;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
@@ -68,9 +70,9 @@ public class TaskDispatcherJob {
                     continue;
                 }
 
-                CronExpression cron = new CronExpression(task.getTaskCron());
-                Date nextFire = cron.getNextValidTimeAfter(scanFrom);
-                if (nextFire == null || nextFire.after(now)) {
+                CronExpression cron = CronExpression.parse(task.getTaskCron());
+                ZonedDateTime nextFire = cron.next(ZonedDateTime.ofInstant(scanFrom.toInstant(), ZoneId.systemDefault()));
+                if (nextFire == null || nextFire.toInstant().isAfter(now.toInstant())) {
                     continue;
                 }
 

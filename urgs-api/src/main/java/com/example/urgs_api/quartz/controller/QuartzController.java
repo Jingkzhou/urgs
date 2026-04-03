@@ -23,6 +23,7 @@ import javax.validation.Valid;
  * @date  
  */
 @RestController
+@RequestMapping("/api")
 @Api(tags = {"Task Scheduler"})
 public class QuartzController {
 

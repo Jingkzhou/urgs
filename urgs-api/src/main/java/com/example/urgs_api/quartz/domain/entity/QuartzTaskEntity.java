@@ -64,7 +64,7 @@ public class QuartzTaskEntity extends BaseEntity {
     /**
      *任务类型1shell2proc
      */
-    private int taskType;
+    private Integer taskType;
     /**
      * 任务自动轮询时间  毫秒
      */
@@ -95,7 +95,7 @@ public class QuartzTaskEntity extends BaseEntity {
     /**
      * 偏移量
      */
-    private int offset;
+    private Integer offset;
 
 
     /**
@@ -123,4 +123,3 @@ public class QuartzTaskEntity extends BaseEntity {
     private String notificationFailed;
 
 }
-
