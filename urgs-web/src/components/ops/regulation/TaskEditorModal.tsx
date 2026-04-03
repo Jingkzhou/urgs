@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AutoComplete, Form, Input, InputNumber, Modal, Select } from 'antd';
 import { Calendar, Clock3, Settings2 } from 'lucide-react';
-import Editor from '@monaco-editor/react';
 import { QuartzTask } from './mockData';
+import LazyMonacoEditor from './LazyMonacoEditor';
 import CronPicker from '../schedule/forms/components/CronPicker';
 import TaskDependencyPanel from './TaskDependencyPanel';
 import { queryQuartzTaskDependencies, QuartzTaskApiModel } from '@/api/ops';
@@ -53,7 +53,7 @@ interface TaskEditorModalProps {
     onSubmit: () => void;
 }
 
-const modalCardClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm';
+const modalCardClass = 'rounded-2xl border border-slate-200 bg-white';
 
 const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
     open,
@@ -217,6 +217,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
             width={1120}
             onOk={onSubmit}
             onCancel={onCancel}
+            destroyOnHidden
             styles={{ body: { padding: 0 }, footer: { padding: '18px 24px' } }}
             footer={
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -234,13 +235,13 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                     <div className="flex items-center justify-end gap-3">
                         <button
                             onClick={onCancel}
-                            className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                            className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
                         >
                             取消
                         </button>
                         <button
                             onClick={onSubmit}
-                            className="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-red-700 hover:shadow-md"
+                            className="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-700"
                         >
                             {editingTask ? '保存修改' : '创建任务'}
                         </button>
@@ -266,7 +267,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                         <Input />
                     </Form.Item>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-1.5">
                         <div className="grid grid-cols-2 gap-1">
                             <button
                                 type="button"
@@ -330,12 +331,12 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                             />
                                         </Form.Item>
                                         <Form.Item name="task_system" label="所属系统">
-                                            <AutoComplete
-                                                options={systems.map(system => ({ value: system }))}
-                                                placeholder="例如：监管报送平台"
-                                                filterOption={(inputValue, option) =>
-                                                    (option?.value ?? '').toUpperCase().includes(inputValue.toUpperCase())
-                                                }
+                                            <Select
+                                                showSearch
+                                                allowClear
+                                                options={systems.map(system => ({ label: system, value: system }))}
+                                                placeholder="请选择所属系统"
+                                                optionFilterProp="label"
                                             />
                                         </Form.Item>
                                         <Form.Item name="theme" label="任务主题">
@@ -447,7 +448,12 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                         <div>
                                             <div className="mb-2 text-sm text-slate-700">脚本</div>
                                             {scriptEditorReady ? (
-                                                <Editor
+                                                <LazyMonacoEditor
+                                                    loadingFallback={
+                                                        <div className="flex h-[260px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-400">
+                                                            脚本编辑器加载中...
+                                                        </div>
+                                                    }
                                                     height="260px"
                                                     value={watchedScript || ''}
                                                     language={editorLanguageMap[watchedTaskType || editingTask?.task_type || 'SHELL'] || 'shell'}

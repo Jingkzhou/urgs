@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { message } from 'antd';
 import dayjs from 'dayjs';
-import { queryQuartzTaskLog, queryQuartzTasks, queryQuartzTaskStatus } from '@/api/ops';
+import { batchExecuteQuartzTaskStatus, queryQuartzTaskLog, queryQuartzTasks, queryQuartzTaskStatus } from '@/api/ops';
 import { QuartzTask, QuartzTaskExecutionLog, QuartzTaskStatus } from './mockData';
 import { blockingStatusRank, incompleteInstanceStatuses } from './task-instance/constants';
 import TaskInstanceDetailDrawer from './task-instance/TaskInstanceDetailDrawer';
@@ -27,6 +27,11 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     const [taskList, setTaskList] = useState<QuartzTask[]>([]);
     const [instanceList, setInstanceList] = useState<QuartzTaskStatus[]>([]);
     const [logList, setLogList] = useState<QuartzTaskExecutionLog[]>([]);
+    const [draftSearchKeyword, setDraftSearchKeyword] = useState('');
+    const [draftTaskSystemFilter, setDraftTaskSystemFilter] = useState('');
+    const [draftDataDateFilter, setDraftDataDateFilter] = useState('');
+    const [draftCreateDateFilter, setDraftCreateDateFilter] = useState(todayDate);
+    const [draftStatusFilter, setDraftStatusFilter] = useState<string>('');
     const [searchKeyword, setSearchKeyword] = useState('');
     const [taskSystemFilter, setTaskSystemFilter] = useState('');
     const [dataDateFilter, setDataDateFilter] = useState('');
@@ -192,6 +197,35 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     useEffect(() => {
         setCurrentPage(1);
     }, [searchKeyword, taskSystemFilter, statusFilter, dataDateFilter, createDateFilter]);
+
+    const handleSearch = useCallback(() => {
+        setSearchKeyword(draftSearchKeyword.trim());
+        setTaskSystemFilter(draftTaskSystemFilter);
+        setDataDateFilter(draftDataDateFilter);
+        setCreateDateFilter(draftCreateDateFilter);
+        setStatusFilter(draftStatusFilter);
+        setCurrentPage(1);
+    }, [
+        draftCreateDateFilter,
+        draftDataDateFilter,
+        draftSearchKeyword,
+        draftStatusFilter,
+        draftTaskSystemFilter,
+    ]);
+
+    const handleResetFilters = useCallback(() => {
+        setDraftSearchKeyword('');
+        setDraftTaskSystemFilter('');
+        setDraftDataDateFilter('');
+        setDraftCreateDateFilter(todayDate);
+        setDraftStatusFilter('');
+        setSearchKeyword('');
+        setTaskSystemFilter('');
+        setDataDateFilter('');
+        setCreateDateFilter(todayDate);
+        setStatusFilter('');
+        setCurrentPage(1);
+    }, [todayDate]);
 
     useEffect(() => {
         const totalPages = Math.max(1, Math.ceil(filteredInstances.length / pageSize));
@@ -385,15 +419,15 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
         setSelectedInstance(prev => prev && targetSet.has(prev.id) ? updater(prev) : prev);
     };
 
-    const markInstanceRunning = (instance: QuartzTaskStatus) => {
+    const markInstanceWaiting = (instance: QuartzTaskStatus) => {
         const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
         return {
             ...instance,
-            status: 2,
-            begin_time: instance.begin_time || now,
+            status: 1,
+            begin_time: null,
             update_time: now,
             end_time: null,
-            msg: '实例已手工触发执行。',
+            msg: '实例已批量重置为等待执行。',
         };
     };
 
@@ -422,7 +456,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     };
 
     const handleExecuteInstance = (instance: QuartzTaskStatus) => {
-        updateInstance(instance.id, markInstanceRunning);
+        updateInstance(instance.id, markInstanceWaiting);
         message.success(`已执行实例 #${instance.id}`);
     };
 
@@ -496,10 +530,28 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
             : prev.filter(id => id !== instanceId));
     };
 
-    const handleBatchExecute = () => {
+    const handleBatchExecute = async () => {
         if (selectedInstanceIds.length === 0) return;
-        updateInstances(selectedInstanceIds, markInstanceRunning);
-        message.success(`已批量执行 ${selectedInstanceIds.length} 条实例`);
+
+        const selectedInstances = instanceList.filter(instance => selectedInstanceIds.includes(instance.id));
+        const invalidInstances = selectedInstances.filter(instance => instance.status !== 3 && instance.status !== 4);
+        if (invalidInstances.length > 0) {
+            message.error('批量执行仅支持失败或已完成实例，当前选择中包含非允许状态，请检查后重试');
+            return;
+        }
+
+        try {
+            const response = await batchExecuteQuartzTaskStatus(selectedInstanceIds);
+            if (!response?.success) {
+                throw new Error(response?.msg || '批量执行失败');
+            }
+            updateInstances(selectedInstanceIds, markInstanceWaiting);
+            setSelectedInstanceIds([]);
+            await loadInstances();
+            message.success(`已批量执行 ${selectedInstances.length} 条实例`);
+        } catch (error: any) {
+            message.error(error?.message || '批量执行失败');
+        }
     };
 
     const handleBatchForceStop = () => {
@@ -568,22 +620,24 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                 taskMap={taskMap}
                 taskNameMap={taskNameMap}
                 taskSystemOptions={taskSystemOptions}
-                searchKeyword={searchKeyword}
-                taskSystemFilter={taskSystemFilter}
-                dataDateFilter={dataDateFilter}
-                createDateFilter={createDateFilter}
-                statusFilter={statusFilter}
+                searchKeyword={draftSearchKeyword}
+                taskSystemFilter={draftTaskSystemFilter}
+                dataDateFilter={draftDataDateFilter}
+                createDateFilter={draftCreateDateFilter}
+                statusFilter={draftStatusFilter}
                 selectedInstanceIds={selectedInstanceIds}
                 allVisibleSelected={allVisibleSelected}
                 rowContextMenu={rowContextMenu}
                 rowContextMenuStyle={rowContextMenuStyle}
                 currentPage={currentPage}
                 pageSize={pageSize}
-                onSearchKeywordChange={setSearchKeyword}
-                onTaskSystemFilterChange={setTaskSystemFilter}
-                onDataDateFilterChange={setDataDateFilter}
-                onCreateDateFilterChange={setCreateDateFilter}
-                onStatusFilterChange={setStatusFilter}
+                onSearchKeywordChange={setDraftSearchKeyword}
+                onTaskSystemFilterChange={setDraftTaskSystemFilter}
+                onDataDateFilterChange={setDraftDataDateFilter}
+                onCreateDateFilterChange={setDraftCreateDateFilter}
+                onStatusFilterChange={setDraftStatusFilter}
+                onSearch={handleSearch}
+                onResetFilters={handleResetFilters}
                 onToggleSelectAllVisible={toggleSelectAllVisible}
                 onToggleSelectInstance={toggleSelectInstance}
                 onBatchExecute={handleBatchExecute}

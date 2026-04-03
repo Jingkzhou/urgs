@@ -4,8 +4,8 @@ import type { MenuProps } from 'antd';
 import { Calendar, Clock3, FileCog, FileText, MoreHorizontal, PauseCircle, Play, PlayCircle, Plus, Search, Settings2, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import zhCN from 'antd/es/date-picker/locale/zh_CN';
-import Editor from '@monaco-editor/react';
 import { QuartzTask } from './mockData';
+import LazyMonacoEditor from './LazyMonacoEditor';
 import TaskEditorModal from './TaskEditorModal';
 import Pagination from '@/components/common/Pagination';
 import {
@@ -18,6 +18,7 @@ import {
     resumeQuartzTask,
     saveOrUpdateQuartzTask
 } from '@/api/ops';
+import { getSsoList, SsoConfig } from '@/api/version';
 
 interface TaskManagementProps {
     onViewExecutionLog?: (task: QuartzTask) => void;
@@ -62,11 +63,11 @@ const statusMap: Record<number, { label: string; className: string }> = {
 };
 
 const detailItemClass = 'rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3';
-const detailSectionClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm';
+const detailSectionClass = 'rounded-2xl border border-slate-200 bg-white';
 const detailMetaBadgeClass = 'inline-flex max-w-[160px] items-center rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] leading-none text-slate-600';
-const actionButtonClass = 'inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition';
+const actionButtonClass = 'inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors';
 const enabledActionClass = 'border-slate-200 text-slate-600 hover:bg-slate-50';
-const primaryActionClass = 'border-slate-200 bg-white text-slate-700 shadow-sm hover:-translate-y-0.5 hover:shadow-md';
+const primaryActionClass = 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
 const emptyToNull = (value?: string) => {
     if (typeof value !== 'string') return null;
     const trimmed = value.trim();
@@ -236,7 +237,6 @@ const normalizeQuartzTask = (item: QuartzTaskApiModel): QuartzTask => {
 
 const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) => {
     const [taskList, setTaskList] = useState<QuartzTask[]>([]);
-    const [allTasks, setAllTasks] = useState<QuartzTask[]>([]);
     const [taskTotal, setTaskTotal] = useState(0);
     const [form] = Form.useForm<TaskFormValues>();
     const [keyword, setKeyword] = useState('');
@@ -255,21 +255,58 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
     const [startDataDate, setStartDataDate] = useState(dayjs().format('YYYY-MM-DD'));
     const [dataSources, setDataSources] = useState<DataSourceOption[]>([]);
     const [dataSourceLoading, setDataSourceLoading] = useState(false);
+    const [regulationSystems, setRegulationSystems] = useState<SsoConfig[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
 
     const taskTypes = useMemo(() => [...supportedTaskTypes], []);
-    const systems = useMemo(
-        () => Array.from(new Set(allTasks.map(task => task.task_system).filter(Boolean))) as string[],
-        [allTasks]
-    );
+    const systems = useMemo(() => {
+        const systemNames = new Set<string>();
+        regulationSystems.forEach(system => {
+            if (system.name?.trim()) {
+                systemNames.add(system.name.trim());
+            }
+        });
+        taskList.forEach(task => {
+            if (task.task_system?.trim()) {
+                systemNames.add(task.task_system.trim());
+            }
+        });
+        if (editingTask?.task_system?.trim()) {
+            systemNames.add(editingTask.task_system.trim());
+        }
+        return Array.from(systemNames);
+    }, [editingTask?.task_system, regulationSystems, taskList]);
     const themes = useMemo(
-        () => Array.from(new Set(allTasks.map(task => task.theme).filter(Boolean))) as string[],
-        [allTasks]
+        () => {
+            const themeNames = new Set<string>();
+            taskList.forEach(task => {
+                if (task.theme?.trim()) {
+                    themeNames.add(task.theme.trim());
+                }
+            });
+            if (editingTask?.theme?.trim()) {
+                themeNames.add(editingTask.theme.trim());
+            }
+            return Array.from(themeNames);
+        },
+        [editingTask?.theme, taskList]
     );
 
     useEffect(() => {
         let mounted = true;
+
+        const fetchRegulationSystems = async () => {
+            try {
+                const list = await getSsoList();
+                if (!mounted) return;
+                setRegulationSystems(Array.isArray(list) ? list : []);
+            } catch (error) {
+                if (!mounted) return;
+                console.error('Failed to fetch regulation systems:', error);
+                message.error('加载监管系统列表失败');
+            }
+        };
 
         const fetchDataSources = async () => {
             setDataSourceLoading(true);
@@ -297,6 +334,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             }
         };
 
+        fetchRegulationSystems();
         fetchDataSources();
 
         return () => {
@@ -327,40 +365,6 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             message.error(error?.message || '加载任务失败');
         }
     }, [buildTaskQueryParams, currentPage, pageSize]);
-
-    const loadAllTasks = useCallback(async () => {
-        try {
-            const firstPage = await queryQuartzTasks({ pageNum: 1, pageSize: 500 });
-            if (!firstPage?.success) {
-                throw new Error(firstPage?.msg || '任务查询失败');
-            }
-
-            const firstList = (firstPage.data?.list || []).map(normalizeQuartzTask);
-            const totalPages = Number(firstPage.data?.pages || 1);
-            if (totalPages <= 1) {
-                setAllTasks(firstList);
-                return;
-            }
-
-            const restPages = await Promise.all(
-                Array.from({ length: totalPages - 1 }, (_, index) =>
-                    queryQuartzTasks({ pageNum: index + 2, pageSize: 500 })
-                )
-            );
-
-            const mergedList = [
-                ...firstList,
-                ...restPages.flatMap(response => (response?.data?.list || []).map(normalizeQuartzTask)),
-            ];
-            setAllTasks(mergedList);
-        } catch (error: any) {
-            message.error(error?.message || '加载任务失败');
-        }
-    }, []);
-
-    useEffect(() => {
-        loadAllTasks();
-    }, [loadAllTasks]);
 
     useEffect(() => {
         loadTasks(currentPage, pageSize);
@@ -413,22 +417,8 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
         };
     }, [selectedTask?.id]);
 
-    const filteredSummaryTasks = useMemo(() => {
-        return allTasks.filter(task => {
-            const matchesKeyword = !keyword || [
-                task.task_name,
-                task.remark,
-            ].some(value => value?.toLowerCase().includes(keyword.toLowerCase()));
-            const matchesStatus = statusFilter === '' || String(task.task_status) === statusFilter;
-            const matchesType = !typeFilter || task.task_type === typeFilter;
-            const matchesSystem = !systemFilter || task.task_system === systemFilter;
-            const matchesTheme = !themeFilter || task.theme === themeFilter;
-            return matchesKeyword && matchesStatus && matchesType && matchesSystem && matchesTheme;
-        });
-    }, [allTasks, keyword, statusFilter, systemFilter, themeFilter, typeFilter]);
-
     const fallbackDataSources = useMemo(() => {
-        return allTasks.reduce<DataSourceOption[]>((acc, task) => {
+        return taskList.reduce<DataSourceOption[]>((acc, task) => {
             if (!task.datasource_name) return acc;
             const nextId = task.datasource_id ?? -(acc.length + 1);
             if (acc.some(item => item.id === nextId || item.name === task.datasource_name)) {
@@ -441,7 +431,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             });
             return acc;
         }, []);
-    }, [allTasks]);
+    }, [taskList]);
 
     const datasourceOptions = useMemo(() => {
         return dataSources.length > 0 ? dataSources : fallbackDataSources;
@@ -499,7 +489,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             if (!response?.success) {
                 throw new Error(response?.msg || '保存任务失败');
             }
-            await Promise.all([loadTasks(currentPage, pageSize), loadAllTasks()]);
+            await loadTasks(currentPage, pageSize);
             message.success(editingTask ? `已更新任务 ${values.task_name}` : `已创建任务 ${values.task_name}`);
             closeTaskModal();
         } catch (error: any) {
@@ -525,7 +515,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             if (!response?.success) {
                 throw new Error(response?.msg || '删除任务失败');
             }
-            await Promise.all([loadTasks(currentPage, pageSize), loadAllTasks()]);
+            await loadTasks(currentPage, pageSize);
             setSelectedTask(prev => prev?.id === task.id ? null : prev);
             message.success(`已删除任务 ${task.task_name}`);
         } catch (error: any) {
@@ -556,7 +546,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             if (!response?.success) {
                 throw new Error(response?.msg || '暂停任务失败');
             }
-            await Promise.all([loadTasks(currentPage, pageSize), loadAllTasks()]);
+            await loadTasks(currentPage, pageSize);
             message.success(`已暂停任务 ${task.task_name}`);
         } catch (error: any) {
             message.error(error?.message || '暂停任务失败');
@@ -570,7 +560,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             if (!response?.success) {
                 throw new Error(response?.msg || '恢复任务失败');
             }
-            await Promise.all([loadTasks(currentPage, pageSize), loadAllTasks()]);
+            await loadTasks(currentPage, pageSize);
             message.success(`已恢复任务 ${task.task_name}`);
         } catch (error: any) {
             message.error(error?.message || '恢复任务失败');
@@ -617,7 +607,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
     return (
         <>
             <div className="space-y-4">
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                <div className="bg-white rounded-2xl border border-slate-200 p-5">
                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                         <div>
                             <div className="text-lg font-bold text-slate-800">任务管理</div>
@@ -631,14 +621,14 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                 共 {taskTotal} 条任务
                             </span>
                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700">
-                                正常 {filteredSummaryTasks.filter(task => task.task_status === 0).length}
+                                正常 {taskList.filter(task => task.task_status === 0).length}
                             </span>
                             <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-amber-700">
-                                暂停 {filteredSummaryTasks.filter(task => task.task_status === 1).length}
+                                暂停 {taskList.filter(task => task.task_status === 1).length}
                             </span>
                             <button
                                 onClick={handleCreateTask}
-                                className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-red-700 hover:-translate-y-0.5 hover:shadow-md"
+                                className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-red-700"
                             >
                                 <Plus size={14} />
                                 新建任务
@@ -698,7 +688,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                     </div>
                 </div>
 
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
                     <div className="overflow-x-auto">
                         <table className="w-full min-w-[1240px] text-sm text-left">
                             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
@@ -728,11 +718,11 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                         <tr
                                             key={task.id}
                                             onClick={() => setSelectedTask(task)}
-                                            className="cursor-pointer transition-colors hover:bg-red-50/30"
+                                            className="cursor-pointer hover:bg-red-50/30"
                                         >
                                             <td className="px-4 py-4">
                                                 <div className="space-y-1 text-left">
-                                                    <div className="font-semibold text-slate-800 transition-colors">
+                                                    <div className="font-semibold text-slate-800">
                                                         {task.task_name}
                                                     </div>
                                                     <div className="font-mono text-xs text-slate-500">#{task.id}</div>
@@ -860,7 +850,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 open={modalVisible}
                 editingTask={editingTask}
                 form={form}
-                taskList={allTasks}
+                taskList={taskList}
                 taskTypes={taskTypes}
                 systems={systems}
                 themes={themes}
@@ -879,6 +869,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 size={620}
                 onClose={() => setSelectedTask(null)}
                 open={!!selectedTask}
+                destroyOnHidden
             >
                 {selectedTask && (
                     <div className="space-y-5">
@@ -915,7 +906,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                             </div>
                         </div>
 
-                        <div className="rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+                        <div className="rounded-2xl border border-slate-200 bg-white p-1.5">
                             <div className="grid grid-cols-2 gap-1">
                                 <button
                                     type="button"
@@ -1026,7 +1017,12 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                             {selectedTask.script ? (
                                                 detailScriptEditorReady ? (
                                                     <div className="mt-2 overflow-hidden rounded-xl border border-slate-200">
-                                                        <Editor
+                                                        <LazyMonacoEditor
+                                                            loadingFallback={
+                                                                <div className="mt-2 flex h-[220px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white text-sm text-slate-400">
+                                                                    脚本内容加载中...
+                                                                </div>
+                                                            }
                                                             height="220px"
                                                             language={editorLanguageMap[selectedTask.task_type || 'SHELL'] || 'shell'}
                                                             value={selectedTask.script}

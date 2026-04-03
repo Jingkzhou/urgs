@@ -171,4 +171,34 @@
         LIMIT 1
     </select>
 
+    <select id="selectByIds" resultType="com.example.urgs_api.quartz.domain.entity.QuartzTaskStatusEntity">
+        SELECT id,
+               plan_id AS planId,
+               data_date AS dataDate,
+               status,
+               begin_time AS beginTime,
+               end_time AS endTime,
+               msg,
+               create_time AS createTime,
+               update_time AS updateTime
+        FROM t_quartz_task_status
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <update id="batchResetToWaiting">
+        UPDATE t_quartz_task_status
+        SET status = 1,
+            begin_time = NULL,
+            end_time = NULL,
+            msg = #{msg},
+            update_time = NOW()
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+
 </mapper>

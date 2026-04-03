@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Modal } from 'antd';
-import { ClipboardList, DatabaseZap, ShieldCheck, TimerReset } from 'lucide-react';
+import { ClipboardList, TimerReset } from 'lucide-react';
 import TaskManagement from './regulation/TaskManagement';
 import TaskInstance from './regulation/TaskInstance';
 import TaskExecutionLog from './regulation/TaskExecutionLog';
@@ -21,13 +21,6 @@ const RegulationBatchManagement: React.FC = () => {
         name: null,
     });
 
-    const [stats, setStats] = useState({
-        waitingInstances: 0,
-        runningInstances: 0,
-        successInstances: 0,
-        failedInstances: 0,
-    });
-
     const handleOpenTaskLog = (task: QuartzTask) => {
         setSelectedLogTask({ id: task.id, name: task.task_name });
         setExecutionLogVisible(true);
@@ -45,7 +38,7 @@ const RegulationBatchManagement: React.FC = () => {
     const renderContent = () => {
         switch (activeView) {
             case 'task-instance':
-                return <TaskInstance onStatsChange={setStats} />;
+                return <TaskInstance />;
             case 'task-management':
             default:
                 return <TaskManagement onViewExecutionLog={handleOpenTaskLog} />;
@@ -55,7 +48,7 @@ const RegulationBatchManagement: React.FC = () => {
     return (
         <div className="h-[calc(100vh-140px)] w-full bg-slate-50 rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col relative animate-fade-in">
             <div className="border-b border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.94)_100%)] backdrop-blur px-5 py-3">
-                <div className="space-y-3">
+                <div>
                     <div className="inline-flex rounded-2xl border border-slate-200/90 bg-white/90 p-1 shadow-[0_12px_32px_-28px_rgba(15,23,42,0.55)]">
                         {navItems.map(item => {
                             const isActive = activeView === item.id;
@@ -73,37 +66,6 @@ const RegulationBatchManagement: React.FC = () => {
                                 </button>
                             );
                         })}
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                        <div className="min-w-[112px] rounded-full border border-slate-200/90 bg-white/90 px-3 py-2 shadow-[0_10px_24px_-24px_rgba(15,23,42,0.55)]">
-                            <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400">
-                                <ClipboardList size={11} />
-                                等待
-                            </div>
-                            <div className="mt-1 text-xl font-bold leading-none text-slate-800">{stats.waitingInstances}</div>
-                        </div>
-                        <div className="min-w-[112px] rounded-full border border-emerald-100 bg-emerald-50/85 px-3 py-2 shadow-[0_10px_24px_-24px_rgba(5,150,105,0.55)]">
-                            <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-600">
-                                <ShieldCheck size={11} />
-                                执行中
-                            </div>
-                            <div className="mt-1 text-xl font-bold leading-none text-emerald-700">{stats.runningInstances}</div>
-                        </div>
-                        <div className="min-w-[112px] rounded-full border border-blue-100 bg-blue-50/85 px-3 py-2 shadow-[0_10px_24px_-24px_rgba(37,99,235,0.55)]">
-                            <div className="flex items-center gap-1.5 text-[11px] font-medium text-blue-600">
-                                <DatabaseZap size={11} />
-                                成功
-                            </div>
-                            <div className="mt-1 text-xl font-bold leading-none text-blue-700">{stats.successInstances}</div>
-                        </div>
-                        <div className="min-w-[112px] rounded-full border border-red-100 bg-red-50/85 px-3 py-2 shadow-[0_10px_24px_-24px_rgba(239,68,68,0.55)]">
-                            <div className="flex items-center gap-1.5 text-[11px] font-medium text-red-600">
-                                <TimerReset size={11} />
-                                失败
-                            </div>
-                            <div className="mt-1 text-xl font-bold leading-none text-red-700">{stats.failedInstances}</div>
-                        </div>
                     </div>
                 </div>
             </div>

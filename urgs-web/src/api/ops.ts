@@ -432,6 +432,9 @@ export interface QuartzTaskLogApiModel {
 export const queryQuartzTaskStatus = (params: QuartzTaskStatusQueryParams) =>
     post<ApiResponse<PageResult<QuartzTaskStatusApiModel>>>('/api/quartz/task/status/query', params);
 
+export const batchExecuteQuartzTaskStatus = (statusIds: number[]) =>
+    post<ApiResponse<string>>('/api/quartz/task/status/batchExecute', { statusIds });
+
 export const queryQuartzTaskLog = (taskId: number, pageNum: number = 1, pageSize: number = 200) =>
     post<ApiResponse<PageResult<QuartzTaskLogApiModel>>>('/api/quartz/task/queryLog', { taskId, pageNum, pageSize });
 

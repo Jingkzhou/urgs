@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tag } from 'antd';
-import { CheckCircle2, Eye, Play, Search, Square } from 'lucide-react';
+import { CheckCircle2, Eye, Play, RotateCcw, Search, Square } from 'lucide-react';
 import Pagination from '@/components/common/Pagination';
 import { QuartzTask, QuartzTaskStatus } from '../mockData';
 import {
@@ -35,6 +35,8 @@ interface TaskInstanceTableViewProps {
     onDataDateFilterChange: (value: string) => void;
     onCreateDateFilterChange: (value: string) => void;
     onStatusFilterChange: (value: string) => void;
+    onSearch: () => void;
+    onResetFilters: () => void;
     onToggleSelectAllVisible: (checked: boolean) => void;
     onToggleSelectInstance: (instanceId: number, checked: boolean) => void;
     onBatchExecute: () => void;
@@ -70,6 +72,8 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     onDataDateFilterChange,
     onCreateDateFilterChange,
     onStatusFilterChange,
+    onSearch,
+    onResetFilters,
     onToggleSelectAllVisible,
     onToggleSelectInstance,
     onBatchExecute,
@@ -94,10 +98,13 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                         <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5">
-                            实例 {filteredInstances.length}
+                            等待 {filteredInstances.filter(instance => instance.status === 1).length}
                         </span>
                         <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1.5 text-blue-700">
                             执行中 {filteredInstances.filter(instance => instance.status === 2).length}
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700">
+                            成功 {filteredInstances.filter(instance => instance.status === 3).length}
                         </span>
                         <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-3 py-1.5 text-red-700">
                             失败 {filteredInstances.filter(instance => instance.status === 4).length}
@@ -105,7 +112,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                     </div>
                 </div>
 
-                <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-7">
                     <label className="space-y-1">
                         <div className="text-xs font-medium text-slate-500">搜索条件</div>
                         <div className="relative">
@@ -113,6 +120,11 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                             <input
                                 value={searchKeyword}
                                 onChange={(event) => onSearchKeywordChange(event.target.value)}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        onSearch();
+                                    }
+                                }}
                                 placeholder="实例ID / 计划ID / 消息 / 主题 / 备注"
                                 className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
                             />
@@ -153,6 +165,11 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                             type="date"
                             value={dataDateFilter}
                             onChange={(event) => onDataDateFilterChange(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                    onSearch();
+                                }
+                            }}
                             className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
                         />
                     </label>
@@ -162,9 +179,33 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                             type="date"
                             value={createDateFilter}
                             onChange={(event) => onCreateDateFilterChange(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                    onSearch();
+                                }
+                            }}
                             className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
                         />
                     </label>
+                    <div className="space-y-1">
+                        <div className="text-xs font-medium text-slate-500">操作</div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={onSearch}
+                                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-red-600 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-700"
+                            >
+                                <Search size={14} />
+                                查询
+                            </button>
+                            <button
+                                onClick={onResetFilters}
+                                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+                            >
+                                <RotateCcw size={14} />
+                                重置
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 {selectedInstanceIds.length > 0 && (

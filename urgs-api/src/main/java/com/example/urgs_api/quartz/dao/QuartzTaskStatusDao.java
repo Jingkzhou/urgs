@@ -62,4 +62,14 @@ public interface QuartzTaskStatusDao extends BaseMapper<QuartzTaskStatusEntity> 
      */
     QuartzTaskStatusEntity getLastSuccess(@Param("planId") Long planId);
 
+    /**
+     * 按实例ID批量查询状态记录
+     */
+    List<QuartzTaskStatusEntity> selectByIds(@Param("ids") List<Long> ids);
+
+    /**
+     * 按实例ID批量更新为等待状态
+     */
+    int batchResetToWaiting(@Param("ids") List<Long> ids, @Param("msg") String msg);
+
 }

@@ -70,6 +70,12 @@ public class QuartzController {
         return quartzTaskService.queryTaskStatus(queryDTO);
     }
 
+    @PostMapping("/quartz/task/status/batchExecute")
+    @ApiOperation(value = "批量执行任务实例")
+    public ResponseDTO<String> batchExecuteStatus(@RequestBody @Valid QuartzBatchExecuteDTO batchExecuteDTO){
+        return quartzTaskService.batchExecuteTaskStatus(batchExecuteDTO);
+    }
+
 
     @PostMapping("/quartz/task/queryLog")
     @ApiOperation(value = "查询任务运行日志")

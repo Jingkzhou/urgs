@@ -141,6 +141,32 @@ public class QuartzTaskService {
         return ResponseDTO.succData(SmartPageUtil.convert2PageResult(pageParam));
     }
 
+    @Transactional(rollbackFor = Throwable.class)
+    public ResponseDTO<String> batchExecuteTaskStatus(QuartzBatchExecuteDTO batchExecuteDTO) {
+        List<Long> statusIds = batchExecuteDTO.getStatusIds() == null
+                ? Collections.emptyList()
+                : batchExecuteDTO.getStatusIds().stream().filter(Objects::nonNull).distinct().collect(Collectors.toList());
+        if (statusIds.isEmpty()) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "请选择需要批量执行的实例");
+        }
+
+        List<QuartzTaskStatusEntity> statusList = quartzTaskStatusDao.selectByIds(statusIds);
+        if (statusList.size() != statusIds.size()) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "部分任务实例不存在或已被删除，请刷新后重试");
+        }
+
+        List<Long> invalidIds = statusList.stream()
+                .filter(item -> item.getStatus() != 3 && item.getStatus() != 4)
+                .map(QuartzTaskStatusEntity::getId)
+                .collect(Collectors.toList());
+        if (!invalidIds.isEmpty()) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "批量执行仅支持失败或已完成实例，存在非法状态实例: " + invalidIds);
+        }
+
+        quartzTaskStatusDao.batchResetToWaiting(statusIds, "实例已批量重置为等待执行。");
+        return ResponseDTO.succ();
+    }
+
     public ResponseDTO<PageResultDTO<QuartzTaskVO>> queryYl(QuartzQueryDTO queryDTO, String type) {
         Page<QuartzTaskVO> pageParam = SmartPageUtil.convert2QueryPage(queryDTO);
         QuartzTaskStatusEntity statusEntity = quartzTaskStatusDao.selectById(queryDTO.getStatusId());
