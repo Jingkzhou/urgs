@@ -1,7 +1,7 @@
-package net.lab1024.smartadmin.module.support.quartz.domain.dto;
+package com.example.urgs_api.quartz.domain.dto;
 
 import lombok.Data;
-import net.lab1024.smartadmin.common.domain.PageParamDTO;
+import com.example.urgs_api.quartz.support.domain.PageParamDTO;
 
 import javax.validation.constraints.NotNull;
 import java.util.List;

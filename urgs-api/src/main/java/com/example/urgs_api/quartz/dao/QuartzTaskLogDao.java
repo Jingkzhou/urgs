@@ -1,10 +1,10 @@
-package net.lab1024.smartadmin.module.support.quartz.dao;
+package com.example.urgs_api.quartz.dao;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import net.lab1024.smartadmin.module.support.quartz.domain.dto.QuartzLogQueryDTO;
-import net.lab1024.smartadmin.module.support.quartz.domain.dto.QuartzTaskLogVO;
-import net.lab1024.smartadmin.module.support.quartz.domain.entity.QuartzTaskLogEntity;
+import com.example.urgs_api.quartz.domain.dto.QuartzLogQueryDTO;
+import com.example.urgs_api.quartz.domain.dto.QuartzTaskLogVO;
+import com.example.urgs_api.quartz.domain.entity.QuartzTaskLogEntity;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.springframework.stereotype.Component;

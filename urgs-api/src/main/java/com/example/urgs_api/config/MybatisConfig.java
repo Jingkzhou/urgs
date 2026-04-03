@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @MapperScan({
                 "com.example.urgs_api.**.mapper",
+                "com.example.urgs_api.quartz.dao",
                 "com.example.urgs_api.ai.repository",
                 "com.example.urgs_api.workflow.repository",
                 "com.example.urgs_api.datasource.repository",

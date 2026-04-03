@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="net.lab1024.smartadmin.module.support.quartz.dao.QuartzTaskStatusDao">
+<mapper namespace="com.example.urgs_api.quartz.dao.QuartzTaskStatusDao">
 
     <resultMap id="QuartzTaskStatusDTO"
-               type="net.lab1024.smartadmin.module.support.quartz.domain.dto.QuartzTaskStatusVO"></resultMap>
+               type="com.example.urgs_api.quartz.domain.dto.QuartzTaskStatusVO"></resultMap>
     <sql id="baseSql">
         t.id,
         t.plan_id,
@@ -151,7 +151,7 @@
         </foreach>
     </select>
 
-    <select id="getWaitingList" resultType="net.lab1024.smartadmin.module.support.quartz.domain.entity.QuartzTaskStatusEntity">
+    <select id="getWaitingList" resultType="com.example.urgs_api.quartz.domain.entity.QuartzTaskStatusEntity">
         SELECT plan_id as planId, data_date as dataDate, status, msg
         FROM t_quartz_task_status
         WHERE status = 1
@@ -163,7 +163,7 @@
         LIMIT 1
     </select>
 
-    <select id="getStatusBatch" resultType="net.lab1024.smartadmin.module.support.quartz.domain.entity.QuartzTaskStatusEntity">
+    <select id="getStatusBatch" resultType="com.example.urgs_api.quartz.domain.entity.QuartzTaskStatusEntity">
         SELECT id, plan_id as planId, data_date as dataDate, status,
                begin_time as beginTime, end_time as endTime, msg,
                create_time as createTime, update_time as updateTime
@@ -175,7 +175,7 @@
         AND data_date BETWEEN #{startDate} AND #{endDate}
     </select>
 
-    <select id="getLastSuccess" resultType="net.lab1024.smartadmin.module.support.quartz.domain.entity.QuartzTaskStatusEntity">
+    <select id="getLastSuccess" resultType="com.example.urgs_api.quartz.domain.entity.QuartzTaskStatusEntity">
         SELECT id, plan_id as planId, data_date as dataDate, status,
                end_time as endTime
         FROM t_quartz_task_status

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.executor.quartz.dao.QuartzTaskDao">
+
+    <sql id="baseSql">
+        t.id,
+        t.task_name,
+        t.task_bean,
+        t.task_params,
+        t.task_cron,
+        t.task_status,
+        t.remark,
+        t.update_time,
+        t.create_time,
+        t.task_type,
+        t.url,
+        t.exe_path,
+        t.depend_id,
+        t.username,
+        t.password,
+        t.driver,
+        t.period,
+        t.task_system,
+        t.theme,
+        t.offset,
+        t.job_key,
+        t.notification_failed,
+        t.notification_completed
+    </sql>
+
+    <select id="selectById" resultType="com.example.executor.quartz.domain.entity.QuartzTaskEntity">
+        SELECT <include refid="baseSql"/>
+        FROM t_quartz_task t
+        WHERE t.id = #{id}
+    </select>
+
+    <select id="queryActiveTasks" resultType="com.example.executor.quartz.domain.entity.QuartzTaskEntity">
+        SELECT <include refid="baseSql"/>
+        FROM t_quartz_task t
+        WHERE t.task_status = 0
+        ORDER BY t.id
+    </select>
+
+    <select id="getTaskListByDepId" resultType="com.example.executor.quartz.domain.entity.QuartzTaskEntity">
+        SELECT <include refid="baseSql"/>
+        FROM t_quartz_task t
+        WHERE t.depend_id IS NOT NULL
+          AND t.depend_id &lt;&gt; ''
+          AND FIND_IN_SET(#{id}, t.depend_id) &gt; 0
+    </select>
+</mapper>

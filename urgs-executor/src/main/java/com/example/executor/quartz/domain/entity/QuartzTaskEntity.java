@@ -1,0 +1,30 @@
+package com.example.executor.quartz.domain.entity;
+
+import lombok.Data;
+
+@Data
+public class QuartzTaskEntity {
+
+    private Long id;
+    private String taskName;
+    private String taskBean;
+    private String taskParams;
+    private String taskCron;
+    private Integer taskStatus;
+    private String remark;
+    private String dependId;
+    private String exePath;
+    private String url;
+    private Integer taskType;
+    private Long period;
+    private String username;
+    private String password;
+    private String driver;
+    private String taskSystem;
+    private String theme;
+    private Integer offset;
+    private String dataDate;
+    private String jobKey;
+    private String notificationCompleted;
+    private String notificationFailed;
+}

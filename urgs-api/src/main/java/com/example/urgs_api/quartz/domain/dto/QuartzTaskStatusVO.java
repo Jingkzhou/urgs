@@ -1,8 +1,8 @@
-package net.lab1024.smartadmin.module.support.quartz.domain.dto;
+package com.example.urgs_api.quartz.domain.dto;
 
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
-import net.lab1024.smartadmin.module.support.quartz.constant.TaskStatusEnum;
+import com.example.urgs_api.quartz.constant.TaskStatusEnum;
 
 import javax.validation.constraints.NotNull;
 

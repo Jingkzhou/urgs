@@ -1,4 +1,4 @@
-package net.lab1024.smartadmin.module.support.quartz.domain.dto;
+package com.example.urgs_api.quartz.domain.dto;
 
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;

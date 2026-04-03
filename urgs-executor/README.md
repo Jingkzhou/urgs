@@ -1,23 +1,20 @@
 # URGS Executor (Unified Resource Governance System Executor)
 
-URGS Executor 是统一资源治理系统的任务执行引擎。它作为一个独立的服务运行，负责接收调度中心分发的任务，并在本地或远程环境中执行具体的业务逻辑。
+URGS Executor 是统一资源治理系统的任务执行引擎。它作为独立服务直接扫描共享库中的 `t_quartz_task / t_quartz_task_status`，并执行任务。
 
 ## ✨ 核心功能
 
-### 1. 多类型任务执行
-Executor 内置了多种 TaskHandler，支持执行不同类型的任务：
-- **ShellHandler**: 执行本地 Shell 脚本或命令。
-- **SqlHandler**: 连接数据库执行 SQL 语句 (支持 MySQL, Oracle, PG 等)。
-- **PythonHandler**: 执行 Python 脚本。
-- **DataXHandler**: 调度 DataX 任务进行数据同步。
-- **HttpHandler**: 发送 HTTP 请求 (GET/POST)。
-- **ProcedureHandler**: 执行数据库存储过程。
+### 1. 任务扫描与执行
+- **定时扫描**: 每分钟按 `task_cron` 扫描活跃任务并下发。
+- **依赖补偿**: 每 30 秒检查 `WAITING` 任务，前置完成后自动触发。
+- **执行类型**:
+  - `task_type=1`: SSH 执行脚本命令
+  - `task_type=2`: JDBC 执行存储过程
 
-### 2. 任务生命周期管理
-- **任务拉取**: 定时从数据库或队列中拉取待执行的任务实例。
-- **状态上报**: 实时监控任务执行状态 (Running, Success, Failed) 并上报给调度中心。
-- **日志采集**: 实时捕获任务执行的标准输出 (stdout) 和标准错误 (stderr)，并持久化保存，供前端查看。
-- **超时控制**: 支持任务执行超时自动终止。
+### 2. 状态流转
+- `WAITING -> RUNNING -> SUCCESS/FAILED`
+- 防重入：同一 `taskId_dataDate` 不会重复执行。
+- 支持重试：按任务 `period` 进行最多 3 次重试。
 
 ### 3. 资源隔离与并发控制
 - 采用线程池管理任务执行，确保系统稳定性。
@@ -39,20 +36,12 @@ Executor 内置了多种 TaskHandler，支持执行不同类型的任务：
 - 运行环境需安装相应的执行依赖 (如 `python3`, `datax` 等)，视具体任务类型而定。
 
 ### 配置文件
+在 `src/main/resources/application.properties` 中通过环境变量配置数据库（需与 urgs-api 指向同一库）：
 
-在 `src/main/resources/application.yml` 中配置数据库连接（需与 urgs-api 指向同一数据库）：
-
-```yaml
-spring:
-  datasource:
-    url: jdbc:mysql://localhost:3306/urgs?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
-    username: root
-    password: your_password
-
-executor:
-  max-threads: 20  # 最大并发执行线程数
-  log-path: /var/log/urgs/tasks # 任务日志本地存储路径
-```
+- `URGS_EXECUTOR_DB_URL`
+- `URGS_EXECUTOR_DB_USERNAME`
+- `URGS_EXECUTOR_DB_PASSWORD`
+- `URGS_EXECUTOR_DB_DRIVER`（默认 `com.mysql.cj.jdbc.Driver`）
 
 ### 编译与运行
 
@@ -72,18 +61,15 @@ java -jar target/urgs-executor-0.0.1-SNAPSHOT.jar
 
 ```
 urgs-executor/
-├── src/main/java/com/example/executor/urgs_executor/
-│   ├── handler/        # 核心：各种任务类型的处理器实现 (ShellHandler, SqlHandler等)
-│   ├── job/            # 定时任务 (如任务拉取 Job)
-│   ├── entity/         # 实体类
-│   ├── mapper/         # 数据访问层
-│   ├── service/        # 业务逻辑层
-│   ├── config/         # 配置类
-│   ├── util/           # 工具类
-│   └── UrgsExecutorApplication.java  # 启动类
+├── src/main/java/com/example/executor/
+│   ├── quartz/service/TaskDispatcherJob.java
+│   ├── quartz/task/DependencyCheckTask.java
+│   ├── quartz/service/ExecutorTaskService.java
+│   └── UrgsExecutorApplication.java
 └── src/main/resources/
-    ├── mapper/         # MyBatis XML Mapper
-    └── application.yml # 配置文件
+    ├── mapper/QuartzTaskMapper.xml
+    ├── mapper/QuartzTaskStatusMapper.xml
+    └── application.properties
 ```
 
 ## 🤝 贡献指南

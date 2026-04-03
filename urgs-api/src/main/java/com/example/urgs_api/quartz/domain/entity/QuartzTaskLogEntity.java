@@ -1,7 +1,7 @@
-package net.lab1024.smartadmin.module.support.quartz.domain.entity;
+package com.example.urgs_api.quartz.domain.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
-import net.lab1024.smartadmin.common.domain.BaseEntity;
+import com.example.urgs_api.quartz.support.domain.BaseEntity;
 import lombok.Data;
 
 /**

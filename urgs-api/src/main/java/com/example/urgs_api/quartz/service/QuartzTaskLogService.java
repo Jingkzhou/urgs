@@ -1,7 +1,7 @@
-package net.lab1024.smartadmin.module.support.quartz.service;
+package com.example.urgs_api.quartz.service;
 
-import net.lab1024.smartadmin.module.support.quartz.dao.QuartzTaskLogDao;
-import net.lab1024.smartadmin.module.support.quartz.domain.entity.QuartzTaskLogEntity;
+import com.example.urgs_api.quartz.dao.QuartzTaskLogDao;
+import com.example.urgs_api.quartz.domain.entity.QuartzTaskLogEntity;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 

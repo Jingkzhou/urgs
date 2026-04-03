@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.executor.quartz.dao.QuartzTaskStatusDao">
+
+    <select id="getWaitingList" resultType="com.example.executor.quartz.domain.entity.QuartzTaskStatusEntity">
+        SELECT id,
+               plan_id as planId,
+               data_date as dataDate,
+               status,
+               begin_time as beginTime,
+               end_time as endTime,
+               msg,
+               create_time as createTime,
+               update_time as updateTime
+        FROM t_quartz_task_status
+        WHERE status = 1
+    </select>
+
+    <select id="getStatusByPlanIdAndDate" resultType="java.lang.Integer">
+        SELECT status
+        FROM t_quartz_task_status
+        WHERE plan_id = #{planId}
+          AND data_date = #{dataDate}
+        LIMIT 1
+    </select>
+
+    <select id="getFinishCount" resultType="int">
+        SELECT count(1)
+        FROM t_quartz_task_status
+        WHERE status = 3
+          AND data_date = #{dataDate}
+          AND plan_id IN
+          <foreach collection="dependIds" item="id" open="(" separator="," close=")">
+              #{id}
+          </foreach>
+    </select>
+
+    <delete id="deleteByPlanIdAndDataDate">
+        DELETE
+        FROM t_quartz_task_status
+        WHERE plan_id = #{planId}
+          AND data_date = #{dataDate}
+    </delete>
+
+    <insert id="insertStatus">
+        INSERT INTO t_quartz_task_status(plan_id, data_date, status, begin_time, end_time, msg, update_time, create_time, create_date)
+        VALUES (#{entity.planId}, #{entity.dataDate}, #{entity.status}, #{entity.beginTime}, #{entity.endTime}, #{entity.msg},
+                #{entity.updateTime}, #{entity.createTime}, DATE_FORMAT(#{entity.createTime}, '%Y%m%d'))
+    </insert>
+
+    <update id="updateStatus">
+        UPDATE t_quartz_task_status
+        SET status      = #{entity.status},
+            msg         = #{entity.msg},
+            update_time = #{entity.updateTime},
+            end_time    = #{entity.endTime}
+        <if test="entity.beginTime != null">
+            , begin_time = #{entity.beginTime}
+        </if>
+        WHERE plan_id = #{entity.planId}
+          AND data_date = #{entity.dataDate}
+    </update>
+</mapper>

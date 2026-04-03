@@ -1,4 +1,4 @@
-package net.lab1024.smartadmin.module.support.quartz.constant;
+package com.example.urgs_api.quartz.constant;
 
 /**
  * 任务执行状态枚举
