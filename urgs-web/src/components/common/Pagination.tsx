@@ -138,12 +138,12 @@ const Pagination: React.FC<PaginationProps> = ({
     };
 
     return (
-        <div className={`flex items-center justify-between py-4 ${className}`}>
-            <div className="text-sm text-slate-500 font-medium">
+        <div className={`flex flex-wrap items-center justify-between gap-3 py-4 ${className}`}>
+            <div className="shrink-0 text-sm font-medium text-slate-500">
                 共 <span className="text-slate-900 font-bold">{total}</span> 条记录
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
                 {showSizeChanger && (
                     <div className="mr-2">
                         {isCustomSize ? (

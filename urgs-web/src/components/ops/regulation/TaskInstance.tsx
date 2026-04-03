@@ -22,17 +22,52 @@ interface DependencyRelationItem {
     missingTask?: boolean;
 }
 
+interface BlockingDependencyItem extends DependencyRelationItem {
+    level: number;
+}
+
+interface DownstreamImpactNode extends DependencyRelationItem {
+    level: number;
+    impacted: boolean;
+    children: DownstreamImpactNode[];
+}
+
+interface DependencyInsightData {
+    selectedTask?: QuartzTask;
+    blockingUpstream: BlockingDependencyItem[];
+    downstreamTree: DownstreamImpactNode[];
+    downstreamTotalCount: number;
+    impactedDownstreamCount: number;
+    failedUpstreamCount: number;
+}
+
 interface RowContextMenuState {
     x: number;
     y: number;
     instance: QuartzTaskStatus;
 }
 
-const statusMap: Record<number, { label: string; className: string; color: string }> = {
-    0: { label: '等待中', className: 'bg-slate-100 text-slate-600 border-slate-200', color: 'default' },
-    1: { label: '运行中', className: 'bg-blue-50 text-blue-600 border-blue-200', color: 'processing' },
-    2: { label: '成功', className: 'bg-emerald-50 text-emerald-600 border-emerald-200', color: 'success' },
-    3: { label: '失败', className: 'bg-red-50 text-red-600 border-red-200', color: 'error' },
+interface TaskInstanceStats {
+    waitingInstances: number;
+    runningInstances: number;
+    successInstances: number;
+    failedInstances: number;
+}
+
+interface TaskInstanceProps {
+    onStatsChange?: (stats: TaskInstanceStats) => void;
+}
+
+const instanceStatusMap: Record<number, { label: string; className: string; color: string }> = {
+    1: { label: '等待中', className: 'bg-slate-100 text-slate-600 border-slate-200', color: 'default' },
+    2: { label: '执行中', className: 'bg-blue-50 text-blue-600 border-blue-200', color: 'processing' },
+    3: { label: '成功', className: 'bg-emerald-50 text-emerald-600 border-emerald-200', color: 'success' },
+    4: { label: '失败', className: 'bg-red-50 text-red-600 border-red-200', color: 'error' },
+};
+
+const taskDefinitionStatusMap: Record<number, { label: string; className: string }> = {
+    0: { label: '正常', className: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
+    1: { label: '暂停', className: 'bg-amber-50 text-amber-600 border-amber-200' },
 };
 
 const detailItemClass = 'rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3';
@@ -45,6 +80,12 @@ const monoCellClass = `${tableCellClass} font-mono text-xs text-slate-600`;
 const batchActionClass = 'inline-flex h-9 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-semibold shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow';
 const relationCardClass = 'rounded-2xl border border-slate-200 bg-white p-4 shadow-sm';
 const contextMenuItemClass = 'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45';
+const incompleteInstanceStatuses = new Set([1, 2, 4]);
+const blockingStatusRank: Record<number, number> = {
+    4: 0,
+    2: 1,
+    1: 2,
+};
 
 const parseDependIds = (dependId?: string | null): number[] => {
     if (!dependId) return [];
@@ -120,7 +161,7 @@ const normalizeStatus = (item: QuartzTaskStatusApiModel): QuartzTaskStatus => {
 
 const normalizeLog = (item: QuartzTaskLogApiModel): QuartzTaskExecutionLog => {
     const processStatus = Number(item.processStatus ?? 0);
-    const mappedStatus = processStatus === 3 ? 2 : processStatus === 4 ? 3 : 0;
+    const mappedStatus = processStatus === 3 ? 3 : processStatus === 4 ? 4 : 1;
     return {
         id: Number(item.id),
         task_id: Number(item.taskId),
@@ -137,29 +178,48 @@ const normalizeLog = (item: QuartzTaskLogApiModel): QuartzTaskExecutionLog => {
     };
 };
 
-const TaskInstance: React.FC = () => {
+const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
+    const todayDate = dayjs().format('YYYY-MM-DD');
     const [taskList, setTaskList] = useState<QuartzTask[]>([]);
     const [instanceList, setInstanceList] = useState<QuartzTaskStatus[]>([]);
     const [logList, setLogList] = useState<QuartzTaskExecutionLog[]>([]);
     const [searchKeyword, setSearchKeyword] = useState('');
     const [taskSystemFilter, setTaskSystemFilter] = useState('');
     const [dataDateFilter, setDataDateFilter] = useState('');
-    const [createDateFilter, setCreateDateFilter] = useState('');
+    const [createDateFilter, setCreateDateFilter] = useState(todayDate);
     const [statusFilter, setStatusFilter] = useState<string>('');
     const [selectedInstance, setSelectedInstance] = useState<QuartzTaskStatus | null>(null);
     const [selectedInstanceIds, setSelectedInstanceIds] = useState<number[]>([]);
     const [instanceDetailTabKey, setInstanceDetailTabKey] = useState<'overview' | 'task' | 'schedule' | 'dependency' | 'execution' | 'runtimeLog' | 'notify'>('overview');
+    const [showImpactedOnly, setShowImpactedOnly] = useState(false);
     const [rowContextMenu, setRowContextMenu] = useState<RowContextMenuState | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
 
     const loadTasks = useCallback(async () => {
         try {
-            const response = await queryQuartzTasks({ pageNum: 1, pageSize: 1000 });
-            if (!response?.success) {
-                throw new Error(response?.msg || '加载任务失败');
+            const pageSize = 500;
+            const firstResponse = await queryQuartzTasks({ pageNum: 1, pageSize });
+            if (!firstResponse?.success) {
+                throw new Error(firstResponse?.msg || '加载任务失败');
             }
-            setTaskList((response.data?.list || []).map(normalizeTask));
+            const totalPages = Number(firstResponse.data?.pages || 1);
+            const mergedTasks = [...(firstResponse.data?.list || []).map(normalizeTask)];
+
+            if (totalPages > 1) {
+                const restResponses = await Promise.all(
+                    Array.from({ length: totalPages - 1 }, (_, index) =>
+                        queryQuartzTasks({ pageNum: index + 2, pageSize })
+                    )
+                );
+                restResponses.forEach(response => {
+                    if (response?.success) {
+                        mergedTasks.push(...(response.data?.list || []).map(normalizeTask));
+                    }
+                });
+            }
+
+            setTaskList(mergedTasks);
         } catch (error: any) {
             message.error(error?.message || '加载任务失败');
         }
@@ -167,20 +227,42 @@ const TaskInstance: React.FC = () => {
 
     const loadInstances = useCallback(async () => {
         try {
-            const response = await queryQuartzTaskStatus({ pageNum: 1, pageSize: 2000 });
-            if (!response?.success) {
-                throw new Error(response?.msg || '加载实例失败');
+            const pageSize = 500;
+            const beginDate = createDateFilter ? createDateFilter.replaceAll('-', '') : undefined;
+            const firstResponse = await queryQuartzTaskStatus({ pageNum: 1, pageSize, beginDate });
+            if (!firstResponse?.success) {
+                throw new Error(firstResponse?.msg || '加载实例失败');
             }
-            setInstanceList((response.data?.list || []).map(normalizeStatus));
+
+            const totalPages = Number(firstResponse.data?.pages || 1);
+            const mergedInstances = [...(firstResponse.data?.list || []).map(normalizeStatus)];
+
+            if (totalPages > 1) {
+                const restResponses = await Promise.all(
+                    Array.from({ length: totalPages - 1 }, (_, index) =>
+                        queryQuartzTaskStatus({ pageNum: index + 2, pageSize, beginDate })
+                    )
+                );
+                restResponses.forEach(response => {
+                    if (response?.success) {
+                        mergedInstances.push(...(response.data?.list || []).map(normalizeStatus));
+                    }
+                });
+            }
+
+            setInstanceList(mergedInstances);
         } catch (error: any) {
             message.error(error?.message || '加载实例失败');
         }
-    }, []);
+    }, [createDateFilter]);
 
     useEffect(() => {
         loadTasks();
+    }, [loadTasks]);
+
+    useEffect(() => {
         loadInstances();
-    }, [loadInstances, loadTasks]);
+    }, [loadInstances]);
 
     useEffect(() => {
         const taskId = selectedInstance?.plan_id;
@@ -243,6 +325,15 @@ const TaskInstance: React.FC = () => {
         });
     }, [createDateFilter, dataDateFilter, instanceList, searchKeyword, statusFilter, taskMap, taskSystemFilter]);
 
+    useEffect(() => {
+        onStatsChange?.({
+            waitingInstances: filteredInstances.filter(instance => instance.status === 1).length,
+            runningInstances: filteredInstances.filter(instance => instance.status === 2).length,
+            successInstances: filteredInstances.filter(instance => instance.status === 3).length,
+            failedInstances: filteredInstances.filter(instance => instance.status === 4).length,
+        });
+    }, [filteredInstances, onStatsChange]);
+
     const pagedInstances = useMemo(() => {
         const start = (currentPage - 1) * pageSize;
         return filteredInstances.slice(start, start + pageSize);
@@ -294,7 +385,27 @@ const TaskInstance: React.FC = () => {
         return map;
     }, [instanceList]);
 
-    const dependencyPanelData = useMemo(() => {
+    const upstreamTaskIdMap = useMemo(() => {
+        const map = new Map<number, number[]>();
+        taskList.forEach(task => {
+            map.set(task.id, parseDependIds(task.depend_id));
+        });
+        return map;
+    }, [taskList]);
+
+    const downstreamTaskIdMap = useMemo(() => {
+        const map = new Map<number, number[]>();
+        taskList.forEach(task => {
+            parseDependIds(task.depend_id).forEach(preTaskId => {
+                const next = map.get(preTaskId) || [];
+                next.push(task.id);
+                map.set(preTaskId, next);
+            });
+        });
+        return map;
+    }, [taskList]);
+
+    const dependencyPanelData = useMemo<DependencyInsightData | null>(() => {
         if (!selectedInstance) return null;
 
         const selectedTask = taskMap.get(selectedInstance.plan_id);
@@ -302,7 +413,7 @@ const TaskInstance: React.FC = () => {
             return instanceByPlanDate.get(`${taskId}_${selectedInstance.data_date}`) || latestInstanceByPlan.get(taskId);
         };
 
-        const upstream: DependencyRelationItem[] = parseDependIds(selectedTask?.depend_id).map(taskId => {
+        const toRelationItem = (taskId: number): DependencyRelationItem => {
             const relationTask = taskMap.get(taskId);
             return {
                 taskId,
@@ -312,24 +423,77 @@ const TaskInstance: React.FC = () => {
                 relatedInstance: pickRelatedInstance(taskId),
                 missingTask: !relationTask,
             };
-        });
+        };
 
-        const downstream: DependencyRelationItem[] = taskList
-            .filter(task => parseDependIds(task.depend_id).includes(selectedInstance.plan_id))
-            .map(task => ({
-                taskId: task.id,
-                taskName: task.task_name,
-                taskSystem: task.task_system || '-',
-                theme: task.theme || '-',
-                relatedInstance: pickRelatedInstance(task.id),
-            }));
+        const blockingUpstreamMap = new Map<number, BlockingDependencyItem>();
+        const upstreamQueue = (upstreamTaskIdMap.get(selectedInstance.plan_id) || []).map(taskId => ({ taskId, level: 1 }));
+        const visitedUpstreamIds = new Set<number>();
+        while (upstreamQueue.length > 0) {
+            const current = upstreamQueue.shift();
+            if (!current || visitedUpstreamIds.has(current.taskId)) {
+                continue;
+            }
+            visitedUpstreamIds.add(current.taskId);
+
+            const relation = toRelationItem(current.taskId);
+            const status = relation.relatedInstance?.status;
+            if (!status || incompleteInstanceStatuses.has(status)) {
+                blockingUpstreamMap.set(current.taskId, {
+                    ...relation,
+                    level: current.level,
+                });
+            }
+
+            (upstreamTaskIdMap.get(current.taskId) || []).forEach(nextTaskId => {
+                if (!visitedUpstreamIds.has(nextTaskId)) {
+                    upstreamQueue.push({ taskId: nextTaskId, level: current.level + 1 });
+                }
+            });
+        }
+
+        let downstreamTotalCount = 0;
+        let impactedDownstreamCount = 0;
+        const buildDownstreamTree = (taskId: number, level: number, path: Set<number>): DownstreamImpactNode[] => {
+            return (downstreamTaskIdMap.get(taskId) || []).flatMap(childTaskId => {
+                if (path.has(childTaskId)) {
+                    return [];
+                }
+                downstreamTotalCount += 1;
+                const relation = toRelationItem(childTaskId);
+                const impacted = relation.relatedInstance?.status !== 3;
+                if (impacted) {
+                    impactedDownstreamCount += 1;
+                }
+                const nextPath = new Set(path);
+                nextPath.add(childTaskId);
+                return [{
+                    ...relation,
+                    level,
+                    impacted,
+                    children: buildDownstreamTree(childTaskId, level + 1, nextPath),
+                }];
+            });
+        };
+
+        const blockingUpstream = Array.from(blockingUpstreamMap.values()).sort((a, b) => {
+            const aStatus = a.relatedInstance?.status ?? 99;
+            const bStatus = b.relatedInstance?.status ?? 99;
+            const rankDiff = (blockingStatusRank[aStatus] ?? 99) - (blockingStatusRank[bStatus] ?? 99);
+            if (rankDiff !== 0) {
+                return rankDiff;
+            }
+            return a.level - b.level;
+        });
 
         return {
             selectedTask,
-            upstream,
-            downstream,
+            blockingUpstream,
+            downstreamTree: buildDownstreamTree(selectedInstance.plan_id, 1, new Set([selectedInstance.plan_id])),
+            downstreamTotalCount,
+            impactedDownstreamCount,
+            failedUpstreamCount: blockingUpstream.filter(item => item.relatedInstance?.status === 4).length,
         };
-    }, [instanceByPlanDate, latestInstanceByPlan, selectedInstance, taskList, taskMap]);
+    }, [downstreamTaskIdMap, instanceByPlanDate, latestInstanceByPlan, selectedInstance, taskMap, upstreamTaskIdMap]);
 
     const updateInstance = (instanceId: number, updater: (instance: QuartzTaskStatus) => QuartzTaskStatus) => {
         setInstanceList(prev => prev.map(instance => instance.id === instanceId ? updater(instance) : instance));
@@ -346,7 +510,7 @@ const TaskInstance: React.FC = () => {
         const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
         return {
             ...instance,
-            status: 1,
+            status: 2,
             begin_time: instance.begin_time || now,
             update_time: now,
             end_time: null,
@@ -358,7 +522,7 @@ const TaskInstance: React.FC = () => {
         const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
         return {
             ...instance,
-            status: 3,
+            status: 4,
             begin_time: instance.begin_time || now,
             update_time: now,
             end_time: now,
@@ -370,7 +534,7 @@ const TaskInstance: React.FC = () => {
         const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
         return {
             ...instance,
-            status: 2,
+            status: 3,
             begin_time: instance.begin_time || now,
             update_time: now,
             end_time: now,
@@ -409,6 +573,7 @@ const TaskInstance: React.FC = () => {
     const handleOpenInstanceDetail = (instance: QuartzTaskStatus, tab: typeof instanceDetailTabKey = 'overview') => {
         setSelectedInstance(instance);
         setInstanceDetailTabKey(tab);
+        setShowImpactedOnly(false);
     };
 
     const locateInstanceFromDependency = (instance: QuartzTaskStatus) => {
@@ -474,7 +639,7 @@ const TaskInstance: React.FC = () => {
                 </span>
             );
         }
-        const mappedStatus = statusMap[relation.status ?? -1];
+        const mappedStatus = instanceStatusMap[relation.status ?? -1];
         if (!mappedStatus) {
             return <Tag className="m-0">{relation.status ?? '-'}</Tag>;
         }
@@ -485,11 +650,13 @@ const TaskInstance: React.FC = () => {
         );
     };
 
-    const renderDependencyList = (items: DependencyRelationItem[], emptyText: string) => {
+    const renderBlockingDependencyList = (items: BlockingDependencyItem[]) => {
         if (items.length === 0) {
             return (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-12 text-center text-sm text-slate-500">
-                    {emptyText}
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-12 text-center">
+                    <CheckCircle2 size={30} className="mx-auto text-emerald-500" />
+                    <div className="mt-3 text-sm font-semibold text-emerald-700">前置任务已全部完成</div>
+                    <div className="mt-1 text-xs text-emerald-600">当前实例没有未结束的上游阻塞点。</div>
                 </div>
             );
         }
@@ -497,7 +664,16 @@ const TaskInstance: React.FC = () => {
         return (
             <div className="space-y-3">
                 {items.map(item => (
-                    <div key={item.taskId} className={relationCardClass}>
+                    <div
+                        key={item.taskId}
+                        className={`rounded-2xl border p-4 shadow-sm ${
+                            item.relatedInstance?.status === 4
+                                ? 'border-red-200 bg-red-50/60'
+                                : item.relatedInstance?.status === 2
+                                  ? 'border-blue-200 bg-blue-50/60'
+                                  : 'border-amber-200 bg-amber-50/60'
+                        }`}
+                    >
                         <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center gap-2">
@@ -513,14 +689,24 @@ const TaskInstance: React.FC = () => {
                                         </span>
                                     )}
                                 </div>
-                                <div className="mt-1 text-xs text-slate-500">
-                                    系统：{item.taskSystem} · 主题：{item.theme}
+                                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                                    <span className="rounded-lg border border-white/80 bg-white/70 px-2 py-1">层级 L{item.level}</span>
+                                    <span className="rounded-lg border border-white/80 bg-white/70 px-2 py-1">系统 {item.taskSystem}</span>
+                                    <span className="rounded-lg border border-white/80 bg-white/70 px-2 py-1">主题 {item.theme}</span>
+                                    <span className="rounded-lg border border-white/80 bg-white/70 px-2 py-1">数据日期 {item.relatedInstance?.data_date || selectedInstance?.data_date || '-'}</span>
                                 </div>
                                 <div className="mt-2 text-xs text-slate-500">
-                                    数据日期：{item.relatedInstance?.data_date || selectedInstance?.data_date || '-'}
+                                    开始 {item.relatedInstance?.begin_time || '-'} · 更新 {item.relatedInstance?.update_time || item.relatedInstance?.create_time || '-'}
                                 </div>
                                 {item.relatedInstance?.msg && (
-                                    <div className="mt-1 truncate text-xs text-slate-500" title={item.relatedInstance.msg || ''}>
+                                    <div
+                                        className={`mt-3 rounded-xl border px-3 py-2 text-xs ${
+                                            item.relatedInstance.status === 4
+                                                ? 'border-red-200 bg-white/80 text-red-700'
+                                                : 'border-white/80 bg-white/70 text-slate-600'
+                                        }`}
+                                        title={item.relatedInstance.msg || ''}
+                                    >
                                         {item.relatedInstance.msg}
                                     </div>
                                 )}
@@ -538,6 +724,87 @@ const TaskInstance: React.FC = () => {
                         </div>
                     </div>
                 ))}
+            </div>
+        );
+    };
+
+    const nodeHasImpact = (node: DownstreamImpactNode): boolean =>
+        node.impacted || node.children.some(child => nodeHasImpact(child));
+
+    const renderDownstreamImpactTree = (items: DownstreamImpactNode[], emptyText: string) => {
+        const visibleItems = showImpactedOnly
+            ? items.filter(item => nodeHasImpact(item))
+            : items;
+
+        if (visibleItems.length === 0) {
+            return (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-12 text-center text-sm text-slate-500">
+                    {emptyText}
+                </div>
+            );
+        }
+
+        return (
+            <div className="space-y-3">
+                {visibleItems.map(item => {
+                    const mappedStatus = instanceStatusMap[item.relatedInstance?.status ?? -1];
+                    return (
+                        <div key={`${item.taskId}-${item.level}`} className="space-y-3">
+                            <div
+                                className={`rounded-2xl border p-4 shadow-sm ${
+                                    item.impacted
+                                        ? 'border-blue-200 bg-blue-50/60'
+                                        : 'border-slate-200 bg-white'
+                                }`}
+                                style={{ marginLeft: Math.min((item.level - 1) * 18, 72) }}
+                            >
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <div className="truncate text-sm font-semibold text-slate-800" title={item.taskName}>
+                                                {item.taskName}
+                                            </div>
+                                            <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-500">
+                                                #{item.taskId}
+                                            </span>
+                                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${item.impacted ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
+                                                {item.impacted ? '会受本次重跑影响' : '当前已稳定'}
+                                            </span>
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                                            <span className="rounded-lg border border-slate-200 bg-white/70 px-2 py-1">层级 L{item.level}</span>
+                                            <span className="rounded-lg border border-slate-200 bg-white/70 px-2 py-1">系统 {item.taskSystem}</span>
+                                            <span className="rounded-lg border border-slate-200 bg-white/70 px-2 py-1">主题 {item.theme}</span>
+                                            <span className="rounded-lg border border-slate-200 bg-white/70 px-2 py-1">数据日期 {item.relatedInstance?.data_date || selectedInstance?.data_date || '-'}</span>
+                                        </div>
+                                        {item.relatedInstance?.msg && (
+                                            <div className="mt-2 truncate text-xs text-slate-500" title={item.relatedInstance.msg || ''}>
+                                                {item.relatedInstance.msg}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex shrink-0 flex-col items-end gap-2">
+                                        {mappedStatus ? (
+                                            <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold leading-none ${mappedStatus.className}`}>
+                                                {mappedStatus.label}
+                                            </span>
+                                        ) : (
+                                            renderRelationStatus(item.relatedInstance)
+                                        )}
+                                        <button
+                                            onClick={() => item.relatedInstance && locateInstanceFromDependency(item.relatedInstance)}
+                                            disabled={!item.relatedInstance}
+                                            className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                                        >
+                                            查看实例
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            {item.children.length > 0 && renderDownstreamImpactTree(item.children, emptyText)}
+                        </div>
+                    );
+                })}
             </div>
         );
     };
@@ -594,10 +861,10 @@ const TaskInstance: React.FC = () => {
                                 实例 {filteredInstances.length}
                             </span>
                             <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1.5 text-blue-700">
-                                运行中 {filteredInstances.filter(instance => instance.status === 1).length}
+                                执行中 {filteredInstances.filter(instance => instance.status === 2).length}
                             </span>
                             <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-3 py-1.5 text-red-700">
-                                失败 {filteredInstances.filter(instance => instance.status === 3).length}
+                                失败 {filteredInstances.filter(instance => instance.status === 4).length}
                             </span>
                         </div>
                     </div>
@@ -638,10 +905,10 @@ const TaskInstance: React.FC = () => {
                                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
                             >
                                 <option value="">全部状态</option>
-                                <option value="0">等待中</option>
-                                <option value="1">运行中</option>
-                                <option value="2">成功</option>
-                                <option value="3">失败</option>
+                                <option value="1">等待中</option>
+                                <option value="2">执行中</option>
+                                <option value="3">成功</option>
+                                <option value="4">失败</option>
                             </select>
                         </label>
                         <label className="space-y-1">
@@ -727,7 +994,7 @@ const TaskInstance: React.FC = () => {
                             <div className="my-1 h-px bg-slate-100" />
                             <button
                                 onClick={() => invokeRowContextAction('execute')}
-                                disabled={rowContextMenu.instance.status === 1}
+                                disabled={rowContextMenu.instance.status === 2}
                                 className={contextMenuItemClass}
                             >
                                 <Play size={14} className="text-blue-600" />
@@ -735,7 +1002,7 @@ const TaskInstance: React.FC = () => {
                             </button>
                             <button
                                 onClick={() => invokeRowContextAction('stop')}
-                                disabled={rowContextMenu.instance.status === 2 || rowContextMenu.instance.status === 3}
+                                disabled={rowContextMenu.instance.status === 3 || rowContextMenu.instance.status === 4}
                                 className={contextMenuItemClass}
                             >
                                 <Square size={14} className="text-amber-600" />
@@ -743,7 +1010,7 @@ const TaskInstance: React.FC = () => {
                             </button>
                             <button
                                 onClick={() => invokeRowContextAction('pass')}
-                                disabled={rowContextMenu.instance.status === 2}
+                                disabled={rowContextMenu.instance.status === 3}
                                 className={contextMenuItemClass}
                             >
                                 <CheckCircle2 size={14} className="text-emerald-600" />
@@ -808,7 +1075,7 @@ const TaskInstance: React.FC = () => {
                                         </td>
                                     </tr>
                                 ) : pagedInstances.map(instance => {
-                                    const mappedStatus = statusMap[instance.status ?? -1];
+                                    const mappedStatus = instanceStatusMap[instance.status ?? -1];
                                     const taskName = taskNameMap.get(instance.plan_id) || '-';
                                     const task = taskMap.get(instance.plan_id);
 
@@ -921,7 +1188,7 @@ const TaskInstance: React.FC = () => {
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2 text-xs">
                                     <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-600">
-                                        实例状态 {statusMap[selectedInstance.status ?? -1]?.label || selectedInstance.status || '-'}
+                                        实例状态 {instanceStatusMap[selectedInstance.status ?? -1]?.label || selectedInstance.status || '-'}
                                     </span>
                                     <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-blue-700">
                                         {selectedTask?.task_system || '-'}
@@ -967,9 +1234,9 @@ const TaskInstance: React.FC = () => {
                                                         <div className={detailItemClass}>
                                                             <div className="text-xs text-slate-400">当前状态</div>
                                                             <div className="mt-1">
-                                                                {statusMap[selectedInstance.status ?? -1] ? (
-                                                                    <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${statusMap[selectedInstance.status ?? -1].className}`}>
-                                                                        {statusMap[selectedInstance.status ?? -1].label}
+                                                                {instanceStatusMap[selectedInstance.status ?? -1] ? (
+                                                                    <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${instanceStatusMap[selectedInstance.status ?? -1].className}`}>
+                                                                        {instanceStatusMap[selectedInstance.status ?? -1].label}
                                                                     </span>
                                                                 ) : (
                                                                     <Tag className="m-0">{selectedInstance.status ?? '-'}</Tag>
@@ -1054,8 +1321,8 @@ const TaskInstance: React.FC = () => {
                                                             <div className="text-xs text-slate-400">任务状态</div>
                                                             <div className="mt-1">
                                                                 {selectedTask ? (
-                                                                    <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${statusMap[selectedTask.task_status].className}`}>
-                                                                        {statusMap[selectedTask.task_status].label}
+                                                                    <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${taskDefinitionStatusMap[selectedTask.task_status]?.className || taskDefinitionStatusMap[0].className}`}>
+                                                                        {taskDefinitionStatusMap[selectedTask.task_status]?.label || taskDefinitionStatusMap[0].label}
                                                                     </span>
                                                                 ) : (
                                                                     '-'
@@ -1170,8 +1437,8 @@ const TaskInstance: React.FC = () => {
                                                             <div className="text-xs text-slate-400">当前状态</div>
                                                             <div className="mt-1">
                                                                 {selectedTask ? (
-                                                                    <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${statusMap[selectedTask.task_status].className}`}>
-                                                                        {statusMap[selectedTask.task_status].label}
+                                                                    <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${taskDefinitionStatusMap[selectedTask.task_status]?.className || taskDefinitionStatusMap[0].className}`}>
+                                                                        {taskDefinitionStatusMap[selectedTask.task_status]?.label || taskDefinitionStatusMap[0].label}
                                                                     </span>
                                                                 ) : (
                                                                     '-'
@@ -1196,73 +1463,92 @@ const TaskInstance: React.FC = () => {
                                         <div className="space-y-4">
                                             <section className={detailSectionClass}>
                                                 <div className={detailSectionHeaderClass}>
-                                                    <div className="text-sm font-semibold text-slate-800">依赖总览</div>
-                                                    <div className="mt-1 text-xs text-slate-500">同一页签内查看当前任务依赖了谁，以及谁依赖了当前任务。</div>
+                                                    <div className="text-sm font-semibold text-slate-800">依赖诊断总览</div>
+                                                    <div className="mt-1 text-xs text-slate-500">
+                                                        聚焦两个问题：当前实例为什么没完成，以及重跑当前实例会影响哪些下游任务。
+                                                    </div>
                                                 </div>
                                                 <div className={detailSectionBodyClass}>
-                                                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-cyan-50/50 p-4">
-                                                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                                            <div>
-                                                                <div className="text-sm font-semibold text-slate-800">
-                                                                    {dependencyPanelData.selectedTask?.task_name || selectedTask?.task_name || taskNameMap.get(selectedInstance.plan_id) || '-'}
-                                                                </div>
-                                                                <div className="mt-1 font-mono text-xs text-slate-500">
-                                                                    任务ID #{selectedInstance.plan_id} · 数据日期 {selectedInstance.data_date}
-                                                                </div>
+                                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                                                        <div className="rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3">
+                                                            <div className="flex items-center gap-2 text-xs font-semibold text-amber-700">
+                                                                <ArrowUpCircle size={14} />
+                                                                阻塞上游
                                                             </div>
-                                                            <div className="flex flex-wrap items-center gap-2 text-xs">
-                                                                <span className="inline-flex items-center rounded-full bg-cyan-50 px-3 py-1 text-cyan-700">
-                                                                    上游 {dependencyPanelData.upstream.length}
-                                                                </span>
-                                                                <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-blue-700">
-                                                                    下游 {dependencyPanelData.downstream.length}
-                                                                </span>
-                                                                {renderRelationStatus(selectedInstance)}
+                                                            <div className="mt-2 text-2xl font-bold text-amber-700">
+                                                                {dependencyPanelData.blockingUpstream.length}
+                                                            </div>
+                                                        </div>
+                                                        <div className="rounded-2xl border border-red-100 bg-red-50/70 px-4 py-3">
+                                                            <div className="flex items-center gap-2 text-xs font-semibold text-red-700">
+                                                                <AlertCircle size={14} />
+                                                                失败上游
+                                                            </div>
+                                                            <div className="mt-2 text-2xl font-bold text-red-700">
+                                                                {dependencyPanelData.failedUpstreamCount}
+                                                            </div>
+                                                        </div>
+                                                        <div className="rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3">
+                                                            <div className="flex items-center gap-2 text-xs font-semibold text-blue-700">
+                                                                <ArrowDownCircle size={14} />
+                                                                受影响下游
+                                                            </div>
+                                                            <div className="mt-2 text-2xl font-bold text-blue-700">
+                                                                {dependencyPanelData.impactedDownstreamCount}
                                                             </div>
                                                         </div>
                                                     </div>
                                                 </div>
                                             </section>
 
-                                            <Tabs
-                                                defaultActiveKey="upstream"
-                                                items={[
-                                                    {
-                                                        key: 'upstream',
-                                                        label: (
-                                                            <span className="inline-flex items-center gap-1.5">
-                                                                <ArrowUpCircle size={14} />
-                                                                我依赖了谁
-                                                            </span>
-                                                        ),
-                                                        children: (
-                                                            <div className="space-y-3">
-                                                                <div className="text-xs text-slate-500">
-                                                                    当前任务依赖的前置任务。前置任务成功后，当前任务通常才应进入执行。
-                                                                </div>
-                                                                {renderDependencyList(dependencyPanelData.upstream, '当前任务未配置前置依赖，属于独立执行任务。')}
-                                                            </div>
-                                                        ),
-                                                    },
-                                                    {
-                                                        key: 'downstream',
-                                                        label: (
-                                                            <span className="inline-flex items-center gap-1.5">
-                                                                <ArrowDownCircle size={14} />
-                                                                谁依赖了我
-                                                            </span>
-                                                        ),
-                                                        children: (
-                                                            <div className="space-y-3">
-                                                                <div className="text-xs text-slate-500">
-                                                                    依赖当前任务的后续任务。当前任务状态会影响这些任务的触发时机。
-                                                                </div>
-                                                                {renderDependencyList(dependencyPanelData.downstream, '当前任务暂时没有被其他任务依赖。')}
-                                                            </div>
-                                                        ),
-                                                    },
-                                                ]}
-                                            />
+                                            <section className={detailSectionClass}>
+                                                <div className={`${detailSectionHeaderClass} flex items-start justify-between gap-3`}>
+                                                    <div>
+                                                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                                                            <ArrowUpCircle size={16} className="text-amber-500" />
+                                                            阻塞原因
+                                                        </div>
+                                                        <div className="mt-1 text-xs text-slate-500">
+                                                            只展示当前实例未完成的上游任务，优先把失败和执行中的节点排在前面。
+                                                        </div>
+                                                    </div>
+                                                    {renderRelationStatus(selectedInstance)}
+                                                </div>
+                                                <div className={detailSectionBodyClass}>
+                                                    {renderBlockingDependencyList(dependencyPanelData.blockingUpstream)}
+                                                </div>
+                                            </section>
+
+                                            <section className={detailSectionClass}>
+                                                <div className={`${detailSectionHeaderClass} flex items-start justify-between gap-3`}>
+                                                    <div>
+                                                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                                                            <ArrowDownCircle size={16} className="text-blue-500" />
+                                                            重跑影响范围
+                                                        </div>
+                                                        <div className="mt-1 text-xs text-slate-500">
+                                                            按下游层级展示传播路径，高亮标记会被本次重跑影响的任务。
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowImpactedOnly(prev => !prev)}
+                                                        className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                                                            showImpactedOnly
+                                                                ? 'border-blue-200 bg-blue-50 text-blue-700'
+                                                                : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                                                        }`}
+                                                    >
+                                                        {showImpactedOnly ? '显示全部下游' : '只看受影响任务'}
+                                                    </button>
+                                                </div>
+                                                <div className={detailSectionBodyClass}>
+                                                    {renderDownstreamImpactTree(
+                                                        dependencyPanelData.downstreamTree,
+                                                        showImpactedOnly ? '当前没有会被重跑影响的下游任务。' : '当前任务暂时没有下游依赖。'
+                                                    )}
+                                                </div>
+                                            </section>
                                         </div>
                                     ) : (
                                         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-12 text-center text-sm text-slate-500">
@@ -1355,7 +1641,7 @@ const TaskInstance: React.FC = () => {
                                                     ) : (
                                                         <div className="space-y-4">
                                                             {selectedInstanceLogs.map(log => {
-                                                                const mappedStatus = statusMap[log.status] || statusMap[0];
+                                                                const mappedStatus = instanceStatusMap[log.status] || instanceStatusMap[1];
                                                                 const stepLines = log.content
                                                                     .split('\n')
                                                                     .map(item => item.trim())

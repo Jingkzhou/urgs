@@ -12,6 +12,7 @@ import {
     deleteQuartzTask,
     getDatasourceConfig,
     pauseQuartzTask,
+    queryQuartzTaskDependencies,
     queryQuartzTasks,
     QuartzTaskApiModel,
     resumeQuartzTask,
@@ -61,6 +62,8 @@ const statusMap: Record<number, { label: string; className: string }> = {
 };
 
 const detailItemClass = 'rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3';
+const detailSectionClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm';
+const detailMetaBadgeClass = 'inline-flex max-w-[160px] items-center rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] leading-none text-slate-600';
 const actionButtonClass = 'inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition';
 const enabledActionClass = 'border-slate-200 text-slate-600 hover:bg-slate-50';
 const primaryActionClass = 'border-slate-200 bg-white text-slate-700 shadow-sm hover:-translate-y-0.5 hover:shadow-md';
@@ -242,6 +245,9 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
     const [systemFilter, setSystemFilter] = useState<string>('');
     const [themeFilter, setThemeFilter] = useState<string>('');
     const [selectedTask, setSelectedTask] = useState<QuartzTask | null>(null);
+    const [selectedTaskDetailTab, setSelectedTaskDetailTab] = useState<'config' | 'dependency'>('config');
+    const [selectedTaskDependencies, setSelectedTaskDependencies] = useState<QuartzTask[]>([]);
+    const [detailScriptEditorReady, setDetailScriptEditorReady] = useState(false);
     const [modalVisible, setModalVisible] = useState(false);
     const [editingTask, setEditingTask] = useState<QuartzTask | null>(null);
     const [startTaskModalVisible, setStartTaskModalVisible] = useState(false);
@@ -364,6 +370,49 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
         setCurrentPage(1);
     }, [keyword, statusFilter, systemFilter, themeFilter, typeFilter]);
 
+    useEffect(() => {
+        setSelectedTaskDetailTab('config');
+        setSelectedTaskDependencies([]);
+        setDetailScriptEditorReady(false);
+
+        if (!selectedTask?.id) {
+            return;
+        }
+
+        let mounted = true;
+
+        const timer = window.setTimeout(() => {
+            if (mounted) {
+                setDetailScriptEditorReady(true);
+            }
+        }, 80);
+
+        const loadSelectedTaskDependencies = async () => {
+            try {
+                const response = await queryQuartzTaskDependencies(selectedTask.id);
+                if (!mounted) {
+                    return;
+                }
+                if (!response?.success) {
+                    setSelectedTaskDependencies([]);
+                    return;
+                }
+                setSelectedTaskDependencies((response.data || []).map(normalizeQuartzTask));
+            } catch (error) {
+                if (mounted) {
+                    setSelectedTaskDependencies([]);
+                }
+            }
+        };
+
+        loadSelectedTaskDependencies();
+
+        return () => {
+            mounted = false;
+            window.clearTimeout(timer);
+        };
+    }, [selectedTask?.id]);
+
     const filteredSummaryTasks = useMemo(() => {
         return allTasks.filter(task => {
             const matchesKeyword = !keyword || [
@@ -397,6 +446,16 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
     const datasourceOptions = useMemo(() => {
         return dataSources.length > 0 ? dataSources : fallbackDataSources;
     }, [dataSources, fallbackDataSources]);
+
+    const selectedTaskDependencySummary = useMemo(() => {
+        if (selectedTaskDependencies.length === 0) {
+            return '无前置依赖';
+        }
+        const labels = selectedTaskDependencies.slice(0, 2).map(task => task.task_name || `任务 ${task.id}`);
+        return selectedTaskDependencies.length > 2
+            ? `${labels.join('，')} 等 ${selectedTaskDependencies.length} 项`
+            : labels.join('，');
+    }, [selectedTaskDependencies]);
 
     const openTaskModal = (task?: QuartzTask | null) => {
         setEditingTask(task || null);
@@ -666,17 +725,18 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                     const mappedStatus = statusMap[task.task_status] || statusMap[0];
 
                                     return (
-                                        <tr key={task.id} className="hover:bg-red-50/30 transition-colors">
+                                        <tr
+                                            key={task.id}
+                                            onClick={() => setSelectedTask(task)}
+                                            className="cursor-pointer transition-colors hover:bg-red-50/30"
+                                        >
                                             <td className="px-4 py-4">
-                                                <button
-                                                    onClick={() => setSelectedTask(task)}
-                                                    className="space-y-1 text-left group"
-                                                >
-                                                    <div className="font-semibold text-slate-800 group-hover:text-red-600 transition-colors">
+                                                <div className="space-y-1 text-left">
+                                                    <div className="font-semibold text-slate-800 transition-colors">
                                                         {task.task_name}
                                                     </div>
-                                                    <div className="text-xs text-slate-500 font-mono">#{task.id}</div>
-                                                </button>
+                                                    <div className="font-mono text-xs text-slate-500">#{task.id}</div>
+                                                </div>
                                             </td>
                                             <td className="px-4 py-4">
                                                 <Tag color="blue" className="m-0 border-0 bg-blue-50 text-blue-600">{task.task_type || '-'}</Tag>
@@ -696,7 +756,10 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                             <td className="px-4 py-4">
                                                 <div className="flex items-center justify-end gap-2">
                                                     <button
-                                                        onClick={() => handleEditTask(task)}
+                                                        onClick={(event) => {
+                                                            event.stopPropagation();
+                                                            handleEditTask(task);
+                                                        }}
                                                         className={`${actionButtonClass} ${primaryActionClass} hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600`}
                                                     >
                                                         <FileCog size={14} />
@@ -704,7 +767,10 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                                     </button>
                                                     {task.task_status === 0 ? (
                                                         <button
-                                                            onClick={() => handlePauseTask(task)}
+                                                            onClick={(event) => {
+                                                                event.stopPropagation();
+                                                                handlePauseTask(task);
+                                                            }}
                                                             className={`${actionButtonClass} ${primaryActionClass} hover:border-amber-200 hover:bg-amber-50 hover:text-amber-700`}
                                                         >
                                                             <PauseCircle size={14} />
@@ -712,7 +778,10 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                                         </button>
                                                     ) : (
                                                         <button
-                                                            onClick={() => handleResumeTask(task)}
+                                                            onClick={(event) => {
+                                                                event.stopPropagation();
+                                                                handleResumeTask(task);
+                                                            }}
                                                             className={`${actionButtonClass} ${primaryActionClass} hover:border-cyan-200 hover:bg-cyan-50 hover:text-cyan-700`}
                                                         >
                                                             <PlayCircle size={14} />
@@ -725,7 +794,10 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                                         placement="bottomRight"
                                                     >
                                                         <button
-                                                            onClick={(event) => event.preventDefault()}
+                                                            onClick={(event) => {
+                                                                event.preventDefault();
+                                                                event.stopPropagation();
+                                                            }}
                                                             className={`${actionButtonClass} ${enabledActionClass} px-2.5 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700`}
                                                             aria-label="更多操作"
                                                         >
@@ -810,130 +882,266 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             >
                 {selectedTask && (
                     <div className="space-y-5">
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className={detailItemClass}>
-                                <div className="text-xs text-slate-400">任务名称</div>
-                                <div className="mt-1 font-semibold text-slate-800">{selectedTask.task_name}</div>
-                            </div>
-                            <div className={detailItemClass}>
-                                <div className="text-xs text-slate-400">任务状态</div>
-                                <div className="mt-1">
-                                    <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${statusMap[selectedTask.task_status].className}`}>
-                                        {statusMap[selectedTask.task_status].label}
-                                    </span>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="truncate text-base font-semibold text-slate-800">
+                                        {selectedTask.task_name}
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                        <span className={`${detailMetaBadgeClass} max-w-none font-mono text-slate-500`}>
+                                            #{selectedTask.id}
+                                        </span>
+                                        <span className={detailMetaBadgeClass} title={selectedTask.task_system || '-'}>
+                                            <span className="mr-1 text-slate-400">系统</span>
+                                            <span className="truncate">{selectedTask.task_system || '-'}</span>
+                                        </span>
+                                        <span className={detailMetaBadgeClass} title={selectedTask.theme || '-'}>
+                                            <span className="mr-1 text-slate-400">主题</span>
+                                            <span className="truncate">{selectedTask.theme || '-'}</span>
+                                        </span>
+                                        <span className={detailMetaBadgeClass} title={selectedTask.task_type || '-'}>
+                                            <span className="mr-1 text-slate-400">类型</span>
+                                            <span className="truncate">{selectedTask.task_type || '-'}</span>
+                                        </span>
+                                    </div>
                                 </div>
+                                <span className={`shrink-0 rounded-full border px-2 py-1 text-xs font-semibold ${statusMap[selectedTask.task_status]?.className || statusMap[0].className}`}>
+                                    {statusMap[selectedTask.task_status]?.label || statusMap[0].label}
+                                </span>
                             </div>
-                            <div className={detailItemClass}>
-                                <div className="text-xs text-slate-400">任务类型</div>
-                                <div className="mt-1 text-slate-700">{selectedTask.task_type || '-'}</div>
+                            <div className="mt-3 text-xs text-slate-500">
+                                {describeCron(selectedTask.task_cron, selectedTask.offset ?? 0)}
                             </div>
                         </div>
 
-                        <section>
-                            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                                <Clock3 size={16} className="text-red-500" />
-                                调度配置
+                        <div className="rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+                            <div className="grid grid-cols-2 gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedTaskDetailTab('config')}
+                                    className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${selectedTaskDetailTab === 'config' ? 'bg-red-50 text-red-700' : 'text-slate-500 hover:bg-slate-50'}`}
+                                >
+                                    任务配置
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedTaskDetailTab('dependency')}
+                                    className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${selectedTaskDetailTab === 'dependency' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}
+                                >
+                                    依赖任务
+                                </button>
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className={detailItemClass}>
-                                    <div className="text-xs text-slate-400">Cron 表达式</div>
-                                    <div className="mt-1 font-mono text-xs text-slate-700 break-all">{selectedTask.task_cron}</div>
+                        </div>
+
+                        {selectedTaskDetailTab === 'config' ? (
+                            <>
+                                <section className={detailSectionClass}>
+                                    <div className="border-b border-slate-100 px-5 py-4">
+                                        <div className="text-base font-semibold text-slate-900">任务核心</div>
+                                        <div className="mt-1 text-sm text-slate-500">基础身份、归属范围和备注信息。</div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3 p-5">
+                                        <div className={`col-span-2 ${detailItemClass}`}>
+                                            <div className="text-xs text-slate-400">任务名称</div>
+                                            <div className="mt-1 font-semibold text-slate-800">{selectedTask.task_name || '-'}</div>
+                                        </div>
+                                        <div className={detailItemClass}>
+                                            <div className="text-xs text-slate-400">任务ID</div>
+                                            <div className="mt-1 font-mono text-xs text-slate-700">#{selectedTask.id}</div>
+                                        </div>
+                                        <div className={detailItemClass}>
+                                            <div className="text-xs text-slate-400">任务状态</div>
+                                            <div className="mt-1">
+                                                <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${statusMap[selectedTask.task_status]?.className || statusMap[0].className}`}>
+                                                    {statusMap[selectedTask.task_status]?.label || statusMap[0].label}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className={detailItemClass}>
+                                            <div className="text-xs text-slate-400">任务类型</div>
+                                            <div className="mt-1 text-slate-700">{selectedTask.task_type || '-'}</div>
+                                        </div>
+                                        <div className={detailItemClass}>
+                                            <div className="text-xs text-slate-400">所属系统</div>
+                                            <div className="mt-1 text-slate-700">{selectedTask.task_system || '-'}</div>
+                                        </div>
+                                        <div className={detailItemClass}>
+                                            <div className="text-xs text-slate-400">任务主题</div>
+                                            <div className="mt-1 text-slate-700">{selectedTask.theme || '-'}</div>
+                                        </div>
+                                        <div className={`col-span-2 ${detailItemClass}`}>
+                                            <div className="text-xs text-slate-400">任务备注</div>
+                                            <div className="mt-1 whitespace-pre-wrap text-slate-700">{selectedTask.remark || '-'}</div>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section className={detailSectionClass}>
+                                    <div className="border-b border-slate-100 px-5 py-4">
+                                        <div className="flex items-center gap-2 text-base font-semibold text-slate-900">
+                                            <Clock3 size={17} className="text-red-500" />
+                                            运行节奏
+                                        </div>
+                                        <div className="mt-1 text-sm text-slate-500">调度表达式、数据偏移、失败轮询和依赖概览。</div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3 p-5">
+                                        <div className={`col-span-2 ${detailItemClass}`}>
+                                            <div className="text-xs text-slate-400">Cron 表达式</div>
+                                            <div className="mt-1 break-all font-mono text-xs text-slate-700">{selectedTask.task_cron || '-'}</div>
+                                            <div className="mt-2 text-xs text-slate-500">
+                                                {describeCron(selectedTask.task_cron, selectedTask.offset ?? 0)}
+                                            </div>
+                                        </div>
+                                        <div className={detailItemClass}>
+                                            <div className="text-xs text-slate-400">数据偏移</div>
+                                            <div className="mt-1 text-slate-700">{selectedTask.offset ?? 0}</div>
+                                        </div>
+                                        <div className={detailItemClass}>
+                                            <div className="text-xs text-slate-400">失败轮询间隔</div>
+                                            <div className="mt-1 text-slate-700">{selectedTask.period ? `${selectedTask.period} ms` : '-'}</div>
+                                        </div>
+                                        <div className={`col-span-2 ${detailItemClass}`}>
+                                            <div className="text-xs text-slate-400">依赖任务概览</div>
+                                            <div className="mt-1 text-slate-700">{selectedTaskDependencySummary}</div>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section className={detailSectionClass}>
+                                    <div className="border-b border-slate-100 px-5 py-4">
+                                        <div className="flex items-center gap-2 text-base font-semibold text-slate-900">
+                                            <Settings2 size={17} className="text-blue-500" />
+                                            执行资源
+                                        </div>
+                                        <div className="mt-1 text-sm text-slate-500">脚本内容和数据源绑定信息。</div>
+                                    </div>
+                                    <div className="space-y-3 p-5">
+                                        <div className={detailItemClass}>
+                                            <div className="text-xs text-slate-400">数据源</div>
+                                            <div className="mt-1 text-slate-700">{selectedTask.datasource_name || '-'}</div>
+                                        </div>
+                                        <div className={detailItemClass}>
+                                            <div className="text-xs text-slate-400">执行脚本</div>
+                                            {selectedTask.script ? (
+                                                detailScriptEditorReady ? (
+                                                    <div className="mt-2 overflow-hidden rounded-xl border border-slate-200">
+                                                        <Editor
+                                                            height="220px"
+                                                            language={editorLanguageMap[selectedTask.task_type || 'SHELL'] || 'shell'}
+                                                            value={selectedTask.script}
+                                                            theme="vs-dark"
+                                                            options={{
+                                                                readOnly: true,
+                                                                minimap: { enabled: false },
+                                                                scrollBeyondLastLine: false,
+                                                                lineNumbers: 'on',
+                                                                folding: true,
+                                                                fontSize: 12,
+                                                                wordWrap: 'on',
+                                                                padding: { top: 10, bottom: 10 },
+                                                            }}
+                                                        />
+                                                    </div>
+                                                ) : (
+                                                    <div className="mt-2 flex h-[220px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white text-sm text-slate-400">
+                                                        脚本内容加载中...
+                                                    </div>
+                                                )
+                                            ) : (
+                                                <div className="mt-2 text-sm text-slate-500">暂无脚本内容</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section className={detailSectionClass}>
+                                    <div className="border-b border-slate-100 px-5 py-4">
+                                        <div className="flex items-center gap-2 text-base font-semibold text-slate-900">
+                                            <Calendar size={17} className="text-emerald-500" />
+                                            通知与托底
+                                        </div>
+                                        <div className="mt-1 text-sm text-slate-500">通知人、创建更新时间和补充说明。</div>
+                                    </div>
+                                    <div className="space-y-3 p-5">
+                                        <div className={detailItemClass}>
+                                            <div className="text-xs text-slate-400">完成时通知</div>
+                                            <div className="mt-1 break-all text-slate-700">{selectedTask.notification_completed || '-'}</div>
+                                        </div>
+                                        <div className={detailItemClass}>
+                                            <div className="text-xs text-slate-400">失败时通知</div>
+                                            <div className="mt-1 break-all text-slate-700">{selectedTask.notification_failed || '-'}</div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className={detailItemClass}>
+                                                <div className="text-xs text-slate-400">创建时间</div>
+                                                <div className="mt-1 font-mono text-xs text-slate-700">
+                                                    {dayjs(selectedTask.create_time).format('YYYY-MM-DD HH:mm:ss')}
+                                                </div>
+                                            </div>
+                                            <div className={detailItemClass}>
+                                                <div className="text-xs text-slate-400">更新时间</div>
+                                                <div className="mt-1 font-mono text-xs text-slate-700">
+                                                    {dayjs(selectedTask.update_time).format('YYYY-MM-DD HH:mm:ss')}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </section>
+                            </>
+                        ) : (
+                            <section className={detailSectionClass}>
+                                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                                    <div>
+                                        <div className="text-base font-semibold text-slate-900">依赖任务</div>
+                                        <div className="mt-1 text-sm text-slate-500">只读查看当前任务的前置依赖链路。</div>
+                                    </div>
+                                    <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                                        {selectedTaskDependencies.length} 项
+                                    </span>
                                 </div>
-                                <div className={detailItemClass}>
-                                    <div className="text-xs text-slate-400">轮询间隔</div>
-                                    <div className="mt-1 text-slate-700">{selectedTask.period ? `${selectedTask.period} ms` : '-'}</div>
-                                </div>
-                                <div className={detailItemClass}>
-                                    <div className="text-xs text-slate-400">偏移量</div>
-                                    <div className="mt-1 text-slate-700">{selectedTask.offset ?? '-'}</div>
-                                </div>
-                                <div className={detailItemClass}>
-                                    <div className="text-xs text-slate-400">依赖任务</div>
-                                    <div className="mt-1 text-slate-700 break-all">{selectedTask.depend_id || '无'}</div>
-                                </div>
-                                <div className={`col-span-2 ${detailItemClass}`}>
-                                    <div className="text-xs text-slate-400">执行脚本</div>
-                                    {selectedTask.script ? (
-                                        <div className="mt-2 overflow-hidden rounded-xl border border-slate-200">
-                                            <Editor
-                                                height="220px"
-                                                language={editorLanguageMap[selectedTask.task_type || 'SHELL'] || 'shell'}
-                                                value={selectedTask.script}
-                                                theme="vs-dark"
-                                                options={{
-                                                    readOnly: true,
-                                                    minimap: { enabled: false },
-                                                    scrollBeyondLastLine: false,
-                                                    lineNumbers: 'on',
-                                                    folding: true,
-                                                    fontSize: 12,
-                                                    wordWrap: 'on',
-                                                    padding: { top: 10, bottom: 10 },
-                                                }}
-                                            />
+                                <div className="divide-y divide-slate-100">
+                                    {selectedTaskDependencies.length === 0 ? (
+                                        <div className="px-5 py-12 text-center text-sm text-slate-500">
+                                            暂无依赖任务
                                         </div>
                                     ) : (
-                                        <div className="mt-2 text-sm text-slate-500">暂无脚本内容</div>
+                                        selectedTaskDependencies.map(task => {
+                                            const mappedStatus = statusMap[task.task_status] || statusMap[0];
+                                            return (
+                                                <div key={task.id} className="px-5 py-4">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="min-w-0 truncate text-sm font-semibold leading-6 text-slate-800" title={task.task_name}>
+                                                            {task.task_name}
+                                                        </div>
+                                                        <span className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold leading-none ${mappedStatus.className}`}>
+                                                            {mappedStatus.label}
+                                                        </span>
+                                                    </div>
+                                                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                                        <span className={`${detailMetaBadgeClass} max-w-none font-mono text-slate-500`}>
+                                                            #{task.id}
+                                                        </span>
+                                                        <span className={detailMetaBadgeClass} title={task.task_system || '-'}>
+                                                            <span className="mr-1 text-slate-400">系统</span>
+                                                            <span className="truncate">{task.task_system || '-'}</span>
+                                                        </span>
+                                                        <span className={detailMetaBadgeClass} title={task.theme || '-'}>
+                                                            <span className="mr-1 text-slate-400">主题</span>
+                                                            <span className="truncate">{task.theme || '-'}</span>
+                                                        </span>
+                                                        <span className={detailMetaBadgeClass} title={task.task_type || '-'}>
+                                                            <span className="mr-1 text-slate-400">类型</span>
+                                                            <span className="truncate">{task.task_type || '-'}</span>
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
                                     )}
                                 </div>
-                            </div>
-                        </section>
-
-                        <section>
-                            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                                <Settings2 size={16} className="text-blue-500" />
-                                执行资源
-                            </div>
-                            <div className="space-y-3">
-                                <div className={detailItemClass}>
-                                    <div className="text-xs text-slate-400">数据源</div>
-                                    <div className="mt-1 text-slate-700">{selectedTask.datasource_name || '-'}</div>
-                                </div>
-                            </div>
-                        </section>
-
-                        <section>
-                            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                                <Calendar size={16} className="text-emerald-500" />
-                                业务属性
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className={detailItemClass}>
-                                    <div className="text-xs text-slate-400">所属系统</div>
-                                    <div className="mt-1 text-slate-700">{selectedTask.task_system || '-'}</div>
-                                </div>
-                                <div className={detailItemClass}>
-                                    <div className="text-xs text-slate-400">主题</div>
-                                    <div className="mt-1 text-slate-700">{selectedTask.theme || '-'}</div>
-                                </div>
-                                <div className={detailItemClass}>
-                                    <div className="text-xs text-slate-400">创建时间</div>
-                                    <div className="mt-1 font-mono text-xs text-slate-700">{dayjs(selectedTask.create_time).format('YYYY-MM-DD HH:mm:ss')}</div>
-                                </div>
-                                <div className={detailItemClass}>
-                                    <div className="text-xs text-slate-400">更新时间</div>
-                                    <div className="mt-1 font-mono text-xs text-slate-700">{dayjs(selectedTask.update_time).format('YYYY-MM-DD HH:mm:ss')}</div>
-                                </div>
-                            </div>
-                        </section>
-
-                        <section>
-                            <div className="mb-3 text-sm font-semibold text-slate-800">通知策略</div>
-                            <div className="space-y-3">
-                                <div className={detailItemClass}>
-                                    <div className="text-xs text-slate-400">完成时通知</div>
-                                    <div className="mt-1 text-slate-700 break-all">{selectedTask.notification_completed || '-'}</div>
-                                </div>
-                                <div className={detailItemClass}>
-                                    <div className="text-xs text-slate-400">失败时通知</div>
-                                    <div className="mt-1 text-slate-700 break-all">{selectedTask.notification_failed || '-'}</div>
-                                </div>
-                                <div className={detailItemClass}>
-                                    <div className="text-xs text-slate-400">备注</div>
-                                    <div className="mt-1 text-slate-700 whitespace-pre-wrap">{selectedTask.remark || '-'}</div>
-                                </div>
-                            </div>
-                        </section>
+                            </section>
+                        )}
                     </div>
                 )}
             </Drawer>

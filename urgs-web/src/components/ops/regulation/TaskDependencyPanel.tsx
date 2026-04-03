@@ -19,6 +19,8 @@ const statusMap: Record<number, { label: string; className: string }> = {
     1: { label: '暂停', className: 'bg-amber-50 text-amber-600 border-amber-200' },
 };
 
+const metaBadgeClass = 'inline-flex max-w-[140px] items-center rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] leading-none text-slate-600';
+
 const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
     taskList,
     editingTaskId,
@@ -139,6 +141,51 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
         setRightCheckedIds([]);
     };
 
+    const renderTaskOption = (task: QuartzTask, checked: boolean, highlightClass: string, onCheckedChange: (checked: boolean) => void) => {
+        const mappedStatus = statusMap[task.task_status] || statusMap[0];
+
+        return (
+            <label
+                key={task.id}
+                className={`flex cursor-pointer items-start gap-3 px-4 py-4 transition-colors ${checked ? highlightClass : 'hover:bg-slate-50'}`}
+            >
+                <Checkbox
+                    checked={checked}
+                    onChange={(event) => onCheckedChange(event.target.checked)}
+                    className="mt-0.5"
+                />
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 truncate text-sm font-semibold leading-6 text-slate-800" title={task.task_name}>
+                            {task.task_name}
+                        </div>
+                        <span className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold leading-none ${mappedStatus.className}`}>
+                            {mappedStatus.label}
+                        </span>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className={`${metaBadgeClass} max-w-none font-mono text-slate-500`}>
+                            #{task.id}
+                        </span>
+                        <span className={metaBadgeClass} title={task.task_system || '-'}>
+                            <span className="mr-1 text-slate-400">系统</span>
+                            <span className="truncate">{task.task_system || '-'}</span>
+                        </span>
+                        <span className={metaBadgeClass} title={task.theme || '-'}>
+                            <span className="mr-1 text-slate-400">主题</span>
+                            <span className="truncate">{task.theme || '-'}</span>
+                        </span>
+                        <span className={metaBadgeClass} title={task.task_type || '-'}>
+                            <span className="mr-1 text-slate-400">类型</span>
+                            <span className="truncate">{task.task_type || '-'}</span>
+                        </span>
+                    </div>
+                </div>
+            </label>
+        );
+    };
+
     return (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between gap-3">
@@ -204,20 +251,15 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
                         ) : pagedCandidateDependencyTasks.map(task => {
                             const taskId = String(task.id);
                             const checked = leftCheckedIds.includes(taskId);
-                            const mappedStatus = statusMap[task.task_status] || statusMap[0];
-                            return (
-                                <label key={task.id} className={`flex cursor-pointer items-start gap-3 px-4 py-3 ${checked ? 'bg-red-50/60' : 'hover:bg-slate-50'}`}>
-                                    <Checkbox checked={checked} onChange={(e) => setLeftCheckedIds(prev => e.target.checked ? Array.from(new Set([...prev, taskId])) : prev.filter(id => id !== taskId))} />
-                                    <div className="min-w-0 flex-1">
-                                        <div className="truncate text-sm font-semibold text-slate-800">{task.task_name}</div>
-                                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-                                            <span className="font-mono">#{task.id}</span>
-                                            <span>{task.task_system || '-'}</span>
-                                            <span>{task.theme || '-'}</span>
-                                            <span className={`rounded-full border px-1.5 py-0.5 ${mappedStatus.className}`}>{mappedStatus.label}</span>
-                                        </div>
-                                    </div>
-                                </label>
+                            return renderTaskOption(
+                                task,
+                                checked,
+                                'bg-red-50/70',
+                                (nextChecked) => setLeftCheckedIds(prev => (
+                                    nextChecked
+                                        ? Array.from(new Set([...prev, taskId]))
+                                        : prev.filter(id => id !== taskId)
+                                ))
                             );
                         })}
                     </div>
@@ -283,20 +325,15 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
                         ) : filteredSelectedDependencyTasks.map(task => {
                             const taskId = String(task.id);
                             const checked = rightCheckedIds.includes(taskId);
-                            const mappedStatus = statusMap[task.task_status] || statusMap[0];
-                            return (
-                                <label key={task.id} className={`flex cursor-pointer items-start gap-3 px-4 py-3 ${checked ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}>
-                                    <Checkbox checked={checked} onChange={(e) => setRightCheckedIds(prev => e.target.checked ? Array.from(new Set([...prev, taskId])) : prev.filter(id => id !== taskId))} />
-                                    <div className="min-w-0 flex-1">
-                                        <div className="truncate text-sm font-semibold text-slate-800">{task.task_name}</div>
-                                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-                                            <span className="font-mono">#{task.id}</span>
-                                            <span>{task.task_system || '-'}</span>
-                                            <span>{task.theme || '-'}</span>
-                                            <span className={`rounded-full border px-1.5 py-0.5 ${mappedStatus.className}`}>{mappedStatus.label}</span>
-                                        </div>
-                                    </div>
-                                </label>
+                            return renderTaskOption(
+                                task,
+                                checked,
+                                'bg-blue-50/70',
+                                (nextChecked) => setRightCheckedIds(prev => (
+                                    nextChecked
+                                        ? Array.from(new Set([...prev, taskId]))
+                                        : prev.filter(id => id !== taskId)
+                                ))
                             );
                         })}
                     </div>

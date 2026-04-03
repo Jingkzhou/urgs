@@ -73,13 +73,31 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
 }) => {
     const [modalTab, setModalTab] = useState<'config' | 'dependency'>('config');
     const [dependencyTasks, setDependencyTasks] = useState<QuartzTask[]>([]);
-    const watchedFormValues = Form.useWatch([], form) as Partial<TaskFormValues> | undefined;
+    const [scriptEditorReady, setScriptEditorReady] = useState(false);
+    const watchedTaskName = Form.useWatch('task_name', form) as string | undefined;
+    const watchedTaskCron = Form.useWatch('task_cron', form) as string | undefined;
+    const watchedOffset = Form.useWatch('offset', form) as number | null | undefined;
+    const watchedDependId = Form.useWatch('depend_id', form) as string | undefined;
+    const watchedTaskType = Form.useWatch('task_type', form) as string | undefined;
+    const watchedScript = Form.useWatch('script', form) as string | undefined;
 
     useEffect(() => {
-        if (open) {
-            setModalTab('config');
-        }
+        setModalTab('config');
     }, [open, editingTask?.id]);
+
+    useEffect(() => {
+        if (!open || scriptEditorReady) {
+            return;
+        }
+
+        const timer = window.setTimeout(() => {
+            setScriptEditorReady(true);
+        }, 60);
+
+        return () => {
+            window.clearTimeout(timer);
+        };
+    }, [open, scriptEditorReady]);
 
     useEffect(() => {
         let mounted = true;
@@ -140,17 +158,27 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
     }, [open, editingTask?.id]);
 
     const selectedDependencyIds = useMemo(() => {
-        const raw = watchedFormValues?.depend_id;
+        const raw = watchedDependId;
         if (!raw) return [] as string[];
         return raw
             .split(',')
             .map(item => item.trim())
             .filter(Boolean);
-    }, [watchedFormValues?.depend_id]);
+    }, [watchedDependId]);
 
-    const availableDependencyTasks = useMemo(() => {
-        return taskList.filter(task => task.id !== editingTask?.id);
-    }, [taskList, editingTask?.id]);
+    const dependencyTaskNameMap = useMemo(() => {
+        const taskNameMap = new Map<string, string>();
+        taskList.forEach(task => {
+            if (task.id === editingTask?.id) {
+                return;
+            }
+            taskNameMap.set(String(task.id), task.task_name);
+        });
+        dependencyTasks.forEach(task => {
+            taskNameMap.set(String(task.id), task.task_name);
+        });
+        return taskNameMap;
+    }, [dependencyTasks, editingTask?.id, taskList]);
 
     const dependencySummary = useMemo(() => {
         if (selectedDependencyIds.length === 0) {
@@ -158,7 +186,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
         }
 
         const labels = selectedDependencyIds
-            .map(id => availableDependencyTasks.find(item => String(item.id) === id)?.task_name || `任务 ${id}`)
+            .map(id => dependencyTaskNameMap.get(id) || `任务 ${id}`)
             .slice(0, 2);
 
         if (selectedDependencyIds.length <= 2) {
@@ -166,15 +194,17 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
         }
 
         return `${labels.join('，')} 等 ${selectedDependencyIds.length} 项`;
-    }, [availableDependencyTasks, selectedDependencyIds]);
+    }, [dependencyTaskNameMap, selectedDependencyIds]);
 
     const portrait = useMemo(() => {
-        const current = watchedFormValues || {};
         return {
-            taskName: current.task_name?.trim() || editingTask?.task_name || '未命名任务',
-            schedule: describeCron(current.task_cron || editingTask?.task_cron, current.offset ?? editingTask?.offset ?? 0),
+            taskName: watchedTaskName?.trim() || editingTask?.task_name || '未命名任务',
+            schedule: describeCron(
+                watchedTaskCron || editingTask?.task_cron,
+                watchedOffset ?? editingTask?.offset ?? 0
+            ),
         };
-    }, [watchedFormValues, editingTask, describeCron]);
+    }, [describeCron, editingTask, watchedOffset, watchedTaskCron, watchedTaskName]);
 
     const updateDependencySelection = (ids: string[]) => {
         form.setFieldValue('depend_id', ids.length > 0 ? ids.join(',') : undefined);
@@ -187,7 +217,6 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
             width={1120}
             onOk={onSubmit}
             onCancel={onCancel}
-            destroyOnHidden
             styles={{ body: { padding: 0 }, footer: { padding: '18px 24px' } }}
             footer={
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -410,25 +439,36 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                     <div className="space-y-4 p-5">
                                         <Form.Item
                                             name="script"
-                                            label="脚本"
+                                            hidden
                                             rules={[{ required: true, message: '请填写脚本内容' }]}
-                                            getValueFromEvent={(value) => value ?? ''}
                                         >
-                                            <Editor
-                                                height="260px"
-                                                language={editorLanguageMap[watchedFormValues?.task_type || editingTask?.task_type || 'SHELL'] || 'shell'}
-                                                theme="vs"
-                                                options={{
-                                                    minimap: { enabled: false },
-                                                    scrollBeyondLastLine: false,
-                                                    automaticLayout: true,
-                                                    fontSize: 13,
-                                                    wordWrap: 'on',
-                                                    tabSize: 2,
-                                                    padding: { top: 12, bottom: 12 },
-                                                }}
-                                            />
+                                            <Input.TextArea />
                                         </Form.Item>
+                                        <div>
+                                            <div className="mb-2 text-sm text-slate-700">脚本</div>
+                                            {scriptEditorReady ? (
+                                                <Editor
+                                                    height="260px"
+                                                    value={watchedScript || ''}
+                                                    language={editorLanguageMap[watchedTaskType || editingTask?.task_type || 'SHELL'] || 'shell'}
+                                                    theme="vs"
+                                                    onChange={(value) => form.setFieldValue('script', value ?? '')}
+                                                    options={{
+                                                        minimap: { enabled: false },
+                                                        scrollBeyondLastLine: false,
+                                                        automaticLayout: true,
+                                                        fontSize: 13,
+                                                        wordWrap: 'on',
+                                                        tabSize: 2,
+                                                        padding: { top: 12, bottom: 12 },
+                                                    }}
+                                                />
+                                            ) : (
+                                                <div className="flex h-[260px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-400">
+                                                    脚本编辑器加载中...
+                                                </div>
+                                            )}
+                                        </div>
                                         <Form.Item name="datasource_id" label="数据源">
                                             <Select
                                                 showSearch

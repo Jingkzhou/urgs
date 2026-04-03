@@ -1,11 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Modal } from 'antd';
 import { ClipboardList, DatabaseZap, ShieldCheck, TimerReset } from 'lucide-react';
 import TaskManagement from './regulation/TaskManagement';
 import TaskInstance from './regulation/TaskInstance';
 import TaskExecutionLog from './regulation/TaskExecutionLog';
 import { QuartzTask, quartzTaskExecutionLogsMock, quartzTaskStatusesMock, quartzTasksMock } from './regulation/mockData';
-import { queryQuartzTaskStatus } from '@/api/ops';
 
 type RegulationView = 'task-management' | 'task-instance';
 
@@ -29,30 +28,6 @@ const RegulationBatchManagement: React.FC = () => {
         failedInstances: 0,
     });
 
-    useEffect(() => {
-        let canceled = false;
-        const loadStats = async () => {
-            try {
-                const response = await queryQuartzTaskStatus({ pageNum: 1, pageSize: 2000 });
-                if (!response?.success) return;
-                const list = response.data?.list || [];
-                if (canceled) return;
-                setStats({
-                    waitingInstances: list.filter(item => Number(item.status) === 0).length,
-                    runningInstances: list.filter(item => Number(item.status) === 1).length,
-                    successInstances: list.filter(item => Number(item.status) === 2).length,
-                    failedInstances: list.filter(item => Number(item.status) === 3).length,
-                });
-            } catch {
-                // ignore stats loading error in shell component
-            }
-        };
-        loadStats();
-        return () => {
-            canceled = true;
-        };
-    }, []);
-
     const handleOpenTaskLog = (task: QuartzTask) => {
         setSelectedLogTask({ id: task.id, name: task.task_name });
         setExecutionLogVisible(true);
@@ -70,7 +45,7 @@ const RegulationBatchManagement: React.FC = () => {
     const renderContent = () => {
         switch (activeView) {
             case 'task-instance':
-                return <TaskInstance />;
+                return <TaskInstance onStatsChange={setStats} />;
             case 'task-management':
             default:
                 return <TaskManagement onViewExecutionLog={handleOpenTaskLog} />;
