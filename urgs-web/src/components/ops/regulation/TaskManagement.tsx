@@ -233,6 +233,8 @@ const normalizeQuartzTask = (item: QuartzTaskApiModel): QuartzTask => {
 
 const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) => {
     const [taskList, setTaskList] = useState<QuartzTask[]>([]);
+    const [allTasks, setAllTasks] = useState<QuartzTask[]>([]);
+    const [taskTotal, setTaskTotal] = useState(0);
     const [form] = Form.useForm<TaskFormValues>();
     const [keyword, setKeyword] = useState('');
     const [statusFilter, setStatusFilter] = useState<string>('');
@@ -252,12 +254,12 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
 
     const taskTypes = useMemo(() => [...supportedTaskTypes], []);
     const systems = useMemo(
-        () => Array.from(new Set(taskList.map(task => task.task_system).filter(Boolean))) as string[],
-        [taskList]
+        () => Array.from(new Set(allTasks.map(task => task.task_system).filter(Boolean))) as string[],
+        [allTasks]
     );
     const themes = useMemo(
-        () => Array.from(new Set(taskList.map(task => task.theme).filter(Boolean))) as string[],
-        [taskList]
+        () => Array.from(new Set(allTasks.map(task => task.theme).filter(Boolean))) as string[],
+        [allTasks]
     );
 
     useEffect(() => {
@@ -296,25 +298,74 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
         };
     }, []);
 
-    const loadTasks = useCallback(async () => {
+    const buildTaskQueryParams = useCallback((pageNum: number, size: number) => ({
+        pageNum,
+        pageSize: size,
+        taskName: emptyToNull(keyword) || undefined,
+        taskStatus: statusFilter === '' ? undefined : Number(statusFilter),
+        taskType: typeFilter ? toTaskTypeCode(typeFilter) : undefined,
+        taskSystem: systemFilter || undefined,
+        theme: themeFilter || undefined,
+    }), [keyword, statusFilter, systemFilter, themeFilter, typeFilter]);
+
+    const loadTasks = useCallback(async (pageNum = currentPage, size = pageSize) => {
         try {
-            const response = await queryQuartzTasks({ pageNum: 1, pageSize: 1000 });
+            const response = await queryQuartzTasks(buildTaskQueryParams(pageNum, size));
             if (!response?.success) {
                 throw new Error(response?.msg || '任务查询失败');
             }
             const list = (response.data?.list || []).map(normalizeQuartzTask);
             setTaskList(list);
+            setTaskTotal(Number(response.data?.total || 0));
+        } catch (error: any) {
+            message.error(error?.message || '加载任务失败');
+        }
+    }, [buildTaskQueryParams, currentPage, pageSize]);
+
+    const loadAllTasks = useCallback(async () => {
+        try {
+            const firstPage = await queryQuartzTasks({ pageNum: 1, pageSize: 500 });
+            if (!firstPage?.success) {
+                throw new Error(firstPage?.msg || '任务查询失败');
+            }
+
+            const firstList = (firstPage.data?.list || []).map(normalizeQuartzTask);
+            const totalPages = Number(firstPage.data?.pages || 1);
+            if (totalPages <= 1) {
+                setAllTasks(firstList);
+                return;
+            }
+
+            const restPages = await Promise.all(
+                Array.from({ length: totalPages - 1 }, (_, index) =>
+                    queryQuartzTasks({ pageNum: index + 2, pageSize: 500 })
+                )
+            );
+
+            const mergedList = [
+                ...firstList,
+                ...restPages.flatMap(response => (response?.data?.list || []).map(normalizeQuartzTask)),
+            ];
+            setAllTasks(mergedList);
         } catch (error: any) {
             message.error(error?.message || '加载任务失败');
         }
     }, []);
 
     useEffect(() => {
-        loadTasks();
-    }, [loadTasks]);
+        loadAllTasks();
+    }, [loadAllTasks]);
 
-    const filteredTasks = useMemo(() => {
-        return taskList.filter(task => {
+    useEffect(() => {
+        loadTasks(currentPage, pageSize);
+    }, [currentPage, loadTasks, pageSize]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [keyword, statusFilter, systemFilter, themeFilter, typeFilter]);
+
+    const filteredSummaryTasks = useMemo(() => {
+        return allTasks.filter(task => {
             const matchesKeyword = !keyword || [
                 task.task_name,
                 task.remark,
@@ -323,29 +374,12 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             const matchesType = !typeFilter || task.task_type === typeFilter;
             const matchesSystem = !systemFilter || task.task_system === systemFilter;
             const matchesTheme = !themeFilter || task.theme === themeFilter;
-
             return matchesKeyword && matchesStatus && matchesType && matchesSystem && matchesTheme;
         });
-    }, [keyword, statusFilter, systemFilter, taskList, themeFilter, typeFilter]);
-
-    const pagedTasks = useMemo(() => {
-        const start = (currentPage - 1) * pageSize;
-        return filteredTasks.slice(start, start + pageSize);
-    }, [filteredTasks, currentPage, pageSize]);
-
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [keyword, statusFilter, typeFilter, systemFilter, themeFilter]);
-
-    useEffect(() => {
-        const totalPages = Math.max(1, Math.ceil(filteredTasks.length / pageSize));
-        if (currentPage > totalPages) {
-            setCurrentPage(totalPages);
-        }
-    }, [filteredTasks.length, pageSize, currentPage]);
+    }, [allTasks, keyword, statusFilter, systemFilter, themeFilter, typeFilter]);
 
     const fallbackDataSources = useMemo(() => {
-        return taskList.reduce<DataSourceOption[]>((acc, task) => {
+        return allTasks.reduce<DataSourceOption[]>((acc, task) => {
             if (!task.datasource_name) return acc;
             const nextId = task.datasource_id ?? -(acc.length + 1);
             if (acc.some(item => item.id === nextId || item.name === task.datasource_name)) {
@@ -358,7 +392,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             });
             return acc;
         }, []);
-    }, [taskList]);
+    }, [allTasks]);
 
     const datasourceOptions = useMemo(() => {
         return dataSources.length > 0 ? dataSources : fallbackDataSources;
@@ -406,7 +440,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             if (!response?.success) {
                 throw new Error(response?.msg || '保存任务失败');
             }
-            await loadTasks();
+            await Promise.all([loadTasks(currentPage, pageSize), loadAllTasks()]);
             message.success(editingTask ? `已更新任务 ${values.task_name}` : `已创建任务 ${values.task_name}`);
             closeTaskModal();
         } catch (error: any) {
@@ -432,7 +466,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             if (!response?.success) {
                 throw new Error(response?.msg || '删除任务失败');
             }
-            await loadTasks();
+            await Promise.all([loadTasks(currentPage, pageSize), loadAllTasks()]);
             setSelectedTask(prev => prev?.id === task.id ? null : prev);
             message.success(`已删除任务 ${task.task_name}`);
         } catch (error: any) {
@@ -463,7 +497,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             if (!response?.success) {
                 throw new Error(response?.msg || '暂停任务失败');
             }
-            await loadTasks();
+            await Promise.all([loadTasks(currentPage, pageSize), loadAllTasks()]);
             message.success(`已暂停任务 ${task.task_name}`);
         } catch (error: any) {
             message.error(error?.message || '暂停任务失败');
@@ -477,7 +511,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             if (!response?.success) {
                 throw new Error(response?.msg || '恢复任务失败');
             }
-            await loadTasks();
+            await Promise.all([loadTasks(currentPage, pageSize), loadAllTasks()]);
             message.success(`已恢复任务 ${task.task_name}`);
         } catch (error: any) {
             message.error(error?.message || '恢复任务失败');
@@ -535,13 +569,13 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                             <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5">
                                 <Settings2 size={14} />
-                                共 {filteredTasks.length} 条任务
+                                共 {taskTotal} 条任务
                             </span>
                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700">
-                                正常 {filteredTasks.filter(task => task.task_status === 0).length}
+                                正常 {filteredSummaryTasks.filter(task => task.task_status === 0).length}
                             </span>
                             <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-amber-700">
-                                暂停 {filteredTasks.filter(task => task.task_status === 1).length}
+                                暂停 {filteredSummaryTasks.filter(task => task.task_status === 1).length}
                             </span>
                             <button
                                 onClick={handleCreateTask}
@@ -622,13 +656,13 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {filteredTasks.length === 0 ? (
+                                {taskList.length === 0 ? (
                                     <tr>
                                         <td colSpan={9} className="px-6 py-16 text-center text-slate-500">
                                             未找到符合条件的监管任务。
                                         </td>
                                     </tr>
-                                ) : pagedTasks.map(task => {
+                                ) : taskList.map(task => {
                                     const mappedStatus = statusMap[task.task_status] || statusMap[0];
 
                                     return (
@@ -708,15 +742,15 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                     </div>
                 </div>
                 <div className="px-5">
-                    <Pagination
-                        current={currentPage}
-                        total={filteredTasks.length}
-                        pageSize={pageSize}
-                        showSizeChanger
-                        onChange={(page, size) => {
-                            setCurrentPage(page);
-                            setPageSize(size);
-                        }}
+                        <Pagination
+                            current={currentPage}
+                            total={taskTotal}
+                            pageSize={pageSize}
+                            showSizeChanger
+                            onChange={(page, size) => {
+                                setCurrentPage(page);
+                                setPageSize(size);
+                            }}
                     />
                 </div>
             </div>
@@ -754,7 +788,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 open={modalVisible}
                 editingTask={editingTask}
                 form={form}
-                taskList={taskList}
+                taskList={allTasks}
                 taskTypes={taskTypes}
                 systems={systems}
                 themes={themes}

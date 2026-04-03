@@ -44,6 +44,13 @@ public class QuartzTaskService {
         return ResponseDTO.succData(SmartPageUtil.convert2PageResult(pageParam));
     }
 
+    public ResponseDTO<List<QuartzTaskVO>> queryDependencies(Long taskId) {
+        if (taskId == null) {
+            return ResponseDTO.succData(Collections.emptyList());
+        }
+        return ResponseDTO.succData(quartzTaskDao.getPreTaskListByTaskId(taskId));
+    }
+
     public ResponseDTO<PageResultDTO<QuartzTaskLogVO>> queryLog(QuartzLogQueryDTO queryDTO) {
         Page<QuartzTaskLogVO> pageParam = SmartPageUtil.convert2QueryPage(queryDTO);
         List<QuartzTaskLogVO> taskList = quartzTaskLogDao.queryList(pageParam, queryDTO);

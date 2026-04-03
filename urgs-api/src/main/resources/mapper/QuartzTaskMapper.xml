@@ -49,7 +49,16 @@
             AND t.id = #{queryDTO.id}
         </if>
         <if test="queryDTO.taskName != null and queryDTO.taskName != ''">
-            AND INSTR(t.task_name, #{queryDTO.taskName})
+            AND (
+                INSTR(t.task_name, #{queryDTO.taskName})
+                OR INSTR(t.remark, #{queryDTO.taskName})
+            )
+        </if>
+        <if test="queryDTO.taskStatus != null">
+            AND t.task_status = #{queryDTO.taskStatus}
+        </if>
+        <if test="queryDTO.taskType != null">
+            AND t.task_type = #{queryDTO.taskType}
         </if>
         <if test="queryDTO.taskSystem != null and queryDTO.taskSystem != ''">
             AND INSTR(t.task_system, #{queryDTO.taskSystem})
@@ -110,6 +119,15 @@
         FROM t_quartz_task_dependency
         WHERE task_id = #{taskId}
         ORDER BY id
+    </select>
+
+    <select id="getPreTaskListByTaskId" resultType="com.example.urgs_api.quartz.domain.dto.QuartzTaskVO">
+        SELECT
+        <include refid="baseSql"/>
+        FROM t_quartz_task t
+        INNER JOIN t_quartz_task_dependency d ON d.pre_task_id = t.id
+        WHERE d.task_id = #{taskId}
+        ORDER BY d.id
     </select>
 
     <delete id="deleteDependenciesByTaskId">

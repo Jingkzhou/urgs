@@ -34,6 +34,10 @@ public class QuartzQueryDTO extends PageParamDTO {
 
     String taskName;
 
+    Integer taskStatus;
+
+    Integer taskType;
+
     String taskSystem;
 
     String theme;

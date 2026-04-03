@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Checkbox } from 'antd';
 import { Search } from 'lucide-react';
+import Pagination from '@/components/common/Pagination';
 import { QuartzTask } from './mockData';
 
 interface TaskDependencyPanelProps {
     taskList: QuartzTask[];
     editingTaskId?: number;
     selectedDependencyIds: string[];
+    dependencyTaskDetails?: QuartzTask[];
     systems: string[];
     taskTypes: readonly string[];
     onChangeSelectedDependencyIds: (ids: string[]) => void;
@@ -21,6 +23,7 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
     taskList,
     editingTaskId,
     selectedDependencyIds,
+    dependencyTaskDetails = [],
     systems,
     taskTypes,
     onChangeSelectedDependencyIds,
@@ -31,6 +34,8 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
     const [selectedDependencyKeyword, setSelectedDependencyKeyword] = useState('');
     const [leftCheckedIds, setLeftCheckedIds] = useState<string[]>([]);
     const [rightCheckedIds, setRightCheckedIds] = useState<string[]>([]);
+    const [candidatePage, setCandidatePage] = useState(1);
+    const [candidatePageSize, setCandidatePageSize] = useState(10);
 
     const availableDependencyTasks = useMemo(() => {
         return taskList.filter(task => task.id !== editingTaskId);
@@ -55,10 +60,23 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
         return filteredDependencyTasks.filter(task => !selectedSet.has(String(task.id)));
     }, [filteredDependencyTasks, selectedDependencyIds]);
 
+    const pagedCandidateDependencyTasks = useMemo(() => {
+        const start = (candidatePage - 1) * candidatePageSize;
+        return candidateDependencyTasks.slice(start, start + candidatePageSize);
+    }, [candidateDependencyTasks, candidatePage, candidatePageSize]);
+
     const selectedDependencyTasks = useMemo(() => {
+        const dependencyTaskMap = new Map(
+            dependencyTaskDetails.map(task => [String(task.id), task])
+        );
+
         return selectedDependencyIds.map(id => {
+            const remoteTask = dependencyTaskMap.get(id);
+            if (remoteTask) return remoteTask;
+
             const task = availableDependencyTasks.find(item => String(item.id) === id);
             if (task) return task;
+
             return {
                 id: Number(id),
                 task_name: `任务 ${id}`,
@@ -73,7 +91,7 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
                 datasource_name: null,
             } as QuartzTask;
         });
-    }, [availableDependencyTasks, selectedDependencyIds]);
+    }, [availableDependencyTasks, dependencyTaskDetails, selectedDependencyIds]);
 
     const filteredSelectedDependencyTasks = useMemo(() => {
         const keywordValue = selectedDependencyKeyword.trim().toLowerCase();
@@ -88,9 +106,21 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
     }, [selectedDependencyKeyword, selectedDependencyTasks]);
 
     useEffect(() => {
-        const candidateIdSet = new Set(candidateDependencyTasks.map(task => String(task.id)));
-        setLeftCheckedIds(prev => prev.filter(id => candidateIdSet.has(id)));
-    }, [candidateDependencyTasks]);
+        setCandidatePage(1);
+    }, [dependencyKeyword, dependencySystemFilter, dependencyTypeFilter]);
+
+    useEffect(() => {
+        const maxPage = Math.max(1, Math.ceil(candidateDependencyTasks.length / candidatePageSize));
+        if (candidatePage > maxPage) {
+            setCandidatePage(maxPage);
+        }
+    }, [candidateDependencyTasks.length, candidatePage, candidatePageSize]);
+
+    useEffect(() => {
+        const availableIdSet = new Set(availableDependencyTasks.map(task => String(task.id)));
+        const selectedIdSet = new Set(selectedDependencyIds);
+        setLeftCheckedIds(prev => prev.filter(id => availableIdSet.has(id) && !selectedIdSet.has(id)));
+    }, [availableDependencyTasks, selectedDependencyIds]);
 
     useEffect(() => {
         const selectedIdSet = new Set(filteredSelectedDependencyTasks.map(task => String(task.id)));
@@ -124,7 +154,20 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
             <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_130px_1fr]">
                 <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/40">
                     <div className="border-b border-slate-200 bg-white px-4 py-3">
-                        <div className="text-sm font-semibold text-slate-800">可选任务池</div>
+                        <div className="flex items-center justify-between gap-2">
+                            <div className="text-sm font-semibold text-slate-800">可选任务池</div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500">已勾选 {leftCheckedIds.length} 项</span>
+                                <button
+                                    type="button"
+                                    onClick={() => setLeftCheckedIds([])}
+                                    disabled={leftCheckedIds.length === 0}
+                                    className="text-xs font-semibold text-red-600 disabled:cursor-not-allowed disabled:text-slate-300"
+                                >
+                                    清空勾选
+                                </button>
+                            </div>
+                        </div>
                         <div className="mt-2 grid grid-cols-1 gap-2">
                             <label className="relative">
                                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -158,7 +201,7 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
                     <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-100">
                         {candidateDependencyTasks.length === 0 ? (
                             <div className="px-4 py-10 text-center text-xs text-slate-500">暂无可添加任务</div>
-                        ) : candidateDependencyTasks.map(task => {
+                        ) : pagedCandidateDependencyTasks.map(task => {
                             const taskId = String(task.id);
                             const checked = leftCheckedIds.includes(taskId);
                             const mappedStatus = statusMap[task.task_status] || statusMap[0];
@@ -177,6 +220,20 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
                                 </label>
                             );
                         })}
+                    </div>
+                    <div className="border-t border-slate-200 bg-white px-4 py-2">
+                        <Pagination
+                            current={candidatePage}
+                            total={candidateDependencyTasks.length}
+                            pageSize={candidatePageSize}
+                            onChange={(page, pageSize) => {
+                                setCandidatePage(page);
+                                setCandidatePageSize(pageSize);
+                            }}
+                            showSizeChanger
+                            pageSizeOptions={[10, 20, 50]}
+                            className="py-2"
+                        />
                     </div>
                 </div>
 

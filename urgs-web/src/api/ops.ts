@@ -332,6 +332,8 @@ export interface QuartzTaskQueryParams {
     pageSize?: number;
     id?: number;
     taskName?: string;
+    taskStatus?: number;
+    taskType?: number;
     taskSystem?: string;
     theme?: string;
 }
@@ -361,6 +363,9 @@ export interface QuartzTaskSavePayload {
 
 export const queryQuartzTasks = (params: QuartzTaskQueryParams) =>
     post<ApiResponse<PageResult<QuartzTaskApiModel>>>('/api/quartz/task/query', params);
+
+export const queryQuartzTaskDependencies = (taskId: number) =>
+    get<ApiResponse<QuartzTaskApiModel[]>>(`/api/quartz/task/dependencies/${taskId}`);
 
 export const saveOrUpdateQuartzTask = (payload: QuartzTaskSavePayload) =>
     post<ApiResponse<string>>('/api/quartz/task/saveOrUpdate', payload);

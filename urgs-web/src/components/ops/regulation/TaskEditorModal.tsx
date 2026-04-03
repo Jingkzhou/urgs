@@ -5,6 +5,7 @@ import Editor from '@monaco-editor/react';
 import { QuartzTask } from './mockData';
 import CronPicker from '../schedule/forms/components/CronPicker';
 import TaskDependencyPanel from './TaskDependencyPanel';
+import { queryQuartzTaskDependencies, QuartzTaskApiModel } from '@/api/ops';
 
 const { TextArea } = Input;
 
@@ -71,12 +72,71 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
     onSubmit,
 }) => {
     const [modalTab, setModalTab] = useState<'config' | 'dependency'>('config');
+    const [dependencyTasks, setDependencyTasks] = useState<QuartzTask[]>([]);
     const watchedFormValues = Form.useWatch([], form) as Partial<TaskFormValues> | undefined;
 
     useEffect(() => {
         if (open) {
             setModalTab('config');
         }
+    }, [open, editingTask?.id]);
+
+    useEffect(() => {
+        let mounted = true;
+
+        const loadDependencyTasks = async () => {
+            if (!open || !editingTask?.id) {
+                setDependencyTasks([]);
+                return;
+            }
+
+            try {
+                const response = await queryQuartzTaskDependencies(editingTask.id);
+                if (!mounted) return;
+                if (!response?.success) {
+                    setDependencyTasks([]);
+                    return;
+                }
+                setDependencyTasks((response.data || []).map((item: QuartzTaskApiModel) => ({
+                    id: Number(item.id),
+                    task_name: item.taskName || '',
+                    task_bean: item.taskBean ?? null,
+                    task_params: item.taskParams ?? null,
+                    task_cron: item.taskCron || '',
+                    task_status: Number(item.taskStatus ?? 0) as 0 | 1,
+                    remark: item.remark ?? null,
+                    update_time: item.updateTime || '',
+                    create_time: item.createTime || '',
+                    task_type: item.taskType === 2 ? 'SQL' : 'SHELL',
+                    url: item.url ?? null,
+                    script: item.exePath ?? null,
+                    depend_id: item.dependId ?? null,
+                    username: item.username ?? null,
+                    password: item.password ?? null,
+                    driver: item.driver ?? null,
+                    datasource_id: null,
+                    datasource_name: null,
+                    period: item.period ?? null,
+                    task_system: item.taskSystem ?? null,
+                    theme: item.theme ?? null,
+                    offset: item.offset ?? null,
+                    data_date: item.dataDate ?? null,
+                    job_key: item.jobKey ?? null,
+                    notification_completed: item.notificationCompleted ?? null,
+                    notification_failed: item.notificationFailed ?? null,
+                })));
+            } catch (error) {
+                if (mounted) {
+                    setDependencyTasks([]);
+                }
+            }
+        };
+
+        loadDependencyTasks();
+
+        return () => {
+            mounted = false;
+        };
     }, [open, editingTask?.id]);
 
     const selectedDependencyIds = useMemo(() => {
@@ -433,6 +493,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                             taskList={taskList}
                             editingTaskId={editingTask?.id}
                             selectedDependencyIds={selectedDependencyIds}
+                            dependencyTaskDetails={dependencyTasks}
                             systems={systems}
                             taskTypes={taskTypes}
                             onChangeSelectedDependencyIds={updateDependencySelection}

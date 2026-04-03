@@ -49,6 +49,8 @@ public interface QuartzTaskDao extends BaseMapper<QuartzTaskEntity> {
      */
     List<QuartzTaskEntity> getTaskListByDepId( @Param("id")Long id);
 
+    List<QuartzTaskVO> getPreTaskListByTaskId(@Param("taskId") Long taskId);
+
     List<Long> getPreTaskIdsByTaskId(@Param("taskId") Long taskId);
 
     void deleteDependenciesByTaskId(@Param("taskId") Long taskId);
