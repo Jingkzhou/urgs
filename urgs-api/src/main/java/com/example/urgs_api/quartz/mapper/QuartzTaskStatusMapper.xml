@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="net.lab1024.smartadmin.module.support.quartz.dao.QuartzTaskStatusDao">
+
+    <resultMap id="QuartzTaskStatusDTO"
+               type="net.lab1024.smartadmin.module.support.quartz.domain.dto.QuartzTaskStatusVO"></resultMap>
+    <sql id="baseSql">
+        t.id,
+        t.plan_id,
+        t.data_date,
+        t.status,
+        t.begin_time,
+        t.update_time,
+        t.end_time,
+        t.msg,
+        t.create_time
+    </sql>
+
+
+    <select id="getFinishCount" resultType="integer">
+        SELECT
+        count(1)
+        FROM
+        t_quartz_task_status t
+        where status = 3
+        and data_date = #{dataDate}
+        and plan_id in
+        <foreach collection="dependIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <update id="insert">
+        INSERT INTO t_quartz_task_status(plan_id,data_date,status,begin_time,end_time,msg,update_time,create_time,create_date)
+        VALUES (#{taskStatusEntity.planId},#{taskStatusEntity.dataDate},#{taskStatusEntity.status},#{taskStatusEntity.beginTime},#{taskStatusEntity.endTime},#{taskStatusEntity.msg},#{taskStatusEntity.updateTime},#{taskStatusEntity.createTime},DATE_FORMAT(#{taskStatusEntity.createTime},'%Y%m%d'))
+    </update>
+    <update id="delete">
+        delete t from t_quartz_task_status t
+        WHERE t.plan_id = #{taskId}
+        and t.data_date = #{dataDate}
+    </update>
+    <update id="update">
+        UPDATE t_quartz_task_status t
+        set t.status = #{taskStatusEntity.status}
+        ,t.msg = #{taskStatusEntity.msg}
+        ,update_time = #{taskStatusEntity.updateTime}
+          ,end_time = #{taskStatusEntity.endTime}
+        <if test="taskStatusEntity.beginTime != null">
+            , begin_time =  #{taskStatusEntity.beginTime}
+        </if>
+        WHERE t.plan_id  = #{taskStatusEntity.planId}
+        and t.data_date = #{taskStatusEntity.dataDate}
+    </update>
+
+    <select id="queryList" resultMap="QuartzTaskStatusDTO">
+        SELECT
+            s.plan_id,
+            s.id,
+            t.task_name,
+            t.task_cron,
+            t.remark,
+            t.task_type,
+            t.url,
+            t.exe_path,
+            t.depend_id,
+            t.username,
+            t.PASSWORD,
+            t.driver,
+            t.task_system,
+            t.theme,
+            t.period,
+            s.data_date,
+            s.STATUS,
+            s.begin_time,
+            s.update_time,
+            s.end_time,
+            s.msg,
+        case when s.status = '3' or s.status = '4' then
+        'true'
+        else
+        'false'
+        end  as _disabled,
+        s.create_time
+        FROM
+            t_quartz_task_status s
+                INNER JOIN t_quartz_task t ON s.plan_id = t.id
+        WHERE
+          1=1
+        <if test="queryDTO.beginDate != null">
+           and  s.create_date = #{queryDTO.beginDate}
+        </if>
+        <if test="queryDTO.dataDate != null">
+            and s.data_date = #{queryDTO.dataDate}
+        </if>
+        <if test="queryDTO.id != null">
+            AND t.id = #{queryDTO.id}
+        </if>
+        <if test="queryDTO.taskName != null">
+            AND  INSTR(t.task_name,#{queryDTO.taskName})
+        </if>
+        <if test="queryDTO.taskSystem != null">
+            AND  INSTR(t.task_system,#{queryDTO.taskSystem})
+        </if>
+        <if test="queryDTO.theme != null">
+            AND  INSTR(t.theme,#{queryDTO.theme})
+        </if>
+        <if test="queryDTO.status != null and queryDTO.status != '99'">
+            AND  s.STATUS = #{queryDTO.status}
+        </if>
+
+        order by s.update_time desc
+    </select>
+
+
+    <select id="queryYlList" resultMap="QuartzTaskStatusDTO">
+        SELECT
+        t.id as  plan_id,
+        s.id,
+        t.task_name,
+        t.task_cron,
+        t.remark,
+        t.task_type,
+        t.url,
+        t.exe_path,
+        t.depend_id,
+        t.username,
+        t.PASSWORD,
+        t.driver,
+        t.task_system,
+        t.theme,
+        t.period,
+        s.data_date,
+        s.STATUS,
+        s.begin_time,
+        s.update_time,
+        s.end_time,
+        s.msg,
+        case when s.status = '3' or s.status = '4' then
+        'true'
+        else
+        'false'
+        end  as _disabled,
+        s.create_time
+        FROM
+            t_quartz_task t
+        left JOIN t_quartz_task_status s ON s.plan_id = t.id and   s.data_date = #{queryDTO.dataDate}
+        WHERE
+        t.id in
+        <foreach collection="queryDTO.dependIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <select id="getWaitingList" resultType="net.lab1024.smartadmin.module.support.quartz.domain.entity.QuartzTaskStatusEntity">
+        SELECT plan_id as planId, data_date as dataDate, status, msg
+        FROM t_quartz_task_status
+        WHERE status = 1
+    </select>
+
+    <select id="getStatusByPlanIdAndDate" resultType="java.lang.Integer">
+        SELECT status FROM t_quartz_task_status
+        WHERE plan_id = #{planId} AND data_date = #{dataDate}
+        LIMIT 1
+    </select>
+
+    <select id="getStatusBatch" resultType="net.lab1024.smartadmin.module.support.quartz.domain.entity.QuartzTaskStatusEntity">
+        SELECT id, plan_id as planId, data_date as dataDate, status,
+               begin_time as beginTime, end_time as endTime, msg,
+               create_time as createTime, update_time as updateTime
+        FROM t_quartz_task_status
+        WHERE plan_id IN
+        <foreach collection="planIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        AND data_date BETWEEN #{startDate} AND #{endDate}
+    </select>
+
+    <select id="getLastSuccess" resultType="net.lab1024.smartadmin.module.support.quartz.domain.entity.QuartzTaskStatusEntity">
+        SELECT id, plan_id as planId, data_date as dataDate, status,
+               end_time as endTime
+        FROM t_quartz_task_status
+        WHERE plan_id = #{planId} AND status = 3
+        ORDER BY data_date DESC
+        LIMIT 1
+    </select>
+
+</mapper>

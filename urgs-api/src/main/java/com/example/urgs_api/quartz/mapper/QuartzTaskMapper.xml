@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="net.lab1024.smartadmin.module.support.quartz.dao.QuartzTaskDao">
+
+    <!--
+         * @RequirementName: 监管调度平台对接ESB微信公众号短信平台需求
+         * @Developer: 周敬坤
+         * @ModifiedDate: 2025-03-19
+         * @ModificationDescription: JLB_W2025020608_监管调度平台对接ESB微信公众号短信平台需求。
+     -->
+    <resultMap id="QuartzTaskDTO"
+               type="net.lab1024.smartadmin.module.support.quartz.domain.entity.QuartzTaskEntity"></resultMap>
+
+    <sql id="baseSql">
+      t.id,
+      t.task_name,
+      t.task_bean,
+      t.task_params,
+      t.task_cron,
+      t.task_status,
+      t.remark,
+      t.update_time,
+      t.create_time,
+      t.task_type,
+      t.url,
+      t.exe_path,
+      t.depend_id,
+      t.username,
+      t.password,
+      t.driver,
+      t.period,
+      t.task_system,
+      t.theme,
+      t.offset,
+      t.job_key,
+      t.notification_failed,
+      t.notification_completed
+    </sql>
+    <select id="queryAllList" resultMap="QuartzTaskDTO">
+    SELECT
+    <include refid="baseSql"></include>
+    FROM
+    t_quartz_task t
+        order by t.id desc
+    </select>
+
+    <select id="queryList" resultMap="QuartzTaskDTO">
+        SELECT
+        <include refid="baseSql"></include>
+        FROM
+        t_quartz_task t
+        where 1=1
+        <if test="queryDTO.id != null">
+            AND t.id = #{queryDTO.id}
+        </if>
+        <if test="queryDTO.taskName != null">
+            AND  INSTR(t.task_name,#{queryDTO.taskName})
+        </if>
+        <if test="queryDTO.taskSystem != null">
+            AND  INSTR(t.task_system,#{queryDTO.taskSystem})
+        </if>
+        <if test="queryDTO.theme != null">
+            AND  INSTR(t.theme,#{queryDTO.theme})
+        </if>
+        order by t.id desc
+    </select>
+
+
+    <update id="updateJobKey">
+        UPDATE t_quartz_task t
+        set t.job_key = #{taskEntity.jobKey}
+        WHERE t.id = #{taskEntity.id}
+    </update>
+    <update id="updateStatus">
+        UPDATE t_quartz_task t
+        set t.task_status = #{taskStatus}
+        WHERE t.id = #{taskId}
+    </update>
+    <select id="queryActiveTasks" resultMap="QuartzTaskDTO">
+        SELECT
+        <include refid="baseSql"></include>
+        FROM
+        t_quartz_task t
+        WHERE t.task_status = 0
+        ORDER BY t.id
+    </select>
+
+    <select id="queryActiveTasksFiltered" resultMap="QuartzTaskDTO">
+        SELECT
+        <include refid="baseSql"></include>
+        FROM
+        t_quartz_task t
+        WHERE t.task_status = 0
+        <if test="queryDTO.taskName != null">
+            AND INSTR(t.task_name, #{queryDTO.taskName})
+        </if>
+        <if test="queryDTO.taskSystem != null">
+            AND INSTR(t.task_system, #{queryDTO.taskSystem})
+        </if>
+        <if test="queryDTO.theme != null">
+            AND INSTR(t.theme, #{queryDTO.theme})
+        </if>
+        ORDER BY t.id
+    </select>
+
+    <select id="getTaskListByDepId" resultMap="QuartzTaskDTO">
+        SELECT
+        <include refid="baseSql"></include>
+        FROM
+        t_quartz_task t
+        WHERE t.depend_id IS NOT NULL
+        AND t.depend_id &lt;&gt; ''
+        AND FIND_IN_SET(#{id}, t.depend_id) &gt; 0
+    </select>
+</mapper>
