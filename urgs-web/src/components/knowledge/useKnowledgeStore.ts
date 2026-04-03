@@ -4,6 +4,21 @@ import * as api from '../../api/knowledge';
 import type { FolderTreeNode, KnowledgeDocument, KnowledgeTag } from '../../api/knowledge';
 import { hasPermission } from '../../utils/permission';
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+    if (error instanceof Error && error.message) {
+        try {
+            const parsed = JSON.parse(error.message);
+            if (parsed?.message) {
+                return parsed.message as string;
+            }
+        } catch {
+            return error.message;
+        }
+        return error.message;
+    }
+    return fallback;
+};
+
 // ==================== State ====================
 
 interface KnowledgeState {
@@ -282,8 +297,8 @@ export function useKnowledgeStore() {
                 }
                 loadFolders();
                 return true;
-            } catch {
-                message.error('操作失败');
+            } catch (error) {
+                message.error(getErrorMessage(error, '操作失败'));
                 return false;
             }
         },
