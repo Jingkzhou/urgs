@@ -24,7 +24,11 @@
       t.task_type,
       t.url,
       t.exe_path,
-      t.depend_id,
+      (
+        SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+        FROM t_quartz_task_dependency d
+        WHERE d.task_id = t.id
+      ) AS depend_id,
       t.username,
       t.password,
       t.driver,
@@ -108,8 +112,24 @@
         <include refid="baseSql"></include>
         FROM
         t_quartz_task t
-        WHERE t.depend_id IS NOT NULL
-        AND t.depend_id &lt;&gt; ''
-        AND FIND_IN_SET(#{id}, t.depend_id) &gt; 0
+        INNER JOIN t_quartz_task_dependency d ON d.task_id = t.id
+        WHERE d.pre_task_id = #{id}
     </select>
+
+    <select id="getPreTaskIdsByTaskId" resultType="java.lang.Long">
+        SELECT pre_task_id
+        FROM t_quartz_task_dependency
+        WHERE task_id = #{taskId}
+        ORDER BY id
+    </select>
+
+    <delete id="deleteDependenciesByTaskId">
+        DELETE FROM t_quartz_task_dependency
+        WHERE task_id = #{taskId}
+    </delete>
+
+    <insert id="insertTaskDependency">
+        INSERT IGNORE INTO t_quartz_task_dependency(task_id, pre_task_id)
+        VALUES (#{taskId}, #{preTaskId})
+    </insert>
 </mapper>

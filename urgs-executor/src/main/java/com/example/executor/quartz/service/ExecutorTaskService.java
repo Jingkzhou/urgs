@@ -64,13 +64,9 @@ public class ExecutorTaskService {
     }
 
     public boolean checkPredecessors(QuartzTaskEntity task, String dataDate) {
-        if (task.getDependId() == null || task.getDependId().trim().isEmpty() || "null".equals(task.getDependId())) {
+        List<Long> dependIds = quartzTaskDao.getPreTaskIdsByTaskId(task.getId());
+        if (dependIds == null || dependIds.isEmpty()) {
             return true;
-        }
-        String[] idStrs = task.getDependId().split(",");
-        List<Long> dependIds = new ArrayList<>();
-        for (String idStr : idStrs) {
-            dependIds.add(Long.valueOf(idStr.trim()));
         }
         int finishCount = quartzTaskStatusDao.getFinishCount(dependIds, dataDate);
         return dependIds.size() == finishCount;

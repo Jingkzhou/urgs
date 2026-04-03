@@ -73,9 +73,11 @@ public class QuartzTaskService {
     private ResponseDTO<String> saveTask(QuartzTaskDTO quartzTaskDTO) {
         QuartzTaskEntity taskEntity = SmartBeanUtil.copy(quartzTaskDTO, QuartzTaskEntity.class);
         taskEntity.setTaskStatus(quartzTaskDTO.getTaskStatus() == null ? TaskStatusEnum.NORMAL.getStatus() : quartzTaskDTO.getTaskStatus());
+        taskEntity.setDependId(null);
         taskEntity.setUpdateTime(new Date());
         taskEntity.setCreateTime(new Date());
         quartzTaskDao.insert(taskEntity);
+        syncTaskDependencies(taskEntity.getId(), quartzTaskDTO.getDependId());
         return ResponseDTO.succ();
     }
 
@@ -86,8 +88,10 @@ public class QuartzTaskService {
         }
         QuartzTaskEntity taskEntity = SmartBeanUtil.copy(quartzTaskDTO, QuartzTaskEntity.class);
         taskEntity.setTaskStatus(oldEntity.getTaskStatus());
+        taskEntity.setDependId(null);
         taskEntity.setUpdateTime(new Date());
         quartzTaskDao.updateById(taskEntity);
+        syncTaskDependencies(taskEntity.getId(), quartzTaskDTO.getDependId());
         return ResponseDTO.succ();
     }
 
@@ -118,6 +122,7 @@ public class QuartzTaskService {
         if (task == null) {
             return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "task不存在");
         }
+        quartzTaskDao.deleteDependenciesByTaskId(taskId);
         quartzTaskDao.deleteById(taskId);
         return ResponseDTO.succ();
     }
@@ -292,11 +297,8 @@ public class QuartzTaskService {
     }
 
     public Set<String> findYl(Set<String> set, QuartzTaskEntity task) {
-        if (task.getDependId() != null && !task.getDependId().isEmpty()) {
-            String[] dependIdStrArray = task.getDependId().split(",");
-            for (String depId : dependIdStrArray) {
-                set.add(depId);
-            }
+        for (Long preTaskId : quartzTaskDao.getPreTaskIdsByTaskId(task.getId())) {
+            set.add(String.valueOf(preTaskId));
         }
         return set;
     }
@@ -322,5 +324,14 @@ public class QuartzTaskService {
         vo.setMissedStatus(missedStatus);
         vo.setWaitingMinutes(waitingMinutes);
         return vo;
+    }
+
+    private void syncTaskDependencies(Long taskId, String dependIdStr) {
+        quartzTaskDao.deleteDependenciesByTaskId(taskId);
+        for (Long preTaskId : parseDependIds(dependIdStr)) {
+            if (!taskId.equals(preTaskId)) {
+                quartzTaskDao.insertTaskDependency(taskId, preTaskId);
+            }
+        }
     }
 }
