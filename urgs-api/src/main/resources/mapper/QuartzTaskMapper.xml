@@ -13,16 +13,14 @@
         t.update_time AS updateTime,
         t.create_time AS createTime,
         t.task_type AS taskType,
-        t.url,
         t.exe_path AS exePath,
+        t.datasource_id AS datasourceId,
+        ds.name AS datasourceName,
         (
             SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
             FROM t_quartz_task_dependency d
             WHERE d.task_id = t.id
         ) AS dependId,
-        t.username,
-        t.password,
-        t.driver,
         t.period,
         t.task_system AS taskSystem,
         t.theme,
@@ -37,6 +35,7 @@
         SELECT
         <include refid="baseSql"/>
         FROM t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         ORDER BY t.id DESC
     </select>
 
@@ -44,6 +43,7 @@
         SELECT
         <include refid="baseSql"/>
         FROM t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         WHERE 1 = 1
         <if test="queryDTO.id != null">
             AND t.id = #{queryDTO.id}
@@ -85,6 +85,7 @@
         SELECT
         <include refid="baseSql"/>
         FROM t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         WHERE t.task_status = 0
         ORDER BY t.id
     </select>
@@ -93,6 +94,7 @@
         SELECT
         <include refid="baseSql"/>
         FROM t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         WHERE t.task_status = 0
         <if test="queryDTO.taskName != null and queryDTO.taskName != ''">
             AND INSTR(t.task_name, #{queryDTO.taskName})
@@ -110,6 +112,7 @@
         SELECT
         <include refid="baseSql"/>
         FROM t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         INNER JOIN t_quartz_task_dependency d ON d.task_id = t.id
         WHERE d.pre_task_id = #{id}
     </select>
@@ -125,6 +128,7 @@
         SELECT
         <include refid="baseSql"/>
         FROM t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         INNER JOIN t_quartz_task_dependency d ON d.pre_task_id = t.id
         WHERE d.task_id = #{taskId}
         ORDER BY d.id

@@ -652,21 +652,9 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
                                                         <div className="text-xs text-slate-400">数据源ID</div>
                                                         <div className="mt-1 font-mono text-xs text-slate-700">{selectedTask?.datasource_id ?? '-'}</div>
                                                     </div>
-                                                    <div className={detailItemClass}>
-                                                        <div className="text-xs text-slate-400">连接地址</div>
-                                                        <div className="mt-1 font-mono text-xs text-slate-700 break-all">{selectedTask?.url || '-'}</div>
-                                                    </div>
-                                                    <div className={detailItemClass}>
-                                                        <div className="text-xs text-slate-400">驱动类</div>
-                                                        <div className="mt-1 font-mono text-xs text-slate-700 break-all">{selectedTask?.driver || '-'}</div>
-                                                    </div>
-                                                    <div className={detailItemClass}>
-                                                        <div className="text-xs text-slate-400">账号</div>
-                                                        <div className="mt-1 text-slate-700">{selectedTask?.username || '-'}</div>
-                                                    </div>
-                                                    <div className={detailItemClass}>
-                                                        <div className="text-xs text-slate-400">密码</div>
-                                                        <div className="mt-1 text-slate-700">{selectedTask?.password || '-'}</div>
+                                                    <div className={`md:col-span-2 ${detailItemClass}`}>
+                                                        <div className="text-xs text-slate-400">连接说明</div>
+                                                        <div className="mt-1 text-slate-700">执行时按数据源ID动态加载连接配置，不再从任务表读取连接串、账号、密码和驱动。</div>
                                                     </div>
                                                 </div>
                                             </div>

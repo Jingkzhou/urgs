@@ -671,10 +671,12 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     const selectedTask = selectedInstance ? taskMap.get(selectedInstance.plan_id) || null : null;
 
     const selectedInstanceLogs = useMemo(() => {
+        const sortByCreateTimeDesc = (a: QuartzTaskExecutionLog, b: QuartzTaskExecutionLog) =>
+            dayjs(b.create_time).valueOf() - dayjs(a.create_time).valueOf();
         if (!selectedInstance) return [] as QuartzTaskExecutionLog[];
         const exactLogs = logList.filter(log => log.instance_id === selectedInstance.id);
         if (exactLogs.length > 0) {
-            return [...exactLogs].sort((a, b) => dayjs(a.create_time).valueOf() - dayjs(b.create_time).valueOf());
+            return [...exactLogs].sort(sortByCreateTimeDesc);
         }
         const sameDataLogs = logList.filter(log =>
             log.task_id === selectedInstance.plan_id
@@ -682,11 +684,11 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
             && log.data_date === selectedInstance.data_date
         );
         if (sameDataLogs.length > 0) {
-            return [...sameDataLogs].sort((a, b) => dayjs(a.create_time).valueOf() - dayjs(b.create_time).valueOf());
+            return [...sameDataLogs].sort(sortByCreateTimeDesc);
         }
         return logList
             .filter(log => log.task_id === selectedInstance.plan_id)
-            .sort((a, b) => dayjs(a.create_time).valueOf() - dayjs(b.create_time).valueOf());
+            .sort(sortByCreateTimeDesc);
     }, [logList, selectedInstance]);
 
     const rowContextMenuStyle = rowContextMenu ? {

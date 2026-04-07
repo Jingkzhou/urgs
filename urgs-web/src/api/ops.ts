@@ -317,6 +317,8 @@ export interface QuartzTaskApiModel {
     username?: string | null;
     password?: string | null;
     driver?: string | null;
+    datasourceId?: number | null;
+    datasourceName?: string | null;
     period?: number | null;
     taskSystem?: string | null;
     theme?: string | null;
@@ -354,6 +356,7 @@ export interface QuartzTaskSavePayload {
     username?: string | null;
     password?: string | null;
     driver?: string | null;
+    datasourceId?: number | null;
     taskSystem?: string | null;
     theme?: string | null;
     offset?: number;
@@ -388,11 +391,9 @@ export interface QuartzTaskStatusApiModel {
     taskType?: string | number | null;
     taskCron?: string | null;
     exePath?: string | null;
-    url?: string | null;
+    datasourceId?: number | null;
+    datasourceName?: string | null;
     period?: string | number | null;
-    username?: string | null;
-    password?: string | null;
-    driver?: string | null;
     status?: string | number | null;
     beginTime?: string | null;
     endTime?: string | null;

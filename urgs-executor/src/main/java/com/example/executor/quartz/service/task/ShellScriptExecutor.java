@@ -1,5 +1,6 @@
 package com.example.executor.quartz.service.task;
 
+import com.example.executor.datasource.ResolvedDataSourceConfig;
 import com.example.executor.quartz.domain.entity.QuartzTaskEntity;
 import com.jcraft.jsch.ChannelExec;
 import com.jcraft.jsch.JSch;
@@ -33,6 +34,12 @@ import java.util.function.Consumer;
  */
 @Slf4j
 public class ShellScriptExecutor implements TaskExecutor {
+
+    private final ResolvedDataSourceConfig dataSourceConfig;
+
+    public ShellScriptExecutor(ResolvedDataSourceConfig dataSourceConfig) {
+        this.dataSourceConfig = dataSourceConfig;
+    }
 
     /** 当前 SSH 会话，用于跨线程取消 */
     private volatile Session sshSession;
@@ -166,9 +173,13 @@ public class ShellScriptExecutor implements TaskExecutor {
     }
 
     private Session connectSsh(QuartzTaskEntity task) throws Exception {
+        if (dataSourceConfig == null || dataSourceConfig.getHost() == null || dataSourceConfig.getUsername() == null) {
+            throw new IllegalArgumentException("Shell 任务缺少可用的数据源连接配置");
+        }
         JSch jsch = new JSch();
-        Session session = jsch.getSession(task.getUsername(), task.getUrl(), 22);
-        session.setPassword(task.getPassword());
+        int port = dataSourceConfig.getPort() == null ? 22 : dataSourceConfig.getPort();
+        Session session = jsch.getSession(dataSourceConfig.getUsername(), dataSourceConfig.getHost(), port);
+        session.setPassword(dataSourceConfig.getPassword());
         session.setTimeout(6_000_000);
         Properties config = new Properties();
         config.put("StrictHostKeyChecking", "no");

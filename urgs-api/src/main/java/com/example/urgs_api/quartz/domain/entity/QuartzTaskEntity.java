@@ -58,10 +58,6 @@ public class QuartzTaskEntity extends BaseEntity {
      */
     private String exePath;
     /**
-     * 1脚本填写服务器IP2存储过程填写链接字符串
-     */
-    private String url;
-    /**
      *任务类型1shell2proc
      */
     private Integer taskType;
@@ -70,17 +66,9 @@ public class QuartzTaskEntity extends BaseEntity {
      */
     private Long period;
     /**
-     * 用户名
+     * 数据源ID
      */
-    private String username;
-    /**
-     * 密码
-     */
-    private String password;
-    /**
-     * 驱动
-     */
-    private String driver;
+    private Long datasourceId;
 
     /**
      * 系统

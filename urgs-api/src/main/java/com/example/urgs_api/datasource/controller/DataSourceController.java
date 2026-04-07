@@ -1,5 +1,6 @@
 package com.example.urgs_api.datasource.controller;
 
+import com.example.urgs_api.datasource.dto.ResolvedDataSourceConfigDTO;
 import com.example.urgs_api.datasource.entity.DataSourceConfig;
 import com.example.urgs_api.datasource.entity.DataSourceMeta;
 import com.example.urgs_api.datasource.service.DataSourceService;
@@ -36,6 +37,11 @@ public class DataSourceController {
     @GetMapping("/config")
     public List<DataSourceConfig> getConfigs() {
         return dataSourceService.getAllConfigs();
+    }
+
+    @GetMapping("/config/{id}/resolved")
+    public ResolvedDataSourceConfigDTO getResolvedConfig(@PathVariable Long id) {
+        return dynamicDataSourceService.resolveConfig(id);
     }
 
     @PostMapping("/config")

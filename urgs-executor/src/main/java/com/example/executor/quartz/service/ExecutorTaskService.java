@@ -1,6 +1,8 @@
 package com.example.executor.quartz.service;
 
 import com.alibaba.druid.pool.DruidDataSource;
+import com.example.executor.datasource.DataSourceConfigClient;
+import com.example.executor.datasource.ResolvedDataSourceConfig;
 import com.example.executor.quartz.constant.TaskExeStatusEnum;
 import com.example.executor.quartz.dao.QuartzTaskDao;
 import com.example.executor.quartz.dao.QuartzTaskStatusDao;
@@ -48,6 +50,9 @@ public class ExecutorTaskService {
     @Autowired
     private TaskExecutionLogService taskExecutionLogService;
 
+    @Autowired
+    private DataSourceConfigClient dataSourceConfigClient;
+
     // ===== 对外查询接口 =====
 
     public List<QuartzTaskEntity> queryAllActiveTasks() {
@@ -85,9 +90,12 @@ public class ExecutorTaskService {
         String taskKey = buildTaskKey(task.getId(), dataDate);
         taskExecutorPool.submitTask(taskKey, () -> {
             try {
+                ResolvedDataSourceConfig resolvedDataSourceConfig = task.getDatasourceId() == null
+                        ? null
+                        : dataSourceConfigClient.getResolvedConfig(task.getDatasourceId());
                 // 需要数据源时在线程内懒获取，避免提交时阻塞
-                DruidDataSource ds = isSqlTask(task) ? dataSourceCacheManager.getOrCreate(task) : null;
-                TaskExecutor executor = createExecutor(task, ds);
+                DruidDataSource ds = isSqlTask(task) ? dataSourceCacheManager.getOrCreate(resolvedDataSourceConfig) : null;
+                TaskExecutor executor = createExecutor(task, ds, resolvedDataSourceConfig);
                 // 注册 cancel 资源：调用 cancelTask() 时会触发 executor.cancel()
                 taskExecutorPool.registerResource(taskKey, executor::cancel);
                 taskDispatch(task, dataDate, executor);
@@ -189,11 +197,11 @@ public class ExecutorTaskService {
     /**
      * 根据任务类型创建对应的执行器实例（每次新建，避免状态复用）。
      */
-    private TaskExecutor createExecutor(QuartzTaskEntity task, DruidDataSource ds) {
+    private TaskExecutor createExecutor(QuartzTaskEntity task, DruidDataSource ds, ResolvedDataSourceConfig resolvedDataSourceConfig) {
         if (isSqlTask(task)) {
             return new SqlTaskExecutor(ds);
         }
-        return new ShellScriptExecutor();
+        return new ShellScriptExecutor(resolvedDataSourceConfig);
     }
 
     private boolean isSqlTask(QuartzTaskEntity task) {

@@ -47,12 +47,10 @@
             t.task_cron AS taskCron,
             t.remark AS remark,
             t.task_type AS taskType,
-            t.url AS url,
             t.exe_path AS exePath,
             t.depend_id AS dependId,
-            t.username AS username,
-            t.password AS password,
-            t.driver AS driver,
+            t.datasource_id AS datasourceId,
+            ds.name AS datasourceName,
             t.task_system AS taskSystem,
             t.theme AS theme,
             t.period AS period,
@@ -67,6 +65,7 @@
             s.create_time AS createTime
         FROM t_quartz_task_status s
                  INNER JOIN t_quartz_task t ON s.plan_id = t.id
+                 LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         WHERE 1 = 1
         <if test="queryDTO.beginDate != null and queryDTO.beginDate != ''">
             AND s.create_date = #{queryDTO.beginDate}
@@ -102,12 +101,10 @@
             t.task_status AS taskStatus,
             t.remark AS remark,
             t.task_type AS taskType,
-            t.url AS url,
             t.exe_path AS exePath,
+            t.datasource_id AS datasourceId,
+            ds.name AS datasourceName,
             t.depend_id AS dependId,
-            t.username AS username,
-            t.password AS password,
-            t.driver AS driver,
             t.period AS period,
             t.task_system AS taskSystem,
             t.theme AS theme,
@@ -119,6 +116,7 @@
             t.update_time AS updateTime,
             t.create_time AS createTime
         FROM t_quartz_task t
+                 LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
                  LEFT JOIN t_quartz_task_status s ON s.plan_id = t.id AND s.data_date = #{queryDTO.dataDate}
         WHERE t.id IN
         <foreach collection="queryDTO.dependIds" item="id" open="(" separator="," close=")">

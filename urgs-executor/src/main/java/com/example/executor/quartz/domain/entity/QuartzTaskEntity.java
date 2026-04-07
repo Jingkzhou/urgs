@@ -14,12 +14,10 @@ public class QuartzTaskEntity {
     private String remark;
     private String dependId;
     private String exePath;
-    private String url;
     private Integer taskType;
     private Long period;
-    private String username;
-    private String password;
-    private String driver;
+    private Long datasourceId;
+    private String datasourceName;
     private String taskSystem;
     private String theme;
     private Integer offset;

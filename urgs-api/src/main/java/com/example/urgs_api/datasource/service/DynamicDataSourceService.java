@@ -1,5 +1,6 @@
 package com.example.urgs_api.datasource.service;
 
+import com.example.urgs_api.datasource.dto.ResolvedDataSourceConfigDTO;
 import com.example.urgs_api.datasource.entity.DataSourceConfig;
 import com.example.urgs_api.datasource.entity.DataSourceMeta;
 import com.example.urgs_api.datasource.repository.DataSourceConfigMapper;
@@ -84,6 +85,38 @@ public class DynamicDataSourceService implements DisposableBean {
         }
 
         return cached.jdbcTemplate;
+    }
+
+    public ResolvedDataSourceConfigDTO resolveConfig(Long dataSourceId) {
+        DataSourceConfig config = configMapper.selectById(dataSourceId);
+        if (config == null) {
+            throw new IllegalArgumentException("DataSource not found: " + dataSourceId);
+        }
+
+        DataSourceMeta meta = metaMapper.selectById(config.getMetaId());
+        if (meta == null) {
+            throw new IllegalArgumentException("DataSource Meta not found for ID: " + config.getMetaId());
+        }
+
+        Map<String, Object> params = config.getConnectionParams();
+        String type = meta.getCode() == null ? "" : meta.getCode().toLowerCase();
+
+        ResolvedDataSourceConfigDTO dto = new ResolvedDataSourceConfigDTO();
+        dto.setId(config.getId());
+        dto.setName(config.getName());
+        dto.setMetaId(config.getMetaId());
+        dto.setTypeName(meta.getName());
+        dto.setTypeCode(meta.getCode());
+        dto.setCategory(meta.getCategory());
+        dto.setStatus(config.getStatus());
+        dto.setUrl(buildJdbcUrl(type, params));
+        dto.setUsername(getString(params, "username"));
+        dto.setPassword(getString(params, "password"));
+        dto.setDriver(buildDriverClass(type, params));
+        dto.setHost(getString(params, "host"));
+        dto.setPort(getInt(params, "port", 22));
+        dto.setConnectionParams(params);
+        return dto;
     }
 
     private CachedDataSource createCachedDataSource(Long dataSourceId) {

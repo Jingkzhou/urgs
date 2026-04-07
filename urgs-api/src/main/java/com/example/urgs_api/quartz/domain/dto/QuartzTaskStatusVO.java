@@ -44,20 +44,14 @@ public class QuartzTaskStatusVO {
     @ApiModelProperty("执行文件")
     private String exePath;
 
-    @ApiModelProperty("url")
-    private String url;
-
     @ApiModelProperty("轮询周期")
     private String period;
 
-    @ApiModelProperty("用户名")
-    private String username;
+    @ApiModelProperty("数据源ID")
+    private Long datasourceId;
 
-    @ApiModelProperty("密码")
-    private String password;
-
-    @ApiModelProperty("驱动")
-    private String driver;
+    @ApiModelProperty("数据源名称")
+    private String datasourceName;
 
     @ApiModelProperty("执行状态")
     private String status;

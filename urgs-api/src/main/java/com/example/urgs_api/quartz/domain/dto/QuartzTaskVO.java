@@ -52,9 +52,6 @@ public class QuartzTaskVO {
     @ApiModelProperty("执行文件")
     private String exePath;
 
-    @ApiModelProperty("连接串或主机")
-    private String url;
-
     @ApiModelProperty("依赖任务ID")
     private String dependId;
 
@@ -70,14 +67,11 @@ public class QuartzTaskVO {
     @ApiModelProperty("偏移量")
     private Integer offset;
 
-    @ApiModelProperty("用户名")
-    private String username;
+    @ApiModelProperty("数据源ID")
+    private Long datasourceId;
 
-    @ApiModelProperty("密码")
-    private String password;
-
-    @ApiModelProperty("驱动")
-    private String driver;
+    @ApiModelProperty("数据源名称")
+    private String datasourceName;
 
     @ApiModelProperty("更新时间")
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")

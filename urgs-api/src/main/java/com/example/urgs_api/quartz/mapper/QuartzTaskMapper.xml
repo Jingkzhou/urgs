@@ -22,16 +22,14 @@
       t.update_time,
       t.create_time,
       t.task_type,
-      t.url,
       t.exe_path,
+      t.datasource_id,
+      ds.name AS datasource_name,
       (
         SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
         FROM t_quartz_task_dependency d
         WHERE d.task_id = t.id
       ) AS depend_id,
-      t.username,
-      t.password,
-      t.driver,
       t.period,
       t.task_system,
       t.theme,
@@ -45,6 +43,7 @@
     <include refid="baseSql"></include>
     FROM
     t_quartz_task t
+    LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         order by t.id desc
     </select>
 
@@ -53,6 +52,7 @@
         <include refid="baseSql"></include>
         FROM
         t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         where 1=1
         <if test="queryDTO.id != null">
             AND t.id = #{queryDTO.id}
@@ -94,6 +94,7 @@
         <include refid="baseSql"></include>
         FROM
         t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         WHERE t.task_status = 0
         ORDER BY t.id
     </select>
@@ -103,6 +104,7 @@
         <include refid="baseSql"></include>
         FROM
         t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         WHERE t.task_status = 0
         <if test="queryDTO.taskName != null">
             AND INSTR(t.task_name, #{queryDTO.taskName})
@@ -121,6 +123,7 @@
         <include refid="baseSql"></include>
         FROM
         t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         INNER JOIN t_quartz_task_dependency d ON d.task_id = t.id
         WHERE d.pre_task_id = #{id}
     </select>
@@ -137,6 +140,7 @@
         <include refid="baseSql"></include>
         FROM
         t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         INNER JOIN t_quartz_task_dependency d ON d.pre_task_id = t.id
         WHERE d.task_id = #{taskId}
         ORDER BY d.id

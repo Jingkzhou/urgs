@@ -192,7 +192,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             if (!task.datasource_name) return acc;
             const nextId = task.datasource_id ?? -(acc.length + 1);
             if (acc.some(item => item.id === nextId || item.name === task.datasource_name)) return acc;
-            acc.push({ id: nextId, name: task.datasource_name, connectionInfo: task.url || '连接信息待补充' });
+            acc.push({ id: nextId, name: task.datasource_name, connectionInfo: '连接信息由数据源配置动态加载' });
             return acc;
         }, []);
     }, [taskList]);
@@ -236,12 +236,9 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 taskStatus: values.task_status,
                 remark: emptyToNull(values.remark),
                 taskType: toTaskTypeCode(values.task_type),
-                url: editingTask?.url ?? null,
                 exePath: normalizeScript(values.script),
                 dependId: emptyToNull(values.depend_id),
-                username: editingTask?.username ?? null,
-                password: editingTask?.password ?? null,
-                driver: editingTask?.driver ?? null,
+                datasourceId: values.datasource_id ?? null,
                 period: values.period ?? null,
                 taskSystem: emptyToNull(values.task_system || undefined),
                 theme: emptyToNull(values.theme || undefined),

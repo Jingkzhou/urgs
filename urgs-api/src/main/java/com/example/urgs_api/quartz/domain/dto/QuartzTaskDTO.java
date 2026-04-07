@@ -54,9 +54,6 @@ public class QuartzTaskDTO {
     @ApiModelProperty("执行文件")
     private String exePath;
 
-    @ApiModelProperty("url")
-    private String url;
-
     @ApiModelProperty("任务类型")
     @NotNull(message = "任务类型不能为空")
     private int taskType;
@@ -64,14 +61,8 @@ public class QuartzTaskDTO {
     @ApiModelProperty("轮询周期")
     private Long period;
 
-    @ApiModelProperty("用户名")
-    private String username;
-
-    @ApiModelProperty("密码")
-    private String password;
-
-    @ApiModelProperty("驱动")
-    private String driver;
+    @ApiModelProperty("数据源ID")
+    private Long datasourceId;
 
     @ApiModelProperty("系统")
     private String taskSystem;

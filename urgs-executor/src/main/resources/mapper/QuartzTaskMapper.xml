@@ -13,16 +13,14 @@
         t.update_time,
         t.create_time,
         t.task_type,
-        t.url,
         t.exe_path,
+        t.datasource_id,
+        ds.name AS datasource_name,
         (
             SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
             FROM t_quartz_task_dependency d
             WHERE d.task_id = t.id
         ) AS depend_id,
-        t.username,
-        t.password,
-        t.driver,
         t.period,
         t.task_system,
         t.theme,
@@ -35,12 +33,14 @@
     <select id="selectById" resultType="com.example.executor.quartz.domain.entity.QuartzTaskEntity">
         SELECT <include refid="baseSql"/>
         FROM t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         WHERE t.id = #{id}
     </select>
 
     <select id="queryActiveTasks" resultType="com.example.executor.quartz.domain.entity.QuartzTaskEntity">
         SELECT <include refid="baseSql"/>
         FROM t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         WHERE t.task_status = 0
         ORDER BY t.id
     </select>
@@ -48,6 +48,7 @@
     <select id="getTaskListByDepId" resultType="com.example.executor.quartz.domain.entity.QuartzTaskEntity">
         SELECT <include refid="baseSql"/>
         FROM t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         INNER JOIN t_quartz_task_dependency d ON d.task_id = t.id
         WHERE d.pre_task_id = #{id}
     </select>
@@ -64,6 +65,7 @@
                ws.data_date AS dataDate
         FROM t_quartz_task_status ws
         INNER JOIN t_quartz_task t ON t.id = ws.plan_id
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         WHERE ws.status = 1
           AND t.task_status = 0
           AND NOT EXISTS (

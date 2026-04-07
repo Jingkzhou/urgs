@@ -60,12 +60,10 @@
             t.task_cron,
             t.remark,
             t.task_type,
-            t.url,
             t.exe_path,
             t.depend_id,
-            t.username,
-            t.PASSWORD,
-            t.driver,
+            t.datasource_id,
+            ds.name AS datasource_name,
             t.task_system,
             t.theme,
             t.period,
@@ -84,6 +82,7 @@
         FROM
             t_quartz_task_status s
                 INNER JOIN t_quartz_task t ON s.plan_id = t.id
+                LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         WHERE
           1=1
         <if test="queryDTO.beginDate != null">
@@ -120,12 +119,10 @@
         t.task_cron,
         t.remark,
         t.task_type,
-        t.url,
         t.exe_path,
         t.depend_id,
-        t.username,
-        t.PASSWORD,
-        t.driver,
+        t.datasource_id,
+        ds.name AS datasource_name,
         t.task_system,
         t.theme,
         t.period,
@@ -143,6 +140,7 @@
         s.create_time
         FROM
             t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         left JOIN t_quartz_task_status s ON s.plan_id = t.id and   s.data_date = #{queryDTO.dataDate}
         WHERE
         t.id in
