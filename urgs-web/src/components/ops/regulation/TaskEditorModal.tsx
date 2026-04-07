@@ -117,7 +117,11 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                     setDependencyTasks([]);
                     return;
                 }
-                setDependencyTasks((response.data || []).map((item: QuartzTaskApiModel) => ({
+                setDependencyTasks((response.data || []).map((item: QuartzTaskApiModel) => {
+                    const datasourceId = item.datasourceId === null || item.datasourceId === undefined
+                        ? null
+                        : Number(item.datasourceId);
+                    return {
                     id: Number(item.id),
                     task_name: item.taskName || '',
                     task_bean: item.taskBean ?? null,
@@ -130,7 +134,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                     task_type: item.taskType === 2 ? 'SQL' : 'SHELL',
                     script: item.exePath ?? null,
                     depend_id: item.dependId ?? null,
-                    datasource_id: item.datasourceId ?? null,
+                    datasource_id: Number.isFinite(datasourceId) ? datasourceId : null,
                     datasource_name: item.datasourceName ?? null,
                     period: item.period ?? null,
                     task_system: item.taskSystem ?? null,
@@ -140,7 +144,8 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                     job_key: item.jobKey ?? null,
                     notification_completed: item.notificationCompleted ?? null,
                     notification_failed: item.notificationFailed ?? null,
-                })));
+                    };
+                }));
             } catch (error) {
                 if (mounted) {
                     setDependencyTasks([]);

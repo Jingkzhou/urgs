@@ -182,7 +182,9 @@ export const getInitialFormValues = (task?: QuartzTask | null): TaskFormValues =
     offset: task?.offset ?? null,
     depend_id: task?.depend_id || undefined,
     period: task?.period ?? null,
-    datasource_id: task?.datasource_id ?? undefined,
+    datasource_id: task?.datasource_id === null || task?.datasource_id === undefined
+        ? undefined
+        : Number(task.datasource_id),
     script: task?.script || undefined,
     notification_completed: task?.notification_completed || undefined,
     notification_failed: task?.notification_failed || undefined,
@@ -243,6 +245,9 @@ export const toTaskTypeLabel = (taskType?: number | null) => {
 
 export const normalizeQuartzTask = (item: QuartzTaskApiModel): QuartzTask => {
     const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+    const datasourceId = item.datasourceId === null || item.datasourceId === undefined
+        ? null
+        : Number(item.datasourceId);
     return {
         id: Number(item.id),
         task_name: item.taskName || '',
@@ -260,7 +265,7 @@ export const normalizeQuartzTask = (item: QuartzTaskApiModel): QuartzTask => {
         username: item.username ?? null,
         password: item.password ?? null,
         driver: item.driver ?? null,
-        datasource_id: item.datasourceId ?? null,
+        datasource_id: Number.isFinite(datasourceId) ? datasourceId : null,
         datasource_name: item.datasourceName ?? null,
         period: item.period ?? null,
         task_system: item.taskSystem ?? null,

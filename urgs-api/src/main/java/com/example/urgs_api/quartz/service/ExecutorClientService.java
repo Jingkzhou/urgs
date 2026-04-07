@@ -20,7 +20,7 @@ public class ExecutorClientService {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
-    @Value("${executor.base-url:http://127.0.0.1:8081}")
+    @Value("${executor.base-url:http://127.0.0.1:8082}")
     private String executorBaseUrl;
 
     public ResponseDTO<ExecutorStopResultData> stopTask(Long planId, String dataDate) {

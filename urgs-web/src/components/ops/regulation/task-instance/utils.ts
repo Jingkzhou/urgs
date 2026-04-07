@@ -32,6 +32,9 @@ const toTaskTypeLabel = (taskType?: number | null) => {
 
 export const normalizeTask = (item: QuartzTaskApiModel): QuartzTask => {
     const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+    const datasourceId = item.datasourceId === null || item.datasourceId === undefined
+        ? null
+        : Number(item.datasourceId);
     return {
         id: Number(item.id),
         task_name: item.taskName || '',
@@ -45,7 +48,7 @@ export const normalizeTask = (item: QuartzTaskApiModel): QuartzTask => {
         task_type: toTaskTypeLabel(item.taskType),
         script: item.exePath ?? null,
         depend_id: item.dependId ?? null,
-        datasource_id: item.datasourceId ?? null,
+        datasource_id: Number.isFinite(datasourceId) ? datasourceId : null,
         datasource_name: item.datasourceName ?? null,
         period: item.period ?? null,
         task_system: item.taskSystem ?? null,
