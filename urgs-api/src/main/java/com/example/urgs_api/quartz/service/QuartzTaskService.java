@@ -212,15 +212,29 @@ public class QuartzTaskService {
             return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "强制停止仅支持等待中或执行中实例，存在非法状态实例: " + invalidIds);
         }
 
+        int cancelledCount = 0;
+        int notRunningCount = 0;
         for (QuartzTaskStatusEntity statusEntity : statusList) {
-            ResponseDTO<String> stopResult = executorClientService.stopTask(statusEntity.getPlanId(), statusEntity.getDataDate());
+            ResponseDTO<ExecutorClientService.ExecutorStopResultData> stopResult =
+                    executorClientService.stopTask(statusEntity.getPlanId(), statusEntity.getDataDate());
             if (!stopResult.isSuccess()) {
-                return stopResult;
+                return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM,
+                        stopResult.getMsg() == null ? "调用执行器停止任务失败" : stopResult.getMsg());
+            }
+            ExecutorClientService.ExecutorStopResultData stopData = stopResult.getData();
+            if (stopData != null && stopData.isFoundRunningTask() && stopData.isCancelled()) {
+                cancelledCount++;
+            } else if (stopData != null && !stopData.isFoundRunningTask()) {
+                notRunningCount++;
             }
         }
 
         quartzTaskStatusDao.batchForceStop(statusIds, "实例已被强制停止。");
-        return ResponseDTO.succ();
+        String resultMsg = String.format(
+                "批量强制停止完成：共 %d 条，执行器已取消 %d 条运行中任务，%d 条未检测到运行实例。",
+                statusIds.size(), cancelledCount, notRunningCount
+        );
+        return ResponseDTO.succData(resultMsg);
     }
 
     @Transactional(rollbackFor = Throwable.class)

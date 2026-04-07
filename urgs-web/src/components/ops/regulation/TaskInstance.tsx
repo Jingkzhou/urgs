@@ -493,10 +493,9 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                 if (!response?.success) {
                     throw new Error(response?.msg || '强制停止失败');
                 }
-                updateInstance(instance.id, markInstanceStopped);
                 setSelectedInstanceIds(prev => prev.filter(id => id !== instance.id));
                 await loadInstances();
-                message.success(`已强制停止实例 #${instance.id}`);
+                message.success(response?.data || `已强制停止实例 #${instance.id}`);
             })
             .catch((error: any) => {
                 message.error(error?.message || '强制停止失败');
@@ -627,10 +626,9 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                 if (!response?.success) {
                     throw new Error(response?.msg || '批量强制停止失败');
                 }
-                updateInstances(selectedInstanceIds, markInstanceStopped);
                 setSelectedInstanceIds([]);
                 await loadInstances();
-                message.success(`已批量强制停止 ${selectedInstances.length} 条实例`);
+                message.success(response?.data || `已批量强制停止 ${selectedInstances.length} 条实例`);
             })
             .catch((error: any) => {
                 message.error(error?.message || '批量强制停止失败');
