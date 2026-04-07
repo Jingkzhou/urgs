@@ -6,27 +6,28 @@ import com.example.executor.quartz.dao.QuartzTaskDao;
 import com.example.executor.quartz.dao.QuartzTaskStatusDao;
 import com.example.executor.quartz.domain.entity.QuartzTaskEntity;
 import com.example.executor.quartz.domain.entity.QuartzTaskStatusEntity;
-import com.jcraft.jsch.ChannelExec;
-import com.jcraft.jsch.JSch;
-import com.jcraft.jsch.Session;
+import com.example.executor.quartz.service.task.ShellScriptExecutor;
+import com.example.executor.quartz.service.task.SqlTaskExecutor;
+import com.example.executor.quartz.service.task.TaskExecutor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataAccessException;
-import org.springframework.jdbc.core.CallableStatementCallback;
-import org.springframework.jdbc.core.CallableStatementCreator;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.Charset;
-import java.sql.CallableStatement;
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.sql.Types;
-import java.util.*;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
 
+/**
+ * 任务执行调度服务。
+ * <p>
+ * 负责：任务状态管理、依赖检查、重试逻辑、线程池提交。
+ * 具体执行逻辑委托给 {@link TaskExecutor} 的具体实现：
+ * <ul>
+ *   <li>taskType=2 → {@link SqlTaskExecutor}（多段 SQL 脚本）</li>
+ *   <li>taskType=1（默认）→ {@link ShellScriptExecutor}（Shell 脚本）</li>
+ * </ul>
+ */
 @Slf4j
 @Service
 public class ExecutorTaskService {
@@ -42,6 +43,8 @@ public class ExecutorTaskService {
 
     @Autowired
     private DataSourceCacheManager dataSourceCacheManager;
+
+    // ===== 对外查询接口 =====
 
     public List<QuartzTaskEntity> queryAllActiveTasks() {
         return quartzTaskDao.queryActiveTasks();
@@ -59,18 +62,6 @@ public class ExecutorTaskService {
         return taskExecutorPool.cancelTask(buildTaskKey(planId, dataDate));
     }
 
-    public void submitTaskToPool(QuartzTaskEntity task, String dataDate) {
-        String taskKey = buildTaskKey(task.getId(), dataDate);
-        taskExecutorPool.submitTask(taskKey, () -> {
-            try {
-                DruidDataSource ds = task.getTaskType() == 2 ? dataSourceCacheManager.getOrCreate(task) : null;
-                taskDispatch(task, dataDate, ds);
-            } catch (Exception e) {
-                log.error("{} task execute failed", taskTag(task, dataDate), e);
-            }
-        });
-    }
-
     public boolean checkPredecessors(QuartzTaskEntity task, String dataDate) {
         List<Long> dependIds = quartzTaskDao.getPreTaskIdsByTaskId(task.getId());
         if (dependIds == null || dependIds.isEmpty()) {
@@ -80,215 +71,167 @@ public class ExecutorTaskService {
         return dependIds.size() == finishCount;
     }
 
-    public void taskDispatch(QuartzTaskEntity task, String dataDate, DruidDataSource druidDataSource) throws Exception {
+    // ===== 任务提交 =====
+
+    /**
+     * 将任务提交到线程池异步执行。
+     * 若同一 planId+dataDate 已在运行，则跳过（幂等）。
+     */
+    public void submitTaskToPool(QuartzTaskEntity task, String dataDate) {
+        String taskKey = buildTaskKey(task.getId(), dataDate);
+        taskExecutorPool.submitTask(taskKey, () -> {
+            try {
+                // 需要数据源时在线程内懒获取，避免提交时阻塞
+                DruidDataSource ds = isSqlTask(task) ? dataSourceCacheManager.getOrCreate(task) : null;
+                TaskExecutor executor = createExecutor(task, ds);
+                // 注册 cancel 资源：调用 cancelTask() 时会触发 executor.cancel()
+                taskExecutorPool.registerResource(taskKey, executor::cancel);
+                taskDispatch(task, dataDate, executor);
+            } catch (Exception e) {
+                log.error("{} task execute failed", taskTag(task, dataDate), e);
+            }
+        });
+    }
+
+    // ===== 内部调度核心 =====
+
+    /**
+     * 任务调度主流程：状态流转 + 依赖检查 + 执行 + 重试。
+     */
+    void taskDispatch(QuartzTaskEntity task, String dataDate, TaskExecutor executor) {
+        // 已在运行或已成功则跳过（防止重复执行）
         Integer currentStatus = quartzTaskStatusDao.getStatusByPlanIdAndDate(task.getId(), dataDate);
         if (currentStatus != null
-                && (TaskExeStatusEnum.RUNNING.getCode().equals(currentStatus) || TaskExeStatusEnum.SUCCESS.getCode().equals(currentStatus))) {
+                && (TaskExeStatusEnum.RUNNING.getCode().equals(currentStatus)
+                || TaskExeStatusEnum.SUCCESS.getCode().equals(currentStatus))) {
             log.info("{} already running/success, skip", taskTag(task, dataDate));
             return;
         }
 
+        // 初始化状态记录
         quartzTaskStatusDao.deleteByPlanIdAndDataDate(task.getId(), dataDate);
+        QuartzTaskStatusEntity status = buildStatus(task.getId(), dataDate,
+                TaskExeStatusEnum.WAITING.getCode(), "等待执行");
+        insertStatus(status);
 
-        QuartzTaskStatusEntity taskStatusEntity = new QuartzTaskStatusEntity();
-        taskStatusEntity.setDataDate(dataDate);
-        taskStatusEntity.setMsg("等待执行");
-        taskStatusEntity.setPlanId(task.getId());
-        taskStatusEntity.setStatus(TaskExeStatusEnum.WAITING.getCode());
-        insertTaskExeStatus(taskStatusEntity);
-
-        Map<String, String> result = new HashMap<>();
-        try {
-            if (!checkPredecessors(task, dataDate)) {
-                taskStatusEntity.setStatus(TaskExeStatusEnum.WAITING.getCode());
-                taskStatusEntity.setMsg("等待前置任务完成");
-                updateTaskExeStatus(taskStatusEntity);
-                return;
-            }
-
-            taskStatusEntity.setStatus(TaskExeStatusEnum.RUNNING.getCode());
-            taskStatusEntity.setMsg("执行中");
-            updateTaskExeStatus(taskStatusEntity);
-
-            int maxRetries = 3;
-            int retryCount = 0;
-            result = exeTask(task, dataDate, druidDataSource);
-            while (!"0".equals(result.get("code")) && task.getPeriod() != null && retryCount < maxRetries) {
-                retryCount++;
-                Thread.sleep(task.getPeriod());
-                taskStatusEntity.setStatus(TaskExeStatusEnum.RUNNING.getCode());
-                taskStatusEntity.setMsg(String.format("第%d/%d次重试, 错误: %s", retryCount, maxRetries, result.get("msg")));
-                updateTaskExeStatus(taskStatusEntity);
-                result = exeTask(task, dataDate, druidDataSource);
-            }
-        } catch (Exception e) {
-            taskStatusEntity.setStatus(TaskExeStatusEnum.FAILED.getCode());
-            taskStatusEntity.setMsg(trimTo500("执行异常: " + e.getMessage()));
-            updateTaskExeStatus(taskStatusEntity);
-            log.error("{} dispatch error", taskTag(task, dataDate), e);
+        // 依赖检查：前置任务未完成则等待
+        if (!checkPredecessors(task, dataDate)) {
+            status.setMsg("等待前置任务完成");
+            updateStatus(status);
             return;
         }
 
-        if (result.get("code") == null) {
-            taskStatusEntity.setStatus(TaskExeStatusEnum.FAILED.getCode());
-            taskStatusEntity.setMsg("返回值不能为空");
-            updateTaskExeStatus(taskStatusEntity);
-            return;
-        }
-        if ("0".equals(result.get("code"))) {
-            taskStatusEntity.setStatus(TaskExeStatusEnum.SUCCESS.getCode());
-            taskStatusEntity.setMsg(result.get("msg"));
-            updateTaskExeStatus(taskStatusEntity);
-            return;
-        }
-        taskStatusEntity.setStatus(TaskExeStatusEnum.FAILED.getCode());
-        taskStatusEntity.setMsg(trimTo500(result.get("msg")));
-        updateTaskExeStatus(taskStatusEntity);
+        // 切换为执行中
+        status.setStatus(TaskExeStatusEnum.RUNNING.getCode());
+        status.setMsg("执行中");
+        updateStatus(status);
+
+        // 执行（含重试）
+        Map<String, String> result = executeWithRetry(task, dataDate, executor, status);
+
+        // 根据结果更新最终状态
+        applyFinalStatus(status, result);
+        updateStatus(status);
     }
 
-    private void insertTaskExeStatus(QuartzTaskStatusEntity entity) {
+    /**
+     * 执行任务，失败时按 period 间隔重试最多 3 次。
+     */
+    private Map<String, String> executeWithRetry(QuartzTaskEntity task, String dataDate,
+                                                  TaskExecutor executor,
+                                                  QuartzTaskStatusEntity status) {
+        Map<String, String> result = Collections.emptyMap();
+        final int maxRetries = 3;
+        try {
+            result = executor.execute(task, dataDate);
+            for (int retry = 1;
+                 !isSuccess(result) && task.getPeriod() != null && retry <= maxRetries;
+                 retry++) {
+                log.warn("{} 执行失败，{}ms 后开始第 {}/{} 次重试，错误: {}",
+                        taskTag(task, dataDate), task.getPeriod(), retry, maxRetries, result.get("msg"));
+                Thread.sleep(task.getPeriod());
+                status.setMsg(String.format("第%d/%d次重试，错误: %s",
+                        retry, maxRetries, result.get("msg")));
+                updateStatus(status);
+                result = executor.execute(task, dataDate);
+            }
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            return failureResult("任务已被中断");
+        } catch (Exception e) {
+            log.error("{} dispatch error", taskTag(task, dataDate), e);
+            return failureResult("执行异常: " + trimTo500(e.getMessage()));
+        }
+        return result;
+    }
+
+    // ===== 工厂方法 =====
+
+    /**
+     * 根据任务类型创建对应的执行器实例（每次新建，避免状态复用）。
+     */
+    private TaskExecutor createExecutor(QuartzTaskEntity task, DruidDataSource ds) {
+        if (isSqlTask(task)) {
+            return new SqlTaskExecutor(ds);
+        }
+        return new ShellScriptExecutor();
+    }
+
+    private boolean isSqlTask(QuartzTaskEntity task) {
+        return task.getTaskType() != null && task.getTaskType() == 2;
+    }
+
+    // ===== 状态管理 =====
+
+    private QuartzTaskStatusEntity buildStatus(Long planId, String dataDate, int statusCode, String msg) {
+        QuartzTaskStatusEntity entity = new QuartzTaskStatusEntity();
+        entity.setPlanId(planId);
+        entity.setDataDate(dataDate);
+        entity.setStatus(statusCode);
+        entity.setMsg(msg);
+        return entity;
+    }
+
+    private void insertStatus(QuartzTaskStatusEntity entity) {
         Date now = new Date();
         entity.setCreateTime(now);
         entity.setUpdateTime(now);
         quartzTaskStatusDao.insertStatus(entity);
     }
 
-    private void updateTaskExeStatus(QuartzTaskStatusEntity entity) {
+    private void updateStatus(QuartzTaskStatusEntity entity) {
         entity.setUpdateTime(new Date());
+        if (TaskExeStatusEnum.RUNNING.getCode().equals(entity.getStatus())) {
+            entity.setBeginTime(new Date());
+        }
         if (TaskExeStatusEnum.FAILED.getCode().equals(entity.getStatus())
                 || TaskExeStatusEnum.SUCCESS.getCode().equals(entity.getStatus())) {
             entity.setEndTime(new Date());
         }
-        if (TaskExeStatusEnum.RUNNING.getCode().equals(entity.getStatus())) {
-            entity.setBeginTime(new Date());
-        }
         quartzTaskStatusDao.updateStatus(entity);
     }
 
-    private Map<String, String> exeTask(QuartzTaskEntity task, String dataDate, DruidDataSource ds) throws Exception {
-        if (task.getTaskType() != null && task.getTaskType() == 2) {
-            return exeProc(task, dataDate, ds);
+    private void applyFinalStatus(QuartzTaskStatusEntity status, Map<String, String> result) {
+        if (result == null || result.get("code") == null) {
+            status.setStatus(TaskExeStatusEnum.FAILED.getCode());
+            status.setMsg("执行器未返回结果");
+        } else if (isSuccess(result)) {
+            status.setStatus(TaskExeStatusEnum.SUCCESS.getCode());
+            status.setMsg(result.get("msg"));
+        } else {
+            status.setStatus(TaskExeStatusEnum.FAILED.getCode());
+            status.setMsg(trimTo500(result.get("msg")));
         }
-        return sshCommand(task, dataDate);
     }
 
-    private Map<String, String> exeProc(QuartzTaskEntity task, String dataDate, DruidDataSource druidDataSource) {
-        Map<String, String> procReturn = new HashMap<>();
-        JdbcTemplate jdbcTemplate = new JdbcTemplate();
-        jdbcTemplate.setDataSource(druidDataSource);
-        String taskKey = buildTaskKey(task.getId(), dataDate);
-        try {
-            procReturn = jdbcTemplate.execute(
-                    new CallableStatementCreator() {
-                        @Override
-                        public CallableStatement createCallableStatement(Connection con) throws SQLException {
-                            String storedProc = "{call " + task.getExePath() + "}";
-                            CallableStatement cs = con.prepareCall(storedProc);
-                            cs.setString(1, dataDate);
-                            cs.registerOutParameter(2, Types.VARCHAR);
-                            cs.registerOutParameter(3, Types.VARCHAR);
-                            taskExecutorPool.registerResource(taskKey, () -> {
-                                try {
-                                    cs.cancel();
-                                } catch (Exception ignore) {
-                                }
-                            });
-                            return cs;
-                        }
-                    },
-                    new CallableStatementCallback<Map<String, String>>() {
-                        @Override
-                        public Map<String, String> doInCallableStatement(CallableStatement cs) throws SQLException, DataAccessException {
-                            cs.execute();
-                            Map<String, String> result = new HashMap<>();
-                            result.put("code", cs.getString(2));
-                            result.put("msg", cs.getString(3));
-                            return result;
-                        }
-                    }
-            );
-        } catch (Exception e) {
-            procReturn.put("code", "-1");
-            procReturn.put("msg", trimTo500(e.getMessage()));
-            log.error("{} proc execute failed", taskTag(task, dataDate), e);
-        }
-        return procReturn;
+    // ===== 工具方法 =====
+
+    private boolean isSuccess(Map<String, String> result) {
+        return result != null && "0".equals(result.get("code"));
     }
 
-    private Map<String, String> sshCommand(QuartzTaskEntity task, String dataDate) {
-        Map<String, String> returnMap = new HashMap<>();
-        Session session = null;
-        ChannelExec execChannel = null;
-        InputStream in = null;
-        String lastLine = null;
-        String taskKey = buildTaskKey(task.getId(), dataDate);
-
-        try {
-            JSch jsch = new JSch();
-            session = jsch.getSession(task.getUsername(), task.getUrl(), 22);
-            session.setPassword(task.getPassword());
-            session.setTimeout(6000000);
-            Properties config = new Properties();
-            config.put("StrictHostKeyChecking", "no");
-            session.setConfig(config);
-            session.connect();
-
-            execChannel = (ChannelExec) session.openChannel("exec");
-            String command = task.getExePath().replace("$datadate", dataDate);
-            execChannel.setCommand(command);
-            execChannel.connect();
-
-            Session finalSession = session;
-            ChannelExec finalExecChannel = execChannel;
-            taskExecutorPool.registerResource(taskKey, () -> {
-                try {
-                    finalExecChannel.disconnect();
-                } catch (Exception ignore) {
-                }
-                try {
-                    finalSession.disconnect();
-                } catch (Exception ignore) {
-                }
-            });
-
-            in = execChannel.getInputStream();
-            BufferedReader reader = new BufferedReader(new InputStreamReader(in, Charset.forName("utf-8")));
-            String currentLine;
-            while ((currentLine = reader.readLine()) != null) {
-                lastLine = currentLine;
-            }
-            if ("0".equals(lastLine)) {
-                returnMap.put("code", "0");
-                returnMap.put("msg", "success");
-            } else {
-                returnMap.put("code", "-1");
-                returnMap.put("msg", trimTo500(lastLine));
-            }
-        } catch (Exception e) {
-            returnMap.put("code", "-1");
-            returnMap.put("msg", trimTo500(e.getMessage()));
-            log.error("{} ssh execute failed", taskTag(task, dataDate), e);
-        } finally {
-            try {
-                if (in != null) {
-                    in.close();
-                }
-            } catch (Exception ignore) {
-            }
-            try {
-                if (execChannel != null) {
-                    execChannel.disconnect();
-                }
-            } catch (Exception ignore) {
-            }
-            try {
-                if (session != null) {
-                    session.disconnect();
-                }
-            } catch (Exception ignore) {
-            }
-        }
-        return returnMap;
+    private Map<String, String> failureResult(String msg) {
+        return Map.of("code", "-1", "msg", msg);
     }
 
     private String buildTaskKey(Long planId, String dataDate) {
@@ -300,9 +243,7 @@ public class ExecutorTaskService {
     }
 
     private String trimTo500(String value) {
-        if (value == null) {
-            return null;
-        }
+        if (value == null) return null;
         return value.length() > 500 ? value.substring(0, 500) : value;
     }
 }

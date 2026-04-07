@@ -1,6 +1,5 @@
 package com.example.executor.quartz.service;
 
-import com.alibaba.druid.pool.DruidDataSource;
 import com.example.executor.quartz.constant.TaskStatusEnum;
 import com.example.executor.quartz.domain.entity.QuartzTaskEntity;
 import jakarta.annotation.PostConstruct;
@@ -27,9 +26,6 @@ public class TaskDispatcherJob {
 
     @Autowired
     private TaskExecutorPool taskExecutorPool;
-
-    @Autowired
-    private DataSourceCacheManager dataSourceCacheManager;
 
     private volatile Date lastScanTime;
 
@@ -71,7 +67,8 @@ public class TaskDispatcherJob {
                 }
 
                 CronExpression cron = CronExpression.parse(task.getTaskCron());
-                ZonedDateTime nextFire = cron.next(ZonedDateTime.ofInstant(scanFrom.toInstant(), ZoneId.systemDefault()));
+                ZonedDateTime nextFire = cron.next(
+                        ZonedDateTime.ofInstant(scanFrom.toInstant(), ZoneId.systemDefault()));
                 if (nextFire == null || nextFire.toInstant().isAfter(now.toInstant())) {
                     continue;
                 }
@@ -82,16 +79,9 @@ public class TaskDispatcherJob {
                     continue;
                 }
 
-                taskExecutorPool.submitTask(taskKey, () -> {
-                    try {
-                        DruidDataSource ds = task.getTaskType() != null && task.getTaskType() == 2
-                                ? dataSourceCacheManager.getOrCreate(task)
-                                : null;
-                        executorTaskService.taskDispatch(task, dataDate, ds);
-                    } catch (Exception e) {
-                        log.error("Dispatch execute failed, taskId={}, dataDate={}", task.getId(), dataDate, e);
-                    }
-                });
+                // 统一通过 submitTaskToPool 提交，确保 cancel 资源正确注册
+                executorTaskService.submitTaskToPool(task, dataDate);
+
             } catch (Exception e) {
                 log.warn("Cron evaluate failed, taskId={}, cron={}", task.getId(), task.getTaskCron(), e);
             }
