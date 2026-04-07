@@ -584,13 +584,19 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             key: `start-${task.id}`,
             label: '立即开始',
             icon: <Play size={14} />,
-            onClick: () => handleStartTask(task),
+            onClick: ({ domEvent }) => {
+                domEvent.stopPropagation();
+                handleStartTask(task);
+            },
         },
         {
             key: `log-${task.id}`,
             label: '执行日志',
             icon: <FileText size={14} />,
-            onClick: () => handleViewExecutionLog(task),
+            onClick: ({ domEvent }) => {
+                domEvent.stopPropagation();
+                handleViewExecutionLog(task);
+            },
         },
         {
             type: 'divider',
@@ -600,7 +606,17 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             label: '删除',
             icon: <Trash2 size={14} />,
             danger: true,
-            onClick: () => handleDeleteTask(task),
+            onClick: ({ domEvent }) => {
+                domEvent.stopPropagation();
+                Modal.confirm({
+                    title: '确认删除任务',
+                    content: `删除后将无法恢复，确认删除任务“${task.task_name}”吗？`,
+                    okText: '确认删除',
+                    cancelText: '取消',
+                    okButtonProps: { danger: true },
+                    onOk: () => handleDeleteTask(task),
+                });
+            },
         },
     ];
 
