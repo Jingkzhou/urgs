@@ -398,8 +398,39 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
                                     <div className="space-y-4">
                                         <section className={detailSectionClass}>
                                             <div className={detailSectionHeaderClass}>
-                                                <div className="text-sm font-semibold text-slate-800">任务基础</div>
-                                                <div className="mt-1 text-xs text-slate-500">任务本身的归属、主题和状态定义。</div>
+                                                <div className="text-sm font-semibold text-slate-800">任务概览</div>
+                                                <div className="mt-1 text-xs text-slate-500">先看关键身份与状态，再看调度与追踪字段。</div>
+                                            </div>
+                                            <div className={detailSectionBodyClass}>
+                                                <div className="rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-blue-50/50 px-4 py-4">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                                                            {selectedTask?.task_type || '-'}
+                                                        </span>
+                                                        <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                                                            {selectedTask?.task_system || '-'}
+                                                        </span>
+                                                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                                            {selectedTask?.theme || '-'}
+                                                        </span>
+                                                        <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                                                            {selectedTask ? (taskDefinitionStatusMap[selectedTask.task_status]?.label || taskDefinitionStatusMap[0].label) : '-'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="mt-3 text-base font-semibold text-slate-800">
+                                                        {selectedTask?.task_name || '-'}
+                                                    </div>
+                                                    <div className="mt-2 text-xs text-slate-500">
+                                                        计划 ID #{selectedInstance.plan_id}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </section>
+
+                                        <section className={detailSectionClass}>
+                                            <div className={detailSectionHeaderClass}>
+                                                <div className="text-sm font-semibold text-slate-800">基础信息</div>
+                                                <div className="mt-1 text-xs text-slate-500">任务基础字段与描述信息。</div>
                                             </div>
                                             <div className={detailSectionBodyClass}>
                                                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -431,10 +462,6 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
                                                         <div className="text-xs text-slate-400">任务主题</div>
                                                         <div className="mt-1 text-slate-700">{selectedTask?.theme || '-'}</div>
                                                     </div>
-                                                    <div className={detailItemClass}>
-                                                        <div className="text-xs text-slate-400">执行器 Bean</div>
-                                                        <div className="mt-1 text-slate-700">{selectedTask?.task_bean || '-'}</div>
-                                                    </div>
                                                 </div>
                                                 <div className={detailItemClass}>
                                                     <div className="text-xs text-slate-400">任务备注</div>
@@ -445,48 +472,14 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
 
                                         <section className={detailSectionClass}>
                                             <div className={detailSectionHeaderClass}>
-                                                <div className="text-sm font-semibold text-slate-800">任务标识</div>
-                                                <div className="mt-1 text-xs text-slate-500">用于定位和串联任务的内部字段。</div>
-                                            </div>
-                                            <div className={detailSectionBodyClass}>
-                                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                                                    <div className={detailItemClass}>
-                                                        <div className="text-xs text-slate-400">任务Bean</div>
-                                                        <div className="mt-1 font-mono text-xs text-slate-700 break-all">{selectedTask?.task_bean || '-'}</div>
-                                                    </div>
-                                                    <div className={detailItemClass}>
-                                                        <div className="text-xs text-slate-400">Job Key</div>
-                                                        <div className="mt-1 font-mono text-xs text-slate-700 break-all">{selectedTask?.job_key || '-'}</div>
-                                                    </div>
-                                                    <div className={detailItemClass}>
-                                                        <div className="text-xs text-slate-400">依赖任务</div>
-                                                        <div className="mt-1 font-mono text-xs text-slate-700 break-all">{selectedTask?.depend_id || '无'}</div>
-                                                    </div>
-                                                    <div className={detailItemClass}>
-                                                        <div className="text-xs text-slate-400">任务参数</div>
-                                                        <div className="mt-1 font-mono text-xs text-slate-700 break-all">{selectedTask?.task_params || '-'}</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </section>
-                                    </div>
-                                ),
-                            },
-                            {
-                                key: 'schedule',
-                                label: '调度依赖',
-                                children: (
-                                    <div className="space-y-4">
-                                        <section className={detailSectionClass}>
-                                            <div className={detailSectionHeaderClass}>
                                                 <div className="text-sm font-semibold text-slate-800">调度配置</div>
-                                                <div className="mt-1 text-xs text-slate-500">任务何时触发，依赖如何串联，统一放在这里看。</div>
+                                                <div className="mt-1 text-xs text-slate-500">执行节奏、偏移和数据日期。</div>
                                             </div>
                                             <div className={detailSectionBodyClass}>
                                                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                                                     <div className={detailItemClass}>
                                                         <div className="text-xs text-slate-400">Cron 表达式</div>
-                                                        <div className="mt-1 font-mono text-xs text-slate-700 break-all">{selectedTask?.task_cron || '-'}</div>
+                                                        <div className="mt-1 break-all font-mono text-xs text-slate-700">{selectedTask?.task_cron || '-'}</div>
                                                     </div>
                                                     <div className={detailItemClass}>
                                                         <div className="text-xs text-slate-400">轮询间隔</div>
@@ -497,8 +490,8 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
                                                         <div className="mt-1 text-slate-700">{selectedTask?.offset ?? '-'}</div>
                                                     </div>
                                                     <div className={detailItemClass}>
-                                                        <div className="text-xs text-slate-400">默认数据日期</div>
-                                                        <div className="mt-1 text-slate-700">{selectedTask?.data_date || '-'}</div>
+                                                        <div className="text-xs text-slate-400">数据日期</div>
+                                                        <div className="mt-1 text-slate-700">{selectedInstance?.data_date || selectedTask?.data_date || '-'}</div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -506,14 +499,18 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
 
                                         <section className={detailSectionClass}>
                                             <div className={detailSectionHeaderClass}>
-                                                <div className="text-sm font-semibold text-slate-800">依赖关系</div>
-                                                <div className="mt-1 text-xs text-slate-500">与其它任务之间的前后置关系。</div>
+                                                <div className="text-sm font-semibold text-slate-800">任务追踪</div>
+                                                <div className="mt-1 text-xs text-slate-500">依赖链路、参数与时间戳。</div>
                                             </div>
                                             <div className={detailSectionBodyClass}>
                                                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                                                     <div className={detailItemClass}>
-                                                        <div className="text-xs text-slate-400">前置依赖</div>
-                                                        <div className="mt-1 text-slate-700 break-all">{selectedTask?.depend_id || '无'}</div>
+                                                        <div className="text-xs text-slate-400">依赖任务</div>
+                                                        <div className="mt-1 break-all font-mono text-xs text-slate-700">{selectedTask?.depend_id || '无'}</div>
+                                                    </div>
+                                                    <div className={detailItemClass}>
+                                                        <div className="text-xs text-slate-400">任务参数</div>
+                                                        <div className="mt-1 break-all font-mono text-xs text-slate-700">{selectedTask?.task_params || '-'}</div>
                                                     </div>
                                                     <div className={detailItemClass}>
                                                         <div className="text-xs text-slate-400">创建时间</div>
@@ -522,18 +519,6 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
                                                     <div className={detailItemClass}>
                                                         <div className="text-xs text-slate-400">更新时间</div>
                                                         <div className="mt-1 text-slate-700">{selectedTask?.update_time || '-'}</div>
-                                                    </div>
-                                                    <div className={detailItemClass}>
-                                                        <div className="text-xs text-slate-400">当前状态</div>
-                                                        <div className="mt-1">
-                                                            {selectedTask ? (
-                                                                <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${taskDefinitionStatusMap[selectedTask.task_status]?.className || taskDefinitionStatusMap[0].className}`}>
-                                                                    {taskDefinitionStatusMap[selectedTask.task_status]?.label || taskDefinitionStatusMap[0].label}
-                                                                </span>
-                                                            ) : (
-                                                                '-'
-                                                            )}
-                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>

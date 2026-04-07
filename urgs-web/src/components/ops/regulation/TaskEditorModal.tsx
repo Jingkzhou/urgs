@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AutoComplete, Form, Input, InputNumber, Modal, Select } from 'antd';
-import { Calendar, Clock3, Settings2 } from 'lucide-react';
+import { Calendar, Clock3, Plus, Settings2, Trash2 } from 'lucide-react';
 import { QuartzTask } from './mockData';
 import LazyMonacoEditor from './LazyMonacoEditor';
 import CronPicker from '../schedule/forms/components/CronPicker';
@@ -24,6 +24,8 @@ interface TaskFormValues {
     script?: string;
     notification_completed?: string;
     notification_failed?: string;
+    notification_completed_list?: Array<{ name: string; custid: string }>;
+    notification_failed_list?: Array<{ name: string; custid: string }>;
 }
 
 interface DataSourceOption {
@@ -524,11 +526,97 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                         </div>
                                     </div>
                                     <div className="space-y-4 p-5">
-                                        <Form.Item name="notification_completed" label="完成时通知">
-                                            <TextArea rows={3} placeholder="多个通知对象使用英文逗号分隔" />
+                                        <Form.Item label="完成时通知" className="mb-0">
+                                            <Form.List name="notification_completed_list">
+                                                {(fields, { add, remove }) => (
+                                                    <div className="space-y-3">
+                                                        {fields.length === 0 ? (
+                                                            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                                                                暂无通知对象，可点击“新增通知对象”添加。
+                                                            </div>
+                                                        ) : fields.map((field) => (
+                                                            <div key={field.key} className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_auto]">
+                                                                <Form.Item
+                                                                    name={[field.name, 'name']}
+                                                                    className="mb-0"
+                                                                    rules={[{ required: true, message: '请输入姓名' }]}
+                                                                >
+                                                                    <Input placeholder="姓名，如：胡滨" />
+                                                                </Form.Item>
+                                                                <Form.Item
+                                                                    name={[field.name, 'custid']}
+                                                                    className="mb-0"
+                                                                    rules={[{ required: true, message: '请输入客户号' }]}
+                                                                >
+                                                                    <Input placeholder="客户号，如：1001642473" />
+                                                                </Form.Item>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => remove(field.name)}
+                                                                    className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-600 transition hover:bg-red-100"
+                                                                >
+                                                                    <Trash2 size={14} />
+                                                                    删除
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => add({ name: '', custid: '' })}
+                                                            className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                                                        >
+                                                            <Plus size={14} />
+                                                            新增通知对象
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </Form.List>
                                         </Form.Item>
-                                        <Form.Item name="notification_failed" label="失败时通知">
-                                            <TextArea rows={3} placeholder="多个通知对象使用英文逗号分隔" />
+                                        <Form.Item label="失败时通知" className="mb-0">
+                                            <Form.List name="notification_failed_list">
+                                                {(fields, { add, remove }) => (
+                                                    <div className="space-y-3">
+                                                        {fields.length === 0 ? (
+                                                            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                                                                暂无通知对象，可点击“新增通知对象”添加。
+                                                            </div>
+                                                        ) : fields.map((field) => (
+                                                            <div key={field.key} className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_auto]">
+                                                                <Form.Item
+                                                                    name={[field.name, 'name']}
+                                                                    className="mb-0"
+                                                                    rules={[{ required: true, message: '请输入姓名' }]}
+                                                                >
+                                                                    <Input placeholder="姓名，如：胡滨" />
+                                                                </Form.Item>
+                                                                <Form.Item
+                                                                    name={[field.name, 'custid']}
+                                                                    className="mb-0"
+                                                                    rules={[{ required: true, message: '请输入客户号' }]}
+                                                                >
+                                                                    <Input placeholder="客户号，如：1001642473" />
+                                                                </Form.Item>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => remove(field.name)}
+                                                                    className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-600 transition hover:bg-red-100"
+                                                                >
+                                                                    <Trash2 size={14} />
+                                                                    删除
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => add({ name: '', custid: '' })}
+                                                            className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                                                        >
+                                                            <Plus size={14} />
+                                                            新增通知对象
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </Form.List>
                                         </Form.Item>
                                     </div>
                                 </section>

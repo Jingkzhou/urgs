@@ -10,6 +10,7 @@ import {
     detailSectionClass,
     describeCron,
     editorLanguageMap,
+    parseNotificationContacts,
     statusMap,
 } from './taskManagementUtils';
 
@@ -32,6 +33,28 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
     onClose,
     onTabChange,
 }) => {
+    const renderNotificationContacts = (value?: string | null) => {
+        const contacts = parseNotificationContacts(value);
+        if (contacts.length === 0) {
+            return <div className="mt-1 text-slate-500">-</div>;
+        }
+        return (
+            <div className="mt-2 space-y-2">
+                {contacts.map((contact, index) => (
+                    <div
+                        key={`${contact.custid || 'custid'}-${contact.name || 'name'}-${index}`}
+                        className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                    >
+                        <span className="inline-flex rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                            {contact.name || '-'}
+                        </span>
+                        <span className="font-mono text-slate-500">{contact.custid || '-'}</span>
+                    </div>
+                ))}
+            </div>
+        );
+    };
+
     return (
         <Drawer
             title={selectedTask ? `任务详情 · ${selectedTask.task_name}` : '任务详情'}
@@ -232,11 +255,11 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
                                 <div className="space-y-3 p-5">
                                     <div className={detailItemClass}>
                                         <div className="text-xs text-slate-400">完成时通知</div>
-                                        <div className="mt-1 break-all text-slate-700">{selectedTask.notification_completed || '-'}</div>
+                                        {renderNotificationContacts(selectedTask.notification_completed)}
                                     </div>
                                     <div className={detailItemClass}>
                                         <div className="text-xs text-slate-400">失败时通知</div>
-                                        <div className="mt-1 break-all text-slate-700">{selectedTask.notification_failed || '-'}</div>
+                                        {renderNotificationContacts(selectedTask.notification_failed)}
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className={detailItemClass}>

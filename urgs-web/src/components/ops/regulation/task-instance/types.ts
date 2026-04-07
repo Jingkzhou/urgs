@@ -50,7 +50,6 @@ export interface TaskInstanceProps {
 export type InstanceDetailTabKey =
     | 'overview'
     | 'task'
-    | 'schedule'
     | 'dependency'
     | 'execution'
     | 'runtimeLog'

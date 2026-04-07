@@ -21,6 +21,7 @@ import {
 import { getSsoList, SsoConfig } from '@/api/version';
 import {
     DataSourceOption,
+    NotificationContact,
     TaskFormValues,
     describeCron,
     describeDataSourceConnection,
@@ -29,6 +30,7 @@ import {
     getInitialFormValues,
     normalizeQuartzTask,
     normalizeScript,
+    serializeNotificationContacts,
     supportedTaskTypes,
     toTaskTypeCode,
 } from './taskManagementUtils';
@@ -244,8 +246,8 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 taskSystem: emptyToNull(values.task_system || undefined),
                 theme: emptyToNull(values.theme || undefined),
                 offset: values.offset ?? 0,
-                notificationCompleted: emptyToNull(values.notification_completed),
-                notificationFailed: emptyToNull(values.notification_failed),
+                notificationCompleted: serializeNotificationContacts(values.notification_completed_list as NotificationContact[] | undefined),
+                notificationFailed: serializeNotificationContacts(values.notification_failed_list as NotificationContact[] | undefined),
             };
             const response = await saveOrUpdateQuartzTask(payload);
             if (!response?.success) throw new Error(response?.msg || '保存任务失败');

@@ -19,6 +19,13 @@ export interface TaskFormValues {
     script?: string;
     notification_completed?: string;
     notification_failed?: string;
+    notification_completed_list?: NotificationContact[];
+    notification_failed_list?: NotificationContact[];
+}
+
+export interface NotificationContact {
+    name: string;
+    custid: string;
 }
 
 export interface DataSourceOption {
@@ -179,7 +186,52 @@ export const getInitialFormValues = (task?: QuartzTask | null): TaskFormValues =
     script: task?.script || undefined,
     notification_completed: task?.notification_completed || undefined,
     notification_failed: task?.notification_failed || undefined,
+    notification_completed_list: parseNotificationContacts(task?.notification_completed),
+    notification_failed_list: parseNotificationContacts(task?.notification_failed),
 });
+
+export const parseNotificationContacts = (value?: string | null): NotificationContact[] => {
+    if (!value || !value.trim()) return [];
+    const raw = value.trim();
+    try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .map((item: any) => ({
+                name: String(item?.name ?? '').trim(),
+                custid: String(item?.custid ?? '').trim(),
+            }))
+            .filter(item => item.name || item.custid);
+    } catch {
+        const normalized = raw
+            .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '$1"$2"$3')
+            .replace(/'/g, '"');
+        try {
+            const parsed = JSON.parse(normalized);
+            if (!Array.isArray(parsed)) return [];
+            return parsed
+                .map((item: any) => ({
+                    name: String(item?.name ?? '').trim(),
+                    custid: String(item?.custid ?? '').trim(),
+                }))
+                .filter(item => item.name || item.custid);
+        } catch {
+            return [];
+        }
+    }
+};
+
+export const serializeNotificationContacts = (contacts?: NotificationContact[] | null) => {
+    if (!contacts || contacts.length === 0) return null;
+    const cleaned = contacts
+        .map(item => ({
+            name: String(item?.name ?? '').trim(),
+            custid: String(item?.custid ?? '').trim(),
+        }))
+        .filter(item => item.name && item.custid);
+    if (cleaned.length === 0) return null;
+    return JSON.stringify(cleaned);
+};
 
 export const toTaskTypeCode = (taskType?: string | null) => (taskType === 'SQL' ? 2 : 1);
 
