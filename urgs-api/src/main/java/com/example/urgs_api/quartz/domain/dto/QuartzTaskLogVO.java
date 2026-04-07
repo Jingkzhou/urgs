@@ -1,6 +1,7 @@
 package com.example.urgs_api.quartz.domain.dto;
 
 import com.example.urgs_api.quartz.constant.TaskResultEnum;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 
@@ -41,6 +42,7 @@ public class QuartzTaskLogVO {
     private String processLog;
 
     @ApiModelProperty("创建时间")
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
     private Date createTime;
 
 

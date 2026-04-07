@@ -1,9 +1,11 @@
 package com.example.urgs_api.quartz.domain.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 import com.example.urgs_api.quartz.constant.TaskStatusEnum;
 
+import java.util.Date;
 import javax.validation.constraints.NotNull;
 
 /**
@@ -61,13 +63,16 @@ public class QuartzTaskStatusVO {
     private String status;
 
     @ApiModelProperty("开始时间")
-    private String beginTime;
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    private Date beginTime;
 
     @ApiModelProperty("结束时间")
-    private String endTime;
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    private Date endTime;
 
     @ApiModelProperty("更新时间")
-    private String updateTime;
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    private Date updateTime;
 
     @ApiModelProperty("主题")
     private String theme;
@@ -85,7 +90,8 @@ public class QuartzTaskStatusVO {
     private String jobKey;
 
     @ApiModelProperty("创建时间")
-    private String createTime;
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    private Date createTime;
 
     @ApiModelProperty("_disabled")
     private boolean _disabled;

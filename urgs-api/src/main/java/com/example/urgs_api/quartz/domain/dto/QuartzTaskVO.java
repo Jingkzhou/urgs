@@ -1,7 +1,10 @@
 package com.example.urgs_api.quartz.domain.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
+
+import java.util.Date;
 
 /**
  * [  ]
@@ -77,10 +80,12 @@ public class QuartzTaskVO {
     private String driver;
 
     @ApiModelProperty("更新时间")
-    private java.util.Date updateTime;
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    private Date updateTime;
 
     @ApiModelProperty("创建时间")
-    private java.util.Date createTime;
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    private Date createTime;
 
     @ApiModelProperty("数据日期")
     private String dataDate;

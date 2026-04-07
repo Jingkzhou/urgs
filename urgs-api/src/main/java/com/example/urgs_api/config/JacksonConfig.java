@@ -8,6 +8,9 @@ import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.text.SimpleDateFormat;
+import java.util.TimeZone;
+
 @Configuration
 public class JacksonConfig {
 
@@ -18,6 +21,8 @@ public class JacksonConfig {
         objectMapper.registerModule(new JavaTimeModule());
         // Disable writing dates as timestamps
         objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        objectMapper.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
+        objectMapper.setDateFormat(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"));
 
         // Serialize Long as String to avoid JS precision loss
         SimpleModule simpleModule = new SimpleModule();
