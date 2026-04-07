@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.executor.quartz.dao.QuartzTaskLogDao">
+
+    <insert id="insertLog" useGeneratedKeys="true" keyProperty="entity.id">
+        INSERT INTO t_quartz_task_log(
+            task_id,
+            task_name,
+            task_params,
+            process_status,
+            process_duration,
+            process_log,
+            ip_address,
+            create_time,
+            update_time
+        )
+        VALUES (
+            #{entity.taskId},
+            #{entity.taskName},
+            #{entity.taskParams},
+            #{entity.processStatus},
+            #{entity.processDuration},
+            #{entity.processLog},
+            #{entity.ipAddress},
+            #{entity.createTime},
+            #{entity.updateTime}
+        )
+    </insert>
+
+    <update id="appendLog">
+        UPDATE t_quartz_task_log
+        SET process_log = CONCAT(IFNULL(process_log, ''), #{line}, '\n'),
+            update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="finishLog">
+        UPDATE t_quartz_task_log
+        SET process_status = #{processStatus},
+            process_duration = #{processDuration},
+            update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+</mapper>
+

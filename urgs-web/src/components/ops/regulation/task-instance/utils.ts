@@ -80,7 +80,7 @@ export const normalizeStatus = (item: QuartzTaskStatusApiModel): QuartzTaskStatu
 
 export const normalizeLog = (item: QuartzTaskLogApiModel): QuartzTaskExecutionLog => {
     const processStatus = Number(item.processStatus ?? 0);
-    const mappedStatus = processStatus === 3 ? 3 : processStatus === 4 ? 4 : 1;
+    const mappedStatus = processStatus === 0 ? 3 : processStatus === 1 ? 4 : 1;
     return {
         id: Number(item.id),
         task_id: Number(item.taskId),

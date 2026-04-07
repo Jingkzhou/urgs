@@ -122,7 +122,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
 
         let canceled = false;
 
-        const loadLogs = async () => {
+        const loadLogs = async (silent = false) => {
             try {
                 const response = await queryQuartzTaskLog(taskId, 1, 200);
                 if (!response?.success) {
@@ -132,14 +132,20 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                 setLogList((response.data?.list || []).map(normalizeLog));
             } catch (error: any) {
                 if (canceled) return;
-                message.error(error?.message || '加载执行日志失败');
+                if (!silent) {
+                    message.error(error?.message || '加载执行日志失败');
+                }
             }
         };
 
         loadLogs();
+        const timer = window.setInterval(() => {
+            void loadLogs(true);
+        }, 3000);
 
         return () => {
             canceled = true;
+            window.clearInterval(timer);
         };
     }, [selectedInstance?.plan_id]);
 
@@ -672,8 +678,16 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
         if (exactLogs.length > 0) {
             return [...exactLogs].sort((a, b) => dayjs(a.create_time).valueOf() - dayjs(b.create_time).valueOf());
         }
+        const sameDataLogs = logList.filter(log =>
+            log.task_id === selectedInstance.plan_id
+            && !!log.data_date
+            && log.data_date === selectedInstance.data_date
+        );
+        if (sameDataLogs.length > 0) {
+            return [...sameDataLogs].sort((a, b) => dayjs(a.create_time).valueOf() - dayjs(b.create_time).valueOf());
+        }
         return logList
-            .filter(log => log.task_id === selectedInstance.plan_id && log.data_date === selectedInstance.data_date)
+            .filter(log => log.task_id === selectedInstance.plan_id)
             .sort((a, b) => dayjs(a.create_time).valueOf() - dayjs(b.create_time).valueOf());
     }, [logList, selectedInstance]);
 

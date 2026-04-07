@@ -10,6 +10,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
@@ -38,7 +39,7 @@ public class SqlTaskExecutor implements TaskExecutor {
     }
 
     @Override
-    public Map<String, String> execute(QuartzTaskEntity task, String dataDate) throws Exception {
+    public Map<String, String> execute(QuartzTaskEntity task, String dataDate, Consumer<String> logConsumer) throws Exception {
         String sqlScript = task.getExePath();
         if (sqlScript == null || sqlScript.trim().isEmpty()) {
             return failure("SQL 脚本内容为空");
@@ -61,10 +62,16 @@ public class SqlTaskExecutor implements TaskExecutor {
 
         log.info("[taskId={}][dataDate={}] 开始执行 SQL 脚本，共 {} 条语句",
                 task.getId(), dataDate, statements.size());
+        if (logConsumer != null) {
+            logConsumer.accept(String.format("[SQL] 开始执行，共 %d 条语句", statements.size()));
+        }
 
         try (Connection conn = dataSource.getConnection()) {
             for (int i = 0; i < statements.size(); i++) {
                 if (cancelled || Thread.currentThread().isInterrupted()) {
+                    if (logConsumer != null) {
+                        logConsumer.accept("[SQL] 任务已被停止");
+                    }
                     return failure("任务已被停止");
                 }
 
@@ -72,14 +79,29 @@ public class SqlTaskExecutor implements TaskExecutor {
                 log.debug("[taskId={}][dataDate={}] 执行第 {}/{} 条语句: {}",
                         task.getId(), dataDate, i + 1, statements.size(),
                         stmt.length() > 200 ? stmt.substring(0, 200) + "..." : stmt);
+                if (logConsumer != null) {
+                    String compactSql = stmt.replaceAll("\\s+", " ").trim();
+                    logConsumer.accept(String.format("[SQL] 执行第 %d/%d 条: %s", i + 1, statements.size(),
+                            compactSql.length() > 400 ? compactSql.substring(0, 400) + "..." : compactSql));
+                }
 
                 try (Statement s = conn.createStatement()) {
                     currentStatement = s;
                     s.execute(stmt);
+                    if (logConsumer != null) {
+                        logConsumer.accept(String.format("[SQL] 第 %d/%d 条执行成功", i + 1, statements.size()));
+                    }
                 } catch (Exception e) {
                     currentStatement = null;
                     if (cancelled || Thread.currentThread().isInterrupted()) {
+                        if (logConsumer != null) {
+                            logConsumer.accept("[SQL] 任务已被停止");
+                        }
                         return failure("任务已被停止");
+                    }
+                    if (logConsumer != null) {
+                        logConsumer.accept(String.format("[SQL] 第 %d/%d 条执行失败: %s",
+                                i + 1, statements.size(), trimTo500(e.getMessage())));
                     }
                     return failure(String.format("第 %d/%d 条 SQL 执行失败: %s",
                             i + 1, statements.size(), trimTo500(e.getMessage())));
@@ -90,6 +112,9 @@ public class SqlTaskExecutor implements TaskExecutor {
 
         String msg = String.format("SQL 脚本执行完成，共执行 %d 条语句", statements.size());
         log.info("[taskId={}][dataDate={}] {}", task.getId(), dataDate, msg);
+        if (logConsumer != null) {
+            logConsumer.accept("[SQL] " + msg);
+        }
         return success(msg);
     }
 

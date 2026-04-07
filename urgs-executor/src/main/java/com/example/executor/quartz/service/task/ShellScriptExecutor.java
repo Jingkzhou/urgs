@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.function.Consumer;
 
 /**
  * Shell 脚本执行器。
@@ -43,7 +44,7 @@ public class ShellScriptExecutor implements TaskExecutor {
     private volatile boolean cancelled = false;
 
     @Override
-    public Map<String, String> execute(QuartzTaskEntity task, String dataDate) throws Exception {
+    public Map<String, String> execute(QuartzTaskEntity task, String dataDate, Consumer<String> logConsumer) throws Exception {
         String scriptContent = task.getExePath();
         if (scriptContent == null || scriptContent.trim().isEmpty()) {
             return failure("Shell 脚本内容为空");
@@ -67,21 +68,22 @@ public class ShellScriptExecutor implements TaskExecutor {
 
             // ② 打开 exec 通道，通过 stdin 管道传入脚本
             channel = (ChannelExec) session.openChannel("exec");
-            channel.setCommand("bash -s");
+            channel.setCommand("bash -s 2>&1");
             channel.setInputStream(
                     new ByteArrayInputStream(fullScript.getBytes(StandardCharsets.UTF_8))
             );
-            // stderr 合并到 Java stderr，不影响 stdout 解析
-            channel.setErrStream(System.err, true);
             execChannel = channel;
             channel.connect();
 
             log.info("[taskId={}][dataDate={}] Shell 脚本已提交，等待执行完成...",
                     task.getId(), dataDate);
+            if (logConsumer != null) {
+                logConsumer.accept("[SHELL] 脚本已提交，开始执行");
+            }
 
             // ③ 读取 stdout（取最后一行作为摘要）
             stdout = channel.getInputStream();
-            String lastLine = readOutput(stdout);
+            String lastLine = readOutput(stdout, logConsumer);
 
             // ④ 等待通道关闭（即脚本执行完毕）
             waitForClose(channel);
@@ -93,6 +95,9 @@ public class ShellScriptExecutor implements TaskExecutor {
             int exitCode = channel.getExitStatus();
             if (exitCode == 0) {
                 log.info("[taskId={}][dataDate={}] Shell 脚本执行成功", task.getId(), dataDate);
+                if (logConsumer != null) {
+                    logConsumer.accept("[SHELL] 执行成功");
+                }
                 return success("Shell 脚本执行成功");
             }
 
@@ -101,6 +106,9 @@ public class ShellScriptExecutor implements TaskExecutor {
                     : "exit code=" + exitCode;
             log.warn("[taskId={}][dataDate={}] Shell 脚本执行失败，exit code={}, 最后输出: {}",
                     task.getId(), dataDate, exitCode, errorMsg);
+            if (logConsumer != null) {
+                logConsumer.accept("[SHELL] 执行失败，exitCode=" + exitCode + "，最后输出: " + trimTo500(errorMsg));
+            }
             return failure(String.format("Shell 脚本执行失败，exit code=%d，输出: %s",
                     exitCode, trimTo500(errorMsg)));
 
@@ -109,6 +117,9 @@ public class ShellScriptExecutor implements TaskExecutor {
                 return failure("任务已被停止");
             }
             log.error("[taskId={}][dataDate={}] Shell 脚本执行异常", task.getId(), dataDate, e);
+            if (logConsumer != null) {
+                logConsumer.accept("[SHELL] 执行异常: " + trimTo500(e.getMessage()));
+            }
             return failure("Shell 脚本执行异常: " + trimTo500(e.getMessage()));
         } finally {
             closeQuietly(stdout);
@@ -169,7 +180,7 @@ public class ShellScriptExecutor implements TaskExecutor {
     /**
      * 逐行读取 stdout，遇到取消或中断则停止，返回最后一行。
      */
-    private String readOutput(InputStream in) {
+    private String readOutput(InputStream in, Consumer<String> logConsumer) {
         String lastLine = null;
         try {
             BufferedReader reader = new BufferedReader(
@@ -179,6 +190,9 @@ public class ShellScriptExecutor implements TaskExecutor {
                 if (cancelled || Thread.currentThread().isInterrupted()) break;
                 if (!line.trim().isEmpty()) {
                     lastLine = line;
+                    if (logConsumer != null) {
+                        logConsumer.accept(line);
+                    }
                 }
             }
         } catch (Exception e) {

@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * 任务执行调度服务。
@@ -43,6 +44,9 @@ public class ExecutorTaskService {
 
     @Autowired
     private DataSourceCacheManager dataSourceCacheManager;
+
+    @Autowired
+    private TaskExecutionLogService taskExecutionLogService;
 
     // ===== 对外查询接口 =====
 
@@ -126,12 +130,16 @@ public class ExecutorTaskService {
         status.setMsg("执行中");
         updateStatus(status);
 
+        TaskExecutionLogService.ExecutionLogContext logContext = taskExecutionLogService.start(task, dataDate);
+        Consumer<String> logConsumer = line -> taskExecutionLogService.append(logContext, line);
+
         // 执行（含重试）
-        Map<String, String> result = executeWithRetry(task, dataDate, executor, status);
+        Map<String, String> result = executeWithRetry(task, dataDate, executor, status, logConsumer);
 
         // 根据结果更新最终状态
         applyFinalStatus(status, result);
         updateStatus(status);
+        taskExecutionLogService.finish(logContext, isSuccess(result), status.getMsg());
     }
 
     /**
@@ -139,27 +147,38 @@ public class ExecutorTaskService {
      */
     private Map<String, String> executeWithRetry(QuartzTaskEntity task, String dataDate,
                                                   TaskExecutor executor,
-                                                  QuartzTaskStatusEntity status) {
+                                                  QuartzTaskStatusEntity status,
+                                                  Consumer<String> logConsumer) {
         Map<String, String> result = Collections.emptyMap();
         final int maxRetries = 3;
         try {
-            result = executor.execute(task, dataDate);
+            result = executor.execute(task, dataDate, logConsumer);
             for (int retry = 1;
                  !isSuccess(result) && task.getPeriod() != null && retry <= maxRetries;
                  retry++) {
                 log.warn("{} 执行失败，{}ms 后开始第 {}/{} 次重试，错误: {}",
                         taskTag(task, dataDate), task.getPeriod(), retry, maxRetries, result.get("msg"));
+                if (logConsumer != null) {
+                    logConsumer.accept(String.format("[RETRY] 第%d/%d次重试，等待%dms，错误: %s",
+                            retry, maxRetries, task.getPeriod(), trimTo500(result.get("msg"))));
+                }
                 Thread.sleep(task.getPeriod());
                 status.setMsg(String.format("第%d/%d次重试，错误: %s",
                         retry, maxRetries, result.get("msg")));
                 updateStatus(status);
-                result = executor.execute(task, dataDate);
+                result = executor.execute(task, dataDate, logConsumer);
             }
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
+            if (logConsumer != null) {
+                logConsumer.accept("[ERROR] 任务执行线程被中断");
+            }
             return failureResult("任务已被中断");
         } catch (Exception e) {
             log.error("{} dispatch error", taskTag(task, dataDate), e);
+            if (logConsumer != null) {
+                logConsumer.accept("[ERROR] 执行异常: " + trimTo500(e.getMessage()));
+            }
             return failureResult("执行异常: " + trimTo500(e.getMessage()));
         }
         return result;

@@ -3,6 +3,7 @@ package com.example.executor.quartz.service.task;
 import com.example.executor.quartz.domain.entity.QuartzTaskEntity;
 
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * 任务执行器接口。
@@ -17,7 +18,7 @@ public interface TaskExecutor {
      *
      * @return 包含 "code"（"0"=成功，否则失败）和 "msg" 的结果 Map
      */
-    Map<String, String> execute(QuartzTaskEntity task, String dataDate) throws Exception;
+    Map<String, String> execute(QuartzTaskEntity task, String dataDate, Consumer<String> logConsumer) throws Exception;
 
     /**
      * 终止正在执行的任务，可从任意线程调用，调用后 execute() 应尽快返回。

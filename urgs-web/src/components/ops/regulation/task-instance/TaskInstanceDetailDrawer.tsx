@@ -726,8 +726,16 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
                                             </div>
                                             <div className={detailSectionBodyClass}>
                                                 {selectedInstanceLogs.length === 0 ? (
-                                                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-10 text-center text-sm text-slate-500">
-                                                        当前实例暂无执行日志。
+                                                    <div className="space-y-3">
+                                                        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-8 text-center text-sm text-slate-500">
+                                                            当前实例暂无执行日志。
+                                                        </div>
+                                                        {selectedInstance?.msg && (
+                                                            <div className="rounded-2xl border border-red-200 bg-red-50/70 px-4 py-3">
+                                                                <div className="text-xs font-semibold text-red-600">实例错误信息</div>
+                                                                <div className="mt-1 whitespace-pre-wrap text-sm text-red-700">{selectedInstance.msg}</div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 ) : (
                                                     <div className="space-y-4">
