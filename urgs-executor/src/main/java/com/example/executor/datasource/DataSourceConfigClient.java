@@ -22,7 +22,7 @@ public class DataSourceConfigClient {
         if (datasourceId == null) {
             return null;
         }
-        String url = apiBaseUrl + "/api/datasource/config/" + datasourceId + "/resolved";
+        String url = apiBaseUrl + "/api/internal/datasource/config/" + datasourceId + "/resolved";
         return restTemplate.getForObject(url, ResolvedDataSourceConfig.class);
     }
 
