@@ -16,4 +16,6 @@ public interface QuartzTaskDao {
     List<QuartzTaskEntity> getTaskListByDepId(@Param("id") Long id);
 
     List<Long> getPreTaskIdsByTaskId(@Param("taskId") Long taskId);
+
+    List<QuartzTaskEntity> queryReadyWaitingTasks();
 }

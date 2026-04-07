@@ -123,4 +123,10 @@ public class QuartzController {
     public ResponseDTO<PageResultDTO<QuartzMissedTaskVO>> queryMissedTasks(@RequestBody @Valid QuartzMissedTaskQueryDTO queryDTO){
         return quartzTaskService.queryMissedTasks(queryDTO);
     }
+
+    @PostMapping("/quartz/task/status/triggerNow")
+    @ApiOperation(value = "立即触发任务")
+    public ResponseDTO<String> triggerNow(@RequestBody @Valid QuartzTriggerNowDTO triggerNowDTO) {
+        return quartzTaskService.triggerNow(triggerNowDTO);
+    }
 }

@@ -58,4 +58,26 @@
         WHERE task_id = #{taskId}
         ORDER BY id
     </select>
+
+    <select id="queryReadyWaitingTasks" resultType="com.example.executor.quartz.domain.entity.QuartzTaskEntity">
+        SELECT <include refid="baseSql"/>,
+               ws.data_date AS dataDate
+        FROM t_quartz_task_status ws
+        INNER JOIN t_quartz_task t ON t.id = ws.plan_id
+        WHERE ws.status = 1
+          AND t.task_status = 0
+          AND NOT EXISTS (
+            SELECT 1
+            FROM t_quartz_task_dependency d
+            WHERE d.task_id = ws.plan_id
+              AND NOT EXISTS (
+                SELECT 1
+                FROM t_quartz_task_status ds
+                WHERE ds.plan_id = d.pre_task_id
+                  AND ds.data_date = ws.data_date
+                  AND ds.status = 3
+              )
+        )
+        ORDER BY ws.id
+    </select>
 </mapper>

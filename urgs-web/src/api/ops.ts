@@ -441,6 +441,9 @@ export const batchForceStopQuartzTaskStatus = (statusIds: number[]) =>
 export const batchForcePassQuartzTaskStatus = (statusIds: number[]) =>
     post<ApiResponse<string>>('/api/quartz/task/status/batchForcePass', { statusIds });
 
+export const triggerNowQuartzTask = (planId: number, dataDate: string) =>
+    post<ApiResponse<string>>('/api/quartz/task/status/triggerNow', { planId, dataDate });
+
 export const queryQuartzTaskLog = (taskId: number, pageNum: number = 1, pageSize: number = 200) =>
     post<ApiResponse<PageResult<QuartzTaskLogApiModel>>>('/api/quartz/task/queryLog', { taskId, pageNum, pageSize });
 

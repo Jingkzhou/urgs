@@ -1,8 +1,7 @@
 package com.example.executor.quartz.task;
 
-import com.example.executor.quartz.dao.QuartzTaskStatusDao;
+import com.example.executor.quartz.dao.QuartzTaskDao;
 import com.example.executor.quartz.domain.entity.QuartzTaskEntity;
-import com.example.executor.quartz.domain.entity.QuartzTaskStatusEntity;
 import com.example.executor.quartz.service.ExecutorTaskService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,23 +18,17 @@ public class DependencyCheckTask {
     private ExecutorTaskService executorTaskService;
 
     @Autowired
-    private QuartzTaskStatusDao quartzTaskStatusDao;
+    private QuartzTaskDao quartzTaskDao;
 
     @Scheduled(fixedDelay = 30000, initialDelay = 10000)
     public void checkDependencies() {
         try {
-            List<QuartzTaskStatusEntity> waitingList = quartzTaskStatusDao.getWaitingList();
-            if (waitingList == null || waitingList.isEmpty()) {
+            List<QuartzTaskEntity> readyTasks = quartzTaskDao.queryReadyWaitingTasks();
+            if (readyTasks == null || readyTasks.isEmpty()) {
                 return;
             }
-            for (QuartzTaskStatusEntity waitingStatus : waitingList) {
-                QuartzTaskEntity task = executorTaskService.getByTaskId(waitingStatus.getPlanId());
-                if (task == null) {
-                    continue;
-                }
-                if (executorTaskService.checkPredecessors(task, waitingStatus.getDataDate())) {
-                    executorTaskService.submitTaskToPool(task, waitingStatus.getDataDate());
-                }
+            for (QuartzTaskEntity task : readyTasks) {
+                executorTaskService.submitTaskToPool(task, task.getDataDate());
             }
         } catch (Exception e) {
             log.error("Dependency check failed", e);

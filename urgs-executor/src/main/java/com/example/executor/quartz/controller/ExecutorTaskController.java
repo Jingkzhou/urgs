@@ -2,6 +2,8 @@ package com.example.executor.quartz.controller;
 
 import com.example.executor.quartz.domain.dto.ExecutorStopTaskDTO;
 import com.example.executor.quartz.domain.dto.ExecutorStopTaskResultDTO;
+import com.example.executor.quartz.domain.dto.ExecutorTriggerNowDTO;
+import com.example.executor.quartz.domain.entity.QuartzTaskEntity;
 import com.example.executor.quartz.service.ExecutorTaskService;
 import com.example.executor.support.domain.ResponseDTO;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,5 +35,21 @@ public class ExecutorTaskController {
                 cancelled,
                 stopTaskDTO.getPlanId() + "_" + stopTaskDTO.getDataDate()
         ));
+    }
+
+    @PostMapping("/triggerNow")
+    public ResponseDTO<String> triggerNow(@RequestBody ExecutorTriggerNowDTO triggerNowDTO) {
+        if (triggerNowDTO.getPlanId() == null || triggerNowDTO.getDataDate() == null || triggerNowDTO.getDataDate().trim().isEmpty()) {
+            return ResponseDTO.wrap(400, "planId 和 dataDate 不能为空");
+        }
+        QuartzTaskEntity task = executorTaskService.getByTaskId(triggerNowDTO.getPlanId());
+        if (task == null) {
+            return ResponseDTO.wrap(404, "任务不存在: planId=" + triggerNowDTO.getPlanId());
+        }
+        if (executorTaskService.isTaskRunning(triggerNowDTO.getPlanId(), triggerNowDTO.getDataDate())) {
+            return ResponseDTO.wrap(409, "任务已在执行中: " + triggerNowDTO.getPlanId() + "_" + triggerNowDTO.getDataDate());
+        }
+        executorTaskService.submitTaskToPool(task, triggerNowDTO.getDataDate());
+        return ResponseDTO.succ();
     }
 }

@@ -168,7 +168,25 @@ public class QuartzTaskService {
         }
 
         quartzTaskStatusDao.batchResetToWaiting(statusIds, "实例已批量重置为等待执行。");
+
+        for (QuartzTaskStatusEntity statusEntity : statusList) {
+            ResponseDTO<String> triggerResult = executorClientService.triggerNow(statusEntity.getPlanId(), statusEntity.getDataDate());
+            if (!triggerResult.isSuccess()) {
+                log.warn("triggerNow failed after batchExecute, planId={}, dataDate={}, msg={}", statusEntity.getPlanId(), statusEntity.getDataDate(), triggerResult.getMsg());
+            }
+        }
         return ResponseDTO.succ();
+    }
+
+    public ResponseDTO<String> triggerNow(QuartzTriggerNowDTO dto) {
+        QuartzTaskEntity task = quartzTaskDao.selectById(dto.getPlanId());
+        if (task == null) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "任务不存在");
+        }
+        if (TaskStatusEnum.PAUSE.getStatus().equals(task.getTaskStatus())) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "任务已暂停，请先恢复任务后再立即执行");
+        }
+        return executorClientService.triggerNow(dto.getPlanId(), dto.getDataDate());
     }
 
     @Transactional(rollbackFor = Throwable.class)
