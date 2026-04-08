@@ -46,6 +46,25 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
 
+    const buildInstanceQueryParams = useCallback((filters?: {
+        createDate?: string;
+        dataDate?: string;
+        status?: string;
+        taskSystem?: string;
+        keyword?: string;
+    }) => {
+        const nextFilters = filters || {};
+        return {
+            pageNum: 1,
+            pageSize: 500,
+            beginDate: (nextFilters.createDate ?? createDateFilter)?.replaceAll('-', '') || undefined,
+            dataDate: (nextFilters.dataDate ?? dataDateFilter)?.replaceAll('-', '') || undefined,
+            status: (nextFilters.status ?? statusFilter) || undefined,
+            taskSystem: (nextFilters.taskSystem ?? taskSystemFilter) || undefined,
+            taskName: (nextFilters.keyword ?? searchKeyword.trim()) || undefined,
+        };
+    }, [createDateFilter, dataDateFilter, searchKeyword, statusFilter, taskSystemFilter]);
+
     const loadTasks = useCallback(async () => {
         try {
             const pageSize = 500;
@@ -75,11 +94,16 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
         }
     }, []);
 
-    const loadInstances = useCallback(async () => {
+    const loadInstances = useCallback(async (filters?: {
+        createDate?: string;
+        dataDate?: string;
+        status?: string;
+        taskSystem?: string;
+        keyword?: string;
+    }) => {
         try {
-            const pageSize = 500;
-            const beginDate = createDateFilter ? createDateFilter.replaceAll('-', '') : undefined;
-            const firstResponse = await queryQuartzTaskStatus({ pageNum: 1, pageSize, beginDate });
+            const queryParams = buildInstanceQueryParams(filters);
+            const firstResponse = await queryQuartzTaskStatus(queryParams);
             if (!firstResponse?.success) {
                 throw new Error(firstResponse?.msg || '加载实例失败');
             }
@@ -90,7 +114,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
             if (totalPages > 1) {
                 const restResponses = await Promise.all(
                     Array.from({ length: totalPages - 1 }, (_, index) =>
-                        queryQuartzTaskStatus({ pageNum: index + 2, pageSize, beginDate })
+                        queryQuartzTaskStatus({ ...queryParams, pageNum: index + 2 })
                     )
                 );
                 restResponses.forEach(response => {
@@ -104,7 +128,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
         } catch (error: any) {
             message.error(error?.message || '加载实例失败');
         }
-    }, [createDateFilter]);
+    }, [buildInstanceQueryParams]);
 
     useEffect(() => {
         loadTasks();
@@ -205,18 +229,27 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     }, [searchKeyword, taskSystemFilter, statusFilter, dataDateFilter, createDateFilter]);
 
     const handleSearch = useCallback(() => {
-        setSearchKeyword(draftSearchKeyword.trim());
+        const nextKeyword = draftSearchKeyword.trim();
+        setSearchKeyword(nextKeyword);
         setTaskSystemFilter(draftTaskSystemFilter);
         setDataDateFilter(draftDataDateFilter);
         setCreateDateFilter(draftCreateDateFilter);
         setStatusFilter(draftStatusFilter);
         setCurrentPage(1);
+        void loadInstances({
+            keyword: nextKeyword,
+            taskSystem: draftTaskSystemFilter,
+            dataDate: draftDataDateFilter,
+            createDate: draftCreateDateFilter,
+            status: draftStatusFilter,
+        });
     }, [
         draftCreateDateFilter,
         draftDataDateFilter,
         draftSearchKeyword,
         draftStatusFilter,
         draftTaskSystemFilter,
+        loadInstances,
     ]);
 
     const handleResetFilters = useCallback(() => {
