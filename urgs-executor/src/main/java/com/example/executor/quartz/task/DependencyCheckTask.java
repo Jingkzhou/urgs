@@ -20,7 +20,7 @@ public class DependencyCheckTask {
     @Autowired
     private QuartzTaskDao quartzTaskDao;
 
-    @Scheduled(fixedDelay = 30000, initialDelay = 10000)
+    @Scheduled(fixedDelay = 3000, initialDelay = 10000)
     public void checkDependencies() {
         try {
             List<QuartzTaskEntity> readyTasks = quartzTaskDao.queryReadyWaitingTasks();

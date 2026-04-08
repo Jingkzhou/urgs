@@ -291,23 +291,6 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
         return map;
     }, [instanceList]);
 
-    const latestInstanceByPlan = useMemo(() => {
-        const map = new Map<number, QuartzTaskStatus>();
-        instanceList.forEach(instance => {
-            const existing = map.get(instance.plan_id);
-            if (!existing) {
-                map.set(instance.plan_id, instance);
-                return;
-            }
-            const existingTime = dayjs(existing.update_time || existing.create_time).valueOf();
-            const incomingTime = dayjs(instance.update_time || instance.create_time).valueOf();
-            if (incomingTime >= existingTime) {
-                map.set(instance.plan_id, instance);
-            }
-        });
-        return map;
-    }, [instanceList]);
-
     const upstreamTaskIdMap = useMemo(() => {
         const map = new Map<number, number[]>();
         taskList.forEach(task => {
@@ -333,7 +316,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
 
         const selectedTask = taskMap.get(selectedInstance.plan_id);
         const pickRelatedInstance = (taskId: number) => {
-            return instanceByPlanDate.get(`${taskId}_${selectedInstance.data_date}`) || latestInstanceByPlan.get(taskId);
+            return instanceByPlanDate.get(`${taskId}_${selectedInstance.data_date}`);
         };
 
         const toRelationItem = (taskId: number): DependencyRelationItem => {
@@ -445,7 +428,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
             impactedDownstreamCount: Array.from(downstreamMetaMap.values()).filter(item => item.impacted).length,
             failedUpstreamCount: blockingUpstream.filter(item => item.relatedInstance?.status === 4).length,
         };
-    }, [downstreamTaskIdMap, instanceByPlanDate, latestInstanceByPlan, selectedInstance, taskMap, upstreamTaskIdMap]);
+    }, [downstreamTaskIdMap, instanceByPlanDate, selectedInstance, taskMap, upstreamTaskIdMap]);
 
     const updateInstance = (instanceId: number, updater: (instance: QuartzTaskStatus) => QuartzTaskStatus) => {
         setInstanceList(prev => prev.map(instance => instance.id === instanceId ? updater(instance) : instance));
