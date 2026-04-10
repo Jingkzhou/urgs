@@ -8,9 +8,25 @@ import RegulationBatchManagement from './ops/RegulationBatchManagement';
 
 type SubModule = 'schedule' | 'issue' | 'infra' | 'regulation';
 
+const OPS_SCHEDULE_NAV_KEY = 'ops_schedule_nav';
+
 const OpsManagement: React.FC = () => {
     const [activeModule, setActiveModule] = useState<SubModule>('regulation');
     const [initialIssueData, setInitialIssueData] = useState<any>(null);
+
+    React.useEffect(() => {
+        const navData = sessionStorage.getItem(OPS_SCHEDULE_NAV_KEY);
+        if (!navData) return;
+
+        try {
+            const { module } = JSON.parse(navData);
+            if (module === 'schedule') {
+                setActiveModule('schedule');
+            }
+        } catch (e) {
+            // ignore invalid data
+        }
+    }, []);
 
     const handleTurnToIssue = (task: any) => {
         setInitialIssueData({

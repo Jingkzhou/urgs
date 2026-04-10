@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Settings,
   ShieldCheck,
   Cpu,
   Layout,
@@ -176,12 +175,6 @@ const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
             </div>
           )}
 
-          <button
-            onClick={() => window.location.href = '#/ops/system-list'}
-            className="p-2.5 bg-slate-100/50 hover:bg-slate-200/50 rounded-xl transition-all text-slate-500 hover:text-slate-800 border border-slate-200/50"
-          >
-            <Settings size={16} />
-          </button>
         </div>
       </div>
 
@@ -206,18 +199,6 @@ const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
           /* 窄列模式：原始滚动网格 */
           <div className="grid grid-cols-2 gap-4 pb-4">
             {systems.map((system, idx) => renderCard(system, idx, idx))}
-
-            {/* More Action */}
-            <motion.div
-              whileHover={{ scale: 1.05 }}
-              className="border-2 border-dashed border-slate-200 rounded-[1.75rem] flex flex-col items-center justify-center aspect-square text-slate-400 hover:border-red-200 hover:text-red-500 transition-all cursor-pointer bg-slate-50/50"
-              onClick={() => window.location.href = '#/ops/system-list'}
-            >
-              <div className="p-2 rounded-full bg-white shadow-sm mb-1">
-                <ChevronRight className="w-4 h-4" />
-              </div>
-              <span className="text-[9px] font-bold uppercase tracking-widest">More</span>
-            </motion.div>
           </div>
         )}
       </div>

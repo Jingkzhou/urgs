@@ -14,6 +14,8 @@ interface TaskInstance {
     logContent?: string;
 }
 
+const OPS_SCHEDULE_NAV_KEY = 'ops_schedule_nav';
+
 const BatchMonitoring: React.FC = () => {
     const [stats, setStats] = useState<TaskInstanceStatsVO | null>(null);
     const [hourlyData, setHourlyData] = useState<any[]>([]);
@@ -45,6 +47,15 @@ const BatchMonitoring: React.FC = () => {
             clearInterval(dataTimer);
         };
     }, []);
+
+    const navigateToTaskInstance = (status?: string) => {
+        sessionStorage.setItem(OPS_SCHEDULE_NAV_KEY, JSON.stringify({
+            module: 'schedule',
+            view: 'task-instance',
+            filters: status ? { status } : {}
+        }));
+        window.location.href = '#/ops';
+    };
 
     // Derived Data for Charts
     const statusData = stats ? [
@@ -105,6 +116,7 @@ const BatchMonitoring: React.FC = () => {
                     color="blue"
                     subValue="Running"
                     animate
+                    onClick={() => navigateToTaskInstance('RUNNING')}
                 />
                 <KpiCard
                     title="等待中"
@@ -112,6 +124,7 @@ const BatchMonitoring: React.FC = () => {
                     icon={<Clock className="w-6 h-6" />}
                     color="purple"
                     subValue="Pending"
+                    onClick={() => navigateToTaskInstance('WAITING_GROUP')}
                 />
                 <KpiCard
                     title="失败任务"
@@ -120,6 +133,7 @@ const BatchMonitoring: React.FC = () => {
                     color="red"
                     subValue="Attention Needed"
                     isAlert={stats?.failed > 0}
+                    onClick={() => navigateToTaskInstance('FAIL')}
                 />
                 <KpiCard
                     title="成功率"
@@ -232,7 +246,17 @@ const BatchMonitoring: React.FC = () => {
 
                     <div className="mt-8 flex flex-col gap-4">
                         {statusDataFixed.map(item => (
-                            <div key={item.name} className="flex flex-col gap-1.5 group/item">
+                            <button
+                                key={item.name}
+                                type="button"
+                                onClick={() => navigateToTaskInstance(
+                                    item.name === '成功' ? 'SUCCESS' :
+                                        item.name === '失败' ? 'FAIL' :
+                                            item.name === '运行中' ? 'RUNNING' :
+                                                'WAITING_GROUP'
+                                )}
+                                className="flex flex-col gap-1.5 group/item text-left rounded-2xl p-2 -mx-2 hover:bg-slate-50/80 transition-colors"
+                            >
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                         <div className="w-2.5 h-2.5 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.1)] transition-transform group-hover/item:scale-125" style={{ backgroundColor: item.color }} />
@@ -250,7 +274,7 @@ const BatchMonitoring: React.FC = () => {
                                         }}
                                     ></div>
                                 </div>
-                            </div>
+                            </button>
                         ))}
                     </div>
                 </div>
@@ -260,7 +284,7 @@ const BatchMonitoring: React.FC = () => {
 };
 
 // Simplified Apple-style Card
-const KpiCard = ({ title, value, icon, color, subValue, animate, isAlert }: any) => {
+const KpiCard = ({ title, value, icon, color, subValue, animate, isAlert, onClick }: any) => {
     const colorStyles: any = {
         gray: { text: 'text-slate-600', bgIcon: 'bg-slate-50 text-slate-600', ring: 'ring-slate-100', glow: 'from-slate-100/30' },
         blue: { text: 'text-blue-600', bgIcon: 'bg-blue-50 text-blue-600', ring: 'ring-blue-100', glow: 'from-blue-100/30' },
@@ -272,7 +296,10 @@ const KpiCard = ({ title, value, icon, color, subValue, animate, isAlert }: any)
     const style = colorStyles[color] || colorStyles.gray;
 
     return (
-        <div className={`relative bg-white/70 backdrop-blur-md rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] hover:-translate-y-1.5 transition-all duration-500 overflow-hidden group ${isAlert ? 'ring-2 ring-red-400/30' : ''}`}>
+        <div
+            onClick={onClick}
+            className={`relative bg-white/70 backdrop-blur-md rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] hover:-translate-y-1.5 transition-all duration-500 overflow-hidden group ${isAlert ? 'ring-2 ring-red-400/30' : ''} ${onClick ? 'cursor-pointer' : ''}`}
+        >
             {/* Background Glow */}
             <div className={`absolute -inset-1 bg-gradient-to-br ${style.glow} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700`} />
 
@@ -305,4 +332,3 @@ const KpiCard = ({ title, value, icon, color, subValue, animate, isAlert }: any)
 };
 
 export default BatchMonitoring;
-

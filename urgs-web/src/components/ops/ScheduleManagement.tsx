@@ -6,6 +6,8 @@ import WorkflowDefinition from './schedule/WorkflowDefinition';
 import TaskDefinition from './schedule/TaskDefinition';
 import TaskInstance from './schedule/TaskInstance';
 
+const OPS_SCHEDULE_NAV_KEY = 'ops_schedule_nav';
+
 // --- Navigation Data ---
 const navSections = [
     {
@@ -29,6 +31,20 @@ interface ScheduleManagementProps {
 
 const ScheduleManagement: React.FC<ScheduleManagementProps> = ({ onTurnToIssue }) => {
     const [activeView, setActiveView] = useState('workflow-definition');
+
+    React.useEffect(() => {
+        const navData = sessionStorage.getItem(OPS_SCHEDULE_NAV_KEY);
+        if (!navData) return;
+
+        try {
+            const { view } = JSON.parse(navData);
+            if (typeof view === 'string') {
+                setActiveView(view);
+            }
+        } catch (e) {
+            // ignore invalid data
+        }
+    }, []);
 
     const activeNav = navSections.flatMap(s => s.items).find(i => i.id === activeView);
 

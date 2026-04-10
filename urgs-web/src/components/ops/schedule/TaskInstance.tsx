@@ -13,6 +13,9 @@ import DependencyGraphModal from './modals/DependencyGraphModal';
 import ScheduleStatsCard from './ScheduleStatsCard';
 import InstanceCard from './InstanceCard';
 
+const OPS_SCHEDULE_NAV_KEY = 'ops_schedule_nav';
+const WAITING_GROUP_STATUS = 'WAITING_GROUP';
+
 interface TaskInstance {
     id: string;
     taskId: string;
@@ -398,12 +401,28 @@ const TaskInstance: React.FC = () => {
         fetchMetadata();
     }, []);
 
+    useEffect(() => {
+        const navData = sessionStorage.getItem(OPS_SCHEDULE_NAV_KEY);
+        if (!navData) return;
+
+        try {
+            const { filters } = JSON.parse(navData);
+            if (filters?.status && typeof filters.status === 'string') {
+                setStatusFilter(filters.status);
+            }
+        } catch (e) {
+            // ignore invalid data
+        } finally {
+            sessionStorage.removeItem(OPS_SCHEDULE_NAV_KEY);
+        }
+    }, []);
+
     const fetchInstances = async () => {
         setLoading(true);
         try {
             const params: Record<string, string> = {};
             if (searchTerm) params['keyword'] = searchTerm;
-            if (statusFilter) params['status'] = statusFilter;
+            if (statusFilter && statusFilter !== WAITING_GROUP_STATUS) params['status'] = statusFilter;
             if (dataDateFilter) params['dataDate'] = dataDateFilter;
             if (executionDateFilter) params['executionDate'] = executionDateFilter;
 
@@ -459,6 +478,9 @@ const TaskInstance: React.FC = () => {
     // Filter instances client-side for Workflow (since API doesn't support it yet)
     const filteredInstances = useMemo(() => {
         let result = instances;
+        if (statusFilter === WAITING_GROUP_STATUS) {
+            result = result.filter(inst => inst.status === 'WAITING' || inst.status === 'PENDING');
+        }
         if (workflowFilter) {
             result = result.filter(inst => {
                 // Check if the task belongs to the selected workflow by ID
@@ -774,6 +796,7 @@ const TaskInstance: React.FC = () => {
                             <option value="SUCCESS">成功</option>
                             <option value="FAIL">失败</option>
                             <option value="RUNNING">运行中</option>
+                            <option value={WAITING_GROUP_STATUS}>等待中</option>
                             <option value="WAITING">等待下发</option>
                             <option value="PENDING">依赖等待</option>
                             <option value="STOPPED">已停止</option>
