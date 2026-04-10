@@ -4,13 +4,17 @@ import com.alibaba.druid.pool.DruidDataSource;
 import com.example.executor.quartz.domain.entity.QuartzTaskEntity;
 import lombok.extern.slf4j.Slf4j;
 
+import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.Statement;
+import java.sql.Types;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -25,6 +29,11 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 public class SqlTaskExecutor implements TaskExecutor {
+
+    private static final Pattern CALL_PATTERN = Pattern.compile(
+            "^call\\s+([\\w$.]+)\\s*\\((.*)\\)\\s*$",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+    );
 
     private final DruidDataSource dataSource;
 
@@ -85,9 +94,8 @@ public class SqlTaskExecutor implements TaskExecutor {
                             compactSql.length() > 400 ? compactSql.substring(0, 400) + "..." : compactSql));
                 }
 
-                try (Statement s = conn.createStatement()) {
-                    currentStatement = s;
-                    s.execute(stmt);
+                try {
+                    executeStatement(conn, stmt, dataDate, logConsumer);
                     if (logConsumer != null) {
                         logConsumer.accept(String.format("[SQL] 第 %d/%d 条执行成功", i + 1, statements.size()));
                     }
@@ -130,6 +138,91 @@ public class SqlTaskExecutor implements TaskExecutor {
                 log.warn("Cancel SQL statement failed: {}", e.getMessage());
             }
         }
+    }
+
+    private void executeStatement(Connection conn, String stmt, String dataDate, Consumer<String> logConsumer) throws Exception {
+        Matcher matcher = CALL_PATTERN.matcher(stmt.trim());
+        if (matcher.matches()) {
+            executeCallable(conn, matcher.group(1), matcher.group(2), dataDate, logConsumer);
+            return;
+        }
+
+        try (Statement s = conn.createStatement()) {
+            currentStatement = s;
+            s.execute(stmt);
+        } finally {
+            currentStatement = null;
+        }
+    }
+
+    private void executeCallable(Connection conn, String procedureName, String argsText, String dataDate, Consumer<String> logConsumer) throws Exception {
+        int paramCount = countParams(argsText);
+        String callableSql = buildCallableSql(procedureName, paramCount);
+        try (CallableStatement cs = conn.prepareCall(callableSql)) {
+            currentStatement = cs;
+            bindCallableParams(cs, paramCount, dataDate);
+            cs.execute();
+            String resultCode = readOutParam(cs, 2, paramCount);
+            String errMsg = readOutParam(cs, 3, paramCount);
+            logCallableOutParams(resultCode, errMsg, logConsumer);
+            if (paramCount >= 2 && !"0".equals(resultCode)) {
+                String message = (errMsg == null || errMsg.isBlank())
+                        ? "存储过程返回失败状态: " + resultCode
+                        : errMsg;
+                throw new RuntimeException(message);
+            }
+        } finally {
+            currentStatement = null;
+        }
+    }
+
+    private void bindCallableParams(CallableStatement cs, int paramCount, String dataDate) throws Exception {
+        if (paramCount >= 1) {
+            cs.setString(1, dataDate);
+        }
+        if (paramCount >= 2) {
+            cs.registerOutParameter(2, Types.VARCHAR);
+        }
+        if (paramCount >= 3) {
+            cs.registerOutParameter(3, Types.VARCHAR);
+        }
+        for (int i = 4; i <= paramCount; i++) {
+            cs.registerOutParameter(i, Types.VARCHAR);
+        }
+    }
+
+    private void logCallableOutParams(String resultCode, String errMsg, Consumer<String> logConsumer) {
+        if (logConsumer == null) {
+            return;
+        }
+        logConsumer.accept("[SQL] 输出参数 p_result: " + trimTo500(resultCode));
+        logConsumer.accept("[SQL] 输出参数 p_errmsg: " + trimTo500(errMsg));
+    }
+
+    private String readOutParam(CallableStatement cs, int index, int paramCount) throws Exception {
+        if (index > paramCount) {
+            return null;
+        }
+        return cs.getString(index);
+    }
+
+    private int countParams(String argsText) {
+        String trimmed = argsText == null ? "" : argsText.trim();
+        if (trimmed.isEmpty()) {
+            return 0;
+        }
+        return (int) Arrays.stream(trimmed.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .count();
+    }
+
+    private String buildCallableSql(String procedureName, int paramCount) {
+        if (paramCount <= 0) {
+            return "{call " + procedureName + "}";
+        }
+        String placeholders = String.join(",", java.util.Collections.nCopies(paramCount, "?"));
+        return "{call " + procedureName + "(" + placeholders + ")}";
     }
 
     // ===== 工具方法 =====

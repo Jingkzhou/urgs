@@ -3,6 +3,7 @@ package com.example.executor.quartz.service;
 import com.alibaba.druid.pool.DruidDataSource;
 import com.example.executor.datasource.DataSourceConfigClient;
 import com.example.executor.datasource.ResolvedDataSourceConfig;
+import com.example.executor.notification.TaskNotificationService;
 import com.example.executor.quartz.constant.TaskExeStatusEnum;
 import com.example.executor.quartz.dao.QuartzTaskDao;
 import com.example.executor.quartz.dao.QuartzTaskStatusDao;
@@ -52,6 +53,9 @@ public class ExecutorTaskService {
 
     @Autowired
     private DataSourceConfigClient dataSourceConfigClient;
+
+    @Autowired
+    private TaskNotificationService taskNotificationService;
 
     // ===== 对外查询接口 =====
 
@@ -155,6 +159,7 @@ public class ExecutorTaskService {
         applyFinalStatus(status, result);
         updateStatus(status);
         taskExecutionLogService.finish(logContext, isSuccess(result), status.getMsg());
+        taskNotificationService.notifyTaskResult(task, status, logConsumer);
     }
 
     /**

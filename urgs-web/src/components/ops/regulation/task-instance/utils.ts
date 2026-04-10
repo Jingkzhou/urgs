@@ -79,12 +79,13 @@ export const normalizeStatus = (item: QuartzTaskStatusApiModel): QuartzTaskStatu
 
 export const normalizeLog = (item: QuartzTaskLogApiModel): QuartzTaskExecutionLog => {
     const processStatus = Number(item.processStatus ?? 0);
-    const mappedStatus = processStatus === 0 ? 3 : processStatus === 1 ? 4 : 1;
+    const mappedStatus = processStatus === 0 ? 2 : 3;
+    const dataDate = item.taskParams?.match(/dataDate=(\d{8})/)?.[1] ?? null;
     return {
         id: Number(item.id),
         task_id: Number(item.taskId),
         instance_id: null,
-        data_date: null,
+        data_date: dataDate,
         status: mappedStatus as 0 | 1 | 2 | 3,
         trigger_type: '定时触发',
         begin_time: null,

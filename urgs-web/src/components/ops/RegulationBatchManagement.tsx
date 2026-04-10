@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
-import { Modal } from 'antd';
+import React, { useEffect, useState } from 'react';
+import { Modal, message } from 'antd';
 import { ClipboardList, TimerReset } from 'lucide-react';
 import TaskManagement from './regulation/TaskManagement';
 import TaskInstance from './regulation/TaskInstance';
 import TaskExecutionLog from './regulation/TaskExecutionLog';
-import { QuartzTask, quartzTaskExecutionLogsMock, quartzTaskStatusesMock, quartzTasksMock } from './regulation/mockData';
+import { queryQuartzTaskLog, queryQuartzTasks } from '@/api/ops';
+import { QuartzTask, QuartzTaskExecutionLog } from './regulation/mockData';
+import { normalizeLog, normalizeTask } from './regulation/task-instance/utils';
 
 type RegulationView = 'task-management' | 'task-instance';
 
@@ -16,10 +18,66 @@ const navItems = [
 const RegulationBatchManagement: React.FC = () => {
     const [activeView, setActiveView] = useState<RegulationView>('task-management');
     const [executionLogVisible, setExecutionLogVisible] = useState(false);
+    const [tasks, setTasks] = useState<QuartzTask[]>([]);
+    const [logs, setLogs] = useState<QuartzTaskExecutionLog[]>([]);
     const [selectedLogTask, setSelectedLogTask] = useState<{ id: number | null; name: string | null }>({
         id: null,
         name: null,
     });
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadTasks = async () => {
+            try {
+                const response = await queryQuartzTasks({ pageNum: 1, pageSize: 500 });
+                if (!response?.success) {
+                    throw new Error(response?.msg || '加载任务失败');
+                }
+                if (cancelled) return;
+                setTasks((response.data?.list || []).map(normalizeTask));
+            } catch (error: any) {
+                if (!cancelled) {
+                    message.error(error?.message || '加载任务失败');
+                }
+            }
+        };
+
+        void loadTasks();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!executionLogVisible || !selectedLogTask.id) {
+            setLogs([]);
+            return;
+        }
+
+        let cancelled = false;
+
+        const loadLogs = async () => {
+            try {
+                const response = await queryQuartzTaskLog(selectedLogTask.id!, 1, 200);
+                if (!response?.success) {
+                    throw new Error(response?.msg || '加载执行日志失败');
+                }
+                if (cancelled) return;
+                setLogs((response.data?.list || []).map(normalizeLog));
+            } catch (error: any) {
+                if (!cancelled) {
+                    setLogs([]);
+                    message.error(error?.message || '加载执行日志失败');
+                }
+            }
+        };
+
+        void loadLogs();
+        return () => {
+            cancelled = true;
+        };
+    }, [executionLogVisible, selectedLogTask.id]);
 
     const handleOpenTaskLog = (task: QuartzTask) => {
         setSelectedLogTask({ id: task.id, name: task.task_name });
@@ -84,8 +142,8 @@ const RegulationBatchManagement: React.FC = () => {
                 styles={{ body: { padding: 16 } }}
             >
                 <TaskExecutionLog
-                    tasks={quartzTasksMock}
-                    logs={quartzTaskExecutionLogsMock}
+                    tasks={tasks}
+                    logs={logs}
                     lockTaskId={selectedLogTask.id}
                     lockTaskName={selectedLogTask.name}
                     embedded
