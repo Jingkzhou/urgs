@@ -93,6 +93,13 @@ public class ExecutorTaskService {
                 ResolvedDataSourceConfig resolvedDataSourceConfig = task.getDatasourceId() == null
                         ? null
                         : dataSourceConfigClient.getResolvedConfig(task.getDatasourceId());
+                if (resolvedDataSourceConfig != null) {
+                    log.info("{} resolved datasource: id={}, url={}, driver={}",
+                            taskTag(task, dataDate),
+                            resolvedDataSourceConfig.getId(),
+                            resolvedDataSourceConfig.getUrl(),
+                            resolvedDataSourceConfig.getDriver());
+                }
                 // 需要数据源时在线程内懒获取，避免提交时阻塞
                 DruidDataSource ds = isSqlTask(task) ? dataSourceCacheManager.getOrCreate(resolvedDataSourceConfig) : null;
                 TaskExecutor executor = createExecutor(task, ds, resolvedDataSourceConfig);

@@ -37,6 +37,7 @@ export interface RowContextMenuState {
 }
 
 export interface TaskInstanceStats {
+    totalInstances: number;
     waitingInstances: number;
     runningInstances: number;
     successInstances: number;

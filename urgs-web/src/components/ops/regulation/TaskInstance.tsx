@@ -26,6 +26,13 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     const todayDate = dayjs().format('YYYY-MM-DD');
     const [taskList, setTaskList] = useState<QuartzTask[]>([]);
     const [instanceList, setInstanceList] = useState<QuartzTaskStatus[]>([]);
+    const [summaryStats, setSummaryStats] = useState({
+        totalInstances: 0,
+        waitingInstances: 0,
+        runningInstances: 0,
+        successInstances: 0,
+        failedInstances: 0,
+    });
     const [logList, setLogList] = useState<QuartzTaskExecutionLog[]>([]);
     const [draftSearchKeyword, setDraftSearchKeyword] = useState('');
     const [draftTaskSystemFilter, setDraftTaskSystemFilter] = useState('');
@@ -94,7 +101,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
         }
     }, []);
 
-    const loadInstances = useCallback(async (filters?: {
+    const queryAllInstances = useCallback(async (filters?: {
         createDate?: string;
         dataDate?: string;
         status?: string;
@@ -124,11 +131,48 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                 });
             }
 
-            setInstanceList(mergedInstances);
+            return mergedInstances;
         } catch (error: any) {
             message.error(error?.message || '加载实例失败');
+            return null;
         }
     }, [buildInstanceQueryParams]);
+
+    const buildStats = useCallback((instances: QuartzTaskStatus[]) => ({
+        totalInstances: instances.length,
+        waitingInstances: instances.filter(instance => instance.status === 1).length,
+        runningInstances: instances.filter(instance => instance.status === 2).length,
+        successInstances: instances.filter(instance => instance.status === 3).length,
+        failedInstances: instances.filter(instance => instance.status === 4).length,
+    }), []);
+
+    const loadInstances = useCallback(async (filters?: {
+        createDate?: string;
+        dataDate?: string;
+        status?: string;
+        taskSystem?: string;
+        keyword?: string;
+    }) => {
+        const mergedInstances = await queryAllInstances(filters);
+        if (mergedInstances) {
+            setInstanceList(mergedInstances);
+        }
+    }, [queryAllInstances]);
+
+    const loadTodaySummaryStats = useCallback(async () => {
+        const todayInstances = await queryAllInstances({
+            createDate: todayDate,
+            dataDate: '',
+            status: '',
+            taskSystem: '',
+            keyword: '',
+        });
+        if (todayInstances) {
+            const nextStats = buildStats(todayInstances);
+            setSummaryStats(nextStats);
+            onStatsChange?.(nextStats);
+        }
+    }, [buildStats, onStatsChange, queryAllInstances, todayDate]);
 
     useEffect(() => {
         loadTasks();
@@ -137,6 +181,10 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     useEffect(() => {
         loadInstances();
     }, [loadInstances]);
+
+    useEffect(() => {
+        loadTodaySummaryStats();
+    }, [loadTodaySummaryStats]);
 
     useEffect(() => {
         const taskId = selectedInstance?.plan_id;
@@ -209,15 +257,6 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
             return matchesKeyword && matchesTaskSystem && matchesDataDate && matchesCreateDate && matchesStatus;
         });
     }, [createDateFilter, dataDateFilter, instanceList, searchKeyword, statusFilter, taskMap, taskSystemFilter]);
-
-    useEffect(() => {
-        onStatsChange?.({
-            waitingInstances: filteredInstances.filter(instance => instance.status === 1).length,
-            runningInstances: filteredInstances.filter(instance => instance.status === 2).length,
-            successInstances: filteredInstances.filter(instance => instance.status === 3).length,
-            failedInstances: filteredInstances.filter(instance => instance.status === 4).length,
-        });
-    }, [filteredInstances, onStatsChange]);
 
     const pagedInstances = useMemo(() => {
         const start = (currentPage - 1) * pageSize;
@@ -491,6 +530,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                 updateInstance(instance.id, markInstanceWaiting);
                 setSelectedInstanceIds(prev => prev.filter(id => id !== instance.id));
                 await loadInstances();
+                await loadTodaySummaryStats();
                 message.success(`已执行实例 #${instance.id}`);
             })
             .catch((error: any) => {
@@ -511,6 +551,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                 }
                 setSelectedInstanceIds(prev => prev.filter(id => id !== instance.id));
                 await loadInstances();
+                await loadTodaySummaryStats();
                 message.success(response?.data || `已强制停止实例 #${instance.id}`);
             })
             .catch((error: any) => {
@@ -532,6 +573,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                 updateInstance(instance.id, markInstancePassed);
                 setSelectedInstanceIds(prev => prev.filter(id => id !== instance.id));
                 await loadInstances();
+                await loadTodaySummaryStats();
                 message.success(`已强制通过实例 #${instance.id}`);
             })
             .catch((error: any) => {
@@ -621,6 +663,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
             updateInstances(selectedInstanceIds, markInstanceWaiting);
             setSelectedInstanceIds([]);
             await loadInstances();
+            await loadTodaySummaryStats();
             message.success(`已批量执行 ${selectedInstances.length} 条实例`);
         } catch (error: any) {
             message.error(error?.message || '批量执行失败');
@@ -644,6 +687,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                 }
                 setSelectedInstanceIds([]);
                 await loadInstances();
+                await loadTodaySummaryStats();
                 message.success(response?.data || `已批量强制停止 ${selectedInstances.length} 条实例`);
             })
             .catch((error: any) => {
@@ -669,6 +713,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                 updateInstances(selectedInstanceIds, markInstancePassed);
                 setSelectedInstanceIds([]);
                 await loadInstances();
+                await loadTodaySummaryStats();
                 message.success(`已批量强制通过 ${selectedInstances.length} 条实例`);
             })
             .catch((error: any) => {
@@ -738,6 +783,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                 filteredInstances={filteredInstances}
                 pagedInstances={pagedInstances}
                 selectedInstances={selectedInstances}
+                summaryStats={summaryStats}
                 taskMap={taskMap}
                 taskNameMap={taskNameMap}
                 taskSystemOptions={taskSystemOptions}

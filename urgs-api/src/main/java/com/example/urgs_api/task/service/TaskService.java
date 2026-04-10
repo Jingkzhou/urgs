@@ -2,6 +2,10 @@ package com.example.urgs_api.task.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.example.urgs_api.quartz.dao.QuartzTaskDao;
+import com.example.urgs_api.quartz.dao.QuartzTaskStatusDao;
+import com.example.urgs_api.quartz.domain.entity.QuartzTaskEntity;
+import com.example.urgs_api.quartz.domain.entity.QuartzTaskStatusEntity;
 import com.example.urgs_api.task.entity.Task;
 import com.example.urgs_api.task.entity.TaskDependency;
 import com.example.urgs_api.task.entity.TaskInstance;
@@ -13,12 +17,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import com.example.urgs_api.task.vo.UpstreamDependencyVO;
 import com.example.urgs_api.task.vo.WorkflowStatsVO;
 import com.example.urgs_api.task.vo.TaskDefinitionStatsVO;
@@ -43,6 +50,12 @@ public class TaskService {
 
     @Autowired
     private WorkflowMapper workflowMapper;
+
+    @Autowired
+    private QuartzTaskStatusDao quartzTaskStatusDao;
+
+    @Autowired
+    private QuartzTaskDao quartzTaskDao;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -520,23 +533,27 @@ public class TaskService {
     }
 
     public com.example.urgs_api.task.vo.TaskInstanceStatsVO getDailyStats(String date) {
-        if (date == null) {
-            date = java.time.LocalDate.now().toString(); // YYYY-MM-DD
-        }
+        String compactDate = normalizeCompactDate(date);
 
-        QueryWrapper<TaskInstance> query = new QueryWrapper<>();
-        query.like("create_time", date);
+        QueryWrapper<QuartzTaskStatusEntity> query = new QueryWrapper<>();
+        query.eq("create_date", compactDate);
 
-        List<TaskInstance> tasks = taskInstanceMapper.selectList(query);
+        List<QuartzTaskStatusEntity> tasks = quartzTaskStatusDao.selectList(query);
 
         com.example.urgs_api.task.vo.TaskInstanceStatsVO stats = new com.example.urgs_api.task.vo.TaskInstanceStatsVO();
         stats.setTotal(tasks.size());
 
         long success = tasks.stream()
-                .filter(t -> "SUCCESS".equals(t.getStatus()) || "FORCE_SUCCESS".equals(t.getStatus())).count();
-        long failed = tasks.stream().filter(t -> "FAIL".equals(t.getStatus())).count();
-        long running = tasks.stream().filter(t -> "RUNNING".equals(t.getStatus())).count();
-        long waiting = tasks.stream().filter(t -> "WAITING".equals(t.getStatus()) || "PENDING".equals(t.getStatus()))
+                .filter(t -> t.getStatus() == 3)
+                .count();
+        long failed = tasks.stream()
+                .filter(t -> t.getStatus() == 4)
+                .count();
+        long running = tasks.stream()
+                .filter(t -> t.getStatus() == 2)
+                .count();
+        long waiting = tasks.stream()
+                .filter(t -> t.getStatus() == 1)
                 .count();
 
         stats.setSuccess(success);
@@ -554,22 +571,24 @@ public class TaskService {
     }
 
     public java.util.List<java.util.Map<String, Object>> getHourlyThroughput(String date) {
-        if (date == null) {
-            date = java.time.LocalDate.now().toString();
-        }
+        String compactDate = normalizeCompactDate(date);
 
-        QueryWrapper<TaskInstance> query = new QueryWrapper<>();
-        query.like("end_time", date);
-        query.in("status", "SUCCESS", "FORCE_SUCCESS");
+        QueryWrapper<QuartzTaskStatusEntity> query = new QueryWrapper<>();
+        query.eq("create_date", compactDate);
+        query.eq("status", 3);
+        query.isNotNull("end_time");
 
-        List<TaskInstance> tasks = taskInstanceMapper.selectList(query);
+        List<QuartzTaskStatusEntity> tasks = quartzTaskStatusDao.selectList(query);
 
         // Group by hour
-        java.util.Map<Integer, Long> hourlyCounts = tasks.stream()
-                .filter(t -> t.getEndTime() != null)
-                .collect(java.util.stream.Collectors.groupingBy(
-                        t -> t.getEndTime().getHour(),
-                        java.util.stream.Collectors.counting()));
+        java.util.Map<Integer, Long> hourlyCounts = new java.util.HashMap<>();
+        for (QuartzTaskStatusEntity task : tasks) {
+            if (task.getEndTime() == null) {
+                continue;
+            }
+            int hour = task.getEndTime().getHours();
+            hourlyCounts.put(hour, hourlyCounts.getOrDefault(hour, 0L) + 1);
+        }
 
         java.util.List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
         for (int i = 0; i < 24; i++) {
@@ -583,72 +602,53 @@ public class TaskService {
     }
 
     public List<WorkflowStatsVO> getWorkflowStats(String date) {
-        if (date == null) {
-            date = java.time.LocalDate.now().toString();
+        String compactDate = normalizeCompactDate(date);
+
+        QueryWrapper<QuartzTaskStatusEntity> query = new QueryWrapper<>();
+        query.eq("create_date", compactDate);
+        List<QuartzTaskStatusEntity> instances = quartzTaskStatusDao.selectList(query);
+
+        if (instances.isEmpty()) {
+            return new ArrayList<>();
         }
 
-        // 1. Get all workflows
-        List<Workflow> workflows = workflowMapper.selectList(null);
+        Set<Long> planIds = instances.stream()
+                .map(QuartzTaskStatusEntity::getPlanId)
+                .collect(Collectors.toSet());
 
-        // 2. Get all task instances for the date
-        QueryWrapper<TaskInstance> query = new QueryWrapper<>();
-        query.like("create_time", date);
-        List<TaskInstance> instances = taskInstanceMapper.selectList(query);
+        Map<Long, QuartzTaskEntity> taskMap = quartzTaskDao.selectBatchIds(planIds).stream()
+                .collect(Collectors.toMap(QuartzTaskEntity::getId, task -> task));
 
-        // Map taskId -> List<TaskInstance>
-        Map<String, List<TaskInstance>> taskInstanceMap = new HashMap<>();
-        for (TaskInstance instance : instances) {
-            taskInstanceMap.computeIfAbsent(instance.getTaskId(), k -> new ArrayList<>()).add(instance);
-        }
+        Map<String, WorkflowStatsVO> workflowStatsMap = new HashMap<>();
 
-        List<WorkflowStatsVO> result = new ArrayList<>();
+        for (QuartzTaskStatusEntity instance : instances) {
+            QuartzTaskEntity task = taskMap.get(instance.getPlanId());
+            String workflowName = task == null || !StringUtils.hasText(task.getTaskSystem())
+                    ? "未分组"
+                    : task.getTaskSystem();
 
-        for (Workflow workflow : workflows) {
-            WorkflowStatsVO vo = new WorkflowStatsVO();
-            vo.setWorkflowName(workflow.getName());
-            long total = 0;
-            long success = 0;
-            long failed = 0;
+            WorkflowStatsVO vo = workflowStatsMap.computeIfAbsent(workflowName, key -> {
+                WorkflowStatsVO item = new WorkflowStatsVO();
+                item.setWorkflowName(key);
+                return item;
+            });
 
-            try {
-                if (workflow.getContent() != null) {
-                    JsonNode root = objectMapper.readTree(workflow.getContent());
-                    if (root.has("nodes")) {
-                        for (JsonNode node : root.get("nodes")) {
-                            if (node.has("id")) {
-                                String taskId = node.get("id").asText();
-                                List<TaskInstance> taskInstances = taskInstanceMap.get(taskId);
-                                if (taskInstances != null) {
-                                    total += taskInstances.size();
-                                    success += taskInstances.stream()
-                                            .filter(t -> "SUCCESS".equals(t.getStatus())
-                                                    || "FORCE_SUCCESS".equals(t.getStatus()))
-                                            .count();
-                                    failed += taskInstances.stream()
-                                            .filter(t -> "FAIL".equals(t.getStatus())
-                                                    || "FAILURE".equals(t.getStatus())) // Cover both possibilities just
-                                                                                        // in case
-                                            .count();
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-
-            vo.setTotal(total);
-            vo.setSuccess(success);
-            vo.setFailed(failed);
-
-            // Only add if there are instances (active today)
-            if (total > 0) {
-                result.add(vo);
+            vo.setTotal(vo.getTotal() + 1);
+            if (instance.getStatus() == 3) {
+                vo.setSuccess(vo.getSuccess() + 1);
+            } else if (instance.getStatus() == 4) {
+                vo.setFailed(vo.getFailed() + 1);
             }
         }
 
-        return result;
+        return workflowStatsMap.values().stream()
+                .sorted((left, right) -> Long.compare(right.getTotal(), left.getTotal()))
+                .collect(Collectors.toList());
+    }
+
+    private String normalizeCompactDate(String date) {
+        String resolvedDate = StringUtils.hasText(date) ? date : LocalDate.now().toString();
+        return resolvedDate.replace("-", "");
     }
 
     @Transactional(rollbackFor = Exception.class)

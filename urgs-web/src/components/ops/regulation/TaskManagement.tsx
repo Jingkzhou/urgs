@@ -42,6 +42,7 @@ interface TaskManagementProps {
 const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) => {
     const [taskList, setTaskList] = useState<QuartzTask[]>([]);
     const [taskTotal, setTaskTotal] = useState(0);
+    const [taskStatusSummary, setTaskStatusSummary] = useState({ normal: 0, paused: 0 });
     const [form] = Form.useForm<TaskFormValues>();
     const [keyword, setKeyword] = useState('');
     const [statusFilter, setStatusFilter] = useState<string>('');
@@ -153,9 +154,46 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
         }
     }, [buildTaskQueryParams, currentPage, pageSize]);
 
+    const loadTaskStatusSummary = useCallback(async () => {
+        try {
+            const summaryPageSize = 500;
+            const firstResponse = await queryQuartzTasks(buildTaskQueryParams(1, summaryPageSize));
+            if (!firstResponse?.success) throw new Error(firstResponse?.msg || '任务统计查询失败');
+
+            const allTasks = [...(firstResponse.data?.list || []).map(normalizeQuartzTask)];
+            const totalPages = Number(firstResponse.data?.pages || 1);
+
+            if (totalPages > 1) {
+                const restResponses = await Promise.all(
+                    Array.from({ length: totalPages - 1 }, (_, index) =>
+                        queryQuartzTasks(buildTaskQueryParams(index + 2, summaryPageSize))
+                    )
+                );
+
+                restResponses.forEach(response => {
+                    if (response?.success) {
+                        allTasks.push(...(response.data?.list || []).map(normalizeQuartzTask));
+                    }
+                });
+            }
+
+            setTaskStatusSummary({
+                normal: allTasks.filter(task => task.task_status === 0).length,
+                paused: allTasks.filter(task => task.task_status === 1).length,
+            });
+        } catch (error: any) {
+            message.error(error?.message || '加载任务统计失败');
+            setTaskStatusSummary({ normal: 0, paused: 0 });
+        }
+    }, [buildTaskQueryParams]);
+
     useEffect(() => {
         loadTasks(currentPage, pageSize);
     }, [currentPage, loadTasks, pageSize]);
+
+    useEffect(() => {
+        loadTaskStatusSummary();
+    }, [loadTaskStatusSummary]);
 
     useEffect(() => {
         setCurrentPage(1);
@@ -249,6 +287,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             const response = await saveOrUpdateQuartzTask(payload);
             if (!response?.success) throw new Error(response?.msg || '保存任务失败');
             await loadTasks(currentPage, pageSize);
+            await loadTaskStatusSummary();
             message.success(editingTask ? `已更新任务 ${values.task_name}` : `已创建任务 ${values.task_name}`);
             closeTaskModal();
         } catch (error: any) {
@@ -266,6 +305,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             const response = await deleteQuartzTask(task.id);
             if (!response?.success) throw new Error(response?.msg || '删除任务失败');
             await loadTasks(currentPage, pageSize);
+            await loadTaskStatusSummary();
             setSelectedTask(prev => prev?.id === task.id ? null : prev);
             message.success(`已删除任务 ${task.task_name}`);
         } catch (error: any) {
@@ -305,6 +345,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             const response = await pauseQuartzTask(task.id);
             if (!response?.success) throw new Error(response?.msg || '暂停任务失败');
             await loadTasks(currentPage, pageSize);
+            await loadTaskStatusSummary();
             message.success(`已暂停任务 ${task.task_name}`);
         } catch (error: any) {
             message.error(error?.message || '暂停任务失败');
@@ -317,6 +358,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             const response = await resumeQuartzTask(task.id);
             if (!response?.success) throw new Error(response?.msg || '恢复任务失败');
             await loadTasks(currentPage, pageSize);
+            await loadTaskStatusSummary();
             message.success(`已恢复任务 ${task.task_name}`);
         } catch (error: any) {
             message.error(error?.message || '恢复任务失败');
@@ -349,10 +391,10 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                 共 {taskTotal} 条任务
                             </span>
                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700">
-                                正常 {taskList.filter(task => task.task_status === 0).length}
+                                正常 {taskStatusSummary.normal}
                             </span>
                             <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-amber-700">
-                                暂停 {taskList.filter(task => task.task_status === 1).length}
+                                暂停 {taskStatusSummary.paused}
                             </span>
                             <button
                                 onClick={() => openTaskModal(null)}

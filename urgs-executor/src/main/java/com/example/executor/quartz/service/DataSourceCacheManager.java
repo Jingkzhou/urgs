@@ -5,6 +5,7 @@ import com.example.executor.datasource.ResolvedDataSourceConfig;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -30,14 +31,24 @@ public class DataSourceCacheManager {
             ds.setMaxWait(60000);
             ds.setTimeBetweenEvictionRunsMillis(60000);
             ds.setMinEvictableIdleTimeMillis(300000);
-            ds.setValidationQuery("SELECT 1");
+            ds.setValidationQuery(resolveValidationQuery(config));
             ds.setTestWhileIdle(true);
             ds.setTestOnBorrow(true);
             ds.setTestOnReturn(false);
             ds.setPoolPreparedStatements(true);
-            log.info("Create shared data source: {}", key);
+            log.info("Create shared data source: id={}, url={}, driver={}, validationQuery={}",
+                    key, config.getUrl(), config.getDriver(), ds.getValidationQuery());
             return ds;
         });
+    }
+
+    private String resolveValidationQuery(ResolvedDataSourceConfig config) {
+        String driver = config.getDriver() == null ? "" : config.getDriver().toLowerCase();
+        String url = config.getUrl() == null ? "" : config.getUrl().toLowerCase();
+        if (driver.contains("oracle") || url.startsWith("jdbc:oracle:")) {
+            return "SELECT 1 FROM DUAL";
+        }
+        return "SELECT 1";
     }
 
     @PreDestroy

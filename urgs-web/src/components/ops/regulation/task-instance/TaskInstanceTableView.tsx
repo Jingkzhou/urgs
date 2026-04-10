@@ -11,12 +11,13 @@ import {
     monoCellClass,
     tableCellClass,
 } from './constants';
-import { RowContextMenuState } from './types';
+import { RowContextMenuState, TaskInstanceStats } from './types';
 
 interface TaskInstanceTableViewProps {
     filteredInstances: QuartzTaskStatus[];
     pagedInstances: QuartzTaskStatus[];
     selectedInstances: QuartzTaskStatus[];
+    summaryStats: TaskInstanceStats;
     taskMap: Map<number, QuartzTask>;
     taskNameMap: Map<number, string>;
     taskSystemOptions: string[];
@@ -55,6 +56,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     filteredInstances,
     pagedInstances,
     selectedInstances,
+    summaryStats,
     taskMap,
     taskNameMap,
     taskSystemOptions,
@@ -104,16 +106,19 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                         <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5">
-                            等待 {filteredInstances.filter(instance => instance.status === 1).length}
+                            全部 {summaryStats.totalInstances}
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5">
+                            等待 {summaryStats.waitingInstances}
                         </span>
                         <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1.5 text-blue-700">
-                            执行中 {filteredInstances.filter(instance => instance.status === 2).length}
+                            执行中 {summaryStats.runningInstances}
                         </span>
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700">
-                            成功 {filteredInstances.filter(instance => instance.status === 3).length}
+                            成功 {summaryStats.successInstances}
                         </span>
                         <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-3 py-1.5 text-red-700">
-                            失败 {filteredInstances.filter(instance => instance.status === 4).length}
+                            失败 {summaryStats.failedInstances}
                         </span>
                     </div>
                 </div>
