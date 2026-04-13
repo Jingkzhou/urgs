@@ -176,6 +176,19 @@ const OrgForm: React.FC<{
 };
 
 const OrgManagement: React.FC = () => {
+    const IMPORT_HEADERS = {
+        name: '机构名称',
+        code: '机构代码',
+        type: '机构类型',
+        typeName: '类型名称',
+        parentId: '上级机构ID',
+        parentCode: '上级机构代码',
+        parentName: '上级机构名称',
+        orderNum: '排序',
+        status: '状态',
+    } as const;
+    const REQUIRED_IMPORT_COLUMNS = new Set([IMPORT_HEADERS.name, IMPORT_HEADERS.code, IMPORT_HEADERS.type]);
+
     const [orgs, setOrgs] = useState<OrgNode[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -247,6 +260,30 @@ const OrgManagement: React.FC = () => {
         return `"${normalized}"`;
     };
 
+    const normalizeImportHeader = (header: string) => {
+        return header
+            .replace(/^\uFEFF/, '')
+            .replace(/\*/g, '')
+            .replace(/（必填）|\(必填\)/g, '')
+            .replace(/\s+/g, '')
+            .trim();
+    };
+
+    const resolveTypeName = (type?: string) => {
+        switch ((type || '').trim()) {
+            case 'HEAD':
+                return '总行';
+            case 'BRANCH':
+                return '一级分行';
+            case 'SUB_BRANCH':
+                return '二级支行';
+            case 'DEPT':
+                return '部门/中心';
+            default:
+                return '';
+        }
+    };
+
     const fetchOrgs = async () => {
         setLoading(true);
         setError(null);
@@ -278,7 +315,28 @@ const OrgManagement: React.FC = () => {
             if (!res.ok) throw new Error('Export failed');
 
             const data = await res.json();
-            const headers = ['机构名称', '机构代码', '机构类型', '类型名称', '上级机构ID', '上级机构代码', '上级机构名称', '排序', '状态'];
+            const headers = [
+                `${IMPORT_HEADERS.name}*`,
+                `${IMPORT_HEADERS.code}*`,
+                `${IMPORT_HEADERS.type}*`,
+                IMPORT_HEADERS.typeName,
+                IMPORT_HEADERS.parentId,
+                IMPORT_HEADERS.parentCode,
+                IMPORT_HEADERS.parentName,
+                IMPORT_HEADERS.orderNum,
+                IMPORT_HEADERS.status
+            ];
+            const descriptionRow = [
+                '必填',
+                '必填',
+                '必填：HEAD/BRANCH/SUB_BRANCH/DEPT',
+                '可选，不填时按机构类型自动补齐',
+                '可选，不填默认 root',
+                '可选，优先级低于上级机构ID',
+                '可选，优先级低于上级机构代码',
+                '可选，不填默认 0',
+                '可选：正常/停用，不填默认 正常'
+            ];
             const rows = data.map((org: any) => [
                 escapeCsvCell(org.name),
                 escapeCsvCell(org.code),
@@ -293,6 +351,7 @@ const OrgManagement: React.FC = () => {
 
             const csvContent = "\uFEFF" + [
                 headers.map(escapeCsvCell),
+                descriptionRow.map(escapeCsvCell),
                 ...rows
             ].map(row => row.join(",")).join("\n");
 
@@ -329,22 +388,22 @@ const OrgManagement: React.FC = () => {
                     payload = JSON.parse(text);
                 } else if (file.name.endsWith('.csv')) {
                     const lines = text.split(/\r?\n/).filter(Boolean);
-                    const headers = splitCSVLine(lines[0]);
+                    const headers = splitCSVLine(lines[0]).map(normalizeImportHeader);
                     payload = lines.slice(1).map(line => {
                         const values = splitCSVLine(line);
                         const item: Record<string, any> = {};
 
                         headers.forEach((header, index) => {
                             const value = values[index] ?? '';
-                            if (header === '机构名称') item.name = value;
-                            else if (header === '机构代码') item.code = value;
-                            else if (header === '机构类型') item.type = value;
-                            else if (header === '类型名称') item.typeName = value;
-                            else if (header === '上级机构ID') item.parentId = value || 'root';
-                            else if (header === '上级机构代码') item.parentCode = value;
-                            else if (header === '上级机构名称') item.parentName = value;
-                            else if (header === '排序') item.orderNum = value ? Number(value) : 0;
-                            else if (header === '状态') item.status = value === '停用' ? 'inactive' : 'active';
+                            if (header === IMPORT_HEADERS.name) item.name = value;
+                            else if (header === IMPORT_HEADERS.code) item.code = value;
+                            else if (header === IMPORT_HEADERS.type) item.type = value;
+                            else if (header === IMPORT_HEADERS.typeName) item.typeName = value;
+                            else if (header === IMPORT_HEADERS.parentId) item.parentId = value || 'root';
+                            else if (header === IMPORT_HEADERS.parentCode) item.parentCode = value;
+                            else if (header === IMPORT_HEADERS.parentName) item.parentName = value;
+                            else if (header === IMPORT_HEADERS.orderNum) item.orderNum = value ? Number(value) : 0;
+                            else if (header === IMPORT_HEADERS.status) item.status = value === '停用' ? 'inactive' : 'active';
                         });
 
                         if (!item.parentId && !item.parentCode && !item.parentName) {
@@ -356,8 +415,27 @@ const OrgManagement: React.FC = () => {
                         if (!item.status) {
                             item.status = 'active';
                         }
+                        if (!item.typeName) {
+                            item.typeName = resolveTypeName(item.type);
+                        }
                         return item;
-                    }).filter(item => item.code && item.name);
+                    }).filter(item => {
+                        const hasInstructionTag = Object.keys(IMPORT_HEADERS).every(key => {
+                            const cellValue = String(item[key] ?? '').trim();
+                            return !cellValue || cellValue.includes('必填') || cellValue.includes('可选');
+                        });
+
+                        if (hasInstructionTag) {
+                            return false;
+                        }
+
+                        return Array.from(REQUIRED_IMPORT_COLUMNS).every(column => {
+                            if (column === IMPORT_HEADERS.name) return Boolean(item.name);
+                            if (column === IMPORT_HEADERS.code) return Boolean(item.code);
+                            if (column === IMPORT_HEADERS.type) return Boolean(item.type);
+                            return true;
+                        });
+                    });
                 }
 
                 if (payload.length === 0) {
@@ -369,13 +447,13 @@ const OrgManagement: React.FC = () => {
                     name: item.name,
                     code: item.code,
                     type: item.type,
-                    typeName: item.typeName,
+                    typeName: item.typeName || resolveTypeName(item.type),
                     status: item.status || 'active',
                     parentId: item.parentId || 'root',
                     parentCode: item.parentCode || '',
                     parentName: item.parentName || '',
                     orderNum: typeof item.orderNum === 'number' && !Number.isNaN(item.orderNum) ? item.orderNum : 0,
-                })).filter(item => item.name && item.code);
+                })).filter(item => item.name && item.code && item.type);
 
                 const token = localStorage.getItem('auth_token');
                 const res = await fetch('/api/orgs/batch', {
