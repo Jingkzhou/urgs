@@ -21,8 +21,8 @@
     "antd": "^6.0.0",
     "axios": "^1.13.2",
     "dagre": "^0.8.5",
-    "dayjs": "^1.11.13",
     "date-fns": "^4.1.0",
+    "dayjs": "^1.11.13",
     "framer-motion": "^12.23.26",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.27",
@@ -42,6 +42,7 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "uuid": "^13.0.0",
+    "xlsx": "^0.18.5",
     "zod": "^4.3.6"
   },
   "devDependencies": {

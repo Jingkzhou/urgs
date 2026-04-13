@@ -1,5 +1,6 @@
 package com.example.urgs_api.user.controller;
 
+import com.example.urgs_api.user.dto.UserBatchImportResultDTO;
 import com.example.urgs_api.user.dto.UserDTO;
 import com.example.urgs_api.user.dto.UserRequest;
 import com.example.urgs_api.user.model.User;
@@ -62,12 +63,12 @@ public class UserController {
     }
 
     @PostMapping("/batch")
-    public ResponseEntity<Void> batch(@RequestBody List<UserRequest> requests) {
+    public ResponseEntity<UserBatchImportResultDTO> batch(@RequestBody List<UserRequest> requests) {
         List<User> users = requests.stream()
                 .map(req -> toEntity(req, null))
                 .collect(Collectors.toList());
-        userService.batchUpsert(users);
-        return ResponseEntity.ok().build();
+        UserBatchImportResultDTO result = userService.batchUpsert(users);
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/export")

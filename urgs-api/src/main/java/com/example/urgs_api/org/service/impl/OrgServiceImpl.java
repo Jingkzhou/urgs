@@ -94,13 +94,6 @@ public class OrgServiceImpl extends ServiceImpl<OrgMapper, Org> implements OrgSe
             return "root";
         }
 
-        if (StringUtils.hasText(request.getParentId())) {
-            Org parent = orgById.get(request.getParentId());
-            if (isValidParent(current, parent)) {
-                return String.valueOf(parent.getId());
-            }
-        }
-
         if (StringUtils.hasText(request.getParentCode())) {
             Org parent = orgByCode.get(request.getParentCode());
             if (isValidParent(current, parent)) {
@@ -110,6 +103,13 @@ public class OrgServiceImpl extends ServiceImpl<OrgMapper, Org> implements OrgSe
 
         if (StringUtils.hasText(request.getParentName())) {
             Org parent = orgByName.get(request.getParentName());
+            if (isValidParent(current, parent)) {
+                return String.valueOf(parent.getId());
+            }
+        }
+
+        if (StringUtils.hasText(request.getParentId())) {
+            Org parent = orgById.get(request.getParentId());
             if (isValidParent(current, parent)) {
                 return String.valueOf(parent.getId());
             }

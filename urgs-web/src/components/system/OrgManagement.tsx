@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Building2, Landmark, LayoutGrid, ChevronDown, ChevronRight, Plus, Edit, Trash2, Save, X, ArrowLeft, FolderTree, Upload, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { OrgNode } from './types';
 import { ActionToolbar } from './Shared';
 import Auth from '../Auth';
@@ -176,18 +177,42 @@ const OrgForm: React.FC<{
 };
 
 const OrgManagement: React.FC = () => {
-    const IMPORT_HEADERS = {
-        name: '机构名称',
-        code: '机构代码',
-        type: '机构类型',
-        typeName: '类型名称',
-        parentId: '上级机构ID',
-        parentCode: '上级机构代码',
-        parentName: '上级机构名称',
-        orderNum: '排序',
-        status: '状态',
-    } as const;
-    const REQUIRED_IMPORT_COLUMNS = new Set([IMPORT_HEADERS.name, IMPORT_HEADERS.code, IMPORT_HEADERS.type]);
+    const CSV_COLUMNS = [
+        { key: 'name', label: '机构名称', required: true, description: '必填' },
+        { key: 'code', label: '机构代码', required: true, description: '必填' },
+        { key: 'type', label: '机构类型', required: true, description: '必填：HEAD/BRANCH/SUB_BRANCH/DEPT' },
+        { key: 'typeName', label: '类型名称', required: false, description: '可选，不填时按机构类型自动补齐' },
+        { key: 'parentCode', label: '上级机构代码', required: false, description: '推荐填写；按父机构代码建立树关系' },
+        { key: 'parentName', label: '上级机构名称', required: false, description: '可选；未填上级机构代码时可按名称匹配' },
+        { key: 'orderNum', label: '排序', required: false, description: '可选，不填默认 0' },
+        { key: 'status', label: '状态', required: false, description: '可选：正常/停用，不填默认 正常' },
+    ] as const;
+    const CSV_LABEL_TO_KEY = CSV_COLUMNS.reduce((acc, column) => {
+        acc[column.label] = column.key;
+        return acc;
+    }, {} as Record<string, typeof CSV_COLUMNS[number]['key']>);
+    const REQUIRED_IMPORT_COLUMNS = CSV_COLUMNS.filter(column => column.required);
+    const ORG_TYPE_OPTIONS = ['HEAD', 'BRANCH', 'SUB_BRANCH', 'DEPT'] as const;
+    const ORG_TYPE_ALIASES: Record<string, typeof ORG_TYPE_OPTIONS[number]> = {
+        HEAD: 'HEAD',
+        '总行': 'HEAD',
+        BRANCH: 'BRANCH',
+        '一级分行': 'BRANCH',
+        '分行': 'BRANCH',
+        SUB_BRANCH: 'SUB_BRANCH',
+        '二级支行': 'SUB_BRANCH',
+        '支行': 'SUB_BRANCH',
+        DEPT: 'DEPT',
+        '部门/中心': 'DEPT',
+        '部门': 'DEPT',
+        '中心': 'DEPT',
+    };
+    const STATUS_ALIASES: Record<string, 'active' | 'inactive'> = {
+        active: 'active',
+        inactive: 'inactive',
+        '正常': 'active',
+        '停用': 'inactive',
+    };
 
     const [orgs, setOrgs] = useState<OrgNode[]>([]);
     const [loading, setLoading] = useState(false);
@@ -229,37 +254,6 @@ const OrgManagement: React.FC = () => {
     const treeData = useMemo(() => buildOrgTree(orgs), [orgs]);
     const parentOptions = useMemo(() => [{ id: 'root', name: '根节点/总行' }, ...orgs.map(o => ({ id: o.id, name: o.name }))], [orgs]);
 
-    const splitCSVLine = (line: string) => {
-        const result: string[] = [];
-        let currentField = '';
-        let inQuotes = false;
-
-        for (let i = 0; i < line.length; i++) {
-            const char = line[i];
-            if (char === '"') {
-                if (inQuotes && line[i + 1] === '"') {
-                    currentField += '"';
-                    i++;
-                } else {
-                    inQuotes = !inQuotes;
-                }
-            } else if (char === ',' && !inQuotes) {
-                result.push(currentField.trim());
-                currentField = '';
-            } else {
-                currentField += char;
-            }
-        }
-
-        result.push(currentField.trim());
-        return result.map(v => v.replace(/^\uFEFF/, '').trim());
-    };
-
-    const escapeCsvCell = (value: unknown) => {
-        const normalized = String(value ?? '').replace(/"/g, '""');
-        return `"${normalized}"`;
-    };
-
     const normalizeImportHeader = (header: string) => {
         return header
             .replace(/^\uFEFF/, '')
@@ -269,8 +263,14 @@ const OrgManagement: React.FC = () => {
             .trim();
     };
 
+    const normalizeOrgType = (type?: string, typeName?: string) => {
+        const normalizedType = (type || '').trim();
+        const normalizedTypeName = (typeName || '').trim();
+        return ORG_TYPE_ALIASES[normalizedType] || ORG_TYPE_ALIASES[normalizedTypeName] || '';
+    };
+
     const resolveTypeName = (type?: string) => {
-        switch ((type || '').trim()) {
+        switch (normalizeOrgType(type)) {
             case 'HEAD':
                 return '总行';
             case 'BRANCH':
@@ -282,6 +282,24 @@ const OrgManagement: React.FC = () => {
             default:
                 return '';
         }
+    };
+
+    const normalizeStatus = (status?: string) => {
+        const normalizedStatus = (status || '').trim();
+        return STATUS_ALIASES[normalizedStatus] || 'active';
+    };
+
+    const formatImportError = (errors: string[]) => {
+        const preview = errors.slice(0, 8);
+        return preview.join('\n') + (errors.length > preview.length ? `\n...共 ${errors.length} 处错误` : '');
+    };
+
+    const parseWorksheetRows = (sheet: XLSX.WorkSheet) => {
+        return XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(sheet, {
+            header: 1,
+            defval: '',
+            raw: false,
+        }).map(row => row.map(cell => String(cell ?? '').trim()));
     };
 
     const fetchOrgs = async () => {
@@ -315,56 +333,22 @@ const OrgManagement: React.FC = () => {
             if (!res.ok) throw new Error('Export failed');
 
             const data = await res.json();
-            const headers = [
-                `${IMPORT_HEADERS.name}*`,
-                `${IMPORT_HEADERS.code}*`,
-                `${IMPORT_HEADERS.type}*`,
-                IMPORT_HEADERS.typeName,
-                IMPORT_HEADERS.parentId,
-                IMPORT_HEADERS.parentCode,
-                IMPORT_HEADERS.parentName,
-                IMPORT_HEADERS.orderNum,
-                IMPORT_HEADERS.status
-            ];
-            const descriptionRow = [
-                '必填',
-                '必填',
-                '必填：HEAD/BRANCH/SUB_BRANCH/DEPT',
-                '可选，不填时按机构类型自动补齐',
-                '可选，不填默认 root',
-                '可选，优先级低于上级机构ID',
-                '可选，优先级低于上级机构代码',
-                '可选，不填默认 0',
-                '可选：正常/停用，不填默认 正常'
-            ];
+            const headers = CSV_COLUMNS.map(column => `${column.label}${column.required ? '*' : ''}`);
+            const descriptionRow = CSV_COLUMNS.map(column => column.description);
             const rows = data.map((org: any) => [
-                escapeCsvCell(org.name),
-                escapeCsvCell(org.code),
-                escapeCsvCell(org.type),
-                escapeCsvCell(org.typeName),
-                escapeCsvCell(org.parentId || 'root'),
-                escapeCsvCell(org.parentCode || ''),
-                escapeCsvCell(org.parentName || ''),
-                escapeCsvCell(org.orderNum ?? 0),
-                escapeCsvCell(org.status === 'inactive' ? '停用' : '正常')
+                org.name ?? '',
+                org.code ?? '',
+                normalizeOrgType(org.type, org.typeName),
+                org.typeName || resolveTypeName(org.type),
+                org.parentCode || '',
+                org.parentName || '',
+                org.orderNum ?? 0,
+                normalizeStatus(org.status) === 'inactive' ? '停用' : '正常'
             ]);
-
-            const csvContent = "\uFEFF" + [
-                headers.map(escapeCsvCell),
-                descriptionRow.map(escapeCsvCell),
-                ...rows
-            ].map(row => row.join(",")).join("\n");
-
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.setAttribute('href', url);
-            link.setAttribute('download', `机构列表_${new Date().toLocaleDateString()}.csv`);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
+            const sheet = XLSX.utils.aoa_to_sheet([headers, descriptionRow, ...rows]);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, sheet, '机构模板');
+            XLSX.writeFile(workbook, `机构列表_${new Date().toLocaleDateString()}.xlsx`);
         } catch (err) {
             alert('导出失败，请重试');
         }
@@ -381,75 +365,114 @@ const OrgManagement: React.FC = () => {
         const reader = new FileReader();
         reader.onload = async (event) => {
             try {
-                const text = event.target?.result as string;
                 let payload: any[] = [];
 
                 if (file.name.endsWith('.json')) {
+                    const text = event.target?.result as string;
                     payload = JSON.parse(text);
-                } else if (file.name.endsWith('.csv')) {
-                    const lines = text.split(/\r?\n/).filter(Boolean);
-                    const headers = splitCSVLine(lines[0]).map(normalizeImportHeader);
-                    payload = lines.slice(1).map(line => {
-                        const values = splitCSVLine(line);
+                } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                    const workbook = XLSX.read(event.target?.result, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const firstSheet = workbook.Sheets[firstSheetName];
+                    const rows = parseWorksheetRows(firstSheet).filter(row => row.some(cell => cell !== ''));
+
+                    if (rows.length === 0) {
+                        alert('导入文件为空');
+                        return;
+                    }
+
+                    const headers = rows[0].map(normalizeImportHeader);
+                    const missingHeaders = REQUIRED_IMPORT_COLUMNS
+                        .map(column => column.label)
+                        .filter(label => !headers.includes(label));
+
+                    if (missingHeaders.length > 0) {
+                        alert(`导入模板不正确，缺少表头：${missingHeaders.join('、')}`);
+                        return;
+                    }
+
+                    const validationErrors: string[] = [];
+                    payload = rows.slice(1).map((values, index) => {
                         const item: Record<string, any> = {};
+                        const rowNumber = index + 2;
 
                         headers.forEach((header, index) => {
                             const value = values[index] ?? '';
-                            if (header === IMPORT_HEADERS.name) item.name = value;
-                            else if (header === IMPORT_HEADERS.code) item.code = value;
-                            else if (header === IMPORT_HEADERS.type) item.type = value;
-                            else if (header === IMPORT_HEADERS.typeName) item.typeName = value;
-                            else if (header === IMPORT_HEADERS.parentId) item.parentId = value || 'root';
-                            else if (header === IMPORT_HEADERS.parentCode) item.parentCode = value;
-                            else if (header === IMPORT_HEADERS.parentName) item.parentName = value;
-                            else if (header === IMPORT_HEADERS.orderNum) item.orderNum = value ? Number(value) : 0;
-                            else if (header === IMPORT_HEADERS.status) item.status = value === '停用' ? 'inactive' : 'active';
+                            const key = CSV_LABEL_TO_KEY[header];
+                            if (!key) return;
+                            item[key] = value;
                         });
 
-                        if (!item.parentId && !item.parentCode && !item.parentName) {
-                            item.parentId = 'root';
-                        }
-                        if (item.orderNum == null || Number.isNaN(item.orderNum)) {
-                            item.orderNum = 0;
-                        }
-                        if (!item.status) {
-                            item.status = 'active';
-                        }
-                        if (!item.typeName) {
-                            item.typeName = resolveTypeName(item.type);
-                        }
-                        return item;
-                    }).filter(item => {
-                        const hasInstructionTag = Object.keys(IMPORT_HEADERS).every(key => {
-                            const cellValue = String(item[key] ?? '').trim();
+                        const isInstructionRow = CSV_COLUMNS.every(column => {
+                            const cellValue = String(item[column.key] ?? '').trim();
                             return !cellValue || cellValue.includes('必填') || cellValue.includes('可选');
                         });
 
-                        if (hasInstructionTag) {
-                            return false;
+                        if (isInstructionRow) {
+                            return null;
                         }
 
-                        return Array.from(REQUIRED_IMPORT_COLUMNS).every(column => {
-                            if (column === IMPORT_HEADERS.name) return Boolean(item.name);
-                            if (column === IMPORT_HEADERS.code) return Boolean(item.code);
-                            if (column === IMPORT_HEADERS.type) return Boolean(item.type);
-                            return true;
-                        });
+                        item.name = String(item.name || '').trim();
+                        item.code = String(item.code || '').trim();
+                        item.type = normalizeOrgType(item.type, item.typeName);
+                        item.typeName = String(item.typeName || '').trim() || resolveTypeName(item.type);
+                        item.parentCode = String(item.parentCode || '').trim();
+                        item.parentName = String(item.parentName || '').trim();
+
+                        if (!item.parentCode && !item.parentName) {
+                            item.parentId = 'root';
+                        } else {
+                            item.parentId = '';
+                        }
+
+                        const orderNumRaw = String(item.orderNum || '').trim();
+                        if (!orderNumRaw) {
+                            item.orderNum = 0;
+                        } else if (/^-?\d+$/.test(orderNumRaw)) {
+                            item.orderNum = Number(orderNumRaw);
+                        } else {
+                            validationErrors.push(`第 ${rowNumber} 行：排序必须是整数`);
+                        }
+
+                        const statusRaw = String(item.status || '').trim();
+                        if (statusRaw && !(statusRaw in STATUS_ALIASES)) {
+                            validationErrors.push(`第 ${rowNumber} 行：状态只能填写“正常”或“停用”`);
+                        }
+                        item.status = normalizeStatus(statusRaw);
+
+                        if (!item.name) {
+                            validationErrors.push(`第 ${rowNumber} 行：机构名称不能为空`);
+                        }
+                        if (!item.code) {
+                            validationErrors.push(`第 ${rowNumber} 行：机构代码不能为空`);
+                        }
+                        if (!item.type) {
+                            validationErrors.push(`第 ${rowNumber} 行：机构类型不能为空，且只能填写 ${ORG_TYPE_OPTIONS.join('/')}`);
+                        }
+
+                        return item;
+                    }).filter(item => {
+                        return item !== null;
                     });
+
+                    if (validationErrors.length > 0) {
+                        alert(`导入失败，请先修正以下问题：\n${formatImportError(validationErrors)}`);
+                        return;
+                    }
                 }
 
                 if (payload.length === 0) {
-                    alert('文件内容为空或格式不正确');
+                    alert('文件内容为空，或没有可导入的数据行');
                     return;
                 }
 
                 const normalizedPayload = payload.map(item => ({
                     name: item.name,
                     code: item.code,
-                    type: item.type,
+                    type: normalizeOrgType(item.type, item.typeName),
                     typeName: item.typeName || resolveTypeName(item.type),
-                    status: item.status || 'active',
-                    parentId: item.parentId || 'root',
+                    status: normalizeStatus(item.status),
+                    parentId: item.parentId || '',
                     parentCode: item.parentCode || '',
                     parentName: item.parentName || '',
                     orderNum: typeof item.orderNum === 'number' && !Number.isNaN(item.orderNum) ? item.orderNum : 0,
@@ -470,7 +493,7 @@ const OrgManagement: React.FC = () => {
                 fetchOrgs();
             } catch (err) {
                 console.error(err);
-                alert('解析或导入失败，请检查文件格式');
+                alert('解析或导入失败，请检查 Excel 模板表头、必填项和字段格式');
             }
 
             if (fileInputRef.current) {
@@ -478,7 +501,11 @@ const OrgManagement: React.FC = () => {
             }
         };
 
-        reader.readAsText(file);
+        if (file.name.endsWith('.json')) {
+            reader.readAsText(file);
+        } else {
+            reader.readAsArrayBuffer(file);
+        }
     };
 
     const handleSaveOrg = async (payload: Partial<OrgNode> & { id?: string }) => {
@@ -680,7 +707,7 @@ const OrgManagement: React.FC = () => {
                 <button
                     onClick={handleImportClick}
                     className="flex items-center gap-1 bg-white text-slate-700 px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors border border-slate-200 whitespace-nowrap"
-                    title="批量导入机构 (支持 CSV/JSON)"
+                    title="批量导入机构 (支持 Excel/JSON)"
                 >
                     <Upload className="w-4 h-4" />
                     导入
@@ -688,7 +715,7 @@ const OrgManagement: React.FC = () => {
                 <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".csv,.json"
+                    accept=".xlsx,.xls,.json"
                     className="hidden"
                     onChange={handleFileChange}
                 />

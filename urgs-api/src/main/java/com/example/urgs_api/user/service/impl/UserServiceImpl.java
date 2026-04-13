@@ -1,6 +1,7 @@
 package com.example.urgs_api.user.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.example.urgs_api.user.dto.UserBatchImportResultDTO;
 import com.example.urgs_api.user.mapper.UserMapper;
 import com.example.urgs_api.user.model.User;
 import com.example.urgs_api.user.service.UserService;
@@ -87,13 +88,17 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     @Override
-    public void batchUpsert(java.util.List<User> users) {
-        if (users == null || users.isEmpty())
-            return;
+    public UserBatchImportResultDTO batchUpsert(java.util.List<User> users) {
+        UserBatchImportResultDTO result = new UserBatchImportResultDTO();
+        if (users == null || users.isEmpty()) {
+            return result;
+        }
 
         for (User user : users) {
-            if (user.getEmpId() == null || user.getEmpId().isEmpty())
+            if (user.getEmpId() == null || user.getEmpId().isEmpty()) {
+                result.setSkipped(result.getSkipped() + 1);
                 continue;
+            }
 
             // Check if user exists by empId
             User existing = baseMapper.selectOne(
@@ -104,14 +109,17 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
                 // Update: carry over the database ID
                 user.setId(existing.getId());
                 this.updateById(user);
+                result.setUpdated(result.getUpdated() + 1);
             } else {
                 // Insert: ensure password is set (default 123456 if empty)
                 if (user.getPassword() == null || user.getPassword().isEmpty()) {
                     user.setPassword("123456");
                 }
                 this.save(user);
+                result.setInserted(result.getInserted() + 1);
             }
         }
+        return result;
     }
 
     @Override

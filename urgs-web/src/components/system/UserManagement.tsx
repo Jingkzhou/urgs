@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserCircle, Edit, Trash2, Save, X, Filter, ChevronLeft, ChevronRight, Lock, Shield, Ban, CheckSquare, Square, Search, Upload, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { User } from './types';
 import { ActionToolbar } from './Shared';
 import Auth from '../Auth';
@@ -411,6 +412,27 @@ const UserForm: React.FC<{
 };
 
 const UserManagement: React.FC = () => {
+    const EXCEL_COLUMNS = [
+        { key: 'empId', label: '工号', required: true, description: '必填' },
+        { key: 'name', label: '姓名', required: true, description: '必填' },
+        { key: 'orgName', label: '所属机构', required: true, description: '必填，按机构名称匹配' },
+        { key: 'roleName', label: '关联角色', required: true, description: '必填，按角色名称匹配' },
+        { key: 'phone', label: '手机号', required: false, description: '可选' },
+        { key: 'system', label: '关联系统', required: false, description: '可选，多个系统用英文逗号分隔' },
+        { key: 'status', label: '状态', required: false, description: '可选：正常/停用，不填默认 正常' },
+    ] as const;
+    const EXCEL_LABEL_TO_KEY = EXCEL_COLUMNS.reduce((acc, column) => {
+        acc[column.label] = column.key;
+        return acc;
+    }, {} as Record<string, typeof EXCEL_COLUMNS[number]['key']>);
+    const REQUIRED_IMPORT_COLUMNS = EXCEL_COLUMNS.filter(column => column.required);
+    const STATUS_ALIASES: Record<string, 'active' | 'inactive'> = {
+        active: 'active',
+        inactive: 'inactive',
+        '正常': 'active',
+        '停用': 'inactive',
+    };
+
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -422,6 +444,33 @@ const UserManagement: React.FC = () => {
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+    const normalizeImportHeader = (header: string) => {
+        return header
+            .replace(/^\uFEFF/, '')
+            .replace(/\*/g, '')
+            .replace(/（必填）|\(必填\)/g, '')
+            .replace(/\s+/g, '')
+            .trim();
+    };
+
+    const normalizeStatus = (status?: string) => {
+        const normalizedStatus = (status || '').trim();
+        return STATUS_ALIASES[normalizedStatus] || 'active';
+    };
+
+    const formatImportError = (errors: string[]) => {
+        const preview = errors.slice(0, 8);
+        return preview.join('\n') + (errors.length > preview.length ? `\n...共 ${errors.length} 处错误` : '');
+    };
+
+    const parseWorksheetRows = (sheet: XLSX.WorkSheet) => {
+        return XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(sheet, {
+            header: 1,
+            defval: '',
+            raw: false,
+        }).map(row => row.map(cell => String(cell ?? '').trim()));
+    };
+
     const handleExport = async () => {
         try {
             const token = localStorage.getItem('auth_token');
@@ -430,40 +479,21 @@ const UserManagement: React.FC = () => {
             });
             if (!res.ok) throw new Error('Export failed');
             const data = await res.json();
-
-            // Generate CSV
-            const headers = ['工号', '姓名', '所属机构', '关联角色', '手机号', '关联系统', '备注'];
-            const escapeCsvCell = (value: unknown) => {
-                const normalized = String(value ?? '').replace(/"/g, '""');
-                return `"${normalized}"`;
-            };
-            const formatEmpIdForExcel = (empId: string) => {
-                const escaped = empId.replace(/"/g, '""');
-                return `"=""${escaped}"""`;
-            };
+            const headers = EXCEL_COLUMNS.map(column => `${column.label}${column.required ? '*' : ''}`);
+            const descriptionRow = EXCEL_COLUMNS.map(column => column.description);
             const rows = data.map((u: User) => [
-                formatEmpIdForExcel(u.empId),
-                escapeCsvCell(u.name),
-                escapeCsvCell(u.orgName),
-                escapeCsvCell(u.roleName),
-                escapeCsvCell(u.phone),
-                escapeCsvCell(u.system || ''),
-                escapeCsvCell(u.status === 'active' ? '正常' : '停用')
+                u.empId ?? '',
+                u.name ?? '',
+                u.orgName ?? '',
+                u.roleName ?? '',
+                u.phone ?? '',
+                u.system || '',
+                normalizeStatus(u.status) === 'inactive' ? '停用' : '正常'
             ]);
-
-            const csvContent = "\uFEFF" + [
-                headers.map(escapeCsvCell),
-                ...rows
-            ].map(row => row.join(",")).join("\n");
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.setAttribute("href", url);
-            link.setAttribute("download", `用户列表_${new Date().toLocaleDateString()}.csv`);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            const sheet = XLSX.utils.aoa_to_sheet([headers, descriptionRow, ...rows]);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, sheet, '用户模板');
+            XLSX.writeFile(workbook, `用户列表_${new Date().toLocaleDateString()}.xlsx`);
         } catch (err) {
             alert('导出失败，请重试');
         }
@@ -480,59 +510,100 @@ const UserManagement: React.FC = () => {
         const reader = new FileReader();
         reader.onload = async (event) => {
             try {
-                const text = event.target?.result as string;
-                let payload = [];
+                let payload: any[] = [];
 
                 if (file.name.endsWith('.json')) {
+                    const text = event.target?.result as string;
                     payload = JSON.parse(text);
-                } else if (file.name.endsWith('.csv')) {
-                    const lines = text.split(/\r?\n/).filter(Boolean);
-                    // Manual CSV parsing to correctly handle empty fields and quoted values
-                    const splitCSVLine = (line: string) => {
-                        const result: string[] = [];
-                        let currentField = '';
-                        let inQuotes = false;
+                } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                    const workbook = XLSX.read(event.target?.result, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const firstSheet = workbook.Sheets[firstSheetName];
+                    const rows = parseWorksheetRows(firstSheet).filter(row => row.some(cell => cell !== ''));
 
-                        for (let i = 0; i < line.length; i++) {
-                            const char = line[i];
-                            if (char === '"') {
-                                inQuotes = !inQuotes;
-                            } else if (char === ',' && !inQuotes) {
-                                result.push(currentField.trim());
-                                currentField = '';
-                            } else {
-                                currentField += char;
-                            }
-                        }
-                        result.push(currentField.trim());
+                    if (rows.length === 0) {
+                        alert('导入文件为空');
+                        return;
+                    }
 
-                        // Clean up any remaining quotes
-                        return result.map(v => v.replace(/^"|"$/g, '').trim());
-                    };
+                    const headers = rows[0].map(normalizeImportHeader);
+                    const missingHeaders = REQUIRED_IMPORT_COLUMNS
+                        .map(column => column.label)
+                        .filter(label => !headers.includes(label));
 
-                    const headers = splitCSVLine(lines[0]);
-                    payload = lines.slice(1).map(line => {
-                        const values = splitCSVLine(line);
+                    if (missingHeaders.length > 0) {
+                        alert(`导入模板不正确，缺少表头：${missingHeaders.join('、')}`);
+                        return;
+                    }
+
+                    const validationErrors: string[] = [];
+                    payload = rows.slice(1).map((values, index) => {
                         const obj: any = {};
+                        const rowNumber = index + 2;
+
                         headers.forEach((h, i) => {
-                            if (h === '工号') obj.empId = values[i];
-                            else if (h === '姓名') obj.name = values[i];
-                            else if (h === '所属机构') obj.orgName = values[i];
-                            else if (h === '关联角色') obj.roleName = values[i];
-                            else if (h === '手机号') obj.phone = values[i];
-                            else if (h === '关联系统') obj.system = values[i];
-                            else if (h === '状态') {
-                                obj.status = values[i] === '停用' ? 'inactive' : 'active';
-                            }
+                            const key = EXCEL_LABEL_TO_KEY[h];
+                            if (!key) return;
+                            obj[key] = values[i];
                         });
+
+                        const isInstructionRow = EXCEL_COLUMNS.every(column => {
+                            const cellValue = String(obj[column.key] ?? '').trim();
+                            return !cellValue || cellValue.includes('必填') || cellValue.includes('可选');
+                        });
+
+                        if (isInstructionRow) {
+                            return null;
+                        }
+
+                        obj.empId = String(obj.empId || '').trim();
+                        obj.name = String(obj.name || '').trim();
+                        obj.orgName = String(obj.orgName || '').trim();
+                        obj.roleName = String(obj.roleName || '').trim();
+                        obj.phone = String(obj.phone || '').trim();
+                        obj.system = String(obj.system || '').trim();
+
+                        const statusRaw = String(obj.status || '').trim();
+                        if (statusRaw && !(statusRaw in STATUS_ALIASES)) {
+                            validationErrors.push(`第 ${rowNumber} 行：状态只能填写“正常”或“停用”`);
+                        }
+                        obj.status = normalizeStatus(statusRaw);
+
+                        if (!obj.empId) validationErrors.push(`第 ${rowNumber} 行：工号不能为空`);
+                        if (!obj.name) validationErrors.push(`第 ${rowNumber} 行：姓名不能为空`);
+                        if (!obj.orgName) validationErrors.push(`第 ${rowNumber} 行：所属机构不能为空`);
+                        if (!obj.roleName) validationErrors.push(`第 ${rowNumber} 行：关联角色不能为空`);
+                        if (obj.orgName && !orgOptions.includes(obj.orgName)) {
+                            validationErrors.push(`第 ${rowNumber} 行：所属机构“${obj.orgName}”不存在`);
+                        }
+                        if (obj.roleName && !roleOptions.some(role => role.name === obj.roleName)) {
+                            validationErrors.push(`第 ${rowNumber} 行：关联角色“${obj.roleName}”不存在`);
+                        }
+
                         return obj;
-                    });
+                    }).filter(item => item !== null);
+
+                    if (validationErrors.length > 0) {
+                        alert(`导入失败，请先修正以下问题：\n${formatImportError(validationErrors)}`);
+                        return;
+                    }
                 }
 
                 if (payload.length === 0) {
-                    alert('文件内容为空或格式不正确');
+                    alert('文件内容为空，或没有可导入的数据行');
                     return;
                 }
+
+                const normalizedPayload = payload.map(item => ({
+                    empId: item.empId,
+                    name: item.name,
+                    orgName: item.orgName,
+                    roleName: item.roleName,
+                    roleId: roleOptions.find(role => role.name === item.roleName)?.id,
+                    phone: item.phone || '',
+                    system: item.system || '',
+                    status: normalizeStatus(item.status),
+                })).filter(item => item.empId && item.name && item.orgName && item.roleName);
 
                 const token = localStorage.getItem('auth_token');
                 const res = await fetch('/api/users/batch', {
@@ -541,20 +612,27 @@ const UserManagement: React.FC = () => {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`
                     },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(normalizedPayload)
                 });
 
                 if (!res.ok) throw new Error('Batch import failed');
-                alert(`成功处理 ${payload.length} 条数据`);
-                fetchUsers();
+                const result = await res.json();
+                alert(
+                    `导入完成：新增 ${result.inserted ?? 0} 条，更新 ${result.updated ?? 0} 条，跳过 ${result.skipped ?? 0} 条`
+                );
+                await fetchUsers();
             } catch (err) {
                 console.error(err);
-                alert('解析或导入失败，请检查文件格式');
+                alert('解析或导入失败，请检查 Excel 模板表头、必填项和字段格式');
             }
             // Reset input
             if (fileInputRef.current) fileInputRef.current.value = '';
         };
-        reader.readAsText(file);
+        if (file.name.endsWith('.json')) {
+            reader.readAsText(file);
+        } else {
+            reader.readAsArrayBuffer(file);
+        }
     };
 
     // Filter & Pagination State
@@ -803,7 +881,7 @@ const UserManagement: React.FC = () => {
                         type="file"
                         ref={fileInputRef}
                         onChange={handleFileChange}
-                        accept=".csv,.json"
+                        accept=".xlsx,.xls,.json"
                         className="hidden"
                     />
                 </div>
