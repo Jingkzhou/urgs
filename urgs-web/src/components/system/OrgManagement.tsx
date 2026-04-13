@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Building2, Landmark, LayoutGrid, ChevronDown, ChevronRight, Plus, Edit, Trash2, Save, X, ArrowLeft, FolderTree } from 'lucide-react';
+import { Building2, Landmark, LayoutGrid, ChevronDown, ChevronRight, Plus, Edit, Trash2, Save, X, ArrowLeft, FolderTree, Upload, Download } from 'lucide-react';
 import { OrgNode } from './types';
 import { ActionToolbar } from './Shared';
 import Auth from '../Auth';
@@ -183,6 +183,7 @@ const OrgManagement: React.FC = () => {
     const [showForm, setShowForm] = useState(false);
     const [editingOrg, setEditingOrg] = useState<OrgNode | null>(null);
     const [defaultParentId, setDefaultParentId] = useState<string>('root');
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     const toggleExpand = (id: string) => {
         const newExpanded = new Set(expandedIds);
@@ -215,6 +216,37 @@ const OrgManagement: React.FC = () => {
     const treeData = useMemo(() => buildOrgTree(orgs), [orgs]);
     const parentOptions = useMemo(() => [{ id: 'root', name: '根节点/总行' }, ...orgs.map(o => ({ id: o.id, name: o.name }))], [orgs]);
 
+    const splitCSVLine = (line: string) => {
+        const result: string[] = [];
+        let currentField = '';
+        let inQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+                if (inQuotes && line[i + 1] === '"') {
+                    currentField += '"';
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (char === ',' && !inQuotes) {
+                result.push(currentField.trim());
+                currentField = '';
+            } else {
+                currentField += char;
+            }
+        }
+
+        result.push(currentField.trim());
+        return result.map(v => v.replace(/^\uFEFF/, '').trim());
+    };
+
+    const escapeCsvCell = (value: unknown) => {
+        const normalized = String(value ?? '').replace(/"/g, '""');
+        return `"${normalized}"`;
+    };
+
     const fetchOrgs = async () => {
         setLoading(true);
         setError(null);
@@ -236,6 +268,140 @@ const OrgManagement: React.FC = () => {
     useEffect(() => {
         fetchOrgs();
     }, []);
+
+    const handleExport = async () => {
+        try {
+            const token = localStorage.getItem('auth_token');
+            const res = await fetch('/api/orgs/export', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) throw new Error('Export failed');
+
+            const data = await res.json();
+            const headers = ['机构名称', '机构代码', '机构类型', '类型名称', '上级机构ID', '上级机构代码', '上级机构名称', '排序', '状态'];
+            const rows = data.map((org: any) => [
+                escapeCsvCell(org.name),
+                escapeCsvCell(org.code),
+                escapeCsvCell(org.type),
+                escapeCsvCell(org.typeName),
+                escapeCsvCell(org.parentId || 'root'),
+                escapeCsvCell(org.parentCode || ''),
+                escapeCsvCell(org.parentName || ''),
+                escapeCsvCell(org.orderNum ?? 0),
+                escapeCsvCell(org.status === 'inactive' ? '停用' : '正常')
+            ]);
+
+            const csvContent = "\uFEFF" + [
+                headers.map(escapeCsvCell),
+                ...rows
+            ].map(row => row.join(",")).join("\n");
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `机构列表_${new Date().toLocaleDateString()}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            alert('导出失败，请重试');
+        }
+    };
+
+    const handleImportClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const text = event.target?.result as string;
+                let payload: any[] = [];
+
+                if (file.name.endsWith('.json')) {
+                    payload = JSON.parse(text);
+                } else if (file.name.endsWith('.csv')) {
+                    const lines = text.split(/\r?\n/).filter(Boolean);
+                    const headers = splitCSVLine(lines[0]);
+                    payload = lines.slice(1).map(line => {
+                        const values = splitCSVLine(line);
+                        const item: Record<string, any> = {};
+
+                        headers.forEach((header, index) => {
+                            const value = values[index] ?? '';
+                            if (header === '机构名称') item.name = value;
+                            else if (header === '机构代码') item.code = value;
+                            else if (header === '机构类型') item.type = value;
+                            else if (header === '类型名称') item.typeName = value;
+                            else if (header === '上级机构ID') item.parentId = value || 'root';
+                            else if (header === '上级机构代码') item.parentCode = value;
+                            else if (header === '上级机构名称') item.parentName = value;
+                            else if (header === '排序') item.orderNum = value ? Number(value) : 0;
+                            else if (header === '状态') item.status = value === '停用' ? 'inactive' : 'active';
+                        });
+
+                        if (!item.parentId && !item.parentCode && !item.parentName) {
+                            item.parentId = 'root';
+                        }
+                        if (item.orderNum == null || Number.isNaN(item.orderNum)) {
+                            item.orderNum = 0;
+                        }
+                        if (!item.status) {
+                            item.status = 'active';
+                        }
+                        return item;
+                    }).filter(item => item.code && item.name);
+                }
+
+                if (payload.length === 0) {
+                    alert('文件内容为空或格式不正确');
+                    return;
+                }
+
+                const normalizedPayload = payload.map(item => ({
+                    name: item.name,
+                    code: item.code,
+                    type: item.type,
+                    typeName: item.typeName,
+                    status: item.status || 'active',
+                    parentId: item.parentId || 'root',
+                    parentCode: item.parentCode || '',
+                    parentName: item.parentName || '',
+                    orderNum: typeof item.orderNum === 'number' && !Number.isNaN(item.orderNum) ? item.orderNum : 0,
+                })).filter(item => item.name && item.code);
+
+                const token = localStorage.getItem('auth_token');
+                const res = await fetch('/api/orgs/batch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(normalizedPayload)
+                });
+
+                if (!res.ok) throw new Error('Batch import failed');
+                alert(`成功处理 ${normalizedPayload.length} 条机构数据`);
+                fetchOrgs();
+            } catch (err) {
+                console.error(err);
+                alert('解析或导入失败，请检查文件格式');
+            }
+
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+        };
+
+        reader.readAsText(file);
+    };
 
     const handleSaveOrg = async (payload: Partial<OrgNode> & { id?: string }) => {
         const body = {
@@ -424,7 +590,31 @@ const OrgManagement: React.FC = () => {
 
     return (
         <div className="space-y-4 animate-fade-in">
-            <ActionToolbar title="机构层级管理" codePrefix="sys:org" onAdd={() => openForm(null, 'root')} />
+            <ActionToolbar title="机构层级管理" codePrefix="sys:org" onAdd={() => openForm(null, 'root')}>
+                <button
+                    onClick={handleExport}
+                    className="flex items-center gap-1 bg-white text-slate-700 px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors border border-slate-200 whitespace-nowrap"
+                    title="导出全量机构数据"
+                >
+                    <Download className="w-4 h-4" />
+                    导出
+                </button>
+                <button
+                    onClick={handleImportClick}
+                    className="flex items-center gap-1 bg-white text-slate-700 px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors border border-slate-200 whitespace-nowrap"
+                    title="批量导入机构 (支持 CSV/JSON)"
+                >
+                    <Upload className="w-4 h-4" />
+                    导入
+                </button>
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv,.json"
+                    className="hidden"
+                    onChange={handleFileChange}
+                />
+            </ActionToolbar>
             {error && (
                 <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{error}</div>
             )}

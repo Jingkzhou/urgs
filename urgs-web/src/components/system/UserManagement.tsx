@@ -433,11 +433,28 @@ const UserManagement: React.FC = () => {
 
             // Generate CSV
             const headers = ['工号', '姓名', '所属机构', '关联角色', '手机号', '关联系统', '备注'];
+            const escapeCsvCell = (value: unknown) => {
+                const normalized = String(value ?? '').replace(/"/g, '""');
+                return `"${normalized}"`;
+            };
+            const formatEmpIdForExcel = (empId: string) => {
+                const escaped = empId.replace(/"/g, '""');
+                return `"=""${escaped}"""`;
+            };
             const rows = data.map((u: User) => [
-                u.empId, u.name, u.orgName, u.roleName, u.phone, u.system || '', u.status === 'active' ? '正常' : '停用'
+                formatEmpIdForExcel(u.empId),
+                escapeCsvCell(u.name),
+                escapeCsvCell(u.orgName),
+                escapeCsvCell(u.roleName),
+                escapeCsvCell(u.phone),
+                escapeCsvCell(u.system || ''),
+                escapeCsvCell(u.status === 'active' ? '正常' : '停用')
             ]);
 
-            const csvContent = "\uFEFF" + [headers, ...rows].map(e => e.map(cell => `"${cell}"`).join(",")).join("\n");
+            const csvContent = "\uFEFF" + [
+                headers.map(escapeCsvCell),
+                ...rows
+            ].map(row => row.join(",")).join("\n");
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");

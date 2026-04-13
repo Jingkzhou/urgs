@@ -1,6 +1,8 @@
 package com.example.urgs_api.org.controller;
 
 import com.example.urgs_api.org.dto.OrgDTO;
+import com.example.urgs_api.org.dto.OrgExportDTO;
+import com.example.urgs_api.org.dto.OrgImportRequest;
 import com.example.urgs_api.org.dto.OrgRequest;
 import com.example.urgs_api.org.model.Org;
 import com.example.urgs_api.org.service.OrgService;
@@ -9,6 +11,8 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @RestController
@@ -58,6 +62,24 @@ public class OrgController {
     public ResponseEntity<Void> delete(@PathVariable("id") Long id) {
         boolean removed = orgService.removeById(id);
         return removed ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
+    }
+
+    @PostMapping("/batch")
+    public ResponseEntity<Void> batch(@RequestBody List<OrgImportRequest> requests) {
+        orgService.batchUpsert(requests);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/export")
+    public List<OrgExportDTO> export() {
+        List<Org> orgs = orgService.list();
+        Map<String, Org> orgById = orgs.stream()
+                .filter(org -> org.getId() != null)
+                .collect(Collectors.toMap(org -> String.valueOf(org.getId()), Function.identity()));
+
+        return orgs.stream()
+                .map(org -> OrgExportDTO.fromEntity(org, orgById.get(org.getParentId())))
+                .collect(Collectors.toList());
     }
 
     private Org toEntity(OrgRequest req, Long id) {
