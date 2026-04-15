@@ -703,8 +703,14 @@ const ChatWidget: React.FC = () => {
                                         readOnly
                                         className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
                                     />
-                                    <img src={getAvatarUrl(u.avatarUrl, u.userId)} className="w-8 h-8 rounded-full object-cover" />
-                                    <span className="text-[13px] text-slate-700">{u.wxId} (ID: {u.userId})</span>
+                                    <img
+                                        src={getAvatarUrl(u.avatarUrl, u.name || u.empId || u.wxId || '用户')}
+                                        className="w-8 h-8 rounded-full object-cover"
+                                    />
+                                    <span className="text-[13px] text-slate-700">
+                                        {u.name || u.wxId}
+                                        {u.empId ? ` (${u.empId})` : ''}
+                                    </span>
                                 </div>
                             ))}
                             {availableUsers.length === 0 && <div className="text-center p-4 text-slate-400 text-sm">暂无结果</div>}

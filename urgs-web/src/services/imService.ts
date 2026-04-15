@@ -7,6 +7,8 @@ export interface ImUser {
     wxId: string;
     avatarUrl: string;
     signature: string;
+    name?: string;
+    empId?: string;
 }
 
 export interface ImMessage {

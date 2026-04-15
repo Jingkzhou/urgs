@@ -41,6 +41,8 @@ public class ImUserServiceImpl implements ImUserService {
                 imUser.setWxId(sysUser.getName());
                 imUser.setAvatarUrl(sysUser.getAvatarUrl());
             }
+            imUser.setName(sysUser.getName());
+            imUser.setEmpId(sysUser.getEmpId());
         }
         return imUser;
     }
@@ -137,6 +139,8 @@ public class ImUserServiceImpl implements ImUserService {
             imUser.setUserId(u.getId());
             imUser.setWxId(u.getName());
             imUser.setAvatarUrl(u.getAvatarUrl());
+            imUser.setName(u.getName());
+            imUser.setEmpId(u.getEmpId());
             // Check if exists in im_user to get real avatar/signature?
             // For performance, we might skip or do a batch query.
             // For now, simple mapping is enough for "Add Friend" list.
