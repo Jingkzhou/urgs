@@ -1,9 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Force Java 17 for Lombok compatibility
-export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home
-export PATH=$JAVA_HOME/bin:$PATH
+# Prefer Java 17 when available; otherwise fall back to the current system JDK.
+if command -v /usr/libexec/java_home >/dev/null 2>&1; then
+  if JAVA17_HOME=$(/usr/libexec/java_home -v 17 2>/dev/null); then
+    export JAVA_HOME="$JAVA17_HOME"
+  else
+    export JAVA_HOME="$(/usr/libexec/java_home)"
+  fi
+elif [ -d "/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home" ]; then
+  export JAVA_HOME="/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home"
+fi
+
+if [ -n "${JAVA_HOME:-}" ]; then
+  export PATH="$JAVA_HOME/bin:$PATH"
+fi
 export HF_ENDPOINT=https://hf-mirror.com
 # 启用离线模式，使用本地缓存的模型，避免每次连接 HuggingFace
 export HF_HUB_OFFLINE=1
