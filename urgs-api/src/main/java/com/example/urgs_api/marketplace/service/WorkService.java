@@ -10,4 +10,6 @@ public interface WorkService extends IService<Work> {
     boolean publishWork(String workId, String userId);
 
     boolean cancelWork(String workId, String userId);
+
+    void recomputeTotalPoints(String workId);
 }

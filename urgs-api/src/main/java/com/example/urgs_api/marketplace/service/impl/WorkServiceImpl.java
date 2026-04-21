@@ -140,4 +140,19 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         }
         return success;
     }
+
+    @Override
+    public void recomputeTotalPoints(String workId) {
+        Work work = this.getById(workId);
+        if (work == null) return;
+
+        List<WorkTask> tasks = workTaskService.lambdaQuery()
+                .eq(WorkTask::getWorkId, workId)
+                .list();
+        int total = tasks.stream()
+                .mapToInt(t -> t.getPoints() != null ? t.getPoints() : 0)
+                .sum();
+        work.setTotalPoints(total);
+        this.updateById(work);
+    }
 }

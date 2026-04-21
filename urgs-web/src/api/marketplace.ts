@@ -77,6 +77,8 @@ export interface TaskApplication {
 export const createWork = (data: WorkCreateDTO) => post('/api/marketplace/works', data);
 export const listWorks = (params: any) => get('/api/marketplace/works', params);
 export const getWorkDetail = (id: string) => get(`/api/marketplace/works/${id}`);
+export const getWorkTasks = (workId: string) => get(`/api/marketplace/tasks/work/${workId}`);
+export const addTaskToWork = (workId: string, data: WorkTaskCreateDTO) => post(`/api/marketplace/tasks/work/${workId}`, data);
 export const publishWork = (id: string) => put(`/api/marketplace/works/${id}/publish`);
 export const cancelWork = (id: string) => put(`/api/marketplace/works/${id}/cancel`);
 

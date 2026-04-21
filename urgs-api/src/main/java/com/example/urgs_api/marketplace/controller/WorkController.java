@@ -27,6 +27,12 @@ public class WorkController {
         return workService.createWork(workCreateDTO, userId);
     }
 
+    @GetMapping("/{id}")
+    public Work getWorkDetail(
+            @PathVariable String id) {
+        return workService.getById(id);
+    }
+
     @GetMapping
     public PageResult<Work> listWorks(
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,

@@ -27,6 +27,27 @@ export type { LineageEngineStartParams } from '@/api/lineage';
 
 const { Text, Title, Paragraph } = Typography;
 const { Dragger } = Upload;
+const uploadAcceptTypes = [
+    '.sql',
+    '.ddl',
+    '.dml',
+    '.hql',
+    '.txt',
+    '.proc',
+    '.prc',
+    '.fnc',
+    '.pkg',
+    '.pkb',
+    '.pks',
+    '.trg',
+    '.tpl',
+    '.view',
+    '.vw',
+    '.log',
+    '.csv',
+    '.tsv',
+    '.zip',
+].join(',');
 
 interface LineageEngineStartModalProps {
     open: boolean;
@@ -362,9 +383,9 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                                         <UploadOutlined />
                                     </div>
                                     <div>
-                                        <Text strong style={{ display: 'block', marginBottom: 8 }}>上传本地 SQL 文件或 ZIP 压缩包</Text>
+                                        <Text strong style={{ display: 'block', marginBottom: 8 }}>上传本地脚本文件、文本文件或 ZIP 压缩包</Text>
                                         <Text type="secondary">
-                                            下一步可上传多个文件；如果上传 ZIP，后端会自动解压后再交给血缘引擎解析。
+                                            下一步可上传多个 SQL、PROC、TXT 等文本文件；如果上传 ZIP，后端会自动解压后再交给血缘引擎解析。
                                         </Text>
                                     </div>
                                 </Space>
@@ -409,12 +430,12 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                             <>
                                 <div style={{ marginBottom: 16 }}>
                                     <Text type="secondary">
-                                        支持上传多个 `.sql` 文件，也支持上传 `.zip` 压缩包批量解析。
+                                        支持上传多个 `.sql`、`.proc`、`.txt` 等文本脚本文件，也支持上传 `.zip` 压缩包批量解析。
                                     </Text>
                                 </div>
                                 <Dragger
                                     multiple
-                                    accept=".sql,.ddl,.hql,.txt,.zip"
+                                    accept={uploadAcceptTypes}
                                     beforeUpload={() => false}
                                     fileList={uploadFiles}
                                     onChange={({ fileList }) => setUploadFiles(fileList)}
@@ -425,7 +446,7 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                                     </p>
                                     <p className="ant-upload-text">点击或拖拽文件到此处上传</p>
                                     <p className="ant-upload-hint">
-                                        建议上传 SQL 文件；如需保留目录结构，可先打包为 ZIP 再上传。
+                                        支持 SQL、存储过程、函数、包体、触发器、文本日志等文件；如需保留目录结构，可先打包为 ZIP 再上传。
                                     </p>
                                 </Dragger>
 
