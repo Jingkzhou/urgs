@@ -192,7 +192,38 @@ export const getLineageEngineStatus = () => {
     return get('/api/metadata/lineage/engine/status');
 };
 
-export const startLineageEngine = (params: any = {}) => {
+export interface LineageEngineStartByGitParams {
+    sourceType: 'git';
+    repoId: number;
+    ref: string;
+    paths: string[];
+    user?: string;
+    language?: string;
+}
+
+export interface LineageEngineStartByUploadParams {
+    sourceType: 'upload';
+    files: File[];
+    user?: string;
+    language?: string;
+}
+
+export type LineageEngineStartParams = LineageEngineStartByGitParams | LineageEngineStartByUploadParams;
+
+export const startLineageEngine = (params: LineageEngineStartParams) => {
+    if (params.sourceType === 'upload') {
+        const formData = new FormData();
+        params.files.forEach(file => {
+            formData.append('files', file);
+        });
+        if (params.user) {
+            formData.append('user', params.user);
+        }
+        if (params.language) {
+            formData.append('language', params.language);
+        }
+        return post('/api/metadata/lineage/engine/start', formData);
+    }
     return post('/api/metadata/lineage/engine/start', params);
 };
 

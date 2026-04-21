@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
 import java.nio.file.StandardCopyOption;
@@ -21,6 +22,7 @@ import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +64,18 @@ public class LineageEngineService {
     private String lastRecordId;
 
     public Map<String, Object> start(StartEngineRequest request) {
+        return startInternal(normalizeRequest(request), null);
+    }
+
+    public Map<String, Object> startWithUpload(List<MultipartFile> files, String user, String language) {
+        StartEngineRequest request = new StartEngineRequest();
+        request.setSourceType("upload");
+        request.setUser(user);
+        request.setLanguage(language);
+        return startInternal(request, files);
+    }
+
+    private Map<String, Object> startInternal(StartEngineRequest request, List<MultipartFile> uploadedFiles) {
         synchronized (lock) {
             if (isRunning()) {
                 return buildStatus(false, "引擎已在运行中");
@@ -76,26 +90,19 @@ public class LineageEngineService {
                 }
 
                 // Prepare Input Paths (Git Source)
-                String inputPath;
-                String repoRoot = null;
-
-                if (request != null && request.getRepoId() != null) {
-                    GitInputResult result = prepareGitInput(request);
-                    inputPath = result.inputPath();
-                    repoRoot = result.repoRoot();
-                } else {
-                    inputPath = resolveEngineArgsPath(engineArgs);
-                }
+                InputPreparationResult inputResult = resolveInput(request, uploadedFiles);
+                String inputPath = inputResult.inputPath();
+                String repoRoot = inputResult.repoRoot();
 
                 // Create record first to get ID and SHA
-                String recordId = null;
+                String recordId = "upload-" + System.currentTimeMillis();
                 LineageAnalysisRecord record = null;
-                if (request != null && request.getRepoId() != null) {
+                if (request.getRepoId() != null) {
                     record = createAnalysisRecord(request, Instant.now());
                     recordId = record.getId();
-                    this.lastRequest = request;
-                    this.lastRecordId = recordId;
                 }
+                this.lastRequest = request;
+                this.lastRecordId = recordId;
 
                 Path logPath = resolveLogPath(workingDir, recordId);
                 Files.createDirectories(logPath.getParent());
@@ -110,7 +117,7 @@ public class LineageEngineService {
                 command.add(inputPath);
 
                 // Pass metadata arguments if available
-                if (request != null && request.getRepoId() != null) {
+                if (request.getRepoId() != null) {
                     if (recordId != null) {
                         command.add("--version-id");
                         command.add(recordId);
@@ -134,11 +141,11 @@ public class LineageEngineService {
                     command.add(repoRoot);
                 }
 
-                if (request != null && StringUtils.hasText(request.getUser())) {
+                if (StringUtils.hasText(request.getUser())) {
                     command.add("--default-user");
                     command.add(request.getUser());
                 }
-                if (request != null && StringUtils.hasText(request.getLanguage())) {
+                if (StringUtils.hasText(request.getLanguage())) {
                     command.add("--dialect");
                     command.add(request.getLanguage());
                 }
@@ -169,14 +176,38 @@ public class LineageEngineService {
         }
     }
 
+    private StartEngineRequest normalizeRequest(StartEngineRequest request) {
+        StartEngineRequest normalized = request != null ? request : new StartEngineRequest();
+        if (!StringUtils.hasText(normalized.getSourceType())) {
+            if (normalized.getRepoId() != null) {
+                normalized.setSourceType("git");
+            } else if (StringUtils.hasText(normalized.getLocalPath())) {
+                normalized.setSourceType("upload");
+            }
+        }
+        return normalized;
+    }
+
+    private record InputPreparationResult(String inputPath, String repoRoot) {
+    }
+
+    private InputPreparationResult resolveInput(StartEngineRequest request, List<MultipartFile> uploadedFiles)
+            throws Exception {
+        if ("upload".equalsIgnoreCase(request.getSourceType())) {
+            return prepareUploadInput(request, uploadedFiles);
+        }
+        if (request.getRepoId() != null) {
+            GitInputResult gitInputResult = prepareGitInput(request);
+            return new InputPreparationResult(gitInputResult.inputPath(), gitInputResult.repoRoot());
+        }
+        return new InputPreparationResult(resolveEngineArgsPath(engineArgs), null);
+    }
+
     private record GitInputResult(String inputPath, String repoRoot) {
     }
 
     private GitInputResult prepareGitInput(StartEngineRequest request) throws Exception {
-        Path baseDir = Paths.get("/tmp/lineage-share");
-        if (!Files.exists(baseDir)) {
-            Files.createDirectories(baseDir);
-        }
+        Path baseDir = resolveSharedBaseDir();
         Path tempDir = Files.createTempDirectory(baseDir, "lineage-git-");
         // Ensure permissions are open so the other container can read/write if UID
         // differs
@@ -312,6 +343,72 @@ public class LineageEngineService {
         }
     }
 
+    private InputPreparationResult prepareUploadInput(StartEngineRequest request, List<MultipartFile> uploadedFiles)
+            throws Exception {
+        if (uploadedFiles != null && !uploadedFiles.isEmpty()) {
+            Path tempDir = Files.createTempDirectory(resolveSharedBaseDir(), "lineage-upload-");
+            try {
+                Files.setPosixFilePermissions(tempDir,
+                        java.nio.file.attribute.PosixFilePermissions.fromString("rwxrwxrwx"));
+            } catch (Exception e) {
+                log.warn("Failed to set perms on upload dir (might be non-posix fs): {}", e.getMessage());
+            }
+
+            List<String> preparedPaths = new ArrayList<>();
+            for (MultipartFile file : uploadedFiles) {
+                if (file == null || file.isEmpty()) {
+                    continue;
+                }
+
+                String originalFilename = file.getOriginalFilename();
+                String cleanedName = Paths.get(StringUtils.cleanPath(
+                        StringUtils.hasText(originalFilename) ? originalFilename : "uploaded.sql"))
+                        .getFileName()
+                        .toString();
+
+                if (cleanedName.toLowerCase().endsWith(".zip")) {
+                    Path zipPath = tempDir.resolve(createUniqueFileName(tempDir, cleanedName));
+                    file.transferTo(zipPath);
+                    extractZipToDirectory(zipPath, tempDir, preparedPaths);
+                    Files.deleteIfExists(zipPath);
+                } else {
+                    Path targetPath = tempDir.resolve(createUniqueFileName(tempDir, cleanedName));
+                    Files.createDirectories(targetPath.getParent());
+                    file.transferTo(targetPath);
+                    preparedPaths.add(tempDir.relativize(targetPath).toString().replace('\\', '/'));
+                }
+            }
+
+            if (preparedPaths.isEmpty()) {
+                throw new IllegalArgumentException("请至少上传一个非空文件");
+            }
+
+            preparedPaths.sort(String::compareTo);
+            grantFullPermissions(tempDir);
+            log.info("上传模式准备完成: {}", preparedPaths);
+            logDirectoryContents(tempDir);
+
+            request.setLocalPath(tempDir.toAbsolutePath().toString());
+            request.setPaths(preparedPaths);
+            return new InputPreparationResult(
+                    tempDir.toAbsolutePath().toString(),
+                    tempDir.toAbsolutePath().toString());
+        }
+
+        if (StringUtils.hasText(request.getLocalPath())) {
+            Path localPath = Paths.get(request.getLocalPath()).toAbsolutePath().normalize();
+            if (!Files.exists(localPath)) {
+                throw new IllegalArgumentException("上传文件已失效，请重新上传后再启动");
+            }
+            if (request.getPaths() == null || request.getPaths().isEmpty()) {
+                request.setPaths(listRelativeFiles(localPath));
+            }
+            return new InputPreparationResult(localPath.toString(), localPath.toString());
+        }
+
+        throw new IllegalArgumentException("上传模式下请至少选择一个文件");
+    }
+
     private void copyDirectory(Path source, Path target) throws Exception {
         Files.walk(source).forEach(path -> {
             try {
@@ -325,6 +422,70 @@ public class LineageEngineService {
                 throw new RuntimeException(e);
             }
         });
+    }
+
+    private Path resolveSharedBaseDir() throws Exception {
+        Path baseDir = Paths.get("/tmp/lineage-share");
+        if (!Files.exists(baseDir)) {
+            Files.createDirectories(baseDir);
+        }
+        return baseDir;
+    }
+
+    private String createUniqueFileName(Path directory, String originalName) {
+        String baseName = originalName;
+        String extension = "";
+        int dotIndex = originalName.lastIndexOf('.');
+        if (dotIndex > 0) {
+            baseName = originalName.substring(0, dotIndex);
+            extension = originalName.substring(dotIndex);
+        }
+
+        String candidate = originalName;
+        int index = 1;
+        while (Files.exists(directory.resolve(candidate))) {
+            candidate = baseName + "-" + index + extension;
+            index++;
+        }
+        return candidate;
+    }
+
+    private void extractZipToDirectory(Path zipPath, Path targetDir, List<String> preparedPaths) throws Exception {
+        try (InputStream inputStream = Files.newInputStream(zipPath);
+                ZipInputStream zipInputStream = new ZipInputStream(inputStream)) {
+            ZipEntry entry;
+            while ((entry = zipInputStream.getNextEntry()) != null) {
+                String entryName = StringUtils.cleanPath(entry.getName());
+                if (!StringUtils.hasText(entryName) || entryName.startsWith("__MACOSX/")) {
+                    zipInputStream.closeEntry();
+                    continue;
+                }
+
+                Path targetPath = targetDir.resolve(entryName).normalize();
+                if (!targetPath.startsWith(targetDir)) {
+                    throw new IllegalArgumentException("压缩包包含非法路径: " + entryName);
+                }
+
+                if (entry.isDirectory()) {
+                    Files.createDirectories(targetPath);
+                } else {
+                    Files.createDirectories(targetPath.getParent());
+                    Files.copy(zipInputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
+                    preparedPaths.add(targetDir.relativize(targetPath).toString().replace('\\', '/'));
+                }
+                zipInputStream.closeEntry();
+            }
+        }
+    }
+
+    private List<String> listRelativeFiles(Path root) throws Exception {
+        try (var stream = Files.walk(root)) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .map(path -> root.relativize(path).toString().replace('\\', '/'))
+                    .sorted(Comparator.naturalOrder())
+                    .toList();
+        }
     }
 
     private String resolveEngineArgsPath(String argsStr) {

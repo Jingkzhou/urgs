@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Steps, Select, Tree, Form, Input, Card, Button, Space, Typography, Tag, Empty, Spin, message } from 'antd';
+import { Modal, Steps, Select, Tree, Form, Input, Card, Button, Space, Typography, Tag, Empty, Spin, message, Radio, Upload } from 'antd';
 import {
     GithubOutlined,
     BranchesOutlined,
@@ -9,6 +9,8 @@ import {
     FolderOpenOutlined,
     FileTextOutlined,
     LoadingOutlined,
+    InboxOutlined,
+    UploadOutlined,
 } from '@ant-design/icons';
 import {
     getGitRepositories,
@@ -18,8 +20,13 @@ import {
     GitBranch,
     GitFileEntry
 } from '@/api/version';
+import type { LineageEngineStartParams } from '@/api/lineage';
+import type { UploadFile } from 'antd/es/upload/interface';
+
+export type { LineageEngineStartParams } from '@/api/lineage';
 
 const { Text, Title, Paragraph } = Typography;
+const { Dragger } = Upload;
 
 interface LineageEngineStartModalProps {
     open: boolean;
@@ -28,16 +35,9 @@ interface LineageEngineStartModalProps {
     loading?: boolean;
 }
 
-export interface LineageEngineStartParams {
-    repoId: number;
-    ref: string;
-    paths: string[];
-    user?: string;
-    language?: string;
-}
-
 const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open, onCancel, onOk, loading }) => {
     const [currentStep, setCurrentStep] = useState(0);
+    const [sourceType, setSourceType] = useState<'git' | 'upload'>('git');
     const [repos, setRepos] = useState<GitRepository[]>([]);
     const [reposLoading, setReposLoading] = useState(false);
     const [selectedRepoId, setSelectedRepoId] = useState<number | null>(null);
@@ -47,31 +47,38 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
     const [fileTree, setFileTree] = useState<any[]>([]);
     const [fileTreeLoading, setFileTreeLoading] = useState(false);
     const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
+    const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
     const [form] = Form.useForm();
+
+    useEffect(() => {
+        if (!open) {
+            setCurrentStep(0);
+            setSourceType('git');
+            setSelectedRepoId(null);
+            setRepos([]);
+            setBranches([]);
+            setSelectedRef('');
+            setFileTree([]);
+            setSelectedPaths([]);
+            setUploadFiles([]);
+            form.resetFields();
+        }
+    }, [open, form]);
 
     // Load Repositories
     useEffect(() => {
-        if (open) {
+        if (open && sourceType === 'git') {
             setReposLoading(true);
             getGitRepositories()
                 .then(res => setRepos(res || []))
                 .catch(() => message.error('获取 Git 仓库失败'))
                 .finally(() => setReposLoading(false));
-        } else {
-            // Reset state on close
-            setCurrentStep(0);
-            setSelectedRepoId(null);
-            setBranches([]);
-            setSelectedRef('');
-            setFileTree([]);
-            setSelectedPaths([]);
-            form.resetFields();
         }
-    }, [open, form]);
+    }, [open, sourceType]);
 
     // Load Branches when Repo changes
     useEffect(() => {
-        if (selectedRepoId) {
+        if (sourceType === 'git' && selectedRepoId) {
             setBranchesLoading(true);
             getRepoBranches(selectedRepoId)
                 .then(res => {
@@ -83,7 +90,7 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                 .catch(() => message.error('获取分支失败'))
                 .finally(() => setBranchesLoading(false));
         }
-    }, [selectedRepoId, form]);
+    }, [selectedRepoId, form, sourceType]);
 
     // Load File Tree when Ref or Repo changes
     const loadFileTree = (path: string = '') => {
@@ -100,10 +107,10 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
     };
 
     useEffect(() => {
-        if (currentStep === 1) {
+        if (sourceType === 'git' && currentStep === 1) {
             loadFileTree();
         }
-    }, [currentStep, selectedRepoId, selectedRef]);
+    }, [currentStep, selectedRepoId, selectedRef, sourceType]);
 
     const formatFileTree = (entries: GitFileEntry[]): any[] => {
         return entries.map(entry => ({
@@ -138,9 +145,22 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
     };
 
     const handleNext = () => {
-        if (currentStep === 0 && !selectedRepoId) {
-            message.warning('请先选择一个代码仓库');
-            return;
+        if (currentStep === 0) {
+            if (sourceType === 'git' && !selectedRepoId) {
+                message.warning('请先选择一个代码仓库');
+                return;
+            }
+        }
+
+        if (currentStep === 1) {
+            if (sourceType === 'git' && selectedPaths.length === 0) {
+                message.warning('请至少选择一个文件或目录进行分析');
+                return;
+            }
+            if (sourceType === 'upload' && uploadFiles.length === 0) {
+                message.warning('请至少上传一个文件');
+                return;
+            }
         }
         setCurrentStep(currentStep + 1);
     };
@@ -150,19 +170,50 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
     };
 
     const handleSubmit = () => {
-        if (selectedPaths.length === 0) {
-            message.warning('请至少选择一个文件或目录进行分析');
-            return;
-        }
         form.validateFields().then(values => {
+            if (sourceType === 'git') {
+                if (selectedPaths.length === 0) {
+                    message.warning('请至少选择一个文件或目录进行分析');
+                    return;
+                }
+                onOk({
+                    sourceType: 'git',
+                    repoId: selectedRepoId!,
+                    ref: selectedRef,
+                    paths: selectedPaths,
+                    user: values.user,
+                    language: values.language,
+                });
+                return;
+            }
+
+            const files = uploadFiles
+                .map(file => file.originFileObj)
+                .filter((file): file is File => !!file);
+
+            if (files.length === 0) {
+                message.warning('请至少上传一个文件');
+                return;
+            }
+
             onOk({
-                repoId: selectedRepoId!,
-                ref: selectedRef,
-                paths: selectedPaths,
+                sourceType: 'upload',
+                files,
                 user: values.user,
                 language: values.language,
             });
         });
+    };
+
+    const handleSourceTypeChange = (nextSourceType: 'git' | 'upload') => {
+        setSourceType(nextSourceType);
+        setCurrentStep(0);
+        setSelectedRepoId(null);
+        setBranches([]);
+        setSelectedRef('');
+        setSelectedPaths([]);
+        setFileTree([]);
+        setUploadFiles([]);
     };
 
     // Custom Styles for high-end look
@@ -193,7 +244,7 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
             footer={[
                 currentStep > 0 && <Button key="prev" onClick={handlePrev}>上一步</Button>,
                 currentStep < 2 && (
-                    <Button key="next" type="primary" onClick={handleNext} disabled={!selectedRepoId}>
+                    <Button key="next" type="primary" onClick={handleNext}>
                         下一步
                     </Button>
                 ),
@@ -212,8 +263,8 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                     size="small"
                     style={{ marginBottom: 24 }}
                     items={[
-                        { title: '选择仓库', icon: <GithubOutlined /> },
-                        { title: '浏览文件', icon: <FileSearchOutlined /> },
+                        { title: '选择来源', icon: sourceType === 'git' ? <GithubOutlined /> : <UploadOutlined /> },
+                        { title: sourceType === 'git' ? '浏览文件' : '上传文件', icon: sourceType === 'git' ? <FileSearchOutlined /> : <InboxOutlined /> },
                         { title: '分析配置', icon: <SettingOutlined /> },
                     ]}
                 />
@@ -222,6 +273,23 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
             <div style={stepContentStyle}>
                 {currentStep === 0 && (
                     <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+                        <div style={{ marginBottom: 24 }}>
+                            <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+                                请选择本次启动血缘分析引擎的输入来源。
+                            </Text>
+                            <Radio.Group
+                                value={sourceType}
+                                onChange={e => handleSourceTypeChange(e.target.value)}
+                                optionType="button"
+                                buttonStyle="solid"
+                            >
+                                <Radio.Button value="git">Git 仓库</Radio.Button>
+                                <Radio.Button value="upload">上传文件</Radio.Button>
+                            </Radio.Group>
+                        </div>
+
+                        {sourceType === 'git' ? (
+                            <>
                         <Paragraph type="secondary" style={{ marginBottom: 20 }}>
                             请选择您需要进行血缘分析的 Git 仓库及其代码分支。
                         </Paragraph>
@@ -286,11 +354,29 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                                 </Form>
                             </div>
                         )}
+                            </>
+                        ) : (
+                            <div style={{ padding: 24, background: '#fafafa', borderRadius: 12, border: '1px solid #f0f0f0' }}>
+                                <Space align="start">
+                                    <div style={{ padding: 10, borderRadius: 12, background: '#e6f4ff', color: '#1677ff' }}>
+                                        <UploadOutlined />
+                                    </div>
+                                    <div>
+                                        <Text strong style={{ display: 'block', marginBottom: 8 }}>上传本地 SQL 文件或 ZIP 压缩包</Text>
+                                        <Text type="secondary">
+                                            下一步可上传多个文件；如果上传 ZIP，后端会自动解压后再交给血缘引擎解析。
+                                        </Text>
+                                    </div>
+                                </Space>
+                            </div>
+                        )}
                     </div>
                 )}
 
                 {currentStep === 1 && (
                     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', animation: 'fadeIn 0.5s ease-out' }}>
+                        {sourceType === 'git' ? (
+                            <>
                         <div style={{ marginBottom: 12 }}>
                             <Text type="secondary">请在下方文件树中选择要解析的 SQL 文件或目录：</Text>
                             {selectedPaths.length > 0 && (
@@ -318,6 +404,51 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                                 />
                             )}
                         </div>
+                            </>
+                        ) : (
+                            <>
+                                <div style={{ marginBottom: 16 }}>
+                                    <Text type="secondary">
+                                        支持上传多个 `.sql` 文件，也支持上传 `.zip` 压缩包批量解析。
+                                    </Text>
+                                </div>
+                                <Dragger
+                                    multiple
+                                    accept=".sql,.ddl,.hql,.txt,.zip"
+                                    beforeUpload={() => false}
+                                    fileList={uploadFiles}
+                                    onChange={({ fileList }) => setUploadFiles(fileList)}
+                                    style={{ padding: '20px 12px', borderRadius: 12 }}
+                                >
+                                    <p className="ant-upload-drag-icon">
+                                        <InboxOutlined style={{ color: '#1677ff' }} />
+                                    </p>
+                                    <p className="ant-upload-text">点击或拖拽文件到此处上传</p>
+                                    <p className="ant-upload-hint">
+                                        建议上传 SQL 文件；如需保留目录结构，可先打包为 ZIP 再上传。
+                                    </p>
+                                </Dragger>
+
+                                <div style={{ marginTop: 20, flex: 1, overflow: 'auto', border: '1px solid #f0f0f0', borderRadius: 12, padding: 16, background: '#fff' }}>
+                                    {uploadFiles.length === 0 ? (
+                                        <Empty description="尚未选择上传文件" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                                    ) : (
+                                        <Space wrap size={[8, 8]}>
+                                            {uploadFiles.map(file => (
+                                                <Tag
+                                                    key={file.uid}
+                                                    closable
+                                                    onClose={() => setUploadFiles(uploadFiles.filter(item => item.uid !== file.uid))}
+                                                    style={{ padding: '4px 8px' }}
+                                                >
+                                                    {file.name}
+                                                </Tag>
+                                            ))}
+                                        </Space>
+                                    )}
+                                </div>
+                            </>
+                        )}
                     </div>
                 )}
 
@@ -351,7 +482,7 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                                 <Space align="start">
                                     <CheckCircleOutlined style={{ color: '#faad14', marginTop: 4 }} />
                                     <div style={{ fontSize: 13, color: 'rgba(0,0,0,0.65)' }}>
-                                        提示：启动后后台将异步下载仓库代码并由 Python 引擎执行解析。解析时间取决于文件数量及复杂度。
+                                        提示：启动后后台将异步{sourceType === 'git' ? '下载仓库代码' : '整理上传文件'}并由 Python 引擎执行解析。解析时间取决于文件数量及复杂度。
                                     </div>
                                 </Space>
                             </div>

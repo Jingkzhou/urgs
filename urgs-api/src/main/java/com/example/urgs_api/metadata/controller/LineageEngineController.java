@@ -5,8 +5,11 @@ import com.example.urgs_api.metadata.dto.StartEngineRequest;
 import com.example.urgs_api.metadata.service.LineageEngineService;
 import com.example.urgs_api.metadata.service.LineageService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -23,10 +26,19 @@ public class LineageEngineController {
         return lineageEngineService.status();
     }
 
-    @PostMapping("/start")
+    @PostMapping(value = "/start", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequirePermission("metadata:lineage:engine:start")
     public Map<String, Object> start(@RequestBody(required = false) StartEngineRequest request) {
         return lineageEngineService.start(request);
+    }
+
+    @PostMapping(value = "/start", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @RequirePermission("metadata:lineage:engine:start")
+    public Map<String, Object> startWithUpload(
+            @RequestParam("files") List<MultipartFile> files,
+            @RequestParam(required = false) String user,
+            @RequestParam(required = false) String language) {
+        return lineageEngineService.startWithUpload(files, user, language);
     }
 
     @PostMapping("/stop")

@@ -5,9 +5,11 @@ import java.util.List;
 
 @Data
 public class StartEngineRequest {
+    private String sourceType;
     private Long repoId;
     private String ref;
     private List<String> paths;
     private String user;
     private String language;
+    private String localPath;
 }

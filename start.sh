@@ -52,6 +52,34 @@ ENABLE_FRONTEND=false
 ENABLE_RAG=false
 ENABLE_PRESENTATION=false
 
+NODE_BIN=""
+NPM_BIN=""
+
+resolve_node_runtime() {
+  local candidate
+  for candidate in /opt/homebrew/bin /usr/local/bin; do
+    if [ -x "$candidate/node" ] && [ -x "$candidate/npm" ]; then
+      NODE_BIN="$candidate/node"
+      NPM_BIN="$candidate/npm"
+      break
+    fi
+  done
+
+  if [ -z "$NODE_BIN" ] || [ -z "$NPM_BIN" ]; then
+    NODE_BIN="$(command -v node || true)"
+    NPM_BIN="$(command -v npm || true)"
+  fi
+
+  if [ -z "$NODE_BIN" ] || [ -z "$NPM_BIN" ]; then
+    echo "Node.js/npm not found. Please install Node.js first."
+    exit 1
+  fi
+
+  export PATH="$(dirname "$NODE_BIN"):$(dirname "$NPM_BIN"):$PATH"
+  echo "Using NODE_BIN: $NODE_BIN"
+  echo "Using NPM_BIN: $NPM_BIN"
+}
+
 kill_port_if_exists() {
   local port="$1"
   if command -v lsof >/dev/null 2>&1; then
@@ -120,13 +148,13 @@ start_frontend() {
   kill_port_if_exists 3000
   kill_port_if_exists 3001
   if [ ! -d node_modules ]; then
-    npm install
+    "$NPM_BIN" install
   fi
 
   if [ "$ENVIRONMENT" = "dev" ]; then
-    npm run dev -- --host &
+    "$NPM_BIN" run dev -- --host &
   else
-    npm run build
+    "$NPM_BIN" run build
   fi
   pids+=($!)
 }
@@ -166,9 +194,9 @@ start_presentation() {
   cd "$PRESENTATION_DIR"
   kill_port_if_exists 3002
   if [ ! -d node_modules ]; then
-    npm install
+    "$NPM_BIN" install
   fi
-  npm run dev -- --host --port 3002 &
+  "$NPM_BIN" run dev -- --host --port 3002 &
   pids+=($!)
 }
 
@@ -230,6 +258,7 @@ done
 
 if [ "$ENABLE_BACKEND" = true ]; then start_backend; fi
 if [ "$ENABLE_EXECUTOR" = true ]; then start_executor; fi
+if [ "$ENABLE_FRONTEND" = true ] || [ "$ENABLE_PRESENTATION" = true ]; then resolve_node_runtime; fi
 if [ "$ENABLE_FRONTEND" = true ]; then start_frontend; fi
 if [ "$ENABLE_RAG" = true ]; then start_rag; fi
 if [ "$ENABLE_PRESENTATION" = true ]; then start_presentation; fi
