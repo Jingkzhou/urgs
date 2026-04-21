@@ -121,7 +121,11 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen max-h-screen overflow-hidden grid lg:grid-cols-2 bg-slate-50">
+    <div className="min-h-screen max-h-screen overflow-hidden grid lg:grid-cols-2 bg-slate-50 relative">
+      {/* Soft transition gradient to blend dark and light sides */}
+      <div className="absolute inset-0 pointer-events-none hidden lg:block z-10" 
+           style={{ background: 'linear-gradient(90deg, rgba(2,6,23,1) 0%, rgba(248,250,252,0.8) 10%, rgba(248,250,252,0) 30%, rgba(248,250,252,0) 70%, rgba(248,250,252,0.8) 90%, rgba(2,6,23,1) 100%)', opacity: 0.15 }} />
+      
       {/* Left Content Section - Professional Dark Theme */}
       <div className="relative hidden lg:flex flex-col justify-between bg-slate-950 p-16 text-white overflow-hidden">
         {/* Background Decorations */}
@@ -145,12 +149,12 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
           </div>
         </div>
 
-        <div className="relative z-10 max-w-lg">
+        <div className="relative z-10 max-w-lg animate-in fade-in slide-in-from-left-8 duration-1000 ease-out">
           <h2 className="text-4xl font-bold leading-tight mb-6 text-slate-100">
             数据驱动监管，<br />
             合规护航金融安全。
           </h2>
-          <div className="flex items-center gap-4 text-slate-400">
+          <div className="flex items-center gap-4 text-slate-400 animate-in fade-in slide-in-from-left-12 duration-1000 delay-300 ease-out">
             <div className="h-[1px] w-8 bg-red-600" />
             <span className="text-sm font-medium uppercase tracking-widest">Security & Compliance First</span>
           </div>
