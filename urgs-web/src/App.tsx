@@ -51,7 +51,7 @@ const App: React.FC = () => {
         name?: string;
         empId?: string;
         roleName?: string;
-        roleId?: number; // Added roleId
+        roleId?: number; 
         avatarUrl?: string;
         system?: string;
     } | null>(initialUser);
@@ -70,7 +70,6 @@ const App: React.FC = () => {
     const [showMoreNavMenu, setShowMoreNavMenu] = useState(false);
     const [changePasswordVisible, setChangePasswordVisible] = useState(false);
 
-    // Click outside handler for user menu
     const userMenuRef = React.useRef<HTMLDivElement>(null);
     const moreMenuRef = React.useRef<HTMLDivElement>(null);
 
@@ -83,7 +82,6 @@ const App: React.FC = () => {
                 setShowMoreNavMenu(false);
             }
         };
-        // Use mousedown to capture the event before click (optional, but robust)
         document.addEventListener('mousedown', handleClickOutside);
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
@@ -96,7 +94,6 @@ const App: React.FC = () => {
         }
     }, [isAuthenticated]);
 
-    // Save layout mode preference
     useEffect(() => {
         if (typeof window !== 'undefined') {
             localStorage.setItem('user_layout_preference', layoutMode);
@@ -108,11 +105,9 @@ const App: React.FC = () => {
             fetchPermissions(initialToken);
         }
 
-        // Basic Hash Routing
         const handleHashChange = () => {
             const hash = window.location.hash;
-            const path = hash.split('?')[0].replace('#/', ''); // #/announcement -> announcement
-
+            const path = hash.split('?')[0].replace('#/', ''); 
             const navIds = NAV_ITEMS.map(n => n.id);
             if (navIds.includes(path)) {
                 setActiveTab(path);
@@ -121,12 +116,9 @@ const App: React.FC = () => {
             }
         };
 
-        // Check on mount
         handleHashChange();
-
         window.addEventListener('hashchange', handleHashChange);
 
-        // Listen for user info updates
         const handleStorageChange = () => {
             const storedUser = localStorage.getItem('auth_user');
             if (storedUser) {
@@ -173,11 +165,6 @@ const App: React.FC = () => {
         setShowUserMenu(false);
     };
 
-    const handleMenuSettings = () => {
-        console.log("Menu Settings clicked");
-        setShowUserMenu(false);
-    };
-
     const handleChangePassword = () => {
         setChangePasswordVisible(true);
         setShowUserMenu(false);
@@ -194,7 +181,6 @@ const App: React.FC = () => {
                 <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{userInfo?.roleName}</p>
             </div>
 
-            {/* Layout Mode Toggles */}
             <div className="px-2 py-2 mb-1">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-2">导航布局偏好</p>
                 <div className="flex items-center gap-1 bg-slate-100/50 p-1 rounded-xl">
@@ -253,8 +239,7 @@ const App: React.FC = () => {
         <div className={`flex h-screen bg-slate-50 ${layoutMode === 'topbar' ? 'flex-col' : 'flex-row'}`}>
             {layoutMode === 'sidebar' && (
                 <aside
-                    className={`${sidebarOpen ? 'w-64' : 'w-24'
-                        } m-4 mr-0 rounded-[2.5rem] bg-white/70 backdrop-blur-3xl border border-white/40 text-slate-800 transition-all duration-500 flex flex-col shadow-[0_40px_100px_-20px_rgba(0,0,0,0.1)] z-20 shrink-0 relative`}
+                    className={`${sidebarOpen ? 'w-64' : 'w-24'} m-4 mr-0 rounded-[2.5rem] bg-white/70 backdrop-blur-3xl border border-white/40 text-slate-800 transition-all duration-500 flex flex-col shadow-[0_40px_100px_-20px_rgba(0,0,0,0.1)] z-20 shrink-0 relative`}
                 >
                     <div className="h-24 flex items-center justify-between px-6 border-b border-slate-100/30 bg-white/10 overflow-hidden shrink-0">
                         {sidebarOpen && (
@@ -288,7 +273,6 @@ const App: React.FC = () => {
                     </nav>
 
                     <div className="p-3 border-t border-slate-100 flex flex-col gap-4 shrink-0">
-                        {/* Notifications */}
                         <div className={`flex ${sidebarOpen ? 'justify-start px-2' : 'justify-center'}`}>
                             <button className="p-2.5 relative bg-slate-50 hover:bg-white rounded-xl text-slate-400 hover:text-red-500 transition-all border border-slate-100/50 shadow-sm group">
                                 <Bell size={20} strokeWidth={2.5} className="group-hover:rotate-12 transition-transform" />
@@ -296,7 +280,6 @@ const App: React.FC = () => {
                             </button>
                         </div>
 
-                        {/* User Profile */}
                         <div className="relative" ref={userMenuRef}>
                             <button
                                 onClick={() => setShowUserMenu(!showUserMenu)}
@@ -342,17 +325,12 @@ const App: React.FC = () => {
                 </aside>
             )}
 
-            {/* Main Content Area */}
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-
-                {/* 1. Global Header - Premium Floating Glass (Topbar layout only) */}
                 {layoutMode === 'topbar' && (
                     <header className="bg-white/80 backdrop-blur-xl border-b border-slate-200/50 h-20 flex items-center justify-between px-8 z-[100] relative shrink-0">
-                        {/* Subtle bottom glow line */}
                         <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-red-500/20 to-transparent"></div>
 
                         <div className="flex items-center gap-10">
-                            {/* Logo & Platform Title */}
                             <div className="flex items-center gap-10">
                                 <div className="flex items-center gap-4 py-1 px-3 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner">
                                     <img src={LOGO_URL} alt="Bank Logo" className="h-8 w-auto object-contain" />
@@ -360,28 +338,20 @@ const App: React.FC = () => {
                                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest italic pr-1">ARK / PORTAL</span>
                                 </div>
 
-                                {/* Top Navigation Tabs - Dynamic Capsule Style */}
                                 <nav className="hidden lg:flex items-center bg-slate-100/50 p-1.5 rounded-[1.25rem] relative" ref={moreMenuRef}>
                                     {(() => {
                                         const allowedItems = NAV_ITEMS.filter(item => hasPermission(item.permission));
                                         if (allowedItems.length === 0) return null;
 
-                                        // Find active item index
                                         const activeIndex = allowedItems.findIndex(item => item.id === activeTab);
-
-                                        // Decide which items to show directly
-                                        const MAX_VISIBLE = 4;
+                                        const MAX_VISIBLE = 6; 
                                         let visibleItems = allowedItems.slice(0, MAX_VISIBLE);
                                         let hiddenItems = allowedItems.slice(MAX_VISIBLE);
 
-                                        // If active item is in hidden, swap it up to visible (replacing the last visible one)
                                         if (activeIndex >= MAX_VISIBLE) {
                                             const activeItem = allowedItems[activeIndex];
                                             const itemToHide = visibleItems[MAX_VISIBLE - 1];
-
                                             visibleItems[MAX_VISIBLE - 1] = activeItem;
-
-                                            // Replace activeitem in hiddenItems with the itemToHide so it visually swaps instead of just pushing
                                             hiddenItems = hiddenItems.map(item => item.id === activeItem.id ? itemToHide : item);
                                         }
 
@@ -393,166 +363,157 @@ const App: React.FC = () => {
                                                         <button
                                                             key={item.id}
                                                             onClick={() => { setActiveTab(item.id); window.location.hash = '#/' + item.id; }}
-                                                            className={`relative flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300 z-10
+                                                            className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300 z-10
                                                             ${isActive ? 'text-red-600' : 'text-slate-500 hover:text-slate-800'}
                                                         `}
-                                                        >
-                                                            {isActive && (
-                                                                <motion.div
-                                                                    layoutId="topNavTab"
-                                                                    className="absolute inset-0 bg-white shadow-xl shadow-black/[0.03] rounded-xl z-[-1] border border-slate-100"
-                                                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                                                                />
-                                                            )}
-                                                            <item.icon size={16} strokeWidth={isActive ? 3 : 2} />
-                                                            <span className="whitespace-nowrap">{item.label}</span>
-                                                        </button>
-                                                    );
-                                                })}
-
-                                                {/* More Dropdown */}
-                                                {hiddenItems.length > 0 && (
-                                                    <div className="relative z-20 ml-1">
-                                                        <button
-                                                            onClick={() => setShowMoreNavMenu(!showMoreNavMenu)}
-                                                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300
-                                                            ${showMoreNavMenu ? 'bg-white text-slate-800 shadow-sm border border-slate-100' : 'text-slate-500 hover:text-slate-800'}
-                                                        `}
-                                                        >
-                                                            <span>更多应用</span>
-                                                            <motion.div
-                                                                animate={{ rotate: showMoreNavMenu ? 180 : 0 }}
-                                                                transition={{ type: 'spring', stiffness: 200, damping: 20 }}
                                                             >
-                                                                <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                                    <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                                                </svg>
-                                                            </motion.div>
-                                                        </button>
+                                                                {isActive && (
+                                                                    <motion.div
+                                                                        layoutId="topNavTab"
+                                                                        className="absolute inset-0 bg-white shadow-xl shadow-black/[0.03] rounded-xl z-[-1] border border-slate-100"
+                                                                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                                                    />
+                                                                )}
+                                                                <item.icon size={16} strokeWidth={isActive ? 3 : 2} />
+                                                                <span className="whitespace-nowrap">{item.label}</span>
+                                                            </button>
+                                                        );
+                                                    })}
 
-                                                        <AnimatePresence>
-                                                            {showMoreNavMenu && (
-                                                                <motion.div
-                                                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                                    transition={{ type: "spring", bounce: 0.3, duration: 0.5 }}
-                                                                    className="absolute right-0 top-full mt-3 w-56 bg-white/90 backdrop-blur-2xl rounded-[1.25rem] shadow-[0_20px_40px_-10px_rgba(0,0,0,0.1)] border border-white p-2 z-50 grid grid-cols-1 gap-1"
+                                                        {hiddenItems.length > 0 && (
+                                                            <div className="relative z-20 ml-1">
+                                                                <button
+                                                                    onClick={() => setShowMoreNavMenu(!showMoreNavMenu)}
+                                                                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300
+                                                                    ${showMoreNavMenu ? 'bg-white text-slate-800 shadow-sm border border-slate-100' : 'text-slate-500 hover:text-slate-800'}
+                                                                `}
                                                                 >
-                                                                    {hiddenItems.map((item) => (
-                                                                        <button
-                                                                            key={item.id}
-                                                                            onClick={() => {
-                                                                                setActiveTab(item.id);
-                                                                                window.location.hash = '#/' + item.id;
-                                                                                setShowMoreNavMenu(false);
-                                                                            }}
-                                                                            className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left transition-all hover:bg-slate-50 hover:text-red-600 group"
+                                                                    <span>更多应用</span>
+                                                                    <motion.div
+                                                                        animate={{ rotate: showMoreNavMenu ? 180 : 0 }}
+                                                                        transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+                                                                    >
+                                                                        <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                                            <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                                        </svg>
+                                                                    </motion.div>
+                                                                </button>
+
+                                                                <AnimatePresence>
+                                                                    {showMoreNavMenu && (
+                                                                        <motion.div
+                                                                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                                            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                                            transition={{ type: "spring", bounce: 0.3, duration: 0.5 }}
+                                                                            className="absolute right-0 top-full mt-3 w-56 bg-white/90 backdrop-blur-2xl rounded-[1.25rem] shadow-[0_20px_40px_-10px_rgba(0,0,0,0.1)] border border-white p-2 z-50 grid grid-cols-1 gap-1"
                                                                         >
-                                                                            <div className="p-1.5 rounded-lg bg-slate-100/80 text-slate-500 group-hover:bg-red-100/50 group-hover:text-red-600 transition-colors">
-                                                                                <item.icon size={16} strokeWidth={2.5} />
-                                                                            </div>
-                                                                            <span className="text-[13px] font-bold text-slate-700 group-hover:text-red-600">{item.label}</span>
-                                                                        </button>
-                                                                    ))}
-                                                                </motion.div>
-                                                            )}
-                                                        </AnimatePresence>
-                                                    </div>
-                                                )}
-                                            </>
-                                        );
-                                    })()}
-                                </nav>
-                            </div>
-                        </div>
-
-                        {/* Right Utilities Section */}
-                        <div className="flex items-center gap-6">
-
-                            <button className="p-3 relative bg-slate-50 hover:bg-white rounded-2xl text-slate-400 hover:text-red-500 transition-all border border-slate-100/50 shadow-sm group">
-                                <Bell size={20} strokeWidth={2.5} className="group-hover:rotate-12 transition-transform" />
-                                <span className="absolute top-2.5 right-2.5 w-3 h-3 bg-red-500 rounded-full border-[3px] border-white shadow-sm"></span>
-                            </button>
-
-                            <div className="flex items-center gap-5 pl-4 border-l border-slate-200/60">
-                                <div className="text-right hidden xl:block">
-                                    <p className="text-[13px] font-black text-slate-800 tracking-tight leading-none mb-1">{userInfo?.name || '用户'}</p>
-                                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.15em]">{userInfo?.roleName || 'System Admin'}</p>
+                                                                            {hiddenItems.map((item) => (
+                                                                                <button
+                                                                                    key={item.id}
+                                                                                    onClick={() => {
+                                                                                        setActiveTab(item.id);
+                                                                                        window.location.hash = '#/' + item.id;
+                                                                                        setShowMoreNavMenu(false);
+                                                                                    }}
+                                                                                    className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left transition-all hover:bg-slate-50 hover:text-red-600 group"
+                                                                                >
+                                                                                    <div className="p-1.5 rounded-lg bg-slate-100/80 text-slate-500 group-hover:bg-red-100/50 group-hover:text-red-600 transition-colors">
+                                                                                        <item.icon size={16} strokeWidth={2.5} />
+                                                                                    </div>
+                                                                                    <span className="text-[13px] font-bold text-slate-700 group-hover:text-red-600">{item.label}</span>
+                                                                                </button>
+                                                                            ))}
+                                                                        </motion.div>
+                                                                    )}
+                                                                </AnimatePresence>
+                                                            </div>
+                                                        )}
+                                                    </>
+                                                );
+                                            })()}
+                                        </nav>
+                                    </div >
                                 </div>
 
-                                <div className="relative" ref={userMenuRef}>
-                                    <button
-                                        onClick={() => setShowUserMenu(!showUserMenu)}
-                                        className={`group relative w-12 h-12 rounded-[1.25rem] bg-slate-50 border transition-all duration-500 overflow-hidden flex items-center justify-center
-                                        ${showUserMenu ? 'border-red-400 shadow-lg shadow-red-500/10' : 'border-slate-100 hover:border-red-200 hover:shadow-md'}
-                                    `}
-                                    >
-                                        {userInfo?.avatarUrl ? (
-                                            <img src={userInfo.avatarUrl} alt="Avatar" className="w-full h-full object-cover grayscale-[0.5] group-hover:grayscale-0 transition-all duration-700" />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-50 text-slate-400">
-                                                <UserCircle size={28} strokeWidth={1.5} />
-                                            </div>
-                                        )}
-                                        {/* Small indicator on avatar */}
-                                        <div className="absolute bottom-1 right-1 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white"></div>
+                                <div className="flex items-center gap-6">
+                                    <button className="p-3 relative bg-slate-50 hover:bg-white rounded-2xl text-slate-400 hover:text-red-500 transition-all border border-slate-100/50 shadow-sm group">
+                                        <Bell size={20} strokeWidth={2.5} className="group-hover:rotate-12 transition-transform" />
+                                        <span className="absolute top-2.5 right-2.5 w-3 h-3 bg-red-500 rounded-full border-[3px] border-white shadow-sm"></span>
                                     </button>
 
-                                    <AnimatePresence>
-                                        {showUserMenu && (
-                                            <motion.div
-                                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                className="absolute right-0 top-full mt-4 w-60 bg-white/90 backdrop-blur-2xl rounded-[1.5rem] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] border border-white/60 p-2 z-[110] overflow-hidden"
+                                    <div className="flex items-center gap-5 pl-4 border-l border-slate-200/60">
+                                        <div className="text-right hidden xl:block">
+                                            <p className="text-[13px] font-black text-slate-800 tracking-tight leading-none mb-1">{userInfo?.name || '用户'}</p>
+                                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.15em]">{userInfo?.roleName || 'System Admin'}</p>
+                                        </div>
+
+                                        <div className="relative" ref={userMenuRef}>
+                                            <button
+                                                onClick={() => setShowUserMenu(!showUserMenu)}
+                                                className={`group relative w-12 h-12 rounded-[1.25rem] bg-slate-50 border transition-all duration-500 overflow-hidden flex items-center justify-center
+                                                ${showUserMenu ? 'border-red-400 shadow-lg shadow-red-500/10' : 'border-slate-100 hover:border-red-200 hover:shadow-md'}
+                                            `}
                                             >
-                                                {renderUserMenuContent()}
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
+                                                {userInfo?.avatarUrl ? (
+                                                    <img src={userInfo.avatarUrl} alt="Avatar" className="w-full h-full object-cover grayscale-[0.5] group-hover:grayscale-0 transition-all duration-700" />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-50 text-slate-400">
+                                                        <UserCircle size={28} strokeWidth={1.5} />
+                                                    </div>
+                                                )}
+                                                <div className="absolute bottom-1 right-1 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white"></div>
+                                            </button>
+
+                                            <AnimatePresence>
+                                                {showUserMenu && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                        className="absolute right-0 top-full mt-4 w-60 bg-white/90 backdrop-blur-2xl rounded-[1.5rem] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] border border-white/60 p-2 z-[110] overflow-hidden"
+                                                    >
+                                                        {renderUserMenuContent()}
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </div>
+                                    </div>
                                 </div>
+                            </header>
+                        )}
+
+                        <main className="flex-1 overflow-y-auto p-4 lg:p-8 scroll-smooth bg-slate-50/50">
+                            <div className="max-w-[98%] mx-auto h-full">
+                                {activeTab === 'dashboard' && <Dashboard />}
+                                {activeTab === 'ark' && <ArkPage />}
+                                {activeTab === 'announcement' && <AnnouncementManagement />}
+                                {activeTab === 'sys' && <SystemManagement />}
+                                {activeTab === 'version' && <VersionManagement />}
+                                {activeTab === 'metadata' && <MetadataManagement />}
+                                {activeTab === 'ops' && <OpsManagement />}
+                                {activeTab === 'knowledge' && <KnowledgeCenter />}
+                                {activeTab === 'marketplace' && <MarketplacePage />}
+                                {activeTab === 'basic_info' && <BasicInfo userInfo={userInfo} />}
                             </div>
-                        </div>
-                    </header>
-                )}
-
-                {/* Scrollable Content Area */}
-                <main className="flex-1 overflow-y-auto p-4 lg:p-8 scroll-smooth bg-slate-50/50">
-                    <div className="max-w-[98%] mx-auto h-full"> {/* Added h-full for ArkPage full height */}
-                        {activeTab === 'dashboard' && <Dashboard />}
-                        {activeTab === 'ark' && <ArkPage />}
-                        {activeTab === 'announcement' && <AnnouncementManagement />}
-                        {activeTab === 'sys' && <SystemManagement />}
-                        {activeTab === 'version' && <VersionManagement />}
-                        {activeTab === 'metadata' && <MetadataManagement />}
-                        {activeTab === 'ops' && <OpsManagement />}
-                        {activeTab === 'knowledge' && <KnowledgeCenter />}
-                        {activeTab === 'marketplace' && <MarketplacePage />}
-                        {activeTab === 'basic_info' && <BasicInfo userInfo={userInfo} />}
+                        </main>
                     </div>
-                </main>
-            </div>
 
-            <ChangePasswordModal
-                visible={changePasswordVisible}
-                onCancel={() => setChangePasswordVisible(false)}
-                onSuccess={() => {
-                    setChangePasswordVisible(false);
-                    // Optionally logout or just close
-                    handleLogout();
-                }}
-            />
+                    <ChangePasswordModal
+                        visible={changePasswordVisible}
+                        onCancel={() => setChangePasswordVisible(false)}
+                        onSuccess={() => {
+                            setChangePasswordVisible(false);
+                            handleLogout();
+                        }}
+                    />
 
-            {/* Persistent Chat Widget */}
-            <ChatWidget />
-        </div >
+                    <ChatWidget />
+        </div>
     );
 };
 
-// Helper for Sidebar Items
 interface NavItemProps {
-
     icon: React.ReactNode;
     label: string;
     active?: boolean;
