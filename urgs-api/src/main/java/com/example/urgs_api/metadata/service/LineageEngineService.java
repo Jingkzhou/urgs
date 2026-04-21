@@ -4,17 +4,13 @@ import com.example.urgs_api.metadata.dto.StartEngineRequest;
 import com.example.urgs_api.metadata.mapper.LineageAnalysisRecordMapper;
 import com.example.urgs_api.metadata.model.LineageAnalysisRecord;
 import com.example.urgs_api.version.service.GitPlatformService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.InputStream;
-import java.nio.file.StandardCopyOption;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,19 +18,21 @@ import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class LineageEngineService {
 
     private final GitPlatformService gitPlatformService;
     private final LineageAnalysisRecordMapper analysisRecordMapper;
+    private final LineageGitInputPreparer gitInputPreparer;
+    private final LineageUploadInputPreparer uploadInputPreparer;
+    private final Executor taskExecutor;
 
     @Value("${lineage.engine.workdir:${user.dir}/../sql-lineage-engine}")
     private String workDir;
@@ -62,9 +60,24 @@ public class LineageEngineService {
     private String lastError;
     private StartEngineRequest lastRequest;
     private String lastRecordId;
+    private boolean startInProgress;
+
+    public LineageEngineService(
+            GitPlatformService gitPlatformService,
+            LineageAnalysisRecordMapper analysisRecordMapper,
+            LineageGitInputPreparer gitInputPreparer,
+            LineageUploadInputPreparer uploadInputPreparer,
+            @Qualifier("aiTaskExecutor") Executor taskExecutor) {
+        this.gitPlatformService = gitPlatformService;
+        this.analysisRecordMapper = analysisRecordMapper;
+        this.gitInputPreparer = gitInputPreparer;
+        this.uploadInputPreparer = uploadInputPreparer;
+        this.taskExecutor = taskExecutor;
+    }
 
     public Map<String, Object> start(StartEngineRequest request) {
-        return startInternal(normalizeRequest(request), null);
+        StartEngineRequest normalized = normalizeRequest(request);
+        return queueStart(normalized);
     }
 
     public Map<String, Object> startWithUpload(List<MultipartFile> files, String user, String language) {
@@ -72,108 +85,133 @@ public class LineageEngineService {
         request.setSourceType("upload");
         request.setUser(user);
         request.setLanguage(language);
-        return startInternal(request, files);
+        try {
+            uploadInputPreparer.stageUploads(request, files);
+            return queueStart(normalizeRequest(request));
+        } catch (Exception e) {
+            lastError = e.getMessage();
+            log.error("暂存上传文件失败", e);
+            return buildStatus(false, "启动失败: " + e.getMessage(), false);
+        }
     }
 
-    private Map<String, Object> startInternal(StartEngineRequest request, List<MultipartFile> uploadedFiles) {
+    private Map<String, Object> queueStart(StartEngineRequest request) {
         synchronized (lock) {
-            if (isRunning()) {
-                return buildStatus(false, "引擎已在运行中");
+            if (isRunning() || startInProgress) {
+                return buildStatus(false, "引擎已在运行中", false);
             }
-            try {
-                Path workingDir = resolveWorkDir();
-                Path script = resolveScriptPath(workingDir);
-                if (!Files.exists(script)) {
-                    lastError = "启动脚本不存在: " + script;
-                    log.error(lastError);
-                    return buildStatus(false, lastError);
-                }
+            this.lastRequest = request;
+            this.lastExitCode = null;
+            this.lastError = null;
+            this.lastStoppedAt = null;
+            this.startInProgress = true;
+            if (!isGitSource(request)) {
+                this.lastRecordId = "upload-" + System.currentTimeMillis();
+            }
+        }
 
-                // Prepare Input Paths (Git Source)
-                InputPreparationResult inputResult = resolveInput(request, uploadedFiles);
-                String inputPath = inputResult.inputPath();
-                String repoRoot = inputResult.repoRoot();
+        taskExecutor.execute(() -> executeStartTask(request));
+        return buildStatus(true, "引擎启动任务已受理", false);
+    }
 
-                // Create record first to get ID and SHA
-                String recordId = "upload-" + System.currentTimeMillis();
-                LineageAnalysisRecord record = null;
-                if (request.getRepoId() != null) {
-                    record = createAnalysisRecord(request, Instant.now());
-                    recordId = record.getId();
-                }
-                this.lastRequest = request;
-                this.lastRecordId = recordId;
+    private void executeStartTask(StartEngineRequest request) {
+        try {
+            Path workingDir = resolveWorkDir();
+            Path script = resolveScriptPath(workingDir);
+            if (!Files.exists(script)) {
+                throw new IllegalStateException("启动脚本不存在: " + script);
+            }
 
-                Path logPath = resolveLogPath(workingDir, recordId);
-                Files.createDirectories(logPath.getParent());
+            LineageEngineInputPreparationResult inputResult = resolveInput(request, null);
+            String inputPath = inputResult.inputPath();
+            String repoRoot = inputResult.repoRoot();
 
-                List<String> command = new ArrayList<>();
-                command.add("bash");
-                command.add(script.toString());
+            String recordId = this.lastRecordId;
+            LineageAnalysisRecord record = null;
+            if (isGitSource(request)) {
+                record = createAnalysisRecord(request);
+                recordId = record.getId();
+            }
 
-                // Construct command line arguments
-                command.add("parse-sql");
-                command.add("--file");
-                command.add(inputPath);
+            Path logPath = resolveLogPath(workingDir, recordId);
+            Files.createDirectories(logPath.getParent());
 
-                // Pass metadata arguments if available
-                if (request.getRepoId() != null) {
-                    if (recordId != null) {
-                        command.add("--version-id");
-                        command.add(recordId);
-                    }
-                    command.add("--repo-id");
-                    command.add(String.valueOf(request.getRepoId()));
+            List<String> command = buildStartCommand(request, inputPath, repoRoot, recordId, record);
+            ProcessBuilder builder = new ProcessBuilder(command);
+            builder.directory(workingDir.toFile());
+            builder.environment().put("DOCKER_API_VERSION", dockerApiVersion);
+            builder.redirectErrorStream(true);
+            builder.redirectOutput(ProcessBuilder.Redirect.appendTo(logPath.toFile()));
 
-                    if (StringUtils.hasText(request.getRef())) {
-                        command.add("--ref");
-                        command.add(request.getRef());
-                    }
+            log.info("异步启动血缘引擎: workDir={}, command={}", workingDir, command);
+            Process startedProcess = builder.start();
 
-                    if (record != null && StringUtils.hasText(record.getCommitSha())) {
-                        command.add("--commit-sha");
-                        command.add(record.getCommitSha());
-                    }
-                } // SHA.
-
-                if (repoRoot != null) {
-                    command.add("--repo-root");
-                    command.add(repoRoot);
-                }
-
-                if (StringUtils.hasText(request.getUser())) {
-                    command.add("--default-user");
-                    command.add(request.getUser());
-                }
-                if (StringUtils.hasText(request.getLanguage())) {
-                    command.add("--dialect");
-                    command.add(request.getLanguage());
-                }
-
-                command.add("--output");
-                command.add("neo4j");
-
-                ProcessBuilder builder = new ProcessBuilder(command);
-                builder.directory(workingDir.toFile());
-                builder.environment().put("DOCKER_API_VERSION", dockerApiVersion);
-                builder.redirectErrorStream(true);
-                builder.redirectOutput(ProcessBuilder.Redirect.appendTo(logPath.toFile()));
-
-                log.info("启动血缘引擎: workDir={}, command={}", workingDir, command);
-                process = builder.start();
+            synchronized (lock) {
+                process = startedProcess;
                 lastStartedAt = Instant.now();
                 lastStoppedAt = null;
                 lastExitCode = null;
                 lastError = null;
+                lastRecordId = recordId;
+                startInProgress = false;
+            }
 
-                watchProcess(process, recordId, logPath);
-                return buildStatus(true, "引擎已启动");
-            } catch (Exception e) {
+            watchProcess(startedProcess, recordId, logPath);
+        } catch (Exception e) {
+            synchronized (lock) {
+                startInProgress = false;
                 lastError = e.getMessage();
-                log.error("启动血缘引擎失败", e);
-                return buildStatus(false, "启动失败: " + e.getMessage());
+                lastStoppedAt = Instant.now();
+            }
+            log.error("异步启动血缘引擎失败", e);
+        }
+    }
+
+    private List<String> buildStartCommand(StartEngineRequest request, String inputPath, String repoRoot,
+            String recordId, LineageAnalysisRecord record) {
+        List<String> command = new ArrayList<>();
+        command.add("bash");
+        command.add(resolveScriptPath(resolveWorkDir()).toString());
+        command.add("parse-sql");
+        command.add("--file");
+        command.add(inputPath);
+
+        if (isGitSource(request)) {
+            if (recordId != null) {
+                command.add("--version-id");
+                command.add(recordId);
+            }
+            command.add("--repo-id");
+            command.add(String.valueOf(request.getRepoId()));
+
+            if (StringUtils.hasText(request.getRef())) {
+                command.add("--ref");
+                command.add(request.getRef());
+            }
+
+            if (record != null && StringUtils.hasText(record.getCommitSha())) {
+                command.add("--commit-sha");
+                command.add(record.getCommitSha());
             }
         }
+
+        if (repoRoot != null) {
+            command.add("--repo-root");
+            command.add(repoRoot);
+        }
+
+        if (StringUtils.hasText(request.getUser())) {
+            command.add("--default-user");
+            command.add(request.getUser());
+        }
+        if (StringUtils.hasText(request.getLanguage())) {
+            command.add("--dialect");
+            command.add(request.getLanguage());
+        }
+
+        command.add("--output");
+        command.add("neo4j");
+        return command;
     }
 
     private StartEngineRequest normalizeRequest(StartEngineRequest request) {
@@ -185,307 +223,22 @@ public class LineageEngineService {
                 normalized.setSourceType("upload");
             }
         }
+        if ("upload".equalsIgnoreCase(normalized.getSourceType())) {
+            normalized.setRepoId(null);
+            normalized.setRef(null);
+        }
         return normalized;
     }
 
-    private record InputPreparationResult(String inputPath, String repoRoot) {
-    }
-
-    private InputPreparationResult resolveInput(StartEngineRequest request, List<MultipartFile> uploadedFiles)
+    private LineageEngineInputPreparationResult resolveInput(StartEngineRequest request, List<MultipartFile> uploadedFiles)
             throws Exception {
         if ("upload".equalsIgnoreCase(request.getSourceType())) {
-            return prepareUploadInput(request, uploadedFiles);
+            return uploadInputPreparer.prepare(request, uploadedFiles);
         }
-        if (request.getRepoId() != null) {
-            GitInputResult gitInputResult = prepareGitInput(request);
-            return new InputPreparationResult(gitInputResult.inputPath(), gitInputResult.repoRoot());
+        if (isGitSource(request)) {
+            return gitInputPreparer.prepare(request);
         }
-        return new InputPreparationResult(resolveEngineArgsPath(engineArgs), null);
-    }
-
-    private record GitInputResult(String inputPath, String repoRoot) {
-    }
-
-    private GitInputResult prepareGitInput(StartEngineRequest request) throws Exception {
-        Path baseDir = resolveSharedBaseDir();
-        Path tempDir = Files.createTempDirectory(baseDir, "lineage-git-");
-        // Ensure permissions are open so the other container can read/write if UID
-        // differs
-        try {
-            // Docker shared volume permissions can be tricky;
-            // Setting 777 is a simple fix for internal tmp sharing
-            Files.setPosixFilePermissions(tempDir,
-                    java.nio.file.attribute.PosixFilePermissions.fromString("rwxrwxrwx"));
-        } catch (Exception e) {
-            log.warn("Failed to set perms on temp dir (might be non-posix fs): {}", e.getMessage());
-        }
-        log.info("下载代码归档到临时目录: {}", tempDir);
-
-        try (InputStream is = gitPlatformService.downloadArchive(request.getRepoId(), request.getRef());
-                ZipInputStream zis = new ZipInputStream(is)) {
-
-            ZipEntry entry;
-            int totalEntries = 0;
-            while ((entry = zis.getNextEntry()) != null) {
-                totalEntries++;
-                if (log.isDebugEnabled()) {
-                    log.debug("Git Archive Entry: {}", entry.getName());
-                }
-
-                Path outPath = tempDir.resolve(entry.getName());
-                if (entry.isDirectory()) {
-                    Files.createDirectories(outPath);
-                } else {
-                    Files.createDirectories(outPath.getParent());
-                    Files.copy(zis, outPath, StandardCopyOption.REPLACE_EXISTING);
-                }
-                zis.closeEntry();
-            }
-            log.info("Extracted {} entries from Git archive.", totalEntries);
-            if (totalEntries > 0) {
-                logDirectoryContents(tempDir);
-            }
-
-            // Robust root dir detection
-            Path detectedRoot = tempDir;
-            try (java.util.stream.Stream<Path> stream = Files.list(tempDir)) {
-                List<Path> topLevel = stream
-                        .filter(p -> !p.getFileName().toString().startsWith(".")) // Ignore hidden files like .DS_Store
-                        .filter(p -> !p.getFileName().toString().equals("__MACOSX"))
-                        .collect(java.util.stream.Collectors.toList());
-
-                if (topLevel.size() == 1 && Files.isDirectory(topLevel.get(0))) {
-                    detectedRoot = topLevel.get(0);
-                    log.info("Detected single root directory: {}", detectedRoot.getFileName());
-                }
-            }
-            Path realBase = detectedRoot;
-
-            if (request.getPaths() != null && !request.getPaths().isEmpty()) {
-                if (request.getPaths().size() == 1) {
-                    // Single path: use it directly, but verify it exists
-                    Path singlePath = realBase.resolve(request.getPaths().get(0));
-                    if (!Files.exists(singlePath)) {
-                        throw new IllegalArgumentException(
-                                "Requested path not found in repository: " + request.getPaths().get(0));
-                    }
-                    return new GitInputResult(
-                            singlePath.toAbsolutePath().toString(),
-                            realBase.toAbsolutePath().toString());
-                } else {
-                    // Multiple paths: copy to collection dir preserving structure
-                    Path collectionDir = tempDir.resolve("collect");
-                    Files.createDirectories(collectionDir);
-                    int fileCount = 0;
-                    List<String> missingPaths = new ArrayList<>();
-
-                    for (String p : request.getPaths()) {
-                        Path src = realBase.resolve(p);
-                        if (Files.exists(src)) {
-                            // Use full relative path to preserve structure (e.g. src/main/A.sql)
-                            // Note: p is already relative to repo root
-                            Path dest = collectionDir.resolve(p);
-                            Files.createDirectories(dest.getParent());
-
-                            if (Files.isDirectory(src)) {
-                                copyDirectory(src, dest);
-                                fileCount++; // Count directory as one entry found
-                            } else {
-                                Files.copy(src, dest, StandardCopyOption.REPLACE_EXISTING);
-                                fileCount++;
-                            }
-                        } else {
-                            missingPaths.add(p);
-                        }
-                    }
-
-                    if (fileCount == 0) {
-                        try {
-                            List<String> validFiles = Files.walk(realBase)
-                                    .filter(Files::isRegularFile)
-                                    .map(p -> realBase.relativize(p).toString())
-                                    .limit(20)
-                                    .collect(java.util.stream.Collectors.toList());
-                            throw new IllegalArgumentException("No valid files found for requested paths: " +
-                                    String.join(", ", request.getPaths()) +
-                                    ". Checked base: " + realBase +
-                                    ". Detected root: " + detectedRoot +
-                                    ". Sample files in base: " + validFiles);
-                        } catch (Exception e) {
-                            if (e instanceof IllegalArgumentException)
-                                throw e;
-                            throw new IllegalArgumentException("No valid files found for requested paths: " +
-                                    String.join(", ", request.getPaths()) +
-                                    ". Checked base: " + realBase +
-                                    ". Detected root: " + detectedRoot);
-                        }
-                    }
-
-                    if (!missingPaths.isEmpty()) {
-                        log.warn("Some requested paths were not found in repository: {}", missingPaths);
-                    }
-
-                    log.info("用户选择的路径: {}", request.getPaths());
-                    log.info("筛选后准备分析的文件数量: {}", fileCount);
-                    logDirectoryContents(collectionDir);
-
-                    // For collection dir, the root is the collection dir itself
-                    // because we reconstructed the structure inside it.
-                    return new GitInputResult(
-                            collectionDir.toAbsolutePath().toString(),
-                            collectionDir.toAbsolutePath().toString());
-                }
-            }
-
-            return new GitInputResult(
-                    realBase.toAbsolutePath().toString(),
-                    realBase.toAbsolutePath().toString());
-        }
-    }
-
-    private InputPreparationResult prepareUploadInput(StartEngineRequest request, List<MultipartFile> uploadedFiles)
-            throws Exception {
-        if (uploadedFiles != null && !uploadedFiles.isEmpty()) {
-            Path tempDir = Files.createTempDirectory(resolveSharedBaseDir(), "lineage-upload-");
-            try {
-                Files.setPosixFilePermissions(tempDir,
-                        java.nio.file.attribute.PosixFilePermissions.fromString("rwxrwxrwx"));
-            } catch (Exception e) {
-                log.warn("Failed to set perms on upload dir (might be non-posix fs): {}", e.getMessage());
-            }
-
-            List<String> preparedPaths = new ArrayList<>();
-            for (MultipartFile file : uploadedFiles) {
-                if (file == null || file.isEmpty()) {
-                    continue;
-                }
-
-                String originalFilename = file.getOriginalFilename();
-                String cleanedName = Paths.get(StringUtils.cleanPath(
-                        StringUtils.hasText(originalFilename) ? originalFilename : "uploaded.sql"))
-                        .getFileName()
-                        .toString();
-
-                if (cleanedName.toLowerCase().endsWith(".zip")) {
-                    Path zipPath = tempDir.resolve(createUniqueFileName(tempDir, cleanedName));
-                    file.transferTo(zipPath);
-                    extractZipToDirectory(zipPath, tempDir, preparedPaths);
-                    Files.deleteIfExists(zipPath);
-                } else {
-                    Path targetPath = tempDir.resolve(createUniqueFileName(tempDir, cleanedName));
-                    Files.createDirectories(targetPath.getParent());
-                    file.transferTo(targetPath);
-                    preparedPaths.add(tempDir.relativize(targetPath).toString().replace('\\', '/'));
-                }
-            }
-
-            if (preparedPaths.isEmpty()) {
-                throw new IllegalArgumentException("请至少上传一个非空文件");
-            }
-
-            preparedPaths.sort(String::compareTo);
-            grantFullPermissions(tempDir);
-            log.info("上传模式准备完成: {}", preparedPaths);
-            logDirectoryContents(tempDir);
-
-            request.setLocalPath(tempDir.toAbsolutePath().toString());
-            request.setPaths(preparedPaths);
-            return new InputPreparationResult(
-                    tempDir.toAbsolutePath().toString(),
-                    tempDir.toAbsolutePath().toString());
-        }
-
-        if (StringUtils.hasText(request.getLocalPath())) {
-            Path localPath = Paths.get(request.getLocalPath()).toAbsolutePath().normalize();
-            if (!Files.exists(localPath)) {
-                throw new IllegalArgumentException("上传文件已失效，请重新上传后再启动");
-            }
-            if (request.getPaths() == null || request.getPaths().isEmpty()) {
-                request.setPaths(listRelativeFiles(localPath));
-            }
-            return new InputPreparationResult(localPath.toString(), localPath.toString());
-        }
-
-        throw new IllegalArgumentException("上传模式下请至少选择一个文件");
-    }
-
-    private void copyDirectory(Path source, Path target) throws Exception {
-        Files.walk(source).forEach(path -> {
-            try {
-                Path destPath = target.resolve(source.relativize(path));
-                if (Files.isDirectory(path)) {
-                    Files.createDirectories(destPath);
-                } else {
-                    Files.copy(path, destPath, StandardCopyOption.REPLACE_EXISTING);
-                }
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
-    }
-
-    private Path resolveSharedBaseDir() throws Exception {
-        Path baseDir = Paths.get("/tmp/lineage-share");
-        if (!Files.exists(baseDir)) {
-            Files.createDirectories(baseDir);
-        }
-        return baseDir;
-    }
-
-    private String createUniqueFileName(Path directory, String originalName) {
-        String baseName = originalName;
-        String extension = "";
-        int dotIndex = originalName.lastIndexOf('.');
-        if (dotIndex > 0) {
-            baseName = originalName.substring(0, dotIndex);
-            extension = originalName.substring(dotIndex);
-        }
-
-        String candidate = originalName;
-        int index = 1;
-        while (Files.exists(directory.resolve(candidate))) {
-            candidate = baseName + "-" + index + extension;
-            index++;
-        }
-        return candidate;
-    }
-
-    private void extractZipToDirectory(Path zipPath, Path targetDir, List<String> preparedPaths) throws Exception {
-        try (InputStream inputStream = Files.newInputStream(zipPath);
-                ZipInputStream zipInputStream = new ZipInputStream(inputStream)) {
-            ZipEntry entry;
-            while ((entry = zipInputStream.getNextEntry()) != null) {
-                String entryName = StringUtils.cleanPath(entry.getName());
-                if (!StringUtils.hasText(entryName) || entryName.startsWith("__MACOSX/")) {
-                    zipInputStream.closeEntry();
-                    continue;
-                }
-
-                Path targetPath = targetDir.resolve(entryName).normalize();
-                if (!targetPath.startsWith(targetDir)) {
-                    throw new IllegalArgumentException("压缩包包含非法路径: " + entryName);
-                }
-
-                if (entry.isDirectory()) {
-                    Files.createDirectories(targetPath);
-                } else {
-                    Files.createDirectories(targetPath.getParent());
-                    Files.copy(zipInputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
-                    preparedPaths.add(targetDir.relativize(targetPath).toString().replace('\\', '/'));
-                }
-                zipInputStream.closeEntry();
-            }
-        }
-    }
-
-    private List<String> listRelativeFiles(Path root) throws Exception {
-        try (var stream = Files.walk(root)) {
-            return stream
-                    .filter(Files::isRegularFile)
-                    .map(path -> root.relativize(path).toString().replace('\\', '/'))
-                    .sorted(Comparator.naturalOrder())
-                    .toList();
-        }
+        return new LineageEngineInputPreparationResult(resolveEngineArgsPath(engineArgs), null);
     }
 
     private String resolveEngineArgsPath(String argsStr) {
@@ -498,7 +251,7 @@ public class LineageEngineService {
         return "./tests/sql";
     }
 
-    private LineageAnalysisRecord createAnalysisRecord(StartEngineRequest request, Instant startTime) {
+    private LineageAnalysisRecord createAnalysisRecord(StartEngineRequest request) {
         LineageAnalysisRecord record = new LineageAnalysisRecord();
         record.setRepoId(request.getRepoId());
         record.setRef(request.getRef());
@@ -572,11 +325,11 @@ public class LineageEngineService {
 
                 // 同时也尝试停止 Java 端记录的进程（如果仍在运行）
                 stopProcess(process);
-                return buildStatus(true, "引擎已停止");
+                return buildStatus(true, "引擎已停止", false);
             } catch (Exception e) {
                 lastError = e.getMessage();
                 log.error("停止血缘引擎失败", e);
-                return buildStatus(false, "停止失败: " + e.getMessage());
+                return buildStatus(false, "停止失败: " + e.getMessage(), false);
             }
         }
     }
@@ -591,7 +344,7 @@ public class LineageEngineService {
 
     public Map<String, Object> status() {
         synchronized (lock) {
-            return buildStatus(true, null);
+            return buildStatus(true, null, true);
         }
     }
 
@@ -663,6 +416,7 @@ public class LineageEngineService {
             try {
                 int exitCode = running.waitFor();
                 synchronized (lock) {
+                    startInProgress = false;
                     if (process == running) {
                         lastExitCode = exitCode;
                         lastStoppedAt = Instant.now();
@@ -725,10 +479,10 @@ public class LineageEngineService {
         return null;
     }
 
-    private Map<String, Object> buildStatus(boolean success, String message) {
+    private Map<String, Object> buildStatus(boolean success, String message, boolean includeVersionStatus) {
         Map<String, Object> status = new HashMap<>();
         status.put("success", success);
-        status.put("status", isRunning() ? "running" : "stopped");
+        status.put("status", startInProgress ? "starting" : (isRunning() ? "running" : "stopped"));
         if (process != null && process.isAlive()) {
             status.put("pid", process.pid());
         }
@@ -748,19 +502,20 @@ public class LineageEngineService {
             status.put("message", message);
         }
 
-        // Add Version Consistency Info
-        try {
-            var wrapper = new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<LineageAnalysisRecord>()
-                    .eq("status", "SUCCESS")
-                    .orderByDesc("start_time")
-                    .last("LIMIT 1");
-            LineageAnalysisRecord lastRecord = analysisRecordMapper.selectOne(wrapper);
-            if (lastRecord != null) {
-                var checkResult = checkVersionConsistency(lastRecord.getRepoId(), lastRecord.getRef());
-                status.put("versionStatus", checkResult);
+        if (includeVersionStatus) {
+            try {
+                var wrapper = new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<LineageAnalysisRecord>()
+                        .eq("status", "SUCCESS")
+                        .orderByDesc("start_time")
+                        .last("LIMIT 1");
+                LineageAnalysisRecord lastRecord = analysisRecordMapper.selectOne(wrapper);
+                if (lastRecord != null && lastRecord.getRepoId() != null) {
+                    var checkResult = checkVersionConsistency(lastRecord.getRepoId(), lastRecord.getRef());
+                    status.put("versionStatus", checkResult);
+                }
+            } catch (Exception e) {
+                log.warn("构建状态时版本校验失败: {}", e.getMessage());
             }
-        } catch (Exception e) {
-            log.warn("构建状态时版本校验失败: {}", e.getMessage());
         }
 
         return status;
@@ -835,31 +590,10 @@ public class LineageEngineService {
         return result;
     }
 
-    private void grantFullPermissions(Path path) {
-        try {
-            Files.walk(path).forEach(p -> {
-                try {
-                    Files.setPosixFilePermissions(p,
-                            java.nio.file.attribute.PosixFilePermissions.fromString("rwxrwxrwx"));
-                } catch (Exception e) {
-                    // Ignore non-posix or permission errors on specific files
-                }
-            });
-        } catch (Exception e) {
-            log.warn("Error setting permissions on {}: {}", path, e.getMessage());
-        }
-    }
-
-    private void logDirectoryContents(Path dir) {
-        try {
-            List<String> files = Files.walk(dir)
-                    .filter(Files::isRegularFile)
-                    .map(p -> dir.relativize(p).toString())
-                    .collect(java.util.stream.Collectors.toList());
-            log.info("Prepared {} files for lineage engine in {}: {}", files.size(), dir, files);
-        } catch (Exception e) {
-            log.warn("Failed to list directory contents: {}", e.getMessage());
-        }
+    private boolean isGitSource(StartEngineRequest request) {
+        return request != null
+                && "git".equalsIgnoreCase(request.getSourceType())
+                && request.getRepoId() != null;
     }
 
     private List<String> parseArgs(String args) {

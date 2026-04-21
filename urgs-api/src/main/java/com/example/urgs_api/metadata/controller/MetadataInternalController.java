@@ -1,15 +1,8 @@
 package com.example.urgs_api.metadata.controller;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.example.urgs_api.metadata.model.ModelField;
-import com.example.urgs_api.metadata.model.ModelTable;
-import com.example.urgs_api.metadata.service.ModelFieldService;
-import com.example.urgs_api.metadata.service.ModelTableService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -20,12 +13,6 @@ import java.util.Map;
  */
 public class MetadataInternalController {
 
-    @Autowired
-    private ModelTableService modelTableService;
-
-    @Autowired
-    private ModelFieldService modelFieldService;
-
     /**
      * 根据表全名获取表及字段信息
      *
@@ -34,40 +21,10 @@ public class MetadataInternalController {
      */
     @GetMapping("/table-fields")
     public Map<String, Object> getTableFields(@RequestParam String fullName) {
-        String owner = null;
-        String tableName;
-
-        if (fullName.contains(".")) {
-            // 处理 SCHEMA.TABLE 格式
-            int lastDotIndex = fullName.lastIndexOf(".");
-            owner = fullName.substring(0, lastDotIndex);
-            tableName = fullName.substring(lastDotIndex + 1);
-        } else {
-            tableName = fullName;
-        }
-
-        // 构建查询条件：始终使用 owner + tableName 组合查询（如果提供了 owner）
-        LambdaQueryWrapper<ModelTable> tableWrapper = new LambdaQueryWrapper<ModelTable>()
-                .eq(ModelTable::getName, tableName.toUpperCase());
-
-        if (owner != null && !owner.isEmpty()) {
-            tableWrapper.eq(ModelTable::getOwner, owner.toUpperCase());
-        }
-
-        ModelTable table = modelTableService.getOne(tableWrapper, false);
-
         Map<String, Object> result = new HashMap<>();
-        if (table == null) {
-            result.put("success", false);
-            result.put("message", "Table not found: " + fullName);
-            return result;
-        }
-
-        List<ModelField> fields = modelFieldService.getFieldsByTableId(table.getId());
-
-        result.put("success", true);
-        result.put("table", table);
-        result.put("fields", fields);
+        // 临时禁用内部元数据查询，避免血缘引擎高频回调拖垮主系统。
+        result.put("success", false);
+        result.put("message", "Metadata lookup temporarily disabled: " + fullName);
         return result;
     }
 }

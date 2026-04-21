@@ -1,8 +1,6 @@
-import requests
 import logging
 from functools import lru_cache
 from typing import List, Dict, Any, Optional
-from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +11,7 @@ class MetadataResolver:
     """
     
     def __init__(self, base_url: str = None):
-        self.base_url = f"{base_url or settings.URGS_API_URL}/api/internal/metadata"
+        self.base_url = base_url
         
     @lru_cache(maxsize=128)
     def get_table_metadata(self, full_table_name: str) -> Optional[Dict[str, Any]]:
@@ -21,26 +19,8 @@ class MetadataResolver:
         获取表的元数据（包含字段列表）
         使用 lru_cache 减少对 API 的重复调用。
         """
-        try:
-            url = f"{self.base_url}/table-fields"
-            params = {"fullName": full_table_name}
-            
-            response = requests.get(url, params=params, timeout=30)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success"):
-                    return {
-                        "table": data.get("table"),
-                        "fields": data.get("fields", []),
-                        "field_names": {f["name"].upper() for f in data.get("fields", [])}
-                    }
-                else:
-                    logger.warning(f"Metadata API returned error for {full_table_name}: {data.get('message')}")
-            else:
-                logger.error(f"Metadata API failed for {full_table_name}: HTTP {response.status_code}")
-        except Exception as e:
-            logger.error(f"Error calling Metadata API for {full_table_name}: {e}")
-            
+        # 临时禁用元数据 API 回查，避免血缘分析期间拖慢主系统。
+        logger.info("Metadata API lookup disabled for table: %s", full_table_name)
         return None
 
     def validate_column(self, table_name: str, column_name: str) -> Dict[str, Any]:

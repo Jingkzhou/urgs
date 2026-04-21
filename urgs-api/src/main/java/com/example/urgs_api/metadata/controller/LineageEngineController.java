@@ -36,8 +36,8 @@ public class LineageEngineController {
     @RequirePermission("metadata:lineage:engine:start")
     public Map<String, Object> startWithUpload(
             @RequestParam("files") List<MultipartFile> files,
-            @RequestParam(required = false) String user,
-            @RequestParam(required = false) String language) {
+            @RequestParam(value = "user", required = false) String user,
+            @RequestParam(value = "language", required = false) String language) {
         return lineageEngineService.startWithUpload(files, user, language);
     }
 
@@ -55,14 +55,15 @@ public class LineageEngineController {
 
     @GetMapping("/logs")
     @RequirePermission("metadata:lineage:engine:logs")
-    public Map<String, Object> logs(@RequestParam(defaultValue = "200") int lines,
-            @RequestParam(required = false) String recordId) {
+    public Map<String, Object> logs(@RequestParam(value = "lines", defaultValue = "200") int lines,
+            @RequestParam(value = "recordId", required = false) String recordId) {
         return lineageEngineService.logs(lines, recordId);
     }
 
     @GetMapping("/version-check")
     @RequirePermission("metadata:lineage:engine:logs")
-    public Map<String, Object> checkVersion(@RequestParam Long repoId, @RequestParam(required = false) String ref) {
+    public Map<String, Object> checkVersion(@RequestParam("repoId") Long repoId,
+            @RequestParam(value = "ref", required = false) String ref) {
         return lineageEngineService.checkVersionConsistency(repoId, ref);
     }
 

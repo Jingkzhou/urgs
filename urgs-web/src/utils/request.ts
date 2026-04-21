@@ -1,6 +1,7 @@
 export interface RequestOptions extends RequestInit {
     params?: Record<string, string | number | boolean | undefined | null>;
     isBlob?: boolean;
+    timeoutMs?: number;
 }
 
 export const request = async <T = any>(url: string, options: RequestOptions = {}): Promise<T> => {
@@ -39,40 +40,56 @@ export const request = async <T = any>(url: string, options: RequestOptions = {}
         fetchUrl = `${url}?${params.toString()}`;
     }
 
-    const response = await fetch(fetchUrl, {
-        ...options,
-        headers,
-    });
-
-    if (response.status === 401) {
-        // Handle 401 Unauthorized - Centralized logout logic
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('auth_user');
-        localStorage.removeItem('user_permissions');
-        // Use hash-friendly redirect or just reload to trigger App's re-render
-        window.location.href = '/';
-        throw new Error('Unauthorized');
-    }
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `Request failed with status ${response.status}`);
-    }
-
-    // Return null for 204 No Content
-    if (response.status === 204) {
-        return null as T;
-    }
-
-    if (options.isBlob) {
-        return await response.blob() as unknown as T;
-    }
+    const timeoutMs = options.timeoutMs;
+    const controller = new AbortController();
+    const timeoutId = timeoutMs ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
 
     try {
-        return await response.json();
-    } catch (e) {
-        // Fallback for non-JSON responses
-        return null as T;
+        const response = await fetch(fetchUrl, {
+            ...options,
+            headers,
+            signal: options.signal ?? controller.signal,
+        });
+
+        if (response.status === 401) {
+            // Handle 401 Unauthorized - Centralized logout logic
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('auth_user');
+            localStorage.removeItem('user_permissions');
+            // Use hash-friendly redirect or just reload to trigger App's re-render
+            window.location.href = '/';
+            throw new Error('Unauthorized');
+        }
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || `Request failed with status ${response.status}`);
+        }
+
+        // Return null for 204 No Content
+        if (response.status === 204) {
+            return null as T;
+        }
+
+        if (options.isBlob) {
+            return await response.blob() as unknown as T;
+        }
+
+        try {
+            return await response.json();
+        } catch (e) {
+            // Fallback for non-JSON responses
+            return null as T;
+        }
+    } catch (error: any) {
+        if (error?.name === 'AbortError') {
+            throw new Error(`Request timeout after ${timeoutMs}ms`);
+        }
+        throw error;
+    } finally {
+        if (timeoutId !== null) {
+            window.clearTimeout(timeoutId);
+        }
     }
 };
 

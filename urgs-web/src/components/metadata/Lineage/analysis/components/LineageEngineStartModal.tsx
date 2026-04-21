@@ -82,7 +82,16 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
             setFileTree([]);
             setSelectedPaths([]);
             setUploadFiles([]);
-            form.resetFields();
+        }
+    }, [open, form]);
+
+    useEffect(() => {
+        if (open) {
+            form.setFieldsValue({
+                ref: undefined,
+                user: undefined,
+                language: 'oracle',
+            });
         }
     }, [open, form]);
 
@@ -197,13 +206,17 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                     message.warning('请至少选择一个文件或目录进行分析');
                     return;
                 }
-                onOk({
+                const payload: LineageEngineStartParams = {
                     sourceType: 'git',
                     repoId: selectedRepoId!,
                     ref: selectedRef,
                     paths: selectedPaths,
                     user: values.user,
                     language: values.language,
+                };
+                onCancel();
+                onOk({
+                    ...payload,
                 });
                 return;
             }
@@ -217,11 +230,15 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                 return;
             }
 
-            onOk({
+            const payload: LineageEngineStartParams = {
                 sourceType: 'upload',
                 files,
                 user: values.user,
                 language: values.language,
+            };
+            onCancel();
+            onOk({
+                ...payload,
             });
         });
     };
@@ -276,24 +293,25 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                 ),
             ]}
             styles={modalStyles}
-            destroyOnClose
+            destroyOnHidden
         >
-            <div style={{ padding: '0 40px' }}>
-                <Steps
-                    current={currentStep}
-                    size="small"
-                    style={{ marginBottom: 24 }}
-                    items={[
-                        { title: '选择来源', icon: sourceType === 'git' ? <GithubOutlined /> : <UploadOutlined /> },
-                        { title: sourceType === 'git' ? '浏览文件' : '上传文件', icon: sourceType === 'git' ? <FileSearchOutlined /> : <InboxOutlined /> },
-                        { title: '分析配置', icon: <SettingOutlined /> },
-                    ]}
-                />
-            </div>
+            <Form form={form} layout="vertical" preserve>
+                <div style={{ padding: '0 40px' }}>
+                    <Steps
+                        current={currentStep}
+                        size="small"
+                        style={{ marginBottom: 24 }}
+                        items={[
+                            { title: '选择来源', icon: sourceType === 'git' ? <GithubOutlined /> : <UploadOutlined /> },
+                            { title: sourceType === 'git' ? '浏览文件' : '上传文件', icon: sourceType === 'git' ? <FileSearchOutlined /> : <InboxOutlined /> },
+                            { title: '分析配置', icon: <SettingOutlined /> },
+                        ]}
+                    />
+                </div>
 
-            <div style={stepContentStyle}>
-                {currentStep === 0 && (
-                    <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+                <div style={stepContentStyle}>
+                    {currentStep === 0 && (
+                        <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
                         <div style={{ marginBottom: 24 }}>
                             <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
                                 请选择本次启动血缘分析引擎的输入来源。
@@ -361,18 +379,16 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
 
                         {selectedRepoId && (
                             <div style={{ marginTop: 32, padding: 20, background: '#fafafa', borderRadius: 12 }}>
-                                <Form layout="vertical" form={form}>
-                                    <Form.Item label={<Space><BranchesOutlined /> <span>选择分析分支/标签</span></Space>} name="ref" style={{ marginBottom: 0 }}>
-                                        <Select
-                                            placeholder="请选择分支"
-                                            loading={branchesLoading}
-                                            value={selectedRef}
-                                            onChange={val => setSelectedRef(val)}
-                                            style={{ width: '100%' }}
-                                            options={branches.map(b => ({ label: b.name, value: b.name }))}
-                                        />
-                                    </Form.Item>
-                                </Form>
+                                <Form.Item label={<Space><BranchesOutlined /> <span>选择分析分支/标签</span></Space>} name="ref" style={{ marginBottom: 0 }}>
+                                    <Select
+                                        placeholder="请选择分支"
+                                        loading={branchesLoading}
+                                        value={selectedRef}
+                                        onChange={val => setSelectedRef(val)}
+                                        style={{ width: '100%' }}
+                                        options={branches.map(b => ({ label: b.name, value: b.name }))}
+                                    />
+                                </Form.Item>
                             </div>
                         )}
                             </>
@@ -385,17 +401,17 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                                     <div>
                                         <Text strong style={{ display: 'block', marginBottom: 8 }}>上传本地脚本文件、文本文件或 ZIP 压缩包</Text>
                                         <Text type="secondary">
-                                            下一步可上传多个 SQL、PROC、TXT 等文本文件；如果上传 ZIP，后端会自动解压后再交给血缘引擎解析。
+                                            下一步可上传多个 SQL、PROC、TXT 等文本文件；如果上传 ZIP，后端会自动解压后直接解析血缘，不会访问 Git 仓库。
                                         </Text>
                                     </div>
                                 </Space>
                             </div>
                         )}
-                    </div>
-                )}
+                        </div>
+                    )}
 
-                {currentStep === 1 && (
-                    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', animation: 'fadeIn 0.5s ease-out' }}>
+                    {currentStep === 1 && (
+                        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', animation: 'fadeIn 0.5s ease-out' }}>
                         {sourceType === 'git' ? (
                             <>
                         <div style={{ marginBottom: 12 }}>
@@ -470,47 +486,46 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                                 </div>
                             </>
                         )}
-                    </div>
-                )}
+                        </div>
+                    )}
 
-                {currentStep === 2 && (
-                    <div style={{ padding: '20px 60px', animation: 'fadeIn 0.5s ease-out' }}>
+                    {currentStep === 2 && (
+                        <div style={{ padding: '20px 60px', animation: 'fadeIn 0.5s ease-out' }}>
                         <Title level={4} style={{ textAlign: 'center', marginBottom: 32 }}>最后一步：配置分析参数</Title>
-                        <Form form={form} layout="vertical">
-                            <Form.Item
-                                label="默认用户"
-                                name="user"
-                                tooltip="在 SQL 解析过程中，如果未指定 Schema，将使用该用户作为默认前缀"
-                            >
-                                <Input placeholder="请输入默认用户" prefix={<SettingOutlined style={{ color: '#bfbfbf' }} />} />
-                            </Form.Item>
-                            <Form.Item
-                                label="SQL 方言"
-                                name="language"
-                                initialValue="oracle"
-                            >
-                                <Select
-                                    options={[
-                                        { label: 'Oracle', value: 'oracle' },
-                                        { label: 'Hive', value: 'hive' },
-                                        { label: 'PostgreSQL', value: 'postgres' },
-                                        { label: 'MySQL', value: 'mysql' },
-                                    ]}
-                                />
-                            </Form.Item>
+                        <Form.Item
+                            label="默认用户"
+                            name="user"
+                            tooltip="在 SQL 解析过程中，如果未指定 Schema，将使用该用户作为默认前缀"
+                        >
+                            <Input placeholder="请输入默认用户" prefix={<SettingOutlined style={{ color: '#bfbfbf' }} />} />
+                        </Form.Item>
+                        <Form.Item
+                            label="SQL 方言"
+                            name="language"
+                            initialValue="oracle"
+                        >
+                            <Select
+                                options={[
+                                    { label: 'Oracle', value: 'oracle' },
+                                    { label: 'Hive', value: 'hive' },
+                                    { label: 'PostgreSQL', value: 'postgres' },
+                                    { label: 'MySQL', value: 'mysql' },
+                                ]}
+                            />
+                        </Form.Item>
 
-                            <div style={{ marginTop: 40, padding: 20, background: '#fffbe6', borderRadius: 12, border: '1px solid #ffe58f' }}>
-                                <Space align="start">
-                                    <CheckCircleOutlined style={{ color: '#faad14', marginTop: 4 }} />
-                                    <div style={{ fontSize: 13, color: 'rgba(0,0,0,0.65)' }}>
-                                        提示：启动后后台将异步{sourceType === 'git' ? '下载仓库代码' : '整理上传文件'}并由 Python 引擎执行解析。解析时间取决于文件数量及复杂度。
-                                    </div>
-                                </Space>
-                            </div>
-                        </Form>
-                    </div>
-                )}
-            </div>
+                        <div style={{ marginTop: 40, padding: 20, background: '#fffbe6', borderRadius: 12, border: '1px solid #ffe58f' }}>
+                            <Space align="start">
+                                <CheckCircleOutlined style={{ color: '#faad14', marginTop: 4 }} />
+                                <div style={{ fontSize: 13, color: 'rgba(0,0,0,0.65)' }}>
+                                    提示：启动后后台将异步{sourceType === 'git' ? '下载仓库代码' : '整理上传文件并直接解析'}，上传模式不会触发任何 Git 相关操作。解析时间取决于文件数量及复杂度。
+                                </div>
+                            </Space>
+                        </div>
+                        </div>
+                    )}
+                </div>
+            </Form>
 
             <style dangerouslySetInnerHTML={{
                 __html: `

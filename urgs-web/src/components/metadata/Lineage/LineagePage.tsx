@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Layout, Input, Button, message, Empty, Spin, Tag, Badge, Pagination, Tooltip, Space, Modal, Switch, Segmented } from 'antd';
+import { Layout, Input, Button, message, Empty, Tag, Badge, Pagination, Tooltip, Space, Modal, Switch, Segmented } from 'antd';
 import {
     SearchOutlined,
     TableOutlined,
@@ -25,14 +25,12 @@ import {
     clearLineageDatabase,
 } from '@/api/lineage';
 import { hasPermission } from '@/utils/permission';
-import LineageDiagramImpact from './analysis/components/LineageDiagram';
-import LineageDiagramTrace from './origin/components/LineageDiagram';
 import LineageReportModal from './analysis/components/LineageReportModal';
 import LineageEngineStartModal, { LineageEngineStartParams } from './analysis/components/LineageEngineStartModal';
 import { NodeData, LinkData, ViewportState } from './analysis/types';
 import { NODE_HEADER_HEIGHT, COLUMN_ROW_HEIGHT } from './analysis/constants';
 import EngineLogViewer from './analysis/components/EngineLogViewer';
-import LineageListView from './analysis/components/LineageListView';
+import LineageGraphContent from './analysis/components/LineageGraphContent';
 
 const { Sider, Content } = Layout;
 
@@ -1044,47 +1042,20 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                     </div>
                 </Sider>
                 <Content style={{ background: '#fff', position: 'relative', minHeight: 0 }}>
-                    <Spin spinning={graphLoading} tip="加载血缘关系...">
-                        <div style={{ height: '100%', width: '100%' }}>
-                            {nodes.length > 0 ? (
-                                viewMode === 'canvas' ? (
-                                    mode === 'impact' ? (
-                                        <LineageDiagramImpact
-                                            viewport={viewport}
-                                            setViewport={setViewport}
-                                            nodes={nodes}
-                                            setNodes={setNodes}
-                                            links={links}
-                                            selectedTable={selectedTable}
-                                            selectedField={selectedField}
-                                            onFieldSelect={setSelectedField}
-                                            onGenerateReport={() => setShowReportModal(true)}
-                                        />
-                                    ) : (
-                                        <LineageDiagramTrace
-                                            viewport={viewport}
-                                            setViewport={setViewport}
-                                            nodes={nodes}
-                                            setNodes={setNodes}
-                                            links={links}
-                                            selectedTable={selectedTable}
-                                            selectedField={selectedField}
-                                            onFieldSelect={setSelectedField}
-                                        />
-                                    )
-                                ) : (
-                                    <LineageListView
-                                        nodes={nodes}
-                                        links={links}
-                                        selectedTable={selectedTable}
-                                        selectedField={selectedField}
-                                    />
-                                )
-                            ) : (
-                                !graphLoading && <Empty description="请从左侧选择表查看血缘" style={{ marginTop: '100px' }} />
-                            )}
-                        </div>
-                    </Spin>
+                    <LineageGraphContent
+                        graphLoading={graphLoading}
+                        nodes={nodes}
+                        links={links}
+                        mode={mode}
+                        viewMode={viewMode}
+                        viewport={viewport}
+                        setViewport={setViewport}
+                        setNodes={setNodes}
+                        selectedTable={selectedTable}
+                        selectedField={selectedField}
+                        setSelectedField={setSelectedField}
+                        onGenerateReport={() => setShowReportModal(true)}
+                    />
                 </Content>
                 {canExport && showReportModal && selectedField && (
                     <LineageReportModal
@@ -1122,5 +1093,4 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
 };
 
 export default LineagePage;
-
 

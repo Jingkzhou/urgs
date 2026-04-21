@@ -211,6 +211,8 @@ export interface LineageEngineStartByUploadParams {
 export type LineageEngineStartParams = LineageEngineStartByGitParams | LineageEngineStartByUploadParams;
 
 export const startLineageEngine = (params: LineageEngineStartParams) => {
+    const startEngineOptions = { timeoutMs: 90000 };
+
     if (params.sourceType === 'upload') {
         const formData = new FormData();
         params.files.forEach(file => {
@@ -222,9 +224,9 @@ export const startLineageEngine = (params: LineageEngineStartParams) => {
         if (params.language) {
             formData.append('language', params.language);
         }
-        return post('/api/metadata/lineage/engine/start', formData);
+        return post('/api/metadata/lineage/engine/start', formData, startEngineOptions);
     }
-    return post('/api/metadata/lineage/engine/start', params);
+    return post('/api/metadata/lineage/engine/start', params, startEngineOptions);
 };
 
 export const restartLineageEngine = () => {

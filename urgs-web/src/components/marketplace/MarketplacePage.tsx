@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import TaskMarket from './TaskMarket';
 import WorkList from './WorkList';
 import MyTasks from './MyTasks';
+import StatsPage from './StatsPage';
 
 const MarketplacePage: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'market' | 'publish' | 'mine'>('market');
+    const [activeTab, setActiveTab] = useState<'market' | 'publish' | 'mine' | 'stats'>('market');
 
     return (
         <div className="h-full flex flex-col gap-6">
@@ -42,6 +43,15 @@ const MarketplacePage: React.FC = () => {
                     >
                         我的任务
                     </button>
+                    <button
+                        onClick={() => setActiveTab('stats')}
+                        className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'stats'
+                                ? 'bg-red-50 text-red-600 shadow-sm'
+                                : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                    >
+                        数据概览
+                    </button>
                 </div>
             </div>
 
@@ -49,6 +59,7 @@ const MarketplacePage: React.FC = () => {
                 {activeTab === 'market' && <TaskMarket />}
                 {activeTab === 'publish' && <WorkList />}
                 {activeTab === 'mine' && <MyTasks />}
+                {activeTab === 'stats' && <StatsPage />}
             </div>
         </div>
     );
