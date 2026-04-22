@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Layout, Input, Button, message, Empty, Tag, Badge, Pagination, Tooltip, Space, Modal, Switch, Segmented } from 'antd';
+import { Layout, Input, Button, message, Empty, Tag, Pagination, Tooltip, Segmented } from 'antd';
 import {
     SearchOutlined,
     TableOutlined,
@@ -7,64 +7,25 @@ import {
     DownOutlined,
     FileTextOutlined,
     DownloadOutlined,
-    PlayCircleOutlined,
-    ReloadOutlined,
-    PoweroffOutlined,
-    DeleteOutlined,
 } from '@ant-design/icons';
 import dagre from 'dagre';
 import {
     getLineageGraph,
     searchTables,
     exportLineage,
-    getLineageEngineStatus,
-    startLineageEngine,
-    restartLineageEngine,
-    stopLineageEngine,
-    getLineageEngineLogs,
-    clearLineageDatabase,
 } from '@/api/lineage';
-import { hasPermission } from '@/utils/permission';
 import LineageReportModal from './analysis/components/LineageReportModal';
-import LineageEngineStartModal, { LineageEngineStartParams } from './analysis/components/LineageEngineStartModal';
 import { NodeData, LinkData, ViewportState } from './analysis/types';
 import { NODE_HEADER_HEIGHT, COLUMN_ROW_HEIGHT } from './analysis/constants';
-import EngineLogViewer from './analysis/components/EngineLogViewer';
 import LineageGraphContent from './analysis/components/LineageGraphContent';
+import LineageEngineToolbar from './analysis/components/LineageEngineToolbar';
+import { useLineageEngineController } from './analysis/hooks/useLineageEngineController';
 
 const { Sider, Content } = Layout;
 
 interface LineagePageProps {
     mode?: 'trace' | 'impact';
 }
-
-const RunDuration: React.FC<{ startTime: string }> = ({ startTime }) => {
-    const [duration, setDuration] = useState<string>('');
-
-    useEffect(() => {
-        const update = () => {
-            if (!startTime) return;
-            const start = new Date(startTime).getTime();
-            const now = new Date().getTime();
-            const diff = Math.max(0, Math.floor((now - start) / 1000));
-
-            const hours = Math.floor(diff / 3600);
-            const minutes = Math.floor((diff % 3600) / 60);
-            const seconds = diff % 60;
-
-            setDuration(
-                `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-            );
-        };
-
-        update();
-        const timer = setInterval(update, 1000);
-        return () => clearInterval(timer);
-    }, [startTime]);
-
-    if (!duration) return null;
-    return <span style={{ fontFamily: 'monospace' }}>{duration}</span>;
-};
 
 const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -82,39 +43,10 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
     const [graphLoading, setGraphLoading] = useState(false);
     const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
     const [showReportModal, setShowReportModal] = useState(false);
-    const [showLogModal, setShowLogModal] = useState(false);
-    const [showStartModal, setShowStartModal] = useState(false);
-    const [engineStatus, setEngineStatus] = useState<'running' | 'stopped' | 'starting'>('stopped');
-    const [engineActionLoading, setEngineActionLoading] = useState<'start' | 'stop' | 'restart' | null>(null);
-    const [engineLogs, setEngineLogs] = useState<string[]>([]);
-    const [engineLogsLoading, setEngineLogsLoading] = useState(false);
-    const [engineMeta, setEngineMeta] = useState<{
-        lastStartedAt?: string;
-        lastStoppedAt?: string;
-        pid?: number;
-        versionStatus?: {
-            consistent: boolean;
-            message: string;
-            lastAnalysisTime: string;
-            lastCommitSha: string;
-            currentCommitSha: string;
-        }
-    }>({});
-    const [autoRefresh, setAutoRefresh] = useState(true);
     const [viewMode, setViewMode] = useState<'canvas' | 'list'>('list');
-    const engineStatusMeta = {
-        running: { badge: 'success' as const, label: '运行中' },
-        stopped: { badge: 'default' as const, label: '未启动' },
-        starting: { badge: 'processing' as const, label: '启动中' },
-    };
-    const engineStatusInfo = engineStatusMeta[engineStatus];
     const pageTitle = mode === 'trace' ? '血缘溯源' : '影响分析';
     const canExport = mode === 'impact';
-    const canViewEngineStatus = hasPermission('metadata:lineage:engine:logs');
-    const canStartEngine = hasPermission('metadata:lineage:engine:start');
-    const canRestartEngine = hasPermission('metadata:lineage:engine:restart');
-    const canStopEngine = hasPermission('metadata:lineage:engine:stop');
-    const canViewEngineLogs = hasPermission('metadata:lineage:engine:logs');
+    const engineController = useLineageEngineController();
 
     const toggleTableExpand = (tableName: string) => {
         setExpandedTables(prev => {
@@ -128,46 +60,6 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
         });
     };
 
-    const fetchEngineStatus = async () => {
-        if (!canViewEngineStatus) {
-            return;
-        }
-        try {
-            const res = await getLineageEngineStatus();
-            if (res) {
-                const status = res.status as 'running' | 'stopped' | 'starting' | undefined;
-                if (status) {
-                    setEngineStatus(status);
-                }
-                setEngineMeta({
-                    lastStartedAt: res.lastStartedAt,
-                    lastStoppedAt: res.lastStoppedAt,
-                    pid: res.pid,
-                    versionStatus: res.versionStatus,
-                });
-            }
-        } catch (error) {
-            message.error('获取引擎状态失败');
-        }
-    };
-
-    const fetchEngineLogs = async (silent: boolean = false) => {
-        if (!canViewEngineLogs) {
-            message.error('无权限查看日志');
-            return;
-        }
-        if (!silent) setEngineLogsLoading(true);
-        try {
-            const res = await getLineageEngineLogs(200);
-            const lines = Array.isArray(res?.lines) ? res.lines : [];
-            setEngineLogs(lines);
-        } catch (error) {
-            if (!silent) message.error('获取日志失败');
-        } finally {
-            if (!silent) setEngineLogsLoading(false);
-        }
-    };
-
     useEffect(() => {
         handleSearch();
     }, []);
@@ -176,140 +68,6 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
         handleSearch();
     }, []);
 
-
-    useEffect(() => {
-        if (!canViewEngineStatus) {
-            return;
-        }
-        fetchEngineStatus();
-        const timer = window.setInterval(() => {
-            fetchEngineStatus();
-        }, 15000);
-        return () => window.clearInterval(timer);
-    }, [canViewEngineStatus]);
-
-    useEffect(() => {
-        if (showLogModal && autoRefresh) {
-            const timer = setInterval(() => {
-                fetchEngineLogs(true);
-            }, 3000);
-            return () => clearInterval(timer);
-        }
-    }, [showLogModal, autoRefresh]);
-
-
-
-    const handleStartEngine = () => {
-        if (!canStartEngine) {
-            message.error('无权限启动引擎');
-            return;
-        }
-        setShowStartModal(true);
-    };
-
-    const handleConfirmStartEngine = async (params: LineageEngineStartParams) => {
-        setEngineActionLoading('start');
-        setEngineStatus('starting');
-        try {
-            const res = await startLineageEngine(params);
-            if (res?.success === false) {
-                message.error(res.message || '引擎启动失败');
-            } else {
-                message.success('解析引擎启动指令已下发');
-                setShowStartModal(false);
-                fetchEngineStatus();
-                fetchEngineLogs();
-            }
-        } catch (error) {
-            message.error('启动引擎出错');
-        } finally {
-            setEngineActionLoading(null);
-        }
-    };
-
-    const handleRestartEngine = async () => {
-        if (!canRestartEngine) {
-            message.error('无权限重启引擎');
-            return;
-        }
-        setEngineActionLoading('restart');
-        setEngineStatus('starting');
-        try {
-            const res = await restartLineageEngine();
-            if (res?.success === false) {
-                message.error(res.message || '引擎重启失败');
-            } else if (res?.message) {
-                message.success(res.message);
-            } else {
-                message.success('引擎重启中');
-            }
-            await fetchEngineStatus();
-        } catch (error) {
-            message.error('引擎重启失败');
-            await fetchEngineStatus();
-        } finally {
-            setEngineActionLoading(null);
-        }
-    };
-
-    const handleStopEngine = async () => {
-        if (!canStopEngine) {
-            message.error('无权限停止引擎');
-            return;
-        }
-        setEngineActionLoading('stop');
-        try {
-            const res = await stopLineageEngine();
-            if (res?.success === false) {
-                message.error(res.message || '引擎停止失败');
-            } else if (res?.message) {
-                message.success(res.message);
-            } else {
-                message.success('引擎已停止');
-            }
-            await fetchEngineStatus();
-        } catch (error) {
-            message.error('引擎停止失败');
-            await fetchEngineStatus();
-        } finally {
-            setEngineActionLoading(null);
-        }
-    };
-
-    const handleOpenLogs = () => {
-        if (!canViewEngineLogs) {
-            message.error('无权限查看日志');
-            return;
-        }
-        setShowLogModal(true);
-        setShowLogModal(true);
-        fetchEngineLogs(false);
-    };
-
-    const handleClearDatabase = () => {
-        Modal.confirm({
-            title: '确认清空数据库',
-            content: '此操作将删除 Neo4j 中的所有血缘数据，且不可恢复。确定要继续吗？',
-            okText: '确认清空',
-            okType: 'danger',
-            cancelText: '取消',
-            onOk: async () => {
-                setEngineActionLoading('clear' as any);
-                try {
-                    const res = await clearLineageDatabase();
-                    if (res?.success === false) {
-                        message.error(res.message || '清空失败');
-                    } else {
-                        message.success(res?.message || '数据库已清空');
-                    }
-                } catch (error) {
-                    message.error('清空数据库失败');
-                } finally {
-                    setEngineActionLoading(null);
-                }
-            },
-        });
-    };
 
     const handleSearch = async (page: number = 1) => {
         setLoading(true);
@@ -327,7 +85,6 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                 }
             }
         } catch (error: any) {
-            console.error(error);
             message.error(`查询失败: ${error.message || '未知错误'}`);
         } finally {
             setLoading(false);
@@ -366,7 +123,6 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                 }
             }
         } catch (error: any) {
-            console.error(error);
             message.error(`加载血缘失败: ${error.message}`);
         } finally {
             setGraphLoading(false);
@@ -396,16 +152,11 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
             document.body.removeChild(a);
             message.success({ content: '导出成功', key: 'export' });
         } catch (error) {
-            console.error(error);
             message.error({ content: '导出失败', key: 'export' });
         }
     };
 
     const processLayoutImpact = (rawNodes: any[], rawEdges: any[], mainTableName: string) => {
-        console.log('========== 血缘数据调试 ==========');
-        console.log('原始节点数量:', rawNodes.length);
-        console.log('原始边数量:', rawEdges.length);
-
         // === 下游过滤：只保留从主表出发的下游依赖 ===
         // 1. 建立节点ID映射和表名归属
         const nodeIdToInfo = new Map<string, { type: 'Table' | 'Column', tableName: string }>();
@@ -482,9 +233,6 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
         const belongsToEdges = rawEdges.filter(e => e.type === 'BELONGS_TO' && downstreamNodeIds.has(e.source));
         const filteredEdges = [...downstreamEdges, ...belongsToEdges];
 
-        console.log('过滤后节点数量:', filteredNodes.length);
-        console.log('过滤后边数量:', filteredEdges.length);
-
         // === 使用过滤后的数据继续处理 ===
         const processedNodes = filteredNodes;
         const processedEdges = filteredEdges;
@@ -494,16 +242,9 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
         processedEdges.forEach(e => {
             edgeTypeCount[e.type] = (edgeTypeCount[e.type] || 0) + 1;
         });
-        console.log('边类型分布:', edgeTypeCount);
 
         // 打印所有非 BELONGS_TO 的边详情
         const lineageEdges = processedEdges.filter(e => e.type !== 'BELONGS_TO');
-        console.log('血缘边详情 (非BELONGS_TO):', lineageEdges.map(e => ({
-            id: e.id,
-            type: e.type,
-            source: e.source,
-            target: e.target
-        })));
 
         const dagreGraph = new dagre.graphlib.Graph();
         dagreGraph.setGraph({ rankdir: 'LR', nodesep: 100, ranksep: 300 });
@@ -654,22 +395,6 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
         const filteredLinks = links.filter(l =>
             validNodeIds.has(l.sourceNodeId) && validNodeIds.has(l.targetNodeId)
         );
-
-        console.log('========== 最终链接数据 ==========');
-        console.log('生成的 links 数量:', links.length);
-        const linkTypeCount: Record<string, number> = {};
-        links.forEach(l => {
-            linkTypeCount[l.type || 'unknown'] = (linkTypeCount[l.type || 'unknown'] || 0) + 1;
-        });
-        console.log('链接类型分布:', linkTypeCount);
-        console.log('链接详情:', links.map(l => ({
-            sourceNode: l.sourceNodeId,
-            sourceCol: l.sourceColumnId,
-            targetNode: l.targetNodeId,
-            targetCol: l.targetColumnId,
-            type: l.type
-        })));
-        console.log('===================================');
 
         return { layoutedNodes, layoutedLinks: filteredLinks };
     };
@@ -837,86 +562,7 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                         value={viewMode}
                         onChange={(val: any) => setViewMode(val)}
                     />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', border: '1px solid #f0f0f0', borderRadius: 8, background: '#fafafa' }}>
-                            <span style={{ fontSize: 12, color: '#8c8c8c' }}>引擎控制</span>
-                            {canViewEngineStatus ? (
-                                <>
-                                    <Badge status={engineStatusInfo.badge} text={engineStatusInfo.label} />
-                                    {engineMeta.versionStatus && !engineMeta.versionStatus.consistent && (
-                                        <Tooltip title={
-                                            <div>
-                                                <p>{engineMeta.versionStatus.message}</p>
-                                                <p style={{ fontSize: 11, opacity: 0.8 }}>最近分析 SHA: {engineMeta.versionStatus.lastCommitSha?.substring(0, 8)}</p>
-                                                <p style={{ fontSize: 11, opacity: 0.8 }}>Git 最新 SHA: {engineMeta.versionStatus.currentCommitSha?.substring(0, 8)}</p>
-                                            </div>
-                                        }>
-                                            <Tag color="warning" icon={<ReloadOutlined spin />} style={{ marginLeft: 8, cursor: 'help', borderRadius: 10 }}>数据过时</Tag>
-                                        </Tooltip>
-                                    )}
-                                    {engineMeta.pid ? <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 4 }}>PID {engineMeta.pid}</span> : null}
-                                    {engineMeta.lastStartedAt && engineStatus === 'running' ? (
-                                        <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8 }} title={engineMeta.lastStartedAt}>
-                                            启动于 {new Date(engineMeta.lastStartedAt).toLocaleString('zh-CN', { hour12: false })}
-                                            <span style={{ margin: '0 4px' }}>·</span>
-                                            已运行 <RunDuration startTime={engineMeta.lastStartedAt} />
-                                        </span>
-                                    ) : null}
-                                </>
-                            ) : (
-                                <Badge status="default" text="无权限" />
-                            )}
-                        </div>
-                        <Space>
-                            {canStartEngine ? (
-                                <Button
-                                    type="primary"
-                                    icon={<PlayCircleOutlined />}
-                                    loading={engineActionLoading === 'start'}
-                                    disabled={engineStatus === 'running' || engineStatus === 'starting'}
-                                    onClick={handleStartEngine}
-                                >
-                                    启动引擎
-                                </Button>
-                            ) : null}
-                            {canRestartEngine ? (
-                                <Button
-                                    icon={<ReloadOutlined />}
-                                    loading={engineActionLoading === 'restart'}
-                                    disabled={engineStatus !== 'running'}
-                                    onClick={handleRestartEngine}
-                                >
-                                    重启
-                                </Button>
-                            ) : null}
-                            {canStopEngine ? (
-                                <Button
-                                    danger
-                                    icon={<PoweroffOutlined />}
-                                    loading={engineActionLoading === 'stop'}
-                                    disabled={engineStatus !== 'running'}
-                                    onClick={handleStopEngine}
-                                >
-                                    停止
-                                </Button>
-                            ) : null}
-                            {canViewEngineLogs ? (
-                                <Button icon={<FileTextOutlined />} onClick={handleOpenLogs}>
-                                    查看日志
-                                </Button>
-                            ) : null}
-                            {canStopEngine ? (
-                                <Button
-                                    danger
-                                    icon={<DeleteOutlined />}
-                                    loading={engineActionLoading === ('clear' as any)}
-                                    onClick={handleClearDatabase}
-                                >
-                                    清空数据
-                                </Button>
-                            ) : null}
-                        </Space>
-                    </div>
+                    <LineageEngineToolbar controller={engineController} />
                 </div>
             </div>
             <Layout style={{ flex: 1, minHeight: 0 }}>
@@ -1065,32 +711,9 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                         onClose={() => setShowReportModal(false)}
                     />
                 )}
-                <Modal
-                    title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><FileTextOutlined /> 引擎执行日志</div>}
-                    open={showLogModal}
-                    onCancel={() => setShowLogModal(false)}
-                    footer={null}
-                    width={840}
-                    styles={{ body: { padding: 0 } }}
-                >
-                    <EngineLogViewer
-                        logs={engineLogs}
-                        loading={engineLogsLoading}
-                        autoRefresh={autoRefresh}
-                        onAutoRefreshChange={setAutoRefresh}
-                        onRefresh={() => fetchEngineLogs(false)}
-                    />
-                </Modal>
-                <LineageEngineStartModal
-                    open={showStartModal}
-                    onCancel={() => setShowStartModal(false)}
-                    onOk={handleConfirmStartEngine}
-                    loading={engineActionLoading === 'start'}
-                />
             </Layout>
         </div>
     );
 };
 
 export default LineagePage;
-

@@ -237,8 +237,11 @@ export const stopLineageEngine = () => {
     return post('/api/metadata/lineage/engine/stop', {});
 };
 
-export const getLineageEngineLogs = (lines: number = 200) => {
-    return get('/api/metadata/lineage/engine/logs', { lines: String(lines) });
+export const getLineageEngineLogs = (lines: number = 200, recordId?: string) => {
+    return get('/api/metadata/lineage/engine/logs', {
+        lines: String(lines),
+        ...(recordId ? { recordId } : {}),
+    });
 };
 
 export const checkLineageVersionConsistency = (repoId: number, ref?: string) => {

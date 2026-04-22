@@ -4,6 +4,7 @@ import jpype
 import logging
 import re
 import json
+import subprocess
 from typing import List, Dict, Any
 from utils.normalize import normalize_table_name
 
@@ -72,6 +73,93 @@ def preprocess_sql(sql_content: str) -> str:
             lines.append(cleaned)
     return "\n".join(lines)
 
+
+def _is_jaxb_jar(jar_path: str) -> bool:
+    name = os.path.basename(jar_path).lower()
+    return (
+        "jaxb" in name
+        or "activation" in name
+        or "javax.activation" in name
+    )
+
+
+def _collect_jaxb_jars() -> List[str]:
+    """Collect JAXB runtime jars for Java 11+ across common Linux/macOS layouts."""
+    jar_paths: List[str] = []
+
+    # Common system locations across Linux and Homebrew-based macOS setups.
+    for jar_dir in [
+        "/usr/share/java",
+        "/opt/homebrew/share/java",
+        "/usr/local/share/java",
+    ]:
+        if os.path.isdir(jar_dir):
+            jar_paths.extend(glob.glob(os.path.join(jar_dir, "*.jar")))
+
+    # Local Maven cache is the most reliable fallback on dev machines.
+    m2_repo = os.path.expanduser("~/.m2/repository")
+    if os.path.isdir(m2_repo):
+        patterns = [
+            "javax/xml/bind/jaxb-api/*/*.jar",
+            "javax/activation/activation/*/*.jar",
+            "javax/activation/javax.activation-api/*/*.jar",
+            "com/sun/xml/bind/jaxb-impl/*/*.jar",
+            "com/sun/xml/bind/jaxb-core/*/*.jar",
+            "org/glassfish/jaxb/jaxb-runtime/*/*.jar",
+            "org/glassfish/jaxb/jaxb-core/*/*.jar",
+            "org/glassfish/jaxb/txw2/*/*.jar",
+            "com/sun/istack/istack-commons-runtime/*/*.jar",
+            "org/eclipse/angus/angus-activation/*/*.jar",
+            "jakarta/activation/jakarta.activation-api/*/*.jar",
+        ]
+        for pattern in patterns:
+            jar_paths.extend(glob.glob(os.path.join(m2_repo, pattern)))
+
+    filtered: List[str] = []
+    seen = set()
+    for jar_path in jar_paths:
+        if jar_path in seen or not _is_jaxb_jar(jar_path):
+            continue
+        seen.add(jar_path)
+        filtered.append(jar_path)
+
+    return filtered
+
+
+def _resolve_java_8_home() -> str | None:
+    """Prefer Java 8 when available because some GSP builds behave better with it."""
+    env_java_home = os.environ.get("JAVA_HOME")
+    if env_java_home and os.path.exists(env_java_home):
+        return env_java_home
+
+    candidate_homes = [
+        "/Users/work/Library/Java/JavaVirtualMachines/corretto-1.8.0_392/Contents/Home",
+        "/Library/Java/JavaVirtualMachines/corretto-1.8.0_392/Contents/Home",
+        "/Library/Java/JavaVirtualMachines/amazon-corretto-8.jdk/Contents/Home",
+        "/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home",
+        "/Library/Java/JavaVirtualMachines/temurin-8.jdk/Contents/Home",
+    ]
+    for java_home in candidate_homes:
+        if os.path.exists(java_home):
+            return java_home
+
+    java_home_cmd = "/usr/libexec/java_home"
+    if os.path.exists(java_home_cmd):
+        try:
+            result = subprocess.run(
+                [java_home_cmd, "-v", "1.8"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            java_home = result.stdout.strip()
+            if java_home and os.path.exists(java_home):
+                return java_home
+        except Exception:
+            pass
+
+    return None
+
 class GSPParser:
     def __init__(self):
         self._start_jvm()
@@ -88,33 +176,22 @@ class GSPParser:
             logging.error(f"No JARs found in {jar_dir}")
             return
 
-        classpath = os.pathsep.join(project_jars)
+        classpath_entries = list(project_jars)
 
-        # Add system JAXB jars if available (for Java 11+)
-        # Dockerfile installs libjaxb-java which puts jars in /usr/share/java
-        system_jar_dir = "/usr/share/java"
-        if os.path.isdir(system_jar_dir):
-            system_jars = glob.glob(os.path.join(system_jar_dir, "*.jar"))
-            # Filter for JAXB related jars
-            jaxb_jars = [
-                j for j in system_jars 
-                if "jaxb" in os.path.basename(j).lower() or 
-                   "activation" in os.path.basename(j).lower() or
-                   "javax.activation" in os.path.basename(j).lower()
-            ]
-            if jaxb_jars:
-                logging.debug(f"Found system JAXB jars: {jaxb_jars}")
-                classpath = classpath + os.pathsep + os.pathsep.join(jaxb_jars)
-        
-        # Try to find Java 8 specifically as GSP might depend on it (JAXB)
-        java_home = "/Users/work/Library/Java/JavaVirtualMachines/corretto-1.8.0_392/Contents/Home"
-        if os.path.exists(java_home):
-            os.environ['JAVA_HOME'] = java_home
+        jaxb_jars = _collect_jaxb_jars()
+        if jaxb_jars:
+            logging.debug(f"Found JAXB jars: {jaxb_jars}")
+            classpath_entries.extend(jaxb_jars)
+
+        classpath = os.pathsep.join(classpath_entries)
+
+        java_home = _resolve_java_8_home()
+        if java_home:
+            os.environ["JAVA_HOME"] = java_home
             try:
                 jvm_path = jpype.getDefaultJVMPath()
-            except:
-                 # Fallback
-                 pass
+            except Exception:
+                pass
         
         try:
             if not 'jvm_path' in locals() or not jvm_path:

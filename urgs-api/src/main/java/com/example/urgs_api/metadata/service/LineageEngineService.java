@@ -18,9 +18,11 @@ import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
@@ -61,6 +63,7 @@ public class LineageEngineService {
     private StartEngineRequest lastRequest;
     private String lastRecordId;
     private boolean startInProgress;
+    private String lastOperationId;
 
     public LineageEngineService(
             GitPlatformService gitPlatformService,
@@ -77,6 +80,7 @@ public class LineageEngineService {
 
     public Map<String, Object> start(StartEngineRequest request) {
         StartEngineRequest normalized = normalizeRequest(request);
+        log.info("[LineageEngineDiagnostics] start request normalized: {}", summarizeRequest(normalized));
         return queueStart(normalized);
     }
 
@@ -85,7 +89,15 @@ public class LineageEngineService {
         request.setSourceType("upload");
         request.setUser(user);
         request.setLanguage(language);
+        log.info("[LineageEngineDiagnostics] startWithUpload received: fileCount={}, fileNames={}, user={}, language={}",
+                files != null ? files.size() : 0,
+                files != null ? files.stream().map(MultipartFile::getOriginalFilename).toList() : List.of(),
+                user,
+                language);
         try {
+            synchronized (lock) {
+                this.lastRequest = request;
+            }
             uploadInputPreparer.stageUploads(request, files);
             return queueStart(normalizeRequest(request));
         } catch (Exception e) {
@@ -96,8 +108,13 @@ public class LineageEngineService {
     }
 
     private Map<String, Object> queueStart(StartEngineRequest request) {
+        String operationId = newOperationId("start");
         synchronized (lock) {
+            log.info("[LineageEngineDiagnostics] queueStart begin: operationId={}, request={}, running={}, startInProgress={}, lastRecordId={}, lastOperationId={}",
+                    operationId, summarizeRequest(request), isRunning(), startInProgress, lastRecordId, lastOperationId);
             if (isRunning() || startInProgress) {
+                log.warn("[LineageEngineDiagnostics] queueStart rejected: operationId={}, running={}, startInProgress={}",
+                        operationId, isRunning(), startInProgress);
                 return buildStatus(false, "引擎已在运行中", false);
             }
             this.lastRequest = request;
@@ -105,19 +122,28 @@ public class LineageEngineService {
             this.lastError = null;
             this.lastStoppedAt = null;
             this.startInProgress = true;
-            if (!isGitSource(request)) {
+            this.lastOperationId = operationId;
+            if (isGitSource(request)) {
+                LineageAnalysisRecord record = createAnalysisRecord(request);
+                this.lastRecordId = record.getId();
+            } else {
                 this.lastRecordId = "upload-" + System.currentTimeMillis();
             }
+            log.info("[LineageEngineDiagnostics] queueStart accepted: operationId={}, recordId={}, request={}",
+                    operationId, this.lastRecordId, summarizeRequest(request));
         }
 
-        taskExecutor.execute(() -> executeStartTask(request));
+        taskExecutor.execute(() -> executeStartTask(request, operationId));
         return buildStatus(true, "引擎启动任务已受理", false);
     }
 
-    private void executeStartTask(StartEngineRequest request) {
+    private void executeStartTask(StartEngineRequest request, String operationId) {
+        long startedAt = System.currentTimeMillis();
         try {
             Path workingDir = resolveWorkDir();
             Path script = resolveScriptPath(workingDir);
+            log.info("[LineageEngineDiagnostics] executeStartTask begin: operationId={}, workDir={}, script={}, request={}",
+                    operationId, workingDir, script, summarizeRequest(request));
             if (!Files.exists(script)) {
                 throw new IllegalStateException("启动脚本不存在: " + script);
             }
@@ -125,26 +151,43 @@ public class LineageEngineService {
             LineageEngineInputPreparationResult inputResult = resolveInput(request, null);
             String inputPath = inputResult.inputPath();
             String repoRoot = inputResult.repoRoot();
+            log.info("[LineageEngineDiagnostics] input resolved: operationId={}, inputPath={}, repoRoot={}",
+                    operationId, inputPath, repoRoot);
 
             String recordId = this.lastRecordId;
             LineageAnalysisRecord record = null;
             if (isGitSource(request)) {
-                record = createAnalysisRecord(request);
-                recordId = record.getId();
+                record = StringUtils.hasText(recordId) ? analysisRecordMapper.selectById(recordId) : null;
+                if (record == null) {
+                    record = createAnalysisRecord(request);
+                    recordId = record.getId();
+                }
+                refreshAnalysisRecord(record, request);
             }
 
             Path logPath = resolveLogPath(workingDir, recordId);
             Files.createDirectories(logPath.getParent());
 
             List<String> command = buildStartCommand(request, inputPath, repoRoot, recordId, record);
+            writeBootstrapLog(logPath, "启动任务已创建");
+            writeBootstrapLog(logPath, "诊断 operationId: " + operationId);
+            writeBootstrapLog(logPath, "请求摘要: " + summarizeRequest(request));
+            writeBootstrapLog(logPath, "工作目录: " + workingDir);
+            writeBootstrapLog(logPath, "脚本路径: " + script);
+            writeBootstrapLog(logPath, "日志路径: " + logPath);
+            writeBootstrapLog(logPath, "执行命令: " + String.join(" ", command));
             ProcessBuilder builder = new ProcessBuilder(command);
             builder.directory(workingDir.toFile());
             builder.environment().put("DOCKER_API_VERSION", dockerApiVersion);
             builder.redirectErrorStream(true);
             builder.redirectOutput(ProcessBuilder.Redirect.appendTo(logPath.toFile()));
 
-            log.info("异步启动血缘引擎: workDir={}, command={}", workingDir, command);
+            log.info("[LineageEngineDiagnostics] process start prepared: operationId={}, recordId={}, logPath={}, command={}",
+                    operationId, recordId, logPath, command);
             Process startedProcess = builder.start();
+            writeBootstrapLog(logPath, "进程已启动，PID=" + startedProcess.pid());
+            log.info("[LineageEngineDiagnostics] process started: operationId={}, pid={}, durationMs={}",
+                    operationId, startedProcess.pid(), System.currentTimeMillis() - startedAt);
 
             synchronized (lock) {
                 process = startedProcess;
@@ -156,14 +199,16 @@ public class LineageEngineService {
                 startInProgress = false;
             }
 
-            watchProcess(startedProcess, recordId, logPath);
+            watchProcess(startedProcess, recordId, logPath, operationId);
         } catch (Exception e) {
             synchronized (lock) {
                 startInProgress = false;
                 lastError = e.getMessage();
                 lastStoppedAt = Instant.now();
             }
-            log.error("异步启动血缘引擎失败", e);
+            writeBootstrapFailureLog(request, e);
+            log.error("[LineageEngineDiagnostics] executeStartTask failed: operationId={}, durationMs={}, request={}",
+                    operationId, System.currentTimeMillis() - startedAt, summarizeRequest(request), e);
         }
     }
 
@@ -258,12 +303,29 @@ public class LineageEngineService {
         record.setPaths(request.getPaths());
         record.setDefaultUser(request.getUser());
         record.setLanguage(request.getLanguage());
-        record.setStatus("RUNNING");
+        record.setStatus("PENDING");
         record.setStartTime(LocalDateTime.now());
         record.setCreateTime(LocalDateTime.now());
         record.setUpdateTime(LocalDateTime.now());
 
-        // Try to fetch current commit SHA for the ref
+        analysisRecordMapper.insert(record);
+        log.info("[LineageEngineDiagnostics] analysis record created: recordId={}, request={}", record.getId(), summarizeRequest(request));
+        return record;
+    }
+
+    private void refreshAnalysisRecord(LineageAnalysisRecord record, StartEngineRequest request) {
+        if (record == null) {
+            return;
+        }
+
+        record.setRepoId(request.getRepoId());
+        record.setRef(request.getRef());
+        record.setPaths(request.getPaths());
+        record.setDefaultUser(request.getUser());
+        record.setLanguage(request.getLanguage());
+        record.setStatus("RUNNING");
+        record.setUpdateTime(LocalDateTime.now());
+
         try {
             var latestCommit = gitPlatformService.getLatestCommit(request.getRepoId(), request.getRef());
             if (latestCommit != null) {
@@ -273,8 +335,37 @@ public class LineageEngineService {
             log.warn("无法获取 Git 最新提交 SHA: {}", e.getMessage());
         }
 
-        analysisRecordMapper.insert(record);
-        return record;
+        analysisRecordMapper.updateById(record);
+        log.info("[LineageEngineDiagnostics] analysis record refreshed: recordId={}, repoId={}, ref={}, commitSha={}, status={}",
+                record.getId(), record.getRepoId(), record.getRef(), record.getCommitSha(), record.getStatus());
+    }
+
+    private void writeBootstrapLog(Path logPath, String message) {
+        try {
+            Files.writeString(
+                    logPath,
+                    LocalDateTime.now() + " [BOOT] " + message + System.lineSeparator(),
+                    StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND);
+        } catch (Exception ex) {
+            log.warn("写入引导日志失败: {}", ex.getMessage());
+        }
+    }
+
+    private void writeBootstrapFailureLog(StartEngineRequest request, Exception e) {
+        try {
+            Path workingDir = resolveWorkDir();
+            Path logPath = resolveLogPath(workingDir, this.lastRecordId);
+            Files.createDirectories(logPath.getParent());
+            writeBootstrapLog(logPath, "启动失败: " + e.getMessage());
+            writeBootstrapLog(logPath, "错误类型: " + e.getClass().getName());
+            if (request != null && StringUtils.hasText(request.getSourceType())) {
+                writeBootstrapLog(logPath, "sourceType=" + request.getSourceType());
+            }
+        } catch (Exception ex) {
+            log.warn("写入启动失败日志失败: {}", ex.getMessage());
+        }
     }
 
     public Map<String, Object> stop() {
@@ -284,7 +375,10 @@ public class LineageEngineService {
             // bridge.sh 会执行 docker exec 后立即返回，但容器中的 Python 进程仍在运行。
             // 所以我们始终尝试执行 kill 脚本，让脚本自己判断是否有进程需要终止。
             try {
-                log.info("停止血缘引擎");
+                String operationId = newOperationId("stop");
+                log.info("[LineageEngineDiagnostics] stop begin: operationId={}, status={}, pid={}, recordId={}, lastOperationId={}",
+                        operationId, startInProgress ? "starting" : (isRunning() ? "running" : "stopped"),
+                        process != null && process.isAlive() ? process.pid() : null, lastRecordId, lastOperationId);
 
                 // Execute kill command via bridge script
                 Path workingDir = resolveWorkDir();
@@ -313,22 +407,24 @@ public class LineageEngineService {
                     // 等待 kill 脚本完成，最多 15 秒（脚本有重试逻辑）
                     boolean finished = killProcess.waitFor(15, TimeUnit.SECONDS);
                     if (!finished) {
-                        log.warn("Kill script timeout, force destroying...");
+                        log.warn("[LineageEngineDiagnostics] kill script timeout: operationId={}, script={}", operationId, script);
                         killProcess.destroyForcibly();
                     } else {
                         int exitCode = killProcess.exitValue();
-                        log.info("Kill script finished with exit code: {}", exitCode);
+                        log.info("[LineageEngineDiagnostics] kill script finished: operationId={}, exitCode={}", operationId, exitCode);
                     }
                 } else {
-                    log.warn("Kill script not found: {}", script);
+                    log.warn("[LineageEngineDiagnostics] kill script not found: operationId={}, script={}", operationId, script);
                 }
 
                 // 同时也尝试停止 Java 端记录的进程（如果仍在运行）
                 stopProcess(process);
+                log.info("[LineageEngineDiagnostics] stop completed: operationId={}, status={}, lastExitCode={}, lastStoppedAt={}",
+                        operationId, startInProgress ? "starting" : (isRunning() ? "running" : "stopped"), lastExitCode, lastStoppedAt);
                 return buildStatus(true, "引擎已停止", false);
             } catch (Exception e) {
                 lastError = e.getMessage();
-                log.error("停止血缘引擎失败", e);
+                log.error("[LineageEngineDiagnostics] stop failed: recordId={}, lastOperationId={}", lastRecordId, lastOperationId, e);
                 return buildStatus(false, "停止失败: " + e.getMessage(), false);
             }
         }
@@ -336,7 +432,8 @@ public class LineageEngineService {
 
     public Map<String, Object> restart() {
         synchronized (lock) {
-            log.info("重启血缘引擎");
+            log.info("[LineageEngineDiagnostics] restart begin: lastRequest={}, recordId={}, pid={}",
+                    summarizeRequest(this.lastRequest), lastRecordId, process != null && process.isAlive() ? process.pid() : null);
             stop();
             return start(this.lastRequest);
         }
@@ -344,6 +441,10 @@ public class LineageEngineService {
 
     public Map<String, Object> status() {
         synchronized (lock) {
+            log.info("[LineageEngineDiagnostics] status snapshot: status={}, pid={}, recordId={}, lastExitCode={}, lastError={}, startInProgress={}, lastOperationId={}",
+                    startInProgress ? "starting" : (isRunning() ? "running" : "stopped"),
+                    process != null && process.isAlive() ? process.pid() : null,
+                    lastRecordId, lastExitCode, lastError, startInProgress, lastOperationId);
             return buildStatus(true, null, true);
         }
     }
@@ -351,17 +452,27 @@ public class LineageEngineService {
     public Map<String, Object> logs(int lines, String recordId) {
         synchronized (lock) {
             Map<String, Object> result = new HashMap<>();
+            long startedAt = System.currentTimeMillis();
             try {
                 String targetId = StringUtils.hasText(recordId) ? recordId : this.lastRecordId;
-                log.info("读取血缘引擎日志: lines={}, recordId={}", lines, targetId);
+                log.info("[LineageEngineDiagnostics] logs begin: lines={}, requestedRecordId={}, targetRecordId={}, lastOperationId={}",
+                        lines, recordId, targetId, lastOperationId);
 
                 Path logPath = resolveLogPath(resolveWorkDir(), targetId);
                 if (!Files.exists(logPath)) {
-                    result.put("success", true);
-                    result.put("lines", List.of());
-                    result.put("lineCount", 0);
-                    result.put("logPath", logPath.toString());
-                    return result;
+                    Path fallbackLogPath = resolveLatestLineageLog(resolveWorkDir());
+                    if (fallbackLogPath != null) {
+                        log.warn("[LineageEngineDiagnostics] logs fallback to latest file: requested={}, fallback={}", logPath, fallbackLogPath);
+                        logPath = fallbackLogPath;
+                    } else {
+                        result.put("success", true);
+                        result.put("lines", List.of());
+                        result.put("lineCount", 0);
+                        result.put("logPath", logPath.toString());
+                        log.info("[LineageEngineDiagnostics] logs no file available: requestedRecordId={}, durationMs={}",
+                                targetId, System.currentTimeMillis() - startedAt);
+                        return result;
+                    }
                 }
                 List<String> allLines = Files.readAllLines(logPath, StandardCharsets.UTF_8);
                 int fromIndex = Math.max(0, allLines.size() - lines);
@@ -369,9 +480,13 @@ public class LineageEngineService {
                 result.put("success", true);
                 result.put("lines", tail);
                 result.put("lineCount", tail.size());
+                result.put("logPath", logPath.toString());
+                log.info("[LineageEngineDiagnostics] logs success: targetRecordId={}, logPath={}, requestedLines={}, returnedLines={}, totalLines={}, durationMs={}",
+                        targetId, logPath, lines, tail.size(), allLines.size(), System.currentTimeMillis() - startedAt);
                 return result;
             } catch (Exception e) {
-                log.error("读取血缘引擎日志失败", e);
+                log.error("[LineageEngineDiagnostics] logs failed: requestedRecordId={}, lines={}, lastOperationId={}",
+                        recordId, lines, lastOperationId, e);
                 result.put("success", false);
                 result.put("error", e.getMessage());
                 result.put("lines", List.of());
@@ -384,13 +499,35 @@ public class LineageEngineService {
         return process != null && process.isAlive();
     }
 
+    private Path resolveLatestLineageLog(Path workingDir) {
+        Path logsDir = workingDir.resolve("logs");
+        if (!Files.isDirectory(logsDir)) {
+            return null;
+        }
+        try (var stream = Files.list(logsDir)) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().startsWith("lineage-engine-"))
+                    .filter(path -> path.getFileName().toString().endsWith(".log"))
+                    .max(Comparator.comparingLong(path -> path.toFile().lastModified()))
+                    .orElse(null);
+        } catch (Exception e) {
+            log.warn("查找最新血缘日志失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
     private void stopProcess(Process running) {
         if (running == null) {
+            log.info("[LineageEngineDiagnostics] stopProcess skipped: running process is null");
             return;
         }
+        long startedAt = System.currentTimeMillis();
+        log.info("[LineageEngineDiagnostics] stopProcess begin: pid={}, timeoutSeconds={}", running.pid(), stopTimeoutSeconds);
         running.destroy();
         try {
             if (!running.waitFor(stopTimeoutSeconds, TimeUnit.SECONDS)) {
+                log.warn("[LineageEngineDiagnostics] stopProcess graceful timeout: pid={}", running.pid());
                 running.destroyForcibly();
                 running.waitFor(stopTimeoutSeconds, TimeUnit.SECONDS);
             }
@@ -408,12 +545,16 @@ public class LineageEngineService {
             if (process == running) {
                 process = null;
             }
+            log.info("[LineageEngineDiagnostics] stopProcess finished: pid={}, alive={}, lastExitCode={}, durationMs={}",
+                    running.pid(), running.isAlive(), lastExitCode, System.currentTimeMillis() - startedAt);
         }
     }
 
-    private void watchProcess(Process running, String recordId, Path logPath) {
+    private void watchProcess(Process running, String recordId, Path logPath, String operationId) {
         Thread watcher = new Thread(() -> {
             try {
+                log.info("[LineageEngineDiagnostics] watcher waiting: operationId={}, pid={}, recordId={}, logPath={}",
+                        operationId, running.pid(), recordId, logPath);
                 int exitCode = running.waitFor();
                 synchronized (lock) {
                     startInProgress = false;
@@ -423,6 +564,8 @@ public class LineageEngineService {
                         process = null;
                     }
                 }
+                log.info("[LineageEngineDiagnostics] watcher completed: operationId={}, pid={}, recordId={}, exitCode={}",
+                        operationId, running.pid(), recordId, exitCode);
 
                 // Update record on completion
                 if (recordId != null) {
@@ -430,6 +573,8 @@ public class LineageEngineService {
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                log.warn("[LineageEngineDiagnostics] watcher interrupted: operationId={}, pid={}, recordId={}",
+                        operationId, running.pid(), recordId);
             }
         }, "lineage-engine-watcher");
         watcher.setDaemon(true);
@@ -454,6 +599,8 @@ public class LineageEngineService {
 
                 record.setUpdateTime(LocalDateTime.now());
                 analysisRecordMapper.updateById(record);
+                log.info("[LineageEngineDiagnostics] analysis record completion updated: recordId={}, exitCode={}, status={}, versionId={}",
+                        recordId, exitCode, record.getStatus(), record.getVersionId());
             }
         } catch (Exception e) {
             log.error("更新分析记录失败", e);
@@ -483,6 +630,12 @@ public class LineageEngineService {
         Map<String, Object> status = new HashMap<>();
         status.put("success", success);
         status.put("status", startInProgress ? "starting" : (isRunning() ? "running" : "stopped"));
+        if (lastRequest != null && StringUtils.hasText(lastRequest.getSourceType())) {
+            status.put("sourceType", lastRequest.getSourceType());
+        }
+        if (StringUtils.hasText(lastRecordId)) {
+            status.put("recordId", lastRecordId);
+        }
         if (process != null && process.isAlive()) {
             status.put("pid", process.pid());
         }
@@ -502,9 +655,15 @@ public class LineageEngineService {
             status.put("message", message);
         }
 
-        if (includeVersionStatus) {
+        boolean shouldCheckVersion = includeVersionStatus
+                && !startInProgress
+                && !isRunning()
+                && isGitSource(lastRequest);
+
+        if (shouldCheckVersion) {
             try {
                 var wrapper = new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<LineageAnalysisRecord>()
+                        .eq("repo_id", lastRequest.getRepoId())
                         .eq("status", "SUCCESS")
                         .orderByDesc("start_time")
                         .last("LIMIT 1");
@@ -516,6 +675,11 @@ public class LineageEngineService {
             } catch (Exception e) {
                 log.warn("构建状态时版本校验失败: {}", e.getMessage());
             }
+        } else if (includeVersionStatus) {
+            log.info("[LineageEngineDiagnostics] skip version check in status: sourceType={}, startInProgress={}, running={}",
+                    lastRequest != null ? lastRequest.getSourceType() : null,
+                    startInProgress,
+                    isRunning());
         }
 
         return status;
@@ -552,6 +716,7 @@ public class LineageEngineService {
     public Map<String, Object> checkVersionConsistency(Long repoId, String ref) {
         Map<String, Object> result = new HashMap<>();
         try {
+            log.info("[LineageEngineDiagnostics] version check begin: repoId={}, ref={}", repoId, ref);
             // 1. Get the latest successful analysis record for this repo
             var wrapper = new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<LineageAnalysisRecord>()
                     .eq("repo_id", repoId)
@@ -582,12 +747,32 @@ public class LineageEngineService {
             if (!consistent) {
                 result.put("message", "Git 仓库已有新提交，当前分析结果可能已过时");
             }
+            log.info("[LineageEngineDiagnostics] version check completed: repoId={}, ref={}, consistent={}, lastCommitSha={}, currentCommitSha={}",
+                    repoId, ref, consistent, lastRecord.getCommitSha(), latestCommit.getSha());
         } catch (Exception e) {
             log.warn("版本一致性校验失败: {}", e.getMessage());
             result.put("consistent", true); // Default to true on error to avoid false positives
             result.put("error", e.getMessage());
         }
         return result;
+    }
+
+    private String newOperationId(String action) {
+        return action + "-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private String summarizeRequest(StartEngineRequest request) {
+        if (request == null) {
+            return "null";
+        }
+        return "sourceType=" + request.getSourceType()
+                + ", repoId=" + request.getRepoId()
+                + ", ref=" + request.getRef()
+                + ", pathCount=" + (request.getPaths() != null ? request.getPaths().size() : 0)
+                + ", paths=" + request.getPaths()
+                + ", user=" + request.getUser()
+                + ", language=" + request.getLanguage()
+                + ", localPath=" + request.getLocalPath();
     }
 
     private boolean isGitSource(StartEngineRequest request) {
