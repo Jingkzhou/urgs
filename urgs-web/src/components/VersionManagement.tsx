@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { hasPermission } from '../utils/permission';
 import { BreadcrumbProvider, useBreadcrumbs } from '../context/BreadcrumbContext';
 import AppSystemList from './version/AppSystemList';
-import AICodeReport from './version/AICodeReport';
 import NoticeManagement from './version/NoticeManagement';
 import ReleaseStats from './version/ReleaseStats';
 import VersionOverview from './version/VersionOverview';
@@ -16,16 +15,24 @@ const VersionManagementContent: React.FC = () => {
     const TABS = [
         { id: 'app', label: '应用系统', subLabel: 'Applications', icon: LayoutGrid, code: 'version:app:list', component: AppSystemList },
         { id: 'repos', label: '仓库管理', subLabel: 'Repositories', icon: GitBranch, code: 'version:repo:list', component: GitRepoManagement },
-        { id: 'code_report', label: '智查报告', subLabel: 'AI Reports', icon: ShieldCheck, code: 'version:ai:audit', component: AICodeReport },
         { id: 'stats', label: '绩效统计', subLabel: 'Metrics', icon: BarChart3, code: 'version:stats', component: ReleaseStats },
     ];
 
     const visibleTabs = TABS.filter(tab => hasPermission(tab.code));
 
     useEffect(() => {
-        if (!activeTab) {
-            setActiveTab('overview');
+        if (activeTab) {
+            return;
         }
+        const hash = typeof window !== 'undefined' ? window.location.hash : '';
+        const query = hash.includes('?') ? hash.split('?')[1] : '';
+        const params = new URLSearchParams(query);
+        const requestedTab = params.get('tab');
+        if (requestedTab && TABS.some(tab => tab.id === requestedTab && hasPermission(tab.code))) {
+            setActiveTab(requestedTab);
+            return;
+        }
+        setActiveTab('overview');
     }, [activeTab]);
 
     const allTabs = [

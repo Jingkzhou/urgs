@@ -1,5 +1,5 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Layout, Input, Button, message, Empty, Tag, Pagination, Tooltip, Segmented } from 'antd';
+import React, { useEffect, useRef, useState } from 'react';
+import { Layout, Input, Button, Drawer, message, Empty, Tag, Pagination, Tooltip, Segmented } from 'antd';
 import {
     SearchOutlined,
     TableOutlined,
@@ -7,12 +7,16 @@ import {
     DownOutlined,
     FileTextOutlined,
     DownloadOutlined,
+    UserOutlined,
+    RobotOutlined,
 } from '@ant-design/icons';
 import dagre from 'dagre';
 import {
     getLineageGraph,
     searchTables,
     exportLineage,
+    LineageSearchOwnerGroup,
+    LineageSearchTableItem,
 } from '@/api/lineage';
 import LineageReportModal from './analysis/components/LineageReportModal';
 import { NodeData, LinkData, ViewportState } from './analysis/types';
@@ -20,6 +24,8 @@ import { NODE_HEADER_HEIGHT, COLUMN_ROW_HEIGHT } from './analysis/constants';
 import LineageGraphContent from './analysis/components/LineageGraphContent';
 import LineageEngineToolbar from './analysis/components/LineageEngineToolbar';
 import { useLineageEngineController } from './analysis/hooks/useLineageEngineController';
+import { hasPermission } from '@/utils/permission';
+import AICodeReport from '@/components/version/AICodeReport';
 
 const { Sider, Content } = Layout;
 
@@ -30,11 +36,13 @@ interface LineagePageProps {
 const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [searchText, setSearchText] = useState('');
-    const [searchResults, setSearchResults] = useState<any[]>([]);
+    const [searchResults, setSearchResults] = useState<LineageSearchOwnerGroup[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
     const [total, setTotal] = useState(0);
+    const [totalOwners, setTotalOwners] = useState(0);
     const [selectedTable, setSelectedTable] = useState<string | null>(null);
+    const [selectedQualifiedName, setSelectedQualifiedName] = useState<string | null>(null);
     const [selectedField, setSelectedField] = useState<{ nodeId: string, colId: string } | null>(null);
     const [nodes, setNodes] = useState<NodeData[]>([]);
     const [links, setLinks] = useState<LinkData[]>([]);
@@ -42,19 +50,34 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
     const [loading, setLoading] = useState(false);
     const [graphLoading, setGraphLoading] = useState(false);
     const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
+    const [expandedOwners, setExpandedOwners] = useState<Set<string>>(new Set());
     const [showReportModal, setShowReportModal] = useState(false);
     const [viewMode, setViewMode] = useState<'canvas' | 'list'>('list');
     const pageTitle = mode === 'trace' ? '血缘溯源' : '影响分析';
     const canExport = mode === 'impact';
+    const canOpenAuditBoard = hasPermission('version:ai:audit');
     const engineController = useLineageEngineController();
+    const [showAuditBoard, setShowAuditBoard] = useState(false);
 
-    const toggleTableExpand = (tableName: string) => {
+    const toggleTableExpand = (qualifiedName: string) => {
         setExpandedTables(prev => {
             const next = new Set(prev);
-            if (next.has(tableName)) {
-                next.delete(tableName);
+            if (next.has(qualifiedName)) {
+                next.delete(qualifiedName);
             } else {
-                next.add(tableName);
+                next.add(qualifiedName);
+            }
+            return next;
+        });
+    };
+
+    const toggleOwnerExpand = (ownerName: string) => {
+        setExpandedOwners(prev => {
+            const next = new Set(prev);
+            if (next.has(ownerName)) {
+                next.delete(ownerName);
+            } else {
+                next.add(ownerName);
             }
             return next;
         });
@@ -64,22 +87,21 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
         handleSearch();
     }, []);
 
-    useEffect(() => {
-        handleSearch();
-    }, []);
-
 
     const handleSearch = async (page: number = 1) => {
         setLoading(true);
         try {
-            const res: any = await searchTables(searchText, page, pageSize);
-            if (res && res.list) {
-                setSearchResults(res.list);
+            const res = await searchTables(searchText, page, pageSize);
+            if (res && res.groupedList) {
+                setSearchResults(res.groupedList);
                 setTotal(res.total || 0);
+                setTotalOwners(res.totalOwners || 0);
                 setCurrentPage(page);
+                setExpandedOwners(new Set((res.groupedList || []).map(group => group.ownerName)));
             } else {
                 setSearchResults([]);
                 setTotal(0);
+                setTotalOwners(0);
                 if (searchText.trim()) {
                     message.info('未找到相关表');
                 }
@@ -91,11 +113,12 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
         }
     };
 
-    const handleSelectTable = async (tableName: string, targetColName?: string) => {
+    const handleSelectTable = async (tableName: string, qualifiedName?: string, targetColName?: string) => {
         setGraphLoading(true);
         setSelectedTable(tableName);
+        setSelectedQualifiedName(qualifiedName || tableName);
         try {
-            const res = await getLineageGraph(tableName, targetColName);
+            const res = await getLineageGraph(tableName, targetColName, -1, qualifiedName);
             if (res) {
                 if (res.nodes && res.nodes.length === 0) {
                     message.info('未找到血缘信息');
@@ -129,18 +152,18 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
         }
     };
 
-    const handleExport = async (tableName: string, e: React.MouseEvent, columnName?: string) => {
+    const handleExport = async (tableName: string, e: React.MouseEvent, columnName?: string, qualifiedName?: string) => {
         e.stopPropagation();
         if (!canExport) {
             return;
         }
         try {
             message.loading({ content: '正在导出...', key: 'export' });
-            const blob = await exportLineage(tableName, columnName);
+            const blob = await exportLineage(tableName, columnName, qualifiedName);
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            let filename = `${tableName}`;
+            let filename = `${qualifiedName || tableName}`;
             if (columnName) {
                 filename += `_${columnName}`;
             }
@@ -551,7 +574,7 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                         <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>SQL Lineage</div>
                         <div style={{ fontSize: 12, color: '#8c8c8c' }}>{pageTitle}</div>
                     </div>
-                    {selectedTable && <Tag color="blue">{selectedTable}</Tag>}
+                    {selectedQualifiedName && <Tag color="blue">{selectedQualifiedName}</Tag>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                     <Segmented
@@ -562,6 +585,14 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                         value={viewMode}
                         onChange={(val: any) => setViewMode(val)}
                     />
+                    <Button
+                        icon={<RobotOutlined />}
+                        disabled={!canOpenAuditBoard}
+                        title={canOpenAuditBoard ? '在当前血缘页面打开 SQL 血缘事后校验看板' : '缺少 version:ai:audit 权限'}
+                        onClick={() => setShowAuditBoard(true)}
+                    >
+                        打开事后校验
+                    </Button>
                     <LineageEngineToolbar controller={engineController} />
                 </div>
             </div>
@@ -572,11 +603,11 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                         <div style={{ padding: '16px', borderBottom: '1px solid #f0f0f0' }}>
                             <div style={{ marginBottom: 16 }}>
                                 <h3>血缘搜索</h3>
-                                <p style={{ color: '#888', fontSize: '12px' }}>输入表名查询上下游血缘关系</p>
+                                <p style={{ color: '#888', fontSize: '12px' }}>按用户/Schema 分组浏览，支持搜索用户、表、字段</p>
                             </div>
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 <Input
-                                    placeholder="输入关键词"
+                                    placeholder="输入用户、表或字段关键词"
                                     value={searchText}
                                     onChange={e => setSearchText(e.target.value)}
                                     onPressEnter={() => handleSearch(1)}
@@ -588,84 +619,111 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                         <div style={{ flex: 1, overflowY: 'auto', padding: '0' }}>
                             {(() => {
                                 return [...searchResults]
-                                    .sort((a, b) => a.tableName.localeCompare(b.tableName))
-                                    .map((item: any) => (
-                                        <div key={item.tableName} style={{ borderBottom: '1px solid #f5f5f5' }}>
+                                    .sort((a, b) => a.ownerName.localeCompare(b.ownerName))
+                                    .map((group) => (
+                                        <div key={group.ownerName} style={{ borderBottom: '1px solid #f0f0f0' }}>
                                             <div
+                                                onClick={() => toggleOwnerExpand(group.ownerName)}
                                                 style={{
                                                     padding: '12px 16px',
                                                     display: 'flex',
                                                     alignItems: 'center',
-                                                    gap: '8px'
+                                                    gap: '8px',
+                                                    background: '#fafafa',
+                                                    cursor: 'pointer'
                                                 }}
                                             >
-                                                <div
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        toggleTableExpand(item.tableName);
-                                                    }}
-                                                    style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
-                                                >
-                                                    {expandedTables.has(item.tableName) ?
-                                                        <DownOutlined style={{ fontSize: 10, color: '#666' }} /> :
-                                                        <RightOutlined style={{ fontSize: 10, color: '#666' }} />
-                                                    }
-                                                </div>
-                                                <div
-                                                    onClick={() => handleSelectTable(item.tableName)}
-                                                    className="hover:text-blue-500 cursor-pointer transition-colors"
-                                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}
-                                                >
-                                                    <TableOutlined style={{ color: '#1890ff' }} />
-                                                    <span style={{ fontWeight: 500 }}>{item.tableName}</span>
-                                                </div>
-                                                {canExport ? (
-                                                    <Tooltip title="导出血缘 Excel">
-                                                        <Button
-                                                            type="text"
-                                                            size="small"
-                                                            icon={<DownloadOutlined />}
-                                                            onClick={(e) => handleExport(item.tableName, e)}
-                                                        />
-                                                    </Tooltip>
-                                                ) : null}
+                                                {expandedOwners.has(group.ownerName)
+                                                    ? <DownOutlined style={{ fontSize: 10, color: '#666' }} />
+                                                    : <RightOutlined style={{ fontSize: 10, color: '#666' }} />}
+                                                <UserOutlined style={{ color: '#8c8c8c' }} />
+                                                <span style={{ fontWeight: 600, flex: 1 }}>{group.ownerName}</span>
+                                                <Tag>{group.tableCount} 张表</Tag>
                                             </div>
-                                            {expandedTables.has(item.tableName) && item.columns && item.columns.length > 0 && (
-                                                <div style={{ padding: '0 16px 12px 36px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                                    {item.columns.map((col: string) => (
-                                                        <Tag
-                                                            key={col}
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleSelectTable(item.tableName, col);
-                                                            }}
-                                                            className="group hover:text-blue-500 hover:border-blue-500"
+                                            {expandedOwners.has(group.ownerName) && group.tables
+                                                .slice()
+                                                .sort((a, b) => a.tableName.localeCompare(b.tableName))
+                                                .map((item: LineageSearchTableItem) => (
+                                                    <div key={item.qualifiedName} style={{ borderTop: '1px solid #f5f5f5' }}>
+                                                        <div
                                                             style={{
-                                                                cursor: 'pointer',
-                                                                margin: 0,
-                                                                display: 'inline-flex',
+                                                                padding: '12px 16px 12px 32px',
+                                                                display: 'flex',
                                                                 alignItems: 'center',
-                                                                gap: '4px',
-                                                                ...(searchText && col.toLowerCase().includes(searchText.toLowerCase()) ? {
-                                                                    backgroundColor: '#e6f7ff',
-                                                                    borderColor: '#1890ff'
-                                                                } : {})
+                                                                gap: '8px'
                                                             }}
                                                         >
-                                                            {col}
+                                                            <div
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    toggleTableExpand(item.qualifiedName);
+                                                                }}
+                                                                style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
+                                                            >
+                                                                {expandedTables.has(item.qualifiedName)
+                                                                    ? <DownOutlined style={{ fontSize: 10, color: '#666' }} />
+                                                                    : <RightOutlined style={{ fontSize: 10, color: '#666' }} />}
+                                                            </div>
+                                                            <div
+                                                                onClick={() => handleSelectTable(item.tableName, item.qualifiedName)}
+                                                                className="hover:text-blue-500 cursor-pointer transition-colors"
+                                                                style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}
+                                                            >
+                                                                <TableOutlined style={{ color: '#1890ff' }} />
+                                                                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                                                    <span style={{ fontWeight: 500 }}>{item.tableName}</span>
+                                                                    <span style={{ color: '#999', fontSize: 12 }}>{item.qualifiedName}</span>
+                                                                </div>
+                                                            </div>
                                                             {canExport ? (
-                                                                <Tooltip title="导出字段血缘">
-                                                                    <DownloadOutlined
-                                                                        className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                                                        style={{ fontSize: '10px', color: '#666' }}
-                                                                        onClick={(e) => handleExport(item.tableName, e, col)}
+                                                                <Tooltip title="导出血缘 Excel">
+                                                                    <Button
+                                                                        type="text"
+                                                                        size="small"
+                                                                        icon={<DownloadOutlined />}
+                                                                        onClick={(e) => handleExport(item.tableName, e, undefined, item.qualifiedName)}
                                                                     />
                                                                 </Tooltip>
                                                             ) : null}
-                                                        </Tag>
-                                                    ))}
-                                                </div>
-                                            )}
+                                                        </div>
+                                                        {expandedTables.has(item.qualifiedName) && item.columns && item.columns.length > 0 && (
+                                                            <div style={{ padding: '0 16px 12px 52px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                                                {item.columns.map((col: string) => (
+                                                                    <Tag
+                                                                        key={`${item.qualifiedName}.${col}`}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleSelectTable(item.tableName, item.qualifiedName, col);
+                                                                        }}
+                                                                        className="group hover:text-blue-500 hover:border-blue-500"
+                                                                        style={{
+                                                                            cursor: 'pointer',
+                                                                            margin: 0,
+                                                                            display: 'inline-flex',
+                                                                            alignItems: 'center',
+                                                                            gap: '4px',
+                                                                            ...(searchText && col.toLowerCase().includes(searchText.toLowerCase()) ? {
+                                                                                backgroundColor: '#e6f7ff',
+                                                                                borderColor: '#1890ff'
+                                                                            } : {})
+                                                                        }}
+                                                                    >
+                                                                        {col}
+                                                                        {canExport ? (
+                                                                            <Tooltip title="导出字段血缘">
+                                                                                <DownloadOutlined
+                                                                                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                                    style={{ fontSize: '10px', color: '#666' }}
+                                                                                    onClick={(e) => handleExport(item.tableName, e, col, item.qualifiedName)}
+                                                                                />
+                                                                            </Tooltip>
+                                                                        ) : null}
+                                                                    </Tag>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
                                         </div>
                                     ));
                             })()}
@@ -676,6 +734,9 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                             )}
                         </div>
                         <div style={{ padding: '8px 16px', borderTop: '1px solid #f0f0f0', textAlign: 'center' }}>
+                            <div style={{ color: '#999', fontSize: 12, marginBottom: 8 }}>
+                                共 {totalOwners} 个用户/Schema，{total} 张表
+                            </div>
                             <Pagination
                                 simple
                                 size="small"
@@ -711,6 +772,16 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                         onClose={() => setShowReportModal(false)}
                     />
                 )}
+                <Drawer
+                    title="SQL 血缘事后校验"
+                    open={showAuditBoard}
+                    onClose={() => setShowAuditBoard(false)}
+                    width="92vw"
+                    destroyOnHidden
+                    styles={{ body: { padding: 16, background: '#f8fafc' } }}
+                >
+                    <AICodeReport />
+                </Drawer>
             </Layout>
         </div>
     );

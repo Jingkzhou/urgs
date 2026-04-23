@@ -79,15 +79,25 @@ public class LineageService {
         // 预处理关键词为大写，以匹配索引（数据导入时已统一转大写）
         String normalizedKeyword = (keyword != null) ? keyword.toUpperCase() : "";
 
-        // 1. Count query - 使用 CONTAINS 进行模糊匹配（索引仍可用于前缀匹配）
-        String countQuery = "MATCH (n:Table) WHERE n.name CONTAINS $keyword RETURN count(n) as total";
+        String matchClause = "MATCH (n:Table) " +
+                "WHERE $keyword = '' " +
+                "OR toUpper(coalesce(n.name, '')) CONTAINS $keyword " +
+                "OR toUpper(coalesce(n.qualifiedName, '')) CONTAINS $keyword " +
+                "OR toUpper(coalesce(n.owner, coalesce(n.schema, coalesce(n.user, coalesce(n.default_user, ''))))) CONTAINS $keyword ";
 
-        // 2. Data query - 优化后的查询，移除 toLower 函数
-        String dataQuery = "MATCH (n:Table) WHERE n.name CONTAINS $keyword " +
+        String countQuery = matchClause + "RETURN count(n) as total";
+
+        String dataQuery = matchClause +
                 "OPTIONAL MATCH (c:Column)-[:BELONGS_TO]->(n) " +
-                "RETURN n.name AS name, collect(c.name) AS columns ORDER BY n.name SKIP $skip LIMIT $limit";
+                "RETURN properties(n) AS tableProps, " +
+                "coalesce(n.owner, coalesce(n.schema, coalesce(n.user, coalesce(n.default_user, '')))) AS ownerSort, " +
+                "n.name AS tableSort, " +
+                "collect(c.name) AS columns " +
+                "ORDER BY ownerSort, tableSort " +
+                "SKIP $skip LIMIT $limit";
 
         List<Map<String, Object>> list = new ArrayList<>();
+        Map<String, Map<String, Object>> groupedOwners = new LinkedHashMap<>();
         long total = 0;
 
         try (Session session = driver.session()) {
@@ -101,16 +111,40 @@ public class LineageService {
             Result result = session.run(dataQuery, Map.of("keyword", normalizedKeyword, "skip", skip, "limit", size));
             while (result.hasNext()) {
                 var record = result.next();
-                Map<String, Object> item = new HashMap<>();
-                item.put("tableName", record.get("name").asString());
-                item.put("columns", record.get("columns").asList(v -> v.asString()));
+                Map<String, Object> tableProps = record.get("tableProps").asMap();
+                String rawName = toSafeUpperString(tableProps.get("name"));
+                String ownerName = resolveOwnerName(tableProps, rawName);
+                String tableName = resolveTableName(tableProps, rawName);
+
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("ownerName", ownerName);
+                item.put("tableName", tableName);
+                item.put("qualifiedName", buildQualifiedName(ownerName, tableName));
+                item.put("columns", record.get("columns").asList(v -> v.isNull() ? null : v.asString()).stream()
+                        .filter(Objects::nonNull)
+                        .sorted()
+                        .toList());
                 list.add(item);
+
+                Map<String, Object> ownerGroup = groupedOwners.computeIfAbsent(ownerName, key -> {
+                    Map<String, Object> group = new LinkedHashMap<>();
+                    group.put("ownerName", key);
+                    group.put("tableCount", 0);
+                    group.put("tables", new ArrayList<Map<String, Object>>());
+                    return group;
+                });
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> tables = (List<Map<String, Object>>) ownerGroup.get("tables");
+                tables.add(item);
+                ownerGroup.put("tableCount", tables.size());
             }
         }
 
         Map<String, Object> response = new HashMap<>();
         response.put("total", total);
         response.put("list", list);
+        response.put("groupedList", new ArrayList<>(groupedOwners.values()));
+        response.put("totalOwners", groupedOwners.size());
         return response;
     }
 
@@ -130,14 +164,29 @@ public class LineageService {
      * @param depth      深度
      * @return 图节点和边数据
      */
-    public Map<String, Object> getGraphData(String tableName, String columnName, int depth) {
+    public Map<String, Object> getGraphData(String tableName, String qualifiedName, String columnName, int depth) {
         String baseStart;
         Map<String, Object> params = new HashMap<>();
 
-        // 预处理表名和列名为大写，以匹配索引（数据导入时已统一转大写）
+        String normalizedQualifiedName = (qualifiedName != null) ? qualifiedName.toUpperCase() : "";
         String normalizedTableName = (tableName != null) ? tableName.toUpperCase() : "";
         String normalizedColumnName = (columnName != null && !columnName.isEmpty()) ? columnName.toUpperCase() : null;
-        params.put("tableName", normalizedTableName);
+        String resolvedTableName = normalizedTableName;
+        String resolvedOwnerName = "";
+
+        if (!normalizedQualifiedName.isEmpty()) {
+            String[] qualifiedParts = splitQualifiedName(normalizedQualifiedName);
+            resolvedOwnerName = qualifiedParts[0];
+            resolvedTableName = qualifiedParts[1];
+        } else if (normalizedTableName.contains(".")) {
+            String[] qualifiedParts = splitQualifiedName(normalizedTableName);
+            resolvedOwnerName = qualifiedParts[0];
+            resolvedTableName = qualifiedParts[1];
+        }
+
+        params.put("tableName", resolvedTableName);
+        params.put("ownerName", resolvedOwnerName);
+        params.put("qualifiedName", buildQualifiedName(resolvedOwnerName, resolvedTableName));
 
         // Handle infinite depth request with a safe upper bound to prevent timeouts
         int queryDepth = (depth == -1) ? 30 : depth;
@@ -147,11 +196,11 @@ public class LineageService {
 
         if (normalizedColumnName != null) {
             params.put("colName", normalizedColumnName);
-            // Start from specific column - 优化：直接使用索引匹配
-            baseStart = "MATCH (t:Table {name: $tableName})<-[:BELONGS_TO]-(c:Column {name: $colName}) WITH c as startNode ";
+            baseStart = buildTableMatchClause("t") +
+                    "MATCH (t)<-[:BELONGS_TO]-(c:Column) WHERE toUpper(c.name) = $colName WITH c as startNode ";
         } else {
-            // Start from Table and all its Columns - 优化：直接使用索引匹配
-            baseStart = "MATCH (n:Table {name: $tableName}) OPTIONAL MATCH (n)<-[:BELONGS_TO]-(c:Column) " +
+            baseStart = buildTableMatchClause("n") +
+                    "OPTIONAL MATCH (n)<-[:BELONGS_TO]-(c:Column) " +
                     "WITH n, collect(c) + n as startNodes UNWIND startNodes as startNode ";
         }
 
@@ -402,6 +451,79 @@ public class LineageService {
         }
     }
 
+    private String buildTableMatchClause(String alias) {
+        return "MATCH (" + alias + ":Table) " +
+                "WHERE (($qualifiedName <> '' AND (" +
+                "toUpper(coalesce(" + alias + ".qualifiedName, '')) = $qualifiedName " +
+                "OR toUpper(coalesce(" + alias + ".name, '')) = $qualifiedName " +
+                "OR (toUpper(coalesce(" + alias + ".owner, coalesce(" + alias + ".schema, coalesce(" + alias + ".user, coalesce(" + alias + ".default_user, ''))))) = $ownerName " +
+                "AND toUpper(coalesce(" + alias + ".name, '')) = $tableName)" +
+                ")) " +
+                "OR ($qualifiedName = '' AND toUpper(coalesce(" + alias + ".name, '')) = $tableName)) ";
+    }
+
+    private String resolveOwnerName(Map<String, Object> props, String rawName) {
+        String explicitOwner = firstNonBlank(
+                toSafeUpperString(props.get("owner")),
+                toSafeUpperString(props.get("schema")),
+                toSafeUpperString(props.get("user")),
+                toSafeUpperString(props.get("default_user")));
+        if (!explicitOwner.isEmpty()) {
+            return explicitOwner;
+        }
+        String[] qualifiedParts = splitQualifiedName(rawName);
+        if (!qualifiedParts[0].isEmpty()) {
+            return qualifiedParts[0];
+        }
+        return "DEFAULT";
+    }
+
+    private String resolveTableName(Map<String, Object> props, String rawName) {
+        String explicitTable = firstNonBlank(
+                toSafeUpperString(props.get("tableName")),
+                toSafeUpperString(props.get("name")));
+        String[] qualifiedParts = splitQualifiedName(explicitTable.isEmpty() ? rawName : explicitTable);
+        return qualifiedParts[1];
+    }
+
+    private String[] splitQualifiedName(String name) {
+        if (name == null) {
+            return new String[] { "", "" };
+        }
+        String normalized = name.trim().toUpperCase();
+        int index = normalized.lastIndexOf('.');
+        if (index <= 0 || index >= normalized.length() - 1) {
+            return new String[] { "", normalized };
+        }
+        return new String[] { normalized.substring(0, index), normalized.substring(index + 1) };
+    }
+
+    private String buildQualifiedName(String ownerName, String tableName) {
+        String normalizedOwner = ownerName == null ? "" : ownerName.trim().toUpperCase();
+        String normalizedTable = tableName == null ? "" : tableName.trim().toUpperCase();
+        if (normalizedOwner.isEmpty() || "DEFAULT".equals(normalizedOwner)) {
+            return normalizedTable;
+        }
+        return normalizedOwner + "." + normalizedTable;
+    }
+
+    private String toSafeUpperString(Object value) {
+        if (value == null) {
+            return "";
+        }
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? "" : text.toUpperCase();
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
     /**
      * 导出血缘Excel
      *
@@ -411,11 +533,11 @@ public class LineageService {
      * @param response   HttpServletResponse
      * @throws IOException
      */
-    public void exportLineage(String tableName, String columnName, int depth, HttpServletResponse response)
+    public void exportLineage(String tableName, String qualifiedName, String columnName, int depth, HttpServletResponse response)
             throws IOException {
         // 1. 获取血缘数据 (Use provided depth, or safe max if -1 is handled inside
         // getGraphData)
-        Map<String, Object> graph = getGraphData(tableName, columnName, depth);
+        Map<String, Object> graph = getGraphData(tableName, qualifiedName, columnName, depth);
         List<Map<String, Object>> nodes = (List<Map<String, Object>>) graph.get("nodes");
         List<Map<String, Object>> edges = (List<Map<String, Object>>) graph.get("edges");
 
@@ -489,7 +611,7 @@ public class LineageService {
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         response.setCharacterEncoding("utf-8");
 
-        String fileNameStr = tableName;
+        String fileNameStr = (qualifiedName != null && !qualifiedName.isEmpty()) ? qualifiedName : tableName;
         if (columnName != null && !columnName.isEmpty()) {
             fileNameStr += "_" + columnName;
         }

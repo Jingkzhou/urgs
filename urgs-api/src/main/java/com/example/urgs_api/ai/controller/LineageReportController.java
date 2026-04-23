@@ -58,7 +58,7 @@ public class LineageReportController {
         Map<String, Object> context = new HashMap<>();
 
         try {
-            Map<String, Object> graphData = lineageService.getGraphData(tableName, columnName, depth);
+            Map<String, Object> graphData = lineageService.getGraphData(tableName, null, columnName, depth);
 
             if (graphData != null) {
                 List<?> allNodes = (List<?>) graphData.get("nodes");

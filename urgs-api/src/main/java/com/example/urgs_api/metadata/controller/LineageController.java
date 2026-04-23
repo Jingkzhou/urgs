@@ -31,16 +31,18 @@ public class LineageController {
     @GetMapping("/graph")
     public Map<String, Object> getLineageGraph(
             @RequestParam(required = false) String tableName,
+            @RequestParam(required = false) String qualifiedName,
             @RequestParam(required = false) String columnName,
             @RequestParam(defaultValue = "2") int depth) {
-        System.out.println("Received lineage request for table: " + tableName + ", column: " + columnName);
+        System.out.println("Received lineage request for table: " + tableName + ", qualifiedName: " + qualifiedName + ", column: " + columnName);
 
         // 如果没有表名，返回空结果
-        if (tableName == null || tableName.trim().isEmpty()) {
+        if ((tableName == null || tableName.trim().isEmpty())
+                && (qualifiedName == null || qualifiedName.trim().isEmpty())) {
             return Map.of("nodes", java.util.Collections.emptyList(), "edges", java.util.Collections.emptyList());
         }
 
-        return lineageService.getGraphData(tableName, columnName, depth);
+        return lineageService.getGraphData(tableName, qualifiedName, columnName, depth);
     }
 
     /**
@@ -123,9 +125,10 @@ public class LineageController {
      */
     @GetMapping("/export")
     public void exportLineage(@RequestParam String tableName,
+            @RequestParam(required = false) String qualifiedName,
             @RequestParam(required = false) String columnName,
             @RequestParam(defaultValue = "-1") int depth,
             HttpServletResponse response) throws IOException {
-        lineageService.exportLineage(tableName, columnName, depth, response);
+        lineageService.exportLineage(tableName, qualifiedName, columnName, depth, response);
     }
 }

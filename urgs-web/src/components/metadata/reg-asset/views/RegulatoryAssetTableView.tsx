@@ -9,6 +9,7 @@ import {
     Download,
     Edit,
     Filter,
+    FileText,
     Info,
     LayoutGrid,
     List,
@@ -44,6 +45,7 @@ interface RegulatoryAssetTableViewProps {
     tableFileInputRef: React.RefObject<HTMLInputElement>;
     handleTableImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
     handleTableExport: () => void;
+    handleTableMarkdownExport: () => void;
     handleBatchDeleteTables: () => void;
     selectedSystem?: string;
     isSyncing: boolean;
@@ -88,6 +90,7 @@ const RegulatoryAssetTableView: React.FC<RegulatoryAssetTableViewProps> = ({
     tableFileInputRef,
     handleTableImport,
     handleTableExport,
+    handleTableMarkdownExport,
     handleBatchDeleteTables,
     selectedSystem,
     isSyncing,
@@ -224,6 +227,11 @@ const RegulatoryAssetTableView: React.FC<RegulatoryAssetTableViewProps> = ({
                         <Auth code="metadata:asset:export">
                             <button onClick={handleTableExport} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="导出报表">
                                 <Download size={14} className="text-blue-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">导出{selectedTableIds.size > 0 ? `(${selectedTableIds.size})` : '全部'}</span>
+                            </button>
+                        </Auth>
+                        <Auth code="metadata:asset:export">
+                            <button onClick={handleTableMarkdownExport} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-cyan-300 hover:text-cyan-700 hover:bg-cyan-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="导出 Markdown 文档">
+                                <FileText size={14} className="text-cyan-500 group-hover:scale-110 transition-transform" /> <span className="text-sm">Markdown{selectedTableIds.size > 0 ? `(${selectedTableIds.size})` : '全部'}</span>
                             </button>
                         </Auth>
                         {selectedTableIds.size > 0 && (

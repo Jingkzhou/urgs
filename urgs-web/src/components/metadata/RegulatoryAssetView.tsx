@@ -8,6 +8,7 @@ import { ElementModal } from './reg-asset/components/ElementModal';
 import { AssetDetailSidebar } from './reg-asset/AssetDetailSidebar';
 import RegulatoryAssetTableView from './reg-asset/views/RegulatoryAssetTableView';
 import RegulatoryAssetElementView from './reg-asset/views/RegulatoryAssetElementView';
+import { useTableImportExport } from './reg-asset/hooks/useTableImportExport';
 
 // ... (rest of imports)
 
@@ -357,80 +358,24 @@ const RegulatoryAssetView: React.FC = () => {
     };
 
     // Import / Export for Tables (报表级批量导入导出)
-    const tableFileInputRef = React.useRef<HTMLInputElement>(null);
-
-    const handleTableExport = async () => {
-        try {
-            const token = localStorage.getItem('auth_token');
-            const params = new URLSearchParams();
-            if (selectedSystem) params.append('systemCode', selectedSystem);
-            if (tableKeyword) params.append('keyword', tableKeyword);
-            if (filterStatus) params.append('autoFetchStatus', filterStatus);
-            if (filterFrequency) params.append('frequency', filterFrequency);
-            if (filterSourceType) params.append('sourceType', filterSourceType);
-
-            // 如果有选中的报表，导出选中的；否则导出全部
-            if (selectedTableIds.size > 0) {
-                params.append('tableIds', Array.from(selectedTableIds).join(','));
-            }
-            const url = '/api/reg/table/export' + (params.toString() ? '?' + params.toString() : '');
-            const res = await fetch(url, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (!res.ok) throw new Error('Export failed');
-            const blob = await res.blob();
-            const blobUrl = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = blobUrl;
-            const now = new Date();
-            const timestamp = now.getFullYear() +
-                String(now.getMonth() + 1).padStart(2, '0') +
-                String(now.getDate()).padStart(2, '0') +
-                String(now.getHours()).padStart(2, '0') +
-                String(now.getMinutes()).padStart(2, '0');
-            a.download = `报表数据导出_${timestamp}.xlsx`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(blobUrl);
-            document.body.removeChild(a);
-        } catch (e) {
-            console.error('Export failed', e);
-            alert('导出失败');
-        }
-    };
-
-    const handleTableImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        const formData = new FormData();
-        formData.append('file', file);
-
-        setIsImporting(true);
-        try {
-            const token = localStorage.getItem('auth_token');
-            const res = await fetch('/api/reg/table/import', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData
-            });
-
-            const result = await res.json();
-            if (res.ok && result.success) {
-                alert(`导入成功！\n报表：${result.tableCount} 个\n字段/指标：${result.elementCount} 个`);
-                fetchTables();
-                fetchStats();
-            } else {
-                alert(`导入失败：${result.message || '未知错误'}`);
-            }
-        } catch (e: any) {
-            console.error('Import failed', e);
-            alert('导入失败：' + (e.message || '网络或系统异常'));
-        } finally {
-            setIsImporting(false);
-            if (tableFileInputRef.current) tableFileInputRef.current.value = '';
-        }
-    };
+    const {
+        tableFileInputRef,
+        handleTableExport,
+        handleTableMarkdownExport,
+        handleTableImport,
+    } = useTableImportExport({
+        selectedSystem,
+        tableKeyword,
+        filterStatus,
+        filterFrequency,
+        filterSourceType,
+        selectedTableIds,
+        setIsImporting,
+        onImportSuccess: () => {
+            fetchTables();
+            fetchStats();
+        },
+    });
 
     // Import / Export for Elements (单表字段导入导出)
     const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -739,6 +684,7 @@ const RegulatoryAssetView: React.FC = () => {
                         tableFileInputRef={tableFileInputRef}
                         handleTableImport={handleTableImport}
                         handleTableExport={handleTableExport}
+                        handleTableMarkdownExport={handleTableMarkdownExport}
                         handleBatchDeleteTables={handleBatchDeleteTables}
                         selectedSystem={selectedSystem}
                         isSyncing={isSyncing}

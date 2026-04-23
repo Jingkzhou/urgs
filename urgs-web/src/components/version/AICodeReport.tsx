@@ -1,496 +1,894 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { getAICodeReviews, AICodeReview, getGitRepositories, GitRepository } from '../../api/version';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-    Bot, CheckCircle, Clock, GitCommit, Search, FileCode,
-    Shield, Activity, Zap, Layers, AlertTriangle, Terminal, User,
-    ArrowUpRight, Loader, ChevronRight, Layout, Fingerprint, Radar,
-    ChevronDown, Package
-} from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import { Progress, Badge, Modal, Tooltip, Empty } from 'antd';
-import { motion, AnimatePresence } from 'framer-motion';
+    Alert,
+    Button,
+    Card,
+    Descriptions,
+    Drawer,
+    Empty,
+    Input,
+    message,
+    Pagination,
+    Select,
+    Space,
+    Spin,
+    Table,
+    Tag,
+    Tooltip,
+    Typography
+} from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import {
+    decideLineageReviewIssue,
+    getLineageReviewExportUrl,
+    getLineageReviewIssues,
+    getLineageReviewRecords,
+    getLineageReviewTaskSqlPreview,
+    getLineageReviewTasks,
+    triggerLineageReview,
+    LineageAnalysisRecordItem,
+    LineageReviewIssue,
+    LineageReviewTask
+} from '@/api/lineage';
+import { hasPermission } from '@/utils/permission';
+import { Activity, AlertTriangle, Bot, Database, Download, FolderTree, ShieldCheck } from 'lucide-react';
 
-// --- Types ---
-interface AuditIssue {
-    severity: 'critical' | 'major' | 'minor';
-    title: string;
-    line?: number;
-    description?: string;
-    recommendation?: string;
-    codeSnippet?: string;
-}
+const { Paragraph, Text, Title } = Typography;
 
-interface ExtendedReview extends AICodeReview {
-    scoreBreakdown: {
-        security: number;
-        reliability: number;
-        maintainability: number;
-        performance: number;
-    };
-    issues: AuditIssue[];
-    language?: string;
-}
+const statusColorMap: Record<string, string> = {
+    PENDING: 'default',
+    RUNNING: 'processing',
+    COMPLETED: 'success',
+    DEGRADED: 'warning',
+    FAILED: 'error'
+};
 
-// --- Mock Data for Presentation ---
-const PRESENTATION_SYSTEMS = [
-    { id: 1, name: '核心支付系统 (Core Payment)' },
-    { id: 2, name: '风控预警平台 (Risk Monitor)' },
-    { id: 3, name: '互联网金融门户 (e-Banking)' }
-];
+const severityColorMap: Record<string, string> = {
+    HIGH: 'red',
+    MEDIUM: 'orange',
+    LOW: 'blue'
+};
 
-const PRESENTATION_REPOS: (GitRepository & { systemId: number })[] = [
-    { id: 1, systemId: 1, name: 'banking-gateway-v4', platform: 'gitlab', ssoId: 1, cloneUrl: '' },
-    { id: 2, systemId: 1, name: 'ledger-service', platform: 'gitlab', ssoId: 1, cloneUrl: '' },
-    { id: 3, systemId: 2, name: 'risk-scoring-engine', platform: 'gitlab', ssoId: 1, cloneUrl: '' },
-    { id: 4, systemId: 3, name: 'retail-portal-web', platform: 'github', ssoId: 1, cloneUrl: '' }
-];
+const reviewStatusColorMap: Record<string, string> = {
+    PENDING: 'default',
+    CONFIRMED: 'success',
+    FALSE_POSITIVE: 'error',
+    IGNORED: 'default',
+    RESOLVED: 'processing'
+};
 
-const PRESENTATION_REVIEWS: ExtendedReview[] = [
-    {
-        id: 1001,
-        repoId: 1,
-        commitSha: '8d2a1c',
-        branch: 'master',
-        score: 95,
-        status: 'COMPLETED',
-        summary: '支付链路加密升级',
-        developerEmail: 'safety@jlbank.com',
-        createdAt: '2024-03-26T10:00:00Z',
-        language: 'Java',
-        scoreBreakdown: { security: 100, reliability: 92, maintainability: 90, performance: 95 },
-        issues: [],
-        content: '## 🚀 安全审计：卓越\n\n成功引入国密算法替代通用算法，关键业务链路已全部实现加密透传，未发现逻辑漏洞。'
-    },
-    {
-        id: 1002,
-        repoId: 2,
-        commitSha: 'fe330a',
-        branch: 'feat/batch-ledger',
-        score: 82,
-        status: 'COMPLETED',
-        summary: '大批量账务平账逻辑优化',
-        developerEmail: 'ledger-dev@jlbank.com',
-        createdAt: '2024-03-25T14:20:00Z',
-        language: 'Go',
-        scoreBreakdown: { security: 85, reliability: 78, maintainability: 82, performance: 88 },
-        issues: [
-            {
-                severity: 'major',
-                title: '数据库连接未及时释放',
-                description: '在处理异步回调时，部分 db 链接在异常路径下可能无法闭合，高并发下会导致连接池枯竭。',
-                recommendation: '使用 defer 确保链接始终关闭。',
-                line: 320,
-                codeSnippet: 'conn, _ := db.GetConn();\n// Missing: defer conn.Close()'
-            }
-        ],
-        content: '## 📊 性能审计：良好\n\n通过批量更新策略显著降低了 IOPS，但需注意资源释放的一致性问题。'
-    },
-    {
-        id: 1003,
-        repoId: 3,
-        commitSha: '6c7b2e',
-        branch: 'fix/model-overfit',
-        score: 45,
-        status: 'COMPLETED',
-        summary: '风控模型过拟合风险修复',
-        developerEmail: 'data-sci@jlbank.com',
-        createdAt: '2024-03-24T09:15:00Z',
-        language: 'Python',
-        scoreBreakdown: { security: 60, reliability: 30, maintainability: 55, performance: 45 },
-        issues: [
-            {
-                severity: 'critical',
-                title: '检测到非线程安全的字典操作',
-                description: '在多线程评估风险评分时，直接操作了全局配置字典，可能导致运行时崩溃。',
-                recommendation: '使用 threading.Lock 或本地线程变量。',
-                line: 12,
-                codeSnippet: 'GLOBAL_CONFIG["last_run"] = time.time()'
-            }
-        ],
-        content: '## ⚠️ 稳定性警告：高危\n\n数据处理脚本在高并发环境下极不稳定，建议立即重构并发控制模型。'
-    },
-    {
-        id: 1004,
-        repoId: 4,
-        commitSha: '99aa0b',
-        branch: 'refactor/ui-kit',
-        score: 91,
-        status: 'COMPLETED',
-        summary: '门户组件库性能重构',
-        developerEmail: 'fe-architect@jlbank.com',
-        createdAt: '2024-03-23T16:00:00Z',
-        language: 'TypeScript',
-        scoreBreakdown: { security: 95, reliability: 88, maintainability: 98, performance: 85 },
-        issues: [],
-        content: '## 🎨 架构审计：通过\n\n前端组件化程度大幅提升，代码复用率提高 40%，首屏加载耗时缩短 300ms。'
+const formatDateTime = (value?: string) => {
+    if (!value) {
+        return '-';
     }
-];
+    return new Date(value).toLocaleString('zh-CN', { hour12: false });
+};
+
+const buildRecordSummary = (record: LineageAnalysisRecordItem) => {
+    const pathCount = record.paths?.length || 0;
+    const pathPreview = pathCount === 0
+        ? '未记录路径'
+        : pathCount <= 2
+            ? (record.paths || []).join('、')
+            : `${record.paths?.slice(0, 2).join('、')} 等 ${pathCount} 个路径`;
+    const sourceType = record.repoId ? 'Git 分析' : '上传导入';
+    return {
+        title: `${sourceType} · ${record.language || '未指定方言'}`,
+        description: `版本 ${record.versionId || '-'} · ${pathPreview}`,
+        meta: `创建于 ${formatDateTime(record.createTime)}`
+    };
+};
+
+const buildTaskSourceSummary = (task: LineageReviewTask) => {
+    if (task.pathPrefix) {
+        return task.pathPrefix;
+    }
+    if (task.systemKey && task.systemKey !== 'GLOBAL') {
+        return `${task.systemKey} 系统相关 SQL`;
+    }
+    return '当前批次全部解析 SQL';
+};
+
+const buildShardLabel = (task: LineageReviewTask) => {
+    const raw = task.pathPrefix || '';
+    if (!raw) {
+        return task.systemKey && task.systemKey !== 'GLOBAL' ? task.systemKey : '全量分片';
+    }
+
+    if (!raw.includes('/')) {
+        return task.systemKey && task.systemKey !== 'GLOBAL' ? task.systemKey : '根目录文件组';
+    }
+
+    return raw.split('/')[0] || raw;
+};
+
+const isFileLikePath = (value?: string) => {
+    if (!value) {
+        return false;
+    }
+    return /\.[a-z0-9]+$/i.test(value);
+};
+
+const resolveReviewStatus = (record: LineageAnalysisRecordItem, relatedTasks: LineageReviewTask[]) => {
+    if (!relatedTasks.length) {
+        return {
+            text: record.status === 'SUCCESS' ? '未走查' : '待分析完成',
+            color: record.status === 'SUCCESS' ? 'default' : 'warning'
+        };
+    }
+
+    const statuses = relatedTasks.map(task => task.status || 'PENDING');
+    if (statuses.some(status => status === 'RUNNING')) {
+        return { text: '走查中', color: 'processing' };
+    }
+    if (statuses.every(status => status === 'COMPLETED')) {
+        return { text: '已完成', color: 'success' };
+    }
+    if (statuses.some(status => status === 'DEGRADED')) {
+        return { text: '部分失败', color: 'warning' };
+    }
+    if (statuses.some(status => status === 'FAILED')) {
+        return { text: '走查失败', color: 'error' };
+    }
+    return { text: '待执行', color: 'default' };
+};
 
 const AICodeReport: React.FC = () => {
-    const [repos, setRepos] = useState<(GitRepository & { systemId: number })[]>(PRESENTATION_REPOS);
-    const [reviews, setReviews] = useState<ExtendedReview[]>(PRESENTATION_REVIEWS);
-    const [loading, setLoading] = useState(false);
-    const [selectedReview, setSelectedReview] = useState<ExtendedReview | null>(PRESENTATION_REVIEWS[0]);
+    const [records, setRecords] = useState<LineageAnalysisRecordItem[]>([]);
+    const [tasks, setTasks] = useState<LineageReviewTask[]>([]);
+    const [taskSummaryMap, setTaskSummaryMap] = useState<Record<string, LineageReviewTask[]>>({});
+    const [issues, setIssues] = useState<LineageReviewIssue[]>([]);
+    const [recordLoading, setRecordLoading] = useState(false);
+    const [taskLoading, setTaskLoading] = useState(false);
+    const [issueLoading, setIssueLoading] = useState(false);
+    const [triggerLoading, setTriggerLoading] = useState(false);
+    const [selectedRecordId, setSelectedRecordId] = useState<string>();
+    const [selectedTaskId, setSelectedTaskId] = useState<number>();
+    const [severityFilter, setSeverityFilter] = useState<string>();
+    const [reviewStatusFilter, setReviewStatusFilter] = useState<string>();
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedIssue, setSelectedIssue] = useState<AuditIssue | null>(null);
-    const [expandedRepos, setExpandedRepos] = useState<Set<number>>(new Set([1, 2, 3, 4]));
+    const [recordPage, setRecordPage] = useState(1);
+    const [recordPageSize, setRecordPageSize] = useState(6);
+    const [taskPage, setTaskPage] = useState(1);
+    const [taskPageSize, setTaskPageSize] = useState(10);
+    const [selectedIssue, setSelectedIssue] = useState<LineageReviewIssue | null>(null);
+    const [decisionLoading, setDecisionLoading] = useState<string>('');
+    const [sqlPreviewOpen, setSqlPreviewOpen] = useState(false);
+    const [sqlPreviewLoading, setSqlPreviewLoading] = useState(false);
+    const [sqlPreviewTask, setSqlPreviewTask] = useState<LineageReviewTask | null>(null);
+    const [sqlPreviews, setSqlPreviews] = useState<Array<{
+        snippet: string;
+        sourceFiles: string[];
+        relationCount: number;
+    }>>([]);
+
+    const canTrigger = hasPermission('version:ai:trigger');
+    const canExport = hasPermission('version:ai:export');
+
+    const loadTaskSummaries = async () => {
+        try {
+            const data = await getLineageReviewTasks();
+            const grouped = (data || []).reduce<Record<string, LineageReviewTask[]>>((acc, item) => {
+                const key = item.analysisRecordId || 'UNKNOWN';
+                if (!acc[key]) {
+                    acc[key] = [];
+                }
+                acc[key].push(item);
+                return acc;
+            }, {});
+            setTaskSummaryMap(grouped);
+        } catch (error: any) {
+            message.error(error?.message || '加载走查状态失败');
+        }
+    };
+
+    const loadRecords = async () => {
+        setRecordLoading(true);
+        try {
+            const data = await getLineageReviewRecords();
+            setRecords(data || []);
+            await loadTaskSummaries();
+            setRecordPage(1);
+            if (!selectedRecordId && data?.length) {
+                setSelectedRecordId(data[0].id);
+            }
+        } catch (error: any) {
+            message.error(error?.message || '加载分析记录失败');
+        } finally {
+            setRecordLoading(false);
+        }
+    };
+
+    const loadTasks = async (analysisRecordId?: string) => {
+        setTaskLoading(true);
+        try {
+            const data = await getLineageReviewTasks({ analysisRecordId });
+            setTasks(data || []);
+            setTaskPage(1);
+            if (!selectedTaskId || !(data || []).some(item => item.id === selectedTaskId)) {
+                setSelectedTaskId(data?.[0]?.id);
+            }
+        } catch (error: any) {
+            message.error(error?.message || '加载校验任务失败');
+        } finally {
+            setTaskLoading(false);
+        }
+    };
+
+    const loadIssues = async (taskId?: number) => {
+        if (!taskId) {
+            setIssues([]);
+            return;
+        }
+        setIssueLoading(true);
+        try {
+            const data = await getLineageReviewIssues({
+                taskId,
+                severity: severityFilter,
+                reviewStatus: reviewStatusFilter
+            });
+            setIssues(data || []);
+        } catch (error: any) {
+            message.error(error?.message || '加载疑点失败');
+        } finally {
+            setIssueLoading(false);
+        }
+    };
 
     useEffect(() => {
-        // Presentation mode logic
+        loadRecords();
     }, []);
 
-    const toggleRepo = (repoId: number) => {
-        const next = new Set(expandedRepos);
-        if (next.has(repoId)) next.delete(repoId);
-        else next.add(repoId);
-        setExpandedRepos(next);
-    };
+    useEffect(() => {
+        if (selectedRecordId) {
+            loadTasks(selectedRecordId);
+        }
+    }, [selectedRecordId]);
 
-    const groupedData = useMemo(() => {
-        const term = searchTerm.toLowerCase();
+    useEffect(() => {
+        loadIssues(selectedTaskId);
+    }, [selectedTaskId, severityFilter, reviewStatusFilter]);
 
-        return PRESENTATION_SYSTEMS.map(sys => {
-            const sysRepos = repos.filter(r => r.systemId === sys.id);
-            const filteredSysRepos = sysRepos.map(repo => ({
-                ...repo,
-                items: reviews.filter(rev =>
-                    rev.repoId === repo.id &&
-                    (repo.name.toLowerCase().includes(term) || rev.summary?.toLowerCase().includes(term) || rev.branch?.toLowerCase().includes(term) || sys.name.toLowerCase().includes(term))
-                ).sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
-            })).filter(repo => repo.items.length > 0);
+    const selectedRecord = useMemo(
+        () => records.find(item => item.id === selectedRecordId),
+        [records, selectedRecordId]
+    );
 
+    const selectedTask = useMemo(
+        () => tasks.find(item => item.id === selectedTaskId),
+        [tasks, selectedTaskId]
+    );
+
+    const buildTaskSourceMeta = (task: LineageReviewTask) => {
+        const currentRecord = records.find(item => item.id === task.analysisRecordId);
+        const paths = currentRecord?.paths || [];
+
+        let matchedPaths = paths;
+        if (task.pathPrefix) {
+            matchedPaths = paths.filter(path => {
+                if (task.pathPrefix && path.startsWith(task.pathPrefix)) {
+                    return true;
+                }
+                if (!task.pathPrefix.includes('/') && isFileLikePath(task.pathPrefix)) {
+                    return path === task.pathPrefix;
+                }
+                return false;
+            });
+        }
+
+        if (!matchedPaths.length && task.pathPrefix) {
+            matchedPaths = [task.pathPrefix];
+        }
+
+        const uniquePaths = Array.from(new Set(matchedPaths));
+        if (!uniquePaths.length) {
             return {
-                ...sys,
-                repos: filteredSysRepos
+                text: '未记录源码',
+                tooltip: '当前任务没有关联到可展示的源码路径'
             };
-        }).filter(sys => sys.repos.length > 0);
-    }, [repos, reviews, searchTerm]);
+        }
 
-    const getScoreColor = (score: number = 0) => {
-        if (score >= 90) return '#10b981'; // Emerald
-        if (score >= 70) return '#6366f1'; // Indigo
-        return '#f43f5e'; // Rose
+        if (uniquePaths.length === 1) {
+            return {
+                text: '1 个源码文件',
+                tooltip: uniquePaths[0]
+            };
+        }
+
+        return {
+            text: `${uniquePaths.length} 个源码文件`,
+            tooltip: uniquePaths.slice(0, 20).join('\n')
+        };
     };
+
+    const filteredIssues = useMemo(() => {
+        const keyword = searchTerm.trim().toLowerCase();
+        if (!keyword) {
+            return issues;
+        }
+        return issues.filter(issue => {
+            const target = [issue.tableName, issue.columnName, issue.issueType, issue.reason]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+            return target.includes(keyword);
+        });
+    }, [issues, searchTerm]);
+
+    const pagedRecords = useMemo(() => {
+        const start = (recordPage - 1) * recordPageSize;
+        return records.slice(start, start + recordPageSize);
+    }, [records, recordPage, recordPageSize]);
+
+    const pagedTasks = useMemo(() => {
+        const start = (taskPage - 1) * taskPageSize;
+        return tasks.slice(start, start + taskPageSize);
+    }, [tasks, taskPage, taskPageSize]);
+
+    const metrics = useMemo(() => {
+        const totalTasks = tasks.length;
+        const completedTasks = tasks.filter(item => item.status === 'COMPLETED').length;
+        const degradedTasks = tasks.filter(item => item.status === 'DEGRADED').length;
+        const totalIssues = tasks.reduce((sum, item) => sum + (item.issueCount || 0), 0);
+        return { totalTasks, completedTasks, degradedTasks, totalIssues };
+    }, [tasks]);
+
+    const handleTrigger = async (forceRerun: boolean) => {
+        if (!selectedRecordId) {
+            message.warning('请先选择一个血缘分析记录');
+            return;
+        }
+        setTriggerLoading(true);
+        try {
+            const result = await triggerLineageReview({ analysisRecordId: selectedRecordId, forceRerun });
+            message.success(result.message || '校验任务已提交');
+            await loadTaskSummaries();
+            await loadTasks(selectedRecordId);
+        } catch (error: any) {
+            message.error(error?.message || '触发校验失败');
+        } finally {
+            setTriggerLoading(false);
+        }
+    };
+
+    const handleDecision = async (reviewStatus: string) => {
+        if (!selectedIssue) {
+            return;
+        }
+        setDecisionLoading(reviewStatus);
+        try {
+            const updated = await decideLineageReviewIssue(selectedIssue.id, {
+                reviewStatus,
+                reviewerNote: ''
+            });
+            setSelectedIssue(updated);
+            await loadIssues(selectedTaskId);
+            message.success('人工判定已保存');
+        } catch (error: any) {
+            message.error(error?.message || '保存判定失败');
+        } finally {
+            setDecisionLoading('');
+        }
+    };
+
+    const handleOpenSqlPreview = async (task: LineageReviewTask) => {
+        setSqlPreviewTask(task);
+        setSqlPreviewOpen(true);
+        setSqlPreviewLoading(true);
+        try {
+            const data = await getLineageReviewTaskSqlPreview(task.id);
+            setSqlPreviews(data || []);
+        } catch (error: any) {
+            message.error(error?.message || '加载 SQL 片段失败');
+            setSqlPreviews([]);
+        } finally {
+            setSqlPreviewLoading(false);
+        }
+    };
+
+    const taskColumns: ColumnsType<LineageReviewTask> = [
+        {
+            title: '分片',
+            key: 'path',
+            render: (_, record) => (
+                <div>
+                    <div className="font-semibold text-slate-700">{buildShardLabel(record)}</div>
+                    <div className="text-xs text-slate-400">{record.systemKey || 'GLOBAL'}</div>
+                </div>
+            )
+        },
+        {
+            title: '源码',
+            key: 'source',
+            width: 240,
+            render: (_, record) => {
+                const sourceMeta = buildTaskSourceMeta(record);
+                return (
+                    <div className="space-y-1">
+                        <Button type="link" className="!h-auto !p-0" onClick={() => handleOpenSqlPreview(record)}>
+                            查看 SQL 片段
+                        </Button>
+                        <Tooltip title={<div style={{ whiteSpace: 'pre-wrap' }}>{sourceMeta.tooltip}</div>}>
+                            <Paragraph className="!mb-0 !text-slate-500" ellipsis={{ rows: 2 }}>
+                                {sourceMeta.text}
+                            </Paragraph>
+                        </Tooltip>
+                    </div>
+                );
+            }
+        },
+        {
+            title: '状态',
+            dataIndex: 'status',
+            width: 110,
+            render: (value?: string) => <Tag color={statusColorMap[value || ''] || 'default'}>{value || '-'}</Tag>
+        },
+        {
+            title: '进度',
+            key: 'progress',
+            width: 180,
+            render: (_, record) => {
+                const total = record.objectCount || 0;
+                const processed = record.processedCount || 0;
+                return (
+                    <div>
+                        <div className="text-sm font-medium text-slate-700">{processed}/{total || '-'}</div>
+                        <div className="text-xs text-slate-400">
+                            疑点 {record.issueCount || 0} · AI {record.aiCallCount || 0} · 缓存 {record.cacheHitCount || 0}
+                        </div>
+                    </div>
+                );
+            }
+        },
+        {
+            title: '完成时间',
+            dataIndex: 'finishedAt',
+            width: 180,
+            render: (value?: string) => <span className="text-xs text-slate-500">{formatDateTime(value)}</span>
+        }
+    ];
+
+    const issueColumns: ColumnsType<LineageReviewIssue> = [
+        {
+            title: '目标对象',
+            key: 'target',
+            render: (_, record) => (
+                <div>
+                    <div className="font-semibold text-slate-700">
+                        {record.tableName}
+                        {record.columnName ? `.${record.columnName}` : ''}
+                    </div>
+                    <div className="text-xs text-slate-400">{record.objectType}</div>
+                </div>
+            )
+        },
+        {
+            title: '疑点类型',
+            dataIndex: 'issueType',
+            width: 180,
+            render: (value?: string) => <Tag>{value || '-'}</Tag>
+        },
+        {
+            title: '严重级别',
+            dataIndex: 'severity',
+            width: 110,
+            render: (value?: string) => <Tag color={severityColorMap[value || ''] || 'default'}>{value || '-'}</Tag>
+        },
+        {
+            title: 'AI 判定',
+            key: 'verdict',
+            width: 150,
+            render: (_, record) => (
+                <div>
+                    <div className="text-sm font-medium text-slate-700">{record.verdict || '-'}</div>
+                    <div className="text-xs text-slate-400">置信度 {Number(record.confidence || 0).toFixed(2)}</div>
+                </div>
+            )
+        },
+        {
+            title: '人工状态',
+            dataIndex: 'reviewStatus',
+            width: 130,
+            render: (value?: string) => <Tag color={reviewStatusColorMap[value || ''] || 'default'}>{value || '-'}</Tag>
+        },
+        {
+            title: '原因摘要',
+            dataIndex: 'reason',
+            render: (value?: string) => (
+                <Paragraph className="!mb-0 !text-slate-500" ellipsis={{ rows: 2 }}>
+                    {value || '-'}
+                </Paragraph>
+            )
+        }
+    ];
 
     return (
-        <div className="flex h-full bg-[#f8fafc] text-slate-600 font-sans selection:bg-indigo-100">
-            {/* Sidebar: Repository-based Archive */}
-            <aside className="w-80 flex-none border-r border-slate-200 bg-white flex flex-col shadow-[1px_0_10px_rgba(0,0,0,0.02)]">
-                <div className="p-6">
-                    <div className="flex items-center gap-3 mb-8">
-                        <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center">
-                            <Radar size={20} className="text-indigo-600" />
-                        </div>
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+                <Card bordered={false} className="shadow-sm">
+                    <div className="flex items-start justify-between">
                         <div>
-                            <h2 className="text-sm font-bold text-slate-800 tracking-tight uppercase">智查报告库</h2>
-                            <p className="text-[10px] text-slate-400 font-mono tracking-widest uppercase">Diagnostic Center</p>
+                            <Text type="secondary">分析批次</Text>
+                            <Title level={3} className="!mb-0 !mt-2">{records.length}</Title>
                         </div>
+                        <Database className="text-sky-500" size={22} />
                     </div>
-
-                    <div className="relative group">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={14} />
-                        <input
-                            placeholder="搜索仓库或报告..."
-                            className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 pl-9 pr-4 text-xs outline-none focus:border-indigo-500/50 focus:bg-white focus:ring-4 focus:ring-indigo-500/5 transition-all"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+                </Card>
+                <Card bordered={false} className="shadow-sm">
+                    <div className="flex items-start justify-between">
+                        <div>
+                            <Text type="secondary">分片任务</Text>
+                            <Title level={3} className="!mb-0 !mt-2">{metrics.totalTasks}</Title>
+                            <div className="text-xs text-slate-400">完成 {metrics.completedTasks} · 降级 {metrics.degradedTasks}</div>
+                        </div>
+                        <FolderTree className="text-indigo-500" size={22} />
                     </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto px-4 pb-6 custom-scrollbar">
-                    {loading ? (
-                        <div className="flex flex-col items-center justify-center py-20 opacity-30 text-indigo-600">
-                            <Loader className="animate-spin mb-2" size={20} />
-                            <span className="text-[10px] font-bold tracking-widest uppercase">Initializing Content...</span>
+                </Card>
+                <Card bordered={false} className="shadow-sm">
+                    <div className="flex items-start justify-between">
+                        <div>
+                            <Text type="secondary">疑点总数</Text>
+                            <Title level={3} className="!mb-0 !mt-2">{metrics.totalIssues}</Title>
                         </div>
-                    ) : groupedData.length > 0 ? (groupedData as any[]).map(sys => (
-                        <div key={`sys-${sys.id}`} className="mb-8">
-                            {/* System Level Header */}
-                            <div className="flex items-center gap-2 mb-3 px-2">
-                                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
-                                <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Module: {sys.name}</span>
-                            </div>
-
-                            <div className="space-y-3">
-                                {sys.repos.map((repo: any) => (
-                                    <div key={`repo-${repo.id}`} className="bg-slate-50/50 rounded-2xl border border-slate-100/50 p-1">
-                                        <button
-                                            onClick={() => toggleRepo(repo.id!)}
-                                            className="w-full flex items-center justify-between p-2.5 hover:bg-white hover:shadow-sm rounded-xl transition-all group"
-                                        >
-                                            <div className="flex items-center gap-2">
-                                                <Package size={14} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
-                                                <span className="text-xs font-bold text-slate-700 truncate max-w-[150px]">{repo.name}</span>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-[9px] font-bold bg-white text-indigo-600 px-1.5 py-0.5 rounded-full shadow-sm border border-indigo-50 group-hover:bg-indigo-600 group-hover:text-white transition-colors">{repo.items.length}</span>
-                                                <ChevronDown
-                                                    size={12}
-                                                    className={`text-slate-300 transition-transform duration-300 ${expandedRepos.has(repo.id!) ? 'rotate-180' : ''}`}
-                                                />
-                                            </div>
-                                        </button>
-
-                                        <AnimatePresence initial={false}>
-                                            {expandedRepos.has(repo.id!) && (
-                                                <motion.div
-                                                    initial={{ height: 0, opacity: 0 }}
-                                                    animate={{ height: 'auto', opacity: 1 }}
-                                                    exit={{ height: 0, opacity: 0 }}
-                                                    className="overflow-hidden"
-                                                >
-                                                    <div className="p-2 space-y-1">
-                                                        {repo.items.map(r => (
-                                                            <button
-                                                                key={r.id}
-                                                                onClick={() => setSelectedReview(r)}
-                                                                className={`w-full text-left p-3 rounded-xl transition-all duration-300 relative group
-                                                                    ${selectedReview?.id === r.id
-                                                                        ? 'bg-white border-2 border-indigo-100 shadow-md ring-1 ring-indigo-500/5'
-                                                                        : 'bg-transparent border-2 border-transparent hover:bg-white hover:border-slate-100 hover:shadow-sm'}`}
-                                                            >
-                                                                {selectedReview?.id === r.id && (
-                                                                    <motion.div
-                                                                        layoutId="active-dot"
-                                                                        className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-indigo-600 rounded-full shadow-[0_0_8px_rgba(79,70,229,0.5)] z-10"
-                                                                    />
-                                                                )}
-                                                                <div className="flex justify-between items-start mb-1.5">
-                                                                    <span className="text-[8px] font-bold font-mono text-slate-400">{new Date(r.createdAt!).toLocaleDateString()}</span>
-                                                                    <Badge count={`${r.score}%`} style={{ backgroundColor: getScoreColor(r.score), fontSize: '8px', height: '14px', lineHeight: '14px' }} />
-                                                                </div>
-                                                                <h3 className={`text-[11px] font-bold line-clamp-1 mb-1 ${selectedReview?.id === r.id ? 'text-indigo-600' : 'text-slate-700'}`}>
-                                                                    {r.summary || 'Untethered Session'}
-                                                                </h3>
-                                                                <div className="flex items-center gap-1.5 text-[9px] text-slate-400 font-medium">
-                                                                    <GitCommit size={10} className="text-slate-300" />
-                                                                    <span className="truncate">{r.branch}</span>
-                                                                </div>
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
-                                    </div>
-                                ))}
-                            </div>
+                        <AlertTriangle className="text-amber-500" size={22} />
+                    </div>
+                </Card>
+                <Card bordered={false} className="shadow-sm">
+                    <div className="flex items-start justify-between">
+                        <div>
+                            <Text type="secondary">当前任务</Text>
+                            <Title level={5} className="!mb-0 !mt-2">{selectedTask ? buildShardLabel(selectedTask) : '未选择'}</Title>
+                            <div className="text-xs text-slate-400">{selectedTask ? buildTaskSourceMeta(selectedTask).text : '请选择任务查看明细'}</div>
                         </div>
-                    )) : (
-                        <div className="py-20 flex flex-col items-center justify-center text-slate-300">
-                            <Bot size={40} className="mb-4 opacity-10" />
-                            <p className="text-[10px] font-black uppercase tracking-widest">No Intelligence Retained</p>
+                        <Bot className="text-emerald-500" size={22} />
+                    </div>
+                </Card>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+                <Card
+                    title={
+                        <div className="flex items-center gap-2">
+                            <ShieldCheck size={16} className="text-indigo-500" />
+                            <span>校验批次</span>
                         </div>
-                    )}
-                </div>
-            </aside>
-
-            {/* Main Content: The Report View */}
-            <main className="flex-1 overflow-y-auto bg-white relative">
-                {selectedReview ? (
-                    <AnimatePresence mode="wait">
-                        <motion.div
-                            key={selectedReview.id}
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: -20 }}
-                            className="p-10 max-w-5xl mx-auto"
-                        >
-                            {/* Header Stats */}
-                            <div className="flex flex-col md:flex-row gap-8 mb-12 items-end justify-between border-b border-slate-100 pb-12">
-                                <div className="space-y-4">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-                                        <span className="text-[10px] font-black uppercase text-indigo-600 tracking-[0.2em]">Diagnostic Report Finalized</span>
-                                    </div>
-                                    <h1 className="text-4xl font-black text-slate-900 tracking-tight leading-none uppercase italic">
-                                        REPORT <span className="text-indigo-600">#{selectedReview.id}</span>
-                                    </h1>
-                                    <div className="flex items-center gap-4 text-xs text-slate-400 font-mono">
-                                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-50 text-slate-600"><FileCode size={12} /> {selectedReview.language}</div>
-                                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-50 text-slate-600"><User size={12} /> {selectedReview.developerEmail.split('@')[0]}</div>
-                                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-50 text-slate-600"><Clock size={12} /> {new Date(selectedReview.createdAt).toLocaleDateString()}</div>
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-4">
-                                    <div className="h-24 w-40 bg-white border border-slate-200 rounded-3xl p-4 flex flex-col justify-between group hover:border-indigo-500/30 transition-all shadow-sm">
-                                        <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Quality Score</span>
-                                        <div className="flex items-baseline gap-1">
-                                            <span className="text-4xl font-black" style={{ color: getScoreColor(selectedReview.score) }}>{selectedReview.score}</span>
-                                            <span className="text-[10px] text-slate-400 font-mono">/100</span>
-                                        </div>
-                                    </div>
-                                    <div className="h-24 w-40 bg-white border border-slate-200 rounded-3xl p-4 flex flex-col justify-between hover:border-rose-500/30 transition-all shadow-sm">
-                                        <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Critical Issues</span>
-                                        <div className="flex items-baseline gap-1 text-slate-800">
-                                            <span className="text-4xl font-black">{selectedReview.issues.filter(i => i.severity === 'critical').length}</span>
-                                            <span className="text-rose-500"><AlertTriangle size={14} /></span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Score Breakdown */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
-                                {Object.entries(selectedReview.scoreBreakdown).map(([key, val]) => (
-                                    <div key={key} className="bg-white border border-slate-200 rounded-2xl p-5 relative overflow-hidden group hover:shadow-lg hover:border-indigo-100 transition-all shadow-sm">
-                                        <div className="absolute top-0 right-0 p-3 opacity-[0.03] group-hover:scale-125 transition-transform group-hover:opacity-[0.08] text-indigo-600">
-                                            {key === 'security' && <Shield size={32} />}
-                                            {key === 'reliability' && <Activity size={32} />}
-                                            {key === 'maintainability' && <Layers size={32} />}
-                                            {key === 'performance' && <Zap size={32} />}
-                                        </div>
-                                        <h4 className="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest">{key}</h4>
-                                        <div className="flex items-end justify-between font-mono">
-                                            <div className="text-2xl font-bold text-slate-800">{val}</div>
-                                            <div className="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                                <motion.div
-                                                    initial={{ width: 0 }}
-                                                    animate={{ width: `${val}%` }}
-                                                    className="h-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.4)]"
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-
-                            {/* Summary Content */}
-                            <div className="mb-12 bg-white border border-slate-200 rounded-3xl p-8 shadow-sm">
-                                <h3 className="text-xs font-black uppercase text-indigo-600 mb-6 tracking-widest flex items-center gap-2">
-                                    <Fingerprint size={14} /> AI Analysis Summary
-                                </h3>
-                                <div className="prose prose-slate max-w-none text-slate-600">
-                                    <ReactMarkdown>{selectedReview.content}</ReactMarkdown>
-                                </div>
-                            </div>
-
-                            {/* Findings / Issues */}
-                            <div className="space-y-4 pb-20">
-                                <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">Diagnostic Findings</h3>
-                                {selectedReview.issues.length > 0 ? selectedReview.issues.map((issue, idx) => (
-                                    <motion.div
-                                        key={idx}
-                                        whileHover={{ y: -2, x: 2 }}
-                                        className="bg-white border border-slate-200 rounded-2xl p-6 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/5 transition-all cursor-pointer group"
-                                        onClick={() => setSelectedIssue(issue)}
+                    }
+                    extra={
+                        <Space>
+                            <Button size="small" onClick={loadRecords} loading={recordLoading}>刷新</Button>
+                            <Button
+                                type="primary"
+                                size="small"
+                                loading={triggerLoading}
+                                disabled={!canTrigger}
+                                title={canTrigger ? '' : '缺少 version:ai:trigger 权限'}
+                                onClick={() => handleTrigger(false)}
+                            >
+                                触发走查
+                            </Button>
+                        </Space>
+                    }
+                    bordered={false}
+                    className="shadow-sm"
+                >
+                    {recordLoading ? (
+                        <div className="py-10 text-center"><Spin /></div>
+                    ) : records.length === 0 ? (
+                        <Empty description="暂无血缘分析记录" />
+                    ) : (
+                        <div className="space-y-3">
+                            {pagedRecords.map(record => {
+                                const isActive = record.id === selectedRecordId;
+                                const summary = buildRecordSummary(record);
+                                const relatedTasks = taskSummaryMap[record.id] || [];
+                                const reviewStatus = resolveReviewStatus(record, relatedTasks);
+                                return (
+                                    <button
+                                        key={record.id}
+                                        onClick={() => setSelectedRecordId(record.id)}
+                                        className={`w-full rounded-xl border p-4 text-left transition ${isActive ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
                                     >
-                                        <div className="flex items-start gap-4">
-                                            <div className={`mt-1 h-3 w-3 rounded-full border-2 border-white shadow-sm ${issue.severity === 'critical' ? 'bg-rose-500' :
-                                                issue.severity === 'major' ? 'bg-amber-500' : 'bg-blue-500'
-                                                }`} />
-                                            <div className="flex-1">
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <h4 className="text-sm font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">{issue.title}</h4>
-                                                    <span className={`text-[9px] font-black uppercase italic tracking-widest px-2 py-0.5 rounded ${issue.severity === 'critical' ? 'text-rose-600 bg-rose-50' : 'text-slate-400 bg-slate-50'
-                                                        }`}>{issue.severity}</span>
-                                                </div>
-                                                <p className="text-xs text-slate-500 line-clamp-2">{issue.description}</p>
-                                            </div>
-                                            <ChevronRight size={16} className="text-slate-300 self-center group-hover:text-indigo-400 group-hover:translate-x-1 transition-all" />
+                                        <div className="flex items-center justify-between">
+                                            <div className="font-semibold text-slate-700">{summary.title}</div>
+                                            <Space size={6}>
+                                                <Tag color={reviewStatus.color}>{reviewStatus.text}</Tag>
+                                                <Tag color={statusColorMap[record.status || ''] || 'default'}>{record.status}</Tag>
+                                            </Space>
                                         </div>
-                                    </motion.div>
-                                )) : (
-                                    <div className="py-20 flex flex-col items-center justify-center opacity-20">
-                                        <CheckCircle size={40} className="text-emerald-500 mb-4" />
-                                        <p className="text-sm font-bold uppercase tracking-widest italic">No Vulnerabilities Detected</p>
-                                    </div>
-                                )}
-                            </div>
-                        </motion.div>
-                    </AnimatePresence>
-                ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-200">
-                        <Bot size={48} className="mb-4 opacity-5" />
-                        <p className="text-lg font-black tracking-widest uppercase opacity-20">Select a Report for Analysis</p>
-                    </div>
-                )}
-            </main>
-
-            {/* Issue Detail Modal (Tailored to light aesthetic) */}
-            <Modal
-                footer={null}
-                open={!!selectedIssue}
-                onCancel={() => setSelectedIssue(null)}
-                width={700}
-                centered
-                styles={{ body: { backgroundColor: '#fff', padding: '0px' } }}
-                closeIcon={<span className="text-slate-400 hover:text-slate-600">×</span>}
-                className="light-diagnostic-modal"
-            >
-                {selectedIssue && (
-                    <div className="p-8 text-slate-600 font-sans">
-                        <div className="flex items-start justify-between mb-8 border-b border-slate-100 pb-8">
-                            <div className="space-y-4">
-                                <div className="flex items-center gap-2">
-                                    <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${selectedIssue.severity === 'critical' ? 'bg-rose-50 text-rose-600 border border-rose-100' :
-                                        'bg-slate-50 text-slate-400 border border-slate-100'
-                                        }`}>
-                                        {selectedIssue.severity} Fault Identified
-                                    </span>
-                                </div>
-                                <h2 className="text-2xl font-black text-slate-900 italic uppercase tracking-tight leading-tight">
-                                    {selectedIssue.title}
-                                </h2>
-                                <div className="flex items-center gap-4 text-[10px] font-mono text-slate-400">
-                                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-50 border border-slate-100"><FileCode size={12} /> Line {selectedIssue.line || 'Unknown'}</div>
-                                    <div className="flex items-center gap-1.5"><Fingerprint size={12} /> Hash: {Math.random().toString(36).substring(7).toUpperCase()}</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="space-y-8">
-                            <div>
-                                <h5 className="text-[10px] font-black uppercase text-indigo-500 mb-3 tracking-[0.2em]">Diagnostic Profile</h5>
-                                <p className="text-sm text-slate-600 leading-relaxed font-medium bg-slate-50 p-6 border border-slate-100 rounded-3xl">
-                                    {selectedIssue.description}
-                                </p>
-                            </div>
-
-                            {selectedIssue.codeSnippet && (
-                                <div>
-                                    <h5 className="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-[0.2em]">Source Context</h5>
-                                    <div className="bg-slate-900 rounded-3xl overflow-hidden shadow-2xl">
-                                        <div className="px-4 py-2 bg-slate-800/50 flex items-center justify-between border-b border-white/5">
-                                            <div className="flex gap-1.5">
-                                                <div className="w-2 h-2 rounded-full bg-slate-700" />
-                                                <div className="w-2 h-2 rounded-full bg-slate-700" />
-                                            </div>
-                                            <span className="text-[8px] font-mono text-slate-500 uppercase">Buffer Inspector</span>
+                                        <div className="mt-2 text-sm text-slate-600">
+                                            {summary.description}
                                         </div>
-                                        <pre className="p-6 overflow-x-auto text-[11px] leading-relaxed text-indigo-100 font-mono">
-                                            <code>{selectedIssue.codeSnippet}</code>
-                                        </pre>
-                                    </div>
+                                        <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+                                            <span>{summary.meta}</span>
+                                            <span>分片 {relatedTasks.length} 个</span>
+                                        </div>
+                                        <div className="mt-2 text-xs text-slate-400">
+                                            批次号: {record.id}
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                            {records.length > recordPageSize && (
+                                <div className="flex justify-center pt-2">
+                                    <Pagination
+                                        size="small"
+                                        current={recordPage}
+                                        pageSize={recordPageSize}
+                                        total={records.length}
+                                        showSizeChanger
+                                        pageSizeOptions={['6', '10', '20']}
+                                        onChange={(page, size) => {
+                                            setRecordPage(page);
+                                            if (size && size !== recordPageSize) {
+                                                setRecordPageSize(size);
+                                            }
+                                        }}
+                                    />
                                 </div>
                             )}
+                        </div>
+                    )}
+                </Card>
 
-                            <div>
-                                <h5 className="text-[10px] font-black uppercase text-emerald-600 mb-3 tracking-[0.2em]">Resolution Protocol</h5>
-                                <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 border-l-4 border-l-emerald-500">
-                                    <div className="flex gap-3">
-                                        <Zap size={18} className="text-emerald-600 flex-none" />
-                                        <p className="text-sm text-emerald-900 font-semibold leading-relaxed">
-                                            {selectedIssue.recommendation}
-                                        </p>
-                                    </div>
-                                </div>
+                <div className="space-y-6">
+                    <Card
+                        title={
+                            <div className="flex items-center gap-2">
+                                <Activity size={16} className="text-sky-500" />
+                                <span>分片任务</span>
                             </div>
-                        </div>
+                        }
+                        extra={
+                            <Space>
+                                <Button
+                                    size="small"
+                                    loading={triggerLoading}
+                                    disabled={!selectedRecord || !canTrigger}
+                                    title={canTrigger ? '' : '缺少 version:ai:trigger 权限'}
+                                    onClick={() => handleTrigger(true)}
+                                >
+                                    强制重跑
+                                </Button>
+                                <Button
+                                    size="small"
+                                    icon={<Download size={14} />}
+                                    disabled={!selectedTask || !canExport}
+                                    title={canExport ? '' : '缺少 version:ai:export 权限'}
+                                    onClick={() => selectedTask && window.open(getLineageReviewExportUrl(selectedTask.id), '_blank')}
+                                >
+                                    导出报告
+                                </Button>
+                            </Space>
+                        }
+                        bordered={false}
+                        className="shadow-sm"
+                    >
+                        {selectedRecord && selectedRecord.status !== 'SUCCESS' && (
+                            <Alert
+                                className="mb-4"
+                                type="warning"
+                                showIcon
+                                message="当前分析记录尚未成功完成"
+                                description="只有 SUCCESS 状态的血缘分析记录才会自动创建事后校验任务。"
+                            />
+                        )}
+                        <Table
+                            rowKey="id"
+                            dataSource={pagedTasks}
+                            columns={taskColumns}
+                            loading={taskLoading}
+                            pagination={{
+                                current: taskPage,
+                                pageSize: taskPageSize,
+                                total: tasks.length,
+                                size: 'small',
+                                showSizeChanger: true,
+                                pageSizeOptions: ['10', '20', '50'],
+                                onChange: (page, size) => {
+                                    setTaskPage(page);
+                                    if (size && size !== taskPageSize) {
+                                        setTaskPageSize(size);
+                                    }
+                                }
+                            }}
+                            locale={{ emptyText: '当前批次暂无校验任务' }}
+                            rowSelection={{
+                                type: 'radio',
+                                selectedRowKeys: selectedTaskId ? [selectedTaskId] : [],
+                                onChange: keys => setSelectedTaskId(Number(keys[0]))
+                            }}
+                        />
+                    </Card>
 
-                        <div className="mt-12 flex justify-end">
-                            <button
-                                onClick={() => setSelectedIssue(null)}
-                                className="px-10 py-4 bg-slate-900 text-white text-[10px] font-black uppercase tracking-[0.2em] hover:bg-indigo-600 transition-all shadow-lg hover:shadow-indigo-500/20 italic"
+                    <Card
+                        title="疑点清单"
+                        bordered={false}
+                        className="shadow-sm"
+                        extra={
+                            <Space wrap>
+                                <Input.Search
+                                    allowClear
+                                    placeholder="搜索表名、字段或原因"
+                                    style={{ width: 220 }}
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                />
+                                <Select
+                                    allowClear
+                                    placeholder="严重级别"
+                                    style={{ width: 120 }}
+                                    value={severityFilter}
+                                    onChange={setSeverityFilter}
+                                    options={[
+                                        { label: 'HIGH', value: 'HIGH' },
+                                        { label: 'MEDIUM', value: 'MEDIUM' },
+                                        { label: 'LOW', value: 'LOW' }
+                                    ]}
+                                />
+                                <Select
+                                    allowClear
+                                    placeholder="人工状态"
+                                    style={{ width: 140 }}
+                                    value={reviewStatusFilter}
+                                    onChange={setReviewStatusFilter}
+                                    options={[
+                                        { label: 'PENDING', value: 'PENDING' },
+                                        { label: 'CONFIRMED', value: 'CONFIRMED' },
+                                        { label: 'FALSE_POSITIVE', value: 'FALSE_POSITIVE' },
+                                        { label: 'IGNORED', value: 'IGNORED' },
+                                        { label: 'RESOLVED', value: 'RESOLVED' }
+                                    ]}
+                                />
+                            </Space>
+                        }
+                    >
+                        <Table
+                            rowKey="id"
+                            dataSource={filteredIssues}
+                            columns={issueColumns}
+                            loading={issueLoading}
+                            pagination={{ pageSize: 8 }}
+                            locale={{ emptyText: selectedTaskId ? '当前任务暂无疑点' : '请先选择一个分片任务' }}
+                            onRow={record => ({
+                                onClick: () => setSelectedIssue(record)
+                            })}
+                        />
+                    </Card>
+                </div>
+            </div>
+
+            <Drawer
+                open={!!selectedIssue}
+                onClose={() => setSelectedIssue(null)}
+                width={620}
+                title="疑点详情"
+                extra={
+                    selectedIssue && (
+                        <Space>
+                            <Button
+                                size="small"
+                                loading={decisionLoading === 'CONFIRMED'}
+                                onClick={() => handleDecision('CONFIRMED')}
                             >
-                                Close Analysis
-                            </button>
-                        </div>
+                                确认问题
+                            </Button>
+                            <Button
+                                size="small"
+                                loading={decisionLoading === 'FALSE_POSITIVE'}
+                                onClick={() => handleDecision('FALSE_POSITIVE')}
+                            >
+                                标记误报
+                            </Button>
+                            <Button
+                                size="small"
+                                loading={decisionLoading === 'RESOLVED'}
+                                onClick={() => handleDecision('RESOLVED')}
+                            >
+                                已处理
+                            </Button>
+                        </Space>
+                    )
+                }
+            >
+                {!selectedIssue ? null : (
+                    <div className="space-y-6">
+                        <Descriptions column={1} size="small" bordered>
+                            <Descriptions.Item label="目标对象">
+                                {selectedIssue.tableName}
+                                {selectedIssue.columnName ? `.${selectedIssue.columnName}` : ''}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="疑点类型">{selectedIssue.issueType}</Descriptions.Item>
+                            <Descriptions.Item label="严重级别">
+                                <Tag color={severityColorMap[selectedIssue.severity] || 'default'}>{selectedIssue.severity}</Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="AI 判定">
+                                {selectedIssue.verdict} / {Number(selectedIssue.confidence || 0).toFixed(2)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="人工状态">
+                                <Tag color={reviewStatusColorMap[selectedIssue.reviewStatus || ''] || 'default'}>
+                                    {selectedIssue.reviewStatus || 'PENDING'}
+                                </Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="原因说明">{selectedIssue.reason || '-'}</Descriptions.Item>
+                        </Descriptions>
+
+                        <Card size="small" title="规则命中">
+                            {(selectedIssue.ruleHits || []).length > 0 ? (
+                                <Space wrap>
+                                    {selectedIssue.ruleHits?.map(item => <Tag key={item}>{item}</Tag>)}
+                                </Space>
+                            ) : (
+                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无规则命中" />
+                            )}
+                        </Card>
+
+                        <Card size="small" title="建议来源">
+                            {(selectedIssue.suggestedSources || []).length > 0 ? (
+                                <div className="space-y-2">
+                                    {selectedIssue.suggestedSources?.map(item => (
+                                        <div key={item} className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">{item}</div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无建议来源" />
+                            )}
+                        </Card>
+
+                        <Card size="small" title="证据引用">
+                            {(selectedIssue.evidenceRefs || []).length > 0 ? (
+                                <div className="space-y-2">
+                                    {selectedIssue.evidenceRefs?.map(item => (
+                                        <div key={item} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600">
+                                            {item}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无证据引用" />
+                            )}
+                        </Card>
+
+                        <Card size="small" title="局部证据包">
+                            <pre className="max-h-80 overflow-auto rounded-xl bg-slate-900 p-4 text-xs text-slate-100">
+                                {JSON.stringify(selectedIssue.graphSnapshot || {}, null, 2)}
+                            </pre>
+                        </Card>
                     </div>
                 )}
-            </Modal>
+            </Drawer>
+
+            <Drawer
+                open={sqlPreviewOpen}
+                onClose={() => setSqlPreviewOpen(false)}
+                width={860}
+                title={`源码 SQL 片段${sqlPreviewTask ? ` · ${buildShardLabel(sqlPreviewTask)}` : ''}`}
+            >
+                {sqlPreviewLoading ? (
+                    <div className="flex items-center justify-center py-20">
+                        <Spin />
+                    </div>
+                ) : sqlPreviews.length === 0 ? (
+                    <Empty description="当前分片暂未记录可展示的 SQL 片段" />
+                ) : (
+                    <div className="space-y-4">
+                        {sqlPreviews.map((item, index) => (
+                            <Card
+                                key={`${index}-${item.relationCount}`}
+                                size="small"
+                                title={`SQL 片段 ${index + 1}`}
+                                extra={<span className="text-xs text-slate-400">关联关系 {item.relationCount}</span>}
+                            >
+                                <div className="mb-3 text-xs text-slate-500">
+                                    来源文件：{item.sourceFiles?.length ? item.sourceFiles.join('、') : '未记录'}
+                                </div>
+                                <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-900 p-4 text-xs text-slate-100">
+                                    {item.snippet}
+                                </pre>
+                            </Card>
+                        ))}
+                    </div>
+                )}
+            </Drawer>
         </div>
     );
 };

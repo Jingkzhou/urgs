@@ -1,15 +1,38 @@
-import { get, post } from '@/utils/request';
+import { get, post, put } from '@/utils/request';
+
+export interface LineageSearchTableItem {
+    ownerName: string;
+    tableName: string;
+    qualifiedName: string;
+    columns: string[];
+}
+
+export interface LineageSearchOwnerGroup {
+    ownerName: string;
+    tableCount: number;
+    tables: LineageSearchTableItem[];
+}
+
+export interface LineageSearchResponse {
+    total: number;
+    totalOwners: number;
+    list: LineageSearchTableItem[];
+    groupedList: LineageSearchOwnerGroup[];
+}
 
 /**
  * Get lineage graph data (仅 DERIVES_TO 关系)
  * @param tableName name of the table to search
  * @param depth search depth (default -1 for full lineage)
  */
-export const getLineageGraph = (tableName: string, columnName?: string, depth: number = -1) => {
+export const getLineageGraph = (tableName: string, columnName?: string, depth: number = -1, qualifiedName?: string) => {
     const params: Record<string, string> = {
         tableName,
         depth: String(depth),
     };
+    if (qualifiedName) {
+        params.qualifiedName = qualifiedName;
+    }
     if (columnName) {
         params.columnName = columnName;
     }
@@ -86,14 +109,14 @@ export const searchTables = (keyword: string, page: number = 1, size: number = 2
         keyword,
         page: String(page),
         size: String(size)
-    });
+    }) as Promise<LineageSearchResponse>;
 };
 
 
 /**
  * 导出血缘 Excel
  */
-export const exportLineage = async (tableName: string, columnName?: string) => {
+export const exportLineage = async (tableName: string, columnName?: string, qualifiedName?: string) => {
     const token = localStorage.getItem('auth_token');
     const headers: HeadersInit = {};
     if (token) {
@@ -101,6 +124,9 @@ export const exportLineage = async (tableName: string, columnName?: string) => {
     }
 
     const params = new URLSearchParams({ tableName });
+    if (qualifiedName) {
+        params.append('qualifiedName', qualifiedName);
+    }
     if (columnName) {
         params.append('columnName', columnName);
     }
@@ -185,6 +211,118 @@ export const getExportPdfUrl = (id: number) => `/api/lineage/report/export/pdf/$
  * 导出报告 Word URL
  */
 export const getExportWordUrl = (id: number) => `/api/lineage/report/export/word/${id}`;
+
+// ============= 血缘事后校验 API =============
+
+export interface LineageAnalysisRecordItem {
+    id: string;
+    repoId?: number;
+    ref?: string;
+    commitSha?: string;
+    paths?: string[];
+    versionId?: string;
+    defaultUser?: string;
+    language?: string;
+    status?: string;
+    error?: string;
+    startTime?: string;
+    endTime?: string;
+    createTime?: string;
+    updateTime?: string;
+}
+
+export interface LineageReviewTask {
+    id: number;
+    analysisRecordId: string;
+    repoId?: number;
+    versionId?: string;
+    ref?: string;
+    systemKey?: string;
+    pathPrefix?: string;
+    taskName?: string;
+    status?: string;
+    objectCount?: number;
+    processedCount?: number;
+    issueCount?: number;
+    failedCount?: number;
+    aiCallCount?: number;
+    cacheHitCount?: number;
+    batchCount?: number;
+    tokenBudget?: number;
+    consumedTokens?: number;
+    lastError?: string;
+    startedAt?: string;
+    finishedAt?: string;
+    createTime?: string;
+    updateTime?: string;
+}
+
+export interface LineageReviewIssue {
+    id: number;
+    taskId: number;
+    analysisRecordId: string;
+    repoId?: number;
+    versionId?: string;
+    systemKey?: string;
+    pathPrefix?: string;
+    tableName?: string;
+    columnName?: string;
+    objectType?: string;
+    issueType: string;
+    severity: string;
+    confidence?: number;
+    verdict?: string;
+    reason?: string;
+    ruleHits?: string[];
+    suggestedSources?: string[];
+    evidenceRefs?: string[];
+    graphSnapshot?: Record<string, unknown>;
+    fingerprint?: string;
+    cacheKey?: string;
+    reviewStatus?: string;
+    reviewerId?: number;
+    reviewerNote?: string;
+    reviewTime?: string;
+    createTime?: string;
+    updateTime?: string;
+}
+
+export const getLineageReviewRecords = () =>
+    get<LineageAnalysisRecordItem[]>('/api/metadata/lineage/review/records');
+
+export const getLineageReviewTasks = (params?: { analysisRecordId?: string; status?: string }) =>
+    get<LineageReviewTask[]>('/api/metadata/lineage/review/tasks', params || {});
+
+export const triggerLineageReview = (data: { analysisRecordId: string; forceRerun?: boolean }) =>
+    post<{ success: boolean; message: string }>('/api/metadata/lineage/review/tasks/trigger', data);
+
+export const getLineageReviewTask = (taskId: number) =>
+    get<LineageReviewTask>(`/api/metadata/lineage/review/tasks/${taskId}`);
+
+export const getLineageReviewTaskSqlPreview = (taskId: number) =>
+    get<Array<{ snippet: string; sourceFiles: string[]; relationCount: number }>>(
+        `/api/metadata/lineage/review/tasks/${taskId}/sql-preview`
+    );
+
+export const getLineageReviewIssues = (params?: {
+    taskId?: number;
+    severity?: string;
+    issueType?: string;
+    reviewStatus?: string;
+}) =>
+    get<LineageReviewIssue[]>('/api/metadata/lineage/review/issues', params || {});
+
+export const getLineageReviewIssue = (issueId: number) =>
+    get<LineageReviewIssue>(`/api/metadata/lineage/review/issues/${issueId}`);
+
+export const decideLineageReviewIssue = (
+    issueId: number,
+    data: { reviewStatus: string; reviewerNote?: string }
+) =>
+    put<LineageReviewIssue>(`/api/metadata/lineage/review/issues/${issueId}/decision`, data);
+
+export const getLineageReviewExportUrl = (taskId: number) =>
+    `/api/metadata/lineage/review/export?taskId=${taskId}`;
 
 // ============= 血缘引擎控制 API =============
 

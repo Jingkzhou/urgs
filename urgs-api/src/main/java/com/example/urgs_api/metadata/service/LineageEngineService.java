@@ -3,6 +3,7 @@ package com.example.urgs_api.metadata.service;
 import com.example.urgs_api.metadata.dto.StartEngineRequest;
 import com.example.urgs_api.metadata.mapper.LineageAnalysisRecordMapper;
 import com.example.urgs_api.metadata.model.LineageAnalysisRecord;
+import com.example.urgs_api.metadata.review.service.LineageReviewService;
 import com.example.urgs_api.version.service.GitPlatformService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -34,6 +35,7 @@ public class LineageEngineService {
     private final LineageAnalysisRecordMapper analysisRecordMapper;
     private final LineageGitInputPreparer gitInputPreparer;
     private final LineageUploadInputPreparer uploadInputPreparer;
+    private final LineageReviewService lineageReviewService;
     private final Executor taskExecutor;
 
     @Value("${lineage.engine.workdir:${user.dir}/../sql-lineage-engine}")
@@ -70,11 +72,13 @@ public class LineageEngineService {
             LineageAnalysisRecordMapper analysisRecordMapper,
             LineageGitInputPreparer gitInputPreparer,
             LineageUploadInputPreparer uploadInputPreparer,
+            LineageReviewService lineageReviewService,
             @Qualifier("aiTaskExecutor") Executor taskExecutor) {
         this.gitPlatformService = gitPlatformService;
         this.analysisRecordMapper = analysisRecordMapper;
         this.gitInputPreparer = gitInputPreparer;
         this.uploadInputPreparer = uploadInputPreparer;
+        this.lineageReviewService = lineageReviewService;
         this.taskExecutor = taskExecutor;
     }
 
@@ -123,12 +127,8 @@ public class LineageEngineService {
             this.lastStoppedAt = null;
             this.startInProgress = true;
             this.lastOperationId = operationId;
-            if (isGitSource(request)) {
-                LineageAnalysisRecord record = createAnalysisRecord(request);
-                this.lastRecordId = record.getId();
-            } else {
-                this.lastRecordId = "upload-" + System.currentTimeMillis();
-            }
+            LineageAnalysisRecord record = createAnalysisRecord(request);
+            this.lastRecordId = record.getId();
             log.info("[LineageEngineDiagnostics] queueStart accepted: operationId={}, recordId={}, request={}",
                     operationId, this.lastRecordId, summarizeRequest(request));
         }
@@ -155,15 +155,12 @@ public class LineageEngineService {
                     operationId, inputPath, repoRoot);
 
             String recordId = this.lastRecordId;
-            LineageAnalysisRecord record = null;
-            if (isGitSource(request)) {
-                record = StringUtils.hasText(recordId) ? analysisRecordMapper.selectById(recordId) : null;
-                if (record == null) {
-                    record = createAnalysisRecord(request);
-                    recordId = record.getId();
-                }
-                refreshAnalysisRecord(record, request);
+            LineageAnalysisRecord record = StringUtils.hasText(recordId) ? analysisRecordMapper.selectById(recordId) : null;
+            if (record == null) {
+                record = createAnalysisRecord(request);
+                recordId = record.getId();
             }
+            refreshAnalysisRecord(record, request);
 
             Path logPath = resolveLogPath(workingDir, recordId);
             Files.createDirectories(logPath.getParent());
@@ -221,11 +218,12 @@ public class LineageEngineService {
         command.add("--file");
         command.add(inputPath);
 
+        if (StringUtils.hasText(recordId)) {
+            command.add("--version-id");
+            command.add(recordId);
+        }
+
         if (isGitSource(request)) {
-            if (recordId != null) {
-                command.add("--version-id");
-                command.add(recordId);
-            }
             command.add("--repo-id");
             command.add(String.valueOf(request.getRepoId()));
 
@@ -326,13 +324,17 @@ public class LineageEngineService {
         record.setStatus("RUNNING");
         record.setUpdateTime(LocalDateTime.now());
 
-        try {
-            var latestCommit = gitPlatformService.getLatestCommit(request.getRepoId(), request.getRef());
-            if (latestCommit != null) {
-                record.setCommitSha(latestCommit.getSha());
+        if (isGitSource(request)) {
+            try {
+                var latestCommit = gitPlatformService.getLatestCommit(request.getRepoId(), request.getRef());
+                if (latestCommit != null) {
+                    record.setCommitSha(latestCommit.getSha());
+                }
+            } catch (Exception e) {
+                log.warn("无法获取 Git 最新提交 SHA: {}", e.getMessage());
             }
-        } catch (Exception e) {
-            log.warn("无法获取 Git 最新提交 SHA: {}", e.getMessage());
+        } else {
+            record.setCommitSha(null);
         }
 
         analysisRecordMapper.updateById(record);
@@ -601,6 +603,9 @@ public class LineageEngineService {
                 analysisRecordMapper.updateById(record);
                 log.info("[LineageEngineDiagnostics] analysis record completion updated: recordId={}, exitCode={}, status={}, versionId={}",
                         recordId, exitCode, record.getStatus(), record.getVersionId());
+                if (exitCode == 0) {
+                    lineageReviewService.scheduleTasksForAnalysis(record, false);
+                }
             }
         } catch (Exception e) {
             log.error("更新分析记录失败", e);
