@@ -11,6 +11,8 @@ import com.example.urgs_api.metadata.service.CodeTableService;
 import com.example.urgs_api.metadata.service.RegElementService;
 import com.example.urgs_api.metadata.service.RegTableMarkdownExportService;
 import com.example.urgs_api.metadata.service.RegTableService;
+import com.example.urgs_api.system.model.SysSystem;
+import com.example.urgs_api.system.service.SysSystemService;
 import jakarta.servlet.http.HttpServletResponse;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,6 +55,9 @@ public class RegTableMarkdownExportServiceImpl implements RegTableMarkdownExport
     @Autowired
     private CodeDirectoryService codeDirectoryService;
 
+    @Autowired
+    private SysSystemService sysSystemService;
+
     @Override
     public void exportMarkdownZip(
             String systemCode,
@@ -65,6 +70,7 @@ public class RegTableMarkdownExportServiceImpl implements RegTableMarkdownExport
         List<RegTable> tables = queryTables(systemCode, keyword, autoFetchStatus, frequency, sourceType, tableIds);
         Map<Long, List<RegElement>> elementMap = queryElements(tables);
         CodeLookup codeLookup = queryCodeLookup(elementMap);
+        Map<String, String> systemNameMap = querySystemNameMap();
 
         response.setContentType("application/zip");
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
@@ -75,11 +81,11 @@ public class RegTableMarkdownExportServiceImpl implements RegTableMarkdownExport
         try (ZipOutputStream zos = new ZipOutputStream(response.getOutputStream(), StandardCharsets.UTF_8)) {
             Map<Long, String> fileNameMap = buildMarkdownFileNames(tables);
 
-            writeZipEntry(zos, "README.md", buildIndexMarkdown(tables, elementMap, fileNameMap));
+            writeZipEntry(zos, "README.md", buildIndexMarkdown(tables, elementMap, fileNameMap, systemNameMap));
 
             for (RegTable table : tables) {
                 List<RegElement> elements = elementMap.getOrDefault(table.getId(), Collections.emptyList());
-                String markdown = buildTableMarkdown(table, elements, codeLookup);
+                String markdown = buildTableMarkdown(table, elements, codeLookup, systemNameMap);
                 writeZipEntry(zos, "tables/" + fileNameMap.get(table.getId()), markdown);
             }
         }
@@ -213,13 +219,15 @@ public class RegTableMarkdownExportServiceImpl implements RegTableMarkdownExport
     private String buildIndexMarkdown(
             List<RegTable> tables,
             Map<Long, List<RegElement>> elementMap,
-            Map<Long, String> fileNameMap) {
+            Map<Long, String> fileNameMap,
+            Map<String, String> systemNameMap) {
         StringBuilder builder = new StringBuilder();
         builder.append("# 监管报表 Markdown 导出索引\n\n");
         builder.append("## 导出说明\n\n");
         builder.append("- 每个报表一个 Markdown 文件，位于 `tables/` 目录。\n");
-        builder.append("- 文档包含报表概览、字段明细，以及字段引用的码表和码值清单。\n");
-        builder.append("- 字段级别若配置了 `codeTableCode`，会在对应报表文档中自动展开码值详情。\n\n");
+        builder.append("- 文档结构为：报表首页、字段总表、补充说明、码表摘要。\n");
+        builder.append("- 默认不为每个字段重复生成整段说明，复杂字段才进入“补充说明”。\n");
+        builder.append("- 码表在文末按码表去重汇总，地区/行业/国家等大码表仅保留摘要说明。\n\n");
         builder.append("## 报表清单\n\n");
         builder.append("| 序号 | 系统 | 物理表名 | 中文名 | 字段数 | 引用码表数 | 文档 |\n");
         builder.append("| --- | --- | --- | --- | --- | --- | --- |\n");
@@ -234,7 +242,7 @@ public class RegTableMarkdownExportServiceImpl implements RegTableMarkdownExport
             builder.append("| ")
                     .append(nullSafe(table.getSortOrder()))
                     .append(" | ")
-                    .append(mdCell(table.getSystemCode()))
+                    .append(mdCell(resolveSystemName(table.getSystemCode(), systemNameMap)))
                     .append(" | ")
                     .append(mdCell(table.getName()))
                     .append(" | ")
@@ -252,24 +260,28 @@ public class RegTableMarkdownExportServiceImpl implements RegTableMarkdownExport
         return builder.toString();
     }
 
-    private String buildTableMarkdown(RegTable table, List<RegElement> elements, CodeLookup codeLookup) {
+    private String buildTableMarkdown(
+            RegTable table,
+            List<RegElement> elements,
+            CodeLookup codeLookup,
+            Map<String, String> systemNameMap) {
         StringBuilder builder = new StringBuilder();
         String title = StringUtils.defaultIfBlank(table.getCnName(), table.getName());
         builder.append("# ").append(mdText(title)).append("\n\n");
         builder.append("> 物理表名：`").append(codeText(table.getName())).append("`");
         if (StringUtils.isNotBlank(table.getSystemCode())) {
-            builder.append("  \n> 所属系统：`").append(codeText(table.getSystemCode())).append("`");
+            builder.append("  \n> 所属系统：").append(mdText(resolveSystemName(table.getSystemCode(), systemNameMap)));
         }
         builder.append("\n\n");
 
-        builder.append("## 1. 报表概览\n\n");
+        builder.append("## 1. 报表首页\n\n");
         builder.append("| 项目 | 内容 |\n");
         builder.append("| --- | --- |\n");
         appendKvRow(builder, "报表ID", nullSafe(table.getId()));
         appendKvRow(builder, "排序号", nullSafe(table.getSortOrder()));
         appendKvRow(builder, "物理表名", codeWrap(table.getName()));
         appendKvRow(builder, "中文名", table.getCnName());
-        appendKvRow(builder, "所属系统", codeWrap(table.getSystemCode()));
+        appendKvRow(builder, "所属系统", resolveSystemName(table.getSystemCode(), systemNameMap));
         appendKvRow(builder, "主题", table.getTheme());
         appendKvRow(builder, "频率", table.getFrequency());
         appendKvRow(builder, "来源类型", table.getSourceType());
@@ -280,34 +292,31 @@ public class RegTableMarkdownExportServiceImpl implements RegTableMarkdownExport
         appendKvRow(builder, "科目名称", table.getSubjectName());
         appendKvRow(builder, "负责人", table.getOwner());
         appendKvRow(builder, "状态", formatStatus(table.getStatus()));
+        appendKvRow(builder, "字段总数", String.valueOf(elements.size()));
+        appendKvRow(builder, "字段类型分布",
+                "`FIELD` = " + countByType(elements, "FIELD") + "，`INDICATOR` = " + countByType(elements, "INDICATOR"));
+        appendKvRow(builder, "引用码表数",
+                String.valueOf(elements.stream().map(RegElement::getCodeTableCode).filter(StringUtils::isNotBlank).distinct().count()));
         builder.append("\n");
 
-        appendRichSection(builder, "## 2. 填报与口径说明", table.getBusinessCaliber(), "业务口径");
-        appendRichSection(builder, null, table.getFillInstruction(), "填报说明");
-        appendRichSection(builder, null, table.getDevNotes(), "研发备注");
+        appendTextSummary(builder, "业务口径摘要", table.getBusinessCaliber());
+        appendTextSummary(builder, "填报说明摘要", table.getFillInstruction());
+        appendTextSummary(builder, "研发备注摘要", table.getDevNotes());
 
-        builder.append("## 3. 字段总览\n\n");
-        builder.append("- 字段总数：`").append(elements.size()).append("`\n");
-        builder.append("- 字段类型分布：`FIELD` = ")
-                .append(countByType(elements, "FIELD"))
-                .append("，`INDICATOR` = ")
-                .append(countByType(elements, "INDICATOR"))
-                .append("\n");
-        builder.append("- 引用码表数：`")
-                .append(elements.stream().map(RegElement::getCodeTableCode).filter(StringUtils::isNotBlank).distinct().count())
-                .append("`\n\n");
+        builder.append("## 2. 字段总表\n\n");
+        builder.append("| 序号 | 字段名 | 中文名 | 类型 | 数据类型 | 长度 | 主键 | 可空 | 码表 | 取值说明 | 校验规则 | 自动取数 | 备注索引 |\n");
+        builder.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
 
-        builder.append("| 序号 | 类型 | 字段名 | 中文名 | 数据类型 | 长度 | 主键 | 可空 | 码表 | 自动取数 | 状态 |\n");
-        builder.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
         for (RegElement element : elements) {
+            String noteIndex = buildFieldNoteIndex(element);
             builder.append("| ")
                     .append(nullSafe(element.getSortOrder()))
-                    .append(" | ")
-                    .append(mdCell(element.getType()))
                     .append(" | ")
                     .append(codeCell(element.getName()))
                     .append(" | ")
                     .append(mdCell(element.getCnName()))
+                    .append(" | ")
+                    .append(mdCell(element.getType()))
                     .append(" | ")
                     .append(mdCell(element.getDataType()))
                     .append(" | ")
@@ -315,64 +324,183 @@ public class RegTableMarkdownExportServiceImpl implements RegTableMarkdownExport
                     .append(" | ")
                     .append(mdCell(formatBooleanFlag(element.getIsPk())))
                     .append(" | ")
-                    .append(mdCell(formatBooleanFlag(element.getNullable() == null ? null : element.getNullable() == 1 ? 1 : 0)))
+                    .append(mdCell(formatNullable(element.getNullable())))
                     .append(" | ")
-                    .append(codeCell(element.getCodeTableCode()))
+                    .append(mdCell(formatCodeTableSummary(element, codeLookup)))
+                    .append(" | ")
+                    .append(mdCell(buildValueSummary(element, codeLookup)))
+                    .append(" | ")
+                    .append(mdCell(shortText(element.getValidationRule(), 40)))
                     .append(" | ")
                     .append(mdCell(element.getAutoFetchStatus()))
                     .append(" | ")
-                    .append(mdCell(formatStatus(element.getStatus())))
+                    .append(mdCell(noteIndex))
                     .append(" |\n");
         }
         builder.append("\n");
 
-        builder.append("## 4. 字段详细说明\n\n");
-        for (int i = 0; i < elements.size(); i++) {
-            RegElement element = elements.get(i);
-            builder.append("### 4.")
-                    .append(i + 1)
-                    .append(" ")
-                    .append(mdText(StringUtils.defaultIfBlank(element.getCnName(), element.getName())))
-                    .append("\n\n");
-            builder.append("| 项目 | 内容 |\n");
-            builder.append("| --- | --- |\n");
-            appendKvRow(builder, "元素ID", nullSafe(element.getId()));
-            appendKvRow(builder, "类型", element.getType());
-            appendKvRow(builder, "字段名", codeWrap(element.getName()));
-            appendKvRow(builder, "中文名", element.getCnName());
-            appendKvRow(builder, "数据类型", element.getDataType());
-            appendKvRow(builder, "长度", element.getLength());
-            appendKvRow(builder, "排序号", nullSafe(element.getSortOrder()));
-            appendKvRow(builder, "是否主键", formatBooleanFlag(element.getIsPk()));
-            appendKvRow(builder, "是否允许为空", formatNullable(element.getNullable()));
-            appendKvRow(builder, "是否脱敏", formatBooleanFlag(element.getIsDesensitized()));
-            appendKvRow(builder, "脱敏类型", element.getDesensitizeType());
-            appendKvRow(builder, "自动取数状态", element.getAutoFetchStatus());
-            appendKvRow(builder, "发文号", element.getDispatchNo());
-            appendKvRow(builder, "生效日期", formatDate(element.getEffectiveDate()));
-            appendKvRow(builder, "值域", element.getValueRange());
-            appendKvRow(builder, "校验规则", element.getValidationRule());
-            appendKvRow(builder, "负责人", element.getOwner());
-            appendKvRow(builder, "状态", formatStatus(element.getStatus()));
-            appendKvRow(builder, "是否初始化项", formatBooleanFlag(element.getIsInit()));
-            appendKvRow(builder, "是否归并公式项", formatBooleanFlag(element.getIsMergeFormula()));
-            appendKvRow(builder, "是否填报业务项", formatBooleanFlag(element.getIsFillBusiness()));
-            appendKvRow(builder, "引用码表", codeWrap(element.getCodeTableCode()));
-            builder.append("\n");
-
-            appendTextBlock(builder, "业务口径", element.getBusinessCaliber());
-            appendTextBlock(builder, "填报说明", element.getFillInstruction());
-            appendTextBlock(builder, "研发备注", element.getDevNotes());
-            appendCodeBlock(builder, "计算公式", element.getFormula(), "");
-            appendCodeBlock(builder, "取数 SQL", element.getFetchSql(), "sql");
-            appendCodeBlock(builder, "代码片段", element.getCodeSnippet(), "java");
-
-            if (StringUtils.isNotBlank(element.getCodeTableCode())) {
-                appendCodeTableSection(builder, element, codeLookup);
-            }
-        }
+        appendFieldNotesSection(builder, elements, codeLookup);
+        appendCodeTablesSummarySection(builder, elements, codeLookup, systemNameMap);
 
         return builder.toString();
+    }
+
+    private void appendFieldNotesSection(StringBuilder builder, List<RegElement> elements, CodeLookup codeLookup) {
+        List<RegElement> notedElements = elements.stream()
+                .filter(this::hasFieldNote)
+                .toList();
+
+        builder.append("## 3. 补充说明\n\n");
+        if (notedElements.isEmpty()) {
+            builder.append("- 当前报表字段说明较简洁，无需额外补充。\n\n");
+            return;
+        }
+
+        for (RegElement element : notedElements) {
+            String noteIndex = buildFieldNoteIndex(element);
+            builder.append("### ").append(noteIndex).append(" ")
+                    .append(mdText(StringUtils.defaultIfBlank(element.getCnName(), element.getName())))
+                    .append("\n\n");
+            builder.append("- 字段名：").append(codeWrap(element.getName())).append("\n");
+            builder.append("- 类型：").append(mdCell(element.getType())).append("\n");
+            builder.append("- 数据类型：").append(mdCell(element.getDataType())).append("\n");
+            if (StringUtils.isNotBlank(element.getCodeTableCode())) {
+                builder.append("- 引用码表：").append(codeWrap(element.getCodeTableCode()));
+                CodeTable codeTable = codeLookup.codeTableMap.get(element.getCodeTableCode());
+                if (codeTable != null && StringUtils.isNotBlank(codeTable.getTableName())) {
+                    builder.append("（").append(mdText(codeTable.getTableName())).append("）");
+                }
+                builder.append("\n");
+            }
+            if (StringUtils.isNotBlank(element.getBusinessCaliber())) {
+                builder.append("- 业务口径：").append(multilineBulletText(element.getBusinessCaliber())).append("\n");
+            }
+            if (StringUtils.isNotBlank(element.getFillInstruction())) {
+                builder.append("- 填报说明：").append(multilineBulletText(element.getFillInstruction())).append("\n");
+            }
+            if (StringUtils.isNotBlank(element.getDevNotes())) {
+                builder.append("- 研发备注：").append(multilineBulletText(element.getDevNotes())).append("\n");
+            }
+            if (StringUtils.isNotBlank(element.getFormula())) {
+                builder.append("\n**计算公式**\n\n");
+                builder.append("```text\n").append(element.getFormula().trim()).append("\n```\n\n");
+            }
+            if (StringUtils.isNotBlank(element.getFetchSql())) {
+                builder.append("**取数 SQL**\n\n");
+                builder.append("```sql\n").append(element.getFetchSql().trim()).append("\n```\n\n");
+            }
+            if (StringUtils.isNotBlank(element.getCodeSnippet())) {
+                builder.append("**代码片段**\n\n");
+                builder.append("```java\n").append(element.getCodeSnippet().trim()).append("\n```\n\n");
+            }
+        }
+    }
+
+    private void appendCodeTablesSummarySection(
+            StringBuilder builder,
+            List<RegElement> elements,
+            CodeLookup codeLookup,
+            Map<String, String> systemNameMap) {
+        Map<String, List<RegElement>> codeTableUsage = elements.stream()
+                .filter(item -> StringUtils.isNotBlank(item.getCodeTableCode()))
+                .collect(Collectors.groupingBy(RegElement::getCodeTableCode, TreeMap::new, Collectors.toList()));
+
+        builder.append("## 4. 码表摘要\n\n");
+        if (codeTableUsage.isEmpty()) {
+            builder.append("- 当前报表未引用码表。\n\n");
+            return;
+        }
+
+        builder.append("| 码表编码 | 码表名称 | 使用字段数 | 说明 | 是否展开明细 |\n");
+        builder.append("| --- | --- | --- | --- | --- |\n");
+        for (Map.Entry<String, List<RegElement>> entry : codeTableUsage.entrySet()) {
+            String tableCode = entry.getKey();
+            CodeTable codeTable = codeLookup.codeTableMap.get(tableCode);
+            boolean summarizeOnly = shouldSummarizeOnly(codeTable, tableCode);
+            builder.append("| ")
+                    .append(codeCell(tableCode))
+                    .append(" | ")
+                    .append(mdCell(codeTable != null ? codeTable.getTableName() : "-"))
+                    .append(" | ")
+                    .append(entry.getValue().size())
+                    .append(" | ")
+                    .append(mdCell(shortText(resolveCodeTableDescription(codeTable), 40)))
+                    .append(" | ")
+                    .append(mdCell(summarizeOnly ? "否" : "是"))
+                    .append(" |\n");
+        }
+        builder.append("\n");
+
+        for (Map.Entry<String, List<RegElement>> entry : codeTableUsage.entrySet()) {
+            String tableCode = entry.getKey();
+            CodeTable codeTable = codeLookup.codeTableMap.get(tableCode);
+            if (shouldSummarizeOnly(codeTable, tableCode)) {
+                continue;
+            }
+
+            List<CodeDirectory> codeDirectories = codeLookup.codeDirectoryMap
+                    .getOrDefault(tableCode, Collections.emptyList())
+                    .stream()
+                    .sorted(Comparator.comparing(CodeDirectory::getSortOrder, Comparator.nullsLast(Integer::compareTo))
+                            .thenComparing(CodeDirectory::getCode, Comparator.nullsLast(String::compareTo)))
+                    .toList();
+
+            builder.append("### ").append(codeText(tableCode));
+            if (codeTable != null && StringUtils.isNotBlank(codeTable.getTableName())) {
+                builder.append(" ").append(mdText(codeTable.getTableName()));
+            }
+            builder.append("\n\n");
+            builder.append("- 使用字段：")
+                    .append(entry.getValue().stream()
+                            .map(item -> codeWrap(StringUtils.defaultIfBlank(item.getName(), "-")))
+                            .distinct()
+                            .collect(Collectors.joining("、")))
+                    .append("\n");
+            if (codeTable != null && StringUtils.isNotBlank(codeTable.getSystemCode())) {
+                builder.append("- 所属系统：")
+                        .append(resolveSystemName(codeTable.getSystemCode(), systemNameMap))
+                        .append("\n");
+            }
+            builder.append("- 码表说明：").append(multilineBulletText(resolveCodeTableDescription(codeTable))).append("\n");
+            builder.append("- 码值数量：").append(codeDirectories.size()).append("\n\n");
+
+            if (codeDirectories.isEmpty()) {
+                builder.append("> 未查询到该码表的码值明细。\n\n");
+                continue;
+            }
+
+            builder.append("| 码值 | 名称 | 上级码值 | 描述 |\n");
+            builder.append("| --- | --- | --- | --- |\n");
+            for (CodeDirectory code : codeDirectories) {
+                builder.append("| ")
+                        .append(codeCell(code.getCode()))
+                        .append(" | ")
+                        .append(mdCell(code.getName()))
+                        .append(" | ")
+                        .append(codeCell(code.getParentCode()))
+                        .append(" | ")
+                        .append(mdCell(shortText(code.getDescription(), 40)))
+                        .append(" |\n");
+            }
+            builder.append("\n");
+        }
+    }
+
+    private Map<String, String> querySystemNameMap() {
+        return sysSystemService.list().stream()
+                .filter(item -> StringUtils.isNotBlank(item.getClientId()))
+                .collect(Collectors.toMap(
+                        SysSystem::getClientId,
+                        item -> StringUtils.defaultIfBlank(item.getName(), item.getClientId()),
+                        (left, right) -> left,
+                        HashMap::new));
+    }
+
+    private String resolveSystemName(String systemCode, Map<String, String> systemNameMap) {
+        if (StringUtils.isBlank(systemCode)) {
+            return "-";
+        }
+        return systemNameMap.getOrDefault(systemCode, systemCode);
     }
 
     private void appendCodeTableSection(StringBuilder builder, RegElement element, CodeLookup codeLookup) {
@@ -461,6 +589,79 @@ public class RegTableMarkdownExportServiceImpl implements RegTableMarkdownExport
                 "sector");
 
         return keywords.stream().anyMatch(text::contains);
+    }
+
+    private boolean hasFieldNote(RegElement element) {
+        return StringUtils.isNotBlank(element.getBusinessCaliber())
+                || StringUtils.isNotBlank(element.getFillInstruction())
+                || StringUtils.isNotBlank(element.getDevNotes())
+                || StringUtils.isNotBlank(element.getFormula())
+                || StringUtils.isNotBlank(element.getFetchSql())
+                || StringUtils.isNotBlank(element.getCodeSnippet());
+    }
+
+    private String buildFieldNoteIndex(RegElement element) {
+        return hasFieldNote(element) ? "F" + nullSafe(element.getSortOrder()) : "-";
+    }
+
+    private String buildValueSummary(RegElement element, CodeLookup codeLookup) {
+        if (StringUtils.isNotBlank(element.getCodeTableCode())) {
+            CodeTable codeTable = codeLookup.codeTableMap.get(element.getCodeTableCode());
+            if (codeTable != null && StringUtils.isNotBlank(codeTable.getTableName())) {
+                return shortText(codeTable.getTableName(), 20);
+            }
+            return shortText(element.getCodeTableCode(), 20);
+        }
+        if (StringUtils.isNotBlank(element.getValueRange())) {
+            return shortText(element.getValueRange(), 20);
+        }
+        return "-";
+    }
+
+    private String formatCodeTableSummary(RegElement element, CodeLookup codeLookup) {
+        if (StringUtils.isBlank(element.getCodeTableCode())) {
+            return "-";
+        }
+        CodeTable codeTable = codeLookup.codeTableMap.get(element.getCodeTableCode());
+        if (codeTable == null || StringUtils.isBlank(codeTable.getTableName())) {
+            return codeWrap(element.getCodeTableCode());
+        }
+        return codeWrap(element.getCodeTableCode()) + " " + mdText(codeTable.getTableName());
+    }
+
+    private String resolveCodeTableDescription(CodeTable codeTable) {
+        if (codeTable == null) {
+            return "-";
+        }
+        if (StringUtils.isNotBlank(codeTable.getDescription())) {
+            return codeTable.getDescription();
+        }
+        if (StringUtils.isNotBlank(codeTable.getStandard())) {
+            return codeTable.getStandard();
+        }
+        return "-";
+    }
+
+    private String shortText(String value, int maxLength) {
+        if (StringUtils.isBlank(value)) {
+            return "-";
+        }
+        String normalized = value.replace("\r\n", " ").replace("\n", " ").trim();
+        return StringUtils.abbreviate(normalized, maxLength);
+    }
+
+    private void appendTextSummary(StringBuilder builder, String label, String content) {
+        if (StringUtils.isBlank(content)) {
+            return;
+        }
+        builder.append("- ").append(label).append("：").append(multilineBulletText(shortText(content, 80))).append("\n");
+    }
+
+    private String multilineBulletText(String value) {
+        if (StringUtils.isBlank(value)) {
+            return "-";
+        }
+        return value.trim().replace("\r\n", "<br>").replace("\n", "<br>");
     }
 
     private void appendRichSection(StringBuilder builder, String title, String content, String fallbackLabel) {
