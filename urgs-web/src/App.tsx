@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { hasPermission } from './utils/permission';
-import { LayoutDashboard, Menu, Bell, Search, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Timer, Database, GitBranch, Activity, Lock, Palette, User, Sparkles, Award, BookOpen } from 'lucide-react';
+import { LayoutDashboard, Menu, Bell, Search, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Timer, Database, GitBranch, Activity, Lock, Palette, User, Sparkles, Award, BookOpen, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Login from './components/Login';
 import Dashboard from './components/home/Dashboard';
@@ -239,21 +239,21 @@ const App: React.FC = () => {
         <div className={`flex h-screen bg-slate-50 ${layoutMode === 'topbar' ? 'flex-col' : 'flex-row'}`}>
             {layoutMode === 'sidebar' && (
                 <aside
-                    className={`${sidebarOpen ? 'w-64' : 'w-24'} m-4 mr-0 rounded-[2.5rem] bg-white/70 backdrop-blur-3xl border border-white/40 text-slate-800 transition-all duration-500 flex flex-col shadow-[0_40px_100px_-20px_rgba(0,0,0,0.1)] z-20 shrink-0 relative`}
+                    className={`${sidebarOpen ? 'w-64' : 'w-24'} m-4 mr-0 rounded-[1.75rem] bg-white/85 backdrop-blur-2xl border border-slate-200/70 text-slate-800 transition-all duration-500 flex flex-col shadow-[0_24px_70px_-38px_rgba(15,23,42,0.45)] z-20 shrink-0 relative`}
                 >
-                    <div className="h-24 flex items-center justify-between px-6 border-b border-slate-100/30 bg-white/10 overflow-hidden shrink-0">
+                    <div className="h-20 flex items-center justify-between px-5 border-b border-slate-100 overflow-hidden shrink-0">
                         {sidebarOpen && (
                             <motion.div
                                 initial={{ opacity: 0, x: -20 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 className="flex flex-col items-center pl-1"
                             >
-                                <img src={LOGO_URL} alt="Bank of Jilin" className="h-7 object-contain brightness-110" />
+                                <img src={LOGO_URL} alt="Bank of Jilin" className="w-36 max-w-full h-auto object-contain brightness-110" />
                             </motion.div>
                         )}
                         <button
                             onClick={() => setSidebarOpen(!sidebarOpen)}
-                            className={`p-3 bg-slate-100/50 hover:bg-white rounded-[1.25rem] text-slate-500 hover:text-red-600 transition-all border border-transparent hover:border-slate-200/50 flex-shrink-0 ${!sidebarOpen ? 'mx-auto' : ''}`}
+                            className={`p-2.5 hover:bg-slate-100 rounded-xl text-slate-500 hover:text-red-600 transition-all flex-shrink-0 ${!sidebarOpen ? 'mx-auto' : ''}`}
                         >
                             <Menu size={18} strokeWidth={2.5} />
                         </button>
@@ -272,9 +272,9 @@ const App: React.FC = () => {
                         ))}
                     </nav>
 
-                    <div className="p-3 border-t border-slate-100 flex flex-col gap-4 shrink-0">
+                    <div className="p-3 border-t border-slate-100 flex flex-col gap-3 shrink-0">
                         <div className={`flex ${sidebarOpen ? 'justify-start px-2' : 'justify-center'}`}>
-                            <button className="p-2.5 relative bg-slate-50 hover:bg-white rounded-xl text-slate-400 hover:text-red-500 transition-all border border-slate-100/50 shadow-sm group">
+                            <button className="p-2.5 relative hover:bg-slate-100 rounded-xl text-slate-400 hover:text-red-500 transition-all group">
                                 <Bell size={20} strokeWidth={2.5} className="group-hover:rotate-12 transition-transform" />
                                 <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white shadow-sm"></span>
                             </button>
@@ -327,18 +327,16 @@ const App: React.FC = () => {
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
                 {layoutMode === 'topbar' && (
-                    <header className="bg-white/80 backdrop-blur-xl border-b border-slate-200/50 h-20 flex items-center justify-between px-8 z-[100] relative shrink-0">
-                        <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-red-500/20 to-transparent"></div>
-
-                        <div className="flex items-center gap-10">
-                            <div className="flex items-center gap-10">
-                                <div className="flex items-center gap-4 py-1 px-3 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner">
-                                    <img src={LOGO_URL} alt="Bank Logo" className="h-8 w-auto object-contain" />
-                                    <div className="h-6 w-px bg-slate-200"></div>
-                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest italic pr-1">ARK / PORTAL</span>
+                    <header className="h-[72px] bg-white/92 backdrop-blur-xl border-b border-slate-200/80 px-6 xl:px-8 z-[100] relative shrink-0 shadow-[0_18px_45px_-38px_rgba(15,23,42,0.55)]">
+                        <div className="h-full flex items-center justify-between gap-6">
+                            <div className="flex items-center gap-7 min-w-0">
+                                <div className="flex items-center gap-3 shrink-0">
+                                    <img src={LOGO_URL} alt="Bank Logo" className="w-36 h-auto max-w-[9rem] object-contain" />
+                                    <div className="hidden xl:flex h-7 w-px bg-slate-200"></div>
+                                    <span className="hidden xl:inline-flex text-[11px] font-black text-slate-500 uppercase tracking-[0.18em]">ARK / PORTAL</span>
                                 </div>
 
-                                <nav className="hidden lg:flex items-center bg-slate-100/50 p-1.5 rounded-[1.25rem] relative" ref={moreMenuRef}>
+                                <nav className="hidden lg:flex items-center gap-1 relative min-w-0" ref={moreMenuRef}>
                                     {(() => {
                                         const allowedItems = NAV_ITEMS.filter(item => hasPermission(item.permission));
                                         if (allowedItems.length === 0) return null;
@@ -363,14 +361,14 @@ const App: React.FC = () => {
                                                         <button
                                                             key={item.id}
                                                             onClick={() => { setActiveTab(item.id); window.location.hash = '#/' + item.id; }}
-                                                            className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300 z-10
-                                                            ${isActive ? 'text-red-600' : 'text-slate-500 hover:text-slate-800'}
+                                                            className={`relative flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300 z-10
+                                                            ${isActive ? 'text-red-600' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/70'}
                                                         `}
                                                             >
                                                                 {isActive && (
                                                                     <motion.div
                                                                         layoutId="topNavTab"
-                                                                        className="absolute inset-0 bg-white shadow-xl shadow-black/[0.03] rounded-xl z-[-1] border border-slate-100"
+                                                                        className="absolute inset-0 bg-red-50/90 rounded-xl z-[-1]"
                                                                         transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                                                                     />
                                                                 )}
@@ -381,11 +379,11 @@ const App: React.FC = () => {
                                                     })}
 
                                                         {hiddenItems.length > 0 && (
-                                                            <div className="relative z-20 ml-1">
+                                                            <div className="relative z-20">
                                                                 <button
                                                                     onClick={() => setShowMoreNavMenu(!showMoreNavMenu)}
-                                                                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300
-                                                                    ${showMoreNavMenu ? 'bg-white text-slate-800 shadow-sm border border-slate-100' : 'text-slate-500 hover:text-slate-800'}
+                                                                    className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300
+                                                                    ${showMoreNavMenu ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/70'}
                                                                 `}
                                                                 >
                                                                     <span>更多应用</span>
@@ -393,9 +391,7 @@ const App: React.FC = () => {
                                                                         animate={{ rotate: showMoreNavMenu ? 180 : 0 }}
                                                                         transition={{ type: 'spring', stiffness: 200, damping: 20 }}
                                                                     >
-                                                                        <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                                            <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                                                        </svg>
+                                                                        <ChevronDown size={14} strokeWidth={2.5} />
                                                                     </motion.div>
                                                                 </button>
 
@@ -406,7 +402,7 @@ const App: React.FC = () => {
                                                                             animate={{ opacity: 1, y: 0, scale: 1 }}
                                                                             exit={{ opacity: 0, y: 10, scale: 0.95 }}
                                                                             transition={{ type: "spring", bounce: 0.3, duration: 0.5 }}
-                                                                            className="absolute right-0 top-full mt-3 w-56 bg-white/90 backdrop-blur-2xl rounded-[1.25rem] shadow-[0_20px_40px_-10px_rgba(0,0,0,0.1)] border border-white p-2 z-50 grid grid-cols-1 gap-1"
+                                                                            className="absolute right-0 top-full mt-3 w-56 bg-white/95 backdrop-blur-2xl rounded-2xl shadow-[0_24px_50px_-18px_rgba(15,23,42,0.28)] border border-slate-200/80 p-2 z-50 grid grid-cols-1 gap-1"
                                                                         >
                                                                             {hiddenItems.map((item) => (
                                                                                 <button
@@ -418,7 +414,7 @@ const App: React.FC = () => {
                                                                                     }}
                                                                                     className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left transition-all hover:bg-slate-50 hover:text-red-600 group"
                                                                                 >
-                                                                                    <div className="p-1.5 rounded-lg bg-slate-100/80 text-slate-500 group-hover:bg-red-100/50 group-hover:text-red-600 transition-colors">
+                                                                                    <div className="p-1.5 rounded-lg bg-slate-100/80 text-slate-500 group-hover:bg-red-50 group-hover:text-red-600 transition-colors">
                                                                                         <item.icon size={16} strokeWidth={2.5} />
                                                                                     </div>
                                                                                     <span className="text-[13px] font-bold text-slate-700 group-hover:text-red-600">{item.label}</span>
@@ -434,25 +430,24 @@ const App: React.FC = () => {
                                             })()}
                                         </nav>
                                     </div >
-                                </div>
 
-                                <div className="flex items-center gap-6">
-                                    <button className="p-3 relative bg-slate-50 hover:bg-white rounded-2xl text-slate-400 hover:text-red-500 transition-all border border-slate-100/50 shadow-sm group">
+                                <div className="flex items-center gap-4 shrink-0 whitespace-nowrap">
+                                    <button className="p-2.5 relative hover:bg-slate-100 rounded-xl text-slate-400 hover:text-red-500 transition-all group">
                                         <Bell size={20} strokeWidth={2.5} className="group-hover:rotate-12 transition-transform" />
-                                        <span className="absolute top-2.5 right-2.5 w-3 h-3 bg-red-500 rounded-full border-[3px] border-white shadow-sm"></span>
+                                        <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white shadow-sm"></span>
                                     </button>
 
-                                    <div className="flex items-center gap-5 pl-4 border-l border-slate-200/60">
-                                        <div className="text-right hidden xl:block">
-                                            <p className="text-[13px] font-black text-slate-800 tracking-tight leading-none mb-1">{userInfo?.name || '用户'}</p>
-                                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.15em]">{userInfo?.roleName || 'System Admin'}</p>
+                                    <div className="flex items-center gap-4 pl-4 border-l border-slate-200 min-w-0 flex-nowrap">
+                                        <div className="text-right hidden xl:block min-w-0 max-w-36 shrink">
+                                            <p className="text-[13px] font-black text-slate-800 tracking-tight leading-none mb-1 truncate">{userInfo?.name || '用户'}</p>
+                                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.15em] truncate">{userInfo?.roleName || 'System Admin'}</p>
                                         </div>
 
-                                        <div className="relative" ref={userMenuRef}>
+                                        <div className="relative shrink-0" ref={userMenuRef}>
                                             <button
                                                 onClick={() => setShowUserMenu(!showUserMenu)}
-                                                className={`group relative w-12 h-12 rounded-[1.25rem] bg-slate-50 border transition-all duration-500 overflow-hidden flex items-center justify-center
-                                                ${showUserMenu ? 'border-red-400 shadow-lg shadow-red-500/10' : 'border-slate-100 hover:border-red-200 hover:shadow-md'}
+                                                className={`group relative w-11 h-11 rounded-xl border transition-all duration-300 overflow-hidden flex items-center justify-center
+                                                ${showUserMenu ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-100 hover:bg-slate-100 hover:border-slate-200'}
                                             `}
                                             >
                                                 {userInfo?.avatarUrl ? (
@@ -471,7 +466,7 @@ const App: React.FC = () => {
                                                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                                                         animate={{ opacity: 1, y: 0, scale: 1 }}
                                                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                        className="absolute right-0 top-full mt-4 w-60 bg-white/90 backdrop-blur-2xl rounded-[1.5rem] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] border border-white/60 p-2 z-[110] overflow-hidden"
+                                                        className="absolute right-0 top-full mt-4 w-60 bg-white/95 backdrop-blur-2xl rounded-2xl shadow-[0_24px_50px_-18px_rgba(15,23,42,0.28)] border border-slate-200/80 p-2 z-[110] overflow-hidden"
                                                     >
                                                         {renderUserMenuContent()}
                                                     </motion.div>
@@ -480,6 +475,7 @@ const App: React.FC = () => {
                                         </div>
                                     </div>
                                 </div>
+                            </div>
                             </header>
                         )}
 

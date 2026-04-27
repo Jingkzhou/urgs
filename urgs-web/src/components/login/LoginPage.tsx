@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { LOGO_URL } from "../../constants";
+import { LOGIN_DARK_LOGO_URL, LOGO_URL } from "../../constants";
 import { Lock, User, Eye, EyeOff, ShieldCheck, ChevronRight, Landmark, Activity } from "lucide-react";
 
 /* ── Particle type ─────────────────────────────────────────────── */
@@ -252,16 +252,12 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-red-600/10 blur-[100px]"
              style={{ animation: 'pulse-glow 12s ease-in-out infinite 2s' }} />
 
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="bg-white p-2 rounded-xl shadow-lg shadow-black/50 animate-in zoom-in duration-700 relative overflow-hidden group">
+        <div className="relative z-10 flex items-center">
+          <div className="bg-transparent p-0 animate-in zoom-in duration-700 relative overflow-hidden group">
             {/* shimmer overlay */}
             <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-                 style={{ background: 'linear-gradient(105deg, transparent 40%, rgba(59,130,246,0.15) 45%, rgba(239,68,68,0.15) 50%, transparent 55%)', backgroundSize: '200% 100%', animation: 'border-shimmer 3s linear infinite' }} />
-            <img src={LOGO_URL} alt="Logo" className="h-8 w-auto relative z-10" />
-          </div>
-          <div className="animate-in fade-in slide-in-from-left-4 duration-1000 delay-300">
-            <div className="text-xl font-bold tracking-tight">监管报送一体化系统</div>
-            <div className="text-xs text-slate-400 tracking-[0.2em] uppercase mt-0.5">Integrated Reporting Portal</div>
+                 style={{ background: 'linear-gradient(105deg, transparent 40%, rgba(59,130,246,0.18) 45%, rgba(239,68,68,0.16) 50%, transparent 55%)', backgroundSize: '200% 100%', animation: 'border-shimmer 3s linear infinite' }} />
+            <img src={LOGIN_DARK_LOGO_URL} alt="监管报送一体化系统" className="w-[360px] max-w-full h-auto relative z-10" />
           </div>
         </div>
 
@@ -295,9 +291,8 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
       <div className="flex items-center justify-center p-8 bg-white">
         <div className="w-full max-w-[400px]">
           {/* Mobile Logo */}
-          <div className="lg:hidden flex items-center justify-center gap-3 mb-12">
-            <img src={LOGO_URL} alt="Logo" className="h-10 w-auto" />
-            <span className="text-xl font-bold text-slate-900">监管报送一体化系统</span>
+          <div className="lg:hidden flex items-center justify-center mb-12">
+            <img src={LOGO_URL} alt="监管报送一体化系统" className="w-[320px] max-w-full h-auto" />
           </div>
 
           {/* Header */}
@@ -412,4 +407,3 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
 };
 
 export default LoginPage;
-
