@@ -2,6 +2,7 @@ import React from 'react';
 
 interface UseTableImportExportOptions {
     selectedSystem?: string;
+    selectedSystemName?: string;
     tableKeyword: string;
     filterStatus: string;
     filterFrequency: string;
@@ -71,6 +72,7 @@ const triggerDownload = (blob: Blob, fileName: string) => {
 
 export const useTableImportExport = ({
     selectedSystem,
+    selectedSystemName,
     tableKeyword,
     filterStatus,
     filterFrequency,
@@ -106,7 +108,8 @@ export const useTableImportExport = ({
             }
 
             const blob = await response.blob();
-            triggerDownload(blob, `报表数据导出_${buildTimestamp()}.xlsx`);
+            const sysName = selectedSystemName ? `${selectedSystemName}_` : '';
+            triggerDownload(blob, `报表数据导出_${sysName}${buildTimestamp(true)}.xlsx`);
         } catch (error) {
             console.error('Export failed', error);
             alert('导出失败');
@@ -133,7 +136,8 @@ export const useTableImportExport = ({
             }
 
             const blob = await response.blob();
-            triggerDownload(blob, `监管报表Markdown导出_${buildTimestamp()}.zip`);
+            const sysName = selectedSystemName ? `${selectedSystemName}_` : '';
+            triggerDownload(blob, `监管报表Markdown导出_${sysName}${buildTimestamp(true)}.zip`);
         } catch (error) {
             console.error('Markdown export failed', error);
             alert('Markdown 导出失败');

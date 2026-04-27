@@ -365,6 +365,7 @@ const RegulatoryAssetView: React.FC = () => {
         handleTableImport,
     } = useTableImportExport({
         selectedSystem,
+        selectedSystemName: systems.find(s => s.clientId === selectedSystem)?.name,
         tableKeyword,
         filterStatus,
         filterFrequency,

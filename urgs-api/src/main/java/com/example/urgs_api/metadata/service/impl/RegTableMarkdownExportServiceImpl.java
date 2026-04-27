@@ -654,7 +654,7 @@ public class RegTableMarkdownExportServiceImpl implements RegTableMarkdownExport
         if (StringUtils.isBlank(content)) {
             return;
         }
-        builder.append("- ").append(label).append("：").append(multilineBulletText(shortText(content, 80))).append("\n");
+        builder.append("- ").append(label).append("：").append(multilineBulletText(content)).append("\n");
     }
 
     private String multilineBulletText(String value) {
