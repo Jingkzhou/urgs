@@ -253,9 +253,9 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
              style={{ animation: 'pulse-glow 12s ease-in-out infinite 2s' }} />
 
         <div className="relative z-10 flex items-center">
-          <div className="bg-transparent p-0 animate-in zoom-in duration-700 relative overflow-hidden group">
+          <div className="bg-transparent p-0 animate-in zoom-in duration-700 relative overflow-hidden">
             {/* shimmer overlay */}
-            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+            <div className="absolute inset-0 opacity-100"
                  style={{ background: 'linear-gradient(105deg, transparent 40%, rgba(59,130,246,0.18) 45%, rgba(239,68,68,0.16) 50%, transparent 55%)', backgroundSize: '200% 100%', animation: 'border-shimmer 3s linear infinite' }} />
             <img src={LOGIN_DARK_LOGO_URL} alt="监管报送一体化系统" className="w-[360px] max-w-full h-auto relative z-10" />
           </div>
@@ -292,7 +292,11 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
         <div className="w-full max-w-[400px]">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center justify-center mb-12">
-            <img src={LOGO_URL} alt="监管报送一体化系统" className="w-[320px] max-w-full h-auto" />
+            <div className="relative overflow-hidden">
+              <div className="absolute inset-0 opacity-100 pointer-events-none"
+                   style={{ background: 'linear-gradient(105deg, transparent 40%, rgba(59,130,246,0.18) 45%, rgba(239,68,68,0.16) 50%, transparent 55%)', backgroundSize: '200% 100%', animation: 'border-shimmer 3s linear infinite' }} />
+              <img src={LOGO_URL} alt="监管报送一体化系统" className="w-[320px] max-w-full h-auto relative z-10" />
+            </div>
           </div>
 
           {/* Header */}
