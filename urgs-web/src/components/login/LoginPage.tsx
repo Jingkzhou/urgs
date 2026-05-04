@@ -196,6 +196,42 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
           0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
           50%      { box-shadow: 0 0 12px 2px rgba(239,68,68,0.15); }
         }
+        @keyframes solar-orbit {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+        .solar-sun {
+          background:
+            radial-gradient(circle at 35% 30%, rgba(255,255,255,0.95) 0 8%, rgba(255,244,164,0.92) 9% 20%, transparent 21%),
+            radial-gradient(circle at 62% 68%, rgba(248,113,113,0.45) 0 9%, transparent 10%),
+            radial-gradient(circle at 35% 35%, #fff7ad 0 18%, #fbbf24 38%, #f97316 68%, #b45309 100%);
+        }
+        .planet-mars {
+          background:
+            radial-gradient(circle at 30% 28%, rgba(255,237,213,0.9) 0 9%, transparent 10%),
+            linear-gradient(150deg, transparent 0 28%, rgba(127,29,29,0.45) 29% 38%, transparent 39% 60%, rgba(251,146,60,0.4) 61% 70%, transparent 71%),
+            radial-gradient(circle at 35% 35%, #fca5a5 0 14%, #ef4444 42%, #991b1b 100%);
+        }
+        .planet-earth {
+          background:
+            radial-gradient(circle at 30% 24%, rgba(255,255,255,0.75) 0 8%, transparent 9%),
+            linear-gradient(35deg, transparent 0 18%, rgba(255,255,255,0.68) 19% 27%, transparent 28% 45%, rgba(255,255,255,0.5) 46% 54%, transparent 55%),
+            radial-gradient(circle at 66% 36%, rgba(34,197,94,0.95) 0 14%, transparent 15%),
+            radial-gradient(circle at 38% 68%, rgba(34,197,94,0.85) 0 12%, transparent 13%),
+            radial-gradient(circle at 35% 35%, #7dd3fc 0 16%, #2563eb 46%, #0f172a 100%);
+        }
+        .planet-moon {
+          background:
+            radial-gradient(circle at 62% 34%, rgba(71,85,105,0.45) 0 16%, transparent 17%),
+            radial-gradient(circle at 36% 66%, rgba(71,85,105,0.35) 0 12%, transparent 13%),
+            radial-gradient(circle at 35% 35%, #f8fafc 0 18%, #cbd5e1 58%, #64748b 100%);
+        }
+        .planet-saturn {
+          background:
+            radial-gradient(circle at 30% 30%, rgba(255,255,255,0.75) 0 12%, transparent 13%),
+            linear-gradient(180deg, transparent 0 28%, rgba(255,237,213,0.55) 29% 36%, transparent 37% 58%, rgba(180,83,9,0.35) 59% 66%, transparent 67%),
+            radial-gradient(circle at 35% 35%, #fde68a 0 18%, #d97706 54%, #78350f 100%);
+        }
         .input-glow-wrapper:focus-within { animation: input-glow 1.5s ease-in-out infinite; }
       `}</style>
 
@@ -252,6 +288,27 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-red-600/10 blur-[100px]"
              style={{ animation: 'pulse-glow 12s ease-in-out infinite 2s' }} />
 
+        <div className="pointer-events-none absolute right-12 top-1/2 z-0 h-[300px] w-[300px] -translate-y-1/2 opacity-65">
+          <div className="solar-sun absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full shadow-[0_0_54px_rgba(251,191,36,0.95),0_0_110px_rgba(249,115,22,0.28)]" />
+          <div className="absolute inset-[88px] rounded-full border border-slate-500/35"
+               style={{ animation: 'solar-orbit 9s linear infinite' }}>
+            <div className="planet-mars absolute left-1/2 top-[-7px] h-3.5 w-3.5 -translate-x-1/2 rounded-full shadow-[inset_-3px_-3px_5px_rgba(15,23,42,0.55),0_0_13px_rgba(239,68,68,0.72)]" />
+          </div>
+          <div className="absolute inset-[56px] rounded-full border border-slate-500/35"
+               style={{ animation: 'solar-orbit 15s linear infinite reverse' }}>
+            <div className="planet-earth absolute left-1/2 top-[-10px] h-5 w-5 -translate-x-1/2 rounded-full shadow-[inset_-5px_-4px_7px_rgba(15,23,42,0.62),0_0_18px_rgba(96,165,250,0.75)]">
+              <div className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2"
+                   style={{ animation: 'solar-orbit 3.2s linear infinite' }}>
+                <div className="planet-moon absolute left-1/2 top-[-3px] h-2 w-2 -translate-x-1/2 rounded-full shadow-[inset_-1px_-1px_2px_rgba(15,23,42,0.45),0_0_6px_rgba(226,232,240,0.65)]" />
+              </div>
+            </div>
+          </div>
+          <div className="absolute inset-[20px] rounded-full border border-slate-500/30"
+               style={{ animation: 'solar-orbit 24s linear infinite' }}>
+            <div className="planet-saturn absolute left-1/2 top-[-12px] h-6 w-6 -translate-x-1/2 rounded-full shadow-[inset_-5px_-5px_8px_rgba(15,23,42,0.58),0_0_18px_rgba(251,191,36,0.45)]" />
+          </div>
+        </div>
+
         <div className="relative z-10 flex items-center">
           <div className="bg-transparent p-0 animate-in zoom-in duration-700 relative overflow-hidden">
             {/* shimmer overlay */}
@@ -288,8 +345,8 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
       </div>
 
       {/* Right Login Section - Clean Professional White */}
-      <div className="flex items-center justify-center p-8 bg-white">
-        <div className="w-full max-w-[400px]">
+      <div className="relative flex items-center justify-center p-8 bg-white overflow-hidden">
+        <div className="relative z-10 w-full max-w-[400px]">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center justify-center mb-12">
             <div className="relative overflow-hidden">
