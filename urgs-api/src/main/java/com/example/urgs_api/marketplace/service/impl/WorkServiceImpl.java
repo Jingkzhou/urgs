@@ -37,6 +37,8 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         Work work = new Work();
         work.setTitle(dto.getTitle());
         work.setDescription(dto.getDescription());
+        work.setBackground(dto.getBackground());
+        work.setBusinessValue(dto.getBusinessValue());
         work.setCategory(dto.getCategory());
         work.setPriority(dto.getPriority() != null ? dto.getPriority() : "P2");
         work.setStatus(WorkStatus.DRAFT.name());
@@ -71,11 +73,19 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
                 task.setWorkId(work.getId());
                 task.setTitle(taskDto.getTitle());
                 task.setDescription(taskDto.getDescription());
+                task.setTaskType(taskDto.getTaskType());
+                task.setDifficulty(taskDto.getDifficulty());
                 task.setRequiredSkills(taskDto.getRequiredSkills());
+                task.setAcceptanceCriteria(taskDto.getAcceptanceCriteria());
                 task.setPoints(taskDto.getPoints() != null ? taskDto.getPoints() : 0);
+                task.setEstimatedHours(taskDto.getEstimatedHours());
                 task.setAssignMode(taskDto.getAssignMode());
                 task.setDeadline(taskDto.getDeadline());
                 task.setSortOrder(order++);
+                task.setReworkCount(0);
+                task.setBonusPoints(0);
+                task.setPenaltyPoints(0);
+                task.setFinalPoints(0);
 
                 // Initialize task status based on assign mode
                 if (AssignMode.ASSIGN.name().equals(task.getAssignMode()) && taskDto.getAssigneeId() != null) {

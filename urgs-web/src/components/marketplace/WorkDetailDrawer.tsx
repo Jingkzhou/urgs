@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Drawer, Tag, Space, Divider, Typography, Spin, Empty } from 'antd';
 import { getWorkDetail, getWorkTasks, addTaskToWork, Work, WorkTask } from '../../api/marketplace';
 import { Plus, Trash2, Award, Clock, Paperclip } from 'lucide-react';
+import { getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -23,6 +24,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         title: '',
         description: '',
         points: 5,
+        estimatedHours: 0,
         assignMode: 'OPEN' as string,
         requiredSkills: '',
         deadline: '',
@@ -60,7 +62,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             await addTaskToWork(workId!, newTask as any);
             setTasks(prev => [...prev, null!] as any); // Will be refreshed by fetchDetail
             await fetchDetail(workId!);
-            setNewTask({ title: '', description: '', points: 5, assignMode: 'OPEN', requiredSkills: '', deadline: '' });
+            setNewTask({ title: '', description: '', points: 5, estimatedHours: 0, assignMode: 'OPEN', requiredSkills: '', deadline: '' });
             setAddingTask(false);
         } catch (error) {
             console.error('Failed to add task', error);
@@ -122,6 +124,8 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         return 'default';
     };
 
+    const totalEstimatedHours = tasks.reduce((sum, task) => sum + (task.estimatedHours ?? task.actualHours ?? 0), 0);
+
     return (
         <Drawer
             title="工作详情"
@@ -142,7 +146,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                 work.status === 'PUBLISHED' ? 'green' :
                                     work.status === 'DRAFT' ? 'default' : 'red'
                             }>
-                                {work.status}
+                                {getWorkStatusLabel(work.status)}
                             </Tag>
                             <Tag color="error">{work.priority}</Tag>
                             <Tag>{work.category}</Tag>
@@ -164,6 +168,11 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                         <div className="text-center">
                             <div className="text-xs text-slate-400 mb-1">任务数</div>
                             <div className="font-bold text-slate-800">{tasks.length}</div>
+                        </div>
+                        <Divider orientation="vertical" className="h-10 border-slate-200" />
+                        <div className="text-center">
+                            <div className="text-xs text-slate-400 mb-1">汇总工时</div>
+                            <div className="font-bold text-slate-800">{totalEstimatedHours} 小时</div>
                         </div>
                         <Divider orientation="vertical" className="h-10 border-slate-200" />
                         <div className="text-center">
@@ -221,11 +230,14 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                             <div className="flex items-center gap-2 mb-1 flex-wrap">
                                                                 <span className="text-sm font-bold text-slate-800 truncate">{task.title}</span>
                                                                 <Tag color={getAssignModeColor(task.assignMode)} className="text-xs">{getAssignModeLabel(task.assignMode)}</Tag>
-                                                                <Tag color={getStatusColor(task.status)} className="text-xs">{task.status}</Tag>
+                                                                <Tag color={getStatusColor(task.status)} className="text-xs">{getTaskStatusLabel(task.status)}</Tag>
                                                             </div>
                                                             <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
                                                                 <span className="flex items-center gap-1">
                                                                     <Award size={12} /> {task.points} 积分
+                                                                </span>
+                                                                <span className="flex items-center gap-1">
+                                                                    <Clock size={12} /> {task.estimatedHours ?? task.actualHours ?? 0} 小时
                                                                 </span>
                                                                 {task.deadline && (
                                                                     <span className="flex items-center gap-1">
@@ -258,7 +270,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                     placeholder="任务标题 *"
                                                 />
                                             </div>
-                                            <div className="grid grid-cols-2 gap-2">
+                                            <div className="grid grid-cols-3 gap-2">
                                                 <select
                                                     value={newTask.assignMode}
                                                     onChange={e => setNewTask(prev => ({ ...prev, assignMode: e.target.value }))}
@@ -274,6 +286,13 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                     onChange={e => setNewTask(prev => ({ ...prev, points: parseInt(e.target.value) || 0 }))}
                                                     className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 outline-none"
                                                     placeholder="积分"
+                                                />
+                                                <input
+                                                    type="number"
+                                                    value={newTask.estimatedHours}
+                                                    onChange={e => setNewTask(prev => ({ ...prev, estimatedHours: parseInt(e.target.value) || 0 }))}
+                                                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 outline-none"
+                                                    placeholder="预计工时"
                                                 />
                                             </div>
                                         </div>
@@ -300,7 +319,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                         </div>
                                         <div className="flex justify-end gap-2">
                                             <button
-                                                onClick={() => { setAddingTask(false); setNewTask({ title: '', description: '', points: 5, assignMode: 'OPEN', requiredSkills: '', deadline: '' }); }}
+                                                onClick={() => { setAddingTask(false); setNewTask({ title: '', description: '', points: 5, estimatedHours: 0, assignMode: 'OPEN', requiredSkills: '', deadline: '' }); }}
                                                 className="px-4 py-1.5 text-sm font-medium text-slate-600 bg-white hover:bg-slate-100 rounded-lg transition-colors"
                                             >
                                                 取消

@@ -3,6 +3,8 @@ package com.example.urgs_api.marketplace.service;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.example.urgs_api.marketplace.dto.TaskMarketDTO;
+import com.example.urgs_api.marketplace.dto.TaskReviewDTO;
+import com.example.urgs_api.marketplace.dto.TaskSubmissionDTO;
 import com.example.urgs_api.marketplace.model.WorkTask;
 
 public interface WorkTaskService extends IService<WorkTask> {
@@ -10,9 +12,15 @@ public interface WorkTaskService extends IService<WorkTask> {
 
     boolean claimTask(String taskId, String userId);
 
+    boolean releaseTask(String taskId, String userId);
+
     boolean assignTask(String taskId, String assigneeId, String currentUserId);
 
     boolean updateTaskStatus(String taskId, String status, String userId);
+
+    boolean submitForReview(String taskId, TaskSubmissionDTO dto, String userId);
+
+    boolean reviewTask(String taskId, TaskReviewDTO dto, String reviewerId);
 
     void logTaskAction(String taskId, String operatorId, String action, String detail);
 

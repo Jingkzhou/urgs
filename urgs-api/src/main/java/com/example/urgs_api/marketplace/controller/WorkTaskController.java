@@ -2,8 +2,11 @@ package com.example.urgs_api.marketplace.controller;
 
 import com.example.urgs_api.common.PageResult;
 import com.example.urgs_api.marketplace.dto.TaskMarketDTO;
+import com.example.urgs_api.marketplace.dto.TaskReviewDTO;
+import com.example.urgs_api.marketplace.dto.TaskSubmissionDTO;
 import com.example.urgs_api.marketplace.dto.WorkTaskCreateDTO;
 import com.example.urgs_api.marketplace.enums.TaskStatus;
+import com.example.urgs_api.marketplace.model.Work;
 import com.example.urgs_api.marketplace.model.WorkTask;
 import com.example.urgs_api.marketplace.service.WorkService;
 import com.example.urgs_api.marketplace.service.WorkTaskService;
@@ -45,10 +48,18 @@ public class WorkTaskController {
         task.setWorkId(workId);
         task.setTitle(dto.getTitle());
         task.setDescription(dto.getDescription());
+        task.setTaskType(dto.getTaskType());
+        task.setDifficulty(dto.getDifficulty());
         task.setRequiredSkills(dto.getRequiredSkills());
+        task.setAcceptanceCriteria(dto.getAcceptanceCriteria());
         task.setPoints(dto.getPoints() != null ? dto.getPoints() : 0);
+        task.setEstimatedHours(dto.getEstimatedHours());
         task.setAssignMode(dto.getAssignMode());
         task.setDeadline(dto.getDeadline());
+        task.setReworkCount(0);
+        task.setBonusPoints(0);
+        task.setPenaltyPoints(0);
+        task.setFinalPoints(0);
 
         if (dto.getAssigneeId() != null && !dto.getAssigneeId().isEmpty()) {
             task.setAssigneeId(dto.getAssigneeId());
@@ -114,6 +125,56 @@ public class WorkTaskController {
         return PageResult.of(resultPage);
     }
 
+    @GetMapping("/review/pending")
+    public PageResult<WorkTask> getPendingReviewTasks(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @RequestParam(defaultValue = "1") int current,
+            @RequestParam(defaultValue = "10") int size) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        List<String> workIds = workService.lambdaQuery()
+                .eq(Work::getPublisherId, userId)
+                .list()
+                .stream()
+                .map(Work::getId)
+                .toList();
+        Page<WorkTask> page = new Page<>(current, size);
+        if (workIds.isEmpty()) {
+            return PageResult.of(page);
+        }
+        Page<WorkTask> resultPage = workTaskService.page(page,
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<WorkTask>()
+                        .in(WorkTask::getWorkId, workIds)
+                        .eq(WorkTask::getStatus, TaskStatus.REVIEW.name())
+                        .orderByDesc(WorkTask::getSubmittedAt));
+        return PageResult.of(resultPage);
+    }
+
+    @GetMapping("/review/history")
+    public PageResult<WorkTask> getReviewHistoryTasks(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @RequestParam(defaultValue = "1") int current,
+            @RequestParam(defaultValue = "20") int size) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        List<String> workIds = workService.lambdaQuery()
+                .eq(Work::getPublisherId, userId)
+                .list()
+                .stream()
+                .map(Work::getId)
+                .toList();
+        Page<WorkTask> page = new Page<>(current, size);
+        if (workIds.isEmpty()) {
+            return PageResult.of(page);
+        }
+        Page<WorkTask> resultPage = workTaskService.page(page,
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<WorkTask>()
+                        .in(WorkTask::getWorkId, workIds)
+                        .isNotNull(WorkTask::getReviewedAt)
+                        .orderByDesc(WorkTask::getReviewedAt));
+        return PageResult.of(resultPage);
+    }
+
     @PostMapping("/{id}/claim")
     public ResponseEntity<Void> claimTask(
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
@@ -121,6 +182,49 @@ public class WorkTaskController {
             @PathVariable String id) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
         workTaskService.claimTask(id, userId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/{id}/release")
+    public ResponseEntity<Void> releaseTask(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @PathVariable String id) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        workTaskService.releaseTask(id, userId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/{id}/status")
+    public ResponseEntity<Void> updateTaskStatus(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @PathVariable String id,
+            @RequestBody Map<String, String> body) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        workTaskService.updateTaskStatus(id, body.get("status"), userId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/{id}/submit")
+    public ResponseEntity<Void> submitForReview(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @PathVariable String id,
+            @RequestBody TaskSubmissionDTO dto) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        workTaskService.submitForReview(id, dto, userId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/{id}/review")
+    public ResponseEntity<Void> reviewTask(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @PathVariable String id,
+            @RequestBody TaskReviewDTO dto) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        workTaskService.reviewTask(id, dto, userId);
         return ResponseEntity.ok().build();
     }
 

@@ -11,6 +11,7 @@ const taskSchema = z.object({
     title: z.string().min(2, '任务标题至少2个字符'),
     description: z.string().min(10, '任务描述至少10个字符'),
     points: z.number().min(0, '积分不能为负数'),
+    estimatedHours: z.number().min(0, '预计工时不能为负数').optional(),
     requiredSkills: z.string().optional().or(z.literal('')),
     assignMode: z.enum(['OPEN', 'ASSIGN', 'COMPETE']),
     assigneeId: z.string().optional().or(z.literal('')),
@@ -54,7 +55,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
         resolver: zodResolver(workSchema),
         defaultValues: {
             priority: 'P2',
-            tasks: [{ assignMode: 'OPEN', points: 10 }]
+            tasks: [{ assignMode: 'OPEN', points: 10, estimatedHours: 0 }]
         }
     });
 
@@ -244,7 +245,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                 <h3 className="text-base font-bold text-slate-800">任务拆分 <span className="text-red-500">*</span></h3>
                                 <button
                                     type="button"
-                                    onClick={() => append({ title: '', description: '', points: 5, assignMode: 'OPEN', deadline: '' })}
+                                    onClick={() => append({ title: '', description: '', points: 5, estimatedHours: 0, assignMode: 'OPEN', deadline: '' })}
                                     className="flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-md transition-colors"
                                 >
                                     <Plus size={16} /> 添加任务
@@ -288,7 +289,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                                 {errors.tasks?.[index]?.title && <p className="text-red-500 text-xs mt-1">{errors.tasks[index]?.title?.message}</p>}
                                             </div>
 
-                                            <div className="grid grid-cols-2 gap-4">
+                                            <div className="grid grid-cols-3 gap-4">
                                                 <div>
                                                     <label className="block text-xs font-medium text-slate-500 mb-1">分发模式 *</label>
                                                     <select
@@ -301,7 +302,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                                     </select>
                                                 </div>
                                                 <div>
-                                                    <label className="block text-xs font-medium text-slate-500 mb-1">任务积分/工时 *</label>
+                                                    <label className="block text-xs font-medium text-slate-500 mb-1">任务积分 *</label>
                                                     <input
                                                         type="number"
                                                         {...register(`tasks.${index}.points` as const, { valueAsNumber: true })}
@@ -309,6 +310,16 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                                         placeholder="例如: 10"
                                                     />
                                                     {errors.tasks?.[index]?.points && <p className="text-red-500 text-xs mt-1">{errors.tasks[index]?.points?.message}</p>}
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-slate-500 mb-1">预计工时</label>
+                                                    <input
+                                                        type="number"
+                                                        {...register(`tasks.${index}.estimatedHours` as const, { valueAsNumber: true })}
+                                                        className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none"
+                                                        placeholder="例如: 8"
+                                                    />
+                                                    {errors.tasks?.[index]?.estimatedHours && <p className="text-red-500 text-xs mt-1">{errors.tasks[index]?.estimatedHours?.message}</p>}
                                                 </div>
                                             </div>
 

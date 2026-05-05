@@ -8,23 +8,19 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("sys_work")
-public class Work {
+@TableName("sys_task_appeal")
+public class TaskAppeal {
     @TableId(type = IdType.ASSIGN_ID)
     private String id;
 
-    private String title;
-    private String description;
-    private String background;
-    private String businessValue;
-    private String category;
-    private String priority;
-    private Integer totalPoints;
+    private String taskId;
+    private String applicantId;
+    private String reason;
+    private String expectedResult;
     private String status;
-    private String publisherId;
-    private LocalDateTime deadline;
-    private String requirementNumber;
-    private String attachments;
+    private String resolverId;
+    private String resolution;
+    private LocalDateTime resolvedAt;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

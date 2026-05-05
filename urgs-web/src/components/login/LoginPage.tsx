@@ -297,9 +297,11 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
           <div className="absolute inset-[56px] rounded-full border border-slate-500/35"
                style={{ animation: 'solar-orbit 15s linear infinite reverse' }}>
             <div className="planet-earth absolute left-1/2 top-[-10px] h-5 w-5 -translate-x-1/2 rounded-full shadow-[inset_-5px_-4px_7px_rgba(15,23,42,0.62),0_0_18px_rgba(96,165,250,0.75)]">
-              <div className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2"
-                   style={{ animation: 'solar-orbit 3.2s linear infinite' }}>
-                <div className="planet-moon absolute left-1/2 top-[-3px] h-2 w-2 -translate-x-1/2 rounded-full shadow-[inset_-1px_-1px_2px_rgba(15,23,42,0.45),0_0_6px_rgba(226,232,240,0.65)]" />
+              <div className="absolute left-1/2 top-1/2 h-11 w-11 -translate-x-1/2 -translate-y-1/2">
+                <div className="relative h-full w-full"
+                     style={{ animation: 'solar-orbit 3.2s linear infinite' }}>
+                  <div className="planet-moon absolute left-1/2 top-[-4px] h-2 w-2 -translate-x-1/2 rounded-full shadow-[inset_-1px_-1px_2px_rgba(15,23,42,0.45),0_0_6px_rgba(226,232,240,0.65)]" />
+                </div>
               </div>
             </div>
           </div>

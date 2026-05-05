@@ -3,9 +3,10 @@ import TaskMarket from './TaskMarket';
 import WorkList from './WorkList';
 import MyTasks from './MyTasks';
 import StatsPage from './StatsPage';
+import ReviewCenter from './ReviewCenter';
 
 const MarketplacePage: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'market' | 'publish' | 'mine' | 'stats'>('market');
+    const [activeTab, setActiveTab] = useState<'market' | 'publish' | 'mine' | 'review' | 'stats'>('market');
 
     return (
         <div className="h-full flex flex-col gap-6">
@@ -41,7 +42,7 @@ const MarketplacePage: React.FC = () => {
                                 : 'text-slate-500 hover:text-slate-800'
                             }`}
                     >
-                        我的任务
+                        个人看板
                     </button>
                     <button
                         onClick={() => setActiveTab('stats')}
@@ -50,7 +51,16 @@ const MarketplacePage: React.FC = () => {
                                 : 'text-slate-500 hover:text-slate-800'
                             }`}
                     >
-                        数据概览
+                        KPI 看板
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('review')}
+                        className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'review'
+                                ? 'bg-red-50 text-red-600 shadow-sm'
+                                : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                    >
+                        验收中心
                     </button>
                 </div>
             </div>
@@ -59,6 +69,7 @@ const MarketplacePage: React.FC = () => {
                 {activeTab === 'market' && <TaskMarket />}
                 {activeTab === 'publish' && <WorkList />}
                 {activeTab === 'mine' && <MyTasks />}
+                {activeTab === 'review' && <ReviewCenter />}
                 {activeTab === 'stats' && <StatsPage />}
             </div>
         </div>

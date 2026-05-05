@@ -7,7 +7,9 @@ public enum TaskStatus {
     IN_PROGRESS("开发/处理中"),
     REVIEW("待审核"),
     COMPLETED("已完成"),
-    REJECTED("退回修改");
+    REJECTED("退回修改"),
+    CANCELLED("已取消"),
+    OVERDUE("已逾期");
 
     private final String desc;
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Drawer, Button, Tag, Space, Divider, Typography, Descriptions, Spin, Empty } from 'antd';
 import { getTaskDetail, TaskMarketDTO, claimTask } from '../../api/marketplace';
 import { Award, Clock, Users, Building2, User } from 'lucide-react';
+import { getTaskStatusLabel } from './marketplaceLabels';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -86,7 +87,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                                 task.status === 'OPEN' ? 'green' :
                                     task.status === 'COMPLETED' ? 'blue' : 'default'
                             }>
-                                {task.status}
+                                {getTaskStatusLabel(task.status)}
                             </Tag>
                         </Space>
                         <Title level={3} className="!mb-0">{task.title}</Title>
@@ -121,6 +122,44 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                             {task.description || '暂无描述信息'}
                         </Paragraph>
                     </section>
+
+                    {(task.acceptanceCriteria || task.completionDescription || task.deliverables) && (
+                        <section>
+                            <Title level={5}>验收信息</Title>
+                            <Descriptions column={1} size="small" className="bg-slate-50 p-4 rounded-xl">
+                                {task.acceptanceCriteria && (
+                                    <Descriptions.Item label="验收标准">
+                                        <span className="whitespace-pre-wrap">{task.acceptanceCriteria}</span>
+                                    </Descriptions.Item>
+                                )}
+                                {task.completionDescription && (
+                                    <Descriptions.Item label="完成说明">
+                                        <span className="whitespace-pre-wrap">{task.completionDescription}</span>
+                                    </Descriptions.Item>
+                                )}
+                                {task.deliverables && (
+                                    <Descriptions.Item label="交付物">
+                                        <span className="break-all whitespace-pre-wrap">{task.deliverables}</span>
+                                    </Descriptions.Item>
+                                )}
+                                {task.actualHours !== undefined && (
+                                    <Descriptions.Item label="实际投入">
+                                        {task.actualHours || 0} 小时
+                                    </Descriptions.Item>
+                                )}
+                                {task.impactScope && (
+                                    <Descriptions.Item label="影响范围">
+                                        <span className="whitespace-pre-wrap">{task.impactScope}</span>
+                                    </Descriptions.Item>
+                                )}
+                                {(task.delayReported || task.delayReason) && (
+                                    <Descriptions.Item label="延期说明">
+                                        {task.delayReported ? '已提前报备' : '未报备'}{task.delayReason ? `：${task.delayReason}` : ''}
+                                    </Descriptions.Item>
+                                )}
+                            </Descriptions>
+                        </section>
+                    )}
 
                     <section>
                         <Title level={5}>技能要求</Title>
