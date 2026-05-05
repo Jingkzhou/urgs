@@ -90,8 +90,8 @@ const ReviewCenter: React.FC = () => {
                                         <div className="break-all">{task.deliverables || '-'}</div>
                                     </div>
                                     <div className="bg-slate-50 rounded-lg p-3">
-                                        <div className="font-bold text-slate-700 mb-1">投入/积分</div>
-                                        <div>{task.actualHours || 0} 小时 / {task.points || 0} 基础积分</div>
+                                        <div className="font-bold text-slate-700 mb-1">任务积分</div>
+                                        <div>{task.points || 0} 基础积分</div>
                                     </div>
                                     <div className="bg-slate-50 rounded-lg p-3">
                                         <div className="font-bold text-slate-700 mb-1">返工/延期</div>

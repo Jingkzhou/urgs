@@ -1,20 +1,19 @@
-package com.example.urgs_api.marketplace.model;
+package com.example.urgs_api.marketplace.dto;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.time.LocalDateTime;
 
 @Data
-@TableName("sys_task_application")
-public class TaskApplication {
-    @TableId(type = IdType.ASSIGN_ID)
+public class TaskApplicationDTO {
     private String id;
-
     private String taskId;
+    private String taskTitle;
+    private String workId;
+    private String workTitle;
+    private Integer taskPoints;
     private String applicantId;
+    private String applicantName;
     private String message;
     private String solution;
     private LocalDateTime expectedCompletionTime;
@@ -24,4 +23,9 @@ public class TaskApplication {
     private LocalDateTime reviewedAt;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+    private Integer completedTaskCount;
+    private Integer finalPoints;
+    private Double onTimeRate;
+    private Double averageQualityScore;
+    private Integer currentLoad;
 }

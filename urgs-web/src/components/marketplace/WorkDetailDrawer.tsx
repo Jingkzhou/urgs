@@ -1,10 +1,36 @@
 import React, { useEffect, useState } from 'react';
 import { Drawer, Tag, Space, Divider, Typography, Spin, Empty } from 'antd';
-import { getWorkDetail, getWorkTasks, addTaskToWork, Work, WorkTask } from '../../api/marketplace';
-import { Plus, Trash2, Award, Clock, Paperclip } from 'lucide-react';
+import {
+    addTaskToWork,
+    approveApplication,
+    getTaskApplications,
+    getWorkDetail,
+    getWorkTasks,
+    listPointRules,
+    MarketplacePointRule,
+    rejectApplication,
+    TaskApplication,
+    Work,
+    WorkTask,
+} from '../../api/marketplace';
+import { Award, CheckCircle2, Clock, Paperclip, Plus, Users, XCircle } from 'lucide-react';
 import { getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
 
 const { Title, Paragraph, Text } = Typography;
+
+const applicationStatusLabel: Record<string, string> = {
+    PENDING: '待审批',
+    ACCEPTED: '已中标',
+    REJECTED: '未中标',
+    WITHDRAWN: '已撤回',
+};
+
+const applicationStatusColor: Record<string, string> = {
+    PENDING: 'orange',
+    ACCEPTED: 'green',
+    REJECTED: 'default',
+    WITHDRAWN: 'default',
+};
 
 interface WorkDetailDrawerProps {
     workId: string | null;
@@ -18,13 +44,18 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
     const [loading, setLoading] = useState(false);
     const [addingTask, setAddingTask] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [pointRules, setPointRules] = useState<MarketplacePointRule[]>([]);
+    const [bidTask, setBidTask] = useState<WorkTask | null>(null);
+    const [applications, setApplications] = useState<TaskApplication[]>([]);
+    const [applicationLoading, setApplicationLoading] = useState(false);
 
     // New task form fields
     const [newTask, setNewTask] = useState({
         title: '',
         description: '',
+        taskType: '开发',
+        difficulty: '简单',
         points: 5,
-        estimatedHours: 0,
         assignMode: 'OPEN' as string,
         requiredSkills: '',
         deadline: '',
@@ -38,6 +69,19 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             setTasks([]);
         }
     }, [isOpen, workId]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        listPointRules({ enabled: true })
+            .then(res => setPointRules(res || []))
+            .catch(error => console.error('Failed to fetch point rules', error));
+    }, [isOpen]);
+
+    const taskTypes = Array.from(new Set(['开发', '测试', '数据', '文档', ...pointRules.map(rule => rule.taskType).filter(Boolean)]));
+    const difficulties = Array.from(new Set(['简单', '中等', '复杂', ...pointRules.map(rule => rule.difficulty).filter(Boolean)]));
+    const suggestedRule = pointRules.find(rule =>
+        rule.enabled !== false && rule.taskType === newTask.taskType && rule.difficulty === newTask.difficulty
+    );
 
     const fetchDetail = async (id: string) => {
         setLoading(true);
@@ -62,12 +106,71 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             await addTaskToWork(workId!, newTask as any);
             setTasks(prev => [...prev, null!] as any); // Will be refreshed by fetchDetail
             await fetchDetail(workId!);
-            setNewTask({ title: '', description: '', points: 5, estimatedHours: 0, assignMode: 'OPEN', requiredSkills: '', deadline: '' });
+            setNewTask({ title: '', description: '', taskType: '开发', difficulty: '简单', points: 5, assignMode: 'OPEN', requiredSkills: '', deadline: '' });
             setAddingTask(false);
         } catch (error) {
             console.error('Failed to add task', error);
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    const openBidDrawer = async (task: WorkTask) => {
+        setBidTask(task);
+        setApplications([]);
+        setApplicationLoading(true);
+        try {
+            const res = await getTaskApplications(task.id, { current: 1, size: 100 });
+            setApplications(res?.records || []);
+        } catch (error) {
+            console.error('Failed to fetch applications', error);
+            alert('加载竞标申请失败');
+        } finally {
+            setApplicationLoading(false);
+        }
+    };
+
+    const refreshBidApplications = async () => {
+        if (!bidTask) return;
+        setApplicationLoading(true);
+        try {
+            const res = await getTaskApplications(bidTask.id, { current: 1, size: 100 });
+            setApplications(res?.records || []);
+            if (workId) {
+                await fetchDetail(workId);
+            }
+        } catch (error) {
+            console.error('Failed to refresh applications', error);
+        } finally {
+            setApplicationLoading(false);
+        }
+    };
+
+    const handleApproveApplication = async (application: TaskApplication) => {
+        const comment = window.prompt('审批意见（可选）', '综合匹配度最高，同意承接');
+        if (comment === null) return;
+        try {
+            await approveApplication(application.id, { reviewComment: comment });
+            await refreshBidApplications();
+        } catch (error) {
+            console.error('Failed to approve application', error);
+            alert('通过竞标失败，申请可能已被处理');
+        }
+    };
+
+    const handleRejectApplication = async (application: TaskApplication) => {
+        const comment = window.prompt('请填写驳回原因', '与当前任务要求或排期不匹配');
+        if (comment === null) return;
+        if (!comment.trim()) {
+            alert('驳回竞标需要填写原因');
+            return;
+        }
+        try {
+            await rejectApplication(application.id, { reviewComment: comment.trim() });
+            await refreshBidApplications();
+        } catch (error) {
+            console.error('Failed to reject application', error);
+            alert('驳回竞标失败，申请可能已被处理');
         }
     };
 
@@ -124,8 +227,6 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         return 'default';
     };
 
-    const totalEstimatedHours = tasks.reduce((sum, task) => sum + (task.estimatedHours ?? task.actualHours ?? 0), 0);
-
     return (
         <Drawer
             title="工作详情"
@@ -136,7 +237,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         >
             {loading ? (
                 <div className="flex justify-center items-center h-64">
-                    <Spin size="large" tip="加载中..." />
+                    <Spin size="large" description="加载中..." />
                 </div>
             ) : work ? (
                 <div className="flex flex-col gap-6">
@@ -168,11 +269,6 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                         <div className="text-center">
                             <div className="text-xs text-slate-400 mb-1">任务数</div>
                             <div className="font-bold text-slate-800">{tasks.length}</div>
-                        </div>
-                        <Divider orientation="vertical" className="h-10 border-slate-200" />
-                        <div className="text-center">
-                            <div className="text-xs text-slate-400 mb-1">汇总工时</div>
-                            <div className="font-bold text-slate-800">{totalEstimatedHours} 小时</div>
                         </div>
                         <Divider orientation="vertical" className="h-10 border-slate-200" />
                         <div className="text-center">
@@ -236,9 +332,9 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                                 <span className="flex items-center gap-1">
                                                                     <Award size={12} /> {task.points} 积分
                                                                 </span>
-                                                                <span className="flex items-center gap-1">
-                                                                    <Clock size={12} /> {task.estimatedHours ?? task.actualHours ?? 0} 小时
-                                                                </span>
+                                                                {task.taskType && (
+                                                                    <span>{task.taskType}{task.difficulty ? `/${task.difficulty}` : ''}</span>
+                                                                )}
                                                                 {task.deadline && (
                                                                     <span className="flex items-center gap-1">
                                                                         <Clock size={12} /> {new Date(task.deadline).toLocaleDateString()}
@@ -250,6 +346,14 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                             </div>
                                                         </div>
                                                     </div>
+                                                    {task.assignMode === 'COMPETE' && (
+                                                        <button
+                                                            onClick={() => openBidDrawer(task)}
+                                                            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg"
+                                                        >
+                                                            <Users size={13} /> 管理竞标
+                                                        </button>
+                                                    )}
                                                 </div>
                                                 {task.description && (
                                                     <p className="text-xs text-slate-500 mt-2 ml-9 line-clamp-2">{task.description}</p>
@@ -270,7 +374,21 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                     placeholder="任务标题 *"
                                                 />
                                             </div>
-                                            <div className="grid grid-cols-3 gap-2">
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <select
+                                                    value={newTask.taskType}
+                                                    onChange={e => setNewTask(prev => ({ ...prev, taskType: e.target.value }))}
+                                                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 outline-none bg-white"
+                                                >
+                                                    {taskTypes.map(type => <option value={type} key={type}>{type}</option>)}
+                                                </select>
+                                                <select
+                                                    value={newTask.difficulty}
+                                                    onChange={e => setNewTask(prev => ({ ...prev, difficulty: e.target.value }))}
+                                                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 outline-none bg-white"
+                                                >
+                                                    {difficulties.map(item => <option value={item} key={item}>{item}</option>)}
+                                                </select>
                                                 <select
                                                     value={newTask.assignMode}
                                                     onChange={e => setNewTask(prev => ({ ...prev, assignMode: e.target.value }))}
@@ -285,16 +403,18 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                     value={newTask.points}
                                                     onChange={e => setNewTask(prev => ({ ...prev, points: parseInt(e.target.value) || 0 }))}
                                                     className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 outline-none"
-                                                    placeholder="积分"
-                                                />
-                                                <input
-                                                    type="number"
-                                                    value={newTask.estimatedHours}
-                                                    onChange={e => setNewTask(prev => ({ ...prev, estimatedHours: parseInt(e.target.value) || 0 }))}
-                                                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 outline-none"
-                                                    placeholder="预计工时"
+                                                    placeholder={suggestedRule ? `建议 ${suggestedRule.suggestedPoints}` : '积分'}
                                                 />
                                             </div>
+                                            {suggestedRule && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setNewTask(prev => ({ ...prev, points: suggestedRule.suggestedPoints }))}
+                                                    className="text-xs font-bold text-red-600 hover:text-red-700"
+                                                >
+                                                    套用 {newTask.taskType}/{newTask.difficulty} 建议积分 {suggestedRule.suggestedPoints}
+                                                </button>
+                                            )}
                                         </div>
                                         <textarea
                                             value={newTask.description}
@@ -319,7 +439,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                         </div>
                                         <div className="flex justify-end gap-2">
                                             <button
-                                                onClick={() => { setAddingTask(false); setNewTask({ title: '', description: '', points: 5, estimatedHours: 0, assignMode: 'OPEN', requiredSkills: '', deadline: '' }); }}
+                                                onClick={() => { setAddingTask(false); setNewTask({ title: '', description: '', taskType: '开发', difficulty: '简单', points: 5, assignMode: 'OPEN', requiredSkills: '', deadline: '' }); }}
                                                 className="px-4 py-1.5 text-sm font-medium text-slate-600 bg-white hover:bg-slate-100 rounded-lg transition-colors"
                                             >
                                                 取消
@@ -341,6 +461,82 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             ) : (
                 <Empty description="无法加载详情" />
             )}
+
+            <Drawer
+                title={bidTask ? `竞标审批：${bidTask.title}` : '竞标审批'}
+                placement="right"
+                onClose={() => setBidTask(null)}
+                open={!!bidTask}
+                width={620}
+            >
+                {applicationLoading ? (
+                    <div className="h-40 flex items-center justify-center text-slate-400">加载竞标申请...</div>
+                ) : applications.length === 0 ? (
+                    <Empty description="暂无竞标申请" />
+                ) : (
+                    <div className="space-y-4">
+                        {applications.map(application => (
+                            <div key={application.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                                <div className="flex items-start justify-between gap-3 mb-3">
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="font-black text-slate-800">{application.applicantName || application.applicantId}</span>
+                                            <Tag color={applicationStatusColor[application.status] || 'default'}>
+                                                {applicationStatusLabel[application.status] || application.status}
+                                            </Tag>
+                                        </div>
+                                        <div className="text-xs text-slate-500 mt-1">
+                                            当前负载 {application.currentLoad || 0} · 历史完成 {application.completedTaskCount || 0} ·
+                                            质量 {application.averageQualityScore || 0} · 准时 {application.onTimeRate || 0}% ·
+                                            累计积分 {application.finalPoints || 0}
+                                        </div>
+                                    </div>
+                                    {application.status === 'PENDING' && (
+                                        <div className="flex gap-2 shrink-0">
+                                            <button
+                                                onClick={() => handleApproveApplication(application)}
+                                                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg"
+                                            >
+                                                <CheckCircle2 size={13} /> 通过
+                                            </button>
+                                            <button
+                                                onClick={() => handleRejectApplication(application)}
+                                                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100 rounded-lg"
+                                            >
+                                                <XCircle size={13} /> 驳回
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                                    <div className="bg-slate-50 rounded-lg p-3">
+                                        <div className="font-bold text-slate-700 mb-1">申请理由</div>
+                                        <div className="text-slate-500 whitespace-pre-wrap">{application.message || '-'}</div>
+                                    </div>
+                                    <div className="bg-slate-50 rounded-lg p-3">
+                                        <div className="font-bold text-slate-700 mb-1">预计完成时间</div>
+                                        <div className="text-slate-500">
+                                            {application.expectedCompletionTime ? new Date(application.expectedCompletionTime).toLocaleString() : '-'}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-slate-50 rounded-lg p-3 mt-3 text-xs">
+                                    <div className="font-bold text-slate-700 mb-1">实施方案</div>
+                                    <div className="text-slate-500 whitespace-pre-wrap">{application.solution || '-'}</div>
+                                </div>
+
+                                {application.reviewComment && (
+                                    <div className="bg-amber-50 rounded-lg p-3 mt-3 text-xs text-amber-700">
+                                        审批意见：{application.reviewComment}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </Drawer>
         </Drawer>
     );
 };

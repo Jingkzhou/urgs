@@ -8,7 +8,7 @@ export const workStatusLabelMap: Record<string, string> = {
 
 export const taskStatusLabelMap: Record<string, string> = {
     OPEN: '可领取',
-    APPLIED: '已申请',
+    APPLIED: '竞标中',
     ASSIGNED: '已承接',
     IN_PROGRESS: '进行中',
     REVIEW: '待验收',

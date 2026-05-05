@@ -4,14 +4,15 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { X, Plus, Trash2, Paperclip, Upload as UploadIcon } from 'lucide-react';
 import { Upload, message } from 'antd';
-import { createWork } from '../../api/marketplace';
+import { createWork, listPointRules, MarketplacePointRule } from '../../api/marketplace';
 import UserSelect from './UserSelect';
 
 const taskSchema = z.object({
     title: z.string().min(2, '任务标题至少2个字符'),
     description: z.string().min(10, '任务描述至少10个字符'),
+    taskType: z.string().optional().or(z.literal('')),
+    difficulty: z.string().optional().or(z.literal('')),
     points: z.number().min(0, '积分不能为负数'),
-    estimatedHours: z.number().min(0, '预计工时不能为负数').optional(),
     requiredSkills: z.string().optional().or(z.literal('')),
     assignMode: z.enum(['OPEN', 'ASSIGN', 'COMPETE']),
     assigneeId: z.string().optional().or(z.literal('')),
@@ -43,6 +44,7 @@ interface CreateWorkDrawerProps {
 }
 
 const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, onSuccess }) => {
+    const [pointRules, setPointRules] = React.useState<MarketplacePointRule[]>([]);
     const {
         register,
         control,
@@ -55,7 +57,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
         resolver: zodResolver(workSchema),
         defaultValues: {
             priority: 'P2',
-            tasks: [{ assignMode: 'OPEN', points: 10, estimatedHours: 0 }]
+            tasks: [{ assignMode: 'OPEN', points: 10, taskType: '开发', difficulty: '中等' }]
         }
     });
 
@@ -65,6 +67,23 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
     });
 
     const attachments = watch('attachments') || [];
+    const taskTypes = React.useMemo(() => {
+        return Array.from(new Set(['开发', '测试', '数据', '文档', ...pointRules.map(rule => rule.taskType).filter(Boolean)]));
+    }, [pointRules]);
+    const difficulties = React.useMemo(() => {
+        return Array.from(new Set(['简单', '中等', '复杂', ...pointRules.map(rule => rule.difficulty).filter(Boolean)]));
+    }, [pointRules]);
+
+    const findRule = (taskType?: string, difficulty?: string) => pointRules.find(rule =>
+        rule.enabled !== false && rule.taskType === taskType && rule.difficulty === difficulty
+    );
+
+    React.useEffect(() => {
+        if (!isOpen) return;
+        listPointRules({ enabled: true })
+            .then(res => setPointRules(res || []))
+            .catch(error => console.error('Failed to fetch point rules', error));
+    }, [isOpen]);
 
     // Close drawer on escape key
     React.useEffect(() => {
@@ -245,7 +264,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                 <h3 className="text-base font-bold text-slate-800">任务拆分 <span className="text-red-500">*</span></h3>
                                 <button
                                     type="button"
-                                    onClick={() => append({ title: '', description: '', points: 5, estimatedHours: 0, assignMode: 'OPEN', deadline: '' })}
+                                    onClick={() => append({ title: '', description: '', points: 5, taskType: '开发', difficulty: '简单', assignMode: 'OPEN', deadline: '' })}
                                     className="flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-md transition-colors"
                                 >
                                     <Plus size={16} /> 添加任务
@@ -256,6 +275,9 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
 
                             {fields.map((field, index) => {
                                 const assignMode = watch(`tasks.${index}.assignMode`);
+                                const taskType = watch(`tasks.${index}.taskType`);
+                                const difficulty = watch(`tasks.${index}.difficulty`);
+                                const suggestedRule = findRule(taskType, difficulty);
 
                                 return (
                                     <div key={field.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative group overflow-hidden">
@@ -289,7 +311,27 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                                 {errors.tasks?.[index]?.title && <p className="text-red-500 text-xs mt-1">{errors.tasks[index]?.title?.message}</p>}
                                             </div>
 
-                                            <div className="grid grid-cols-3 gap-4">
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-xs font-medium text-slate-500 mb-1">任务类型</label>
+                                                    <select
+                                                        {...register(`tasks.${index}.taskType` as const)}
+                                                        className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none bg-white"
+                                                    >
+                                                        <option value="">未分类</option>
+                                                        {taskTypes.map(type => <option value={type} key={type}>{type}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-slate-500 mb-1">难度</label>
+                                                    <select
+                                                        {...register(`tasks.${index}.difficulty` as const)}
+                                                        className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none bg-white"
+                                                    >
+                                                        <option value="">未设置</option>
+                                                        {difficulties.map(item => <option value={item} key={item}>{item}</option>)}
+                                                    </select>
+                                                </div>
                                                 <div>
                                                     <label className="block text-xs font-medium text-slate-500 mb-1">分发模式 *</label>
                                                     <select
@@ -302,7 +344,18 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                                     </select>
                                                 </div>
                                                 <div>
-                                                    <label className="block text-xs font-medium text-slate-500 mb-1">任务积分 *</label>
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <label className="block text-xs font-medium text-slate-500">任务积分 *</label>
+                                                        {suggestedRule && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setValue(`tasks.${index}.points` as const, suggestedRule.suggestedPoints)}
+                                                                className="text-[11px] font-bold text-red-600 hover:text-red-700"
+                                                            >
+                                                                套用建议 {suggestedRule.suggestedPoints}
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                     <input
                                                         type="number"
                                                         {...register(`tasks.${index}.points` as const, { valueAsNumber: true })}
@@ -310,16 +363,6 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                                         placeholder="例如: 10"
                                                     />
                                                     {errors.tasks?.[index]?.points && <p className="text-red-500 text-xs mt-1">{errors.tasks[index]?.points?.message}</p>}
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs font-medium text-slate-500 mb-1">预计工时</label>
-                                                    <input
-                                                        type="number"
-                                                        {...register(`tasks.${index}.estimatedHours` as const, { valueAsNumber: true })}
-                                                        className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none"
-                                                        placeholder="例如: 8"
-                                                    />
-                                                    {errors.tasks?.[index]?.estimatedHours && <p className="text-red-500 text-xs mt-1">{errors.tasks[index]?.estimatedHours?.message}</p>}
                                                 </div>
                                             </div>
 

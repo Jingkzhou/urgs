@@ -302,14 +302,7 @@ const MyTasks: React.FC = () => {
                                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm min-h-[70px]"
                                 placeholder="交付物链接、附件、代码或文档地址 *"
                             />
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <input
-                                    type="number"
-                                    value={submitForm.actualHours || ''}
-                                    onChange={e => setSubmitForm({ ...submitForm, actualHours: Number(e.target.value) || undefined })}
-                                    className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                                    placeholder="实际投入工时"
-                                />
+                            <div className="grid grid-cols-1 gap-3">
                                 <label className="flex items-center gap-2 text-sm text-slate-600 border border-slate-200 rounded-lg px-3 py-2">
                                     <input
                                         type="checkbox"

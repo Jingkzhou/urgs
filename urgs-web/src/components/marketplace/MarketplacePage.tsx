@@ -4,9 +4,19 @@ import WorkList from './WorkList';
 import MyTasks from './MyTasks';
 import StatsPage from './StatsPage';
 import ReviewCenter from './ReviewCenter';
+import PointRuleConfig from './PointRuleConfig';
+import MarketplaceTodoPanel from './MarketplaceTodoPanel';
+
+type MarketplaceTab = 'market' | 'publish' | 'mine' | 'review' | 'stats' | 'rules';
 
 const MarketplacePage: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'market' | 'publish' | 'mine' | 'review' | 'stats'>('market');
+    const [activeTab, setActiveTab] = useState<MarketplaceTab>('market');
+
+    const handleSelectTab = (tab: string) => {
+        if (['market', 'publish', 'mine', 'review', 'stats', 'rules'].includes(tab)) {
+            setActiveTab(tab as MarketplaceTab);
+        }
+    };
 
     return (
         <div className="h-full flex flex-col gap-6">
@@ -62,8 +72,19 @@ const MarketplacePage: React.FC = () => {
                     >
                         验收中心
                     </button>
+                    <button
+                        onClick={() => setActiveTab('rules')}
+                        className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'rules'
+                                ? 'bg-red-50 text-red-600 shadow-sm'
+                                : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                    >
+                        规则配置
+                    </button>
                 </div>
             </div>
+
+            <MarketplaceTodoPanel onSelectTab={handleSelectTab} />
 
             <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 {activeTab === 'market' && <TaskMarket />}
@@ -71,6 +92,7 @@ const MarketplacePage: React.FC = () => {
                 {activeTab === 'mine' && <MyTasks />}
                 {activeTab === 'review' && <ReviewCenter />}
                 {activeTab === 'stats' && <StatsPage />}
+                {activeTab === 'rules' && <PointRuleConfig />}
             </div>
         </div>
     );

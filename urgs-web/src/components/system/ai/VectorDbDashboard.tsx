@@ -314,7 +314,7 @@ const VectorDbDashboard: React.FC<Props> = ({ initialCollection }) => {
                 <Content className="flex-1 overflow-y-auto p-6">
                     {docLoading ? (
                         <div className="flex justify-center items-center h-full">
-                            <Spin tip="加载向量数据..." size="large" />
+                            <Spin description="加载向量数据..." size="large" />
                         </div>
                     ) : filteredDocs.length === 0 ? (
                         <div className="flex justify-center items-center h-full">

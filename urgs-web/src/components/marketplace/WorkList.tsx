@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { listWorks, publishWork, cancelWork, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
-import { Clock3, ListTodo, Plus, Play, XCircle } from 'lucide-react';
+import { ListTodo, Plus, Play, XCircle } from 'lucide-react';
 import CreateWorkDrawer from './CreateWorkDrawer';
 import WorkDetailDrawer from './WorkDetailDrawer';
 import { getWorkStatusLabel } from './marketplaceLabels';
 
 interface WorkTaskSummary {
     taskCount: number;
-    totalHours: number;
-    taskHours: number[];
 }
 
 const WorkList: React.FC = () => {
@@ -41,11 +39,8 @@ const WorkList: React.FC = () => {
     };
 
     const buildTaskSummary = (tasks: WorkTask[]): WorkTaskSummary => {
-        const taskHours = tasks.map(task => task.estimatedHours ?? task.actualHours ?? 0);
         return {
             taskCount: tasks.length,
-            taskHours,
-            totalHours: taskHours.reduce((sum, hours) => sum + hours, 0),
         };
     };
 
@@ -132,14 +127,6 @@ const WorkList: React.FC = () => {
                                 <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-slate-500">
                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-50 border border-slate-100">
                                         <ListTodo size={13} /> 子任务 {taskSummaries[work.id]?.taskCount ?? 0} 个
-                                    </span>
-                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-50 border border-slate-100">
-                                        <Clock3 size={13} /> 汇总工时 {taskSummaries[work.id]?.totalHours ?? 0} 小时
-                                    </span>
-                                    <span className="truncate max-w-full">
-                                        子任务工时: {(taskSummaries[work.id]?.taskHours || []).length > 0
-                                            ? taskSummaries[work.id].taskHours.map((hours, index) => `#${index + 1} ${hours}h`).join(' / ')
-                                            : '-'}
                                     </span>
                                 </div>
                             </div>

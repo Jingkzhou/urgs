@@ -8,20 +8,16 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("sys_task_application")
-public class TaskApplication {
+@TableName("sys_marketplace_point_rule")
+public class MarketplacePointRule {
     @TableId(type = IdType.ASSIGN_ID)
     private String id;
 
-    private String taskId;
-    private String applicantId;
-    private String message;
-    private String solution;
-    private LocalDateTime expectedCompletionTime;
-    private String status;
-    private String reviewComment;
-    private String reviewedBy;
-    private LocalDateTime reviewedAt;
+    private String taskType;
+    private String difficulty;
+    private Integer suggestedPoints;
+    private String description;
+    private Boolean enabled;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

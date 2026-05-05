@@ -1,6 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { listWorks, getMarketTasks, getTeamKpi, getKpiDetails, Work, TaskMarketDTO, TeamKpiDTO, KpiDetailDTO } from '../../api/marketplace';
-import { Briefcase, Rocket, ListTodo, Award, TrendingUp, CheckCircle2, Clock3, AlertCircle, Medal } from 'lucide-react';
+import {
+    generateKpiSnapshot,
+    getKpiDetails,
+    getKpiSnapshots,
+    getMarketTasks,
+    getTeamKpi,
+    KpiDetailDTO,
+    KpiSnapshot,
+    listWorks,
+    TaskMarketDTO,
+    TeamKpiDTO,
+    Work,
+} from '../../api/marketplace';
+import { AlertCircle, Award, Briefcase, CalendarCheck, CheckCircle2, Clock3, ListTodo, Medal, Rocket, TrendingUp } from 'lucide-react';
 
 const formatDateInput = (date: Date) => {
     const year = date.getFullYear();
@@ -17,31 +29,38 @@ const getCurrentMonthRange = () => {
     };
 };
 
+const getCurrentPeriod = () => getCurrentMonthRange().startDate.slice(0, 7);
+
 const StatsPage: React.FC = () => {
     const [works, setWorks] = useState<Work[]>([]);
     const [marketTasks, setMarketTasks] = useState<TaskMarketDTO[]>([]);
     const [teamKpi, setTeamKpi] = useState<TeamKpiDTO | null>(null);
     const [details, setDetails] = useState<KpiDetailDTO[]>([]);
+    const [snapshots, setSnapshots] = useState<KpiSnapshot[]>([]);
     const [dateRange, setDateRange] = useState(getCurrentMonthRange);
+    const [snapshotPeriod, setSnapshotPeriod] = useState(getCurrentPeriod);
     const [loading, setLoading] = useState(true);
+    const [generatingSnapshot, setGeneratingSnapshot] = useState(false);
 
     useEffect(() => {
         fetchStats();
-    }, [dateRange.startDate, dateRange.endDate]);
+    }, [dateRange.startDate, dateRange.endDate, snapshotPeriod]);
 
     const fetchStats = async () => {
         setLoading(true);
         try {
-            const [workRes, taskRes, teamRes, detailRes] = await Promise.all([
+            const [workRes, taskRes, teamRes, detailRes, snapshotRes] = await Promise.all([
                 listWorks({ current: 1, size: 100 }),
                 getMarketTasks({ current: 1, size: 200 }),
                 getTeamKpi(dateRange),
                 getKpiDetails(dateRange),
+                getKpiSnapshots({ period: snapshotPeriod }),
             ]);
             setWorks(workRes?.records || []);
             setMarketTasks(taskRes?.records || []);
             setTeamKpi(teamRes || null);
             setDetails(detailRes || []);
+            setSnapshots(snapshotRes || []);
         } catch (error) {
             console.error('Failed to fetch stats', error);
         } finally {
@@ -51,6 +70,20 @@ const StatsPage: React.FC = () => {
 
     const resetToCurrentMonth = () => {
         setDateRange(getCurrentMonthRange());
+        setSnapshotPeriod(getCurrentPeriod());
+    };
+
+    const handleGenerateSnapshot = async () => {
+        setGeneratingSnapshot(true);
+        try {
+            const res = await generateKpiSnapshot(snapshotPeriod);
+            setSnapshots(res || []);
+        } catch (error) {
+            console.error('Failed to generate KPI snapshot', error);
+            alert('生成 KPI 快照失败，请稍后重试');
+        } finally {
+            setGeneratingSnapshot(false);
+        }
     };
 
     // Compute KPIs from fetched data
@@ -153,6 +186,56 @@ const StatsPage: React.FC = () => {
                 >
                     本月
                 </button>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm mb-6">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-2">
+                        <CalendarCheck size={18} className="text-red-500" />
+                        <div>
+                            <h3 className="font-bold text-slate-800">月度 KPI 结算快照</h3>
+                            <p className="text-xs text-slate-500 mt-0.5">生成后会固化当月个人积分、质量、准时和返工数据</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="month"
+                            value={snapshotPeriod}
+                            onChange={e => setSnapshotPeriod(e.target.value)}
+                            className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                        />
+                        <button
+                            onClick={handleGenerateSnapshot}
+                            disabled={generatingSnapshot}
+                            className="px-3 py-1.5 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-60"
+                        >
+                            {generatingSnapshot ? '生成中...' : '生成快照'}
+                        </button>
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {snapshots.slice(0, 6).map(snapshot => (
+                        <div key={snapshot.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="font-bold text-sm text-slate-800 truncate">{snapshot.userName || snapshot.userId}</div>
+                                    <div className="text-xs text-slate-500 mt-1">
+                                        质量 {snapshot.averageQualityScore} / 准时 {snapshot.onTimeRate}% / 返工 {snapshot.reworkCount}
+                                    </div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                    <div className="text-lg font-black text-orange-600">{snapshot.finalPoints}</div>
+                                    <div className="text-xs text-slate-400">最终积分</div>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                    {snapshots.length === 0 && (
+                        <div className="md:col-span-3 text-center py-6 text-slate-400 bg-slate-50 rounded-lg">
+                            当前周期暂无快照，点击“生成快照”后用于绩效复盘
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Summary Cards */}

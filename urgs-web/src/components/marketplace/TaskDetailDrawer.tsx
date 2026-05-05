@@ -74,7 +74,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
         >
             {loading ? (
                 <div className="flex justify-center items-center h-64">
-                    <Spin size="large" tip="加载中..." />
+                    <Spin size="large" description="加载中..." />
                 </div>
             ) : task ? (
                 <div className="flex flex-col gap-6">
@@ -142,11 +142,6 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                                         <span className="break-all whitespace-pre-wrap">{task.deliverables}</span>
                                     </Descriptions.Item>
                                 )}
-                                {task.actualHours !== undefined && (
-                                    <Descriptions.Item label="实际投入">
-                                        {task.actualHours || 0} 小时
-                                    </Descriptions.Item>
-                                )}
                                 {task.impactScope && (
                                     <Descriptions.Item label="影响范围">
                                         <span className="whitespace-pre-wrap">{task.impactScope}</span>
@@ -173,6 +168,11 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                     <Divider className="my-0" />
 
                     <Descriptions column={1} size="small" className="bg-slate-50 p-4 rounded-xl">
+                        {(task.taskType || task.difficulty) && (
+                            <Descriptions.Item label="任务分类">
+                                {task.taskType || '未分类'}{task.difficulty ? ` / ${task.difficulty}` : ''}
+                            </Descriptions.Item>
+                        )}
                         <Descriptions.Item label={<Space><Building2 size={14} /> 所属工作</Space>}>
                             <span className="font-medium">{task.workTitle || '未指定'}</span>
                         </Descriptions.Item>

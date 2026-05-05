@@ -52,11 +52,12 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         // Query tasks that are part of PUBLISHED works
         LambdaQueryWrapper<WorkTask> queryWrapper = new LambdaQueryWrapper<>();
 
-        if (StringUtils.hasText(status)) {
+        if ("OPEN".equals(status) || "AVAILABLE".equals(status)) {
+            queryWrapper.in(WorkTask::getStatus, TaskStatus.OPEN.name(), TaskStatus.APPLIED.name());
+        } else if (StringUtils.hasText(status)) {
             queryWrapper.eq(WorkTask::getStatus, status);
         } else {
-            // Default to only show OPEN tasks in the main hall
-            queryWrapper.eq(WorkTask::getStatus, TaskStatus.OPEN.name());
+            queryWrapper.in(WorkTask::getStatus, TaskStatus.OPEN.name(), TaskStatus.APPLIED.name());
         }
 
         if (StringUtils.hasText(keyword)) {
@@ -381,7 +382,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (AssignMode.COMPETE.name().equals(task.getAssignMode())) {
             long count = taskApplicationService.lambdaQuery()
                     .eq(com.example.urgs_api.marketplace.model.TaskApplication::getTaskId, task.getId())
-                    .eq(com.example.urgs_api.marketplace.model.TaskApplication::getStatus, "PENDING")
+                        .eq(com.example.urgs_api.marketplace.model.TaskApplication::getStatus, "PENDING")
                     .count();
             dto.setApplicationCount((int) count);
         } else {

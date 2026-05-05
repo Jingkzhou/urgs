@@ -6,6 +6,8 @@ import com.example.urgs_api.marketplace.dto.KpiSummaryDTO;
 import com.example.urgs_api.marketplace.dto.TeamKpiDTO;
 import com.example.urgs_api.marketplace.enums.TaskStatus;
 import com.example.urgs_api.marketplace.enums.WorkStatus;
+import com.example.urgs_api.marketplace.mapper.KpiSnapshotMapper;
+import com.example.urgs_api.marketplace.model.KpiSnapshot;
 import com.example.urgs_api.marketplace.model.Work;
 import com.example.urgs_api.marketplace.model.WorkTask;
 import com.example.urgs_api.marketplace.service.KpiService;
@@ -20,6 +22,7 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.YearMonth;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +40,9 @@ public class KpiServiceImpl implements KpiService {
 
     @Autowired
     private UserMapper userMapper;
+
+    @Autowired
+    private KpiSnapshotMapper kpiSnapshotMapper;
 
     @Override
     public KpiSummaryDTO getUserSummary(String userId, LocalDate startDate, LocalDate endDate) {
@@ -90,6 +96,56 @@ public class KpiServiceImpl implements KpiService {
                 .map(entry -> buildSummary(entry.getKey(), entry.getValue()))
                 .sorted(comparator.reversed())
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<KpiSnapshot> generateMonthlySnapshot(String period, String generatedBy) {
+        YearMonth yearMonth = YearMonth.parse(period);
+        List<KpiSummaryDTO> summaries = getLeaderboard("overall", yearMonth.atDay(1), yearMonth.atEndOfMonth());
+        LocalDateTime now = LocalDateTime.now();
+
+        for (KpiSummaryDTO summary : summaries) {
+            KpiSnapshot snapshot = kpiSnapshotMapper.selectOne(new LambdaQueryWrapper<KpiSnapshot>()
+                    .eq(KpiSnapshot::getPeriod, period)
+                    .eq(KpiSnapshot::getUserId, summary.getUserId())
+                    .last("LIMIT 1"));
+            boolean exists = snapshot != null;
+            if (!exists) {
+                snapshot = new KpiSnapshot();
+                snapshot.setPeriod(period);
+                snapshot.setUserId(summary.getUserId());
+                snapshot.setCreateTime(now);
+            }
+            snapshot.setUserName(summary.getUserName());
+            snapshot.setCompletedTaskCount(summary.getCompletedTaskCount());
+            snapshot.setBasePoints(summary.getBasePoints());
+            snapshot.setFinalPoints(summary.getFinalPoints());
+            snapshot.setOnTimeRate(summary.getOnTimeRate());
+            snapshot.setAverageQualityScore(summary.getAverageQualityScore());
+            snapshot.setReworkCount(summary.getReworkCount());
+            snapshot.setOverdueCount(summary.getOverdueCount());
+            snapshot.setHighPriorityTaskCount(summary.getHighPriorityTaskCount());
+            snapshot.setActiveTaskCount(summary.getActiveTaskCount());
+            snapshot.setStatus("LOCKED");
+            snapshot.setGeneratedBy(generatedBy);
+            snapshot.setGeneratedAt(now);
+            snapshot.setUpdateTime(now);
+            if (exists) {
+                kpiSnapshotMapper.updateById(snapshot);
+            } else {
+                kpiSnapshotMapper.insert(snapshot);
+            }
+        }
+
+        return listSnapshots(period);
+    }
+
+    @Override
+    public List<KpiSnapshot> listSnapshots(String period) {
+        return kpiSnapshotMapper.selectList(new LambdaQueryWrapper<KpiSnapshot>()
+                .eq(KpiSnapshot::getPeriod, period)
+                .orderByDesc(KpiSnapshot::getFinalPoints)
+                .orderByAsc(KpiSnapshot::getUserName));
     }
 
     private List<WorkTask> completedTasks(LocalDate startDate, LocalDate endDate) {
