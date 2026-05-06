@@ -46,29 +46,53 @@ public class AnnouncementServiceImpl extends ServiceImpl<AnnouncementMapper, Ann
         }
 
         @Override
-        public java.util.Map<String, Object> getStats() {
+        public java.util.Map<String, Object> getStats(String userId, List<String> userSystems) {
                 java.util.Map<String, Object> stats = new java.util.HashMap<>();
                 
                 // 本月发布总数
                 LocalDateTime monthStart = LocalDateTime.now().withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0);
-                stats.put("monthlyCount", baseMapper.selectCount(new QueryWrapper<Announcement>()
+                QueryWrapper<Announcement> monthlyWrapper = new QueryWrapper<Announcement>()
                         .eq("status", 1)
-                        .ge("create_time", monthStart)));
+                        .ge("create_time", monthStart);
+                applyVisibilityScope(monthlyWrapper, userId, userSystems);
+                stats.put("monthlyCount", baseMapper.selectCount(monthlyWrapper));
                 
-                // 紧急公告总数
-                stats.put("urgentCount", baseMapper.selectCount(new QueryWrapper<Announcement>()
+                // 紧急通知总数：与前台公告列表口径保持一致，只统计当前用户可见的通知公告
+                QueryWrapper<Announcement> urgentWrapper = new QueryWrapper<Announcement>()
                         .eq("status", 1)
-                        .eq("type", "urgent")));
+                        .eq("category", "Announcement")
+                        .eq("type", "urgent");
+                applyVisibilityScope(urgentWrapper, userId, userSystems);
+                stats.put("urgentCount", baseMapper.selectCount(urgentWrapper));
                 
                 // 待发布总数
-                stats.put("pendingCount", baseMapper.selectCount(new QueryWrapper<Announcement>()
-                        .eq("status", 0)));
+                QueryWrapper<Announcement> pendingWrapper = new QueryWrapper<Announcement>()
+                        .eq("status", 0);
+                applyVisibilityScope(pendingWrapper, userId, userSystems);
+                stats.put("pendingCount", baseMapper.selectCount(pendingWrapper));
                 
                 return stats;
         }
 
+        private void applyVisibilityScope(QueryWrapper<Announcement> wrapper, String userId, List<String> userSystems) {
+                if (userId == null || userId.isEmpty()) {
+                        return;
+                }
+
+                wrapper.and(scope -> {
+                        scope.eq("create_by", userId);
+                        if (userSystems != null) {
+                                for (String system : userSystems) {
+                                        if (system != null && !system.isBlank()) {
+                                                scope.or().like("systems", system);
+                                        }
+                                }
+                        }
+                });
+        }
+
         @Override
-        public void markAllAsRead(String category, String userId) {
+        public void markAllAsRead(String category, String userId, List<String> userSystems) {
                 // 查询该分类下所有已发布且当前用户未读的公告 ID
                 // 这通常涉及一个复杂的子查询或多步操作。为了实现幂等性且不报错：
                 // 1. 获取所有符合条件的公告 ID
@@ -76,6 +100,7 @@ public class AnnouncementServiceImpl extends ServiceImpl<AnnouncementMapper, Ann
                 if (category != null && !category.isEmpty()) {
                         qw.eq("category", category);
                 }
+                applyVisibilityScope(qw, userId, userSystems);
                 List<Announcement> list = baseMapper.selectList(qw.select("id"));
                 
                 for (Announcement a : list) {

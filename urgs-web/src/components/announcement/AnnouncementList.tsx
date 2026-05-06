@@ -23,18 +23,34 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit, defaultSele
     const handleMarkAllAsRead = async () => {
         try {
             const token = localStorage.getItem('auth_token');
+            const userStr = localStorage.getItem('auth_user');
+            let systems = '';
+            let userId = 'admin';
+            if (userStr) {
+                const user = JSON.parse(userStr);
+                systems = user.system || '';
+                userId = user.empId || 'admin';
+            }
+
             const res = await fetch(`/api/announcement/read-all?category=${forceCategory || ''}`, {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'X-User-Id': encodeURIComponent(userId),
+                    'X-User-Systems': encodeURIComponent(systems)
+                }
             });
             if (res.ok) {
-                fetchNotices();
+                await fetchNotices();
                 // Optionally notify other components via custom event
                 window.dispatchEvent(new CustomEvent('announcementRead'));
                 message.success('已全部标记为已读');
+            } else {
+                message.error('全部标记为已读失败');
             }
         } catch (err) {
             console.error("Failed to mark all as read", err);
+            message.error('全部标记为已读失败');
         }
     };
 

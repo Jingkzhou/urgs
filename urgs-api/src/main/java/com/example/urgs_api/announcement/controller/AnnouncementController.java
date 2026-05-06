@@ -222,20 +222,53 @@ public class AnnouncementController {
     }
 
     @GetMapping("/stats")
-    public ResponseEntity<java.util.Map<String, Object>> getStats() {
-        return ResponseEntity.ok(announcementService.getStats());
-    }
-
-    @PostMapping("/read-all")
-    public ResponseEntity<Void> markAllAsRead(@RequestParam(required = false) String category,
-            @RequestHeader(value = "X-User-Id", defaultValue = "admin") String userId) {
+    public ResponseEntity<java.util.Map<String, Object>> getStats(
+            @RequestHeader(value = "X-User-Id", defaultValue = "admin") String userId,
+            @RequestHeader(value = "X-User-Systems", required = false) String userSystemsStr) {
         String decodedUserId = userId;
         try {
             decodedUserId = java.net.URLDecoder.decode(userId, java.nio.charset.StandardCharsets.UTF_8);
         } catch (Exception e) {
             // ignore
         }
-        announcementService.markAllAsRead(category, decodedUserId);
+
+        List<String> userSystems = null;
+        if (userSystemsStr != null && !userSystemsStr.isEmpty()) {
+            try {
+                String decodedSystems = java.net.URLDecoder.decode(userSystemsStr,
+                        java.nio.charset.StandardCharsets.UTF_8);
+                userSystems = java.util.Arrays.asList(decodedSystems.split(","));
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+
+        return ResponseEntity.ok(announcementService.getStats(decodedUserId, userSystems));
+    }
+
+    @PostMapping("/read-all")
+    public ResponseEntity<Void> markAllAsRead(@RequestParam(required = false) String category,
+            @RequestHeader(value = "X-User-Id", defaultValue = "admin") String userId,
+            @RequestHeader(value = "X-User-Systems", required = false) String userSystemsStr) {
+        String decodedUserId = userId;
+        try {
+            decodedUserId = java.net.URLDecoder.decode(userId, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            // ignore
+        }
+
+        List<String> userSystems = null;
+        if (userSystemsStr != null && !userSystemsStr.isEmpty()) {
+            try {
+                String decodedSystems = java.net.URLDecoder.decode(userSystemsStr,
+                        java.nio.charset.StandardCharsets.UTF_8);
+                userSystems = java.util.Arrays.asList(decodedSystems.split(","));
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+
+        announcementService.markAllAsRead(category, decodedUserId, userSystems);
         return ResponseEntity.ok().build();
     }
 }

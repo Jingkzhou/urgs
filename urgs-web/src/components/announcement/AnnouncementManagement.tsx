@@ -69,8 +69,21 @@ const AnnouncementManagement: React.FC = () => {
     const fetchStats = async () => {
         try {
             const token = localStorage.getItem('auth_token');
+            const userStr = localStorage.getItem('auth_user');
+            let systems = '';
+            let userId = 'admin';
+            if (userStr) {
+                const user = JSON.parse(userStr);
+                systems = user.system || '';
+                userId = user.empId || 'admin';
+            }
+
             const res = await fetch('/api/announcement/stats', {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'X-User-Id': encodeURIComponent(userId),
+                    'X-User-Systems': encodeURIComponent(systems)
+                }
             });
             if (res.ok) {
                 const data = await res.json();
@@ -109,6 +122,7 @@ const AnnouncementManagement: React.FC = () => {
     const handlePublishSuccess = (category?: string) => {
         setEditId(null);
         setActiveTab(category === 'Log' ? 'log' : 'list');
+        fetchStats();
     };
 
     const handleTabChange = (key: 'list' | 'log' | 'publish') => {
