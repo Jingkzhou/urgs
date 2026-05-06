@@ -42,6 +42,11 @@ const ItemEntry: React.FC<ItemEntryProps> = ({
             onSelect(e);
             return;
         }
+        // 单击文件夹 → 进入
+        if (!isDoc) {
+            onEnter();
+            return;
+        }
         // 单击文档 → 预览
         if (isDoc && doc && onPreview) {
             onPreview(doc);
@@ -50,6 +55,7 @@ const ItemEntry: React.FC<ItemEntryProps> = ({
 
     const handleDoubleClick = () => {
         if (selectionMode) return;
+        if (!isDoc) return;
         onEnter();
     };
 

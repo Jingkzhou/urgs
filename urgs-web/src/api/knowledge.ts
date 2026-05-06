@@ -89,6 +89,7 @@ export const listDocuments = (params: {
     folderId?: number;
     keyword?: string;
     favorite?: boolean;
+    tagId?: number;
     page?: number;
     size?: number;
     scope?: string;
@@ -153,6 +154,9 @@ export const deleteTag = (id: number) =>
 
 // 文件夹下载
 export const getFolderDownloadUrl = (id: number) => `/api/wiki/folders/${id}/download`;
+
+export const downloadFolderArchive = (id: number) =>
+    get<Blob>(getFolderDownloadUrl(id), undefined, { isBlob: true });
 
 // ==================== 批量操作 API ====================
 

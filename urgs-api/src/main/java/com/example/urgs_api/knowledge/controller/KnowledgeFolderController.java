@@ -83,11 +83,12 @@ public class KnowledgeFolderController {
     @GetMapping("/{id}/download")
     public void downloadFolder(
             @PathVariable Long id,
-            @RequestHeader(value = "X-User-Id", defaultValue = "1") Long userId,
+            HttpServletRequest request,
             HttpServletResponse response) throws IOException {
+        Long userId = getUserId(request);
 
         KnowledgeFolder folder = folderService.getById(id);
-        if (folder == null || !folder.getUserId().equals(userId)) {
+        if (folder == null || (!folder.getUserId().equals(userId) && !"shared".equals(folder.getScope()))) {
             response.setStatus(404);
             return;
         }

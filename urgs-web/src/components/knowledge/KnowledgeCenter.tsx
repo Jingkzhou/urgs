@@ -221,6 +221,12 @@ const KnowledgeCenter: React.FC = () => {
             .map(key => parseInt(key.replace('doc-', ''), 10));
     }, [state.selectedItems]);
 
+    const getSelectedFolderIds = useCallback((): number[] => {
+        return Array.from(state.selectedItems)
+            .filter(key => key.startsWith('folder-'))
+            .map(key => parseInt(key.replace('folder-', ''), 10));
+    }, [state.selectedItems]);
+
     const handleBatchDownload = useCallback(() => {
         const docIds = getSelectedDocIds();
         const docs = state.documents.filter(d => docIds.includes(d.id));
@@ -233,19 +239,26 @@ const KnowledgeCenter: React.FC = () => {
 
     const handleBatchDelete = useCallback(async () => {
         const docIds = getSelectedDocIds();
-        if (docIds.length === 0) {
-            message.warning('请选择文档');
+        const folderIds = getSelectedFolderIds();
+        if (docIds.length === 0 && folderIds.length === 0) {
+            message.warning('请选择要删除的项目');
             return;
         }
         try {
-            await api.batchDeleteDocuments(docIds);
-            message.success(`已删除 ${docIds.length} 个文档`);
+            if (docIds.length > 0) {
+                await api.batchDeleteDocuments(docIds);
+            }
+            if (folderIds.length > 0) {
+                await Promise.all(folderIds.map(id => api.deleteFolder(id)));
+            }
+            message.success(`已删除 ${docIds.length + folderIds.length} 个项目`);
             actions.exitSelectionMode();
+            actions.loadFolders();
             actions.loadDocuments();
         } catch {
             message.error('批量删除失败');
         }
-    }, [getSelectedDocIds, actions]);
+    }, [getSelectedDocIds, getSelectedFolderIds, actions]);
 
     const handleBatchMove = useCallback(async (folderId: number | null) => {
         const docIds = getSelectedDocIds();

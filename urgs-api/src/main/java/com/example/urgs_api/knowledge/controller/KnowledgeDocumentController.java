@@ -34,12 +34,13 @@ public class KnowledgeDocumentController {
             @RequestParam(required = false) Long folderId,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Boolean favorite,
+            @RequestParam(required = false) Long tagId,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "private") String scope) {
         Long userId = getUserId(request);
         return ResponseEntity
-                .ok(documentService.listDocuments(userId, folderId, keyword, favorite, page, size, scope));
+                .ok(documentService.listDocuments(userId, folderId, keyword, favorite, tagId, page, size, scope));
     }
 
     /**

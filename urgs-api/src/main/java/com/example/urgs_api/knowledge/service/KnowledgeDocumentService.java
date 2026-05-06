@@ -32,7 +32,7 @@ public class KnowledgeDocumentService {
     public IPage<KnowledgeDocument> listDocuments(Long userId, Long folderId, String keyword,
             Boolean favorite,
             int page, int size) {
-        return listDocuments(userId, folderId, keyword, favorite, page, size, "private");
+        return listDocuments(userId, folderId, keyword, favorite, null, page, size, "private");
     }
 
     /**
@@ -41,6 +41,12 @@ public class KnowledgeDocumentService {
      */
     public IPage<KnowledgeDocument> listDocuments(Long userId, Long folderId, String keyword,
             Boolean favorite,
+            int page, int size, String scope) {
+        return listDocuments(userId, folderId, keyword, favorite, null, page, size, scope);
+    }
+
+    public IPage<KnowledgeDocument> listDocuments(Long userId, Long folderId, String keyword,
+            Boolean favorite, Long tagId,
             int page, int size, String scope) {
         LambdaQueryWrapper<KnowledgeDocument> wrapper = new LambdaQueryWrapper<>();
 
@@ -51,7 +57,13 @@ public class KnowledgeDocumentService {
             wrapper.eq(KnowledgeDocument::getScope, "private");
         }
 
-        if (folderId != null) {
+        if (tagId != null) {
+            List<Long> taggedDocumentIds = documentMapper.findDocumentIdsByTagId(tagId);
+            if (taggedDocumentIds.isEmpty()) {
+                return new Page<>(page, size);
+            }
+            wrapper.in(KnowledgeDocument::getId, taggedDocumentIds);
+        } else if (folderId != null) {
             wrapper.eq(KnowledgeDocument::getFolderId, folderId);
         } else if (!StringUtils.hasText(keyword)) {
             wrapper.isNull(KnowledgeDocument::getFolderId);

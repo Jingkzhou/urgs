@@ -20,6 +20,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class KnowledgeTagService {
 
+    private static final int TAG_NAME_MAX_LENGTH = 50;
+
     private final KnowledgeTagMapper tagMapper;
     private final KnowledgeDocumentMapper documentMapper;
 
@@ -35,6 +37,8 @@ public class KnowledgeTagService {
      */
     @Transactional
     public KnowledgeTag createTag(Long userId, String name, String color) {
+        validateTagName(name);
+        name = name.trim();
         // 检查是否已存在
         KnowledgeTag existing = tagMapper.findByUserIdAndName(userId, name);
         if (existing != null) {
@@ -64,6 +68,8 @@ public class KnowledgeTagService {
 
         // 检查名称是否重复
         if (name != null && !name.equals(tag.getName())) {
+            validateTagName(name);
+            name = name.trim();
             KnowledgeTag existing = tagMapper.findByUserIdAndName(tag.getUserId(), name);
             if (existing != null) {
                 throw new RuntimeException("标签名称已存在");
@@ -76,6 +82,15 @@ public class KnowledgeTagService {
 
         tagMapper.updateById(tag);
         return tag;
+    }
+
+    private void validateTagName(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            throw new RuntimeException("标签名称不能为空");
+        }
+        if (name.length() > TAG_NAME_MAX_LENGTH) {
+            throw new RuntimeException("标签名称不能超过50个字符");
+        }
     }
 
     /**

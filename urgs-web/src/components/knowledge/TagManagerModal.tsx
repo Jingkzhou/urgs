@@ -3,6 +3,8 @@ import { Modal, Form, Input, Button, Tag } from 'antd';
 import { Plus } from 'lucide-react';
 import type { KnowledgeTag } from '../../api/knowledge';
 
+const TAG_NAME_MAX_LENGTH = 50;
+
 interface TagManagerModalProps {
     open: boolean;
     tags: KnowledgeTag[];
@@ -28,8 +30,15 @@ const TagManagerModal: React.FC<TagManagerModalProps> = ({ open, tags, onClose, 
         >
             <div className="mb-6">
                 <Form form={form} layout="inline" onFinish={handleCreate}>
-                    <Form.Item name="name" rules={[{ required: true }]} style={{ flex: 1 }}>
-                        <Input placeholder="新标签名称" />
+                    <Form.Item
+                        name="name"
+                        rules={[
+                            { required: true, message: '请输入标签名称' },
+                            { max: TAG_NAME_MAX_LENGTH, message: `标签名称不能超过 ${TAG_NAME_MAX_LENGTH} 个字符` },
+                        ]}
+                        style={{ flex: 1 }}
+                    >
+                        <Input placeholder="新标签名称" maxLength={TAG_NAME_MAX_LENGTH} showCount />
                     </Form.Item>
                     <Form.Item name="color" initialValue="#3b82f6">
                         <Input type="color" className="w-12 p-0 h-8 border-none" />
@@ -48,7 +57,9 @@ const TagManagerModal: React.FC<TagManagerModalProps> = ({ open, tags, onClose, 
                         onClose={() => onDeleteTag(t.id)}
                         className="px-3 py-1 rounded-full border-none shadow-sm"
                     >
-                        {t.name}
+                        <span className="inline-block max-w-64 truncate align-bottom" title={t.name}>
+                            {t.name}
+                        </span>
                     </Tag>
                 ))}
             </div>

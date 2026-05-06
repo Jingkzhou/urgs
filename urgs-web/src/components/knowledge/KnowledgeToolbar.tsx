@@ -97,7 +97,7 @@ const KnowledgeToolbar: React.FC<KnowledgeToolbarProps> = ({
                                         ${!filterTagId ? 'bg-blue-50 text-blue-600 font-medium' : 'text-slate-600 hover:bg-slate-50'}`}
                                     onClick={() => onFilterTag(null)}
                                 >
-                                    全部文件
+                                    当前空间全部文件
                                 </div>
                                 <div className="h-px bg-slate-100 my-1" />
                                 {tags.map(t => (
@@ -108,7 +108,7 @@ const KnowledgeToolbar: React.FC<KnowledgeToolbarProps> = ({
                                         onClick={() => onFilterTag(filterTagId === t.id ? null : t.id)}
                                     >
                                         <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }} />
-                                        {t.name}
+                                        <span className="truncate" title={t.name}>{t.name}</span>
                                     </div>
                                 ))}
                             </div>
@@ -126,7 +126,9 @@ const KnowledgeToolbar: React.FC<KnowledgeToolbarProps> = ({
                             title="按标签筛选"
                         >
                             <Tags size={14} />
-                            {filterTagId ? tags.find(t => t.id === filterTagId)?.name || '标签' : '标签'}
+                            <span className="max-w-24 truncate">
+                                {filterTagId ? tags.find(t => t.id === filterTagId)?.name || '标签' : '标签'}
+                            </span>
                         </button>
                     </Popover>
                 )}

@@ -115,7 +115,11 @@ function reducer(state: KnowledgeState, action: KnowledgeAction): KnowledgeState
         case 'SET_LOADING':
             return { ...state, loading: action.payload };
         case 'SET_FILTER_TAG':
-            return { ...state, filterTagId: action.payload };
+            return {
+                ...state,
+                filterTagId: action.payload,
+                selectedFolderId: action.payload && state.viewMode === 'browse' ? null : state.selectedFolderId,
+            };
         case 'TOGGLE_SELECT': {
             const next = new Set(state.selectedItems);
             if (next.has(action.payload)) {
@@ -180,8 +184,9 @@ export function useKnowledgeStore() {
                     : data;
             } else {
                 const result = await api.listDocuments({
-                    folderId: state.selectedFolderId ?? undefined,
+                    folderId: state.filterTagId ? undefined : state.selectedFolderId ?? undefined,
                     keyword: state.searchKeyword || undefined,
+                    tagId: state.filterTagId ?? undefined,
                     page: 1,
                     size: 200,
                     scope: state.scope,
@@ -199,8 +204,7 @@ export function useKnowledgeStore() {
                 }
             }
 
-            // 标签筛选（客户端过滤）
-            if (state.filterTagId) {
+            if (state.viewMode === 'favorites' && state.filterTagId) {
                 docs = docs.filter(d => d.tags?.some(t => t.id === state.filterTagId));
             }
 
@@ -353,15 +357,25 @@ export function useKnowledgeStore() {
             }
         },
 
-        handleDownloadFolder: (id: number, title: string) => {
-            const url = api.getFolderDownloadUrl(id);
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `${title}.zip`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            message.loading('正在打包文件夹...', 2);
+        handleDownloadFolder: async (id: number, title: string) => {
+            const loadingKey = 'knowledge-folder-download';
+            message.loading({ content: '正在打包文件夹...', key: loadingKey, duration: 0 });
+            try {
+                const blob = await api.downloadFolderArchive(id);
+                const url = URL.createObjectURL(blob);
+                const safeTitle = title || 'folder';
+                const fileName = safeTitle.endsWith('.zip') ? safeTitle : `${safeTitle}.zip`;
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                message.success({ content: '文件夹打包下载已开始', key: loadingKey });
+            } catch {
+                message.error({ content: '文件夹打包下载失败', key: loadingKey });
+            }
         },
 
         // Phase 3: 选择操作

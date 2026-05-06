@@ -14,6 +14,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.io.*;
+import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.zip.*;
 import org.springframework.beans.factory.annotation.Value;
 import com.example.urgs_api.knowledge.entity.KnowledgeDocument;
@@ -192,6 +195,13 @@ public class KnowledgeFolderService {
      */
     public void writeFolderToZip(Long folderId, Long userId, ZipOutputStream zos, String currentPath)
             throws IOException {
+        KnowledgeFolder folder = folderId == null ? null : folderMapper.selectById(folderId);
+        String scope = folder != null && "shared".equals(folder.getScope()) ? "shared" : "private";
+        writeFolderToZip(folderId, userId, zos, currentPath, scope);
+    }
+
+    private void writeFolderToZip(Long folderId, Long userId, ZipOutputStream zos, String currentPath, String scope)
+            throws IOException {
         // 1. 获取当前目录下所有文档
         LambdaQueryWrapper<KnowledgeDocument> docQuery = new LambdaQueryWrapper<>();
         if (folderId == null) {
@@ -199,17 +209,23 @@ public class KnowledgeFolderService {
         } else {
             docQuery.eq(KnowledgeDocument::getFolderId, folderId);
         }
-        docQuery.eq(KnowledgeDocument::getUserId, userId);
+        if ("shared".equals(scope)) {
+            docQuery.eq(KnowledgeDocument::getScope, "shared");
+        } else {
+            docQuery.eq(KnowledgeDocument::getUserId, userId);
+            docQuery.and(w -> w.eq(KnowledgeDocument::getScope, "private")
+                    .or()
+                    .isNull(KnowledgeDocument::getScope));
+        }
         List<KnowledgeDocument> documents = documentMapper.selectList(docQuery);
 
         for (KnowledgeDocument doc : documents) {
             if (doc.getFileUrl() != null) {
-                // 读取原始文件
-                String relativePath = doc.getFileUrl().replace("/profile/", "");
-                File file = new File(profile, relativePath);
+                File file = resolveUploadedFile(doc.getFileUrl());
                 if (file.exists()) {
                     try (FileInputStream fis = new FileInputStream(file)) {
-                        ZipEntry zipEntry = new ZipEntry(currentPath + doc.getFileName());
+                        String entryName = doc.getFileName() != null ? doc.getFileName() : doc.getTitle();
+                        ZipEntry zipEntry = new ZipEntry(currentPath + entryName);
                         zos.putNextEntry(zipEntry);
                         byte[] bytes = new byte[1024];
                         int length;
@@ -218,23 +234,63 @@ public class KnowledgeFolderService {
                         }
                         zos.closeEntry();
                     }
+                } else {
+                    log.warn("知识库文件夹打包跳过不存在的文件: documentId={}, fileUrl={}, resolvedPath={}",
+                            doc.getId(), doc.getFileUrl(), file.getAbsolutePath());
                 }
             }
         }
 
         // 2. 递归子目录
         List<KnowledgeFolder> subFolders;
+        LambdaQueryWrapper<KnowledgeFolder> folderQuery = new LambdaQueryWrapper<>();
         if (folderId == null) {
-            LambdaQueryWrapper<KnowledgeFolder> folderQuery = new LambdaQueryWrapper<>();
-            folderQuery.isNull(KnowledgeFolder::getParentId).eq(KnowledgeFolder::getUserId, userId);
-            subFolders = folderMapper.selectList(folderQuery);
+            folderQuery.isNull(KnowledgeFolder::getParentId);
         } else {
-            subFolders = folderMapper.findByParentId(folderId);
+            folderQuery.eq(KnowledgeFolder::getParentId, folderId);
         }
+        if ("shared".equals(scope)) {
+            folderQuery.eq(KnowledgeFolder::getScope, "shared");
+        } else {
+            folderQuery.eq(KnowledgeFolder::getUserId, userId);
+            folderQuery.and(w -> w.eq(KnowledgeFolder::getScope, "private")
+                    .or()
+                    .isNull(KnowledgeFolder::getScope));
+        }
+        subFolders = folderMapper.selectList(folderQuery);
 
         for (KnowledgeFolder subFolder : subFolders) {
-            writeFolderToZip(subFolder.getId(), userId, zos, currentPath + subFolder.getName() + "/");
+            writeFolderToZip(subFolder.getId(), userId, zos, currentPath + subFolder.getName() + "/", scope);
         }
+    }
+
+    private File resolveUploadedFile(String fileUrl) {
+        String path = fileUrl;
+        try {
+            if (path.startsWith("http://") || path.startsWith("https://")) {
+                path = URI.create(path).getPath();
+            }
+        } catch (IllegalArgumentException e) {
+            log.warn("知识库文件 URL 解析失败，将按原始路径处理: {}", fileUrl);
+        }
+
+        int profileIndex = path.indexOf("/profile/");
+        if (profileIndex >= 0) {
+            path = path.substring(profileIndex + "/profile/".length());
+        } else if (path.startsWith("profile/")) {
+            path = path.substring("profile/".length());
+        }
+
+        path = URLDecoder.decode(path, StandardCharsets.UTF_8);
+        path = path.replace("\\", "/");
+        while (path.startsWith("/")) {
+            path = path.substring(1);
+        }
+        if (path.contains("..")) {
+            throw new IllegalArgumentException("非法文件路径: " + fileUrl);
+        }
+
+        return new File(profile, path);
     }
 
     /**
