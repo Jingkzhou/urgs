@@ -229,13 +229,22 @@ const KnowledgeCenter: React.FC = () => {
 
     const handleBatchDownload = useCallback(() => {
         const docIds = getSelectedDocIds();
+        const folderIds = getSelectedFolderIds();
         const docs = state.documents.filter(d => docIds.includes(d.id));
+        const folders = currentSubFolders.filter(f => folderIds.includes(f.id));
+        if (docs.length === 0 && folders.length === 0) {
+            message.warning('请选择要下载的项目');
+            return;
+        }
         docs.forEach((doc, i) => {
             setTimeout(() => actions.handleDownloadItem(doc), i * 100);
         });
-        message.success(`正在下载 ${docs.length} 个文件`);
+        folders.forEach((folder, i) => {
+            setTimeout(() => actions.handleDownloadFolder(folder.id, folder.name), (docs.length + i) * 150);
+        });
+        message.success(`正在下载 ${docs.length + folders.length} 个项目`);
         actions.exitSelectionMode();
-    }, [getSelectedDocIds, state.documents, actions]);
+    }, [getSelectedDocIds, getSelectedFolderIds, state.documents, currentSubFolders, actions]);
 
     const handleBatchDelete = useCallback(async () => {
         const docIds = getSelectedDocIds();

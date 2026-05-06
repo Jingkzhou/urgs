@@ -117,7 +117,7 @@ const ItemEntry: React.FC<ItemEntryProps> = ({
                     className={`flex flex-col items-center p-2 rounded-lg cursor-pointer transition-all hover:bg-slate-200 group relative
                         ${selected ? 'ring-2 ring-blue-500 bg-blue-50/50' : ''}
                     `}
-                    style={{ width: 100, height: 110 }}
+                    style={{ width: isDoc ? 160 : 100, minHeight: isDoc ? 150 : 110 }}
                     onClick={handleClick}
                     onDoubleClick={handleDoubleClick}
                     onContextMenu={(e) => e.stopPropagation()}
@@ -174,7 +174,12 @@ const ItemEntry: React.FC<ItemEntryProps> = ({
                             </div>
                         )}
                     </div>
-                    <span className="text-xs text-center line-clamp-2 px-1 break-all text-slate-700 font-medium group-hover:text-slate-900 leading-tight">
+                    <span
+                        className={`text-xs text-center px-1 break-all text-slate-700 font-medium group-hover:text-slate-900 leading-tight
+                            ${isDoc ? 'whitespace-normal' : 'line-clamp-2'}
+                        `}
+                        title={title}
+                    >
                         {title}
                     </span>
                     {isDoc && doc?.tags && doc.tags.length > 0 && (
@@ -201,7 +206,7 @@ const ItemEntry: React.FC<ItemEntryProps> = ({
     return (
         <Dropdown menu={{ items: menuItems }} trigger={['contextMenu']}>
             <div
-                className={`flex items-center px-4 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-100 group text-sm
+                className={`flex items-start px-4 py-2.5 hover:bg-blue-50 cursor-pointer border-b border-slate-100 group text-sm
                     ${selected ? 'bg-blue-50' : ''}
                 `}
                 onClick={handleClick}
@@ -227,42 +232,50 @@ const ItemEntry: React.FC<ItemEntryProps> = ({
                         </div>
                     </div>
                 )}
-                <div className="w-8 flex-shrink-0 flex items-center justify-center">
+                <div className="w-8 flex-shrink-0 flex items-center justify-center pt-0.5">
                     {isDoc ? (
                         getFileIcon(doc?.fileName || title, 18)
                     ) : (
                         <Folder size={18} className="text-amber-400 fill-amber-400" />
                     )}
                 </div>
-                <div className="flex-1 truncate font-medium text-slate-700 group-hover:text-blue-600 mr-2">
-                    {title}
-                </div>
-                {isDoc && doc?.tags && doc.tags.length > 0 && (
-                    <div className="flex items-center gap-1 mr-2 flex-shrink-0 max-w-[200px] overflow-hidden">
-                        {doc.tags.slice(0, 3).map(t => (
-                            <span
-                                key={t.id}
-                                className="inline-flex items-center px-1.5 rounded-full text-[10px] font-medium text-white leading-4 whitespace-nowrap"
-                                style={{ backgroundColor: t.color }}
-                            >
-                                {t.name}
-                            </span>
-                        ))}
-                        {doc.tags.length > 3 && (
-                            <span className="text-[10px] text-slate-400">+{doc.tags.length - 3}</span>
-                        )}
+                <div className="flex-1 min-w-0 mr-4">
+                    <div
+                        className={`font-medium text-slate-700 group-hover:text-blue-600 leading-5
+                            ${isDoc ? 'whitespace-normal break-all' : 'truncate'}
+                        `}
+                        title={title}
+                    >
+                        {title}
                     </div>
-                )}
-                <div className="w-32 text-slate-400 text-xs text-center">
+                    {isDoc && doc?.tags && doc.tags.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                            {doc.tags.slice(0, 4).map(t => (
+                                <span
+                                    key={t.id}
+                                    className="inline-flex max-w-28 items-center px-1.5 rounded-full text-[10px] font-medium text-white leading-4 truncate"
+                                    style={{ backgroundColor: t.color }}
+                                    title={t.name}
+                                >
+                                    {t.name}
+                                </span>
+                            ))}
+                            {doc.tags.length > 4 && (
+                                <span className="text-[10px] text-slate-400">+{doc.tags.length - 4}</span>
+                            )}
+                        </div>
+                    )}
+                </div>
+                <div className="w-32 text-slate-400 text-xs text-center pt-0.5">
                     {isDoc ? '附件' : '文件夹'}
                 </div>
-                <div className="w-44 text-slate-400 text-xs">
+                <div className="w-44 text-slate-400 text-xs pt-0.5">
                     {isDoc && doc ? new Date(doc.updateTime).toLocaleString() : '-'}
                 </div>
-                <div className="w-24 text-slate-400 text-xs text-right">
+                <div className="w-24 text-slate-400 text-xs text-right pt-0.5">
                     {isDoc && doc?.fileSize ? `${(doc.fileSize / 1024).toFixed(1)} KB` : '-'}
                 </div>
-                <div className="w-10 flex justify-end ml-4">
+                <div className="w-10 flex justify-end ml-4 pt-0.5">
                     {isDoc && doc && !isShared ? (
                         <button
                             className={`p-1 rounded transition-all

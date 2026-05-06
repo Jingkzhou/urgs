@@ -9,6 +9,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import * as XLSX from 'xlsx';
+import mammoth from 'mammoth/mammoth.browser';
 import type { KnowledgeDocument } from '../../api/knowledge';
 import { getPreviewType } from '../../utils/filePreview';
 import { getFileIcon } from '../../utils/fileIcons';
@@ -97,6 +99,167 @@ const ImagePreview: React.FC<{ url: string }> = ({ url }) => {
     );
 };
 
+// ==================== Excel 预览 ====================
+const SpreadsheetPreview: React.FC<{ url: string }> = ({ url }) => {
+    const [sheets, setSheets] = useState<Array<{ name: string; html: string }>>([]);
+    const [activeSheet, setActiveSheet] = useState(0);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        setLoading(true);
+        setError(null);
+        setSheets([]);
+        setActiveSheet(0);
+
+        fetch(url)
+            .then(res => {
+                if (!res.ok) throw new Error('加载失败');
+                return res.arrayBuffer();
+            })
+            .then(buffer => {
+                const workbook = XLSX.read(buffer, { type: 'array' });
+                const nextSheets = workbook.SheetNames.map(name => ({
+                    name,
+                    html: XLSX.utils.sheet_to_html(workbook.Sheets[name], { id: `sheet-${name}` }),
+                }));
+                setSheets(nextSheets);
+                setLoading(false);
+            })
+            .catch(() => {
+                setError('Excel 文件加载失败');
+                setLoading(false);
+            });
+    }, [url]);
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-full">
+                <Spin size="large" />
+            </div>
+        );
+    }
+
+    if (error) {
+        return <div className="flex items-center justify-center h-full text-white/70">{error}</div>;
+    }
+
+    return (
+        <div className="w-full h-full bg-white rounded-xl overflow-hidden flex flex-col">
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-200 overflow-x-auto bg-slate-50">
+                {sheets.map((sheet, index) => (
+                    <button
+                        key={sheet.name}
+                        onClick={() => setActiveSheet(index)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${
+                            activeSheet === index
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-white text-slate-500 hover:text-blue-600 border border-slate-200'
+                        }`}
+                    >
+                        {sheet.name}
+                    </button>
+                ))}
+            </div>
+            <div
+                className="flex-1 overflow-auto p-4 text-sm [&_table]:border-collapse [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_td]:align-top [&_td]:whitespace-pre [&_th]:border [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:px-2 [&_th]:py-1"
+                dangerouslySetInnerHTML={{ __html: sheets[activeSheet]?.html || '' }}
+            />
+        </div>
+    );
+};
+
+// ==================== Word 预览 ====================
+const WordPreview: React.FC<{ url: string; fileName: string; onDownload: () => void }> = ({ url, fileName, onDownload }) => {
+    const [html, setHtml] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const isDocx = fileName.toLowerCase().endsWith('.docx');
+
+    useEffect(() => {
+        setHtml(null);
+        setError(null);
+        setLoading(true);
+
+        if (!isDocx) {
+            setError('DOC 旧格式暂不支持本地解析，请下载或用 Office 在线方式打开。');
+            setLoading(false);
+            return;
+        }
+
+        fetch(url)
+            .then(res => {
+                if (!res.ok) throw new Error('加载失败');
+                return res.arrayBuffer();
+            })
+            .then(buffer => mammoth.convertToHtml({ arrayBuffer: buffer }))
+            .then(result => {
+                setHtml(result.value);
+                setLoading(false);
+            })
+            .catch(() => {
+                setError('Word 文件加载失败');
+                setLoading(false);
+            });
+    }, [url, isDocx]);
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-full">
+                <Spin size="large" />
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="flex flex-col items-center justify-center h-full gap-4 text-white/70">
+                <p>{error}</p>
+                <button
+                    onClick={onDownload}
+                    className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-all flex items-center gap-2"
+                >
+                    <Download size={16} />
+                    下载文件
+                </button>
+            </div>
+        );
+    }
+
+    return (
+        <div className="w-full h-full overflow-auto bg-slate-100 rounded-xl p-6">
+            <div
+                className="max-w-5xl mx-auto min-h-full bg-white shadow-sm rounded-lg px-12 py-10 text-slate-800 leading-7 [&_table]:border-collapse [&_td]:border [&_td]:border-slate-300 [&_td]:px-2 [&_td]:py-1 [&_img]:max-w-full"
+                dangerouslySetInnerHTML={{ __html: html || '' }}
+            />
+        </div>
+    );
+};
+
+// ==================== Office 在线预览 ====================
+const OfficeOnlinePreview: React.FC<{ url: string; fileName: string; onDownload: () => void }> = ({ url, fileName, onDownload }) => {
+    const absoluteUrl = new URL(url, window.location.origin).href;
+    const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absoluteUrl)}`;
+
+    return (
+        <div className="w-full h-full bg-white rounded-xl overflow-hidden relative">
+            <iframe
+                src={viewerUrl}
+                className="w-full h-full bg-white"
+                title={`${fileName} Preview`}
+            />
+            {(absoluteUrl.includes('localhost') || absoluteUrl.includes('127.0.0.1')) && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 max-w-xl rounded-xl bg-slate-900/85 px-4 py-3 text-xs text-white/80 shadow-lg backdrop-blur">
+                    Office 在线预览需要外部服务能访问文件地址；本地 localhost 环境如无法显示，请下载后打开。
+                    <button className="ml-3 text-blue-300 hover:text-blue-200 font-bold" onClick={onDownload}>
+                        下载
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
+
 // ==================== 文本内容预览 (代码/MD/纯文本) ====================
 const TextContentPreview: React.FC<{
     url: string;
@@ -125,9 +288,44 @@ const TextContentPreview: React.FC<{
 
     if (kind === 'markdown') {
         return (
-            <div className="w-full h-full overflow-auto bg-white rounded-xl p-8">
-                <div className="prose prose-slate max-w-4xl mx-auto">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            <div className="w-full h-full overflow-auto bg-slate-100 rounded-xl p-6">
+                <div className="max-w-5xl mx-auto min-h-full bg-white rounded-xl shadow-sm px-10 py-8 text-slate-800">
+                    <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                            h1: ({ children }) => <h1 className="mt-0 mb-6 border-b border-slate-200 pb-3 text-3xl font-black text-slate-900">{children}</h1>,
+                            h2: ({ children }) => <h2 className="mt-8 mb-4 border-b border-slate-100 pb-2 text-2xl font-extrabold text-slate-900">{children}</h2>,
+                            h3: ({ children }) => <h3 className="mt-6 mb-3 text-xl font-bold text-slate-900">{children}</h3>,
+                            h4: ({ children }) => <h4 className="mt-5 mb-2 text-base font-bold text-slate-800">{children}</h4>,
+                            p: ({ children }) => <p className="my-3 text-sm leading-7 text-slate-700">{children}</p>,
+                            a: ({ children, href }) => <a className="font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700" href={href} target="_blank" rel="noreferrer">{children}</a>,
+                            ul: ({ children }) => <ul className="my-3 list-disc space-y-1 pl-6 text-sm leading-7 text-slate-700">{children}</ul>,
+                            ol: ({ children }) => <ol className="my-3 list-decimal space-y-1 pl-6 text-sm leading-7 text-slate-700">{children}</ol>,
+                            li: ({ children }) => <li className="pl-1">{children}</li>,
+                            blockquote: ({ children }) => <blockquote className="my-4 border-l-4 border-blue-300 bg-blue-50 px-4 py-2 text-sm text-slate-700">{children}</blockquote>,
+                            hr: () => <hr className="my-8 border-slate-200" />,
+                            table: ({ children }) => <div className="my-5 overflow-auto rounded-lg border border-slate-200"><table className="min-w-full border-collapse text-sm">{children}</table></div>,
+                            thead: ({ children }) => <thead className="bg-slate-50 text-left text-slate-700">{children}</thead>,
+                            th: ({ children }) => <th className="border-b border-slate-200 px-3 py-2 font-bold">{children}</th>,
+                            td: ({ children }) => <td className="border-t border-slate-100 px-3 py-2 align-top text-slate-700">{children}</td>,
+                            code: ({ className, children }) => {
+                                const match = /language-(\w+)/.exec(className || '');
+                                if (match) {
+                                    return (
+                                        <SyntaxHighlighter
+                                            language={match[1]}
+                                            style={oneLight}
+                                            customStyle={{ margin: '16px 0', borderRadius: '0.75rem', fontSize: '13px' }}
+                                        >
+                                            {String(children).replace(/\n$/, '')}
+                                        </SyntaxHighlighter>
+                                    );
+                                }
+                                return <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[12px] text-rose-600">{children}</code>;
+                            },
+                            pre: ({ children }) => <>{children}</>,
+                        }}
+                    >
                         {content || ''}
                     </ReactMarkdown>
                 </div>
@@ -236,6 +434,27 @@ const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                         src={fileUrl}
                         className="w-full h-full rounded-xl bg-white"
                         title="PDF Preview"
+                    />
+                );
+
+            case 'spreadsheet':
+                return <SpreadsheetPreview url={fileUrl} />;
+
+            case 'word':
+                return (
+                    <WordPreview
+                        url={fileUrl}
+                        fileName={fileName}
+                        onDownload={() => onDownload(doc)}
+                    />
+                );
+
+            case 'presentation':
+                return (
+                    <OfficeOnlinePreview
+                        url={fileUrl}
+                        fileName={fileName}
+                        onDownload={() => onDownload(doc)}
                     />
                 );
 
