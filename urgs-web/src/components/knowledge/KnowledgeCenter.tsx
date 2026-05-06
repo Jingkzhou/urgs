@@ -227,24 +227,32 @@ const KnowledgeCenter: React.FC = () => {
             .map(key => parseInt(key.replace('folder-', ''), 10));
     }, [state.selectedItems]);
 
-    const handleBatchDownload = useCallback(() => {
+    const handleBatchDownload = useCallback(async () => {
         const docIds = getSelectedDocIds();
         const folderIds = getSelectedFolderIds();
-        const docs = state.documents.filter(d => docIds.includes(d.id));
-        const folders = currentSubFolders.filter(f => folderIds.includes(f.id));
-        if (docs.length === 0 && folders.length === 0) {
+        if (docIds.length === 0 && folderIds.length === 0) {
             message.warning('请选择要下载的项目');
             return;
         }
-        docs.forEach((doc, i) => {
-            setTimeout(() => actions.handleDownloadItem(doc), i * 100);
-        });
-        folders.forEach((folder, i) => {
-            setTimeout(() => actions.handleDownloadFolder(folder.id, folder.name), (docs.length + i) * 150);
-        });
-        message.success(`正在下载 ${docs.length + folders.length} 个项目`);
-        actions.exitSelectionMode();
-    }, [getSelectedDocIds, getSelectedFolderIds, state.documents, currentSubFolders, actions]);
+
+        const loadingKey = 'knowledge-batch-download';
+        message.loading({ content: `正在打包 ${docIds.length + folderIds.length} 个项目...`, key: loadingKey, duration: 0 });
+        try {
+            const blob = await api.downloadSelectedArchive({ documentIds: docIds, folderIds });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = '知识库打包下载.zip';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            message.success({ content: '打包下载已开始', key: loadingKey });
+            actions.exitSelectionMode();
+        } catch {
+            message.error({ content: '打包下载失败', key: loadingKey });
+        }
+    }, [getSelectedDocIds, getSelectedFolderIds, actions]);
 
     const handleBatchDelete = useCallback(async () => {
         const docIds = getSelectedDocIds();

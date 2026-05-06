@@ -10,8 +10,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.io.*;
 import java.net.URI;
@@ -197,10 +199,46 @@ public class KnowledgeFolderService {
             throws IOException {
         KnowledgeFolder folder = folderId == null ? null : folderMapper.selectById(folderId);
         String scope = folder != null && "shared".equals(folder.getScope()) ? "shared" : "private";
-        writeFolderToZip(folderId, userId, zos, currentPath, scope);
+        writeFolderToZip(folderId, userId, zos, currentPath, scope, new HashSet<>());
+    }
+
+    /**
+     * 将选中的文档和文件夹统一打包到一个 ZIP，选中文件夹保留原文件夹名称。
+     */
+    public void writeSelectedItemsToZip(List<Long> documentIds, List<Long> folderIds, Long userId, ZipOutputStream zos)
+            throws IOException {
+        Set<String> entryNames = new HashSet<>();
+
+        if (documentIds != null) {
+            for (Long documentId : documentIds) {
+                KnowledgeDocument document = documentMapper.selectById(documentId);
+                if (document != null && canAccessDocument(document, userId)) {
+                    writeDocumentToZip(document, zos, "", entryNames);
+                }
+            }
+        }
+
+        if (folderIds != null) {
+            for (Long folderId : folderIds) {
+                KnowledgeFolder folder = folderMapper.selectById(folderId);
+                if (folder != null && canAccessFolder(folder, userId)) {
+                    String folderPath = nextZipEntryName(folder.getName() + "/", entryNames);
+                    zos.putNextEntry(new ZipEntry(folderPath));
+                    zos.closeEntry();
+                    String scope = "shared".equals(folder.getScope()) ? "shared" : "private";
+                    writeFolderToZip(folderId, userId, zos, folderPath, scope, entryNames);
+                }
+            }
+        }
     }
 
     private void writeFolderToZip(Long folderId, Long userId, ZipOutputStream zos, String currentPath, String scope)
+            throws IOException {
+        writeFolderToZip(folderId, userId, zos, currentPath, scope, new HashSet<>());
+    }
+
+    private void writeFolderToZip(Long folderId, Long userId, ZipOutputStream zos, String currentPath, String scope,
+            Set<String> entryNames)
             throws IOException {
         // 1. 获取当前目录下所有文档
         LambdaQueryWrapper<KnowledgeDocument> docQuery = new LambdaQueryWrapper<>();
@@ -220,25 +258,7 @@ public class KnowledgeFolderService {
         List<KnowledgeDocument> documents = documentMapper.selectList(docQuery);
 
         for (KnowledgeDocument doc : documents) {
-            if (doc.getFileUrl() != null) {
-                File file = resolveUploadedFile(doc.getFileUrl());
-                if (file.exists()) {
-                    try (FileInputStream fis = new FileInputStream(file)) {
-                        String entryName = doc.getFileName() != null ? doc.getFileName() : doc.getTitle();
-                        ZipEntry zipEntry = new ZipEntry(currentPath + entryName);
-                        zos.putNextEntry(zipEntry);
-                        byte[] bytes = new byte[1024];
-                        int length;
-                        while ((length = fis.read(bytes)) >= 0) {
-                            zos.write(bytes, 0, length);
-                        }
-                        zos.closeEntry();
-                    }
-                } else {
-                    log.warn("知识库文件夹打包跳过不存在的文件: documentId={}, fileUrl={}, resolvedPath={}",
-                            doc.getId(), doc.getFileUrl(), file.getAbsolutePath());
-                }
-            }
+            writeDocumentToZip(doc, zos, currentPath, entryNames);
         }
 
         // 2. 递归子目录
@@ -260,8 +280,73 @@ public class KnowledgeFolderService {
         subFolders = folderMapper.selectList(folderQuery);
 
         for (KnowledgeFolder subFolder : subFolders) {
-            writeFolderToZip(subFolder.getId(), userId, zos, currentPath + subFolder.getName() + "/", scope);
+            String folderPath = nextZipEntryName(currentPath + subFolder.getName() + "/", entryNames);
+            zos.putNextEntry(new ZipEntry(folderPath));
+            zos.closeEntry();
+            writeFolderToZip(subFolder.getId(), userId, zos, folderPath, scope, entryNames);
         }
+    }
+
+    private void writeDocumentToZip(KnowledgeDocument doc, ZipOutputStream zos, String currentPath, Set<String> entryNames)
+            throws IOException {
+        if (doc.getFileUrl() == null) {
+            return;
+        }
+
+        File file = resolveUploadedFile(doc.getFileUrl());
+        if (!file.exists()) {
+            log.warn("知识库文件夹打包跳过不存在的文件: documentId={}, fileUrl={}, resolvedPath={}",
+                    doc.getId(), doc.getFileUrl(), file.getAbsolutePath());
+            return;
+        }
+
+        try (FileInputStream fis = new FileInputStream(file)) {
+            String entryName = doc.getFileName() != null ? doc.getFileName() : doc.getTitle();
+            ZipEntry zipEntry = new ZipEntry(nextZipEntryName(currentPath + entryName, entryNames));
+            zos.putNextEntry(zipEntry);
+            byte[] bytes = new byte[1024];
+            int length;
+            while ((length = fis.read(bytes)) >= 0) {
+                zos.write(bytes, 0, length);
+            }
+            zos.closeEntry();
+        }
+    }
+
+    private boolean canAccessFolder(KnowledgeFolder folder, Long userId) {
+        return "shared".equals(folder.getScope()) || userId.equals(folder.getUserId());
+    }
+
+    private boolean canAccessDocument(KnowledgeDocument document, Long userId) {
+        return "shared".equals(document.getScope()) || userId.equals(document.getUserId());
+    }
+
+    private String nextZipEntryName(String entryName, Set<String> entryNames) {
+        String normalized = entryName.replace("\\", "/");
+        if (entryNames.add(normalized)) {
+            return normalized;
+        }
+
+        boolean directory = normalized.endsWith("/");
+        String path = directory ? normalized.substring(0, normalized.length() - 1) : normalized;
+        int slashIndex = path.lastIndexOf('/');
+        String prefix = slashIndex >= 0 ? path.substring(0, slashIndex + 1) : "";
+        String name = slashIndex >= 0 ? path.substring(slashIndex + 1) : path;
+        String baseName = name;
+        String extension = "";
+        int dotIndex = name.lastIndexOf('.');
+        if (!directory && dotIndex > 0) {
+            baseName = name.substring(0, dotIndex);
+            extension = name.substring(dotIndex);
+        }
+
+        int suffix = 2;
+        String candidate;
+        do {
+            candidate = prefix + baseName + "(" + suffix + ")" + extension + (directory ? "/" : "");
+            suffix++;
+        } while (!entryNames.add(candidate));
+        return candidate;
     }
 
     private File resolveUploadedFile(String fileUrl) {

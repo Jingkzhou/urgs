@@ -104,6 +104,29 @@ public class KnowledgeFolderController {
         }
     }
 
+    @PostMapping("/download-selected")
+    public void downloadSelectedItems(
+            @RequestBody BatchDownloadRequest req,
+            HttpServletRequest request,
+            HttpServletResponse response) throws IOException {
+        Long userId = getUserId(request);
+        boolean hasDocuments = req.getDocumentIds() != null && !req.getDocumentIds().isEmpty();
+        boolean hasFolders = req.getFolderIds() != null && !req.getFolderIds().isEmpty();
+        if (!hasDocuments && !hasFolders) {
+            response.setStatus(400);
+            return;
+        }
+
+        String fileName = URLEncoder.encode("知识库打包下载.zip", StandardCharsets.UTF_8.toString()).replace("+", "%20");
+        response.setContentType("application/zip");
+        response.setHeader("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
+
+        try (ZipOutputStream zos = new ZipOutputStream(response.getOutputStream())) {
+            folderService.writeSelectedItemsToZip(req.getDocumentIds(), req.getFolderIds(), userId, zos);
+            zos.finish();
+        }
+    }
+
     /**
      * 获取当前用户ID（从请求属性中获取，由认证过滤器设置）
      */
@@ -127,5 +150,11 @@ public class KnowledgeFolderController {
         private String name;
         private Long parentId;
         private Integer sortOrder;
+    }
+
+    @Data
+    public static class BatchDownloadRequest {
+        private List<Long> documentIds;
+        private List<Long> folderIds;
     }
 }

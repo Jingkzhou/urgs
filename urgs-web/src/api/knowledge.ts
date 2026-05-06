@@ -158,6 +158,9 @@ export const getFolderDownloadUrl = (id: number) => `/api/wiki/folders/${id}/dow
 export const downloadFolderArchive = (id: number) =>
     get<Blob>(getFolderDownloadUrl(id), undefined, { isBlob: true });
 
+export const downloadSelectedArchive = (data: { documentIds: number[]; folderIds: number[] }) =>
+    post<Blob>('/api/wiki/folders/download-selected', data, { isBlob: true });
+
 // ==================== 批量操作 API ====================
 
 /** 批量删除文档 */
