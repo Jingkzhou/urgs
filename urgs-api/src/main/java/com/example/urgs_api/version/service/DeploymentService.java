@@ -1,9 +1,12 @@
 package com.example.urgs_api.version.service;
 
+import com.example.urgs_api.version.dto.OfflineDeploymentResultRequest;
 import com.example.urgs_api.version.entity.DeployEnvironment;
 import com.example.urgs_api.version.entity.Deployment;
+import com.example.urgs_api.version.entity.VersionPackage;
 import com.example.urgs_api.version.repository.DeployEnvironmentRepository;
 import com.example.urgs_api.version.repository.DeploymentRepository;
+import com.example.urgs_api.version.repository.VersionPackageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -21,6 +24,7 @@ public class DeploymentService {
 
     private final DeployEnvironmentRepository envRepository;
     private final DeploymentRepository deploymentRepository;
+    private final VersionPackageRepository packageRepository;
 
     // ========== 环境管理 ==========
 
@@ -124,6 +128,51 @@ public class DeploymentService {
         executeDeployAsync(saved.getId(), env);
 
         return saved;
+    }
+
+    @Transactional
+    public Deployment recordOfflineResult(OfflineDeploymentResultRequest request) {
+        if (request.getSsoId() == null) {
+            throw new IllegalArgumentException("ssoId 不能为空");
+        }
+        if (request.getEnvId() == null) {
+            throw new IllegalArgumentException("envId 不能为空");
+        }
+        if (request.getPackageId() == null) {
+            throw new IllegalArgumentException("packageId 不能为空");
+        }
+        if (!envRepository.existsById(request.getEnvId())) {
+            throw new IllegalArgumentException("环境不存在: " + request.getEnvId());
+        }
+
+        VersionPackage versionPackage = packageRepository.findById(request.getPackageId())
+                .orElseThrow(() -> new IllegalArgumentException("版本包不存在: " + request.getPackageId()));
+
+        String status = request.getStatus() != null ? request.getStatus() : Deployment.STATUS_SUCCESS;
+        Deployment deployment = new Deployment();
+        deployment.setSsoId(request.getSsoId());
+        deployment.setEnvId(request.getEnvId());
+        deployment.setPackageId(request.getPackageId());
+        deployment.setVersion(versionPackage.getVersion());
+        deployment.setArtifactUrl(versionPackage.getPackageUrl());
+        deployment.setDeployedBy(request.getDeployedBy());
+        deployment.setDeployedAt(LocalDateTime.now());
+        deployment.setStatus(status);
+        deployment.setLogs(request.getLogs());
+        deployment.setRemark(request.getRemark());
+
+        if (Deployment.STATUS_SUCCESS.equals(status)) {
+            versionPackage.setStatus(VersionPackage.STATUS_DEPLOYED);
+            versionPackage.setDeployedBy(request.getDeployedBy());
+            versionPackage.setDeployedAt(LocalDateTime.now());
+        } else if (Deployment.STATUS_BLOCKED.equals(status)) {
+            versionPackage.setStatus(VersionPackage.STATUS_BLOCKED);
+        } else if (Deployment.STATUS_FAILED.equals(status)) {
+            versionPackage.setStatus(VersionPackage.STATUS_FAILED);
+        }
+        packageRepository.save(versionPackage);
+
+        return deploymentRepository.save(deployment);
     }
 
     /**

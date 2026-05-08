@@ -28,9 +28,10 @@ deploy_pkg_{version}/
 执行机（生产/测试服务器）需具备以下环境：
 
 1. **Python 环境**: Python 3.8+
-2. **数据库驱动**: 
+2. **数据库驱动**:
    - **Oracle**: `pip install cx_Oracle` (需安装 Oracle Instant Client)
-   - **MySQL**: `pip install pymysql`
+   - **MySQL/GBase**: `pip install pymysql`
+   - **星环/Transwarp/JDBC**: `pip install JayDeBeApi JPype1`，并提供对应 JDBC `.jar`
 3. **连接配置**: 
    在执行机 `~/.db_deploy/connections.json` 中配置数据库连接信息（此文件不入包，由本地环境持有）。
 

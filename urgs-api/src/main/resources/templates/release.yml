@@ -1,0 +1,93 @@
+# URGS Git 仓库生产投产包发布规格模板
+#
+# 使用方式：
+# 1. 将本文件复制到需要投产的业务 Git 仓库根目录，并命名为 .urgs/release.yml。
+# 2. 在版本管理页面选择 Git 仓库、当前 Tag、上一投产 Tag 后，系统会读取当前 Tag 中的该文件。
+# 3. 系统只会打包 package.include 命中的差异文件，并生成生产一致性校验、备份、部署、回滚动作。
+#
+# 目录约定：
+# - db/sql/        正式投产 SQL 脚本。
+# - db/procedures/ 存储过程源码。发生变更时，系统会自动打包当前 Tag 与上一 Tag 的版本。
+# - db/backup/     投产前备份脚本。存在 SQL 或存储过程投产内容时必须提供，或改用 backup.tables。
+# - db/rollback/   SQL 回滚脚本。存在 SQL 变更时必须提供。
+
+# 发布类型。当前生产投产包主要支持 db 类型。
+type: db
+
+# 数据库平台与驱动配置。
+# dbType 支持：mysql、gbase、oracle、xinghuan、transwarp。
+# MySQL/GBase/Oracle 可以继续使用 URGS 资产管理中的连接信息和 Python 原生驱动；
+# 星环/Transwarp 走 JDBC 方式，必须声明 jdbcUrl、driverJar、jdbcDriverClass。
+#
+# 驱动上传路径固定为：
+# - MySQL:   urgs-api/src/main/resources/db_deploy/drivers/mysql/
+# - GBase:   urgs-api/src/main/resources/db_deploy/drivers/gbase/
+# - Oracle:  urgs-api/src/main/resources/db_deploy/drivers/oracle/
+# - 星环:     urgs-api/src/main/resources/db_deploy/drivers/xinghuan/
+# - Transwarp: urgs-api/src/main/resources/db_deploy/drivers/transwarp/
+# 生产环境如果配置了 DEPLOY_TOOL_WORKDIR=/data/urgs/db_deploy，则上传到：
+# - /data/urgs/db_deploy/drivers/<dbType>/
+#
+# driverDir 写资源路径，不写本机绝对路径；生产包内会自动转换为 bin/db_deploy/drivers/<dbType>/。
+# driverJar 只写文件名，例如 ojdbc8.jar、mysql-connector-j-8.3.0.jar、transwarp-jdbc.jar。
+# jdbcUrl 可以放内网地址；账号密码仍默认从页面选择的 URGS 数据库资产用户中取。
+database:
+  dbType: mysql
+  schema: business_prod
+  # jdbcUrl: jdbc:mysql://10.10.1.20:3306/business_prod
+  # driverDir: db_deploy/drivers/mysql
+  # driverJar: mysql-connector-j-8.3.0.jar
+  # jdbcDriverClass: com.mysql.cj.jdbc.Driver
+
+# 星环/Transwarp 示例：
+# database:
+#   dbType: xinghuan
+#   schema: business_prod
+#   jdbcUrl: jdbc:hive2://10.10.1.30:10000/business_prod
+#   driverDir: db_deploy/drivers/xinghuan
+#   driverJar: transwarp-jdbc.jar
+#   jdbcDriverClass: io.transwarp.jdbc.InceptorDriver
+
+# 差异文件范围。
+# 系统会基于 previousGitRef..gitRef 计算差异，只打包这里声明范围内的文件。
+# 至少需要声明一个 include 规则，否则门禁失败。
+package:
+  include:
+    - db/sql/**
+    - db/procedures/**
+    - db/backup/**
+    - db/rollback/**
+
+# 备份策略。
+# required=true 表示存在 SQL 或存储过程投产内容时必须满足备份门禁。
+# 满足方式二选一：
+# - sourceDir 指向的目录存在备份脚本，例如 db/backup/001_backup_xxx.sql。
+# - tables 声明需要系统自动备份的表名。
+backup:
+  required: true
+  sourceDir: db/backup
+  # tables:
+  #   - example_table
+  #   - another_table
+
+# 回滚策略。
+# required=true 表示存在 SQL 变更时必须提供 rollback.sourceDir 下的回滚脚本。
+# 存储过程变更会自动把上一 Tag 的版本纳入回滚计划，无需在这里重复声明。
+rollback:
+  required: true
+  sourceDir: db/rollback
+
+# 存储过程生产一致性门禁。
+# enabled=true 时，存储过程变更会在投产前执行第一道门禁：
+# - 从生产库导出同名存储过程源码。
+# - 与上一投产 Tag 中的存储过程基线进行规范化比较。
+# - 任一不一致即终止投产，提示“生产中的版本与GitLab中的投产前版本不一致”。
+# onMismatch 必须为 abort，否则门禁失败。
+procedureGuard:
+  enabled: true
+  onMismatch: abort
+
+# 部署命令展示模板。
+# 生产包生成后页面会展示固定入口命令；${operator} 会由执行人参数替换。
+deploy:
+  command: bash deploy.sh --operator ${operator}

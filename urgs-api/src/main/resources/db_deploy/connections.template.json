@@ -13,5 +13,14 @@
     "user": "root",
     "password": "your_password",
     "database": "data_warehouse"
+  },
+  "xinghuan_prod": {
+    "type": "xinghuan",
+    "user": "prod_user",
+    "password": "your_password",
+    "jdbc_url": "jdbc:hive2://10.10.1.30:10000/business_prod",
+    "driver_class": "io.transwarp.jdbc.InceptorDriver",
+    "driver_jar": "bin/db_deploy/drivers/xinghuan/transwarp-jdbc.jar",
+    "schema": "business_prod"
   }
 }

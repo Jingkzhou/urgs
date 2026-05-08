@@ -6,6 +6,7 @@ import com.example.urgs_api.ops.repository.InfrastructureAssetRepository;
 import com.example.urgs_api.version.dto.GitCommit;
 import com.example.urgs_api.version.dto.GitCommitDiff;
 import com.example.urgs_api.version.dto.GitTag;
+import com.example.urgs_api.version.dto.ReleaseSpec;
 import com.example.urgs_api.version.entity.VersionPackage;
 import com.example.urgs_api.version.repository.VersionPackageRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -22,9 +23,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StreamUtils;
 
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -131,6 +135,19 @@ public class VersionPackageService {
      * 包含: sql/, procedures/, prev_procedures/, rollback/, backup/, manifest.json, connections
      */
     public byte[] generateArchive(Long packageId) throws IOException {
+        return generateArchive(packageId, null, List.of(), null);
+    }
+
+    public byte[] generateArchive(Long packageId, Set<String> allowedDbPaths) throws IOException {
+        return generateArchive(packageId, allowedDbPaths, List.of(), null);
+    }
+
+    public byte[] generateArchive(Long packageId, Set<String> allowedDbPaths, List<String> backupTables) throws IOException {
+        return generateArchive(packageId, allowedDbPaths, backupTables, null);
+    }
+
+    public byte[] generateArchive(Long packageId, Set<String> allowedDbPaths, List<String> backupTables,
+                                  ReleaseSpec.DatabaseSpec databaseSpec) throws IOException {
         VersionPackage vp = findById(packageId);
 
         // 1. 获取两个 tag 之间的变更文件列表
@@ -140,12 +157,12 @@ public class VersionPackageService {
                     vp.getRepoId(), vp.getPreviousGitRef(), vp.getGitRef());
             for (GitCommitDiff diff : diffs) {
                 String path = diff.getNewPath();
-                if (path != null && path.startsWith("db/")) {
+                if (path != null && path.startsWith("db/") && isAllowedDbPath(path, allowedDbPaths)) {
                     changedDbPaths.add(path);
                 }
                 // 也处理 oldPath（文件重命名或删除的情况）
                 String oldPath = diff.getOldPath();
-                if (oldPath != null && oldPath.startsWith("db/")) {
+                if (oldPath != null && oldPath.startsWith("db/") && isAllowedDbPath(oldPath, allowedDbPaths)) {
                     changedDbPaths.add(oldPath);
                 }
             }
@@ -182,20 +199,14 @@ public class VersionPackageService {
             }
 
             // 4. 生成数据库连接配置并写入 manifest
-            Map<String, Object> connections = buildConnectionsConfig(vp);
+            Map<String, Object> connections = buildConnectionsConfig(vp, databaseSpec);
 
             // 5. 生成 manifest.json
-            String manifestJson = generateManifest(vp, procedureNames, connections);
+            String manifestJson = generateManifest(vp, procedureNames, connections, backupTables);
             addToZip(zos, "manifest.json", manifestJson.getBytes("UTF-8"), checksumBuilder);
 
             // 6. 打包 db_deploy 工具（按 dbType 选入对应驱动）
-            String dbType = null;
-            if (vp.getAssetId() != null) {
-                InfrastructureAsset asset = assetRepository.findById(vp.getAssetId()).orElse(null);
-                if (asset != null && asset.getDbType() != null) {
-                    dbType = asset.getDbType().toLowerCase();
-                }
-            }
+            String dbType = resolveDbType(vp, databaseSpec);
             addToolToZip(zos, checksumBuilder, dbType);
 
             // 7. 写入 checksum.sha256
@@ -205,6 +216,10 @@ public class VersionPackageService {
         }
 
         return baos.toByteArray();
+    }
+
+    private boolean isAllowedDbPath(String path, Set<String> allowedDbPaths) {
+        return allowedDbPaths == null || allowedDbPaths.isEmpty() || allowedDbPaths.contains(path);
     }
 
     /**
@@ -265,7 +280,7 @@ public class VersionPackageService {
      * 根据单台资产 ID + 执行用户构建数据库连接配置
      * 从 InfrastructureAsset + InfrastructureUser (userType=db) 自动生成
      */
-    private Map<String, Object> buildConnectionsConfig(VersionPackage vp) {
+    private Map<String, Object> buildConnectionsConfig(VersionPackage vp, ReleaseSpec.DatabaseSpec databaseSpec) {
         Map<String, Object> connections = new LinkedHashMap<>();
 
         if (vp.getAssetId() == null) {
@@ -296,7 +311,7 @@ public class VersionPackageService {
             return connections;
         }
 
-        Map<String, Object> connConfig = buildSingleConnection(asset, dbUser);
+        Map<String, Object> connConfig = buildSingleConnection(asset, dbUser, databaseSpec);
         connections.put("prod_db", connConfig);
 
         return connections;
@@ -305,13 +320,33 @@ public class VersionPackageService {
     /**
      * 构建单个数据库连接配置
      */
-    private Map<String, Object> buildSingleConnection(InfrastructureAsset asset, InfrastructureUser dbUser) {
+    private Map<String, Object> buildSingleConnection(InfrastructureAsset asset, InfrastructureUser dbUser,
+                                                      ReleaseSpec.DatabaseSpec databaseSpec) {
         Map<String, Object> connConfig = new LinkedHashMap<>();
 
-        String dbType = asset.getDbType() != null ? asset.getDbType().toLowerCase() : "oracle";
+        String dbType = firstNonBlank(databaseSpec != null ? databaseSpec.getDbType() : null, asset.getDbType(), "oracle")
+                .toLowerCase();
         connConfig.put("type", dbType);
         connConfig.put("user", dbUser.getUsername());
         connConfig.put("password", dbUser.getPassword());
+        if (databaseSpec != null) {
+            if (!isBlank(databaseSpec.getJdbcUrl())) {
+                connConfig.put("jdbc_url", databaseSpec.getJdbcUrl());
+            }
+            if (!isBlank(databaseSpec.getJdbcDriverClass())) {
+                connConfig.put("driver_class", databaseSpec.getJdbcDriverClass());
+            }
+            if (!isBlank(databaseSpec.getDriverJar())) {
+                connConfig.put("driver_jar", packageDriverJarPath(databaseSpec, dbType));
+                connConfig.put("driver_jar_name", databaseSpec.getDriverJar());
+            }
+            if (!isBlank(databaseSpec.getDriverDir())) {
+                connConfig.put("driver_dir", packageDriverDirPath(databaseSpec.getDriverDir(), dbType));
+            }
+            if (!isBlank(databaseSpec.getSchema())) {
+                connConfig.put("schema", databaseSpec.getSchema());
+            }
+        }
 
         switch (dbType) {
             case "oracle":
@@ -331,6 +366,8 @@ public class VersionPackageService {
                 break;
             case "mysql":
             case "gbase":
+            case "xinghuan":
+            case "transwarp":
                 connConfig.put("host", asset.getInternalIp());
                 connConfig.put("port", asset.getDbPort() != null ? asset.getDbPort() : 3306);
                 connConfig.put("database", asset.getDbName());
@@ -348,7 +385,7 @@ public class VersionPackageService {
      * 生成 manifest.json，包含完整的 execution_plan 和 rollback_plan
      */
     private String generateManifest(VersionPackage vp, List<String> procedureNames,
-                                     Map<String, Object> connections) {
+                                     Map<String, Object> connections, List<String> backupTables) {
         try {
             ObjectNode root = objectMapper.createObjectNode();
             root.put("pkg_version", vp.getVersion());
@@ -382,17 +419,29 @@ public class VersionPackageService {
                 execPlan.add(preCheck);
             }
 
-            // Step 2: 执行备份脚本
-            ObjectNode backupStep = objectMapper.createObjectNode();
-            backupStep.put("step", step++);
-            backupStep.put("name", "执行备份脚本");
-            backupStep.put("type", "execute_sql_ordered");
-            backupStep.set("targets", objectMapper.createArrayNode().add(targetName));
-            ObjectNode backupParams = objectMapper.createObjectNode();
-            backupParams.put("source_dir", "backup");
-            backupParams.put("sort_by", "filename_asc");
-            backupStep.set("params", backupParams);
-            execPlan.add(backupStep);
+            // Step 2: 执行备份
+            if (backupTables != null && !backupTables.isEmpty()) {
+                ObjectNode backupStep = objectMapper.createObjectNode();
+                backupStep.put("step", step++);
+                backupStep.put("name", "按表执行投产前备份");
+                backupStep.put("type", "backup_table");
+                backupStep.set("targets", objectMapper.createArrayNode().add(targetName));
+                ObjectNode backupParams = objectMapper.createObjectNode();
+                backupParams.set("tables", objectMapper.valueToTree(backupTables));
+                backupStep.set("params", backupParams);
+                execPlan.add(backupStep);
+            } else {
+                ObjectNode backupStep = objectMapper.createObjectNode();
+                backupStep.put("step", step++);
+                backupStep.put("name", "执行备份脚本");
+                backupStep.put("type", "execute_sql_ordered");
+                backupStep.set("targets", objectMapper.createArrayNode().add(targetName));
+                ObjectNode backupParams = objectMapper.createObjectNode();
+                backupParams.put("source_dir", "backup");
+                backupParams.put("sort_by", "filename_asc");
+                backupStep.set("params", backupParams);
+                execPlan.add(backupStep);
+            }
 
             // Step 3: 执行 DDL/DML
             ObjectNode sqlStep = objectMapper.createObjectNode();
@@ -461,6 +510,11 @@ public class VersionPackageService {
     // ===================== 工具方法 =====================
 
     private void addToolToZip(ZipOutputStream zos, StringBuilder checksumBuilder, String dbType) throws IOException {
+        if (!dbDeployPath.startsWith("classpath:")) {
+            addFileToolToZip(zos, checksumBuilder, dbType);
+            return;
+        }
+
         ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
         String pattern = dbDeployPath.endsWith("/") ? dbDeployPath + "**/*" : dbDeployPath + "/**/*";
         Resource[] resources = resolver.getResources(pattern);
@@ -495,6 +549,33 @@ public class VersionPackageService {
         }
     }
 
+    private void addFileToolToZip(ZipOutputStream zos, StringBuilder checksumBuilder, String dbType) throws IOException {
+        Path root = Path.of(dbDeployPath).toAbsolutePath().normalize();
+        if (!Files.exists(root) || !Files.isDirectory(root)) {
+            throw new IOException("部署工具目录不存在: " + root);
+        }
+
+        String targetDriverDir = "drivers/" + (dbType != null ? dbType : "oracle") + "/";
+        List<Path> files;
+        try (Stream<Path> stream = Files.walk(root)) {
+            files = stream.filter(Files::isRegularFile).sorted().toList();
+        }
+
+        for (Path file : files) {
+            String relative = root.relativize(file).toString().replace(File.separatorChar, '/');
+            if (relative.contains("__pycache__") || relative.startsWith(".") || relative.contains("/.")) {
+                continue;
+            }
+            if (relative.endsWith(".pyc")) {
+                continue;
+            }
+            if (relative.startsWith("drivers/") && !relative.startsWith(targetDriverDir)) {
+                continue;
+            }
+            addToZip(zos, "bin/db_deploy/" + relative, Files.readAllBytes(file), checksumBuilder);
+        }
+    }
+
     private void addToZip(ZipOutputStream zos, String path, byte[] content, StringBuilder checksumBuilder) throws IOException {
         ZipEntry entry = new ZipEntry(path);
         zos.putNextEntry(entry);
@@ -503,6 +584,56 @@ public class VersionPackageService {
 
         String hash = calculateSha256(content);
         checksumBuilder.append(hash).append("  ").append(path).append("\n");
+    }
+
+    private String resolveDbType(VersionPackage vp, ReleaseSpec.DatabaseSpec databaseSpec) {
+        if (databaseSpec != null && !isBlank(databaseSpec.getDbType())) {
+            return databaseSpec.getDbType().toLowerCase();
+        }
+        if (vp.getAssetId() != null) {
+            InfrastructureAsset asset = assetRepository.findById(vp.getAssetId()).orElse(null);
+            if (asset != null && !isBlank(asset.getDbType())) {
+                return asset.getDbType().toLowerCase();
+            }
+        }
+        return "oracle";
+    }
+
+    private String packageDriverJarPath(ReleaseSpec.DatabaseSpec databaseSpec, String dbType) {
+        return packageDriverDirPath(databaseSpec.getDriverDir(), dbType) + "/" + databaseSpec.getDriverJar();
+    }
+
+    private String packageDriverDirPath(String driverDir, String dbType) {
+        String normalized = isBlank(driverDir) ? "db_deploy/drivers/" + dbType : driverDir.trim().replace("\\", "/");
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (normalized.startsWith("bin/")) {
+            return normalized;
+        }
+        if (normalized.startsWith("db_deploy/")) {
+            return "bin/" + normalized;
+        }
+        if (normalized.startsWith("drivers/")) {
+            return "bin/db_deploy/" + normalized;
+        }
+        return "bin/db_deploy/drivers/" + normalized;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (!isBlank(value)) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private String calculateSha256(byte[] data) {

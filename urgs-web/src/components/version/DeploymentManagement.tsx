@@ -1,32 +1,33 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Button, Modal, Form, Input, Select, Tag, Space, message, Card, Dropdown } from 'antd';
-import { 
-    Plus, Edit, RefreshCw, Server, Rocket,
-    CheckCircle, XCircle, Clock, Globe, Download,
-    Info, Package, GitBranch, Tag as TagIcon, MoreVertical,
-    ShieldCheck, History, AlertTriangle
+import React, { useEffect, useMemo, useState } from 'react';
+import { Alert, Button, Card, Descriptions, Dropdown, Form, Input, List, Modal, Select, Space, Steps, Tag, message } from 'antd';
+import {
+    AlertTriangle, CheckCircle, Clock, Download, Edit, GitBranch, Globe, History,
+    Info, MoreVertical, Package, RefreshCw, Rocket, Server, ShieldCheck,
+    Tag as TagIcon, XCircle
 } from 'lucide-react';
 import {
+    buildProductionPackage as buildProductionPackageApi,
+    downloadProductionPackage,
+    downloadVersionPackage,
+    gateCheckProductionPackage,
     getDeployEnvironments,
+    getGitRepositories,
+    getRepoTags,
+    getVersionPackages,
+    recordOfflineDeploymentResult,
+    updatePackageStatus,
+    DeployEnvironment,
+    GitRepository,
+    GitTag as IGitTag,
+    ProductionPackageBuildResult,
+    ProductionPackageGateResult,
+    ProductionPackageRequest,
+    VersionPackage
 } from '@/api/version';
 import {
     getInfrastructureAssets,
     InfrastructureAsset
 } from '@/api/ops';
-import {
-    getGitRepositories,
-    getRepoBranches,
-    getRepoTags,
-    getVersionPackages,
-    createVersionPackage,
-    downloadVersionPackage,
-    updatePackageStatus,
-    DeployEnvironment,
-    GitRepository,
-    GitBranch as IGitBranch,
-    GitTag as IGitTag,
-    VersionPackage
-} from '@/api/version';
 
 const { Option } = Select;
 
@@ -38,11 +39,12 @@ const statusConfig: Record<string, { color: string; icon: React.ReactNode; label
     pending: { color: 'default', icon: <Clock size={14} />, label: '待处理' },
     success: { color: 'success', icon: <CheckCircle size={14} />, label: '成功' },
     failed: { color: 'error', icon: <XCircle size={14} />, label: '失败' },
+    blocked: { color: 'warning', icon: <AlertTriangle size={14} />, label: '已阻断' },
 };
 
 interface Props {
     ssoId?: number;
-    repoId?: number; // 新增：指定默认使用的版本库ID
+    repoId?: number;
 }
 
 const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
@@ -51,24 +53,42 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const [repos, setRepos] = useState<GitRepository[]>([]);
     const [infraAssets, setInfraAssets] = useState<InfrastructureAsset[]>([]);
     const [availableUsers, setAvailableUsers] = useState<string[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [activeTab, setActiveTab] = useState<'packages' | 'history'>('packages');
-
-    // 版本包 Modal
-    const [packageModalVisible, setPackageModalVisible] = useState(false);
-    const [packageForm] = Form.useForm();
-    const [selectedRepo, setSelectedRepo] = useState<number | null>(null);
-    const [branches, setBranches] = useState<IGitBranch[]>([]);
     const [tags, setTags] = useState<IGitTag[]>([]);
+    const [loading, setLoading] = useState(false);
     const [fetchingGit, setFetchingGit] = useState(false);
+    const [gateLoading, setGateLoading] = useState(false);
+    const [buildLoading, setBuildLoading] = useState(false);
+    const [activeTab, setActiveTab] = useState<'release' | 'history'>('release');
+    const [selectedRepo, setSelectedRepo] = useState<number | null>(repoId || null);
+    const [gateResult, setGateResult] = useState<ProductionPackageGateResult | null>(null);
+    const [buildResult, setBuildResult] = useState<ProductionPackageBuildResult | null>(null);
+    const [recordModalVisible, setRecordModalVisible] = useState(false);
+    const [recordForm] = Form.useForm();
+    const [productionForm] = Form.useForm<ProductionPackageRequest>();
 
-
+    const currentUserId = useMemo(() => {
+        try {
+            const user = JSON.parse(localStorage.getItem('auth_user') || '{}');
+            const id = user.userId || user.id;
+            return Number.isFinite(Number(id)) ? Number(id) : undefined;
+        } catch (error) {
+            return undefined;
+        }
+    }, []);
 
     useEffect(() => {
         if (ssoId) {
             fetchData();
         }
     }, [ssoId]);
+
+    useEffect(() => {
+        if (repoId) {
+            setSelectedRepo(repoId);
+            productionForm.setFieldValue('repoId', repoId);
+            loadTags(repoId);
+        }
+    }, [repoId]);
 
     const fetchData = async () => {
         setLoading(true);
@@ -90,47 +110,13 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
         }
     };
 
-    // ========== 派生数据 ==========
-    // 筛选出 role=db 的数据库服务器，供版本包创建时选择单台服务器
-    const dbAssets = useMemo(() => {
-        return infraAssets.filter(a => a.role === 'db');
-    }, [infraAssets]);
+    const dbAssets = useMemo(() => infraAssets.filter(a => a.role === 'db'), [infraAssets]);
 
-    const handleAssetChange = (assetId: any) => {
-        if (!assetId) {
-            setAvailableUsers([]);
-            packageForm.setFieldsValue({ execUser: undefined });
-            return;
-        }
+    const watchedAssetId = Form.useWatch('assetId', productionForm);
+    const watchedRepoId = Form.useWatch('repoId', productionForm);
+    const watchedGitRef = Form.useWatch('gitRef', productionForm);
+    const watchedPreviousGitRef = Form.useWatch('previousGitRef', productionForm);
 
-        const asset = infraAssets.find(a => a.id === assetId);
-        if (asset) {
-            // 从该服务器的 users 中筛选 userType=db 的数据库用户
-            const dbUsers = (asset.users || [])
-                .filter((u: any) => u.userType === 'db')
-                .map((u: any) => u.username)
-                .filter(Boolean);
-
-            setAvailableUsers(dbUsers);
-
-            // 自动带出服务器所属环境（后端也会从 asset 推导，前端同步设置用于显示）
-            packageForm.setFieldsValue({ envId: asset.envId ?? undefined });
-
-            // 智能选中：如果只有一个 db 用户，自动填入
-            const current = packageForm.getFieldValue('execUser');
-            if (dbUsers.length === 1 && (!current || !dbUsers.includes(current))) {
-                packageForm.setFieldsValue({ execUser: dbUsers[0] });
-            } else if (!dbUsers.includes(current)) {
-                packageForm.setFieldsValue({ execUser: undefined });
-            }
-        } else {
-            setAvailableUsers([]);
-        }
-    };
-
-    const watchedAssetId = Form.useWatch('assetId', packageForm);
-
-    // 检测所选服务器是否缺少连接字符串信息
     const assetMissingDsn = useMemo(() => {
         if (!watchedAssetId) return false;
         const asset = infraAssets.find(a => a.id === watchedAssetId);
@@ -150,67 +136,146 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
         }
     }, [watchedAssetId, infraAssets]);
 
-    // ========== 版本包操作 ==========
-    const handleRepoChange = async (repoId: number) => {
-        setSelectedRepo(repoId);
+    const handleAssetChange = (assetId: any) => {
+        if (!assetId) {
+            setAvailableUsers([]);
+            productionForm.setFieldsValue({ execUser: undefined });
+            return;
+        }
+
+        const asset = infraAssets.find(a => a.id === assetId);
+        if (!asset) {
+            setAvailableUsers([]);
+            return;
+        }
+
+        const dbUsers = (asset.users || [])
+            .filter((u: any) => u.userType === 'db')
+            .map((u: any) => u.username)
+            .filter(Boolean);
+
+        setAvailableUsers(dbUsers);
+        productionForm.setFieldsValue({ envId: asset.envId ?? undefined });
+
+        const current = productionForm.getFieldValue('execUser');
+        if (dbUsers.length === 1 && (!current || !dbUsers.includes(current))) {
+            productionForm.setFieldsValue({ execUser: dbUsers[0] });
+        } else if (current && !dbUsers.includes(current)) {
+            productionForm.setFieldsValue({ execUser: undefined });
+        }
+    };
+
+    const loadTags = async (targetRepoId: number) => {
         setFetchingGit(true);
-        packageForm.setFieldsValue({ gitRef: undefined, previousGitRef: undefined });
+        setTags([]);
+        setGateResult(null);
+        setBuildResult(null);
         try {
-            const [b, t] = await Promise.all([
-                getRepoBranches(repoId),
-                getRepoTags(repoId)
-            ]);
-            setBranches(b || []);
-            // 按 taggerDate 时间倒序排列
-            const sortedTags = [...(t || [])].sort((a, b) => {
+            const repoTags = await getRepoTags(targetRepoId);
+            const sortedTags = [...(repoTags || [])].sort((a, b) => {
                 const dateA = a.taggerDate || '';
                 const dateB = b.taggerDate || '';
                 return dateB.localeCompare(dateA);
             });
             setTags(sortedTags);
         } catch (error) {
-            message.error('获取仓库分支/标签失败');
+            message.error('获取仓库标签失败');
         } finally {
             setFetchingGit(false);
         }
     };
 
-    // 选择当前 tag 后，自动填入基线 tag（时间线上的前一个）
+    const handleRepoChange = (targetRepoId: number) => {
+        setSelectedRepo(targetRepoId);
+        productionForm.setFieldsValue({ gitRef: undefined, previousGitRef: undefined });
+        loadTags(targetRepoId);
+    };
+
     const handleTagChange = (tagName: string) => {
         const idx = tags.findIndex(t => t.name === tagName);
-        if (idx >= 0 && idx + 1 < tags.length) {
-            packageForm.setFieldsValue({ previousGitRef: tags[idx + 1].name });
-        } else {
-            packageForm.setFieldsValue({ previousGitRef: undefined });
+        productionForm.setFieldsValue({
+            previousGitRef: idx >= 0 && idx + 1 < tags.length ? tags[idx + 1].name : undefined
+        });
+        setGateResult(null);
+        setBuildResult(null);
+    };
+
+    const buildPayload = async (): Promise<ProductionPackageRequest> => {
+        const values = await productionForm.validateFields();
+        return {
+            ...values,
+            repoId: repoId || values.repoId,
+            ssoId: ssoId!,
+            createdBy: currentUserId
+        };
+    };
+
+    const handleGateCheck = async () => {
+        try {
+            const payload = await buildPayload();
+            setGateLoading(true);
+            const result = await gateCheckProductionPackage(payload);
+            setGateResult(result);
+            setBuildResult(null);
+            if (result.status === 'passed') {
+                message.success('生产投产门禁通过');
+            } else {
+                message.warning('生产投产门禁未通过');
+            }
+        } catch (error) {
+            console.error(error);
+            message.error('门禁校验失败');
+        } finally {
+            setGateLoading(false);
         }
     };
 
-    const handleCreatePackage = async () => {
+    const handleBuildPackage = async () => {
+        if (!gateResult || gateResult.status !== 'passed') {
+            message.warning('请先通过生产投产门禁');
+            return;
+        }
         try {
-            const values = await packageForm.validateFields();
-            await createVersionPackage({
-                ...values,
-                ssoId: ssoId!
-            });
-            message.success('版本包创建成功');
-            setPackageModalVisible(false);
+            const payload = await buildPayload();
+            setBuildLoading(true);
+            const result = await buildProductionPackageApi(payload);
+            setBuildResult(result);
+            message.success('生产投产包已生成');
             fetchData();
         } catch (error) {
             console.error(error);
+            message.error('生成生产投产包失败');
+        } finally {
+            setBuildLoading(false);
         }
     };
 
-    const handleDownload = async (pkg: VersionPackage) => {
+    const downloadBlob = (blob: Blob, fileName: string) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    };
+
+    const handleDownloadProduction = async (packageId: number, fileName?: string) => {
+        try {
+            const blob = await downloadProductionPackage(packageId);
+            downloadBlob(blob, fileName || `release-${packageId}.zip`);
+            message.success('生产投产包下载开始');
+        } catch (error) {
+            message.error('下载生产投产包失败');
+        }
+    };
+
+    const handleDownloadLegacy = async (pkg: VersionPackage) => {
         try {
             const blob = await downloadVersionPackage(pkg.id);
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `deploy-${pkg.version}-${pkg.gitRef}.zip`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            message.success('部署包下载开始');
+            downloadBlob(blob, `deploy-${pkg.version}-${pkg.gitRef}.zip`);
+            message.success('数据库部署包下载开始');
         } catch (error) {
             message.error('下载部署包失败');
         }
@@ -218,7 +283,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
 
     const handleUpdateStatus = async (id: number, status: string) => {
         try {
-            await updatePackageStatus(id, status);
+            await updatePackageStatus(id, status, currentUserId);
             message.success('状态更新成功');
             fetchData();
         } catch (error) {
@@ -226,406 +291,430 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
         }
     };
 
+    const openRecordModal = () => {
+        if (!buildResult) {
+            message.warning('请先生成生产投产包');
+            return;
+        }
+        recordForm.setFieldsValue({
+            packageId: buildResult.packageId,
+            status: 'success',
+            logs: '',
+            remark: ''
+        });
+        setRecordModalVisible(true);
+    };
 
-    const primaryButtonClass = 'bg-gradient-to-tr from-indigo-500 to-purple-600 border-none hover:from-indigo-600 hover:to-purple-700';
+    const handleRecordResult = async () => {
+        try {
+            const values = await recordForm.validateFields();
+            const envId = productionForm.getFieldValue('envId');
+            if (!envId) {
+                message.error('缺少投产环境，无法回填部署记录');
+                return;
+            }
+            await recordOfflineDeploymentResult({
+                ssoId: ssoId!,
+                envId,
+                packageId: values.packageId,
+                status: values.status,
+                deployedBy: currentUserId,
+                logs: values.logs,
+                remark: values.remark
+            });
+            message.success('部署结果已回填');
+            setRecordModalVisible(false);
+            fetchData();
+        } catch (error) {
+            message.error('回填部署结果失败');
+        }
+    };
 
-    return (
-        <div className="space-y-6">
-            {/* 统计概览 */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden bg-white">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-indigo-50 rounded-xl text-indigo-600">
-                            <Package size={24} />
-                        </div>
-                        <div>
-                            <div className="text-xs text-slate-400 font-medium uppercase tracking-wider">总版本包</div>
-                            <div className="text-2xl font-bold text-slate-800">{versionPackages.length}</div>
-                        </div>
-                    </div>
-                </Card>
-                <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden bg-white">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-emerald-50 rounded-xl text-emerald-600">
-                            <CheckCircle size={24} />
-                        </div>
-                        <div>
-                            <div className="text-xs text-slate-400 font-medium uppercase tracking-wider">最近已部署</div>
-                            <div className="text-2xl font-bold text-slate-800">
-                                {versionPackages.filter(p => p.status === 'deployed').length}
+    const currentStep = useMemo(() => {
+        if (!watchedRepoId || !watchedGitRef || !watchedPreviousGitRef) return 0;
+        if (!gateResult) return 1;
+        if (gateResult.status !== 'passed') return 2;
+        if (!buildResult) return 3;
+        return 4;
+    }, [watchedRepoId, watchedGitRef, watchedPreviousGitRef, gateResult, buildResult]);
+
+    const renderGatePanel = () => {
+        if (!gateResult) {
+            return (
+                <Alert
+                    type="info"
+                    showIcon
+                    message="等待门禁校验"
+                    description="系统会读取当前 Tag 中的 .urgs/release.yml，并基于当前 Tag 与上一投产 Tag 的差异生成门禁结果。"
+                />
+            );
+        }
+
+        const summary = gateResult.changeSummary;
+        return (
+            <div className="space-y-4">
+                <Alert
+                    type={gateResult.status === 'passed' ? 'success' : 'error'}
+                    showIcon
+                    message={gateResult.summary}
+                    description={gateResult.status === 'passed'
+                        ? '生产执行时会先校验存储过程生产版本与上一 Tag 基线版本，一旦不一致会在备份前终止。'
+                        : '门禁未通过，请按失败项补齐发布规格、备份或回滚内容后重新打 Tag。'}
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {gateResult.gates.map(item => (
+                        <div key={item.key} className="border border-slate-200 rounded-lg p-3 bg-white">
+                            <div className="flex items-center justify-between mb-1">
+                                <span className="font-semibold text-slate-800 text-sm">{item.label}</span>
+                                <Tag color={item.status === 'passed' ? 'success' : 'error'}>{item.status === 'passed' ? '通过' : '失败'}</Tag>
                             </div>
+                            <div className="text-xs text-slate-500 leading-5">{item.message || '-'}</div>
                         </div>
-                    </div>
-                </Card>
-                <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden bg-white">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-blue-50 rounded-xl text-blue-600">
-                            <History size={24} />
-                        </div>
-                        <div>
-                            <div className="text-xs text-slate-400 font-medium uppercase tracking-wider">部署历史</div>
-                            <div className="text-2xl font-bold text-slate-800">{versionPackages.filter(p => p.status === 'deployed' || p.status === 'archived').length}</div>
-                        </div>
-                    </div>
-                </Card>
-            </div>
-
-            {/* 操作主区域 */}
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                    <div className="flex items-center gap-8">
-                        <div 
-                            className={`flex items-center gap-2 cursor-pointer transition-colors ${activeTab === 'packages' ? 'text-indigo-600 font-bold' : 'text-slate-500 font-medium'}`}
-                            onClick={() => setActiveTab('packages')}
-                        >
-                            <Package size={18} />
-                            版本包管理
-                            {activeTab === 'packages' && <div className="ml-1 w-1.5 h-1.5 rounded-full bg-indigo-600" />}
-                        </div>
-                        <div 
-                            className={`flex items-center gap-2 cursor-pointer transition-colors ${activeTab === 'history' ? 'text-indigo-600 font-bold' : 'text-slate-500 font-medium'}`}
-                            onClick={() => setActiveTab('history')}
-                        >
-                            <History size={18} />
-                            部署历史
-                            {activeTab === 'history' && <div className="ml-1 w-1.5 h-1.5 rounded-full bg-indigo-600" />}
-                        </div>
-                    </div>
-                    <Space>
-                        <Button 
-                            icon={<RefreshCw size={14} className={loading ? 'animate-spin' : ''} />} 
-                            onClick={fetchData}
-                        >
-                            刷新
-                        </Button>
-                        <Button 
-                            type="primary" 
-                            icon={<Plus size={16} />} 
-                            className={primaryButtonClass}
-                            onClick={() => {
-                                setPackageModalVisible(true);
-                                // 如果是从具体仓库页面进来的，自动填充 repoId
-                                if (repoId) {
-                                    packageForm.setFieldsValue({ repoId });
-                                    // 延迟一小会儿执行加载，确保 Modal 内部状态同步
-                                    setTimeout(() => handleRepoChange(repoId), 0);
-                                }
-                            }}
-                        >
-                            创建版本包
-                        </Button>
-                    </Space>
+                    ))}
                 </div>
+                <Descriptions size="small" bordered column={2}>
+                    <Descriptions.Item label="规格文件">{gateResult.specPath || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="投产类型">{gateResult.packageType || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="SQL">{summary?.sqlFiles?.length || 0} 个</Descriptions.Item>
+                    <Descriptions.Item label="存储过程">{summary?.procedureFiles?.length || 0} 个</Descriptions.Item>
+                    <Descriptions.Item label="备份脚本">{summary?.backupFiles?.length || 0} 个</Descriptions.Item>
+                    <Descriptions.Item label="回滚脚本">{summary?.rollbackFiles?.length || 0} 个</Descriptions.Item>
+                </Descriptions>
+                <List
+                    size="small"
+                    bordered
+                    header={<span className="font-semibold">命中投产范围的差异文件</span>}
+                    dataSource={gateResult.includedFiles || []}
+                    locale={{ emptyText: '暂无差异文件' }}
+                    renderItem={item => <List.Item><span className="font-mono text-xs">{item}</span></List.Item>}
+                />
+            </div>
+        );
+    };
 
-                <div className="p-6">
-                    {activeTab === 'packages' ? (
-                        <div className="space-y-4">
-                            {versionPackages.filter(p => p.status !== 'deployed' && p.status !== 'archived').length === 0 ? (
-                                <div className="py-20 text-center flex flex-col items-center justify-center opacity-40">
-                                    <Package size={64} strokeWidth={1} className="mb-4" />
-                                    <p>暂无版本包记录，请点击上方按钮从 Git 仓库创建</p>
+    const renderReleaseWorkflow = () => (
+        <div className="space-y-5">
+            <Steps
+                size="small"
+                current={currentStep}
+                items={[
+                    { title: '选择 Tag' },
+                    { title: '读取规格' },
+                    { title: '门禁校验' },
+                    { title: '生成生产包' },
+                    { title: '回填结果' }
+                ]}
+            />
+
+            <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-5">
+                <Card title="生产投产参数" className="border-slate-200 shadow-sm">
+                    <Form form={productionForm} layout="vertical">
+                        <Form.Item name="repoId" label="Git 仓库" rules={[{ required: true, message: '请选择 Git 仓库' }]}>
+                            {repoId ? (
+                                <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                                    <div className="font-semibold text-slate-800">{repos.find(r => r.id === repoId)?.name || '当前仓库'}</div>
+                                    <div className="text-xs text-slate-400 font-mono break-all mt-1">{repos.find(r => r.id === repoId)?.cloneUrl}</div>
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                                    {versionPackages.filter(p => p.status !== 'deployed' && p.status !== 'archived').map(pkg => {
-                                        const config = statusConfig[pkg.status] || statusConfig.draft;
-                                        return (
-                                            <div key={pkg.id} className="rounded-2xl border border-slate-200 p-5 hover:border-indigo-300 transition-all hover:shadow-md bg-white group">
-                                                <div className="flex items-start justify-between mb-4">
-                                                    <div>
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <h4 className="text-base font-bold text-slate-800 m-0">版本: {pkg.version}</h4>
-                                                            <Tag color={config.color} className="flex items-center gap-1">
-                                                                {config.icon} {config.label}
-                                                            </Tag>
-                                                        </div>
-                                                        <div className="text-xs text-slate-400 font-mono">ID: VP-{pkg.id.toString().padStart(6, '0')}</div>
-                                                    </div>
-                                                    <Dropdown menu={{
-                                                        items: [
-                                                            { key: 'deployed', label: '标记为已部署', onClick: () => handleUpdateStatus(pkg.id, 'deployed') },
-                                                            { key: 'archived', label: '标记为归档', onClick: () => handleUpdateStatus(pkg.id, 'archived') },
-                                                            { key: 'delete', label: '删除', danger: true, onClick: () => message.info('功能暂未开放') },
-                                                        ]
-                                                    }}>
-                                                        <Button type="text" icon={<MoreVertical size={16} />} />
-                                                    </Dropdown>
-                                                </div>
-
-                                                <div className="grid grid-cols-2 gap-y-3 gap-x-6 text-sm">
-                                                    <div className="flex items-center gap-2 text-slate-600">
-                                                        <Globe size={14} className="text-slate-400" />
-                                                        <span className="truncate">仓库: {repos.find(r => r.id === pkg.repoId)?.name || '未知'}</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 text-slate-600">
-                                                        <GitBranch size={14} className="text-slate-400" />
-                                                        <span>引用: {pkg.gitRef}</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 text-slate-600">
-                                                        <Server size={14} className="text-slate-400" />
-                                                        <span className="truncate">环境: {environments.find(e => String(e.id) === String(pkg.envId))?.name || '-'}</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 text-slate-600">
-                                                        <ShieldCheck size={14} className="text-emerald-500" />
-                                                        <span>执行用户: {pkg.execUser || '-'}</span>
-                                                    </div>
-                                                    <div className="col-span-2 flex items-start gap-2 text-slate-600">
-                                                        <Info size={14} className="text-slate-400 mt-1" />
-                                                        <span>说明: {pkg.description || '无'}</span>
-                                                    </div>
-                                                </div>
-
-                                                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
-                                                    <div className="text-xs text-slate-400">
-                                                        创建时间: {pkg.createdAt ? new Date(pkg.createdAt).toLocaleString() : '-'}
-                                                    </div>
-                                                    <Button
-                                                        size="small"
-                                                        icon={<Download size={14} />}
-                                                        onClick={() => handleDownload(pkg)}
-                                                    >
-                                                        下载安装包
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                                <Select placeholder="选择 Git 仓库" onChange={handleRepoChange}>
+                                    {repos.map(repo => <Option key={repo.id} value={repo.id}>{repo.name}</Option>)}
+                                </Select>
                             )}
-                        </div>
-                    ) : (
-                        <div className="space-y-4">
-                            {versionPackages.filter(p => p.status === 'deployed' || p.status === 'archived').length === 0 ? (
-                                <div className="py-20 text-center flex flex-col items-center justify-center opacity-40">
-                                    <History size={64} strokeWidth={1} className="mb-4" />
-                                    <p>暂无已部署记录，标记版本包为"已部署"后将在此展示</p>
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                                    {versionPackages.filter(p => p.status === 'deployed' || p.status === 'archived').map(pkg => {
-                                        const config = statusConfig[pkg.status] || statusConfig.deployed;
-                                        return (
-                                            <div key={pkg.id} className="rounded-2xl border border-slate-200 p-5 bg-white">
-                                                <div className="flex items-start justify-between mb-4">
-                                                    <div>
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <h4 className="text-base font-bold text-slate-800 m-0">版本: {pkg.version}</h4>
-                                                            <Tag color={config.color} className="flex items-center gap-1">
-                                                                {config.icon} {config.label}
-                                                            </Tag>
-                                                        </div>
-                                                        <div className="text-xs text-slate-400 font-mono">ID: VP-{pkg.id.toString().padStart(6, '0')}</div>
-                                                    </div>
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-y-3 gap-x-6 text-sm">
-                                                    <div className="flex items-center gap-2 text-slate-600">
-                                                        <Globe size={14} className="text-slate-400" />
-                                                        <span className="truncate">仓库: {repos.find(r => r.id === pkg.repoId)?.name || '未知'}</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 text-slate-600">
-                                                        <GitBranch size={14} className="text-slate-400" />
-                                                        <span>引用: {pkg.gitRef}</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 text-slate-600">
-                                                        <Server size={14} className="text-slate-400" />
-                                                        <span className="truncate">环境: {environments.find(e => String(e.id) === String(pkg.envId))?.name || '-'}</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 text-slate-600">
-                                                        <ShieldCheck size={14} className="text-emerald-500" />
-                                                        <span>执行用户: {pkg.execUser || '-'}</span>
-                                                    </div>
-                                                    <div className="col-span-2 flex items-start gap-2 text-slate-600">
-                                                        <Info size={14} className="text-slate-400 mt-1" />
-                                                        <span>说明: {pkg.description || '无'}</span>
-                                                    </div>
-                                                </div>
-                                                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
-                                                    <div className="text-xs text-slate-400">
-                                                        创建时间: {pkg.createdAt ? new Date(pkg.createdAt).toLocaleString() : '-'}
-                                                    </div>
-                                                    <Button
-                                                        size="small"
-                                                        icon={<Download size={14} />}
-                                                        onClick={() => handleDownload(pkg)}
-                                                    >
-                                                        下载安装包
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-            </div>
+                        </Form.Item>
 
-            {/* 创建版本包 Modal */}
-            <Modal
-                title={
-                    <div className="flex items-center gap-3 py-1">
-                        <div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600">
-                            <Package size={18} />
-                        </div>
-                        <span>创建新版本包</span>
-                    </div>
-                }
-                open={packageModalVisible}
-                onOk={handleCreatePackage}
-                onCancel={() => setPackageModalVisible(false)}
-                okText="创建版本包"
-                cancelText="取消"
-                width={550}
-                centered
-            >
-                <Form form={packageForm} layout="vertical" className="mt-4 px-1">
-                    <Form.Item name="repoId" label="项目仓库" rules={[{ required: true }]}>
-                        {repoId ? (
-                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <Globe size={14} className="text-indigo-500" />
-                                    <span className="font-bold text-slate-800">
-                                        {repos.find(r => r.id === repoId)?.name || '正在加载...'}
-                                    </span>
-                                </div>
-                                <div className="text-xs text-slate-400 font-mono break-all pl-6">
-                                    {repos.find(r => r.id === repoId)?.cloneUrl}
-                                </div>
-                            </div>
-                        ) : (
-                            <Select placeholder="选择关联的 Git 仓库" onChange={handleRepoChange}>
-                                {repos.map(repo => (
-                                    <Option key={repo.id} value={repo.id}>
-                                        <div className="flex items-center gap-2">
-                                            <Globe size={14} className="text-slate-400" />
-                                            <span>{repo.name} {repo.fullName && `(${repo.fullName})`}</span>
+                        <Form.Item name="gitRef" label="当前投产 Tag" rules={[{ required: true, message: '请选择当前投产 Tag' }]}>
+                            <Select
+                                placeholder={selectedRepo ? '选择当前投产 Tag' : '请先选择仓库'}
+                                disabled={!selectedRepo}
+                                loading={fetchingGit}
+                                showSearch
+                                onChange={handleTagChange}
+                            >
+                                {tags.map(tag => (
+                                    <Option key={tag.name} value={tag.name}>
+                                        <Space>
+                                            <TagIcon size={14} />
+                                            <span>{tag.name}</span>
+                                            {tag.taggerDate && <span className="text-xs text-slate-400">{tag.taggerDate.split('T')[0]}</span>}
+                                        </Space>
+                                    </Option>
+                                ))}
+                            </Select>
+                        </Form.Item>
+
+                        <Form.Item name="previousGitRef" label="上一投产 Tag" rules={[{ required: true, message: '请选择上一投产 Tag' }]}>
+                            <Select
+                                placeholder={selectedRepo ? '选择上一投产 Tag' : '请先选择仓库'}
+                                disabled={!selectedRepo}
+                                loading={fetchingGit}
+                                showSearch
+                                onChange={() => {
+                                    setGateResult(null);
+                                    setBuildResult(null);
+                                }}
+                            >
+                                {tags
+                                    .filter(tag => tag.name !== productionForm.getFieldValue('gitRef'))
+                                    .map(tag => (
+                                        <Option key={tag.name} value={tag.name}>
+                                            <Space>
+                                                <History size={14} />
+                                                <span>{tag.name}</span>
+                                                {tag.taggerDate && <span className="text-xs text-slate-400">{tag.taggerDate.split('T')[0]}</span>}
+                                            </Space>
+                                        </Option>
+                                    ))}
+                            </Select>
+                        </Form.Item>
+
+                        <Form.Item name="assetId" label="生产数据库服务器" rules={[{ required: true, message: '请选择生产数据库服务器' }]}>
+                            <Select placeholder="选择 role=db 的生产数据库服务器" showSearch optionFilterProp="label">
+                                {dbAssets.map(asset => (
+                                    <Option key={asset.id} value={asset.id} label={`${asset.hostname} ${asset.internalIp}`}>
+                                        <div className="flex items-center justify-between">
+                                            <Space>
+                                                <Server size={14} />
+                                                <span>{asset.hostname}</span>
+                                                <span className="text-xs text-slate-400">{asset.internalIp}</span>
+                                            </Space>
+                                            <Space>
+                                                {asset.dbType && <Tag color="purple" className="m-0">{asset.dbType}</Tag>}
+                                                {asset.envType && <Tag color="blue" className="m-0">{asset.envType}</Tag>}
+                                            </Space>
                                         </div>
                                     </Option>
                                 ))}
                             </Select>
+                        </Form.Item>
+
+                        <Form.Item name="envId" hidden><Input /></Form.Item>
+
+                        {assetMissingDsn && (
+                            <Alert
+                                className="mb-4"
+                                type="error"
+                                showIcon
+                                message="数据库连接信息缺失"
+                                description="该生产数据库服务器缺少数据库名/SID 或服务名，生成的包无法连接生产库。"
+                            />
                         )}
-                    </Form.Item>
 
-                    <Form.Item name="gitRef" label="版本标签 (Tag)" rules={[{ required: true }]}>
-                        <Select
-                            placeholder={selectedRepo ? "选择一个 Git 标签 (Tag)" : "请先选择仓库"}
-                            disabled={!selectedRepo}
-                            loading={fetchingGit}
-                            showSearch
-                            onChange={handleTagChange}
-                        >
-                            {tags.map(tag => (
-                                <Option key={`tag-${tag.name}`} value={tag.name}>
-                                    <div className="flex items-center gap-2">
-                                        <TagIcon size={14} className="text-indigo-500"/>
-                                        <span>{tag.name}</span>
-                                        {tag.taggerDate && (
-                                            <span className="text-[10px] text-slate-400 ml-auto">{tag.taggerDate.split('T')[0]}</span>
-                                        )}
-                                    </div>
-                                </Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
+                        <Form.Item name="execUser" label="数据库执行用户" rules={[{ required: true, message: '请选择数据库执行用户' }]}>
+                            <Select placeholder={availableUsers.length > 0 ? '选择数据库执行用户' : '该服务器暂未配置 DB 用户'} allowClear showSearch>
+                                {availableUsers.map(user => (
+                                    <Option key={user} value={user}>
+                                        <Space><ShieldCheck size={14} />{user}</Space>
+                                    </Option>
+                                ))}
+                            </Select>
+                        </Form.Item>
 
-                    <Form.Item name="previousGitRef" label="基线标签 (上一版本 Tag)" rules={[{ required: true, message: '请选择基线标签' }]}
-                        tooltip="用于对比差异，只打包两个标签之间变更的数据库脚本"
+                        <Form.Item name="description" label="投产说明">
+                            <Input.TextArea rows={3} placeholder="填写本次投产范围、风险点、验证说明" />
+                        </Form.Item>
+
+                        <Space wrap>
+                            <Button icon={<RefreshCw size={14} />} onClick={handleGateCheck} loading={gateLoading}>
+                                执行门禁校验
+                            </Button>
+                            <Button type="primary" icon={<Package size={14} />} onClick={handleBuildPackage} loading={buildLoading} disabled={gateResult?.status !== 'passed'}>
+                                生成生产投产包
+                            </Button>
+                        </Space>
+                    </Form>
+                </Card>
+
+                <div className="space-y-4">
+                    <Card title="生产门禁" className="border-slate-200 shadow-sm">
+                        {renderGatePanel()}
+                    </Card>
+
+                    {buildResult && (
+                        <Card title="生产执行命令" className="border-emerald-200 shadow-sm bg-emerald-50/30">
+                            <div className="space-y-3">
+                                <Alert type="success" showIcon message="生产投产包已生成" description={buildResult.packageName} />
+                                <Descriptions size="small" bordered column={1}>
+                                    <Descriptions.Item label="部署命令">
+                                        <code>{buildResult.deployCommand}</code>
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label="回滚命令">
+                                        <code>{buildResult.rollbackCommand}</code>
+                                    </Descriptions.Item>
+                                </Descriptions>
+                                <Space wrap>
+                                    <Button type="primary" icon={<Download size={14} />} onClick={() => handleDownloadProduction(buildResult.packageId, buildResult.packageName)}>
+                                        下载生产投产包
+                                    </Button>
+                                    <Button icon={<CheckCircle size={14} />} onClick={openRecordModal}>
+                                        回填生产执行结果
+                                    </Button>
+                                </Space>
+                            </div>
+                        </Card>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderPackageCard = (pkg: VersionPackage) => {
+        const config = statusConfig[pkg.status] || statusConfig.ready;
+        const repoName = repos.find(r => r.id === pkg.repoId)?.name || '未知仓库';
+        const envName = environments.find(e => String(e.id) === String(pkg.envId))?.name || '-';
+        const isProductionPackage = !!pkg.deployCommand || pkg.packageUrl?.startsWith('generated://production');
+        return (
+            <div key={pkg.id} className="rounded-lg border border-slate-200 p-4 bg-white hover:border-indigo-300 transition-colors">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                    <div>
+                        <Space className="mb-1" wrap>
+                            <span className="font-bold text-slate-800">版本: {pkg.version}</span>
+                            <Tag color={config.color} className="inline-flex items-center gap-1">{config.icon} {config.label}</Tag>
+                            {pkg.packageType && <Tag color="geekblue">{pkg.packageType}</Tag>}
+                        </Space>
+                        <div className="text-xs text-slate-400 font-mono">VP-{pkg.id.toString().padStart(6, '0')}</div>
+                    </div>
+                    <Dropdown menu={{
+                        items: [
+                            { key: 'deployed', label: '标记为已部署', onClick: () => handleUpdateStatus(pkg.id, 'deployed') },
+                            { key: 'archived', label: '标记为归档', onClick: () => handleUpdateStatus(pkg.id, 'archived') },
+                        ]
+                    }}>
+                        <Button type="text" icon={<MoreVertical size={16} />} />
+                    </Dropdown>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-slate-600">
+                    <Space><Globe size={14} />仓库: {repoName}</Space>
+                    <Space><GitBranch size={14} />Tag: {pkg.gitRef}</Space>
+                    <Space><History size={14} />基线: {pkg.previousGitRef || '-'}</Space>
+                    <Space><Server size={14} />环境: {envName}</Space>
+                    <Space><ShieldCheck size={14} />执行用户: {pkg.execUser || '-'}</Space>
+                    <Space><Info size={14} />门禁: {pkg.gateStatus || '-'}</Space>
+                </div>
+                {pkg.buildLog && <div className="mt-3 text-xs text-slate-500 bg-slate-50 rounded p-2">{pkg.buildLog}</div>}
+                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-xs text-slate-400">创建时间: {pkg.createdAt ? new Date(pkg.createdAt).toLocaleString() : '-'}</span>
+                    <Button
+                        size="small"
+                        icon={<Download size={14} />}
+                        onClick={() => isProductionPackage ? handleDownloadProduction(pkg.id, pkg.packageName) : handleDownloadLegacy(pkg)}
                     >
-                        <Select
-                            placeholder={selectedRepo ? "自动选择上一版本标签（可手动修改）" : "请先选择仓库"}
-                            disabled={!selectedRepo}
-                            loading={fetchingGit}
-                            showSearch
-                        >
-                            {tags
-                                .filter(tag => tag.name !== packageForm.getFieldValue('gitRef'))
-                                .map(tag => (
-                                <Option key={`prev-${tag.name}`} value={tag.name}>
-                                    <div className="flex items-center gap-2">
-                                        <History size={14} className="text-slate-400"/>
-                                        <span>{tag.name}</span>
-                                        {tag.taggerDate && (
-                                            <span className="text-[10px] text-slate-400 ml-auto">{tag.taggerDate.split('T')[0]}</span>
-                                        )}
-                                    </div>
-                                </Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
+                        {isProductionPackage ? '下载生产包' : '下载数据库包'}
+                    </Button>
+                </div>
+            </div>
+        );
+    };
 
-                    <Form.Item name="assetId" label="投产数据库服务器" rules={[{ required: true, message: '请选择投产数据库服务器' }]}>
-                        <Select
-                            placeholder="选择该版本拟投产的目标数据库服务器"
-                            showSearch
-                            optionFilterProp="label"
-                            onChange={handleAssetChange}
-                        >
-                            {dbAssets.map(asset => (
-                                <Option key={asset.id} value={asset.id} label={`${asset.hostname} ${asset.internalIp}`}>
-                                    <div className="flex items-center justify-between py-1">
-                                        <div className="flex items-center gap-2 overflow-hidden">
-                                            <Server size={14} className="text-indigo-500 shrink-0" />
-                                            <span className="font-bold text-slate-800 truncate">{asset.hostname || '未命名'}</span>
-                                            <span className="text-slate-400 text-xs shrink-0">{asset.internalIp}</span>
-                                        </div>
-                                        <div className="flex items-center gap-2 shrink-0">
-                                            {asset.dbType && <Tag color="purple" className="m-0 text-[10px]">{asset.dbType}</Tag>}
-                                            {asset.envType && <Tag color="blue" className="m-0 text-[10px]">{asset.envType}</Tag>}
-                                        </div>
-                                    </div>
-                                </Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
-                    
-                    {/* envId 由选中服务器自动带出，不需要用户手动选择 */}
-                    <Form.Item name="envId" hidden><Input /></Form.Item>
+    const activePackages = versionPackages.filter(p => !['deployed', 'archived', 'failed', 'blocked'].includes(p.status));
+    const historyPackages = versionPackages.filter(p => p.status === 'deployed' || p.status === 'archived' || p.status === 'failed' || p.status === 'blocked');
 
-                    {assetMissingDsn && (
-                        <div className="mb-4 p-3 bg-red-50 rounded-xl border border-red-200 flex items-start gap-3">
-                            <AlertTriangle size={16} className="text-red-500 mt-0.5 shrink-0" />
-                            <div className="text-xs text-red-700">
-                                <b>连接字符串缺失：</b>该服务器未配置 <b>数据库名/SID</b> 或 <b>服务名</b>，
-                                生成的 manifest.json 中将缺少 <code>dsn</code> 字段，部署脚本无法连接数据库。
-                                请前往 <b>基础设施管理</b> 完善该服务器的数据库连接信息后再创建版本包。
-                            </div>
+    return (
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="border-slate-200 shadow-sm">
+                    <Space>
+                        <Package className="text-indigo-600" size={24} />
+                        <div>
+                            <div className="text-xs text-slate-400 font-medium">总投产包</div>
+                            <div className="text-2xl font-bold text-slate-800">{versionPackages.length}</div>
+                        </div>
+                    </Space>
+                </Card>
+                <Card className="border-slate-200 shadow-sm">
+                    <Space>
+                        <CheckCircle className="text-emerald-600" size={24} />
+                        <div>
+                            <div className="text-xs text-slate-400 font-medium">已部署</div>
+                            <div className="text-2xl font-bold text-slate-800">{versionPackages.filter(p => p.status === 'deployed').length}</div>
+                        </div>
+                    </Space>
+                </Card>
+                <Card className="border-slate-200 shadow-sm">
+                    <Space>
+                        <AlertTriangle className="text-amber-600" size={24} />
+                        <div>
+                            <div className="text-xs text-slate-400 font-medium">阻断/失败</div>
+                            <div className="text-2xl font-bold text-slate-800">{versionPackages.filter(p => p.status === 'blocked' || p.status === 'failed').length}</div>
+                        </div>
+                    </Space>
+                </Card>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                    <Space size="large">
+                        <button
+                            className={`flex items-center gap-2 ${activeTab === 'release' ? 'text-indigo-600 font-bold' : 'text-slate-500 font-medium'}`}
+                            onClick={() => setActiveTab('release')}
+                        >
+                            <Rocket size={18} /> 生产投产
+                        </button>
+                        <button
+                            className={`flex items-center gap-2 ${activeTab === 'history' ? 'text-indigo-600 font-bold' : 'text-slate-500 font-medium'}`}
+                            onClick={() => setActiveTab('history')}
+                        >
+                            <History size={18} /> 投产记录
+                        </button>
+                    </Space>
+                    <Button icon={<RefreshCw size={14} className={loading ? 'animate-spin' : ''} />} onClick={fetchData}>
+                        刷新
+                    </Button>
+                </div>
+                <div className="p-6">
+                    {activeTab === 'release' ? (
+                        <div className="space-y-6">
+                            {renderReleaseWorkflow()}
+                            <Card title="待执行投产包" className="border-slate-200 shadow-sm">
+                                {activePackages.length === 0 ? (
+                                    <div className="py-12 text-center text-slate-400">暂无待执行投产包</div>
+                                ) : (
+                                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                        {activePackages.map(renderPackageCard)}
+                                    </div>
+                                )}
+                            </Card>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {historyPackages.length === 0 ? (
+                                <div className="py-16 text-center text-slate-400">暂无投产历史</div>
+                            ) : (
+                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                    {historyPackages.map(renderPackageCard)}
+                                </div>
+                            )}
                         </div>
                     )}
+                </div>
+            </div>
 
-                    <Form.Item name="execUser" label="执行用户" rules={[{ required: true, message: '请选择执行用户' }]}>
-                        <Select 
-                            placeholder={availableUsers.length > 0 ? "选择环境鉴权账号" : "该环境暂未配置鉴权账号"}
-                            allowClear
-                            showSearch
-                        >
-                            {availableUsers.map(user => (
-                                <Option key={user} value={user}>
-                                    <div className="flex items-center gap-2">
-                                        <ShieldCheck size={14} className="text-emerald-500" />
-                                        <span>{user}</span>
-                                    </div>
-                                </Option>
-                            ))}
+            <Modal
+                title="回填生产执行结果"
+                open={recordModalVisible}
+                onOk={handleRecordResult}
+                onCancel={() => setRecordModalVisible(false)}
+                okText="确认回填"
+                cancelText="取消"
+            >
+                <Form form={recordForm} layout="vertical">
+                    <Form.Item name="packageId" label="投产包 ID" rules={[{ required: true }]}>
+                        <Input disabled />
+                    </Form.Item>
+                    <Form.Item name="status" label="执行结果" rules={[{ required: true }]}>
+                        <Select>
+                            <Option value="success">成功</Option>
+                            <Option value="failed">失败</Option>
+                            <Option value="blocked">被存储过程一致性校验阻断</Option>
                         </Select>
                     </Form.Item>
-
-                    <Form.Item name="description" label="版本说明">
-                        <Input.TextArea rows={3} placeholder="填写该版本的变更点、注意事项等" />
+                    <Form.Item name="logs" label="生产执行日志">
+                        <Input.TextArea rows={5} placeholder="粘贴 deploy.sh 或 rollback.sh 的关键日志" />
                     </Form.Item>
-                    
-                    {dbAssets.length === 0 && (
-                        <div className="mt-2 p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-start gap-3">
-                            <AlertTriangle size={16} className="text-amber-500 mt-0.5" />
-                            <div className="text-xs text-amber-700">
-                                <b>{'注意：'}</b> {'当前系统暂未配置任何数据库服务器(role=db)，请前往基础设施管理添加数据库服务器。'}
-                            </div>
-                        </div>
-                    )}
+                    <Form.Item name="remark" label="备注">
+                        <Input.TextArea rows={3} placeholder="填写验证结论、异常说明或回滚说明" />
+                    </Form.Item>
                 </Form>
             </Modal>
-
-
         </div>
     );
 };

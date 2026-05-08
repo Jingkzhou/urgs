@@ -17,6 +17,7 @@ public class Deployment {
     public static final String STATUS_SUCCESS = "success";
     public static final String STATUS_FAILED = "failed";
     public static final String STATUS_ROLLBACK = "rollback";
+    public static final String STATUS_BLOCKED = "blocked";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

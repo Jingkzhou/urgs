@@ -344,7 +344,7 @@ export interface Deployment {
     pipelineRunId?: number;
     version?: string;
     artifactUrl?: string;
-    status: 'pending' | 'deploying' | 'success' | 'failed' | 'rollback';
+    status: 'pending' | 'deploying' | 'success' | 'failed' | 'rollback' | 'blocked';
     deployedBy?: number;
     deployedAt?: string;
     rollbackTo?: number;
@@ -375,8 +375,79 @@ export interface VersionPackage {
     deployedAt?: string;
     envId?: number;
     execUser?: string;
+    specPath?: string;
+    packageType?: string;
+    gateStatus?: string;
+    gateSummary?: string;
+    changedFiles?: string;
+    buildLog?: string;
+    deployCommand?: string;
+    rollbackCommand?: string;
+    backupStatus?: string;
     createdAt?: string;
     updatedAt?: string;
+}
+
+export interface ProductionPackageRequest {
+    repoId: number;
+    ssoId: number;
+    gitRef: string;
+    previousGitRef: string;
+    assetId?: number;
+    execUser?: string;
+    description?: string;
+    createdBy?: number;
+    envId?: number;
+}
+
+export interface ProductionPackageGateItem {
+    key: string;
+    label: string;
+    status: 'passed' | 'failed' | string;
+    message?: string;
+}
+
+export interface ProductionPackageChangeSummary {
+    sqlFiles: string[];
+    procedureFiles: string[];
+    backupFiles: string[];
+    rollbackFiles: string[];
+    otherFiles: string[];
+}
+
+export interface ProductionPackageDatabaseSpec {
+    dbType?: string;
+    jdbcUrl?: string;
+    schema?: string;
+    driverDir?: string;
+    driverJar?: string;
+    jdbcDriverClass?: string;
+}
+
+export interface ProductionPackageGateResult {
+    repoId: number;
+    gitRef: string;
+    previousGitRef: string;
+    packageType?: string;
+    specPath?: string;
+    status: 'passed' | 'failed' | string;
+    summary?: string;
+    deployCommand?: string;
+    rollbackCommand?: string;
+    database?: ProductionPackageDatabaseSpec;
+    gates: ProductionPackageGateItem[];
+    includedFiles: string[];
+    backupTables?: string[];
+    changeSummary: ProductionPackageChangeSummary;
+}
+
+export interface ProductionPackageBuildResult {
+    packageId: number;
+    packageName: string;
+    packageSize: number;
+    deployCommand: string;
+    rollbackCommand: string;
+    gateResult: ProductionPackageGateResult;
 }
 
 // 环境管理
@@ -407,6 +478,16 @@ export const executeDeploy = (data: { ssoId: number; envId: number; version: str
 
 export const rollbackDeploy = (deploymentId: number) =>
     post<Deployment>(`/api/version/deploy/deployments/${deploymentId}/rollback`, {});
+
+export const recordOfflineDeploymentResult = (data: {
+    ssoId: number;
+    envId: number;
+    packageId: number;
+    status: 'success' | 'failed' | 'blocked';
+    deployedBy?: number;
+    logs?: string;
+    remark?: string;
+}) => post<Deployment>('/api/version/deploy/deployments/offline-result', data);
 
 // ===== 发布台账 API =====
 
@@ -588,6 +669,15 @@ export const createVersionPackage = (params: {
  */
 export const downloadVersionPackage = (packageId: number) =>
     get<Blob>(`/api/version/deploy/packages/${packageId}/download`, {}, { isBlob: true });
+
+export const gateCheckProductionPackage = (params: ProductionPackageRequest) =>
+    post<ProductionPackageGateResult>('/api/version/deploy/packages/gate-check', params);
+
+export const buildProductionPackage = (params: ProductionPackageRequest) =>
+    post<ProductionPackageBuildResult>('/api/version/deploy/packages/production', params);
+
+export const downloadProductionPackage = (packageId: number) =>
+    get<Blob>(`/api/version/deploy/packages/${packageId}/production-download`, {}, { isBlob: true });
 
 /**
  * 回填版本包部署状态

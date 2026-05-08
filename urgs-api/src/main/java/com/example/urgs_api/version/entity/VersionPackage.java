@@ -17,6 +17,8 @@ public class VersionPackage {
     public static final String STATUS_READY = "ready";
     public static final String STATUS_DEPLOYED = "deployed";
     public static final String STATUS_ARCHIVED = "archived";
+    public static final String STATUS_FAILED = "failed";
+    public static final String STATUS_BLOCKED = "blocked";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -101,6 +103,42 @@ public class VersionPackage {
     /** 投产环境ID */
     @Column(name = "env_id")
     private Long envId;
+
+    /** 发布规格文件路径 */
+    @Column(name = "spec_path", length = 255)
+    private String specPath;
+
+    /** 投产包类型: db/app/static/mixed */
+    @Column(name = "package_type", length = 50)
+    private String packageType;
+
+    /** 门禁状态 */
+    @Column(name = "gate_status", length = 20)
+    private String gateStatus;
+
+    /** 门禁摘要(JSON) */
+    @Column(name = "gate_summary", columnDefinition = "LONGTEXT")
+    private String gateSummary;
+
+    /** 差异文件清单(JSON) */
+    @Column(name = "changed_files", columnDefinition = "LONGTEXT")
+    private String changedFiles;
+
+    /** 打包日志 */
+    @Column(name = "build_log", columnDefinition = "LONGTEXT")
+    private String buildLog;
+
+    /** 生产部署命令 */
+    @Column(name = "deploy_command", length = 500)
+    private String deployCommand;
+
+    /** 生产回滚命令 */
+    @Column(name = "rollback_command", length = 500)
+    private String rollbackCommand;
+
+    /** 备份状态 */
+    @Column(name = "backup_status", length = 20)
+    private String backupStatus;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

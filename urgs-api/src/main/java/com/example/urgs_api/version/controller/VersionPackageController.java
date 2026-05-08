@@ -1,6 +1,10 @@
 package com.example.urgs_api.version.controller;
 
+import com.example.urgs_api.version.dto.ProductionPackageBuildResult;
+import com.example.urgs_api.version.dto.ProductionPackageGateResult;
+import com.example.urgs_api.version.dto.ProductionPackageRequest;
 import com.example.urgs_api.version.entity.VersionPackage;
+import com.example.urgs_api.version.service.ProductionPackageService;
 import com.example.urgs_api.version.service.VersionPackageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -18,6 +22,7 @@ import java.util.Map;
 public class VersionPackageController {
 
     private final VersionPackageService packageService;
+    private final ProductionPackageService productionPackageService;
 
     @GetMapping
     public List<VersionPackage> list(@RequestParam Long ssoId) {
@@ -60,6 +65,28 @@ public class VersionPackageController {
         String status = (String) params.get("status");
         Long operatorId = params.get("operatorId") != null ? Long.valueOf(params.get("operatorId").toString()) : null;
         return packageService.updateStatus(id, status, operatorId);
+    }
+
+    @PostMapping("/gate-check")
+    public ProductionPackageGateResult gateCheck(@RequestBody ProductionPackageRequest request) {
+        return productionPackageService.gateCheck(request);
+    }
+
+    @PostMapping("/production")
+    public ProductionPackageBuildResult buildProductionPackage(@RequestBody ProductionPackageRequest request) {
+        return productionPackageService.buildProductionPackage(request);
+    }
+
+    @GetMapping("/{id}/production-download")
+    public ResponseEntity<byte[]> downloadProductionPackage(@PathVariable Long id) throws IOException {
+        VersionPackage vp = packageService.findById(id);
+        byte[] archive = productionPackageService.generateProductionArchive(id);
+        String filename = productionPackageService.productionPackageName(vp);
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(archive);
     }
 
     @DeleteMapping("/{id}")

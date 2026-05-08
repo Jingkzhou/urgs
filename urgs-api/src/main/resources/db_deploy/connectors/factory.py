@@ -53,6 +53,51 @@ class GBaseConnector(MySQLConnector):
     """GBase 8a 兼容 MySQL 协议，直接复用 MySQLConnector"""
     pass
 
+class JdbcConnector(DBConnector):
+    """JDBC 通用连接器，用于星环等需要上传 JDBC jar 的数据库平台"""
+    def __init__(self, config):
+        import jaydebeapi
+        jdbc_url = config.get('jdbc_url') or config.get('jdbcUrl')
+        driver_class = config.get('driver_class') or config.get('jdbcDriverClass')
+        driver_jar = config.get('driver_jar') or config.get('driverJar')
+        if not jdbc_url:
+            raise ValueError("JDBC config missing jdbc_url")
+        if not driver_class:
+            raise ValueError("JDBC config missing driver_class")
+        if not driver_jar:
+            raise ValueError("JDBC config missing driver_jar")
+        if not os.path.isabs(driver_jar):
+            driver_jar = os.path.abspath(driver_jar)
+        if not os.path.exists(driver_jar):
+            raise FileNotFoundError(f"JDBC driver jar not found: {driver_jar}")
+        self.conn = jaydebeapi.connect(
+            driver_class,
+            jdbc_url,
+            [config.get('user'), config.get('password')],
+            driver_jar
+        )
+    def execute(self, sql: str):
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(sql)
+            if hasattr(self.conn, 'commit'):
+                self.conn.commit()
+            return cursor.rowcount
+        finally:
+            cursor.close()
+    def fetch(self, sql: str, params=None) -> list:
+        cursor = self.conn.cursor()
+        try:
+            if params:
+                cursor.execute(sql, params)
+            else:
+                cursor.execute(sql)
+            return cursor.fetchall()
+        finally:
+            cursor.close()
+    def close(self):
+        self.conn.close()
+
 class ConnectorFactory:
     _instances = {}
 
@@ -66,7 +111,10 @@ class ConnectorFactory:
             raise ValueError(f"Connection config for '{target_name}' not found")
 
         db_type = config.get('type', '').lower()
-        if db_type == 'oracle':
+        use_jdbc = all(config.get(k) for k in ('jdbc_url', 'driver_class', 'driver_jar'))
+        if db_type in ('jdbc', 'xinghuan', 'transwarp') or use_jdbc:
+            conn = JdbcConnector(config)
+        elif db_type == 'oracle':
             conn = OracleConnector(config)
         elif db_type == 'mysql':
             conn = MySQLConnector(config)

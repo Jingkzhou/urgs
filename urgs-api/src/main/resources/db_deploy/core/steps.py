@@ -129,12 +129,23 @@ class ExportAndCompareProceduresHandler(BaseHandler):
                 # 读取包内的基线版本
                 expected_path = os.path.join(working_dir, expected_source_dir, f"{proc_name}.sql")
                 if not os.path.exists(expected_path):
-                    log.warn(f"基线文件不存在: {expected_source_dir}/{proc_name}.sql，跳过校验")
-                    matched += 1
+                    mismatches.append(proc_name)
+                    log.error(
+                        f"基线文件不存在: {expected_source_dir}/{proc_name}.sql。"
+                        "生产中的版本与GitLab中的投产前版本不一致，停止投产"
+                    )
                     continue
 
                 with open(expected_path, "r", encoding="utf-8") as f:
                     expected_source = f.read()
+
+                if not prod_source:
+                    mismatches.append(proc_name)
+                    log.error(
+                        f"生产库未导出存储过程 '{proc_name}'。"
+                        "生产中的版本与GitLab中的投产前版本不一致，停止投产"
+                    )
+                    continue
 
                 # 规范化后对比
                 norm_prod = self._normalize(prod_source)
@@ -145,10 +156,16 @@ class ExportAndCompareProceduresHandler(BaseHandler):
                     log.info(f"校验通过: {proc_name}")
                 else:
                     mismatches.append(proc_name)
-                    log.error(f"不一致: 生产存储过程 '{proc_name}' 与 Git 基线版本不匹配")
+                    log.error(
+                        f"不一致: 生产存储过程 '{proc_name}' 与 GitLab 投产前版本不匹配。"
+                        "生产中的版本与GitLab中的投产前版本不一致，停止投产"
+                    )
 
         if mismatches:
-            msg = f"生产存储过程与 Git 基线版本不一致: {', '.join(mismatches)}。停止部署，需人工介入。"
+            msg = (
+                f"生产中的版本与GitLab中的投产前版本不一致: {', '.join(mismatches)}。"
+                "停止投产，未执行备份和正式部署。"
+            )
             if on_mismatch == "abort":
                 raise RuntimeError(msg)
             else:

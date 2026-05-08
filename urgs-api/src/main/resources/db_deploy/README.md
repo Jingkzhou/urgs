@@ -30,7 +30,7 @@
         │   └── main.py        # 命令行入口
         ├── connectors/
         │   ├── __init__.py
-        │   └── factory.py     # 数据库连接工厂（Oracle / MySQL / GBase）
+        │   └── factory.py     # 数据库连接工厂（Oracle / MySQL / GBase / JDBC）
         ├── core/
         │   ├── __init__.py
         │   ├── engine.py      # 部署引擎核心（check / deploy / rollback）
@@ -52,11 +52,16 @@
 bash bin/db_deploy/install_deps.sh
 ```
 
+URGS 后端打包时默认从 `classpath:db_deploy` 读取工具与驱动。生产环境可配置
+`DEPLOY_TOOL_WORKDIR=/data/urgs/db_deploy`，然后将驱动上传到
+`/data/urgs/db_deploy/drivers/<dbType>/`，避免每次新增驱动都重打后端包。
+
 **在线环境（有外网）：**
 
 ```bash
-pip3 install cx_Oracle   # Oracle（需额外安装 Oracle Instant Client）
-pip3 install pymysql     # MySQL / GBase
+pip3 install cx_Oracle          # Oracle（需额外安装 Oracle Instant Client）
+pip3 install pymysql            # MySQL / GBase
+pip3 install JayDeBeApi JPype1  # 星环/Transwarp 等 JDBC 平台
 ```
 
 ---
@@ -80,6 +85,22 @@ pip3 install pymysql     # MySQL / GBase
     "user": "irs_datacore",
     "password": "your_password",
     "dsn": "192.168.1.10:1521/ORCL"
+  }
+}
+```
+
+星环/Transwarp 等 JDBC 平台示例：
+
+```json
+{
+  "prod_db": {
+    "type": "xinghuan",
+    "user": "prod_user",
+    "password": "your_password",
+    "jdbc_url": "jdbc:hive2://10.10.1.30:10000/business_prod",
+    "driver_class": "io.transwarp.jdbc.InceptorDriver",
+    "driver_jar": "bin/db_deploy/drivers/xinghuan/transwarp-jdbc.jar",
+    "schema": "business_prod"
   }
 }
 ```
