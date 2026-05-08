@@ -61,7 +61,7 @@ public class VersionPackageService {
      */
     @Transactional
     public VersionPackage createPackage(Long repoId, Long ssoId, String gitRef, String previousGitRef,
-                                         Long assetId, String execUser, String description, Long createdBy, Long envId) {
+                                         String description, Long createdBy, Long envId) {
         // 获取当前 tag 的提交信息
         GitCommit latestCommit = gitPlatformService.getLatestCommit(repoId, gitRef);
 
@@ -89,16 +89,11 @@ public class VersionPackageService {
         }
         vp.setPreviousGitRef(previousGitRef);
         vp.setPreviousCommitSha(previousCommitSha);
-        vp.setAssetId(assetId);
-        vp.setExecUser(execUser);
         vp.setDescription(description);
         vp.setStatus(VersionPackage.STATUS_READY);
         vp.setCreatedBy(createdBy);
-        // 若前端未传 envId，从关联的服务器资产自动推导
         if (envId != null) {
             vp.setEnvId(envId);
-        } else if (assetId != null) {
-            assetRepository.findById(assetId).ifPresent(a -> vp.setEnvId(a.getEnvId()));
         }
 
         return packageRepository.save(vp);
@@ -277,11 +272,16 @@ public class VersionPackageService {
     }
 
     /**
-     * 根据单台资产 ID + 执行用户构建数据库连接配置
-     * 从 InfrastructureAsset + InfrastructureUser (userType=db) 自动生成
+     * 优先根据发布规格构建数据库连接配置，兼容旧包的资产 ID + 执行用户模式
      */
     private Map<String, Object> buildConnectionsConfig(VersionPackage vp, ReleaseSpec.DatabaseSpec databaseSpec) {
         Map<String, Object> connections = new LinkedHashMap<>();
+
+        if (hasDatabaseConnectionConfig(databaseSpec)) {
+            String targetName = firstNonBlank(databaseSpec.getTargetName(), "prod_db");
+            connections.put(targetName, buildConnectionFromSpec(databaseSpec));
+            return connections;
+        }
 
         if (vp.getAssetId() == null) {
             log.warn("版本包 {} 未指定目标数据库服务器，跳过连接配置生成", vp.getId());
@@ -317,6 +317,55 @@ public class VersionPackageService {
         return connections;
     }
 
+    private boolean hasDatabaseConnectionConfig(ReleaseSpec.DatabaseSpec databaseSpec) {
+        if (databaseSpec == null || isBlank(databaseSpec.getDbType())) {
+            return false;
+        }
+        return !isBlank(databaseSpec.getUser())
+                || !isBlank(databaseSpec.getPassword())
+                || !isBlank(databaseSpec.getHost())
+                || !isBlank(databaseSpec.getDsn())
+                || !isBlank(databaseSpec.getJdbcUrl());
+    }
+
+    private Map<String, Object> buildConnectionFromSpec(ReleaseSpec.DatabaseSpec databaseSpec) {
+        Map<String, Object> connConfig = new LinkedHashMap<>();
+        String dbType = firstNonBlank(databaseSpec.getDbType(), "oracle").toLowerCase();
+        connConfig.put("type", dbType);
+        putIfPresent(connConfig, "user", databaseSpec.getUser());
+        putIfPresent(connConfig, "password", databaseSpec.getPassword());
+        appendDatabaseSpecOptions(connConfig, databaseSpec, dbType);
+
+        boolean useJdbc = !isBlank(databaseSpec.getJdbcUrl())
+                && !isBlank(databaseSpec.getDriverJar())
+                && !isBlank(databaseSpec.getJdbcDriverClass());
+        if (useJdbc) {
+            return connConfig;
+        }
+
+        switch (dbType) {
+            case "oracle":
+                connConfig.put("dsn", resolveOracleDsn(databaseSpec));
+                break;
+            case "mysql":
+            case "gbase":
+                connConfig.put("host", firstNonBlank(databaseSpec.getHost(), hostFromJdbcUrl(databaseSpec.getJdbcUrl())));
+                connConfig.put("port", firstNonNull(databaseSpec.getPort(), portFromJdbcUrl(databaseSpec.getJdbcUrl()), 3306));
+                connConfig.put("database", firstNonBlank(databaseSpec.getDatabase(), databaseSpec.getSchema(),
+                        databaseNameFromJdbcUrl(databaseSpec.getJdbcUrl())));
+                break;
+            default:
+                putIfPresent(connConfig, "host", firstNonBlank(databaseSpec.getHost(), hostFromJdbcUrl(databaseSpec.getJdbcUrl())));
+                if (databaseSpec.getPort() != null) {
+                    connConfig.put("port", databaseSpec.getPort());
+                }
+                putIfPresent(connConfig, "database", firstNonBlank(databaseSpec.getDatabase(), databaseSpec.getSchema(),
+                        databaseNameFromJdbcUrl(databaseSpec.getJdbcUrl())));
+        }
+
+        return connConfig;
+    }
+
     /**
      * 构建单个数据库连接配置
      */
@@ -330,22 +379,7 @@ public class VersionPackageService {
         connConfig.put("user", dbUser.getUsername());
         connConfig.put("password", dbUser.getPassword());
         if (databaseSpec != null) {
-            if (!isBlank(databaseSpec.getJdbcUrl())) {
-                connConfig.put("jdbc_url", databaseSpec.getJdbcUrl());
-            }
-            if (!isBlank(databaseSpec.getJdbcDriverClass())) {
-                connConfig.put("driver_class", databaseSpec.getJdbcDriverClass());
-            }
-            if (!isBlank(databaseSpec.getDriverJar())) {
-                connConfig.put("driver_jar", packageDriverJarPath(databaseSpec, dbType));
-                connConfig.put("driver_jar_name", databaseSpec.getDriverJar());
-            }
-            if (!isBlank(databaseSpec.getDriverDir())) {
-                connConfig.put("driver_dir", packageDriverDirPath(databaseSpec.getDriverDir(), dbType));
-            }
-            if (!isBlank(databaseSpec.getSchema())) {
-                connConfig.put("schema", databaseSpec.getSchema());
-            }
+            appendDatabaseSpecOptions(connConfig, databaseSpec, dbType);
         }
 
         switch (dbType) {
@@ -379,6 +413,126 @@ public class VersionPackageService {
         }
 
         return connConfig;
+    }
+
+    private void appendDatabaseSpecOptions(Map<String, Object> connConfig, ReleaseSpec.DatabaseSpec databaseSpec,
+                                           String dbType) {
+        if (!isBlank(databaseSpec.getJdbcUrl())) {
+            connConfig.put("jdbc_url", databaseSpec.getJdbcUrl());
+        }
+        if (!isBlank(databaseSpec.getJdbcDriverClass())) {
+            connConfig.put("driver_class", databaseSpec.getJdbcDriverClass());
+        }
+        if (!isBlank(databaseSpec.getDriverJar())) {
+            connConfig.put("driver_jar", packageDriverJarPath(databaseSpec, dbType));
+            connConfig.put("driver_jar_name", databaseSpec.getDriverJar());
+        }
+        if (!isBlank(databaseSpec.getDriverDir())) {
+            connConfig.put("driver_dir", packageDriverDirPath(databaseSpec.getDriverDir(), dbType));
+        }
+        if (!isBlank(databaseSpec.getSchema())) {
+            connConfig.put("schema", databaseSpec.getSchema());
+        }
+    }
+
+    private String resolveOracleDsn(ReleaseSpec.DatabaseSpec databaseSpec) {
+        if (!isBlank(databaseSpec.getDsn())) {
+            return databaseSpec.getDsn();
+        }
+        String host = databaseSpec.getHost();
+        Integer port = firstNonNull(databaseSpec.getPort(), 1521);
+        String serviceName = databaseSpec.getServiceName();
+        String sid = firstNonBlank(databaseSpec.getSid(), databaseSpec.getDatabase());
+        if (!isBlank(host) && !isBlank(serviceName)) {
+            return String.format("%s:%d/%s", host, port, serviceName);
+        }
+        if (!isBlank(host) && !isBlank(sid)) {
+            return String.format("%s:%d:%s", host, port, sid);
+        }
+        return null;
+    }
+
+    private String hostFromJdbcUrl(String jdbcUrl) {
+        String authority = jdbcAuthority(jdbcUrl);
+        if (isBlank(authority)) {
+            return null;
+        }
+        int at = authority.lastIndexOf('@');
+        if (at >= 0 && at + 1 < authority.length()) {
+            authority = authority.substring(at + 1);
+        }
+        int colon = authority.lastIndexOf(':');
+        return colon > 0 ? authority.substring(0, colon) : authority;
+    }
+
+    private Integer portFromJdbcUrl(String jdbcUrl) {
+        String authority = jdbcAuthority(jdbcUrl);
+        if (isBlank(authority)) {
+            return null;
+        }
+        int at = authority.lastIndexOf('@');
+        if (at >= 0 && at + 1 < authority.length()) {
+            authority = authority.substring(at + 1);
+        }
+        int colon = authority.lastIndexOf(':');
+        if (colon < 0 || colon + 1 >= authority.length()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(authority.substring(colon + 1));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private String databaseNameFromJdbcUrl(String jdbcUrl) {
+        if (isBlank(jdbcUrl)) {
+            return null;
+        }
+        String normalized = jdbcUrl;
+        int queryIndex = normalized.indexOf('?');
+        if (queryIndex >= 0) {
+            normalized = normalized.substring(0, queryIndex);
+        }
+        int lastSlash = normalized.lastIndexOf('/');
+        if (lastSlash < 0 || lastSlash + 1 >= normalized.length()) {
+            return null;
+        }
+        String database = normalized.substring(lastSlash + 1);
+        int semicolon = database.indexOf(';');
+        if (semicolon >= 0) {
+            database = database.substring(0, semicolon);
+        }
+        return isBlank(database) ? null : database;
+    }
+
+    private String jdbcAuthority(String jdbcUrl) {
+        if (isBlank(jdbcUrl)) {
+            return null;
+        }
+        int protocolIndex = jdbcUrl.indexOf("://");
+        if (protocolIndex < 0 || protocolIndex + 3 >= jdbcUrl.length()) {
+            return null;
+        }
+        String remainder = jdbcUrl.substring(protocolIndex + 3);
+        int slash = remainder.indexOf('/');
+        return slash >= 0 ? remainder.substring(0, slash) : remainder;
+    }
+
+    private void putIfPresent(Map<String, Object> target, String key, String value) {
+        if (!isBlank(value)) {
+            target.put(key, value);
+        }
+    }
+
+    @SafeVarargs
+    private <T> T firstNonNull(T... values) {
+        for (T value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
     }
 
     /**

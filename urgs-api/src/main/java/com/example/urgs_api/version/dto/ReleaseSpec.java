@@ -1,6 +1,7 @@
 package com.example.urgs_api.version.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
@@ -36,11 +37,23 @@ public class ReleaseSpec {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class DatabaseSpec {
         private String dbType;
+        @JsonAlias({"username", "execUser"})
+        private String user;
+        private String password;
+        @JsonAlias({"server", "hostname", "ip"})
+        private String host;
+        private Integer port;
+        @JsonAlias({"dbName", "databaseName"})
+        private String database;
+        private String dsn;
+        private String serviceName;
+        private String sid;
         private String jdbcUrl;
         private String schema;
         private String driverDir;
         private String driverJar;
         private String jdbcDriverClass;
+        private String targetName = "prod_db";
     }
 
     @Data

@@ -1,7 +1,5 @@
 package com.example.urgs_api.version.service;
 
-import com.example.urgs_api.ops.entity.InfrastructureAsset;
-import com.example.urgs_api.ops.repository.InfrastructureAssetRepository;
 import com.example.urgs_api.version.dto.GitCommit;
 import com.example.urgs_api.version.dto.GitCommitDiff;
 import com.example.urgs_api.version.dto.ProductionPackageBuildResult;
@@ -50,7 +48,6 @@ public class ProductionPackageService {
     private final GitPlatformService gitPlatformService;
     private final VersionPackageService versionPackageService;
     private final VersionPackageRepository packageRepository;
-    private final InfrastructureAssetRepository assetRepository;
     private final ObjectMapper objectMapper;
 
     @Value("${deploy.tool.workdir:classpath:db_deploy}")
@@ -124,8 +121,6 @@ public class ProductionPackageService {
         vp.setVersion(request.getGitRef());
         vp.setGitRef(request.getGitRef());
         vp.setPreviousGitRef(request.getPreviousGitRef());
-        vp.setAssetId(request.getAssetId());
-        vp.setExecUser(request.getExecUser());
         vp.setDescription(request.getDescription());
         vp.setCreatedBy(request.getCreatedBy());
         vp.setEnvId(resolveEnvId(request));
@@ -187,8 +182,9 @@ public class ProductionPackageService {
 
             if (!includedDbPaths.isEmpty()) {
                 List<String> backupTables = gateResult.getBackupTables();
+                ReleaseSpec.DatabaseSpec databaseSpec = loadDatabaseSpec(vp);
                 byte[] dbArchive = versionPackageService.generateArchive(packageId, includedDbPaths, backupTables,
-                        gateResult.getDatabase());
+                        databaseSpec);
                 addToZip(zos, "db/deploy-db.zip", dbArchive, checksumBuilder);
             }
 
@@ -228,22 +224,30 @@ public class ProductionPackageService {
     private void validateDatabaseSpec(ReleaseSpec spec, List<ProductionPackageGateResult.GateItem> gates) {
         ReleaseSpec.DatabaseSpec database = spec.getDatabase();
         if (database == null || isBlank(database.getDbType())) {
-            gates.add(gate("database", "数据库平台与驱动", GATE_PASSED, "未声明 database.dbType，将使用页面选择的数据库资产类型"));
+            gates.add(gate("database", "数据库平台与连接", GATE_FAILED,
+                    ".urgs/release.yml 必须声明 database.dbType 和生产库连接配置"));
             return;
         }
 
         String dbType = database.getDbType().toLowerCase();
-        Set<String> supportedTypes = Set.of("mysql", "gbase", "oracle", "xinghuan", "transwarp");
+        Set<String> supportedTypes = Set.of("mysql", "gbase", "oracle", "xinghuan", "transwarp", "dameng");
         if (!supportedTypes.contains(dbType)) {
-            gates.add(gate("database", "数据库平台与驱动", GATE_FAILED,
-                    "database.dbType 仅支持 mysql/gbase/oracle/xinghuan/transwarp"));
+            gates.add(gate("database", "数据库平台与连接", GATE_FAILED,
+                    "database.dbType 仅支持 mysql/gbase/oracle/xinghuan/transwarp/dameng"));
             return;
         }
 
-        boolean jdbcConfigured = !isBlank(database.getJdbcUrl())
+        List<String> missingConnection = missingConnectionFields(database, dbType);
+        if (!missingConnection.isEmpty()) {
+            gates.add(gate("database", "数据库平台与连接", GATE_FAILED,
+                    ".urgs/release.yml 缺少生产库连接配置: " + String.join(", ", missingConnection)));
+            return;
+        }
+
+        boolean jdbcRequired = "xinghuan".equals(dbType) || "transwarp".equals(dbType) || "dameng".equals(dbType);
+        boolean jdbcConfigured = jdbcRequired
                 || !isBlank(database.getDriverJar())
                 || !isBlank(database.getJdbcDriverClass());
-        boolean jdbcRequired = "xinghuan".equals(dbType) || "transwarp".equals(dbType);
         if (jdbcRequired || jdbcConfigured) {
             List<String> missing = new ArrayList<>();
             if (isBlank(database.getJdbcUrl())) {
@@ -256,20 +260,113 @@ public class ProductionPackageService {
                 missing.add("database.jdbcDriverClass");
             }
             if (!missing.isEmpty()) {
-                gates.add(gate("database", "数据库平台与驱动", GATE_FAILED,
+                gates.add(gate("database", "数据库平台与连接", GATE_FAILED,
                         "JDBC 驱动方式缺少配置: " + String.join(", ", missing)));
                 return;
             }
             String driverResource = normalizeDriverResourcePath(database, dbType);
             if (!driverResourceExists(driverResource)) {
-                gates.add(gate("database", "数据库平台与驱动", GATE_FAILED,
+                gates.add(gate("database", "数据库平台与连接", GATE_FAILED,
                         "驱动包不存在，请上传到 " + driverUploadPath(driverResource)));
                 return;
             }
         }
 
-        gates.add(gate("database", "数据库平台与驱动", GATE_PASSED,
-                "已声明数据库平台 " + dbType + (isBlank(database.getDriverJar()) ? "" : "，驱动包 " + database.getDriverJar())));
+        gates.add(gate("database", "数据库平台与连接", GATE_PASSED,
+                "已从 .urgs/release.yml 读取生产库连接配置: " + dbType
+                        + (isBlank(database.getDriverJar()) ? "" : "，驱动包 " + database.getDriverJar())));
+    }
+
+    private List<String> missingConnectionFields(ReleaseSpec.DatabaseSpec database, String dbType) {
+        List<String> missing = new ArrayList<>();
+        if (isBlank(database.getUser())) {
+            missing.add("database.user");
+        }
+        if (isBlank(database.getPassword())) {
+            missing.add("database.password");
+        }
+        if (hasCompleteJdbcConfig(database)) {
+            return missing;
+        }
+
+        if ("oracle".equals(dbType)) {
+            boolean hasDsn = !isBlank(database.getDsn());
+            boolean hasHostDsn = !isBlank(database.getHost())
+                    && (!isBlank(database.getServiceName()) || !isBlank(database.getSid()) || !isBlank(database.getDatabase()));
+            if (!hasDsn && !hasHostDsn) {
+                missing.add("database.dsn 或 database.host + database.serviceName/sid/database");
+            }
+            return missing;
+        }
+
+        if ("mysql".equals(dbType) || "gbase".equals(dbType)) {
+            if (isBlank(database.getHost()) && isBlank(database.getJdbcUrl())) {
+                missing.add("database.host 或 database.jdbcUrl");
+            }
+            if (isBlank(firstNonBlank(database.getDatabase(), database.getSchema(), databaseNameFromJdbcUrl(database.getJdbcUrl())))) {
+                missing.add("database.database 或 database.schema");
+            }
+            return missing;
+        }
+
+        return missing;
+    }
+
+    private boolean hasCompleteJdbcConfig(ReleaseSpec.DatabaseSpec database) {
+        return !isBlank(database.getJdbcUrl())
+                && !isBlank(database.getDriverJar())
+                && !isBlank(database.getJdbcDriverClass());
+    }
+
+    private String databaseNameFromJdbcUrl(String jdbcUrl) {
+        if (isBlank(jdbcUrl)) {
+            return null;
+        }
+        String normalized = jdbcUrl;
+        int queryIndex = normalized.indexOf('?');
+        if (queryIndex >= 0) {
+            normalized = normalized.substring(0, queryIndex);
+        }
+        int lastSlash = normalized.lastIndexOf('/');
+        if (lastSlash < 0 || lastSlash + 1 >= normalized.length()) {
+            return null;
+        }
+        String database = normalized.substring(lastSlash + 1);
+        int semicolon = database.indexOf(';');
+        if (semicolon >= 0) {
+            database = database.substring(0, semicolon);
+        }
+        return isBlank(database) ? null : database;
+    }
+
+    private ReleaseSpec.DatabaseSpec loadDatabaseSpec(VersionPackage vp) {
+        try {
+            ReleaseSpecService.LoadedReleaseSpec loadedSpec = releaseSpecService.loadSpec(vp.getRepoId(), vp.getGitRef());
+            return loadedSpec.spec().getDatabase();
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("重新读取发布规格失败，无法生成生产库连接配置: " + e.getMessage(), e);
+        }
+    }
+
+    private ReleaseSpec.DatabaseSpec sanitizeDatabaseSpec(ReleaseSpec.DatabaseSpec database) {
+        if (database == null) {
+            return null;
+        }
+        ReleaseSpec.DatabaseSpec sanitized = new ReleaseSpec.DatabaseSpec();
+        sanitized.setDbType(database.getDbType());
+        sanitized.setHost(database.getHost());
+        sanitized.setPort(database.getPort());
+        sanitized.setDatabase(database.getDatabase());
+        sanitized.setDsn(database.getDsn());
+        sanitized.setServiceName(database.getServiceName());
+        sanitized.setSid(database.getSid());
+        sanitized.setJdbcUrl(database.getJdbcUrl());
+        sanitized.setSchema(database.getSchema());
+        sanitized.setDriverDir(database.getDriverDir());
+        sanitized.setDriverJar(database.getDriverJar());
+        sanitized.setJdbcDriverClass(database.getJdbcDriverClass());
+        sanitized.setTargetName(database.getTargetName());
+        return sanitized;
     }
 
     private void validateProcedureGuard(ProductionPackageRequest request, ReleaseSpec spec,
@@ -357,7 +454,7 @@ public class ProductionPackageService {
                 .summary(GATE_PASSED.equals(status) ? "生产投产包门禁通过" : "生产投产包门禁失败")
                 .deployCommand("bash deploy.sh --operator <姓名>")
                 .rollbackCommand("bash rollback.sh --operator <姓名>")
-                .database(spec != null ? spec.getDatabase() : null)
+                .database(spec != null ? sanitizeDatabaseSpec(spec.getDatabase()) : null)
                 .gates(gates)
                 .includedFiles(includedFiles)
                 .backupTables(spec != null && spec.getBackup() != null ? spec.getBackup().getTables() : List.of())
@@ -584,13 +681,7 @@ public class ProductionPackageService {
     }
 
     private Long resolveEnvId(ProductionPackageRequest request) {
-        if (request.getEnvId() != null) {
-            return request.getEnvId();
-        }
-        if (request.getAssetId() == null) {
-            return null;
-        }
-        return assetRepository.findById(request.getAssetId()).map(InfrastructureAsset::getEnvId).orElse(null);
+        return request.getEnvId();
     }
 
     private String writeJson(Object value) {
@@ -729,5 +820,14 @@ public class ProductionPackageService {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (!isBlank(value)) {
+                return value;
+            }
+        }
+        return null;
     }
 }

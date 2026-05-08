@@ -374,7 +374,6 @@ export interface VersionPackage {
     deployedBy?: number;
     deployedAt?: string;
     envId?: number;
-    execUser?: string;
     specPath?: string;
     packageType?: string;
     gateStatus?: string;
@@ -393,8 +392,6 @@ export interface ProductionPackageRequest {
     ssoId: number;
     gitRef: string;
     previousGitRef: string;
-    assetId?: number;
-    execUser?: string;
     description?: string;
     createdBy?: number;
     envId?: number;
@@ -419,6 +416,10 @@ export interface ProductionPackageDatabaseSpec {
     dbType?: string;
     jdbcUrl?: string;
     schema?: string;
+    host?: string;
+    port?: number;
+    database?: string;
+    dsn?: string;
     driverDir?: string;
     driverJar?: string;
     jdbcDriverClass?: string;
@@ -657,8 +658,6 @@ export const createVersionPackage = (params: {
     ssoId: number;
     gitRef: string;
     previousGitRef?: string;
-    assetId?: number;
-    execUser?: string;
     description: string;
     createdBy?: number;
     envId?: number;

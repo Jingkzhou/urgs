@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Card, Descriptions, Dropdown, Form, Input, List, Modal, Select, Space, Steps, Tag, message } from 'antd';
 import {
     AlertTriangle, CheckCircle, Clock, Download, Edit, GitBranch, Globe, History,
-    Info, MoreVertical, Package, RefreshCw, Rocket, Server, ShieldCheck,
+    Info, MoreVertical, Package, RefreshCw, Rocket, Server,
     Tag as TagIcon, XCircle
 } from 'lucide-react';
 import {
@@ -24,10 +24,6 @@ import {
     ProductionPackageRequest,
     VersionPackage
 } from '@/api/version';
-import {
-    getInfrastructureAssets,
-    InfrastructureAsset
-} from '@/api/ops';
 
 const { Option } = Select;
 
@@ -51,8 +47,6 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const [environments, setEnvironments] = useState<DeployEnvironment[]>([]);
     const [versionPackages, setVersionPackages] = useState<VersionPackage[]>([]);
     const [repos, setRepos] = useState<GitRepository[]>([]);
-    const [infraAssets, setInfraAssets] = useState<InfrastructureAsset[]>([]);
-    const [availableUsers, setAvailableUsers] = useState<string[]>([]);
     const [tags, setTags] = useState<IGitTag[]>([]);
     const [loading, setLoading] = useState(false);
     const [fetchingGit, setFetchingGit] = useState(false);
@@ -93,16 +87,14 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [envs, pkgs, repositories, assets] = await Promise.all([
+            const [envs, pkgs, repositories] = await Promise.all([
                 getDeployEnvironments(ssoId),
                 getVersionPackages(ssoId!),
-                getGitRepositories({ ssoId }),
-                getInfrastructureAssets({ appSystemId: Number(ssoId) })
+                getGitRepositories({ ssoId })
             ]);
             setEnvironments(envs || []);
             setVersionPackages(pkgs || []);
             setRepos(repositories || []);
-            setInfraAssets(assets || []);
         } catch (error) {
             message.error('加载数据失败');
         } finally {
@@ -110,60 +102,21 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
         }
     };
 
-    const dbAssets = useMemo(() => infraAssets.filter(a => a.role === 'db'), [infraAssets]);
+    const productionEnvId = useMemo(() => {
+        const env = environments.find(item => ['prod', 'production'].includes((item.code || '').toLowerCase()))
+            || environments.find(item => item.name?.includes('生产'));
+        return env?.id;
+    }, [environments]);
 
-    const watchedAssetId = Form.useWatch('assetId', productionForm);
     const watchedRepoId = Form.useWatch('repoId', productionForm);
     const watchedGitRef = Form.useWatch('gitRef', productionForm);
     const watchedPreviousGitRef = Form.useWatch('previousGitRef', productionForm);
 
-    const assetMissingDsn = useMemo(() => {
-        if (!watchedAssetId) return false;
-        const asset = infraAssets.find(a => a.id === watchedAssetId);
-        if (!asset) return false;
-        const dbType = (asset.dbType || '').toLowerCase();
-        if (dbType === 'oracle') {
-            return !asset.dbServiceName && !asset.dbName;
-        }
-        return !asset.dbName;
-    }, [watchedAssetId, infraAssets]);
-
     useEffect(() => {
-        if (watchedAssetId) {
-            handleAssetChange(watchedAssetId);
-        } else {
-            setAvailableUsers([]);
+        if (productionEnvId) {
+            productionForm.setFieldValue('envId', productionEnvId);
         }
-    }, [watchedAssetId, infraAssets]);
-
-    const handleAssetChange = (assetId: any) => {
-        if (!assetId) {
-            setAvailableUsers([]);
-            productionForm.setFieldsValue({ execUser: undefined });
-            return;
-        }
-
-        const asset = infraAssets.find(a => a.id === assetId);
-        if (!asset) {
-            setAvailableUsers([]);
-            return;
-        }
-
-        const dbUsers = (asset.users || [])
-            .filter((u: any) => u.userType === 'db')
-            .map((u: any) => u.username)
-            .filter(Boolean);
-
-        setAvailableUsers(dbUsers);
-        productionForm.setFieldsValue({ envId: asset.envId ?? undefined });
-
-        const current = productionForm.getFieldValue('execUser');
-        if (dbUsers.length === 1 && (!current || !dbUsers.includes(current))) {
-            productionForm.setFieldsValue({ execUser: dbUsers[0] });
-        } else if (current && !dbUsers.includes(current)) {
-            productionForm.setFieldsValue({ execUser: undefined });
-        }
-    };
+    }, [productionEnvId]);
 
     const loadTags = async (targetRepoId: number) => {
         setFetchingGit(true);
@@ -206,6 +159,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
             ...values,
             repoId: repoId || values.repoId,
             ssoId: ssoId!,
+            envId: values.envId || productionEnvId,
             createdBy: currentUserId
         };
     };
@@ -467,47 +421,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                             </Select>
                         </Form.Item>
 
-                        <Form.Item name="assetId" label="生产数据库服务器" rules={[{ required: true, message: '请选择生产数据库服务器' }]}>
-                            <Select placeholder="选择 role=db 的生产数据库服务器" showSearch optionFilterProp="label">
-                                {dbAssets.map(asset => (
-                                    <Option key={asset.id} value={asset.id} label={`${asset.hostname} ${asset.internalIp}`}>
-                                        <div className="flex items-center justify-between">
-                                            <Space>
-                                                <Server size={14} />
-                                                <span>{asset.hostname}</span>
-                                                <span className="text-xs text-slate-400">{asset.internalIp}</span>
-                                            </Space>
-                                            <Space>
-                                                {asset.dbType && <Tag color="purple" className="m-0">{asset.dbType}</Tag>}
-                                                {asset.envType && <Tag color="blue" className="m-0">{asset.envType}</Tag>}
-                                            </Space>
-                                        </div>
-                                    </Option>
-                                ))}
-                            </Select>
-                        </Form.Item>
-
                         <Form.Item name="envId" hidden><Input /></Form.Item>
-
-                        {assetMissingDsn && (
-                            <Alert
-                                className="mb-4"
-                                type="error"
-                                showIcon
-                                message="数据库连接信息缺失"
-                                description="该生产数据库服务器缺少数据库名/SID 或服务名，生成的包无法连接生产库。"
-                            />
-                        )}
-
-                        <Form.Item name="execUser" label="数据库执行用户" rules={[{ required: true, message: '请选择数据库执行用户' }]}>
-                            <Select placeholder={availableUsers.length > 0 ? '选择数据库执行用户' : '该服务器暂未配置 DB 用户'} allowClear showSearch>
-                                {availableUsers.map(user => (
-                                    <Option key={user} value={user}>
-                                        <Space><ShieldCheck size={14} />{user}</Space>
-                                    </Option>
-                                ))}
-                            </Select>
-                        </Form.Item>
 
                         <Form.Item name="description" label="投产说明">
                             <Input.TextArea rows={3} placeholder="填写本次投产范围、风险点、验证说明" />
@@ -587,7 +501,6 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                     <Space><GitBranch size={14} />Tag: {pkg.gitRef}</Space>
                     <Space><History size={14} />基线: {pkg.previousGitRef || '-'}</Space>
                     <Space><Server size={14} />环境: {envName}</Space>
-                    <Space><ShieldCheck size={14} />执行用户: {pkg.execUser || '-'}</Space>
                     <Space><Info size={14} />门禁: {pkg.gateStatus || '-'}</Space>
                 </div>
                 {pkg.buildLog && <div className="mt-3 text-xs text-slate-500 bg-slate-50 rounded p-2">{pkg.buildLog}</div>}
