@@ -17,6 +17,7 @@
 ├── sql/                       # DDL/DML 变更脚本（按文件名升序执行）
 ├── procedures/                # 当前版本存储过程脚本
 ├── prev_procedures/           # 上一版本存储过程（用于部署前一致性校验）
+├── production_procedure_backup/ # 执行 deploy 时导出的生产存储过程备份
 ├── backup/                    # 部署前执行的备份脚本
 ├── rollback/                  # 回滚脚本（回退时执行）
 │
@@ -127,7 +128,11 @@ python3 -m bin.db_deploy.cli.main check --pkg .
 python3 -m bin.db_deploy.cli.main deploy --pkg . --operator 张三
 ```
 
-按 `manifest.json` 中 `execution_plan` 的 step 顺序依次执行。
+按 `manifest.json` 中 `execution_plan` 的 step 顺序依次执行：
+1. 生产存储过程对比。
+2. 执行 `backup/` 目录 SQL。
+3. 执行 `sql/` 目录 SQL。
+4. 部署 `procedures/` 目录存储过程。
 
 **断点续跑**（部署中断后，修复问题再继续）：
 
@@ -141,7 +146,9 @@ python3 -m bin.db_deploy.cli.main deploy --pkg . --operator 张三 --resume
 python3 -m bin.db_deploy.cli.main rollback --pkg . --operator 张三
 ```
 
-按 `manifest.json` 中 `rollback_plan` 顺序执行回滚脚本。
+按 `manifest.json` 中 `rollback_plan` 顺序执行：
+1. 执行 `rollback/` 目录 SQL。
+2. 恢复 `production_procedure_backup/` 中的生产执行前存储过程。
 
 ### 4.4 查看部署状态
 
@@ -170,8 +177,8 @@ python3 -m bin.db_deploy.cli.main status --pkg .
 | `execute_sql_ordered` | 扫描 `source_dir` 目录，按文件名**升序**执行所有 `.sql` 文件（以 `;` 分割语句） |
 | `execute_sql` | 执行 `files` 列表中指定的 SQL 文件 |
 | `deploy_procedures` | 部署存储过程，每个文件**整体**执行（不按 `;` 分割，自动去除 Oracle `/` 终止符） |
-| `export_and_compare_procedures` | 从生产数据库导出存储过程，与 `prev_procedures/` 基线对比，不一致则**中止**部署 |
-| `backup_table` | 备份表：`CREATE TABLE BAK_{TABLE}_{TS} AS SELECT * FROM {TABLE}` |
+| `export_and_compare_procedures` | 执行部署时先从生产数据库导出存储过程到 `production_procedure_backup/`，再与 `prev_procedures/` 基线对比，不一致则**中止**部署 |
+| `restore_procedure_backups` | 回滚时恢复 `production_procedure_backup/` 中的生产执行前存储过程 |
 | `post_check` | 执行后置校验 SQL |
 
 ---

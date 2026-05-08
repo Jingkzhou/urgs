@@ -97,14 +97,55 @@ class DeployProceduresHandler(BaseHandler):
 
         return {"procedures_deployed": deployed}
 
+class RestoreProcedureBackupsHandler(BaseHandler):
+    """恢复生产执行前备份的存储过程"""
+    def run(self, working_dir: str, targets: list, params: dict, conn_config: dict, log):
+        backup_dir = params.get("backup_dir", "production_procedure_backup")
+        restored = 0
+        restored_files = []
+
+        for target in targets:
+            safe_target = re.sub(r"[^A-Za-z0-9_.-]+", "_", target)
+            target_dir = os.path.join(working_dir, backup_dir, safe_target)
+            if not os.path.isdir(target_dir):
+                raise RuntimeError(f"生产执行前存储过程备份目录不存在: {backup_dir}/{safe_target}")
+
+            sql_files = []
+            for root, _, files in os.walk(target_dir):
+                for file_name in files:
+                    if file_name.endswith(".sql"):
+                        sql_files.append(os.path.join(root, file_name))
+            sql_files.sort()
+
+            if not sql_files:
+                raise RuntimeError(f"生产执行前存储过程备份目录为空: {backup_dir}/{safe_target}")
+
+            conn = ConnectorFactory.get_connector(target, conn_config)
+            for full_path in sql_files:
+                with open(full_path, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                if content.endswith("/"):
+                    content = content[:-1].strip()
+                if not content:
+                    raise RuntimeError(f"生产执行前存储过程备份为空: {full_path}")
+
+                rel_path = os.path.relpath(full_path, working_dir)
+                log.info(f"恢复生产执行前存储过程: {rel_path} (目标: {target})")
+                conn.execute(content)
+                restored += 1
+                restored_files.append(rel_path)
+
+        return {"procedures_restored": restored, "files": restored_files}
+
 class ExportAndCompareProceduresHandler(BaseHandler):
     """
-    导出生产数据库中的存储过程源码，与包内的上一版本（prev_procedures/）对比。
+    导出并备份生产数据库中的存储过程源码，与包内的上一版本（prev_procedures/）对比。
     如果不一致，说明生产与 Git 不同步，停止部署。
     """
     def run(self, working_dir: str, targets: list, params: dict, conn_config: dict, log):
         procedure_names = params.get("procedure_names", [])
         expected_source_dir = params.get("expected_source_dir", "prev_procedures")
+        production_backup_dir = params.get("production_backup_dir", "production_procedure_backup")
         on_mismatch = params.get("on_mismatch", "abort")
 
         if not procedure_names:
@@ -125,6 +166,9 @@ class ExportAndCompareProceduresHandler(BaseHandler):
 
                 # 从数据库导出存储过程源码
                 prod_source = self._export_procedure(conn, db_type, proc_name, log)
+                production_backup_path = self._write_production_backup(
+                    working_dir, production_backup_dir, target, proc_name, prod_source
+                )
 
                 # 读取包内的基线版本
                 expected_path = os.path.join(working_dir, expected_source_dir, f"{proc_name}.sql")
@@ -142,22 +186,26 @@ class ExportAndCompareProceduresHandler(BaseHandler):
                 if not prod_source:
                     mismatches.append(proc_name)
                     log.error(
-                        f"生产库未导出存储过程 '{proc_name}'。"
+                        f"生产库未导出存储过程 '{proc_name}'，生产备份文件: {production_backup_path}。"
                         "生产中的版本与GitLab中的投产前版本不一致，停止投产"
                     )
                     continue
 
-                # 规范化后对比
-                norm_prod = self._normalize(prod_source)
+                with open(production_backup_path, "r", encoding="utf-8") as f:
+                    production_backup_source = f.read()
+
+                # 规范化后对比：生产运行时备份 vs 上一 Tag 基线
+                norm_prod = self._normalize(production_backup_source)
                 norm_expected = self._normalize(expected_source)
 
                 if norm_prod == norm_expected:
                     matched += 1
-                    log.info(f"校验通过: {proc_name}")
+                    log.info(f"校验通过: {proc_name}，生产备份文件: {production_backup_path}")
                 else:
                     mismatches.append(proc_name)
                     log.error(
                         f"不一致: 生产存储过程 '{proc_name}' 与 GitLab 投产前版本不匹配。"
+                        f"生产备份文件: {production_backup_path}。"
                         "生产中的版本与GitLab中的投产前版本不一致，停止投产"
                     )
 
@@ -172,6 +220,20 @@ class ExportAndCompareProceduresHandler(BaseHandler):
                 log.warn(msg)
 
         return {"checked": checked, "matched": matched, "mismatches": mismatches}
+
+    def _write_production_backup(self, working_dir: str, backup_dir: str, target: str, proc_name: str, source: str) -> str:
+        safe_target = re.sub(r"[^A-Za-z0-9_.-]+", "_", target)
+        safe_proc_parts = [
+            re.sub(r"[^A-Za-z0-9_.-]+", "_", part)
+            for part in proc_name.split("/")
+            if part not in ("", ".", "..")
+        ]
+        safe_proc_path = os.path.join(*safe_proc_parts) if safe_proc_parts else "unknown"
+        backup_path = os.path.join(working_dir, backup_dir, safe_target, f"{safe_proc_path}.sql")
+        os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+        with open(backup_path, "w", encoding="utf-8") as f:
+            f.write(source or "")
+        return backup_path
 
     def _export_procedure(self, conn, db_type: str, proc_name: str, log) -> str:
         """从数据库导出存储过程源码"""
@@ -220,21 +282,6 @@ class ExportAndCompareProceduresHandler(BaseHandler):
         # 合并多余空白
         return "\n".join(lines).lower()
 
-class BackupTableHandler(BaseHandler):
-    def run(self, working_dir: str, targets: list, params: dict, conn_config: dict, log):
-        tables = params.get("tables", [])
-        timestamp = os.path.basename(working_dir).split("_")[-1]
-        processed = []
-        for target in targets:
-            conn = ConnectorFactory.get_connector(target, conn_config)
-            for table in tables:
-                bak_table = f"BAK_{table}_{timestamp}"
-                sql = f"CREATE TABLE {bak_table} AS SELECT * FROM {table}"
-                log.info(f"备份表: {table} -> {bak_table} (目标: {target})")
-                rows = conn.execute(sql)
-                processed.append({"src": table, "bak": bak_table, "target": target})
-        return {"backed_up_tables": processed}
-
 class PostCheckHandler(BaseHandler):
     def run(self, working_dir: str, targets: list, params: dict, conn_config: dict, log):
         query = params.get("query")
@@ -251,8 +298,8 @@ class StepHandlerFactory:
         "execute_sql": ExecuteSQLHandler(),
         "execute_sql_ordered": ExecuteSQLOrderedHandler(),
         "deploy_procedures": DeployProceduresHandler(),
+        "restore_procedure_backups": RestoreProcedureBackupsHandler(),
         "export_and_compare_procedures": ExportAndCompareProceduresHandler(),
-        "backup_table": BackupTableHandler(),
         "post_check": PostCheckHandler()
     }
 

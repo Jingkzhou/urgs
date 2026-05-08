@@ -130,7 +130,7 @@ public class ProductionPackageService {
         vp.setGateStatus(gateResult.getStatus());
         vp.setGateSummary(writeJson(gateResult));
         vp.setChangedFiles(writeJson(gateResult.getIncludedFiles()));
-        vp.setBackupStatus(gateResult.getChangeSummary().getBackupFiles().isEmpty() ? "table_config" : "script");
+        vp.setBackupStatus(gateResult.getChangeSummary().getBackupFiles().isEmpty() ? "none" : "script");
         vp.setDeployCommand("bash deploy.sh --operator <姓名>");
         vp.setRollbackCommand("bash rollback.sh --operator <姓名>");
         vp.setStatus(VersionPackage.STATUS_READY);
@@ -374,13 +374,13 @@ public class ProductionPackageService {
                                         List<ProductionPackageGateResult.GateItem> gates) {
         ReleaseSpec.ProcedureGuardSpec guard = spec.getProcedureGuard();
         if (!Boolean.TRUE.equals(guard.getEnabled())) {
-            gates.add(gate("procedureGuard", "存储过程生产一致性校验", GATE_FAILED,
-                    "存储过程变更必须启用 procedureGuard"));
+            gates.add(gate("procedureGuard", "存储过程一致性执行计划", GATE_FAILED,
+                    "存储过程变更必须配置运行时 procedureGuard"));
             return;
         }
         if (!"abort".equalsIgnoreCase(guard.getOnMismatch())) {
-            gates.add(gate("procedureGuard", "存储过程生产一致性校验", GATE_FAILED,
-                    "procedureGuard.onMismatch 必须为 abort"));
+            gates.add(gate("procedureGuard", "存储过程一致性执行计划", GATE_FAILED,
+                    "运行时 procedureGuard.onMismatch 必须为 abort"));
             return;
         }
 
@@ -393,29 +393,27 @@ public class ProductionPackageService {
             }
         }
         if (!missingBaseline.isEmpty()) {
-            gates.add(gate("procedureBaseline", "上一 Tag 存储过程基线", GATE_FAILED,
-                    "上一 Tag 缺少基线文件: " + String.join(", ", missingBaseline)));
+            gates.add(gate("procedureBaseline", "上一 Tag 存储过程基线文件", GATE_FAILED,
+                    "运行时对比缺少上一 Tag 基线文件: " + String.join(", ", missingBaseline)));
             return;
         }
 
-        gates.add(gate("procedureGuard", "存储过程生产一致性校验", GATE_PASSED,
-                "生产执行时将先比较生产版本与上一 Tag 基线，不一致立即终止投产"));
+        gates.add(gate("procedureGuard", "存储过程一致性执行计划", GATE_PASSED,
+                "已写入生产包执行计划；生产执行 deploy.sh 时才会连接生产库导出并对比，失败即终止投产"));
     }
 
     private void validateBackup(ReleaseSpec spec, ProductionPackageGateResult.ChangeSummary summary,
                                 boolean hasDbChanges, List<ProductionPackageGateResult.GateItem> gates) {
         if (!hasDbChanges) {
-            gates.add(gate("backup", "投产前备份", GATE_PASSED, "本次无数据库变更"));
+            gates.add(gate("backup", "备份执行计划", GATE_PASSED, "本次无数据库变更，无需写入备份动作"));
             return;
         }
         boolean hasBackupScripts = !summary.getBackupFiles().isEmpty();
-        boolean hasBackupTables = spec.getBackup().getTables() != null && !spec.getBackup().getTables().isEmpty();
-        if (hasBackupScripts || hasBackupTables) {
-            gates.add(gate("backup", "投产前备份", GATE_PASSED,
-                    hasBackupScripts ? "已提供备份脚本" : "已声明 backup.tables"));
+        if (hasBackupScripts) {
+            gates.add(gate("backup", "备份执行计划", GATE_PASSED, "已写入运行时 db/backup SQL 执行计划"));
         } else {
-            gates.add(gate("backup", "投产前备份", GATE_FAILED,
-                    "SQL/存储过程投产必须提供 backup 脚本或 backup.tables"));
+            gates.add(gate("backup", "备份执行计划", GATE_FAILED,
+                    "SQL/存储过程投产必须提供 db/backup SQL 脚本"));
         }
     }
 
@@ -423,19 +421,19 @@ public class ProductionPackageService {
                                   boolean hasSql, boolean hasProcedures,
                                   List<ProductionPackageGateResult.GateItem> gates) {
         if (!hasSql && !hasProcedures) {
-            gates.add(gate("rollback", "回滚动作", GATE_PASSED, "本次无数据库变更"));
+            gates.add(gate("rollback", "回滚执行计划", GATE_PASSED, "本次无数据库变更，无需写入回滚动作"));
             return;
         }
         if (hasSql && summary.getRollbackFiles().isEmpty()) {
-            gates.add(gate("rollback", "回滚动作", GATE_FAILED, "SQL 变更必须提供 rollback 脚本"));
+            gates.add(gate("rollback", "回滚执行计划", GATE_FAILED, "SQL 变更必须提供 rollback 脚本"));
             return;
         }
         if (Boolean.FALSE.equals(spec.getRollback().getRequired())) {
-            gates.add(gate("rollback", "回滚动作", GATE_FAILED, "数据库投产必须启用 rollback.required"));
+            gates.add(gate("rollback", "回滚执行计划", GATE_FAILED, "数据库投产必须启用 rollback.required"));
             return;
         }
-        gates.add(gate("rollback", "回滚动作", GATE_PASSED,
-                hasProcedures ? "SQL 回滚脚本已提供，存储过程将自动恢复上一 Tag 版本" : "SQL 回滚脚本已提供"));
+        gates.add(gate("rollback", "回滚执行计划", GATE_PASSED,
+                hasProcedures ? "已写入运行时 SQL 回滚和上一 Tag 存储过程恢复计划" : "已写入运行时 SQL 回滚脚本执行计划"));
     }
 
     private ProductionPackageGateResult buildGateResult(ProductionPackageRequest request, String specPath,
@@ -622,9 +620,12 @@ public class ProductionPackageService {
                 """.stripIndent()
                 + (hasDbPackage ? """
 
-                rm -rf "$ROOT_DIR/.runtime/db"
-                mkdir -p "$ROOT_DIR/.runtime/db"
-                unzip -q "$ROOT_DIR/db/deploy-db.zip" -d "$ROOT_DIR/.runtime/db"
+                if [ ! -d "$ROOT_DIR/.runtime/db" ]; then
+                  mkdir -p "$ROOT_DIR/.runtime/db"
+                  unzip -q "$ROOT_DIR/db/deploy-db.zip" -d "$ROOT_DIR/.runtime/db"
+                else
+                  echo "[INFO] reuse existing db runtime directory to keep production procedure backups"
+                fi
                 (cd "$ROOT_DIR/.runtime/db" && python3 -m bin.db_deploy.cli.main rollback --pkg . --operator "$OPERATOR")
                 """ : """
 
@@ -649,9 +650,21 @@ public class ProductionPackageService {
                 bash rollback.sh --operator <姓名>
                 ```
 
+                ## 数据库执行顺序
+
+                1. 生产存储过程对比。
+                2. 执行 db/backup SQL。
+                3. 执行 db/sql SQL。
+                4. 部署 db/procedures 存储过程。
+
+                ## 回滚顺序
+
+                1. 执行 db/rollback SQL。
+                2. 恢复生产执行前备份的存储过程。
+
                 ## 阻断规则
 
-                如果存储过程生产版本与 GitLab 上一个投产 Tag 的基线版本不一致，部署脚本会在备份和正式部署前终止。
+                部署脚本会先把生产库当前存储过程导出到 production_procedure_backup，再与 GitLab 上一个投产 Tag 的基线版本对比。如果不一致，会在执行 db/backup、db/sql 和存储过程部署前终止。
 
                 """.stripIndent()
                 + "\n版本: " + vp.getVersion() + "\n基线: " + vp.getPreviousGitRef() + "\n";

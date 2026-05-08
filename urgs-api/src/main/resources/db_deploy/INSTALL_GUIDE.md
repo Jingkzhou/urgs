@@ -18,9 +18,10 @@ deploy_pkg_{version}/
 │   │   └── dml/             #   DML 脚本 (数据修正等)
 │   └── mysql/               
 ├── procedures/              # [可选] 存储过程/函数脚本
+├── prev_procedures/         # [可选] 上一 Tag 存储过程基线
+├── production_procedure_backup/ # [运行时生成] 生产存储过程备份
 └── rollback/                # [必选] 回退脚本目录
-    ├── sql/                 #   对应的逆向回滚脚本
-    └── procedures/          #   存储过程备份
+    └── sql/                 #   对应的逆向回滚脚本
 ```
 
 ## 2. 环境准备 (Prerequisites)
@@ -80,6 +81,10 @@ python3 -m bin.db_deploy.cli.main rollback --pkg . --operator your_name
 | `pkg_version` | 版本号 |
 | `execution_plan` | 执行顺序列表，定义了 step, type, targets, params |
 | `rollback_plan` | 对应的回退顺序列表 |
+
+部署执行顺序固定为：生产存储过程对比 -> 执行 `backup/` 目录 SQL -> 执行 `sql/` 目录 SQL -> 部署 `procedures/` 目录存储过程。
+
+回滚执行顺序固定为：执行 `rollback/` 目录 SQL -> 恢复 `production_procedure_backup/` 中的生产执行前存储过程。
 
 ## 6. 安全建议
 

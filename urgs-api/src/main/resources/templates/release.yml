@@ -8,7 +8,7 @@
 # 目录约定：
 # - db/sql/        正式投产 SQL 脚本。
 # - db/procedures/ 存储过程源码。发生变更时，系统会自动打包当前 Tag 与上一 Tag 的版本。
-# - db/backup/     投产前备份脚本。存在 SQL 或存储过程投产内容时必须提供，或改用 backup.tables。
+# - db/backup/     投产前备份脚本。存在 SQL 或存储过程投产内容时必须提供。
 # - db/rollback/   SQL 回滚脚本。存在 SQL 变更时必须提供。
 
 # 发布类型。当前生产投产包主要支持 db 类型。
@@ -107,19 +107,14 @@ package:
 
 # 备份策略。
 # required=true 表示存在 SQL 或存储过程投产内容时必须满足备份门禁。
-# 满足方式二选一：
-# - sourceDir 指向的目录存在备份脚本，例如 db/backup/001_backup_xxx.sql。
-# - tables 声明需要系统自动备份的表名。
+# sourceDir 指向的目录必须存在备份脚本，例如 db/backup/001_backup_xxx.sql。
 backup:
   required: true
   sourceDir: db/backup
-  # tables:
-  #   - example_table
-  #   - another_table
 
 # 回滚策略。
 # required=true 表示存在 SQL 变更时必须提供 rollback.sourceDir 下的回滚脚本。
-# 存储过程变更会自动把上一 Tag 的版本纳入回滚计划，无需在这里重复声明。
+# 存储过程变更会在生产部署前导出生产当前版本；回滚时恢复该生产执行前备份。
 rollback:
   required: true
   sourceDir: db/rollback

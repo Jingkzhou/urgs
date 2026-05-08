@@ -573,34 +573,22 @@ public class VersionPackageService {
                 execPlan.add(preCheck);
             }
 
-            // Step 2: 执行备份
-            if (backupTables != null && !backupTables.isEmpty()) {
-                ObjectNode backupStep = objectMapper.createObjectNode();
-                backupStep.put("step", step++);
-                backupStep.put("name", "按表执行投产前备份");
-                backupStep.put("type", "backup_table");
-                backupStep.set("targets", objectMapper.createArrayNode().add(targetName));
-                ObjectNode backupParams = objectMapper.createObjectNode();
-                backupParams.set("tables", objectMapper.valueToTree(backupTables));
-                backupStep.set("params", backupParams);
-                execPlan.add(backupStep);
-            } else {
-                ObjectNode backupStep = objectMapper.createObjectNode();
-                backupStep.put("step", step++);
-                backupStep.put("name", "执行备份脚本");
-                backupStep.put("type", "execute_sql_ordered");
-                backupStep.set("targets", objectMapper.createArrayNode().add(targetName));
-                ObjectNode backupParams = objectMapper.createObjectNode();
-                backupParams.put("source_dir", "backup");
-                backupParams.put("sort_by", "filename_asc");
-                backupStep.set("params", backupParams);
-                execPlan.add(backupStep);
-            }
+            // Step 2: 执行 db/backup SQL
+            ObjectNode backupStep = objectMapper.createObjectNode();
+            backupStep.put("step", step++);
+            backupStep.put("name", "执行 db/backup SQL");
+            backupStep.put("type", "execute_sql_ordered");
+            backupStep.set("targets", objectMapper.createArrayNode().add(targetName));
+            ObjectNode backupParams = objectMapper.createObjectNode();
+            backupParams.put("source_dir", "backup");
+            backupParams.put("sort_by", "filename_asc");
+            backupStep.set("params", backupParams);
+            execPlan.add(backupStep);
 
-            // Step 3: 执行 DDL/DML
+            // Step 3: 执行 db/sql SQL
             ObjectNode sqlStep = objectMapper.createObjectNode();
             sqlStep.put("step", step++);
-            sqlStep.put("name", "执行DDL/DML");
+            sqlStep.put("name", "执行 db/sql SQL");
             sqlStep.put("type", "execute_sql_ordered");
             sqlStep.set("targets", objectMapper.createArrayNode().add(targetName));
             ObjectNode sqlParams = objectMapper.createObjectNode();
@@ -609,11 +597,11 @@ public class VersionPackageService {
             sqlStep.set("params", sqlParams);
             execPlan.add(sqlStep);
 
-            // Step 4: 部署存储过程（如果有）
+            // Step 4: 部署 db/procedures 存储过程（如果有）
             if (!procedureNames.isEmpty()) {
                 ObjectNode procStep = objectMapper.createObjectNode();
                 procStep.put("step", step++);
-                procStep.put("name", "部署存储过程");
+                procStep.put("name", "部署 db/procedures 存储过程");
                 procStep.put("type", "deploy_procedures");
                 procStep.set("targets", objectMapper.createArrayNode().add(targetName));
                 ObjectNode procParams = objectMapper.createObjectNode();
@@ -640,15 +628,15 @@ public class VersionPackageService {
             rollbackSql.set("params", rollbackSqlParams);
             rollbackPlan.add(rollbackSql);
 
-            // Rollback Step 2: 恢复上一版本存储过程
+            // Rollback Step 2: 恢复生产执行前备份的存储过程
             if (!procedureNames.isEmpty()) {
                 ObjectNode restoreProc = objectMapper.createObjectNode();
                 restoreProc.put("step", rStep++);
-                restoreProc.put("name", "恢复上一版本存储过程");
-                restoreProc.put("type", "deploy_procedures");
+                restoreProc.put("name", "恢复生产执行前备份的存储过程");
+                restoreProc.put("type", "restore_procedure_backups");
                 restoreProc.set("targets", objectMapper.createArrayNode().add(targetName));
                 ObjectNode restoreProcParams = objectMapper.createObjectNode();
-                restoreProcParams.put("source_dir", "prev_procedures");
+                restoreProcParams.put("backup_dir", "production_procedure_backup");
                 restoreProc.set("params", restoreProcParams);
                 rollbackPlan.add(restoreProc);
             }
