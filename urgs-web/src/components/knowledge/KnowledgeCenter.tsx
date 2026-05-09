@@ -215,6 +215,10 @@ const KnowledgeCenter: React.FC = () => {
 
     const handleSelectAll = () => actions.selectAll(allItemKeys);
 
+    const selectedFolderCount = useMemo(() => {
+        return Array.from(state.selectedItems).filter(key => key.startsWith('folder-')).length;
+    }, [state.selectedItems]);
+
     const getSelectedDocIds = useCallback((): number[] => {
         return Array.from(state.selectedItems)
             .filter(key => key.startsWith('doc-'))
@@ -279,6 +283,11 @@ const KnowledgeCenter: React.FC = () => {
 
     const handleBatchMove = useCallback(async (folderId: number | null) => {
         const docIds = getSelectedDocIds();
+        const folderIds = getSelectedFolderIds();
+        if (folderIds.length > 0) {
+            message.warning('移动操作只支持文档，请不要选择文件夹');
+            return;
+        }
         if (docIds.length === 0) {
             message.warning('请选择文档');
             return;
@@ -291,7 +300,7 @@ const KnowledgeCenter: React.FC = () => {
         } catch {
             message.error('批量移动失败');
         }
-    }, [getSelectedDocIds, actions]);
+    }, [getSelectedDocIds, getSelectedFolderIds, actions]);
 
     const handleBatchTag = useCallback(async (tagIds: number[]) => {
         const docIds = getSelectedDocIds();
@@ -501,6 +510,7 @@ const KnowledgeCenter: React.FC = () => {
                 onCancel={actions.exitSelectionMode}
                 folders={state.folders}
                 tags={state.tags}
+                hasSelectedFolders={selectedFolderCount > 0}
             />
 
             <FilePreviewModal

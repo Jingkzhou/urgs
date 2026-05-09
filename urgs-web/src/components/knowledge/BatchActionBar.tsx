@@ -20,6 +20,7 @@ interface BatchActionBarProps {
     onCancel: () => void;
     folders: FolderTreeNode[];
     tags: KnowledgeTag[];
+    hasSelectedFolders?: boolean;
 }
 
 // 文件夹树选择器
@@ -108,7 +109,7 @@ const TagPicker: React.FC<{
 const BatchActionBar: React.FC<BatchActionBarProps> = ({
     visible, selectedCount, totalCount,
     onSelectAll, onDeselectAll, onBatchDownload, onBatchDelete,
-    onBatchMove, onBatchTag, onCancel, folders, tags,
+    onBatchMove, onBatchTag, onCancel, folders, tags, hasSelectedFolders = false,
 }) => {
     const [moveOpen, setMoveOpen] = useState(false);
     const [tagOpen, setTagOpen] = useState(false);
@@ -127,6 +128,15 @@ const BatchActionBar: React.FC<BatchActionBarProps> = ({
     const handleMove = (folderId: number | null) => {
         setMoveOpen(false);
         onBatchMove(folderId);
+    };
+
+    const handleMoveOpenChange = (open: boolean) => {
+        if (open && hasSelectedFolders) {
+            message.warning('移动操作只支持文档，请不要选择文件夹');
+            setMoveOpen(false);
+            return;
+        }
+        setMoveOpen(open);
     };
 
     const handleTag = (tagIds: number[]) => {
@@ -176,7 +186,7 @@ const BatchActionBar: React.FC<BatchActionBarProps> = ({
                             title={<span className="text-sm font-medium">移动到</span>}
                             trigger="click"
                             open={moveOpen}
-                            onOpenChange={setMoveOpen}
+                            onOpenChange={handleMoveOpenChange}
                             placement="top"
                         >
                             <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-800 transition-colors">
