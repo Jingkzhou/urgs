@@ -77,6 +77,18 @@ public class GitBrowserController {
     }
 
     /**
+     * 获取两个 ref 之间的提交列表
+     */
+    @GetMapping("/{repoId}/compare/commits")
+    public ResponseEntity<List<GitCommit>> compareCommits(
+            @PathVariable Long repoId,
+            @RequestParam String fromRef,
+            @RequestParam String toRef) {
+        List<GitCommit> commits = gitPlatformService.compareRefCommits(repoId, fromRef, toRef);
+        return ResponseEntity.ok(commits);
+    }
+
+    /**
      * 获取提交详情
      */
     @GetMapping("/{repoId}/commits/{sha}")

@@ -203,7 +203,7 @@ public class ProductionPackageService {
     }
 
     public String productionPackageName(VersionPackage vp) {
-        return String.format("release-%s-%s.zip", vp.getRepoId(), sanitize(vp.getGitRef()));
+        return sanitize(vp.getGitRef()) + ".zip";
     }
 
     private void validateRequest(ProductionPackageRequest request) {

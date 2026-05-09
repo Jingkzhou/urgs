@@ -159,6 +159,24 @@ public class GitPlatformService {
     }
 
     /**
+     * 获取两个 ref (tag/branch/commit) 之间的提交列表
+     */
+    public List<GitCommit> compareRefCommits(Long repoId, String fromRef, String toRef) {
+        GitRepository repo = gitRepositoryService.findById(repoId)
+                .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
+
+        try {
+            return switch (repo.getPlatform().toLowerCase()) {
+                case "gitlab" -> compareGitLabRefCommits(repo, fromRef, toRef);
+                default -> throw new RuntimeException("compareRefCommits 暂不支持平台: " + repo.getPlatform());
+            };
+        } catch (Exception e) {
+            log.error("获取 ref 区间提交失败: repoId={}, from={}, to={}", repoId, fromRef, toRef, e);
+            throw new RuntimeException("获取 ref 区间提交失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 获取最新提交
      */
     public GitCommit getLatestCommit(Long repoId, String ref) {
@@ -1704,6 +1722,34 @@ public class GitPlatformService {
             }
         }
         return diffs;
+    }
+
+    private List<GitCommit> compareGitLabRefCommits(GitRepository repo, String fromRef, String toRef) throws Exception {
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
+        String encodedFrom = java.net.URLEncoder.encode(fromRef, "UTF-8");
+        String encodedTo = java.net.URLEncoder.encode(toRef, "UTF-8");
+        String url = String.format("%s/projects/%s/repository/compare?from=%s&to=%s",
+                apiBase, projectId, encodedFrom, encodedTo);
+
+        JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
+        JsonNode commitsNode = response.path("commits");
+
+        List<GitCommit> commits = new ArrayList<>();
+        if (commitsNode.isArray()) {
+            for (JsonNode commit : commitsNode) {
+                commits.add(GitCommit.builder()
+                        .sha(commit.path("short_id").asText())
+                        .fullSha(commit.path("id").asText())
+                        .message(commit.path("message").asText())
+                        .authorName(commit.path("author_name").asText())
+                        .authorEmail(commit.path("author_email").asText())
+                        .authorAvatar(null)
+                        .committedAt(commit.path("committed_date").asText())
+                        .build());
+            }
+        }
+        return commits;
     }
 
     private void createGitLabBranch(GitRepository repo, String branchName, String ref, String token) throws Exception {

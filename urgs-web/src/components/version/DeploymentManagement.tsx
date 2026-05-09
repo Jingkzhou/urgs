@@ -12,11 +12,13 @@ import {
     gateCheckProductionPackage,
     getDeployEnvironments,
     getGitRepositories,
+    getRepoCompareCommits,
     getRepoTags,
     getVersionPackages,
     recordOfflineDeploymentResult,
     updatePackageStatus,
     DeployEnvironment,
+    GitCommit,
     GitRepository,
     GitTag as IGitTag,
     ProductionPackageBuildResult,
@@ -38,6 +40,34 @@ const statusConfig: Record<string, { color: string; icon: React.ReactNode; label
     blocked: { color: 'warning', icon: <AlertTriangle size={14} />, label: '已阻断' },
 };
 
+const formatCommitDate = (value?: string) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+};
+
+const firstLine = (value?: string) => (value || '').split('\n')[0]?.trim() || '-';
+
+const formatProductionDescription = (gitRef: string, previousGitRef: string, commits: GitCommit[]) => {
+    const lines = [
+        `投产版本: ${gitRef}`,
+        `基线版本: ${previousGitRef}`,
+        '',
+        `提交记录（${previousGitRef}..${gitRef}，共 ${commits.length} 条）:`
+    ];
+
+    if (commits.length === 0) {
+        lines.push('- 未读取到提交记录，请确认 Tag 区间或手工补充说明');
+    } else {
+        commits.forEach((commit, index) => {
+            const sha = commit.sha || commit.fullSha?.slice(0, 8) || '-';
+            lines.push(`${index + 1}. ${sha} ${firstLine(commit.message)}（${commit.authorName || '-'}，${formatCommitDate(commit.committedAt)}）`);
+        });
+    }
+
+    return lines.join('\n');
+};
+
 interface Props {
     ssoId?: number;
     repoId?: number;
@@ -56,6 +86,8 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const [selectedRepo, setSelectedRepo] = useState<number | null>(repoId || null);
     const [gateResult, setGateResult] = useState<ProductionPackageGateResult | null>(null);
     const [buildResult, setBuildResult] = useState<ProductionPackageBuildResult | null>(null);
+    const [releaseCommits, setReleaseCommits] = useState<GitCommit[]>([]);
+    const [commitLoading, setCommitLoading] = useState(false);
     const [recordModalVisible, setRecordModalVisible] = useState(false);
     const [recordForm] = Form.useForm();
     const [productionForm] = Form.useForm<ProductionPackageRequest>();
@@ -118,6 +150,44 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
         }
     }, [productionEnvId]);
 
+    useEffect(() => {
+        if (!watchedRepoId || !watchedGitRef || !watchedPreviousGitRef) {
+            setReleaseCommits([]);
+            return;
+        }
+
+        let cancelled = false;
+        const loadReleaseCommits = async () => {
+            setCommitLoading(true);
+            try {
+                const commits = await getRepoCompareCommits(Number(watchedRepoId), watchedPreviousGitRef, watchedGitRef);
+                if (cancelled) return;
+                setReleaseCommits(commits || []);
+                productionForm.setFieldValue(
+                    'description',
+                    formatProductionDescription(watchedGitRef, watchedPreviousGitRef, commits || [])
+                );
+            } catch (error) {
+                if (cancelled) return;
+                setReleaseCommits([]);
+                productionForm.setFieldValue(
+                    'description',
+                    formatProductionDescription(watchedGitRef, watchedPreviousGitRef, [])
+                );
+                message.error('读取 Tag 区间提交记录失败');
+            } finally {
+                if (!cancelled) {
+                    setCommitLoading(false);
+                }
+            }
+        };
+
+        loadReleaseCommits();
+        return () => {
+            cancelled = true;
+        };
+    }, [watchedRepoId, watchedGitRef, watchedPreviousGitRef]);
+
     const loadTags = async (targetRepoId: number) => {
         setFetchingGit(true);
         setTags([]);
@@ -140,15 +210,18 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
 
     const handleRepoChange = (targetRepoId: number) => {
         setSelectedRepo(targetRepoId);
-        productionForm.setFieldsValue({ gitRef: undefined, previousGitRef: undefined });
+        productionForm.setFieldsValue({ gitRef: undefined, previousGitRef: undefined, description: undefined });
+        setReleaseCommits([]);
         loadTags(targetRepoId);
     };
 
     const handleTagChange = (tagName: string) => {
         const idx = tags.findIndex(t => t.name === tagName);
         productionForm.setFieldsValue({
-            previousGitRef: idx >= 0 && idx + 1 < tags.length ? tags[idx + 1].name : undefined
+            previousGitRef: idx >= 0 && idx + 1 < tags.length ? tags[idx + 1].name : undefined,
+            description: undefined
         });
+        setReleaseCommits([]);
         setGateResult(null);
         setBuildResult(null);
     };
@@ -403,6 +476,8 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                                 loading={fetchingGit}
                                 showSearch
                                 onChange={() => {
+                                    productionForm.setFieldValue('description', undefined);
+                                    setReleaseCommits([]);
                                     setGateResult(null);
                                     setBuildResult(null);
                                 }}
@@ -424,8 +499,15 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                         <Form.Item name="envId" hidden><Input /></Form.Item>
 
                         <Form.Item name="description" label="投产说明">
-                            <Input.TextArea rows={3} placeholder="填写本次投产范围、风险点、验证说明" />
+                            <Input.TextArea rows={8} placeholder="选择当前投产 Tag 和上一投产 Tag 后自动带出两次 Tag 之间的提交记录" />
                         </Form.Item>
+                        <div className="mb-4 -mt-3 text-xs text-slate-500">
+                            {commitLoading
+                                ? '正在读取两次 Tag 之间的提交记录...'
+                                : watchedGitRef && watchedPreviousGitRef
+                                    ? `已带出 ${releaseCommits.length} 条提交记录，可在生成生产包前补充风险点和验证说明。`
+                                    : '选择完整 Tag 后自动带出提交记录。'}
+                        </div>
 
                         <Space wrap>
                             <Button icon={<RefreshCw size={14} />} onClick={handleGateCheck} loading={gateLoading}>

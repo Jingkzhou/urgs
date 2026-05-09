@@ -156,6 +156,9 @@ export const getRepoFileContent = (repoId: number, path: string, ref?: string) =
 export const getRepoCommits = (repoId: number, params?: { ref?: string; page?: number; perPage?: number }) =>
     get<GitCommit[]>(`/api/version/repos/${repoId}/commits`, params || {});
 
+export const getRepoCompareCommits = (repoId: number, fromRef: string, toRef: string) =>
+    get<GitCommit[]>(`/api/version/repos/${repoId}/compare/commits`, { fromRef, toRef });
+
 export const getRepoCommitDetail = (repoId: number, sha: string) =>
     get<GitCommit>(`/api/version/repos/${repoId}/commits/${sha}`);
 
