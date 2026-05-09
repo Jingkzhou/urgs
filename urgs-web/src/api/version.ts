@@ -681,6 +681,9 @@ export const buildProductionPackage = (params: ProductionPackageRequest) =>
 export const downloadProductionPackage = (packageId: number) =>
     get<Blob>(`/api/version/deploy/packages/${packageId}/production-download`, {}, { isBlob: true });
 
+export const deleteVersionPackage = (packageId: number) =>
+    del<void>(`/api/version/deploy/packages/${packageId}`);
+
 /**
  * 回填版本包部署状态
  */

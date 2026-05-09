@@ -134,11 +134,6 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                     <h1 className="text-3xl font-black text-slate-800 tracking-tighter italic uppercase">基本信息</h1>
                     <p className="text-[11px] text-slate-400 font-black uppercase tracking-[0.2em] mt-2 opacity-70">Personal Profile & Identity v2.0</p>
                 </div>
-                <div className="flex gap-3">
-                    <button className="px-6 py-2.5 bg-slate-900 text-white rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-black transition-all active:scale-95 shadow-xl shadow-slate-900/10">
-                        更新账户
-                    </button>
-                </div>
             </div>
 
             <div className="bg-white/65 backdrop-blur-3xl rounded-[3rem] shadow-[0_30px_70px_-15px_rgba(0,0,0,0.12)] border border-white/60 overflow-hidden relative group/profile">
@@ -197,11 +192,7 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                             </div>
                         </div>
 
-                        <div className="flex gap-3 md:mb-2 w-full md:w-auto">
-                            <button className="flex-1 md:flex-none px-8 py-3 bg-white hover:bg-slate-50 text-slate-700 rounded-2xl text-[11px] font-black uppercase tracking-widest border border-slate-200 shadow-xl shadow-black/[0.03] transition-all hover:-translate-y-1 active:scale-95">
-                                编辑公开资料
-                            </button>
-                        </div>
+                      
                     </div>
 
                     {/* Information Grid */}

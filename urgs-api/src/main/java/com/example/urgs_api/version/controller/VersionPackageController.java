@@ -7,12 +7,14 @@ import com.example.urgs_api.version.entity.VersionPackage;
 import com.example.urgs_api.version.service.ProductionPackageService;
 import com.example.urgs_api.version.service.VersionPackageService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -82,7 +84,10 @@ public class VersionPackageController {
         String filename = productionPackageService.productionPackageName(vp);
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename(filename, StandardCharsets.UTF_8)
+                        .build()
+                        .toString())
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(archive);
     }

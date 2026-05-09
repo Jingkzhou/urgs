@@ -828,7 +828,14 @@ public class ProductionPackageService {
     }
 
     private String sanitize(String value) {
-        return value == null ? "unknown" : value.replaceAll("[^a-zA-Z0-9._-]", "_");
+        if (isBlank(value)) {
+            return "unknown";
+        }
+        String sanitized = value.trim()
+                .replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]+", "_")
+                .replaceAll("^\\.+", "_")
+                .replaceAll("\\.+$", "_");
+        return sanitized.isBlank() ? "unknown" : sanitized;
     }
 
     private boolean isBlank(String value) {

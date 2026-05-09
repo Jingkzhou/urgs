@@ -3,10 +3,11 @@ import { Alert, Button, Card, Descriptions, Dropdown, Form, Input, List, Modal, 
 import {
     AlertTriangle, CheckCircle, Clock, Download, Edit, GitBranch, Globe, History,
     Info, MoreVertical, Package, RefreshCw, Rocket, Server,
-    Tag as TagIcon, XCircle
+    Tag as TagIcon, Trash2, XCircle
 } from 'lucide-react';
 import {
     buildProductionPackage as buildProductionPackageApi,
+    deleteVersionPackage,
     downloadProductionPackage,
     downloadVersionPackage,
     gateCheckProductionPackage,
@@ -16,7 +17,6 @@ import {
     getRepoTags,
     getVersionPackages,
     recordOfflineDeploymentResult,
-    updatePackageStatus,
     DeployEnvironment,
     GitCommit,
     GitRepository,
@@ -89,6 +89,8 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const [releaseCommits, setReleaseCommits] = useState<GitCommit[]>([]);
     const [commitLoading, setCommitLoading] = useState(false);
     const [recordModalVisible, setRecordModalVisible] = useState(false);
+    const [detailModalVisible, setDetailModalVisible] = useState(false);
+    const [selectedPackageDetail, setSelectedPackageDetail] = useState<VersionPackage | null>(null);
     const [recordForm] = Form.useForm();
     const [productionForm] = Form.useForm<ProductionPackageRequest>();
 
@@ -308,23 +310,20 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
         }
     };
 
-    const handleUpdateStatus = async (id: number, status: string) => {
-        try {
-            await updatePackageStatus(id, status, currentUserId);
-            message.success('状态更新成功');
-            fetchData();
-        } catch (error) {
-            message.error('更新状态失败');
+    const openRecordModal = (pkg?: VersionPackage) => {
+        const packageId = pkg?.id || buildResult?.packageId;
+        const envId = pkg?.envId || productionForm.getFieldValue('envId') || productionEnvId;
+        if (!packageId) {
+            message.warning('请先选择生产投产包');
+            return;
         }
-    };
-
-    const openRecordModal = () => {
-        if (!buildResult) {
-            message.warning('请先生成生产投产包');
+        if (!envId) {
+            message.error('该投产包缺少投产环境，无法回填部署记录');
             return;
         }
         recordForm.setFieldsValue({
-            packageId: buildResult.packageId,
+            packageId,
+            envId,
             status: 'success',
             logs: '',
             remark: ''
@@ -335,7 +334,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const handleRecordResult = async () => {
         try {
             const values = await recordForm.validateFields();
-            const envId = productionForm.getFieldValue('envId');
+            const envId = values.envId;
             if (!envId) {
                 message.error('缺少投产环境，无法回填部署记录');
                 return;
@@ -351,10 +350,39 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
             });
             message.success('部署结果已回填');
             setRecordModalVisible(false);
+            setActiveTab('history');
             fetchData();
         } catch (error) {
             message.error('回填部署结果失败');
         }
+    };
+
+    const openPackageDetail = (pkg: VersionPackage) => {
+        setSelectedPackageDetail(pkg);
+        setDetailModalVisible(true);
+    };
+
+    const handleDeletePackage = (pkg: VersionPackage) => {
+        Modal.confirm({
+            title: '删除投产包',
+            content: `确认删除投产包 ${pkg.packageName || pkg.version || pkg.id}？`,
+            okText: '删除',
+            okButtonProps: { danger: true },
+            cancelText: '取消',
+            onOk: async () => {
+                try {
+                    await deleteVersionPackage(pkg.id);
+                    message.success('投产包已删除');
+                    if (selectedPackageDetail?.id === pkg.id) {
+                        setDetailModalVisible(false);
+                        setSelectedPackageDetail(null);
+                    }
+                    fetchData();
+                } catch (error) {
+                    message.error('删除投产包失败');
+                }
+            }
+        });
     };
 
     const currentStep = useMemo(() => {
@@ -541,7 +569,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                                     <Button type="primary" icon={<Download size={14} />} onClick={() => handleDownloadProduction(buildResult.packageId, buildResult.packageName)}>
                                         下载生产投产包
                                     </Button>
-                                    <Button icon={<CheckCircle size={14} />} onClick={openRecordModal}>
+                                    <Button icon={<CheckCircle size={14} />} onClick={() => openRecordModal()}>
                                         回填生产执行结果
                                     </Button>
                                 </Space>
@@ -559,7 +587,11 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
         const envName = environments.find(e => String(e.id) === String(pkg.envId))?.name || '-';
         const isProductionPackage = !!pkg.deployCommand || pkg.packageUrl?.startsWith('generated://production');
         return (
-            <div key={pkg.id} className="rounded-lg border border-slate-200 p-4 bg-white hover:border-indigo-300 transition-colors">
+            <div
+                key={pkg.id}
+                className="rounded-lg border border-slate-200 p-4 bg-white hover:border-indigo-300 transition-colors cursor-pointer"
+                onClick={() => openPackageDetail(pkg)}
+            >
                 <div className="flex items-start justify-between gap-3 mb-3">
                     <div>
                         <Space className="mb-1" wrap>
@@ -569,13 +601,20 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                         </Space>
                         <div className="text-xs text-slate-400 font-mono">VP-{pkg.id.toString().padStart(6, '0')}</div>
                     </div>
-                    <Dropdown menu={{
-                        items: [
-                            { key: 'deployed', label: '标记为已部署', onClick: () => handleUpdateStatus(pkg.id, 'deployed') },
-                            { key: 'archived', label: '标记为归档', onClick: () => handleUpdateStatus(pkg.id, 'archived') },
-                        ]
-                    }}>
-                        <Button type="text" icon={<MoreVertical size={16} />} />
+                    <Dropdown
+                        menu={{
+                            items: [
+                                { key: 'record', label: '回填生产执行结果', icon: <CheckCircle size={14} />, onClick: () => openRecordModal(pkg) },
+                                { key: 'delete', label: '删除', icon: <Trash2 size={14} />, danger: true, onClick: () => handleDeletePackage(pkg) },
+                            ]
+                        }}
+                        trigger={['click']}
+                    >
+                        <Button
+                            type="text"
+                            icon={<MoreVertical size={16} />}
+                            onClick={(event) => event.stopPropagation()}
+                        />
                     </Dropdown>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-slate-600">
@@ -591,7 +630,10 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                     <Button
                         size="small"
                         icon={<Download size={14} />}
-                        onClick={() => isProductionPackage ? handleDownloadProduction(pkg.id, pkg.packageName) : handleDownloadLegacy(pkg)}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            isProductionPackage ? handleDownloadProduction(pkg.id, pkg.packageName) : handleDownloadLegacy(pkg);
+                        }}
                     >
                         {isProductionPackage ? '下载生产包' : '下载数据库包'}
                     </Button>
@@ -684,6 +726,69 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
             </div>
 
             <Modal
+                title="投产包详情"
+                open={detailModalVisible}
+                onCancel={() => setDetailModalVisible(false)}
+                footer={selectedPackageDetail ? (
+                    <Space wrap>
+                        <Button
+                            icon={<Download size={14} />}
+                            onClick={() => {
+                                const isProductionPackage = !!selectedPackageDetail.deployCommand || selectedPackageDetail.packageUrl?.startsWith('generated://production');
+                                isProductionPackage
+                                    ? handleDownloadProduction(selectedPackageDetail.id, selectedPackageDetail.packageName)
+                                    : handleDownloadLegacy(selectedPackageDetail);
+                            }}
+                        >
+                            下载投产包
+                        </Button>
+                        <Button icon={<CheckCircle size={14} />} onClick={() => openRecordModal(selectedPackageDetail)}>
+                            回填生产执行结果
+                        </Button>
+                        <Button danger icon={<Trash2 size={14} />} onClick={() => handleDeletePackage(selectedPackageDetail)}>
+                            删除
+                        </Button>
+                    </Space>
+                ) : null}
+                width={760}
+            >
+                {selectedPackageDetail && (
+                    <div className="space-y-4">
+                        <Descriptions size="small" bordered column={2}>
+                            <Descriptions.Item label="版本">{selectedPackageDetail.version || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="包名">{selectedPackageDetail.packageName || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="当前 Tag">{selectedPackageDetail.gitRef || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="基线 Tag">{selectedPackageDetail.previousGitRef || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="环境">
+                                {environments.find(e => String(e.id) === String(selectedPackageDetail.envId))?.name || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="状态">
+                                <Tag color={(statusConfig[selectedPackageDetail.status] || statusConfig.ready).color}>
+                                    {(statusConfig[selectedPackageDetail.status] || statusConfig.ready).label}
+                                </Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="门禁">{selectedPackageDetail.gateStatus || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="类型">{selectedPackageDetail.packageType || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="创建时间" span={2}>
+                                {selectedPackageDetail.createdAt ? new Date(selectedPackageDetail.createdAt).toLocaleString() : '-'}
+                            </Descriptions.Item>
+                        </Descriptions>
+                        {selectedPackageDetail.description && (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                <div className="mb-2 text-sm font-semibold text-slate-700">投产说明</div>
+                                <pre className="whitespace-pre-wrap break-words text-xs leading-5 text-slate-600">{selectedPackageDetail.description}</pre>
+                            </div>
+                        )}
+                        {selectedPackageDetail.buildLog && (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                                {selectedPackageDetail.buildLog}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </Modal>
+
+            <Modal
                 title="回填生产执行结果"
                 open={recordModalVisible}
                 onOk={handleRecordResult}
@@ -695,6 +800,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                     <Form.Item name="packageId" label="投产包 ID" rules={[{ required: true }]}>
                         <Input disabled />
                     </Form.Item>
+                    <Form.Item name="envId" hidden><Input /></Form.Item>
                     <Form.Item name="status" label="执行结果" rules={[{ required: true }]}>
                         <Select>
                             <Option value="success">成功</Option>
