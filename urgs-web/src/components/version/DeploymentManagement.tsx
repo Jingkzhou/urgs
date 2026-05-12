@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Descriptions, Dropdown, Form, Input, List, Modal, Select, Space, Steps, Tag, message } from 'antd';
+import { Alert, Button, Card, Checkbox, Descriptions, Dropdown, Form, Input, List, Modal, Select, Space, Steps, Tag, Upload, message } from 'antd';
+import * as XLSX from 'xlsx';
 import {
     AlertTriangle, CheckCircle, Clock, Download, Edit, GitBranch, Globe, History,
     Info, MoreVertical, Package, RefreshCw, Rocket, Server,
-    Tag as TagIcon, Trash2, XCircle
+    Tag as TagIcon, Trash2, UploadCloud, XCircle
 } from 'lucide-react';
 import {
     buildProductionPackage as buildProductionPackageApi,
@@ -68,6 +69,41 @@ const formatProductionDescription = (gitRef: string, previousGitRef: string, com
     return lines.join('\n');
 };
 
+const parseDeployLogStatus = (content: string): 'success' | 'failed' | 'blocked' | undefined => {
+    const normalized = content.toLowerCase();
+    if (content.includes('生产中的版本与GitLab中的投产前版本不一致')
+        || content.includes('生产存储过程一致性校验')
+        || content.includes('被存储过程一致性校验阻断')) {
+        return 'blocked';
+    }
+    if (normalized.includes('"event": "deploy_end"') && normalized.includes('"status": "success"')) {
+        return 'success';
+    }
+    if (normalized.includes('final status: success')) {
+        return 'success';
+    }
+    if (normalized.includes('"event": "deploy_end"') && normalized.includes('"status": "failed"')) {
+        return 'failed';
+    }
+    if (normalized.includes('final status: failed')
+        || normalized.includes('"event": "step_fail"')
+        || content.includes('部署中断')
+        || content.includes('Step') && content.includes('失败')) {
+        return 'failed';
+    }
+    return undefined;
+};
+
+const logBelongsToPackage = (content: string, packageId: number) => {
+    const id = String(packageId);
+    return content.includes(`PACKAGE_ID=${id}`)
+        || content.includes(`"package_id": ${id}`)
+        || content.includes(`"package_id":${id}`)
+        || content.includes(`package_id=${id}`);
+};
+
+const fileNameSafe = (value?: string) => (value || 'unknown').replace(/[\\/:*?"<>|\p{C}]+/gu, '_');
+
 interface Props {
     ssoId?: number;
     repoId?: number;
@@ -89,8 +125,13 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const [releaseCommits, setReleaseCommits] = useState<GitCommit[]>([]);
     const [commitLoading, setCommitLoading] = useState(false);
     const [recordModalVisible, setRecordModalVisible] = useState(false);
+    const [recordPackage, setRecordPackage] = useState<VersionPackage | null>(null);
+    const [logParseMessage, setLogParseMessage] = useState<string>('');
+    const [logParseStatus, setLogParseStatus] = useState<'success' | 'error' | 'warning' | 'info'>('info');
     const [detailModalVisible, setDetailModalVisible] = useState(false);
     const [selectedPackageDetail, setSelectedPackageDetail] = useState<VersionPackage | null>(null);
+    const [fileListModalVisible, setFileListModalVisible] = useState(false);
+    const [fileListPackage, setFileListPackage] = useState<VersionPackage | null>(null);
     const [recordForm] = Form.useForm();
     const [productionForm] = Form.useForm<ProductionPackageRequest>();
 
@@ -145,6 +186,9 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const watchedRepoId = Form.useWatch('repoId', productionForm);
     const watchedGitRef = Form.useWatch('gitRef', productionForm);
     const watchedPreviousGitRef = Form.useWatch('previousGitRef', productionForm);
+    const watchedRecordStatus = Form.useWatch('status', recordForm);
+    const watchedManualChecked = Form.useWatch('manualChecked', recordForm);
+    const watchedRecordEnvId = Form.useWatch('envId', recordForm);
 
     useEffect(() => {
         if (productionEnvId) {
@@ -313,22 +357,78 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const openRecordModal = (pkg?: VersionPackage) => {
         const packageId = pkg?.id || buildResult?.packageId;
         const envId = pkg?.envId || productionForm.getFieldValue('envId') || productionEnvId;
+        const targetPackage = pkg
+            || versionPackages.find(item => item.id === packageId)
+            || (packageId ? {
+                id: packageId,
+                repoId: Number(watchedRepoId || repoId),
+                ssoId: ssoId!,
+                version: watchedGitRef || '',
+                gitRef: watchedGitRef || '',
+                commitSha: '',
+                status: 'ready',
+                envId,
+                packageName: buildResult?.packageName
+            } as VersionPackage : null);
         if (!packageId) {
             message.warning('请先选择生产投产包');
             return;
         }
-        if (!envId) {
-            message.error('该投产包缺少投产环境，无法回填部署记录');
-            return;
-        }
+        setRecordPackage(targetPackage);
+        setLogParseMessage(envId
+            ? '请上传当前投产包执行 deploy.sh 产生的日志文件，系统会自动识别执行结果。'
+            : '该投产包未保存投产环境，请先选择投产环境，再上传 deploy.sh 日志文件。');
+        setLogParseStatus(envId ? 'info' : 'warning');
         recordForm.setFieldsValue({
             packageId,
             envId,
-            status: 'success',
+            status: undefined,
+            logFileName: undefined,
             logs: '',
+            manualChecked: false,
             remark: ''
         });
         setRecordModalVisible(true);
+    };
+
+    const handleDeploymentLogFile = async (file: File) => {
+        const packageId = Number(recordForm.getFieldValue('packageId'));
+        if (!packageId) {
+            message.error('缺少投产包 ID，无法校验日志文件');
+            return;
+        }
+
+        const content = await file.text();
+        if (content.includes('ROLLBACK START') || content.includes('rollback_success') || content.includes('rollback_failed')) {
+            setLogParseStatus('error');
+            setLogParseMessage('请上传 deploy.sh 部署日志，不要上传 rollback.sh 回滚日志。');
+            recordForm.setFieldsValue({ status: undefined, logs: '', logFileName: undefined, manualChecked: false });
+            return;
+        }
+        if (!logBelongsToPackage(content, packageId)) {
+            setLogParseStatus('error');
+            setLogParseMessage(`日志文件不属于当前投产包，或缺少 PACKAGE_ID=${packageId} 标识。请上传该生产包 deploy.sh 产生的日志。`);
+            recordForm.setFieldsValue({ status: undefined, logs: '', logFileName: undefined, manualChecked: false });
+            return;
+        }
+
+        const parsedStatus = parseDeployLogStatus(content);
+        if (!parsedStatus) {
+            setLogParseStatus('warning');
+            setLogParseMessage('日志属于当前投产包，但未识别到最终执行结果，请确认日志是否完整。');
+            recordForm.setFieldsValue({ status: undefined, logs: content, logFileName: file.name, manualChecked: false });
+            return;
+        }
+
+        const label = parsedStatus === 'success' ? '成功' : parsedStatus === 'blocked' ? '被存储过程一致性校验阻断' : '失败';
+        setLogParseStatus(parsedStatus === 'success' ? 'success' : parsedStatus === 'blocked' ? 'warning' : 'error');
+        setLogParseMessage(`已识别为：${label}。请手工核验日志内容后勾选确认。`);
+        recordForm.setFieldsValue({
+            status: parsedStatus,
+            logs: content,
+            logFileName: file.name,
+            manualChecked: false
+        });
     };
 
     const handleRecordResult = async () => {
@@ -339,17 +439,23 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                 message.error('缺少投产环境，无法回填部署记录');
                 return;
             }
+            if (!values.logs || !values.status || !values.manualChecked) {
+                message.error('请上传当前生产包部署日志并完成人工检核');
+                return;
+            }
             await recordOfflineDeploymentResult({
                 ssoId: ssoId!,
                 envId,
                 packageId: values.packageId,
                 status: values.status,
                 deployedBy: currentUserId,
-                logs: values.logs,
+                logs: `[日志文件] ${values.logFileName || '-'}\n${values.logs}`,
                 remark: values.remark
             });
             message.success('部署结果已回填');
             setRecordModalVisible(false);
+            setRecordPackage(null);
+            setLogParseMessage('');
             setActiveTab('history');
             fetchData();
         } catch (error) {
@@ -362,7 +468,78 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
         setDetailModalVisible(true);
     };
 
+    const parsePackageFiles = (pkg?: VersionPackage | null) => {
+        if (!pkg?.changedFiles) {
+            return [];
+        }
+        try {
+            const files = JSON.parse(pkg.changedFiles);
+            return Array.isArray(files) ? files.filter(item => typeof item === 'string') : [];
+        } catch (error) {
+            return [];
+        }
+    };
+
+    const packageDeployCommand = (pkg?: VersionPackage | null) => pkg?.deployCommand || 'bash deploy.sh --operator <姓名>';
+
+    const packageRollbackCommand = (pkg?: VersionPackage | null) => pkg?.rollbackCommand || 'bash rollback.sh --operator <姓名>';
+
+    const packageLogPaths = () => [
+        '生产包解压目录/.runtime/db/.meta/deploy_*.log',
+        '生产包解压目录/.runtime/db/.meta/runtime_log.jsonl'
+    ];
+
+    const exportPackageExcel = (pkg?: VersionPackage | null) => {
+        if (!pkg) {
+            return;
+        }
+
+        const envName = environments.find(e => String(e.id) === String(pkg.envId))?.name || '-';
+        const files = parsePackageFiles(pkg);
+        const workbook = XLSX.utils.book_new();
+
+        const infoSheet = XLSX.utils.json_to_sheet([
+            { 字段: '投产包ID', 内容: `VP-${pkg.id.toString().padStart(6, '0')}` },
+            { 字段: '版本', 内容: pkg.version || '-' },
+            { 字段: '包名', 内容: pkg.packageName || '-' },
+            { 字段: '当前Tag', 内容: pkg.gitRef || '-' },
+            { 字段: '基线Tag', 内容: pkg.previousGitRef || '-' },
+            { 字段: '环境', 内容: envName },
+            { 字段: '状态', 内容: (statusConfig[pkg.status] || statusConfig.ready).label },
+            { 字段: '门禁', 内容: pkg.gateStatus || '-' },
+            { 字段: '类型', 内容: pkg.packageType || '-' },
+            { 字段: '部署命令', 内容: packageDeployCommand(pkg) },
+            { 字段: '回滚命令', 内容: packageRollbackCommand(pkg) },
+            { 字段: '创建时间', 内容: pkg.createdAt ? new Date(pkg.createdAt).toLocaleString() : '-' },
+            { 字段: '投产说明', 内容: pkg.description || '-' },
+            { 字段: '构建日志', 内容: pkg.buildLog || '-' }
+        ]);
+        XLSX.utils.book_append_sheet(workbook, infoSheet, '投产包信息');
+
+        const logSheet = XLSX.utils.json_to_sheet(packageLogPaths().map((path, index) => ({
+            序号: index + 1,
+            日志文件路径: path,
+            用途: index === 0 ? '回填生产执行结果的文本日志' : '回填生产执行结果的结构化日志'
+        })));
+        XLSX.utils.book_append_sheet(workbook, logSheet, '回填日志路径');
+
+        const fileSheet = XLSX.utils.json_to_sheet(files.map((file, index) => ({
+            序号: index + 1,
+            投产文件: file
+        })));
+        XLSX.utils.book_append_sheet(workbook, fileSheet, '投产文件清单');
+
+        XLSX.writeFile(workbook, `投产包_${fileNameSafe(pkg.version || pkg.packageName)}.xlsx`);
+    };
+
+    const openPackageFileList = (pkg: VersionPackage) => {
+        setFileListPackage(pkg);
+        setFileListModalVisible(true);
+    };
+
     const handleDeletePackage = (pkg: VersionPackage) => {
+        setDetailModalVisible(false);
+        setSelectedPackageDetail(null);
         Modal.confirm({
             title: '删除投产包',
             content: `确认删除投产包 ${pkg.packageName || pkg.version || pkg.id}？`,
@@ -604,8 +781,25 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                     <Dropdown
                         menu={{
                             items: [
-                                { key: 'record', label: '回填生产执行结果', icon: <CheckCircle size={14} />, onClick: () => openRecordModal(pkg) },
-                                { key: 'delete', label: '删除', icon: <Trash2 size={14} />, danger: true, onClick: () => handleDeletePackage(pkg) },
+                                {
+                                    key: 'record',
+                                    label: '回填生产执行结果',
+                                    icon: <CheckCircle size={14} />,
+                                    onClick: ({ domEvent }) => {
+                                        domEvent.stopPropagation();
+                                        openRecordModal(pkg);
+                                    }
+                                },
+                                {
+                                    key: 'delete',
+                                    label: '删除',
+                                    icon: <Trash2 size={14} />,
+                                    danger: true,
+                                    onClick: ({ domEvent }) => {
+                                        domEvent.stopPropagation();
+                                        handleDeletePackage(pkg);
+                                    }
+                                },
                             ]
                         }}
                         trigger={['click']}
@@ -624,7 +818,18 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                     <Space><Server size={14} />环境: {envName}</Space>
                     <Space><Info size={14} />门禁: {pkg.gateStatus || '-'}</Space>
                 </div>
-                {pkg.buildLog && <div className="mt-3 text-xs text-slate-500 bg-slate-50 rounded p-2">{pkg.buildLog}</div>}
+                {pkg.buildLog && (
+                    <button
+                        type="button"
+                        className="mt-3 w-full rounded bg-slate-50 p-2 text-left text-xs text-slate-500 hover:bg-indigo-50 hover:text-indigo-700"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            openPackageFileList(pkg);
+                        }}
+                    >
+                        {pkg.buildLog}
+                    </button>
+                )}
                 <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
                     <span className="text-xs text-slate-400">创建时间: {pkg.createdAt ? new Date(pkg.createdAt).toLocaleString() : '-'}</span>
                     <Button
@@ -745,8 +950,8 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                         <Button icon={<CheckCircle size={14} />} onClick={() => openRecordModal(selectedPackageDetail)}>
                             回填生产执行结果
                         </Button>
-                        <Button danger icon={<Trash2 size={14} />} onClick={() => handleDeletePackage(selectedPackageDetail)}>
-                            删除
+                        <Button icon={<Download size={14} />} onClick={() => exportPackageExcel(selectedPackageDetail)}>
+                            导出 Excel
                         </Button>
                     </Space>
                 ) : null}
@@ -772,6 +977,19 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                             <Descriptions.Item label="创建时间" span={2}>
                                 {selectedPackageDetail.createdAt ? new Date(selectedPackageDetail.createdAt).toLocaleString() : '-'}
                             </Descriptions.Item>
+                            <Descriptions.Item label="部署命令" span={2}>
+                                <code>{packageDeployCommand(selectedPackageDetail)}</code>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="回滚命令" span={2}>
+                                <code>{packageRollbackCommand(selectedPackageDetail)}</code>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="回填日志文件路径" span={2}>
+                                <div className="space-y-1">
+                                    {packageLogPaths().map(path => (
+                                        <div key={path} className="font-mono text-xs text-slate-700">{path}</div>
+                                    ))}
+                                </div>
+                            </Descriptions.Item>
                         </Descriptions>
                         {selectedPackageDetail.description && (
                             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -780,36 +998,139 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                             </div>
                         )}
                         {selectedPackageDetail.buildLog && (
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                            <button
+                                type="button"
+                                className="w-full rounded-lg border border-slate-200 bg-slate-50 p-3 text-left text-xs text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+                                onClick={() => openPackageFileList(selectedPackageDetail)}
+                            >
                                 {selectedPackageDetail.buildLog}
-                            </div>
+                            </button>
                         )}
                     </div>
                 )}
             </Modal>
 
             <Modal
+                title="投产文件清单"
+                open={fileListModalVisible}
+                onCancel={() => setFileListModalVisible(false)}
+                footer={(
+                    <Space>
+                        <Button onClick={() => setFileListModalVisible(false)}>关闭</Button>
+                        <Button type="primary" icon={<Download size={14} />} onClick={() => exportPackageExcel(fileListPackage)}>
+                            导出 Excel
+                        </Button>
+                    </Space>
+                )}
+                width={760}
+            >
+                <div className="space-y-3">
+                    <Descriptions size="small" bordered column={2}>
+                        <Descriptions.Item label="投产包">
+                            {fileListPackage?.packageName || fileListPackage?.version || '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="文件数">
+                            {parsePackageFiles(fileListPackage).length}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="当前 Tag">{fileListPackage?.gitRef || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="基线 Tag">{fileListPackage?.previousGitRef || '-'}</Descriptions.Item>
+                    </Descriptions>
+                    <List
+                        size="small"
+                        bordered
+                        dataSource={parsePackageFiles(fileListPackage)}
+                        locale={{ emptyText: '暂无投产文件记录' }}
+                        renderItem={(item, index) => (
+                            <List.Item>
+                                <span className="mr-3 text-xs text-slate-400">{index + 1}</span>
+                                <span className="font-mono text-xs text-slate-700">{item}</span>
+                            </List.Item>
+                        )}
+                    />
+                </div>
+            </Modal>
+
+            <Modal
                 title="回填生产执行结果"
                 open={recordModalVisible}
                 onOk={handleRecordResult}
-                onCancel={() => setRecordModalVisible(false)}
+                onCancel={() => {
+                    setRecordModalVisible(false);
+                    setRecordPackage(null);
+                    setLogParseMessage('');
+                }}
+                okButtonProps={{ disabled: !watchedRecordEnvId || !watchedRecordStatus || !watchedManualChecked }}
                 okText="确认回填"
                 cancelText="取消"
+                width={720}
             >
                 <Form form={recordForm} layout="vertical">
-                    <Form.Item name="packageId" label="投产包 ID" rules={[{ required: true }]}>
-                        <Input disabled />
+                    {recordPackage && (
+                        <Alert
+                            className="mb-4"
+                            type="info"
+                            showIcon
+                            message="必须上传当前生产包 deploy.sh 产生的日志文件"
+                            description={`当前投产包：VP-${recordPackage.id.toString().padStart(6, '0')} / ${recordPackage.packageName || recordPackage.version || '-'}`}
+                        />
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <Form.Item name="packageId" label="投产包 ID" rules={[{ required: true }]}>
+                            <Input disabled />
+                        </Form.Item>
+                        <Form.Item name="logFileName" label="日志文件">
+                            <Input disabled placeholder="上传后自动填入" />
+                        </Form.Item>
+                    </div>
+                    <Form.Item name="envId" label="投产环境" rules={[{ required: true, message: '请选择投产环境' }]}>
+                        <Select placeholder="选择本次生产执行对应的投产环境">
+                            {environments.map(env => (
+                                <Option key={env.id} value={env.id}>
+                                    {env.name}{env.code ? `（${env.code}）` : ''}
+                                </Option>
+                            ))}
+                        </Select>
                     </Form.Item>
-                    <Form.Item name="envId" hidden><Input /></Form.Item>
+                    <Form.Item name="logs" hidden rules={[{ required: true, message: '请上传生产执行日志文件' }]}>
+                        <Input.TextArea />
+                    </Form.Item>
+                    <Upload
+                        accept=".log,.jsonl,.txt"
+                        maxCount={1}
+                        beforeUpload={(file) => {
+                            handleDeploymentLogFile(file);
+                            return false;
+                        }}
+                        onRemove={() => {
+                            recordForm.setFieldsValue({ status: undefined, logs: '', logFileName: undefined, manualChecked: false });
+                            setLogParseStatus('info');
+                            setLogParseMessage('请上传当前投产包执行 deploy.sh 产生的日志文件，系统会自动识别执行结果。');
+                        }}
+                    >
+                        <Button icon={<UploadCloud size={14} />}>上传生产执行日志</Button>
+                    </Upload>
+                    {logParseMessage && (
+                        <Alert className="mt-3" type={logParseStatus} showIcon message={logParseMessage} />
+                    )}
                     <Form.Item name="status" label="执行结果" rules={[{ required: true }]}>
-                        <Select>
+                        <Select disabled placeholder="上传日志后自动识别">
                             <Option value="success">成功</Option>
                             <Option value="failed">失败</Option>
                             <Option value="blocked">被存储过程一致性校验阻断</Option>
                         </Select>
                     </Form.Item>
-                    <Form.Item name="logs" label="生产执行日志">
-                        <Input.TextArea rows={5} placeholder="粘贴 deploy.sh 或 rollback.sh 的关键日志" />
+                    <Form.Item
+                        name="manualChecked"
+                        valuePropName="checked"
+                        rules={[
+                            {
+                                validator: (_, value) => value
+                                    ? Promise.resolve()
+                                    : Promise.reject(new Error('请完成人工检核确认'))
+                            }
+                        ]}
+                    >
+                        <Checkbox>我已人工核验日志文件，确认该日志由当前投产包部署产生，且识别结果与日志一致</Checkbox>
                     </Form.Item>
                     <Form.Item name="remark" label="备注">
                         <Input.TextArea rows={3} placeholder="填写验证结论、异常说明或回滚说明" />

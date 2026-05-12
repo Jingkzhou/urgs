@@ -75,6 +75,16 @@ class DeployEngine:
             if not os.path.exists(manifest_path):
                 self.log.error("缺失 manifest.json 文件")
                 return False
+            manifest = self._load_manifest()
+            if manifest:
+                self.log.info(
+                    "PACKAGE_ID=%s PKG_VERSION=%s PREVIOUS_VERSION=%s GIT_COMMIT=%s" % (
+                        manifest.get("package_id", ""),
+                        manifest.get("pkg_version", ""),
+                        manifest.get("previous_version", ""),
+                        manifest.get("git_commit", "")
+                    )
+                )
 
             self.log.ok("Pre-flight check 通过")
             return True

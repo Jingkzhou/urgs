@@ -19,6 +19,8 @@ public class ReleaseSpec {
 
     private DatabaseSpec database = new DatabaseSpec();
 
+    private EnvironmentSpec environment = new EnvironmentSpec();
+
     private BackupSpec backup = new BackupSpec();
 
     private RollbackSpec rollback = new RollbackSpec();
@@ -54,6 +56,13 @@ public class ReleaseSpec {
         private String driverJar;
         private String jdbcDriverClass;
         private String targetName = "prod_db";
+    }
+
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class EnvironmentSpec {
+        private String code = "prod";
+        private String name = "生产环境";
     }
 
     @Data

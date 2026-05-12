@@ -14,6 +14,14 @@
 # 发布类型。当前生产投产包主要支持 db 类型。
 type: db
 
+# 投产环境台账配置。
+# 这里不是数据库连接配置，而是 URGS 投产记录归属的环境。
+# 系统会优先按 code 在当前系统下查找部署环境；找不到时再按 name 查找。
+# 若不存在，请先在 URGS 中维护一条 code=prod、name=生产环境 的部署环境。
+environment:
+  code: prod
+  name: 生产环境
+
 # 数据库平台、生产库服务器与执行用户配置。
 # dbType 支持：mysql、gbase、oracle、xinghuan、transwarp、dameng。
 # MySQL/GBase/Oracle 使用这里声明的连接信息和 Python 原生驱动；

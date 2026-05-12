@@ -6,7 +6,9 @@ import com.example.urgs_api.version.dto.ProductionPackageBuildResult;
 import com.example.urgs_api.version.dto.ProductionPackageGateResult;
 import com.example.urgs_api.version.dto.ProductionPackageRequest;
 import com.example.urgs_api.version.dto.ReleaseSpec;
+import com.example.urgs_api.version.entity.DeployEnvironment;
 import com.example.urgs_api.version.entity.VersionPackage;
+import com.example.urgs_api.version.repository.DeployEnvironmentRepository;
 import com.example.urgs_api.version.repository.VersionPackageRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -48,6 +50,7 @@ public class ProductionPackageService {
     private final GitPlatformService gitPlatformService;
     private final VersionPackageService versionPackageService;
     private final VersionPackageRepository packageRepository;
+    private final DeployEnvironmentRepository environmentRepository;
     private final ObjectMapper objectMapper;
 
     @Value("${deploy.tool.workdir:classpath:db_deploy}")
@@ -189,10 +192,10 @@ public class ProductionPackageService {
             }
 
             addChangedArtifacts(zos, checksumBuilder, vp, includedFiles);
-            addToZip(zos, "deploy.sh", buildDeployScript(!includedDbPaths.isEmpty()).getBytes(StandardCharsets.UTF_8),
+            addToZip(zos, "deploy.sh", buildDeployScript(vp, !includedDbPaths.isEmpty()).getBytes(StandardCharsets.UTF_8),
                     checksumBuilder);
             addToZip(zos, "rollback.sh",
-                    buildRollbackScript(!includedDbPaths.isEmpty()).getBytes(StandardCharsets.UTF_8), checksumBuilder);
+                    buildRollbackScript(vp, !includedDbPaths.isEmpty()).getBytes(StandardCharsets.UTF_8), checksumBuilder);
             addToZip(zos, "README.md", buildReadme(vp).getBytes(StandardCharsets.UTF_8), checksumBuilder);
 
             zos.putNextEntry(new ZipEntry("checksum.sha256"));
@@ -552,7 +555,7 @@ public class ProductionPackageService {
         return manifest;
     }
 
-    private String buildDeployScript(boolean hasDbPackage) {
+    private String buildDeployScript(VersionPackage vp, boolean hasDbPackage) {
         return """
                 #!/usr/bin/env bash
                 set -euo pipefail
@@ -572,6 +575,12 @@ public class ProductionPackageService {
 
                 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
                 echo "[INFO] operator=${OPERATOR}"
+                """.stripIndent()
+                + "echo \"[INFO] PACKAGE_ID=" + vp.getId()
+                + " PKG_VERSION=" + shellQuote(vp.getVersion())
+                + " GIT_REF=" + shellQuote(vp.getGitRef())
+                + " PREVIOUS_GIT_REF=" + shellQuote(vp.getPreviousGitRef()) + "\"\n"
+                + """
 
                 if command -v sha256sum >/dev/null 2>&1; then
                   (cd "$ROOT_DIR" && sha256sum -c checksum.sha256)
@@ -596,7 +605,7 @@ public class ProductionPackageService {
                 + "\necho \"[INFO] deploy finished\"\n";
     }
 
-    private String buildRollbackScript(boolean hasDbPackage) {
+    private String buildRollbackScript(VersionPackage vp, boolean hasDbPackage) {
         return """
                 #!/usr/bin/env bash
                 set -euo pipefail
@@ -616,6 +625,12 @@ public class ProductionPackageService {
 
                 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
                 echo "[INFO] rollback operator=${OPERATOR}"
+                """.stripIndent()
+                + "echo \"[INFO] PACKAGE_ID=" + vp.getId()
+                + " PKG_VERSION=" + shellQuote(vp.getVersion())
+                + " GIT_REF=" + shellQuote(vp.getGitRef())
+                + " PREVIOUS_GIT_REF=" + shellQuote(vp.getPreviousGitRef()) + "\"\n"
+                + """
 
                 """.stripIndent()
                 + (hasDbPackage ? """
@@ -694,7 +709,34 @@ public class ProductionPackageService {
     }
 
     private Long resolveEnvId(ProductionPackageRequest request) {
-        return request.getEnvId();
+        if (request.getEnvId() != null) {
+            return request.getEnvId();
+        }
+        ReleaseSpec spec;
+        try {
+            spec = releaseSpecService.loadSpec(request.getRepoId(), request.getGitRef()).spec();
+        } catch (RuntimeException e) {
+            log.warn("读取 release.yml 解析投产环境失败: {}", e.getMessage());
+            return null;
+        }
+        ReleaseSpec.EnvironmentSpec envSpec = spec.getEnvironment();
+        if (envSpec == null) {
+            return null;
+        }
+        if (!isBlank(envSpec.getCode())) {
+            var byCode = environmentRepository.findBySsoIdAndCode(request.getSsoId(), envSpec.getCode());
+            if (byCode.isPresent()) {
+                return byCode.get().getId();
+            }
+        }
+        if (!isBlank(envSpec.getName())) {
+            return environmentRepository.findBySsoIdOrderBySortOrderAsc(request.getSsoId()).stream()
+                    .filter(env -> envSpec.getName().equals(env.getName()))
+                    .map(DeployEnvironment::getId)
+                    .findFirst()
+                    .orElse(null);
+        }
+        return null;
     }
 
     private String writeJson(Object value) {
@@ -836,6 +878,10 @@ public class ProductionPackageService {
                 .replaceAll("^\\.+", "_")
                 .replaceAll("\\.+$", "_");
         return sanitized.isBlank() ? "unknown" : sanitized;
+    }
+
+    private String shellQuote(String value) {
+        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private boolean isBlank(String value) {

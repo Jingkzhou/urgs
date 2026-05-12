@@ -543,6 +543,9 @@ public class VersionPackageService {
         try {
             ObjectNode root = objectMapper.createObjectNode();
             root.put("pkg_version", vp.getVersion());
+            if (vp.getId() != null) {
+                root.put("package_id", vp.getId());
+            }
             root.put("previous_version", vp.getPreviousGitRef() != null ? vp.getPreviousGitRef() : "");
             root.put("created_at", LocalDateTime.now().toString());
             root.put("git_commit", vp.getCommitSha() != null ? vp.getCommitSha() : "");
