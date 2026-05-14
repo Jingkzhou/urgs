@@ -485,7 +485,7 @@ export const rollbackDeploy = (deploymentId: number) =>
 
 export const recordOfflineDeploymentResult = (data: {
     ssoId: number;
-    envId: number;
+    envId?: number;
     packageId: number;
     status: 'success' | 'failed' | 'blocked';
     deployedBy?: number;

@@ -188,7 +188,6 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const watchedPreviousGitRef = Form.useWatch('previousGitRef', productionForm);
     const watchedRecordStatus = Form.useWatch('status', recordForm);
     const watchedManualChecked = Form.useWatch('manualChecked', recordForm);
-    const watchedRecordEnvId = Form.useWatch('envId', recordForm);
 
     useEffect(() => {
         if (productionEnvId) {
@@ -375,10 +374,8 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
             return;
         }
         setRecordPackage(targetPackage);
-        setLogParseMessage(envId
-            ? '请上传当前投产包执行 deploy.sh 产生的日志文件，系统会自动识别执行结果。'
-            : '该投产包未保存投产环境，请先选择投产环境，再上传 deploy.sh 日志文件。');
-        setLogParseStatus(envId ? 'info' : 'warning');
+        setLogParseMessage('请上传当前投产包执行 deploy.sh 产生的日志文件，系统会自动识别执行结果。');
+        setLogParseStatus('info');
         recordForm.setFieldsValue({
             packageId,
             envId,
@@ -434,18 +431,13 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const handleRecordResult = async () => {
         try {
             const values = await recordForm.validateFields();
-            const envId = values.envId;
-            if (!envId) {
-                message.error('缺少投产环境，无法回填部署记录');
-                return;
-            }
             if (!values.logs || !values.status || !values.manualChecked) {
                 message.error('请上传当前生产包部署日志并完成人工检核');
                 return;
             }
             await recordOfflineDeploymentResult({
                 ssoId: ssoId!,
-                envId,
+                envId: values.envId,
                 packageId: values.packageId,
                 status: values.status,
                 deployedBy: currentUserId,
@@ -484,10 +476,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
 
     const packageRollbackCommand = (pkg?: VersionPackage | null) => pkg?.rollbackCommand || 'bash rollback.sh --operator <姓名>';
 
-    const packageLogPaths = () => [
-        '生产包解压目录/.runtime/db/.meta/deploy_*.log',
-        '生产包解压目录/.runtime/db/.meta/runtime_log.jsonl'
-    ];
+    const packageDeployLogPath = () => '生产包解压目录/.runtime/db/.meta/deploy_*.log';
 
     const exportPackageExcel = (pkg?: VersionPackage | null) => {
         if (!pkg) {
@@ -516,11 +505,10 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
         ]);
         XLSX.utils.book_append_sheet(workbook, infoSheet, '投产包信息');
 
-        const logSheet = XLSX.utils.json_to_sheet(packageLogPaths().map((path, index) => ({
-            序号: index + 1,
-            日志文件路径: path,
-            用途: index === 0 ? '回填生产执行结果的文本日志' : '回填生产执行结果的结构化日志'
-        })));
+        const logSheet = XLSX.utils.json_to_sheet([{
+            日志文件路径: packageDeployLogPath(),
+            用途: '回填生产执行结果的部署日志'
+        }]);
         XLSX.utils.book_append_sheet(workbook, logSheet, '回填日志路径');
 
         const fileSheet = XLSX.utils.json_to_sheet(files.map((file, index) => ({
@@ -984,11 +972,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                                 <code>{packageRollbackCommand(selectedPackageDetail)}</code>
                             </Descriptions.Item>
                             <Descriptions.Item label="回填日志文件路径" span={2}>
-                                <div className="space-y-1">
-                                    {packageLogPaths().map(path => (
-                                        <div key={path} className="font-mono text-xs text-slate-700">{path}</div>
-                                    ))}
-                                </div>
+                                <div className="font-mono text-xs text-slate-700">{packageDeployLogPath()}</div>
                             </Descriptions.Item>
                         </Descriptions>
                         {selectedPackageDetail.description && (
@@ -1059,7 +1043,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                     setRecordPackage(null);
                     setLogParseMessage('');
                 }}
-                okButtonProps={{ disabled: !watchedRecordEnvId || !watchedRecordStatus || !watchedManualChecked }}
+                okButtonProps={{ disabled: !watchedRecordStatus || !watchedManualChecked }}
                 okText="确认回填"
                 cancelText="取消"
                 width={720}
@@ -1082,20 +1066,12 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                             <Input disabled placeholder="上传后自动填入" />
                         </Form.Item>
                     </div>
-                    <Form.Item name="envId" label="投产环境" rules={[{ required: true, message: '请选择投产环境' }]}>
-                        <Select placeholder="选择本次生产执行对应的投产环境">
-                            {environments.map(env => (
-                                <Option key={env.id} value={env.id}>
-                                    {env.name}{env.code ? `（${env.code}）` : ''}
-                                </Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
+                    <Form.Item name="envId" hidden><Input /></Form.Item>
                     <Form.Item name="logs" hidden rules={[{ required: true, message: '请上传生产执行日志文件' }]}>
                         <Input.TextArea />
                     </Form.Item>
                     <Upload
-                        accept=".log,.jsonl,.txt"
+                        accept=".log"
                         maxCount={1}
                         beforeUpload={(file) => {
                             handleDeploymentLogFile(file);

@@ -1,4 +1,27 @@
 services:
+  urgs-mysql:
+    image: mysql:8.4
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${HOST_PORT_MYSQL:-3306}:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u${DB_USER} -p${DB_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - urgs-net
+
   neo4j:
     image: neo4j:5.15.0
     environment:
@@ -89,6 +112,26 @@ services:
       - urgs-api
     networks:
       - urgs-net
+
+  urgs-rag:
+    build: ./urgs-rag
+    image: urgs-rag:latest
+    environment:
+      LLM_API_BASE: ${LLM_API_BASE}
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_API_KEY: ${LLM_API_KEY}
+      URGS_API_URL: ${URGS_API_URL:-http://urgs-api:8080}
+      EMBEDDING_DEVICE: cpu
+      RERANKER_DEVICE: cpu
+    ports:
+      - "${HOST_PORT_RAG}:8001"
+    depends_on:
+      - urgs-api
+    networks:
+      - urgs-net
+    volumes:
+      - rag_data:/app/data
+      - rag_doc_store:/app/doc_store
 
   urgs-presentation:
     build:
@@ -262,6 +305,9 @@ networks:
     driver: bridge
 
 volumes:
+  mysql_data:
   neo4j_data:
+  rag_data:
+  rag_doc_store:
   dify_db_data:
   dify_weaviate_data:

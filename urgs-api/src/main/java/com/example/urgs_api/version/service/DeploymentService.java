@@ -135,23 +135,18 @@ public class DeploymentService {
         if (request.getSsoId() == null) {
             throw new IllegalArgumentException("ssoId 不能为空");
         }
-        if (request.getEnvId() == null) {
-            throw new IllegalArgumentException("envId 不能为空");
-        }
         if (request.getPackageId() == null) {
             throw new IllegalArgumentException("packageId 不能为空");
-        }
-        if (!envRepository.existsById(request.getEnvId())) {
-            throw new IllegalArgumentException("环境不存在: " + request.getEnvId());
         }
 
         VersionPackage versionPackage = packageRepository.findById(request.getPackageId())
                 .orElseThrow(() -> new IllegalArgumentException("版本包不存在: " + request.getPackageId()));
+        Long envId = resolveOfflineEnvId(request, versionPackage);
 
         String status = request.getStatus() != null ? request.getStatus() : Deployment.STATUS_SUCCESS;
         Deployment deployment = new Deployment();
         deployment.setSsoId(request.getSsoId());
-        deployment.setEnvId(request.getEnvId());
+        deployment.setEnvId(envId);
         deployment.setPackageId(request.getPackageId());
         deployment.setVersion(versionPackage.getVersion());
         deployment.setArtifactUrl(versionPackage.getPackageUrl());
@@ -170,9 +165,40 @@ public class DeploymentService {
         } else if (Deployment.STATUS_FAILED.equals(status)) {
             versionPackage.setStatus(VersionPackage.STATUS_FAILED);
         }
+        if (versionPackage.getEnvId() == null) {
+            versionPackage.setEnvId(envId);
+        }
         packageRepository.save(versionPackage);
 
         return deploymentRepository.save(deployment);
+    }
+
+    private Long resolveOfflineEnvId(OfflineDeploymentResultRequest request, VersionPackage versionPackage) {
+        if (request.getEnvId() != null && envRepository.existsById(request.getEnvId())) {
+            return request.getEnvId();
+        }
+        if (versionPackage.getEnvId() != null && envRepository.existsById(versionPackage.getEnvId())) {
+            return versionPackage.getEnvId();
+        }
+
+        Long ssoId = request.getSsoId();
+        Optional<DeployEnvironment> prodEnv = envRepository.findBySsoIdAndCode(ssoId, "prod")
+                .or(() -> envRepository.findBySsoIdAndCode(ssoId, "production"))
+                .or(() -> envRepository.findBySsoIdOrderBySortOrderAsc(ssoId).stream()
+                        .filter(env -> env.getName() != null && env.getName().contains("生产"))
+                        .findFirst());
+        if (prodEnv.isPresent()) {
+            return prodEnv.get().getId();
+        }
+
+        DeployEnvironment env = new DeployEnvironment();
+        env.setSsoId(ssoId);
+        env.setCode("prod");
+        env.setName("生产环境");
+        env.setDeployType("ssh");
+        env.setDeployUrl("offline-production");
+        env.setSortOrder(1);
+        return envRepository.save(env).getId();
     }
 
     /**

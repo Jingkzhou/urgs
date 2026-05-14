@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+OUT_DIR="${OUT_DIR:-${ROOT_DIR}/dist-packages}"
+STAMP="$(date +%Y%m%d%H%M%S)"
+PACKAGE_BASENAME="${PACKAGE_NAME:-urgs-nondocker-${STAMP}}"
+WORK_DIR="${OUT_DIR}/${PACKAGE_BASENAME}"
+SERVICES=()
+
+usage() {
+    cat <<'EOF'
+Usage:
+  deploy/non-docker/package-services.sh <service-or-component...>
+
+Services:
+  api          Build and package urgs-api Spring Boot service.
+  web          Build and package urgs-web static frontend.
+  executor     Build and package urgs-executor Spring Boot service.
+  rag          Package urgs-rag Python service source and requirements.
+  lineage      Package sql-lineage-engine source and requirements.
+
+Components:
+  nginx        Package nginx deployment config, or NGINX_TARBALL when provided.
+  redis        Package redis config, or REDIS_TARBALL when provided.
+
+Groups:
+  app-all      api web executor rag lineage
+  deps-all     nginx redis
+  full         app-all deps-all
+
+Examples:
+  deploy/non-docker/package-services.sh api web
+  deploy/non-docker/package-services.sh api web executor rag
+  deploy/non-docker/package-services.sh full
+  REDIS_TARBALL=/tmp/redis.tar.gz deploy/non-docker/package-services.sh api web redis
+  OUT_DIR=/tmp/urgs-packages deploy/non-docker/package-services.sh api executor
+
+Output:
+  dist-packages/<package>.tar.gz
+EOF
+}
+
+log() {
+    printf '[nondocker-package] %s\n' "$*"
+}
+
+die() {
+    printf '[nondocker-package][error] %s\n' "$*" >&2
+    exit 1
+}
+
+normalize_service() {
+    case "$1" in
+        api | urgs-api) echo "api" ;;
+        web | urgs-web | frontend) echo "web" ;;
+        executor | urgs-executor) echo "executor" ;;
+        rag | urgs-rag) echo "rag" ;;
+        lineage | sql-lineage-engine) echo "lineage" ;;
+        nginx) echo "nginx" ;;
+        redis) echo "redis" ;;
+        *) return 1 ;;
+    esac
+}
+
+has_service() {
+    local expected="$1"
+    local item
+    [ "${#SERVICES[@]}" -gt 0 ] || return 1
+    for item in "${SERVICES[@]}"; do
+        [ "$item" = "$expected" ] && return 0
+    done
+    return 1
+}
+
+append_service() {
+    local service="$1"
+    if ! has_service "$service"; then
+        SERVICES+=("$service")
+    fi
+}
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
+
+copy_with_rsync() {
+    local src="$1"
+    local dst="$2"
+    require_command rsync
+    rsync -a \
+        --exclude '.git' \
+        --exclude '.venv' \
+        --exclude '__pycache__' \
+        --exclude '.pytest_cache' \
+        --exclude 'node_modules' \
+        --exclude 'target' \
+        --exclude 'dist' \
+        --exclude 'logs' \
+        "$src" "$dst"
+}
+
+latest_jar() {
+    local dir="$1"
+    find "$dir" -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | tail -1
+}
+
+build_api() {
+    log "Building urgs-api."
+    (cd "${ROOT_DIR}/urgs-api" && ./mvnw clean package -DskipTests)
+    local jar
+    jar="$(latest_jar "${ROOT_DIR}/urgs-api/target")"
+    [ -n "$jar" ] || die "urgs-api jar was not generated."
+    mkdir -p "${WORK_DIR}/services/api"
+    cp "$jar" "${WORK_DIR}/services/api/app.jar"
+}
+
+build_executor() {
+    log "Building urgs-executor."
+    (cd "${ROOT_DIR}/urgs-executor" && ./mvnw clean package -DskipTests)
+    local jar
+    jar="$(latest_jar "${ROOT_DIR}/urgs-executor/target")"
+    [ -n "$jar" ] || die "urgs-executor jar was not generated."
+    mkdir -p "${WORK_DIR}/services/executor"
+    cp "$jar" "${WORK_DIR}/services/executor/app.jar"
+}
+
+build_web() {
+    log "Building urgs-web."
+    require_command npm
+    if [ -f "${ROOT_DIR}/urgs-web/package-lock.json" ]; then
+        (cd "${ROOT_DIR}/urgs-web" && npm ci && npm run build)
+    else
+        (cd "${ROOT_DIR}/urgs-web" && npm install && npm run build)
+    fi
+    [ -d "${ROOT_DIR}/urgs-web/dist" ] || die "urgs-web dist was not generated."
+    mkdir -p "${WORK_DIR}/services/web"
+    cp -R "${ROOT_DIR}/urgs-web/dist" "${WORK_DIR}/services/web/dist"
+}
+
+package_rag() {
+    log "Packaging urgs-rag source."
+    [ -f "${ROOT_DIR}/urgs-rag/requirements.txt" ] || die "urgs-rag/requirements.txt does not exist."
+    mkdir -p "${WORK_DIR}/services/rag"
+    copy_with_rsync "${ROOT_DIR}/urgs-rag/" "${WORK_DIR}/services/rag/"
+}
+
+package_lineage() {
+    log "Packaging sql-lineage-engine source."
+    [ -f "${ROOT_DIR}/sql-lineage-engine/requirements.txt" ] || die "sql-lineage-engine/requirements.txt does not exist."
+    mkdir -p "${WORK_DIR}/services/lineage"
+    copy_with_rsync "${ROOT_DIR}/sql-lineage-engine/" "${WORK_DIR}/services/lineage/"
+    chmod +x "${WORK_DIR}/services/lineage/run.sh" 2>/dev/null || true
+}
+
+package_component() {
+    local component="$1"
+    local tarball_var=""
+    local tarball=""
+    log "Packaging ${component} component descriptor."
+    mkdir -p "${WORK_DIR}/components/${component}"
+    case "$component" in
+        nginx) tarball_var="NGINX_TARBALL" ;;
+        redis) tarball_var="REDIS_TARBALL" ;;
+        *) die "Unknown component: ${component}" ;;
+    esac
+    tarball="${!tarball_var:-}"
+    if [ -n "$tarball" ]; then
+        [ -f "$tarball" ] || die "${tarball_var} does not exist: ${tarball}"
+        cp "$tarball" "${WORK_DIR}/components/${component}/"
+    fi
+    cat > "${WORK_DIR}/components/${component}/README.txt" <<EOF
+${component} component selected.
+
+If a tarball was supplied during packaging, it is stored in this directory.
+If no tarball is present, bin/deploy.sh will use the target host installation
+when possible and report a clear error for missing runtime commands.
+EOF
+}
+
+write_manifest() {
+    {
+        printf 'package_name=%s\n' "$PACKAGE_BASENAME"
+        printf 'created_at=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+        printf 'services=%s\n' "${SERVICES[*]}"
+        if command -v git >/dev/null 2>&1 && git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            printf 'git_commit=%s\n' "$(git -C "$ROOT_DIR" rev-parse HEAD)"
+        fi
+    } > "${WORK_DIR}/MANIFEST"
+}
+
+prepare_work_dir() {
+    rm -rf "$WORK_DIR"
+    mkdir -p "${WORK_DIR}/bin" "${WORK_DIR}/config" "${WORK_DIR}/logs" "${WORK_DIR}/pids" "$OUT_DIR"
+    cp "${ROOT_DIR}/deploy/non-docker/runtime/deploy.sh" "${WORK_DIR}/bin/deploy.sh"
+    cp "${ROOT_DIR}/deploy/non-docker/templates/deploy.env" "${WORK_DIR}/config/deploy.env"
+    cp "${ROOT_DIR}/deploy/non-docker/templates/nginx.conf.template" "${WORK_DIR}/config/nginx.conf.template"
+    chmod +x "${WORK_DIR}/bin/deploy.sh"
+    printf '%s\n' "${SERVICES[@]}" > "${WORK_DIR}/config/services.list"
+}
+
+create_archive() {
+    log "Creating package archive."
+    (cd "$OUT_DIR" && tar -czf "${PACKAGE_BASENAME}.tar.gz" "$PACKAGE_BASENAME")
+    log "Package ready: ${OUT_DIR}/${PACKAGE_BASENAME}.tar.gz"
+}
+
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    usage
+    exit 0
+fi
+
+[ "$#" -gt 0 ] || {
+    usage
+    exit 1
+}
+
+for raw_service in "$@"; do
+    case "$raw_service" in
+        app-all)
+            for service in api web executor rag lineage; do append_service "$service"; done
+            ;;
+        deps-all)
+            for service in nginx redis; do append_service "$service"; done
+            ;;
+        full)
+            for service in api web executor rag lineage nginx redis; do append_service "$service"; done
+            ;;
+        *)
+            service="$(normalize_service "$raw_service")" || die "Unknown service: ${raw_service}"
+            append_service "$service"
+            ;;
+    esac
+done
+
+if has_service api || has_service executor; then
+    require_command java
+fi
+
+prepare_work_dir
+
+for service in "${SERVICES[@]}"; do
+    case "$service" in
+        api) build_api ;;
+        web) build_web ;;
+        executor) build_executor ;;
+        rag) package_rag ;;
+        lineage) package_lineage ;;
+        nginx | redis) package_component "$service" ;;
+        *) die "Unhandled service: ${service}" ;;
+    esac
+done
+
+write_manifest
+create_archive
