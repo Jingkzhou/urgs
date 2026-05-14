@@ -296,6 +296,7 @@ start_all() {
     render_runtime_config
     install_nginx_config
     start_web_static
+    true
 }
 
 stop_all() {
@@ -304,6 +305,7 @@ stop_all() {
     service_enabled executor && stop_service executor
     service_enabled rag && stop_service rag
     service_enabled redis && stop_service redis
+    true
 }
 
 status_all() {
@@ -314,6 +316,7 @@ status_all() {
     service_enabled web && status_service web-static
     service_enabled lineage && printf '%-12s PACKAGED cli-only\n' "lineage"
     service_enabled nginx && printf '%-12s CONFIGURED via %s\n' "nginx" "$NGINX_CONF_DIR"
+    true
 }
 
 case "${1:-}" in

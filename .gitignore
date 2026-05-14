@@ -77,3 +77,4 @@ urgs-agent/urgs_agent.egg-info/
 .agents/
 .claude/
 .codex/
+dist-packages/
