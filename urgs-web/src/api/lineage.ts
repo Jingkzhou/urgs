@@ -20,23 +20,57 @@ export interface LineageSearchResponse {
     groupedList: LineageSearchOwnerGroup[];
 }
 
+export type LineageGraphDirection = 'upstream' | 'downstream' | 'both';
+export type LineageGraphRelationLevel = 'table' | 'column';
+
+export interface LineageGraphOptions {
+    depth?: number;
+    qualifiedName?: string;
+    direction?: LineageGraphDirection;
+    limit?: number;
+    relationLevel?: LineageGraphRelationLevel;
+}
+
+export interface LineageGraphResponse {
+    nodes: any[];
+    edges: any[];
+    truncated?: boolean;
+    totalNodes?: number;
+    totalEdges?: number;
+    limit?: number;
+    depth?: number;
+    direction?: LineageGraphDirection;
+    relationLevel?: LineageGraphRelationLevel;
+}
+
 /**
  * Get lineage graph data (仅 DERIVES_TO 关系)
  * @param tableName name of the table to search
- * @param depth search depth (default -1 for full lineage)
+ * @param depth search depth (default 2 for initial graph)
  */
-export const getLineageGraph = (tableName: string, columnName?: string, depth: number = -1, qualifiedName?: string) => {
+export const getLineageGraph = (
+    tableName: string,
+    columnName?: string,
+    optionsOrDepth: LineageGraphOptions | number = {},
+    qualifiedName?: string
+) => {
+    const options: LineageGraphOptions = typeof optionsOrDepth === 'number'
+        ? { depth: optionsOrDepth, qualifiedName }
+        : optionsOrDepth;
     const params: Record<string, string> = {
         tableName,
-        depth: String(depth),
+        depth: String(options.depth ?? 2),
+        direction: options.direction || 'both',
+        limit: String(options.limit ?? 1000),
+        relationLevel: options.relationLevel || (columnName ? 'column' : 'table'),
     };
-    if (qualifiedName) {
-        params.qualifiedName = qualifiedName;
+    if (options.qualifiedName) {
+        params.qualifiedName = options.qualifiedName;
     }
     if (columnName) {
         params.columnName = columnName;
     }
-    return get('/api/metadata/lineage/graph', params);
+    return get('/api/metadata/lineage/graph', params) as Promise<LineageGraphResponse>;
 };
 
 /**

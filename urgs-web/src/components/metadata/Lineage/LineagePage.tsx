@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Layout, Input, Button, Drawer, message, Empty, Tag, Pagination, Tooltip, Segmented } from 'antd';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Layout, Input, Button, Drawer, message, Empty, Tag, Pagination, Tooltip, Segmented, Checkbox } from 'antd';
 import {
     SearchOutlined,
     TableOutlined,
@@ -10,20 +10,18 @@ import {
     UserOutlined,
     RobotOutlined,
 } from '@ant-design/icons';
-import dagre from 'dagre';
 import {
-    getLineageGraph,
     searchTables,
     exportLineage,
     LineageSearchOwnerGroup,
     LineageSearchTableItem,
+    LineageGraphDirection,
 } from '@/api/lineage';
 import LineageReportModal from './analysis/components/LineageReportModal';
-import { NodeData, LinkData, ViewportState } from './analysis/types';
-import { NODE_HEADER_HEIGHT, COLUMN_ROW_HEIGHT } from './analysis/constants';
 import LineageGraphContent from './analysis/components/LineageGraphContent';
 import LineageEngineToolbar from './analysis/components/LineageEngineToolbar';
 import { useLineageEngineController } from './analysis/hooks/useLineageEngineController';
+import { useLineageGraphLoader } from './analysis/hooks/useLineageGraphLoader';
 import { hasPermission } from '@/utils/permission';
 import AICodeReport from '@/components/version/AICodeReport';
 
@@ -33,31 +31,45 @@ interface LineagePageProps {
     mode?: 'trace' | 'impact';
 }
 
-const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
+type DirectionOption = 'upstream' | 'downstream';
+
+const LineagePage: React.FC<LineagePageProps> = () => {
     const containerRef = useRef<HTMLDivElement>(null);
+    const lastDirectionRef = useRef<LineageGraphDirection>('both');
     const [searchText, setSearchText] = useState('');
     const [searchResults, setSearchResults] = useState<LineageSearchOwnerGroup[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
     const [total, setTotal] = useState(0);
     const [totalOwners, setTotalOwners] = useState(0);
-    const [selectedTable, setSelectedTable] = useState<string | null>(null);
-    const [selectedQualifiedName, setSelectedQualifiedName] = useState<string | null>(null);
-    const [selectedField, setSelectedField] = useState<{ nodeId: string, colId: string } | null>(null);
-    const [nodes, setNodes] = useState<NodeData[]>([]);
-    const [links, setLinks] = useState<LinkData[]>([]);
-    const [viewport, setViewport] = useState<ViewportState>({ x: 0, y: 0, zoom: 0.85 });
     const [loading, setLoading] = useState(false);
-    const [graphLoading, setGraphLoading] = useState(false);
     const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
     const [expandedOwners, setExpandedOwners] = useState<Set<string>>(new Set());
     const [showReportModal, setShowReportModal] = useState(false);
     const [viewMode, setViewMode] = useState<'canvas' | 'list'>('list');
-    const pageTitle = mode === 'trace' ? '血缘溯源' : '影响分析';
-    const canExport = mode === 'impact';
+    const [directionOptions, setDirectionOptions] = useState<DirectionOption[]>(['upstream', 'downstream']);
+    const queryDirection = useMemo<LineageGraphDirection>(() => (
+        directionOptions.length === 2 ? 'both' : directionOptions[0] || 'both'
+    ), [directionOptions]);
+    const canExport = true;
     const canOpenAuditBoard = hasPermission('version:ai:audit');
     const engineController = useLineageEngineController();
     const [showAuditBoard, setShowAuditBoard] = useState(false);
+    const {
+        selectedTable,
+        selectedQualifiedName,
+        selectedField,
+        nodes,
+        links,
+        listNodes,
+        listLinks,
+        graphMeta,
+        graphLoading,
+        listLoading,
+        listDetailsLoaded,
+        handleSelectTable,
+        loadListDetails,
+    } = useLineageGraphLoader(queryDirection);
 
     const toggleTableExpand = (qualifiedName: string) => {
         setExpandedTables(prev => {
@@ -87,6 +99,30 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
         handleSearch();
     }, []);
 
+    useEffect(() => {
+        if (viewMode === 'list' && selectedTable && !listDetailsLoaded && !listLoading) {
+            loadListDetails();
+        }
+    }, [listDetailsLoaded, listLoading, loadListDetails, selectedTable, viewMode]);
+
+    useEffect(() => {
+        if (lastDirectionRef.current === queryDirection) {
+            return;
+        }
+        lastDirectionRef.current = queryDirection;
+        if (selectedTable) {
+            handleSelectTable(selectedTable, selectedQualifiedName || undefined);
+        }
+    }, [handleSelectTable, queryDirection, selectedQualifiedName, selectedTable]);
+
+    const handleDirectionChange = (checkedValues: any[]) => {
+        const next = checkedValues as DirectionOption[];
+        if (next.length === 0) {
+            message.warning('至少选择一个查询方向');
+            return;
+        }
+        setDirectionOptions(next);
+    };
 
     const handleSearch = async (page: number = 1) => {
         setLoading(true);
@@ -110,45 +146,6 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
             message.error(`查询失败: ${error.message || '未知错误'}`);
         } finally {
             setLoading(false);
-        }
-    };
-
-    const handleSelectTable = async (tableName: string, qualifiedName?: string, targetColName?: string) => {
-        setGraphLoading(true);
-        setSelectedTable(tableName);
-        setSelectedQualifiedName(qualifiedName || tableName);
-        try {
-            const res = await getLineageGraph(tableName, targetColName, -1, qualifiedName);
-            if (res) {
-                if (res.nodes && res.nodes.length === 0) {
-                    message.info('未找到血缘信息');
-                    setNodes([]);
-                    setLinks([]);
-                } else {
-                    const layoutResult = mode === 'impact'
-                        ? processLayoutImpact(res.nodes, res.edges, tableName)
-                        : processLayoutTrace(res.nodes, res.edges, tableName);
-                    setNodes(layoutResult.layoutedNodes);
-                    setLinks(layoutResult.layoutedLinks);
-                    setViewport({ x: 100, y: 100, zoom: 0.85 });
-
-                    if (targetColName) {
-                        const tableNode = layoutResult.layoutedNodes.find(n => n.title === tableName);
-                        if (tableNode) {
-                            const col = tableNode.columns.find(c => c.name === targetColName);
-                            if (col) {
-                                setSelectedField({ nodeId: tableNode.id, colId: col.id });
-                            }
-                        }
-                    } else {
-                        setSelectedField(null);
-                    }
-                }
-            }
-        } catch (error: any) {
-            message.error(`加载血缘失败: ${error.message}`);
-        } finally {
-            setGraphLoading(false);
         }
     };
 
@@ -179,380 +176,6 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
         }
     };
 
-    const processLayoutImpact = (rawNodes: any[], rawEdges: any[], mainTableName: string) => {
-        // === 下游过滤：只保留从主表出发的下游依赖 ===
-        // 1. 建立节点ID映射和表名归属
-        const nodeIdToInfo = new Map<string, { type: 'Table' | 'Column', tableName: string }>();
-        rawNodes.forEach(n => {
-            if (n.labels.includes('Table')) {
-                nodeIdToInfo.set(n.id, { type: 'Table', tableName: n.properties.name });
-            } else if (n.labels.includes('Column')) {
-                nodeIdToInfo.set(n.id, { type: 'Column', tableName: n.properties.table || '' });
-            }
-        });
-
-        // 2. 建立边的 source -> edges 索引（排除 BELONGS_TO）
-        const edgesBySource = new Map<string, any[]>();
-        rawEdges.forEach(e => {
-            if (e.type !== 'BELONGS_TO') {
-                const list = edgesBySource.get(e.source) || [];
-                list.push(e);
-                edgesBySource.set(e.source, list);
-            }
-        });
-
-        // 3. BFS 从主表出发收集所有下游节点和边
-        const downstreamNodeIds = new Set<string>();
-        const downstreamEdges: any[] = [];
-        const processedSources = new Set<string>();
-
-        // 找到主表相关的所有起始节点（主表本身和其字段）
-        const startNodeIds: string[] = [];
-        rawNodes.forEach(n => {
-            const info = nodeIdToInfo.get(n.id);
-            if (info && info.tableName.toLowerCase() === mainTableName.toLowerCase()) {
-                startNodeIds.push(n.id);
-                downstreamNodeIds.add(n.id);
-            }
-        });
-
-        const queue = [...startNodeIds];
-        while (queue.length > 0) {
-            const currentId = queue.shift()!;
-            if (processedSources.has(currentId)) continue;
-            processedSources.add(currentId);
-
-            const outEdges = edgesBySource.get(currentId) || [];
-            for (const edge of outEdges) {
-                downstreamEdges.push(edge);
-                downstreamNodeIds.add(edge.target);
-                if (!processedSources.has(edge.target)) {
-                    queue.push(edge.target);
-                }
-            }
-        }
-
-        // 3.5. [Fix] 补充下游字段所属的表节点
-        // 遍历所有找到的 downstreamNodeIds，如果是 Column，找到其所属 Table 并加入
-        // nodeIdToInfo 已经有映射关系，但这里我们需要确保 Table 节点本身也被加入
-        const additionalTableIds = new Set<string>();
-        downstreamNodeIds.forEach(nodeId => {
-            const info = nodeIdToInfo.get(nodeId);
-            if (info && info.type === 'Column') {
-                // 找到该 Column 对应的 BELONGS_TO 边
-                // 注意：BELONGS_TO 是从 Column -> Table
-                const parentTableEdges = rawEdges.filter(e => e.type === 'BELONGS_TO' && e.source === nodeId);
-                parentTableEdges.forEach(e => {
-                    additionalTableIds.add(e.target);
-                });
-            }
-        });
-        additionalTableIds.forEach(id => downstreamNodeIds.add(id));
-
-        // 4. 过滤节点：只保留下游节点 + BELONGS_TO 的相关表
-        const filteredNodes = rawNodes.filter(n => downstreamNodeIds.has(n.id));
-
-        // 5. 保留 BELONGS_TO 边（用于字段归属关系）
-        const belongsToEdges = rawEdges.filter(e => e.type === 'BELONGS_TO' && downstreamNodeIds.has(e.source));
-        const filteredEdges = [...downstreamEdges, ...belongsToEdges];
-
-        // === 使用过滤后的数据继续处理 ===
-        const processedNodes = filteredNodes;
-        const processedEdges = filteredEdges;
-
-        // 统计边类型
-        const edgeTypeCount: Record<string, number> = {};
-        processedEdges.forEach(e => {
-            edgeTypeCount[e.type] = (edgeTypeCount[e.type] || 0) + 1;
-        });
-
-        // 打印所有非 BELONGS_TO 的边详情
-        const lineageEdges = processedEdges.filter(e => e.type !== 'BELONGS_TO');
-
-        const dagreGraph = new dagre.graphlib.Graph();
-        dagreGraph.setGraph({ rankdir: 'LR', nodesep: 100, ranksep: 300 });
-        dagreGraph.setDefaultEdgeLabel(() => ({}));
-
-        const nodeMap = new Map<string, any>();
-        const tableMap = new Map<string, NodeData>(); // Key: Table Name
-        const tableIdMap = new Map<string, NodeData>(); // Key: Table Element ID
-
-        // Helper to find table node for a column
-        const colToTableId = new Map<string, string>(); // Col ElementID -> Table ElementID
-
-        processedNodes.forEach(node => {
-            if (node.labels.includes('Table')) {
-                const tableName = node.properties.name;
-                const tableId = node.id;
-                const tableNode: NodeData = {
-                    id: tableId,
-                    type: 'default',
-                    title: tableName,
-                    columns: [],
-                    x: 0,
-                    y: 0,
-                    width: 240,
-                    isCollapsed: false
-                };
-                tableMap.set(tableName, tableNode);
-                tableIdMap.set(tableId, tableNode);
-            }
-        });
-
-        processedEdges.forEach(e => {
-            if (e.type === 'BELONGS_TO') {
-                // Assuming (Column)-[:BELONGS_TO]->(Table)
-                const colId = e.source;
-                const tableId = e.target;
-                colToTableId.set(colId, tableId);
-            }
-        });
-
-        processedNodes.forEach(node => {
-            if (node.labels.includes('Column')) {
-                const colId = node.id;
-                const tableId = colToTableId.get(colId);
-                if (tableId) {
-                    const tableNode = tableIdMap.get(tableId);
-                    if (tableNode) {
-                        tableNode.columns.push({
-                            id: colId,
-                            name: node.properties.name
-                        });
-                    }
-                }
-            }
-        });
-
-        // Filter out empty tables and calculate table sizes
-        tableMap.forEach((node, tableName) => {
-            if (node.columns.length === 0) {
-                tableMap.delete(tableName);
-                return;
-            }
-            // Sort columns for consistency
-            node.columns.sort((a, b) => a.name.localeCompare(b.name));
-            node.width = 240;
-        });
-
-        // Create nodes for dagre
-        tableMap.forEach(node => {
-            const height = NODE_HEADER_HEIGHT + node.columns.length * COLUMN_ROW_HEIGHT;
-            dagreGraph.setNode(node.id, { width: node.width, height });
-            nodeMap.set(node.id, node);
-        });
-
-        // Create links from lineage edges (exclude BELONGS_TO)
-        const links: LinkData[] = [];
-        processedEdges.forEach(e => {
-            if (e.type === 'BELONGS_TO') return;
-            const sourceColId = e.source;
-            const targetColId = e.target;
-            const sourceTableId = colToTableId.get(sourceColId);
-            const targetTableId = colToTableId.get(targetColId);
-            if (!sourceTableId || !targetTableId) return;
-
-            links.push({
-                id: e.id,
-                sourceNodeId: sourceTableId,
-                sourceColumnId: sourceColId,
-                targetNodeId: targetTableId,
-                targetColumnId: targetColId,
-                type: e.type,
-                properties: e.properties
-            });
-            dagreGraph.setEdge(sourceTableId, targetTableId);
-        });
-
-        // Run layout
-        dagre.layout(dagreGraph);
-
-        // 过滤孤立节点和旁支节点：只保留主表的直系亲属 (Ancestors + Descendants)
-        const lineageNodeIds = new Set<string>();
-        const lineageQueue: string[] = [];
-        const mainTableNode = [...tableMap.values()].find(n => n.title.toLowerCase() === mainTableName.toLowerCase());
-        if (mainTableNode) {
-            lineageQueue.push(mainTableNode.id);
-            lineageNodeIds.add(mainTableNode.id);
-        }
-
-        const linkMapBySource = new Map<string, string[]>();
-        const linkMapByTarget = new Map<string, string[]>();
-        links.forEach(l => {
-            const sourceList = linkMapBySource.get(l.sourceNodeId) || [];
-            sourceList.push(l.targetNodeId);
-            linkMapBySource.set(l.sourceNodeId, sourceList);
-            const targetList = linkMapByTarget.get(l.targetNodeId) || [];
-            targetList.push(l.sourceNodeId);
-            linkMapByTarget.set(l.targetNodeId, targetList);
-        });
-
-        while (lineageQueue.length > 0) {
-            const currentId = lineageQueue.shift()!;
-            const downstream = linkMapBySource.get(currentId) || [];
-            const upstream = linkMapByTarget.get(currentId) || [];
-            [...downstream, ...upstream].forEach(nextId => {
-                if (!lineageNodeIds.has(nextId)) {
-                    lineageNodeIds.add(nextId);
-                    lineageQueue.push(nextId);
-                }
-            });
-        }
-
-        const validNodeIds = new Set<string>(lineageNodeIds);
-
-        // Apply positions (只处理有效的节点)
-        const layoutedNodes: NodeData[] = [];
-        tableMap.forEach(node => {
-            if (!validNodeIds.has(node.id)) {
-                return;
-            }
-            const dagreNode = dagreGraph.node(node.id);
-            if (dagreNode) {
-                node.x = dagreNode.x - node.width / 2;
-                node.y = dagreNode.y - (NODE_HEADER_HEIGHT + node.columns.length * COLUMN_ROW_HEIGHT) / 2;
-                layoutedNodes.push(node);
-            }
-        });
-
-        const filteredLinks = links.filter(l =>
-            validNodeIds.has(l.sourceNodeId) && validNodeIds.has(l.targetNodeId)
-        );
-
-        return { layoutedNodes, layoutedLinks: filteredLinks };
-    };
-
-    const processLayoutTrace = (rawNodes: any[], rawEdges: any[], mainTableName: string) => {
-        const dagreGraph = new dagre.graphlib.Graph();
-        dagreGraph.setGraph({ rankdir: 'LR', nodesep: 100, ranksep: 300 });
-        dagreGraph.setDefaultEdgeLabel(() => ({}));
-
-        const nodeMap = new Map<string, any>();
-        const tableMap = new Map<string, NodeData>(); // Key: Table Name
-        const tableIdMap = new Map<string, NodeData>(); // Key: Table Element ID
-
-        // Helper to find table node for a column
-        const colToTableId = new Map<string, string>(); // Col ElementID -> Table ElementID
-
-        rawNodes.forEach(node => {
-            if (node.labels.includes('Table')) {
-                const tableName = node.properties.name;
-                const tableId = node.id;
-                const tableNode: NodeData = {
-                    id: tableId,
-                    type: 'default',
-                    title: tableName,
-                    columns: [],
-                    x: 0,
-                    y: 0,
-                    width: 240,
-                    isCollapsed: false
-                };
-                tableMap.set(tableName, tableNode);
-                tableIdMap.set(tableId, tableNode);
-            }
-        });
-
-        rawEdges.forEach(e => {
-            if (e.type === 'BELONGS_TO') {
-                // Assuming (Column)-[:BELONGS_TO]->(Table)
-                const colId = e.source;
-                const tableId = e.target;
-                colToTableId.set(colId, tableId);
-            }
-        });
-
-        rawNodes.forEach(node => {
-            if (node.labels.includes('Column')) {
-                const colId = node.id;
-                const tableId = colToTableId.get(colId);
-                if (tableId) {
-                    const tableNode = tableIdMap.get(tableId);
-                    if (tableNode) {
-                        tableNode.columns.push({
-                            id: colId,
-                            name: node.properties.name
-                        });
-                    }
-                }
-            }
-        });
-
-        // Filter out empty tables and calculate table sizes
-        tableMap.forEach((node, tableName) => {
-            if (node.columns.length === 0) {
-                tableMap.delete(tableName);
-                return;
-            }
-            // Sort columns for consistency
-            node.columns.sort((a, b) => a.name.localeCompare(b.name));
-            node.width = 240;
-        });
-
-        // Create nodes for dagre
-        tableMap.forEach(node => {
-            const height = NODE_HEADER_HEIGHT + node.columns.length * COLUMN_ROW_HEIGHT;
-            dagreGraph.setNode(node.id, { width: node.width, height });
-            nodeMap.set(node.id, node);
-        });
-
-        // Create links from lineage edges (exclude BELONGS_TO)
-        const links: LinkData[] = [];
-        rawEdges.forEach(e => {
-            if (e.type === 'BELONGS_TO') return;
-            const sourceColId = e.source;
-            const targetColId = e.target;
-            const sourceTableId = colToTableId.get(sourceColId);
-            const targetTableId = colToTableId.get(targetColId);
-            if (!sourceTableId || !targetTableId) return;
-
-            links.push({
-                id: e.id,
-                sourceNodeId: sourceTableId,
-                sourceColumnId: sourceColId,
-                targetNodeId: targetTableId,
-                targetColumnId: targetColId,
-                type: e.type,
-                properties: e.properties
-            });
-            dagreGraph.setEdge(sourceTableId, targetTableId);
-        });
-
-        // Run layout
-        dagre.layout(dagreGraph);
-
-        // 过滤孤立节点：只保留有连线的节点或主表本身
-        const validNodeIds = new Set<string>();
-        links.forEach(l => {
-            validNodeIds.add(l.sourceNodeId);
-            validNodeIds.add(l.targetNodeId);
-        });
-
-        const mainTableNode = [...tableMap.values()].find(n => n.title.toLowerCase() === mainTableName.toLowerCase());
-        if (mainTableNode) {
-            validNodeIds.add(mainTableNode.id);
-        }
-
-        const layoutedNodes: NodeData[] = [];
-        tableMap.forEach(node => {
-            if (!validNodeIds.has(node.id)) {
-                return;
-            }
-            const dagreNode = dagreGraph.node(node.id);
-            if (dagreNode) {
-                node.x = dagreNode.x - node.width / 2;
-                node.y = dagreNode.y - (NODE_HEADER_HEIGHT + node.columns.length * COLUMN_ROW_HEIGHT) / 2;
-                layoutedNodes.push(node);
-            }
-        });
-
-        const filteredLinks = links.filter(l =>
-            validNodeIds.has(l.sourceNodeId) && validNodeIds.has(l.targetNodeId)
-        );
-
-        return { layoutedNodes, layoutedLinks: filteredLinks };
-    };
-
     return (
         <div
             ref={containerRef}
@@ -570,10 +193,10 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
             `}</style>
             <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>SQL Lineage</div>
-                        <div style={{ fontSize: 12, color: '#8c8c8c' }}>{pageTitle}</div>
-                    </div>
+                        <div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>SQL Lineage</div>
+                            <div style={{ fontSize: 12, color: '#8c8c8c' }}>血缘模块</div>
+                        </div>
                     {selectedQualifiedName && <Tag color="blue">{selectedQualifiedName}</Tag>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -585,6 +208,13 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                         value={viewMode}
                         onChange={(val: any) => setViewMode(val)}
                     />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 12px', border: '1px solid #e5e7eb', borderRadius: 8, background: '#f8fafc' }}>
+                        <span style={{ fontSize: 13, color: '#4b5563', whiteSpace: 'nowrap' }}>查询方向</span>
+                        <Checkbox.Group value={directionOptions} onChange={handleDirectionChange}>
+                            <Checkbox value="upstream">上游</Checkbox>
+                            <Checkbox value="downstream">下游</Checkbox>
+                        </Checkbox.Group>
+                    </div>
                     <Button
                         icon={<RobotOutlined />}
                         disabled={!canOpenAuditBoard}
@@ -753,15 +383,15 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                         graphLoading={graphLoading}
                         nodes={nodes}
                         links={links}
-                        mode={mode}
+                        listLoading={listLoading}
+                        listNodes={listNodes}
+                        listLinks={listLinks}
+                        mode={queryDirection === 'downstream' ? 'impact' : 'trace'}
                         viewMode={viewMode}
-                        viewport={viewport}
-                        setViewport={setViewport}
-                        setNodes={setNodes}
                         selectedTable={selectedTable}
                         selectedField={selectedField}
-                        setSelectedField={setSelectedField}
-                        onGenerateReport={() => setShowReportModal(true)}
+                        graphMeta={graphMeta}
+                        onGenerateReport={canExport ? () => setShowReportModal(true) : undefined}
                     />
                 </Content>
                 {canExport && showReportModal && selectedField && (
@@ -776,7 +406,7 @@ const LineagePage: React.FC<LineagePageProps> = ({ mode = 'impact' }) => {
                     title="SQL 血缘事后校验"
                     open={showAuditBoard}
                     onClose={() => setShowAuditBoard(false)}
-                    width="92vw"
+                    size="92vw"
                     destroyOnHidden
                     styles={{ body: { padding: 16, background: '#f8fafc' } }}
                 >

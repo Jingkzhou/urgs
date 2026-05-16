@@ -165,6 +165,11 @@ public class LineageService {
      * @return 图节点和边数据
      */
     public Map<String, Object> getGraphData(String tableName, String qualifiedName, String columnName, int depth) {
+        return getGraphData(tableName, qualifiedName, columnName, depth, "both", 1000, "column");
+    }
+
+    public Map<String, Object> getGraphData(String tableName, String qualifiedName, String columnName, int depth,
+            String direction, int limit, String relationLevel) {
         String baseStart;
         Map<String, Object> params = new HashMap<>();
 
@@ -188,11 +193,11 @@ public class LineageService {
         params.put("ownerName", resolvedOwnerName);
         params.put("qualifiedName", buildQualifiedName(resolvedOwnerName, resolvedTableName));
 
-        // Handle infinite depth request with a safe upper bound to prevent timeouts
-        int queryDepth = (depth == -1) ? 30 : depth;
-        // Ensure depth is at least 1
-        if (queryDepth < 1)
-            queryDepth = 1;
+        int queryDepth = normalizeDepth(depth);
+        int queryLimit = normalizeLimit(limit);
+        String normalizedDirection = normalizeDirection(direction);
+        String normalizedRelationLevel = normalizeRelationLevel(relationLevel, normalizedColumnName);
+        params.put("rowLimit", queryLimit + 1);
 
         if (normalizedColumnName != null) {
             params.put("colName", normalizedColumnName);
@@ -204,28 +209,17 @@ public class LineageService {
                     "WITH n, collect(c) + n as startNodes UNWIND startNodes as startNode ";
         }
 
-        // 查询所有血缘关系类型
-        String allRelTypes = "DERIVES_TO|FILTERS|JOINS|GROUPS|ORDERS|CALLS|REFERENCES|CASE_WHEN";
+        String allRelTypes = String.join("|", ALL_LINEAGE_RELATION_TYPES);
+
+        if ("table".equals(normalizedRelationLevel)) {
+            return getTableLevelGraphData(baseStart, params, allRelTypes, queryDepth, normalizedDirection, queryLimit);
+        }
 
         // Optimized Query:
         // 1. Use variable length path with specified depth
         // 2. UNWIND relationships and return DISTINCT to avoid combinatorial explosion
         // of paths
-        String lineageQuery =
-                // Downstream
-                baseStart +
-                        "MATCH p = (startNode)-[:" + allRelTypes + "*0.." + queryDepth + "]->(m) " +
-                        "UNWIND relationships(p) as r " +
-                        "RETURN DISTINCT r, startNode(r) as source, endNode(r) as target " +
-                        "UNION " +
-                        // Upstream
-                        baseStart +
-                        "MATCH p = (startNode)<-[:" + allRelTypes + "*0.." + queryDepth + "]-(m) " +
-                        "UNWIND relationships(p) as r " +
-                        "RETURN DISTINCT r, startNode(r) as target, endNode(r) as source"; // Note reverse for upstream
-                                                                                           // to maintain flow direction
-                                                                                           // if needed, but here we
-                                                                                           // just need nodes/edges
+        String lineageQuery = buildColumnLineageQuery(baseStart, allRelTypes, queryDepth, normalizedDirection);
 
         Map<String, Object> graph = new HashMap<>();
         List<Map<String, Object>> nodes = new ArrayList<>();
@@ -233,11 +227,16 @@ public class LineageService {
         Set<String> seenNodes = new HashSet<>();
         Set<String> seenEdges = new HashSet<>();
         Set<String> columnElementIds = new HashSet<>();
+        boolean truncated = false;
 
         try (Session session = driver.session()) {
             Result result = session.run(lineageQuery, params);
             while (result.hasNext()) {
                 var record = result.next();
+                if (seenEdges.size() >= queryLimit) {
+                    truncated = true;
+                    break;
+                }
                 Relationship rel = record.get("r").asRelationship();
                 Node source = record.get("source").asNode();
                 Node target = record.get("target").asNode();
@@ -287,7 +286,110 @@ public class LineageService {
 
         graph.put("nodes", nodes);
         graph.put("edges", edges);
+        graph.put("truncated", truncated);
+        graph.put("totalNodes", nodes.size());
+        graph.put("totalEdges", edges.size());
+        graph.put("limit", queryLimit);
+        graph.put("depth", queryDepth);
+        graph.put("direction", normalizedDirection);
+        graph.put("relationLevel", normalizedRelationLevel);
         return graph;
+    }
+
+    private Map<String, Object> getTableLevelGraphData(String baseStart, Map<String, Object> params,
+            String allRelTypes, int queryDepth, String direction, int queryLimit) {
+        Map<String, Object> graph = new HashMap<>();
+        List<Map<String, Object>> nodes = new ArrayList<>();
+        List<Map<String, Object>> edges = new ArrayList<>();
+        Set<String> seenNodes = new HashSet<>();
+        Set<String> seenEdges = new HashSet<>();
+        boolean truncated = false;
+
+        String query = buildTableLineageQuery(baseStart, allRelTypes, queryDepth, direction);
+
+        try (Session session = driver.session()) {
+            Result result = session.run(query, params);
+            while (result.hasNext()) {
+                var record = result.next();
+                if (seenEdges.size() >= queryLimit) {
+                    truncated = true;
+                    break;
+                }
+
+                Node sourceTable = record.get("sourceTable").asNode();
+                Node targetTable = record.get("targetTable").asNode();
+                String relType = record.get("relType").asString("DERIVES_TO");
+                long relationCount = record.get("relationCount").asLong(1);
+                String snippet = record.get("snippet").asString("");
+                List<String> sourceFiles = record.get("sourceFiles").asList(value -> value.asString());
+                List<String> sourceColumns = record.get("sourceColumns").asList(value -> value.asString());
+                List<String> targetColumns = record.get("targetColumns").asList(value -> value.asString());
+
+                addNode(sourceTable, nodes, seenNodes);
+                addNode(targetTable, nodes, seenNodes);
+                addTableEdge(sourceTable, targetTable, relType, relationCount, snippet, sourceFiles,
+                        sourceColumns, targetColumns, edges, seenEdges);
+            }
+        }
+
+        graph.put("nodes", nodes);
+        graph.put("edges", edges);
+        graph.put("truncated", truncated);
+        graph.put("totalNodes", nodes.size());
+        graph.put("totalEdges", edges.size());
+        graph.put("limit", queryLimit);
+        graph.put("depth", queryDepth);
+        graph.put("direction", direction);
+        graph.put("relationLevel", "table");
+        return graph;
+    }
+
+    private String buildColumnLineageQuery(String baseStart, String allRelTypes, int queryDepth, String direction) {
+        List<String> branches = new ArrayList<>();
+        if ("downstream".equals(direction) || "both".equals(direction)) {
+            branches.add("WITH startNode MATCH p = (startNode)-[:" + allRelTypes + "*1.." + queryDepth + "]->(m) " +
+                    "UNWIND relationships(p) as r RETURN DISTINCT r, startNode(r) as source, endNode(r) as target");
+        }
+        if ("upstream".equals(direction) || "both".equals(direction)) {
+            branches.add("WITH startNode MATCH p = (startNode)<-[:" + allRelTypes + "*1.." + queryDepth + "]-(m) " +
+                    "UNWIND relationships(p) as r RETURN DISTINCT r, startNode(r) as source, endNode(r) as target");
+        }
+        return baseStart +
+                "CALL { " + String.join(" UNION ", branches) + " } " +
+                "RETURN DISTINCT r, source, target LIMIT $rowLimit";
+    }
+
+    private String buildTableLineageQuery(String baseStart, String allRelTypes, int queryDepth, String direction) {
+        List<String> branches = new ArrayList<>();
+        if ("downstream".equals(direction) || "both".equals(direction)) {
+            branches.add("WITH startNode MATCH p = (startNode)-[:" + allRelTypes + "*1.." + queryDepth + "]->(m) " +
+                    "UNWIND relationships(p) as r RETURN DISTINCT r, startNode(r) as source, endNode(r) as target");
+        }
+        if ("upstream".equals(direction) || "both".equals(direction)) {
+            branches.add("WITH startNode MATCH p = (startNode)<-[:" + allRelTypes + "*1.." + queryDepth + "]-(m) " +
+                    "UNWIND relationships(p) as r RETURN DISTINCT r, startNode(r) as source, endNode(r) as target");
+        }
+
+        return baseStart +
+                "CALL { " + String.join(" UNION ", branches) + " } " +
+                "OPTIONAL MATCH (source)-[:BELONGS_TO]->(sourceParent:Table) " +
+                "OPTIONAL MATCH (target)-[:BELONGS_TO]->(targetParent:Table) " +
+                "WITH coalesce(sourceParent, source) as sourceTable, coalesce(targetParent, target) as targetTable, r " +
+                "WHERE sourceTable:Table AND targetTable:Table AND elementId(sourceTable) <> elementId(targetTable) " +
+                "WITH sourceTable, targetTable, type(r) AS relType, " +
+                "     count(DISTINCT elementId(r)) AS relationCount, " +
+                "     collect(DISTINCT CASE WHEN source:Column THEN coalesce(source.name, '') ELSE '' END) AS sourceColumns, " +
+                "     collect(DISTINCT CASE WHEN target:Column THEN coalesce(target.name, '') ELSE '' END) AS targetColumns, " +
+                "     collect(DISTINCT coalesce(r.snippet, '')) AS snippets, " +
+                "     collect(coalesce(r.sourceFiles, [])) AS sourceFileGroups, " +
+                "     collect(DISTINCT coalesce(r.source_file, coalesce(r.sourceFile, ''))) AS sourceFileNames " +
+                "RETURN sourceTable, targetTable, relType, relationCount, " +
+                "       [column IN sourceColumns WHERE column <> ''] AS sourceColumns, " +
+                "       [column IN targetColumns WHERE column <> ''] AS targetColumns, " +
+                "       [snippet IN snippets WHERE snippet <> ''][0] AS snippet, " +
+                "       reduce(files = [], group IN sourceFileGroups | files + group) + [file IN sourceFileNames WHERE file <> ''] AS sourceFiles " +
+                "ORDER BY relationCount DESC " +
+                "LIMIT $rowLimit";
     }
 
     /**
@@ -449,6 +551,61 @@ public class LineageService {
             edges.add(edgeData);
             seenEdges.add(rel.elementId());
         }
+    }
+
+    private void addTableEdge(Node sourceTable, Node targetTable, String relType, long relationCount,
+            String snippet, List<String> sourceFiles, List<String> sourceColumns, List<String> targetColumns,
+            List<Map<String, Object>> edges, Set<String> seenEdges) {
+        String edgeId = sourceTable.elementId() + "::" + targetTable.elementId() + "::" + relType;
+        if (!seenEdges.contains(edgeId)) {
+            Map<String, Object> edgeData = new HashMap<>();
+            Map<String, Object> properties = new HashMap<>();
+            properties.put("relationCount", relationCount);
+            properties.put("relationLevel", "table");
+            properties.put("snippet", snippet);
+            properties.put("sourceFiles", sourceFiles.stream().filter(Objects::nonNull).distinct().toList());
+            properties.put("sourceColumns", sourceColumns.stream().filter(Objects::nonNull).distinct().toList());
+            properties.put("targetColumns", targetColumns.stream().filter(Objects::nonNull).distinct().toList());
+
+            edgeData.put("id", edgeId);
+            edgeData.put("source", sourceTable.elementId());
+            edgeData.put("target", targetTable.elementId());
+            edgeData.put("type", relType);
+            edgeData.put("properties", properties);
+            edges.add(edgeData);
+            seenEdges.add(edgeId);
+        }
+    }
+
+    private int normalizeDepth(int depth) {
+        if (depth == -1) {
+            return 30;
+        }
+        return Math.max(1, depth);
+    }
+
+    private int normalizeLimit(int limit) {
+        if (limit <= 0) {
+            return 1000;
+        }
+        return Math.min(limit, 5000);
+    }
+
+    private String normalizeDirection(String direction) {
+        if ("upstream".equalsIgnoreCase(direction)) {
+            return "upstream";
+        }
+        if ("downstream".equalsIgnoreCase(direction)) {
+            return "downstream";
+        }
+        return "both";
+    }
+
+    private String normalizeRelationLevel(String relationLevel, String normalizedColumnName) {
+        if ("column".equalsIgnoreCase(relationLevel) || normalizedColumnName != null) {
+            return "column";
+        }
+        return "table";
     }
 
     private String buildTableMatchClause(String alias) {

@@ -177,6 +177,9 @@ export const searchUsers = (keyword: string) =>
 export const getSystemList = (params?: { showAll?: boolean }) =>
     get<any[]>('/api/sys/system/list', params);
 
+export const jumpSystem = (id: number | string) =>
+    post<{ targetUrl: string }>(`/api/system/${id}/jump`);
+
 // ===== Task Scheduling API =====
 
 export interface Task {

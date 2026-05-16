@@ -10,7 +10,7 @@ import {
   ChevronRight,
   ChevronLeft
 } from 'lucide-react';
-import { getSystemList } from '@/api/ops';
+import { getSystemList, jumpSystem } from '@/api/ops';
 
 interface SystemLinksProps {
   fullWidth?: boolean;
@@ -83,6 +83,37 @@ const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
     return colors[index % colors.length];
   };
 
+  const handleSystemClick = async (system: any) => {
+    if (!system?.id) {
+      alert('系统配置缺少 ID，无法跳转');
+      return;
+    }
+    if (!system.callbackUrl) {
+      alert(`${system.name || '该系统'} 未配置回调地址，无法单点跳转`);
+      return;
+    }
+
+    const jumpWindow = window.open('about:blank', '_blank');
+    try {
+      const result = await jumpSystem(system.id);
+      if (!result?.targetUrl) {
+        jumpWindow?.close();
+        alert('跳转接口未返回目标地址');
+        return;
+      }
+
+      if (jumpWindow) {
+        jumpWindow.location.href = result.targetUrl;
+      } else {
+        window.location.href = result.targetUrl;
+      }
+    } catch (err: any) {
+      jumpWindow?.close();
+      alert(err?.message || '系统跳转失败');
+      console.error('Failed to jump system', err);
+    }
+  };
+
   if (loading) {
     return (
       <div className="bg-white/70 backdrop-blur-md rounded-2xl shadow-[0_25px_50px_-12px_rgba(0,0,0,0.08)] border border-slate-200/50 flex flex-col h-[600px] overflow-hidden p-6 gap-4">
@@ -112,7 +143,7 @@ const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
       whileHover={{ scale: 1.05, y: -5 }}
       whileTap={{ scale: 0.95 }}
       className={`relative cursor-pointer ${fullWidth ? '' : 'aspect-square'}`}
-      onClick={() => window.open(system.url, '_blank')}
+      onClick={() => handleSystemClick(system)}
     >
       <div className={`${fullWidth ? '' : 'absolute inset-0'} bg-white border border-slate-200/60 rounded-[1.75rem] shadow-[0_4px_12px_-4px_rgba(0,0,0,0.05)] overflow-hidden transition-all duration-500 group-hover:border-slate-300`}>
         <div className={`absolute -inset-px opacity-0 hover:opacity-10 transition-opacity bg-gradient-to-br ${getSystemColor(originalIndex)}`} />

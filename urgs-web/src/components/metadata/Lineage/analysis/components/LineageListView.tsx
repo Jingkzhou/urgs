@@ -6,6 +6,23 @@ import CodeModal from './CodeModal';
 
 const { Text } = Typography;
 
+const normalizeArray = (value: any): string[] => {
+    if (Array.isArray(value)) {
+        return value.filter(Boolean).map(String);
+    }
+    return value ? [String(value)] : [];
+};
+
+const formatColumnSummary = (columns: string[], fallback: string) => {
+    if (columns.length === 0) {
+        return fallback;
+    }
+    if (columns.length <= 2) {
+        return columns.join('、');
+    }
+    return `${columns.slice(0, 2).join('、')} 等 ${columns.length} 个字段`;
+};
+
 interface LineageListViewProps {
     nodes: NodeData[];
     links: LinkData[];
@@ -29,8 +46,10 @@ const LineageListView: React.FC<LineageListViewProps> = ({
 
     const tableData = useMemo(() => {
         const colMap = new Map<string, { tableId: string, tableName: string, colName: string }>();
+        const nodeMap = new Map<string, NodeData>();
 
         nodes.forEach(node => {
+            nodeMap.set(node.id, node);
             node.columns.forEach(col => {
                 colMap.set(col.id, {
                     tableId: node.id,
@@ -43,7 +62,16 @@ const LineageListView: React.FC<LineageListViewProps> = ({
         return links.map((link, index) => {
             const sourceCol = colMap.get(link.sourceColumnId);
             const targetCol = colMap.get(link.targetColumnId);
+            const sourceNode = nodeMap.get(link.sourceNodeId);
+            const targetNode = nodeMap.get(link.targetNodeId);
             const relationStyle = link.type ? RELATION_STYLES[link.type] : null;
+            const relationCount = Number(link.properties?.relationCount || 0);
+            const sourceColumns = normalizeArray(link.properties?.sourceColumns);
+            const targetColumns = normalizeArray(link.properties?.targetColumns);
+            const sourceColumn = sourceCol?.colName || link.properties?.sourceColumn || link.properties?.sourceColumnName
+                || formatColumnSummary(sourceColumns, link.sourceColumnId || `表级关系(${relationCount || 1})`);
+            const targetColumn = targetCol?.colName || link.properties?.targetColumn || link.properties?.targetColumnName
+                || formatColumnSummary(targetColumns, link.targetColumnId || `表级关系(${relationCount || 1})`);
 
             // Handle source file
             const sourceFiles = link.properties?.sourceFiles;
@@ -53,13 +81,15 @@ const LineageListView: React.FC<LineageListViewProps> = ({
 
             return {
                 key: link.id || `${index}`,
-                sourceTable: sourceCol?.tableName || 'Unknown',
-                sourceColumn: sourceCol?.colName || 'Unknown',
+                sourceTable: sourceCol?.tableName || sourceNode?.title || link.properties?.sourceTable || 'Unknown',
+                sourceColumn,
                 relationType: link.type || 'UNKNOWN',
                 relationLabel: relationStyle?.label || link.type || '未知关系',
                 relationColor: relationStyle?.color || '#8c8c8c',
-                targetTable: targetCol?.tableName || 'Unknown',
-                targetColumn: targetCol?.colName || 'Unknown',
+                targetTable: targetCol?.tableName || targetNode?.title || link.properties?.targetTable || 'Unknown',
+                targetColumn,
+                sourceColumnTooltip: sourceColumns.join('、'),
+                targetColumnTooltip: targetColumns.join('、'),
                 snippet: link.properties?.snippet,
                 sourceFile: sourceFile,
                 isHighlighted: (selectedField && (link.sourceColumnId === selectedField.colId || link.targetColumnId === selectedField.colId)) ||
@@ -90,7 +120,11 @@ const LineageListView: React.FC<LineageListViewProps> = ({
             title: '源字段',
             dataIndex: 'sourceColumn',
             key: 'sourceColumn',
-            render: (text: string) => <Tag color="blue">{text}</Tag>,
+            render: (text: string, record: any) => (
+                <Tooltip title={record.sourceColumnTooltip || text}>
+                    <Tag color="blue">{text}</Tag>
+                </Tooltip>
+            ),
         },
         {
             title: '关联类型',
@@ -116,7 +150,11 @@ const LineageListView: React.FC<LineageListViewProps> = ({
             title: '目标字段',
             dataIndex: 'targetColumn',
             key: 'targetColumn',
-            render: (text: string) => <Tag color="green">{text}</Tag>,
+            render: (text: string, record: any) => (
+                <Tooltip title={record.targetColumnTooltip || text}>
+                    <Tag color="green">{text}</Tag>
+                </Tooltip>
+            ),
         },
         {
             title: '源文件',

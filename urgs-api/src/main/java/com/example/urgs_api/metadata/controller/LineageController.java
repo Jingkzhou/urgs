@@ -33,8 +33,12 @@ public class LineageController {
             @RequestParam(required = false) String tableName,
             @RequestParam(required = false) String qualifiedName,
             @RequestParam(required = false) String columnName,
-            @RequestParam(defaultValue = "2") int depth) {
-        System.out.println("Received lineage request for table: " + tableName + ", qualifiedName: " + qualifiedName + ", column: " + columnName);
+            @RequestParam(defaultValue = "2") int depth,
+            @RequestParam(defaultValue = "both") String direction,
+            @RequestParam(defaultValue = "1000") int limit,
+            @RequestParam(defaultValue = "table") String relationLevel) {
+        System.out.println("Received lineage request for table: " + tableName + ", qualifiedName: " + qualifiedName + ", column: " + columnName
+                + ", direction: " + direction + ", relationLevel: " + relationLevel);
 
         // 如果没有表名，返回空结果
         if ((tableName == null || tableName.trim().isEmpty())
@@ -42,7 +46,7 @@ public class LineageController {
             return Map.of("nodes", java.util.Collections.emptyList(), "edges", java.util.Collections.emptyList());
         }
 
-        return lineageService.getGraphData(tableName, qualifiedName, columnName, depth);
+        return lineageService.getGraphData(tableName, qualifiedName, columnName, depth, direction, limit, relationLevel);
     }
 
     /**

@@ -1,72 +1,57 @@
 import React from 'react';
 import { Empty, Spin } from 'antd';
-import LineageDiagramImpact from './LineageDiagram';
-import LineageDiagramTrace from '../../origin/components/LineageDiagram';
 import LineageListView from './LineageListView';
-import { LinkData, NodeData, ViewportState } from '../types';
+import G6LineageDiagram from './G6LineageDiagram';
+import { LinkData, NodeData } from '../types';
+import type { LineageGraphResponse } from '@/api/lineage';
 
 interface LineageGraphContentProps {
     graphLoading: boolean;
     nodes: NodeData[];
     links: LinkData[];
+    listLoading: boolean;
+    listNodes: NodeData[];
+    listLinks: LinkData[];
     mode: 'trace' | 'impact';
     viewMode: 'canvas' | 'list';
-    viewport: ViewportState;
-    setViewport: React.Dispatch<React.SetStateAction<ViewportState>>;
-    setNodes: React.Dispatch<React.SetStateAction<NodeData[]>>;
     selectedTable: string | null;
     selectedField: { nodeId: string; colId: string } | null;
-    setSelectedField: React.Dispatch<React.SetStateAction<{ nodeId: string; colId: string } | null>>;
-    onGenerateReport: () => void;
+    graphMeta?: Partial<LineageGraphResponse> | null;
+    onGenerateReport?: () => void;
 }
 
 const LineageGraphContent: React.FC<LineageGraphContentProps> = ({
     graphLoading,
     nodes,
     links,
+    listLoading,
+    listNodes,
+    listLinks,
     mode,
     viewMode,
-    viewport,
-    setViewport,
-    setNodes,
     selectedTable,
     selectedField,
-    setSelectedField,
+    graphMeta,
     onGenerateReport,
 }) => {
     return (
-        <Spin spinning={graphLoading} description="加载血缘关系...">
+        <Spin spinning={viewMode === 'list' ? listLoading : graphLoading} description="加载血缘关系...">
             <div style={{ height: '100%', width: '100%' }}>
                 {nodes.length > 0 ? (
                     viewMode === 'canvas' ? (
-                        mode === 'impact' ? (
-                            <LineageDiagramImpact
-                                viewport={viewport}
-                                setViewport={setViewport}
-                                nodes={nodes}
-                                setNodes={setNodes}
-                                links={links}
-                                selectedTable={selectedTable}
-                                selectedField={selectedField}
-                                onFieldSelect={setSelectedField}
-                                onGenerateReport={onGenerateReport}
-                            />
-                        ) : (
-                            <LineageDiagramTrace
-                                viewport={viewport}
-                                setViewport={setViewport}
-                                nodes={nodes}
-                                setNodes={setNodes}
-                                links={links}
-                                selectedTable={selectedTable}
-                                selectedField={selectedField}
-                                onFieldSelect={setSelectedField}
-                            />
-                        )
-                    ) : (
-                        <LineageListView
+                        <G6LineageDiagram
+                            mode={mode}
                             nodes={nodes}
                             links={links}
+                            selectedTable={selectedTable}
+                            selectedField={selectedField}
+                            graphMeta={graphMeta}
+                            onGenerateReport={onGenerateReport}
+                        />
+                    ) : (
+                        <LineageListView
+                            nodes={listNodes}
+                            links={listLinks}
                             selectedTable={selectedTable}
                             selectedField={selectedField}
                         />
