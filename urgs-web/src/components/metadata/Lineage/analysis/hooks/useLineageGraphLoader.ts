@@ -16,8 +16,8 @@ export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
     const [graphLoading, setGraphLoading] = useState(false);
     const [listLoading, setListLoading] = useState(false);
     const [listDetailsLoaded, setListDetailsLoaded] = useState(false);
-    const layoutGraph = useCallback((response: LineageGraphResponse, tableName: string) => (
-        processLayoutTrace(response.nodes, response.edges, tableName)
+    const layoutGraph = useCallback((response: LineageGraphResponse, tableName: string, qualifiedName?: string | null) => (
+        processLayoutTrace(response.nodes, response.edges, tableName, qualifiedName || undefined)
     ), []);
 
     const handleSelectTable = useCallback(async (tableName: string, qualifiedName?: string, targetColName?: string) => {
@@ -46,7 +46,7 @@ export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
                 return;
             }
 
-            const layoutResult = layoutGraph(response, tableName);
+            const layoutResult = layoutGraph(response, tableName, qualifiedName);
             setNodes(layoutResult.layoutedNodes);
             setLinks(layoutResult.layoutedLinks);
             setGraphMeta(response);
@@ -90,7 +90,7 @@ export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
                 setListDetailsLoaded(true);
                 return;
             }
-            const layoutResult = layoutGraph(response, selectedTable);
+            const layoutResult = layoutGraph(response, selectedTable, selectedQualifiedName);
             setListNodes(layoutResult.layoutedNodes);
             setListLinks(layoutResult.layoutedLinks);
             setListDetailsLoaded(true);

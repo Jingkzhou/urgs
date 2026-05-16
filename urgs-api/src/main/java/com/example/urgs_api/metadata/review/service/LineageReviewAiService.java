@@ -23,7 +23,7 @@ public class LineageReviewAiService {
             请严格输出 JSON，不要输出 Markdown，不要输出额外解释。
             JSON 结构如下：
             {
-              "issueType": "MISSING_SOURCE|OVER_CONNECTED|RELATION_TYPE_MISMATCH|SPARSE_TABLE_LINEAGE|AMBIGUOUS_MAPPING|NEEDS_MANUAL_REVIEW",
+              "issueType": "MISSING_SOURCE|WRONG_SOURCE|WRONG_TARGET|WRONG_RELATION_TYPE|OVER_CONNECTED|RELATION_TYPE_MISMATCH|SPARSE_TABLE_LINEAGE|AMBIGUOUS_MAPPING|UNCERTAIN_MAPPING|NEEDS_MANUAL_REVIEW",
               "severity": "HIGH|MEDIUM|LOW",
               "confidence": 0.0,
               "verdict": "CONFIRMED|REJECTED|NEEDS_REVIEW",
@@ -32,6 +32,34 @@ public class LineageReviewAiService {
               "evidenceRefs": ["证据1", "证据2"]
             }
             如果证据不足，请返回 NEEDS_REVIEW，不要臆断。
+            """;
+
+    private static final String SQL_AUDIT_SYSTEM_PROMPT = """
+            你是一名 SQL 血缘二次校验助手。
+            你的任务是对照原始 SQL 和程序抽取出的血缘关系，判断程序结果是否有遗漏或错误。
+            必须只基于 SQL 文本、程序关系列表和给定证据判断；不要补充无法从 SQL 推断的血缘。
+            重点检查：
+            1. 是否漏掉 SELECT、JOIN、WHERE、CASE、GROUP BY、ORDER BY、函数参数中的来源字段或来源表；
+            2. 是否把不相关字段/表错误连接到目标字段/表；
+            3. 目标字段是否对错位；
+            4. 关系类型是否错误，例如数据派生、过滤、关联、分组、排序、条件。
+            请严格输出 JSON，不要输出 Markdown，不要输出额外解释。
+            JSON 结构如下：
+            {
+              "issues": [
+                {
+                  "issueType": "MISSING_SOURCE|WRONG_SOURCE|WRONG_TARGET|WRONG_RELATION_TYPE|UNCERTAIN_MAPPING|NEEDS_MANUAL_REVIEW|NO_ISSUE",
+                  "severity": "HIGH|MEDIUM|LOW",
+                  "confidence": 0.0,
+                  "verdict": "CONFIRMED|REJECTED|NEEDS_REVIEW",
+                  "reason": "简要说明",
+                  "suggestedSources": ["schema.table.column"],
+                  "evidenceRefs": ["SQL片段或程序关系证据"]
+                }
+              ]
+            }
+            如果程序结果正确，请只返回一个 NO_ISSUE 且 verdict 为 REJECTED。
+            如果证据不足，请返回 UNCERTAIN_MAPPING 或 NEEDS_MANUAL_REVIEW，verdict 为 NEEDS_REVIEW。
             """;
 
     private final AiClient aiClient;
@@ -52,6 +80,23 @@ public class LineageReviewAiService {
             return parseResponse(response, draftIssue);
         } catch (Exception ex) {
             return fallbackVerdict(draftIssue, "AI 调用失败，已降级为规则结果: " + ex.getMessage());
+        }
+    }
+
+    public List<LineageReviewAIVerdict> auditSqlLineage(Map<String, Object> evidence) {
+        try {
+            String response = aiClient.chat(SQL_AUDIT_SYSTEM_PROMPT, buildSqlAuditPrompt(evidence));
+            return parseIssueList(response);
+        } catch (Exception ex) {
+            LineageReviewAIVerdict verdict = new LineageReviewAIVerdict();
+            verdict.setIssueType("NEEDS_MANUAL_REVIEW");
+            verdict.setSeverity("MEDIUM");
+            verdict.setConfidence(BigDecimal.valueOf(0.55));
+            verdict.setVerdict("NEEDS_REVIEW");
+            verdict.setReason("AI 二次校验调用失败: " + ex.getMessage());
+            verdict.setSuggestedSources(new ArrayList<>());
+            verdict.setEvidenceRefs(new ArrayList<>());
+            return List.of(verdict);
         }
     }
 
@@ -85,6 +130,15 @@ public class LineageReviewAiService {
                 toJson(evidence));
     }
 
+    private String buildSqlAuditPrompt(Map<String, Object> evidence) {
+        return """
+                请对照以下 SQL 和程序抽取出的血缘关系，判断是否存在遗漏或错误。
+
+                [证据包]
+                %s
+                """.formatted(toJson(evidence));
+    }
+
     private LineageReviewAIVerdict parseResponse(String response, LineageReviewIssue draftIssue) {
         try {
             String json = extractJson(response);
@@ -101,6 +155,40 @@ public class LineageReviewAiService {
         } catch (Exception ex) {
             return fallbackVerdict(draftIssue, "AI 返回无法解析，已降级为规则结果");
         }
+    }
+
+    private List<LineageReviewAIVerdict> parseIssueList(String response) {
+        List<LineageReviewAIVerdict> results = new ArrayList<>();
+        try {
+            String json = extractJson(response);
+            JsonNode root = objectMapper.readTree(json);
+            JsonNode issues = root.has("issues") ? root.get("issues") : root;
+            if (!issues.isArray()) {
+                return results;
+            }
+            for (JsonNode node : issues) {
+                LineageReviewAIVerdict verdict = new LineageReviewAIVerdict();
+                verdict.setIssueType(readText(node, "issueType", "NEEDS_MANUAL_REVIEW"));
+                verdict.setSeverity(readText(node, "severity", "MEDIUM"));
+                verdict.setConfidence(readDecimal(node, "confidence", BigDecimal.valueOf(0.60)));
+                verdict.setVerdict(readText(node, "verdict", "NEEDS_REVIEW"));
+                verdict.setReason(readText(node, "reason", "AI 二次校验未返回充分理由"));
+                verdict.setSuggestedSources(readArray(node.get("suggestedSources")));
+                verdict.setEvidenceRefs(readArray(node.get("evidenceRefs")));
+                results.add(verdict);
+            }
+        } catch (Exception ex) {
+            LineageReviewAIVerdict verdict = new LineageReviewAIVerdict();
+            verdict.setIssueType("NEEDS_MANUAL_REVIEW");
+            verdict.setSeverity("MEDIUM");
+            verdict.setConfidence(BigDecimal.valueOf(0.55));
+            verdict.setVerdict("NEEDS_REVIEW");
+            verdict.setReason("AI 二次校验返回无法解析，需人工复核");
+            verdict.setSuggestedSources(new ArrayList<>());
+            verdict.setEvidenceRefs(new ArrayList<>());
+            results.add(verdict);
+        }
+        return results;
     }
 
     private LineageReviewAIVerdict fallbackVerdict(LineageReviewIssue draftIssue, String reason) {

@@ -47,6 +47,9 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     private static final Logger log = LoggerFactory.getLogger(LineageReviewServiceImpl.class);
     private static final int TASK_BATCH_SIZE = 200;
     private static final int TASK_AI_BUDGET = 150;
+    private static final int RULE_AI_BUDGET = 50;
+    private static final int SQL_AUDIT_LIMIT = 100;
+    private static final int SQL_AUDIT_SNIPPET_LIMIT = 12000;
 
     private final LineageAnalysisRecordMapper analysisRecordMapper;
     private final LineageReviewTaskMapper taskMapper;
@@ -297,7 +300,8 @@ public class LineageReviewServiceImpl implements LineageReviewService {
 
         try {
             List<Map<String, Object>> objects = loadShardObjects(task);
-            task.setObjectCount(objects.size());
+            List<Map<String, Object>> sqlAuditObjects = loadSqlAuditObjects(task);
+            task.setObjectCount(objects.size() + sqlAuditObjects.size());
             taskMapper.updateById(task);
 
             int processed = 0;
@@ -355,6 +359,33 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                     }
                 }
                 updateTaskProgress(task, processed, issueCount, failedCount, aiCallCount, cacheHits, batchCount);
+            }
+
+            for (Map<String, Object> sqlAuditObject : sqlAuditObjects) {
+                try {
+                    if (aiCallCount >= TASK_AI_BUDGET) {
+                        continue;
+                    }
+                    aiCallCount++;
+                    Map<String, Object> evidence = buildSqlAuditEvidence(sqlAuditObject);
+                    List<LineageReviewAIVerdict> verdicts = aiService.auditSqlLineage(evidence);
+                    for (LineageReviewAIVerdict verdict : verdicts) {
+                        LineageReviewIssue issue = buildSqlAuditIssue(task, sqlAuditObject, evidence, verdict);
+                        if (issue == null) {
+                            continue;
+                        }
+                        issueMapper.insert(issue);
+                        if (isFormalIssue(issue)) {
+                            issueCount++;
+                        }
+                    }
+                } catch (Exception ex) {
+                    failedCount++;
+                    log.warn("lineage sql audit failed, taskId={}, object={}", taskId, sqlAuditObject, ex);
+                } finally {
+                    processed++;
+                    updateTaskProgress(task, processed, issueCount, failedCount, aiCallCount, cacheHits, batchCount);
+                }
             }
 
             task.setStatus(failedCount > 0 ? "DEGRADED" : "COMPLETED");
@@ -428,6 +459,108 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             }
         }
         return results;
+    }
+
+    private List<Map<String, Object>> loadSqlAuditObjects(LineageReviewTask task) {
+        if (!StringUtils.hasText(task.getVersionId())) {
+            return Collections.emptyList();
+        }
+        String filterPath = normalizePathPrefix(task.getPathPrefix());
+        boolean hasRepoId = task.getRepoId() != null;
+        String query = """
+                MATCH (source)-[r:DERIVES_TO|FILTERS|JOINS|GROUPS|ORDERS|CALLS|REFERENCES|CASE_WHEN]->(target)
+                WHERE r.version = $versionId
+                  AND ($hasRepoId = false OR r.repoId = $repoId)
+                  AND r.snippet IS NOT NULL
+                  AND trim(r.snippet) <> ''
+                  AND ($pathPrefix = '' OR ANY(file IN coalesce(r.sourceFiles, []) WHERE file STARTS WITH $pathPrefix))
+                WITH r.snippet AS snippet,
+                     coalesce(r.sourceFiles, []) AS sourceFiles,
+                     collect(DISTINCT {
+                        sourceTable: CASE WHEN source:Column THEN source.table ELSE source.name END,
+                        sourceColumn: CASE WHEN source:Column THEN source.name ELSE null END,
+                        targetTable: CASE WHEN target:Column THEN target.table ELSE target.name END,
+                        targetColumn: CASE WHEN target:Column THEN target.name ELSE null END,
+                        relationType: type(r),
+                        relationLevel: coalesce(r.relationLevel, ''),
+                        confidence: coalesce(r.confidence, '')
+                     }) AS programRelations,
+                     count(*) AS relationCount
+                RETURN snippet, sourceFiles, programRelations, relationCount
+                ORDER BY relationCount DESC
+                LIMIT $limit
+                """;
+
+        List<Map<String, Object>> results = new ArrayList<>();
+        try (Session session = neo4jDriver.session()) {
+            var cursor = session.run(query, Map.of(
+                    "repoId", task.getRepoId() == null ? "" : String.valueOf(task.getRepoId()),
+                    "hasRepoId", hasRepoId,
+                    "versionId", task.getVersionId(),
+                    "pathPrefix", filterPath,
+                    "limit", SQL_AUDIT_LIMIT));
+            while (cursor.hasNext()) {
+                Record record = cursor.next();
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("snippet", record.get("snippet").isNull() ? "" : record.get("snippet").asString());
+                item.put("sourceFiles", record.get("sourceFiles").asList(v -> v.asString()));
+                item.put("programRelations", record.get("programRelations").asList(v -> v.asMap()));
+                item.put("relationCount", record.get("relationCount").asInt());
+                results.add(item);
+            }
+        }
+        return results;
+    }
+
+    private Map<String, Object> buildSqlAuditEvidence(Map<String, Object> object) {
+        Map<String, Object> evidence = new LinkedHashMap<>();
+        evidence.put("sqlSnippet", truncateSnippet(toText(object.get("snippet"))));
+        evidence.put("sourceFiles", object.getOrDefault("sourceFiles", List.of()));
+        evidence.put("programRelations", object.getOrDefault("programRelations", List.of()));
+        evidence.put("relationCount", object.getOrDefault("relationCount", 0));
+        evidence.put("auditInstruction", "请判断 programRelations 相对于 sqlSnippet 是否有遗漏来源、错误来源、错误目标或关系类型错误。");
+        return evidence;
+    }
+
+    private LineageReviewIssue buildSqlAuditIssue(LineageReviewTask task, Map<String, Object> object,
+            Map<String, Object> evidence, LineageReviewAIVerdict verdict) {
+        if (verdict == null || isNoIssue(verdict)) {
+            return null;
+        }
+        String issueType = StringUtils.hasText(verdict.getIssueType()) ? verdict.getIssueType() : "NEEDS_MANUAL_REVIEW";
+        String tableName = resolvePrimaryTarget(object, "targetTable");
+        String columnName = resolvePrimaryTarget(object, "targetColumn");
+        String snippetHash = hashOf(toText(object.get("snippet")));
+
+        LineageReviewIssue issue = new LineageReviewIssue();
+        issue.setTaskId(task.getId());
+        issue.setAnalysisRecordId(task.getAnalysisRecordId());
+        issue.setRepoId(task.getRepoId());
+        issue.setVersionId(task.getVersionId());
+        issue.setSystemKey(task.getSystemKey());
+        issue.setPathPrefix(task.getPathPrefix());
+        issue.setTableName(tableName);
+        issue.setColumnName(columnName);
+        issue.setObjectType("SQL_SNIPPET");
+        issue.setIssueType(issueType);
+        issue.setSeverity(StringUtils.hasText(verdict.getSeverity()) ? verdict.getSeverity() : "MEDIUM");
+        issue.setConfidence(verdict.getConfidence() == null
+                ? BigDecimal.valueOf(0.60).setScale(4, RoundingMode.HALF_UP)
+                : verdict.getConfidence());
+        issue.setVerdict(StringUtils.hasText(verdict.getVerdict()) ? verdict.getVerdict() : "NEEDS_REVIEW");
+        issue.setReason(verdict.getReason());
+        issue.setRuleHits(List.of("AI_SQL_LINEAGE_RECHECK", "AI_PROGRAM_LINEAGE_COMPARE"));
+        issue.setSuggestedSources(verdict.getSuggestedSources() == null ? new ArrayList<>() : verdict.getSuggestedSources());
+        issue.setEvidenceRefs(verdict.getEvidenceRefs() == null || verdict.getEvidenceRefs().isEmpty()
+                ? buildSqlAuditEvidenceRefs(object)
+                : verdict.getEvidenceRefs());
+        issue.setGraphSnapshot(evidence);
+        issue.setFingerprint(hashOf(task.getAnalysisRecordId(), task.getPathPrefix(), snippetHash, issueType,
+                verdict.getReason(), String.valueOf(issue.getEvidenceRefs())));
+        issue.setReviewStatus("PENDING");
+        issue.setCreateTime(LocalDateTime.now());
+        issue.setUpdateTime(LocalDateTime.now());
+        return issue;
     }
 
     private LineageReviewIssue buildIssueDraft(LineageReviewTask task, Map<String, Object> object) {
@@ -521,7 +654,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     }
 
     private boolean shouldUseAi(LineageReviewIssue issue, int currentAiCalls) {
-        if (issue == null || currentAiCalls >= TASK_AI_BUDGET) {
+        if (issue == null || currentAiCalls >= RULE_AI_BUDGET) {
             return false;
         }
         return !"LOW".equalsIgnoreCase(issue.getSeverity()) || issue.getRuleHits().size() >= 2;
@@ -667,6 +800,52 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     private String buildTaskName(LineageAnalysisRecord record, String shardPath) {
         String suffix = StringUtils.hasText(shardPath) ? shardPath : "GLOBAL";
         return "Lineage Review - " + record.getId() + " - " + suffix;
+    }
+
+    private boolean isNoIssue(LineageReviewAIVerdict verdict) {
+        return "NO_ISSUE".equalsIgnoreCase(verdict.getIssueType())
+                || "REJECTED".equalsIgnoreCase(verdict.getVerdict());
+    }
+
+    private String truncateSnippet(String snippet) {
+        if (!StringUtils.hasText(snippet)) {
+            return "";
+        }
+        if (snippet.length() <= SQL_AUDIT_SNIPPET_LIMIT) {
+            return snippet;
+        }
+        return snippet.substring(0, SQL_AUDIT_SNIPPET_LIMIT) + "\n/* SQL snippet truncated for AI audit */";
+    }
+
+    private String resolvePrimaryTarget(Map<String, Object> object, String key) {
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> relations = (List<Map<String, Object>>) object.getOrDefault("programRelations", List.of());
+        return relations.stream()
+                .map(rel -> toText(rel.get(key)))
+                .filter(StringUtils::hasText)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private List<String> buildSqlAuditEvidenceRefs(Map<String, Object> object) {
+        List<String> refs = new ArrayList<>();
+        for (String file : asStringList(object.get("sourceFiles"))) {
+            refs.add("sourceFile: " + file);
+            if (refs.size() >= 3) {
+                return refs;
+            }
+        }
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> relations = (List<Map<String, Object>>) object.getOrDefault("programRelations", List.of());
+        for (Map<String, Object> rel : relations) {
+            refs.add(toText(rel.get("sourceTable")) + "." + toText(rel.get("sourceColumn"))
+                    + " -> " + toText(rel.get("targetTable")) + "." + toText(rel.get("targetColumn"))
+                    + " [" + toText(rel.get("relationType")) + "]");
+            if (refs.size() >= 5) {
+                break;
+            }
+        }
+        return refs;
     }
 
     private List<String> asStringList(Object value) {

@@ -315,6 +315,36 @@ def _read_sql_file(path: str) -> str:
     raise ValueError(f"无法解码文件: {path}")
 
 
+def test_repeated_select_column_maps_by_position(mock_metadata_resolver):
+    """同名投影列重复出现时，必须按 SELECT 位置映射到不同目标列。"""
+    from parsers.sql_parser import LineageParser
+
+    sql = """
+    INSERT INTO IE_TY_TYJDFS_INC
+      (datadate, corpid, nbjgh, IRS_CORP_ID)
+    SELECT
+      datadate,
+      corpid,
+      corpid,
+      CASE
+        WHEN CORPID LIKE '51%' THEN '510000'
+        ELSE '990000'
+      END
+    FROM DATACORE_IE_TY_TYJDFS
+    """
+
+    parser = LineageParser(dialect="oracle", default_schema="IRS_DATACORE")
+    actual = make_column_lineage_set(parser.get_column_lineage(sql))
+
+    assert (
+        "IRS_DATACORE.DATACORE_IE_TY_TYJDFS",
+        "CORPID",
+        "IRS_DATACORE.IE_TY_TYJDFS_INC",
+        "NBJGH",
+        "fdd",
+    ) in actual
+
+
 # ============================================================
 # 汇总报告（作为最后一个测试运行）
 # ============================================================

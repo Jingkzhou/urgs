@@ -76,6 +76,9 @@ def preprocess_sql(sql_content: str) -> str:
 
 def _is_jaxb_jar(jar_path: str) -> bool:
     name = os.path.basename(jar_path).lower()
+    normalized_path = jar_path.replace(os.sep, "/").lower()
+    if "/jakarta/" in normalized_path or "/4." in normalized_path:
+        return False
     return (
         "jaxb" in name
         or "activation" in name
@@ -203,7 +206,8 @@ class GSPParser:
         jvm_args = [
             "-ea",
             f"-Djava.class.path={classpath}",
-            "-Djava.awt.headless=true"
+            "-Djava.awt.headless=true",
+            "-Dcom.sun.xml.bind.v2.bytecode.ClassTailor.noOptimize=true"
         ]
         
         logging.debug(f"Starting JVM with classpath: {classpath}")

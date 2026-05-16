@@ -250,9 +250,15 @@ class IndirectFlowParser:
                 try:
                     if isinstance(scope.expression, exp.Select):
                         # 注意：表达式可能很大，但通常是 SELECT 列表
-                        if projection_item in scope.expression.expressions:
-                            idx = scope.expression.expressions.index(projection_item)
-                            
+                        idx = next(
+                            (
+                                i
+                                for i, expr in enumerate(scope.expression.expressions)
+                                if expr is projection_item
+                            ),
+                            None,
+                        )
+                        if idx is not None:
                             # 1. 尝试位置映射 (INSERT INTO t (c1, c2) ...)
                             if target_info.get("columns") and idx in target_info["columns"]:
                                 specific_target_column = target_info["columns"][idx]
@@ -551,4 +557,3 @@ class IndirectFlowParser:
                 elif hasattr(col, 'name'):
                     columns[i] = col.name
         return columns
-

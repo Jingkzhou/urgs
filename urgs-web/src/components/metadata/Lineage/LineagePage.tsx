@@ -3,6 +3,7 @@ import { Layout, Input, Button, Drawer, message, Empty, Tag, Pagination, Tooltip
 import {
     SearchOutlined,
     TableOutlined,
+    LeftOutlined,
     RightOutlined,
     DownOutlined,
     FileTextOutlined,
@@ -39,13 +40,14 @@ const LineagePage: React.FC<LineagePageProps> = () => {
     const [searchText, setSearchText] = useState('');
     const [searchResults, setSearchResults] = useState<LineageSearchOwnerGroup[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(20);
+    const pageSize = 20;
     const [total, setTotal] = useState(0);
     const [totalOwners, setTotalOwners] = useState(0);
+    const [selectedOwnerTotal, setSelectedOwnerTotal] = useState(0);
+    const [selectedOwnerName, setSelectedOwnerName] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
-    const [expandedOwners, setExpandedOwners] = useState<Set<string>>(new Set());
-    const [searchCollapsed, setSearchCollapsed] = useState(false);
+    const [searchCollapsed, setSearchCollapsed] = useState(true);
     const [viewMode, setViewMode] = useState<'canvas' | 'list'>('canvas');
     const [directionOptions, setDirectionOptions] = useState<DirectionOption[]>(['upstream', 'downstream']);
     const queryDirection = useMemo<LineageGraphDirection>(() => (
@@ -82,18 +84,6 @@ const LineagePage: React.FC<LineagePageProps> = () => {
         });
     };
 
-    const toggleOwnerExpand = (ownerName: string) => {
-        setExpandedOwners(prev => {
-            const next = new Set(prev);
-            if (next.has(ownerName)) {
-                next.delete(ownerName);
-            } else {
-                next.add(ownerName);
-            }
-            return next;
-        });
-    };
-
     useEffect(() => {
         handleSearch();
     }, []);
@@ -123,20 +113,35 @@ const LineagePage: React.FC<LineagePageProps> = () => {
         setDirectionOptions(next);
     };
 
-    const handleSearch = async (page: number = 1) => {
+    const sortedOwnerGroups = useMemo(() => (
+        [...searchResults].sort((a, b) => a.ownerName.localeCompare(b.ownerName))
+    ), [searchResults]);
+
+    const selectedOwnerGroup = useMemo(() => (
+        sortedOwnerGroups.find(group => group.ownerName === selectedOwnerName) || null
+    ), [selectedOwnerName, sortedOwnerGroups]);
+
+    const selectedOwnerTables = useMemo(() => (
+        selectedOwnerGroup?.tables?.slice().sort((a, b) => a.tableName.localeCompare(b.tableName)) || []
+    ), [selectedOwnerGroup]);
+
+    const handleSearch = async (page: number = 1, ownerName: string | null = selectedOwnerName) => {
         setLoading(true);
         try {
-            const res = await searchTables(searchText, page, pageSize);
+            const res = await searchTables(searchText, page, pageSize, ownerName || undefined);
             if (res && res.groupedList) {
                 setSearchResults(res.groupedList);
                 setTotal(res.total || 0);
                 setTotalOwners(res.totalOwners || 0);
+                setSelectedOwnerTotal(res.selectedOwnerTotal || 0);
                 setCurrentPage(page);
-                setExpandedOwners(new Set((res.groupedList || []).map(group => group.ownerName)));
+                setExpandedTables(new Set());
             } else {
                 setSearchResults([]);
                 setTotal(0);
                 setTotalOwners(0);
+                setSelectedOwnerTotal(0);
+                setExpandedTables(new Set());
                 if (searchText.trim()) {
                     message.info('未找到相关表');
                 }
@@ -146,6 +151,32 @@ const LineagePage: React.FC<LineagePageProps> = () => {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleKeywordSearch = () => {
+        setSelectedOwnerName(null);
+        handleSearch(1, null);
+    };
+
+    const handleSearchSubmit = () => {
+        if (selectedOwnerName) {
+            handleSearch(1, selectedOwnerName);
+            return;
+        }
+        handleKeywordSearch();
+    };
+
+    const handleOwnerSelect = (ownerName: string) => {
+        setSelectedOwnerName(ownerName);
+        handleSearch(1, ownerName);
+    };
+
+    const handleOwnerBack = () => {
+        setSelectedOwnerName(null);
+        setSelectedOwnerTotal(0);
+        setCurrentPage(1);
+        setExpandedTables(new Set());
+        handleSearch(1, null);
     };
 
     const handleExport = async (tableName: string, e: React.MouseEvent, columnName?: string, qualifiedName?: string) => {
@@ -321,44 +352,39 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                                     placeholder="输入用户、表或字段关键词"
                                     value={searchText}
                                     onChange={e => setSearchText(e.target.value)}
-                                    onPressEnter={() => handleSearch(1)}
+                                    onPressEnter={handleSearchSubmit}
                                 />
-                                <Button type="primary" icon={<SearchOutlined />} onClick={() => handleSearch(1)} loading={loading}>
+                                <Button type="primary" icon={<SearchOutlined />} onClick={handleSearchSubmit} loading={loading}>
                                 </Button>
                             </div>
                         </div>
                         <div style={{ flex: 1, overflowY: 'auto', padding: '0' }}>
-                            {(() => {
-                                return [...searchResults]
-                                    .sort((a, b) => a.ownerName.localeCompare(b.ownerName))
-                                    .map((group) => (
-                                        <div key={group.ownerName} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                                            <div
-                                                onClick={() => toggleOwnerExpand(group.ownerName)}
-                                                style={{
-                                                    padding: '12px 16px',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '8px',
-                                                    background: '#fafafa',
-                                                    cursor: 'pointer'
-                                                }}
-                                            >
-                                                {expandedOwners.has(group.ownerName)
-                                                    ? <DownOutlined style={{ fontSize: 10, color: '#666' }} />
-                                                    : <RightOutlined style={{ fontSize: 10, color: '#666' }} />}
-                                                <UserOutlined style={{ color: '#8c8c8c' }} />
-                                                <span style={{ fontWeight: 600, flex: 1 }}>{group.ownerName}</span>
-                                                <Tag>{group.tableCount} 张表</Tag>
+                            {selectedOwnerName ? (
+                                <div>
+                                    <div style={{ padding: '12px 16px 8px', background: '#fafafa' }}>
+                                        <Button
+                                            type="text"
+                                            size="small"
+                                            icon={<LeftOutlined />}
+                                            onClick={handleOwnerBack}
+                                            style={{ paddingInline: 0, marginBottom: 8 }}
+                                        >
+                                            返回上一级
+                                        </Button>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                            <div style={{ minWidth: 0 }}>
+                                                <div style={{ fontWeight: 700, color: '#1f2937', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedOwnerName}</div>
+                                                <div style={{ color: '#94a3b8', fontSize: 12 }}>当前用户下的表 / 报表</div>
                                             </div>
-                                            {expandedOwners.has(group.ownerName) && group.tables
-                                                .slice()
-                                                .sort((a, b) => a.tableName.localeCompare(b.tableName))
-                                                .map((item: LineageSearchTableItem) => (
+                                            <Tag color="blue" style={{ margin: 0 }}>{selectedOwnerTotal} 张表</Tag>
+                                        </div>
+                                    </div>
+                                    {selectedOwnerTables.length > 0 ? (
+                                        selectedOwnerTables.map((item: LineageSearchTableItem) => (
                                                     <div key={item.qualifiedName} style={{ borderTop: '1px solid #f5f5f5' }}>
                                                         <div
                                                             style={{
-                                                                padding: '12px 16px 12px 32px',
+                                                                padding: '12px 16px',
                                                                 display: 'flex',
                                                                 alignItems: 'center',
                                                                 gap: '8px'
@@ -398,7 +424,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                                                             ) : null}
                                                         </div>
                                                         {expandedTables.has(item.qualifiedName) && item.columns && item.columns.length > 0 && (
-                                                            <div style={{ padding: '0 16px 12px 52px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                                            <div style={{ padding: '0 16px 12px 36px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                                                 {item.columns.map((col: string) => (
                                                                     <Tag
                                                                         key={`${item.qualifiedName}.${col}`}
@@ -434,10 +460,45 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                                                             </div>
                                                         )}
                                                     </div>
-                                                ))}
+                                        ))
+                                    ) : (
+                                        <div style={{ padding: '24px 0' }}>
+                                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该用户暂无匹配表" />
                                         </div>
-                                    ));
-                            })()}
+                                    )}
+                                </div>
+                            ) : (
+                                <div style={{ padding: '10px 12px 8px' }}>
+                                    <div style={{ color: '#64748b', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>用户/Schema</div>
+                                    {sortedOwnerGroups.map((group) => (
+                                        <div
+                                            key={group.ownerName}
+                                            onClick={() => handleOwnerSelect(group.ownerName)}
+                                            style={{
+                                                padding: '10px 10px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 8,
+                                                borderRadius: 8,
+                                                background: '#fff',
+                                                border: '1px solid #eef2f7',
+                                                cursor: 'pointer',
+                                                marginBottom: 8
+                                            }}
+                                        >
+                                            <UserOutlined style={{ color: '#8c8c8c' }} />
+                                            <span style={{ fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.ownerName}</span>
+                                            <Tag style={{ margin: 0 }}>{group.tableCount} 张表</Tag>
+                                            <RightOutlined style={{ color: '#cbd5e1', fontSize: 12 }} />
+                                        </div>
+                                    ))}
+                                    {sortedOwnerGroups.length > 0 ? (
+                                        <div style={{ padding: '16px 6px 8px', color: '#94a3b8', fontSize: 12, lineHeight: 1.8 }}>
+                                            点击用户/Schema 查看对应的表清单。
+                                        </div>
+                                    ) : null}
+                                </div>
+                            )}
                             {searchResults.length === 0 && !loading && (
                                 <div style={{ padding: '24px 0' }}>
                                     <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无搜索结果" />
@@ -446,16 +507,20 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                         </div>
                         <div style={{ padding: '8px 16px', borderTop: '1px solid #f0f0f0', textAlign: 'center' }}>
                             <div style={{ color: '#999', fontSize: 12, marginBottom: 8 }}>
-                                共 {totalOwners} 个用户/Schema，{total} 张表
+                                {selectedOwnerName
+                                    ? `${selectedOwnerName}：${selectedOwnerTotal} 张表`
+                                    : `共 ${totalOwners} 个用户/Schema，${total} 张表`}
                             </div>
-                            <Pagination
-                                simple
-                                size="small"
-                                current={currentPage}
-                                pageSize={pageSize}
-                                total={total}
-                                onChange={(page) => handleSearch(page)}
-                            />
+                            {selectedOwnerName ? (
+                                <Pagination
+                                    simple
+                                    size="small"
+                                    current={currentPage}
+                                    pageSize={pageSize}
+                                    total={selectedOwnerTotal}
+                                    onChange={(page) => handleSearch(page, selectedOwnerName)}
+                                />
+                            ) : null}
                         </div>
                     </div>
                     )}

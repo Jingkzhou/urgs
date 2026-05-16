@@ -18,7 +18,16 @@ type RawLineageEdge = {
 
 const isTableNode = (node: RawLineageNode) => node.labels.includes('Table');
 const isColumnNode = (node: RawLineageNode) => node.labels.includes('Column');
-const sameTableName = (left: string, right: string) => left.toLowerCase() === right.toLowerCase();
+const normalizeTableName = (value?: string) => String(value || '').trim().toLowerCase();
+const unqualifiedTableName = (value?: string) => {
+    const normalized = normalizeTableName(value);
+    const index = normalized.lastIndexOf('.');
+    return index >= 0 ? normalized.slice(index + 1) : normalized;
+};
+const sameTableName = (left: string, right: string) => (
+    normalizeTableName(left) === normalizeTableName(right)
+    || unqualifiedTableName(left) === unqualifiedTableName(right)
+);
 
 const collectDownstreamGraph = (
     rawNodes: RawLineageNode[],
@@ -96,7 +105,8 @@ const buildTableGraph = (
     rawNodes: RawLineageNode[],
     rawEdges: RawLineageEdge[],
     mainTableName: string,
-    keepMainLineageOnly: boolean
+    keepMainLineageOnly: boolean,
+    mainQualifiedName?: string
 ) => {
     const dagreGraph = new dagre.graphlib.Graph();
     dagreGraph.setGraph({ rankdir: 'LR', nodesep: 100, ranksep: 300 });
@@ -181,8 +191,11 @@ const buildTableGraph = (
 
     dagre.layout(dagreGraph);
 
+    const validLinkIds = keepMainLineageOnly
+        ? collectMainLineageLinkIds(tableMap, links, mainTableName, mainQualifiedName)
+        : null;
     const validNodeIds = keepMainLineageOnly
-        ? collectMainLineageNodeIds(tableMap, links, mainTableName)
+        ? collectNodeIdsFromLinks(tableMap, links, mainTableName, validLinkIds || new Set<string>(), mainQualifiedName)
         : collectConnectedNodeIds(tableMap, links, mainTableName);
     const layoutedNodes: NodeData[] = [];
 
@@ -201,7 +214,11 @@ const buildTableGraph = (
 
     return {
         layoutedNodes,
-        layoutedLinks: links.filter(link => validNodeIds.has(link.sourceNodeId) && validNodeIds.has(link.targetNodeId)),
+        layoutedLinks: links.filter(link => (
+            validNodeIds.has(link.sourceNodeId)
+            && validNodeIds.has(link.targetNodeId)
+            && (!validLinkIds || validLinkIds.has(link.id))
+        )),
     };
 };
 
@@ -219,33 +236,74 @@ const collectConnectedNodeIds = (tableMap: Map<string, NodeData>, links: LinkDat
     return validNodeIds;
 };
 
-const collectMainLineageNodeIds = (tableMap: Map<string, NodeData>, links: LinkData[], mainTableName: string) => {
+const collectNodeIdsFromLinks = (
+    tableMap: Map<string, NodeData>,
+    links: LinkData[],
+    mainTableName: string,
+    linkIds: Set<string>,
+    mainQualifiedName?: string
+) => {
     const lineageNodeIds = new Set<string>();
-    const queue: string[] = [];
-    const mainTableNode = [...tableMap.values()].find(node => sameTableName(node.title, mainTableName));
+    const mainTableNode = findMainTableNode(tableMap, mainTableName, mainQualifiedName);
     if (mainTableNode) {
         lineageNodeIds.add(mainTableNode.id);
-        queue.push(mainTableNode.id);
+    }
+    links.forEach(link => {
+        if (!linkIds.has(link.id)) {
+            return;
+        }
+        lineageNodeIds.add(link.sourceNodeId);
+        lineageNodeIds.add(link.targetNodeId);
+    });
+    return lineageNodeIds;
+};
+
+const findMainTableNode = (tableMap: Map<string, NodeData>, mainTableName: string, mainQualifiedName?: string) => (
+    [...tableMap.values()].find(node => (
+        sameTableName(node.title, mainQualifiedName || '')
+        || sameTableName(node.title, mainTableName)
+    ))
+);
+
+const collectMainLineageLinkIds = (
+    tableMap: Map<string, NodeData>,
+    links: LinkData[],
+    mainTableName: string,
+    mainQualifiedName?: string
+) => {
+    const lineageLinkIds = new Set<string>();
+    const mainTableNode = findMainTableNode(tableMap, mainTableName, mainQualifiedName);
+    if (!mainTableNode) {
+        return lineageLinkIds;
     }
 
-    const bySource = new Map<string, string[]>();
-    const byTarget = new Map<string, string[]>();
+    const bySource = new Map<string, LinkData[]>();
+    const byTarget = new Map<string, LinkData[]>();
     links.forEach(link => {
-        bySource.set(link.sourceNodeId, [...(bySource.get(link.sourceNodeId) || []), link.targetNodeId]);
-        byTarget.set(link.targetNodeId, [...(byTarget.get(link.targetNodeId) || []), link.sourceNodeId]);
+        bySource.set(link.sourceNodeId, [...(bySource.get(link.sourceNodeId) || []), link]);
+        byTarget.set(link.targetNodeId, [...(byTarget.get(link.targetNodeId) || []), link]);
     });
 
-    while (queue.length > 0) {
-        const currentId = queue.shift()!;
-        [...(bySource.get(currentId) || []), ...(byTarget.get(currentId) || [])].forEach(nextId => {
-            if (!lineageNodeIds.has(nextId)) {
-                lineageNodeIds.add(nextId);
-                queue.push(nextId);
-            }
-        });
-    }
+    const walk = (initialId: string, edgeMap: Map<string, LinkData[]>, getNextId: (link: LinkData) => string) => {
+        const visitedNodeIds = new Set<string>([initialId]);
+        const queue = [initialId];
+        while (queue.length > 0) {
+            const currentId = queue.shift()!;
+            (edgeMap.get(currentId) || []).forEach(link => {
+                lineageLinkIds.add(link.id);
+                const nextId = getNextId(link);
+                if (!visitedNodeIds.has(nextId)) {
+                    visitedNodeIds.add(nextId);
+                    queue.push(nextId);
+                }
+            });
+        }
+    };
 
-    return lineageNodeIds;
+    walk(mainTableNode.id, byTarget, link => link.sourceNodeId);
+    walk(mainTableNode.id, bySource, link => link.targetNodeId);
+
+    return lineageLinkIds;
 };
 
 export const processLayoutImpact = (rawNodes: any[], rawEdges: any[], mainTableName: string) => {
@@ -253,6 +311,11 @@ export const processLayoutImpact = (rawNodes: any[], rawEdges: any[], mainTableN
     return buildTableGraph(downstreamGraph.nodes, downstreamGraph.edges, mainTableName, true);
 };
 
-export const processLayoutTrace = (rawNodes: any[], rawEdges: any[], mainTableName: string) => (
-    buildTableGraph(rawNodes, rawEdges, mainTableName, false)
+export const processLayoutTrace = (
+    rawNodes: any[],
+    rawEdges: any[],
+    mainTableName: string,
+    mainQualifiedName?: string
+) => (
+    buildTableGraph(rawNodes, rawEdges, mainTableName, true, mainQualifiedName)
 );

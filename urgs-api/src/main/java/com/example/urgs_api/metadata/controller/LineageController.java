@@ -59,11 +59,12 @@ public class LineageController {
     public Map<String, Object> searchTables(
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String ownerName) {
         if (keyword == null) {
             keyword = "";
         }
-        return lineageService.searchTables(keyword, page, size);
+        return lineageService.searchTables(keyword, page, size, ownerName);
     }
 
     /**

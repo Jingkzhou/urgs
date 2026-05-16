@@ -71,21 +71,21 @@ public class LineageService {
      * @param keyword Search keyword
      * @param page    Page number (1-based)
      * @param size    Page size
-     * @return Map containing "total" (Long) and "list" (List<Map>)
+     * @param ownerName Optional owner/schema filter for table pagination
+     * @return Map containing owner summaries and paginated table list
      */
-    public Map<String, Object> searchTables(String keyword, int page, int size) {
-        int skip = (page - 1) * size;
+    public Map<String, Object> searchTables(String keyword, int page, int size, String ownerName) {
+        int skip = Math.max(0, (page - 1) * size);
 
         // 预处理关键词为大写，以匹配索引（数据导入时已统一转大写）
         String normalizedKeyword = (keyword != null) ? keyword.toUpperCase() : "";
+        String normalizedOwner = (ownerName != null) ? ownerName.trim().toUpperCase() : "";
 
         String matchClause = "MATCH (n:Table) " +
-                "WHERE $keyword = '' " +
+                "WHERE ($keyword = '' " +
                 "OR toUpper(coalesce(n.name, '')) CONTAINS $keyword " +
                 "OR toUpper(coalesce(n.qualifiedName, '')) CONTAINS $keyword " +
-                "OR toUpper(coalesce(n.owner, coalesce(n.schema, coalesce(n.user, coalesce(n.default_user, ''))))) CONTAINS $keyword ";
-
-        String countQuery = matchClause + "RETURN count(n) as total";
+                "OR toUpper(coalesce(n.owner, coalesce(n.schema, coalesce(n.user, coalesce(n.default_user, ''))))) CONTAINS $keyword) ";
 
         String dataQuery = matchClause +
                 "OPTIONAL MATCH (c:Column)-[:BELONGS_TO]->(n) " +
@@ -93,40 +93,37 @@ public class LineageService {
                 "coalesce(n.owner, coalesce(n.schema, coalesce(n.user, coalesce(n.default_user, '')))) AS ownerSort, " +
                 "n.name AS tableSort, " +
                 "collect(c.name) AS columns " +
-                "ORDER BY ownerSort, tableSort " +
-                "SKIP $skip LIMIT $limit";
+                "ORDER BY ownerSort, tableSort";
 
         List<Map<String, Object>> list = new ArrayList<>();
         Map<String, Map<String, Object>> groupedOwners = new LinkedHashMap<>();
+        List<Map<String, Object>> selectedOwnerItems = new ArrayList<>();
         long total = 0;
+        long selectedOwnerTotal = 0;
+
+        Map<String, Object> queryParams = new HashMap<>();
+        queryParams.put("keyword", normalizedKeyword);
 
         try (Session session = driver.session()) {
-            // Execute count
-            Result countResult = session.run(countQuery, Map.of("keyword", normalizedKeyword));
-            if (countResult.hasNext()) {
-                total = countResult.next().get("total").asLong();
-            }
-
-            // Execute data fetch
-            Result result = session.run(dataQuery, Map.of("keyword", normalizedKeyword, "skip", skip, "limit", size));
+            Result result = session.run(dataQuery, queryParams);
             while (result.hasNext()) {
                 var record = result.next();
                 Map<String, Object> tableProps = record.get("tableProps").asMap();
                 String rawName = toSafeUpperString(tableProps.get("name"));
-                String ownerName = resolveOwnerName(tableProps, rawName);
+                String itemOwnerName = resolveOwnerName(tableProps, rawName);
                 String tableName = resolveTableName(tableProps, rawName);
 
                 Map<String, Object> item = new LinkedHashMap<>();
-                item.put("ownerName", ownerName);
+                item.put("ownerName", itemOwnerName);
                 item.put("tableName", tableName);
-                item.put("qualifiedName", buildQualifiedName(ownerName, tableName));
+                item.put("qualifiedName", buildQualifiedName(itemOwnerName, tableName));
                 item.put("columns", record.get("columns").asList(v -> v.isNull() ? null : v.asString()).stream()
                         .filter(Objects::nonNull)
                         .sorted()
                         .toList());
-                list.add(item);
+                total++;
 
-                Map<String, Object> ownerGroup = groupedOwners.computeIfAbsent(ownerName, key -> {
+                Map<String, Object> ownerGroup = groupedOwners.computeIfAbsent(itemOwnerName, key -> {
                     Map<String, Object> group = new LinkedHashMap<>();
                     group.put("ownerName", key);
                     group.put("tableCount", 0);
@@ -135,16 +132,41 @@ public class LineageService {
                 });
                 @SuppressWarnings("unchecked")
                 List<Map<String, Object>> tables = (List<Map<String, Object>>) ownerGroup.get("tables");
-                tables.add(item);
-                ownerGroup.put("tableCount", tables.size());
+                ownerGroup.put("tableCount", ((Number) ownerGroup.get("tableCount")).longValue() + 1);
+
+                if (normalizedOwner.isEmpty() || normalizedOwner.equals(itemOwnerName)) {
+                    selectedOwnerItems.add(item);
+                    tables.add(item);
+                }
             }
+        }
+
+        selectedOwnerTotal = selectedOwnerItems.size();
+        int fromIndex = Math.min(skip, selectedOwnerItems.size());
+        int toIndex = Math.min(fromIndex + size, selectedOwnerItems.size());
+        list.addAll(selectedOwnerItems.subList(fromIndex, toIndex));
+
+        if (!normalizedOwner.isEmpty()) {
+            groupedOwners.values().forEach(group -> {
+                if (!normalizedOwner.equals(group.get("ownerName"))) {
+                    group.put("tables", new ArrayList<Map<String, Object>>());
+                } else {
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> ownerTables = (List<Map<String, Object>>) group.get("tables");
+                    group.put("tables", ownerTables.subList(fromIndex, toIndex));
+                }
+            });
+        } else {
+            groupedOwners.values().forEach(group -> group.put("tables", new ArrayList<Map<String, Object>>()));
         }
 
         Map<String, Object> response = new HashMap<>();
         response.put("total", total);
+        response.put("selectedOwnerTotal", selectedOwnerTotal);
         response.put("list", list);
         response.put("groupedList", new ArrayList<>(groupedOwners.values()));
         response.put("totalOwners", groupedOwners.size());
+        response.put("selectedOwner", normalizedOwner);
         return response;
     }
 
@@ -324,11 +346,16 @@ public class LineageService {
                 List<String> sourceFiles = record.get("sourceFiles").asList(value -> value.asString());
                 List<String> sourceColumns = record.get("sourceColumns").asList(value -> value.asString());
                 List<String> targetColumns = record.get("targetColumns").asList(value -> value.asString());
+                long fallbackCount = record.get("fallbackCount").asLong(0);
+                long snippetCount = record.get("snippetCount").asLong(0);
+                List<String> relationLevels = record.get("relationLevels").asList(value -> value.asString());
+                List<String> lineageOrigins = record.get("lineageOrigins").asList(value -> value.asString());
 
                 addNode(sourceTable, nodes, seenNodes);
                 addNode(targetTable, nodes, seenNodes);
                 addTableEdge(sourceTable, targetTable, relType, relationCount, snippet, sourceFiles,
-                        sourceColumns, targetColumns, edges, seenEdges);
+                        sourceColumns, targetColumns, fallbackCount, snippetCount, relationLevels, lineageOrigins,
+                        edges, seenEdges);
             }
         }
 
@@ -374,18 +401,30 @@ public class LineageService {
                 "CALL { " + String.join(" UNION ", branches) + " } " +
                 "OPTIONAL MATCH (source)-[:BELONGS_TO]->(sourceParent:Table) " +
                 "OPTIONAL MATCH (target)-[:BELONGS_TO]->(targetParent:Table) " +
-                "WITH coalesce(sourceParent, source) as sourceTable, coalesce(targetParent, target) as targetTable, r " +
+                "WITH coalesce(sourceParent, source) as sourceTable, coalesce(targetParent, target) as targetTable, source, target, r " +
                 "WHERE sourceTable:Table AND targetTable:Table AND elementId(sourceTable) <> elementId(targetTable) " +
                 "WITH sourceTable, targetTable, type(r) AS relType, " +
                 "     count(DISTINCT elementId(r)) AS relationCount, " +
-                "     collect(DISTINCT CASE WHEN source:Column THEN coalesce(source.name, '') ELSE '' END) AS sourceColumns, " +
-                "     collect(DISTINCT CASE WHEN target:Column THEN coalesce(target.name, '') ELSE '' END) AS targetColumns, " +
+                "     count(DISTINCT CASE WHEN coalesce(r.relationLevel, '') = 'table_fallback' OR coalesce(r.isTableFallback, false) OR coalesce(r.hasTableFallback, false) OR 'table_fallback' IN coalesce(r.relationLevels, []) THEN elementId(r) END) AS fallbackCount, " +
+                "     count(DISTINCT CASE WHEN coalesce(r.snippet, '') <> '' THEN elementId(r) END) AS snippetCount, " +
+                "     collect(DISTINCT CASE WHEN source:Column THEN coalesce(source.name, '') ELSE '' END) AS nodeSourceColumns, " +
+                "     collect(DISTINCT CASE WHEN target:Column THEN coalesce(target.name, '') ELSE '' END) AS nodeTargetColumns, " +
+                "     collect(coalesce(r.sourceColumns, [])) AS relationSourceColumnGroups, " +
+                "     collect(coalesce(r.targetColumns, [])) AS relationTargetColumnGroups, " +
+                "     collect(DISTINCT coalesce(r.sourceColumn, '')) AS relationSourceColumnNames, " +
+                "     collect(DISTINCT coalesce(r.targetColumn, '')) AS relationTargetColumnNames, " +
+                "     collect(DISTINCT coalesce(r.relationLevel, '')) AS relationLevels, " +
+                "     collect(coalesce(r.relationLevels, [])) AS relationLevelGroups, " +
+                "     collect(DISTINCT coalesce(r.lineageOrigin, '')) AS lineageOrigins, " +
+                "     collect(coalesce(r.lineageOrigins, [])) AS lineageOriginGroups, " +
                 "     collect(DISTINCT coalesce(r.snippet, '')) AS snippets, " +
                 "     collect(coalesce(r.sourceFiles, [])) AS sourceFileGroups, " +
                 "     collect(DISTINCT coalesce(r.source_file, coalesce(r.sourceFile, ''))) AS sourceFileNames " +
-                "RETURN sourceTable, targetTable, relType, relationCount, " +
-                "       [column IN sourceColumns WHERE column <> ''] AS sourceColumns, " +
-                "       [column IN targetColumns WHERE column <> ''] AS targetColumns, " +
+                "RETURN sourceTable, targetTable, relType, relationCount, fallbackCount, snippetCount, " +
+                "       [column IN nodeSourceColumns + reduce(columns = [], group IN relationSourceColumnGroups | columns + group) + [column IN relationSourceColumnNames WHERE column <> ''] WHERE column <> ''] AS sourceColumns, " +
+                "       [column IN nodeTargetColumns + reduce(columns = [], group IN relationTargetColumnGroups | columns + group) + [column IN relationTargetColumnNames WHERE column <> ''] WHERE column <> ''] AS targetColumns, " +
+                "       [level IN relationLevels + reduce(levels = [], group IN relationLevelGroups | levels + group) WHERE level <> ''] AS relationLevels, " +
+                "       [origin IN lineageOrigins + reduce(origins = [], group IN lineageOriginGroups | origins + group) WHERE origin <> ''] AS lineageOrigins, " +
                 "       [snippet IN snippets WHERE snippet <> ''][0] AS snippet, " +
                 "       reduce(files = [], group IN sourceFileGroups | files + group) + [file IN sourceFileNames WHERE file <> ''] AS sourceFiles " +
                 "ORDER BY relationCount DESC " +
@@ -555,13 +594,24 @@ public class LineageService {
 
     private void addTableEdge(Node sourceTable, Node targetTable, String relType, long relationCount,
             String snippet, List<String> sourceFiles, List<String> sourceColumns, List<String> targetColumns,
+            long fallbackCount, long snippetCount, List<String> relationLevels, List<String> lineageOrigins,
             List<Map<String, Object>> edges, Set<String> seenEdges) {
         String edgeId = sourceTable.elementId() + "::" + targetTable.elementId() + "::" + relType;
         if (!seenEdges.contains(edgeId)) {
             Map<String, Object> edgeData = new HashMap<>();
             Map<String, Object> properties = new HashMap<>();
+            long fieldRelationCount = Math.max(0, relationCount - fallbackCount);
+            String edgeRelationLevel = fallbackCount >= relationCount
+                    ? "table_fallback"
+                    : (fallbackCount > 0 ? "table_mixed" : "table");
             properties.put("relationCount", relationCount);
-            properties.put("relationLevel", "table");
+            properties.put("relationLevel", edgeRelationLevel);
+            properties.put("fallbackRelationCount", fallbackCount);
+            properties.put("fieldRelationCount", fieldRelationCount);
+            properties.put("snippetCount", snippetCount);
+            properties.put("hasSnippet", snippetCount > 0 || (snippet != null && !snippet.isBlank()));
+            properties.put("relationLevels", relationLevels.stream().filter(Objects::nonNull).distinct().toList());
+            properties.put("lineageOrigins", lineageOrigins.stream().filter(Objects::nonNull).distinct().toList());
             properties.put("snippet", snippet);
             properties.put("sourceFiles", sourceFiles.stream().filter(Objects::nonNull).distinct().toList());
             properties.put("sourceColumns", sourceColumns.stream().filter(Objects::nonNull).distinct().toList());

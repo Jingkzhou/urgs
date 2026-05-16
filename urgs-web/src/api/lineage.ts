@@ -15,6 +15,8 @@ export interface LineageSearchOwnerGroup {
 
 export interface LineageSearchResponse {
     total: number;
+    selectedOwnerTotal?: number;
+    selectedOwner?: string;
     totalOwners: number;
     list: LineageSearchTableItem[];
     groupedList: LineageSearchOwnerGroup[];
@@ -138,11 +140,17 @@ export const getLineageVersions = () => {
  * @param page page number (default 1)
  * @param size page size (default 20)
  */
-export const searchTables = (keyword: string, page: number = 1, size: number = 20) => {
-    return get('/api/metadata/lineage/search', {
+export const searchTables = (keyword: string, page: number = 1, size: number = 20, ownerName?: string) => {
+    const params: Record<string, string> = {
         keyword,
         page: String(page),
         size: String(size)
+    };
+    if (ownerName) {
+        params.ownerName = ownerName;
+    }
+    return get('/api/metadata/lineage/search', {
+        ...params
     }) as Promise<LineageSearchResponse>;
 };
 

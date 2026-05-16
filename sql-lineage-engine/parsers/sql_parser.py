@@ -151,6 +151,12 @@ class LineageParser:
                         stmt_info["targets"] = result["targets"]
                         has_lineage = True
                     if "relationships" in result and result["relationships"]:
+                        for rel in result["relationships"]:
+                            rel.setdefault("source_file", source_file)
+                            rel.setdefault("snippet", final_stmt)
+                            rel.setdefault("lineage_origin", "gsp_table")
+                            rel.setdefault("relation_level", "table_evidence")
+                            rel.setdefault("confidence", "MEDIUM")
                         relations.extend(result["relationships"])
                         stmt_info["relationships"] = result["relationships"]
                         has_lineage = True
@@ -185,6 +191,11 @@ class LineageParser:
                         "source_column": dep["source_column"],
                         "dependency_type": dep["dependency_type"],
                         "source_file": dep.get("source_file"),
+                        "snippet": dep.get("snippet"),
+                        "lineage_origin": "sqlglot_table",
+                        "relation_level": "table_from_column",
+                        "confidence": dep.get("confidence", "MEDIUM"),
+                        "validation_note": dep.get("validation_note"),
                         # Normalize for compatibility
                         "source": dep_source,
                         "target": dep_target,
@@ -881,7 +892,16 @@ class LineageParser:
         # 3. Create relationships
         for tgt in targets:
             for src in sources:
-                relations.append({"source": src, "target": tgt, "type": "fdd"})
+                relations.append({
+                    "source": src,
+                    "target": tgt,
+                    "type": "fdd",
+                    "snippet": sql,
+                    "lineage_origin": "regex_fallback",
+                    "relation_level": "table_fallback",
+                    "confidence": "LOW",
+                    "validation_note": "Regex fallback table lineage; column-level evidence was unavailable.",
+                })
 
         return {
             "sources": list(sources),

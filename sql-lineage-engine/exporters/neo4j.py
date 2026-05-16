@@ -205,72 +205,148 @@ class Neo4jClient:
             print(f"  - 相关血缘关系已智能清除（保留多文件关系）")
 
 
-    def create_lineage(self, source_table: str, target_table: str):
+    def create_lineage(self, source_table: str, target_table: str, relationship: dict = None,
+                       version: str = None, repo_id: str = None):
         """
         创建两个表之间的血缘关系。
         """
-        # 统一转换为大写
-        source_table = (source_table or "").upper()
-        target_table = (target_table or "").upper()
-        
-        with self.driver.session() as session:
-            session.execute_write(self._create_and_link_tables, source_table, target_table)
+        item = dict(relationship or {})
+        item["source"] = source_table
+        item["target"] = target_table
+        self.create_lineage_batch([item], version=version, repo_id=repo_id)
 
     @staticmethod
-    def _create_and_link_tables(tx, source_name, target_name):
-        query = (
-            "MERGE (s:Table {name: $source_name}) "
-            "MERGE (t:Table {name: $target_name}) "
-            "MERGE (s)-[:DERIVES_TO]->(t)"
-        )
-        tx.run(query, source_name=source_name, target_name=target_name)
+    def _as_clean_list(value):
+        if value is None:
+            return []
+        values = value if isinstance(value, list) else [value]
+        return [str(item) for item in values if item not in (None, "")]
 
-    def create_lineage_batch(self, relationships: list):
+    @classmethod
+    def _normalize_table_relationships(cls, relationships: list, version: str = None, repo_id: str = None):
+        normalized = []
+        for rel in relationships:
+            source = (rel.get("source") or rel.get("source_table") or "").upper()
+            target = (rel.get("target") or rel.get("target_table") or "").upper()
+            if not source or not target:
+                continue
+
+            dependency_type = rel.get("dependency_type") or rel.get("type") or "fdd"
+            neo4j_rel_type = rel.get("neo4j_type") or RELATION_TYPE_MAP.get(dependency_type, "DERIVES_TO")
+            if neo4j_rel_type not in ALL_LINEAGE_RELATION_TYPES:
+                neo4j_rel_type = "DERIVES_TO"
+
+            source_columns = cls._as_clean_list(
+                rel.get("sourceColumns") or rel.get("source_columns") or rel.get("source_column")
+            )
+            target_columns = cls._as_clean_list(
+                rel.get("targetColumns") or rel.get("target_columns") or rel.get("target_column")
+            )
+            source_files = cls._as_clean_list(
+                rel.get("sourceFiles") or rel.get("source_files") or rel.get("source_file") or rel.get("sourceFile")
+            )
+            relation_level = rel.get("relation_level") or rel.get("relationLevel") or "table_fallback"
+            confidence = rel.get("confidence") or ("LOW" if relation_level == "table_fallback" else "MEDIUM")
+            lineage_origin = rel.get("lineage_origin") or rel.get("lineageOrigin") or "table_parser"
+
+            normalized.append({
+                "source": source,
+                "target": target,
+                "dependency_type": dependency_type,
+                "neo4j_rel_type": neo4j_rel_type,
+                "snippet": rel.get("snippet") or rel.get("sql"),
+                "source_files": source_files,
+                "source_columns": source_columns,
+                "target_columns": target_columns,
+                "version": version or rel.get("version"),
+                "repo_id": repo_id or rel.get("repo_id") or rel.get("repoId"),
+                "relation_level": relation_level,
+                "relation_levels": cls._as_clean_list(rel.get("relationLevels") or rel.get("relation_levels"))
+                    or [relation_level],
+                "lineage_origin": lineage_origin,
+                "lineage_origins": cls._as_clean_list(rel.get("lineageOrigins") or rel.get("lineage_origins"))
+                    or [lineage_origin],
+                "confidence": confidence,
+                "validation_note": rel.get("validation_note") or rel.get("validationNote"),
+            })
+        return normalized
+
+    def create_lineage_batch(self, relationships: list, version: str = None, repo_id: str = None):
         """
         批量创建表级血缘。
         relationships: 包含 source 和 target 键的字典列表
         """
-        if not relationships:
+        normalized = self._normalize_table_relationships(relationships, version=version, repo_id=repo_id)
+        if not normalized:
             return
-            
+
+        grouped = {}
+        for rel in normalized:
+            grouped.setdefault(rel["neo4j_rel_type"], []).append(rel)
+
         with self.driver.session() as session:
             # 优化：增加批次大小到 2000
             batch_size = 2000
-            total = len(relationships)
-            for i in range(0, total, batch_size):
-                 chunk = relationships[i:i + batch_size]
-                 try:
-                     session.execute_write(self._create_tables_batch, chunk)
-                 except Exception as e:
-                     print(f"\n    Error in table batch {i//batch_size}: {e}")
+            total_all = len(normalized)
+            processed_all = 0
+            for rel_type, group in grouped.items():
+                total = len(group)
+                for i in range(0, total, batch_size):
+                    chunk = group[i:i + batch_size]
+                    try:
+                        session.execute_write(self._create_tables_batch, chunk, rel_type)
+                    except Exception as e:
+                        print(f"\n    Error in table batch {i//batch_size} ({rel_type}): {e}")
 
-                 # Progress Log - 每 5000 条或最后一批打印一次
-                 processed = min(i + batch_size, total)
-                 if processed % 5000 == 0 or processed == total:
-                     sys.stdout.write(f"\r    Processed {processed}/{total} table relationships...")
-                     sys.stdout.flush()
+                    # Progress Log - 每 5000 条或最后一批打印一次
+                    processed_all += len(chunk)
+                    if processed_all % 5000 == 0 or processed_all == total_all:
+                        sys.stdout.write(f"\r    Processed {processed_all}/{total_all} table relationships...")
+                        sys.stdout.flush()
             print("") # Newline after done
 
     @staticmethod
-    def _create_tables_batch(tx, relationships):
-         # 归一化处理
-         normalized = []
-         for r in relationships:
-             s = (r.get("source") or "").upper()
-             t = (r.get("target") or "").upper()
-             if s and t:
-                 normalized.append({"source": s, "target": t})
-         
-         if not normalized:
-             return
-
-         query = (
-             "UNWIND $batch as rel "
-             "MERGE (s:Table {name: rel.source}) "
-             "MERGE (t:Table {name: rel.target}) "
-             "MERGE (s)-[:DERIVES_TO]->(t)"
-         )
-         tx.run(query, batch=normalized)
+    def _create_tables_batch(tx, relationships, rel_type):
+        query = f"""
+        UNWIND $batch AS item
+        MERGE (s:Table {{name: item.source}})
+        MERGE (t:Table {{name: item.target}})
+        MERGE (s)-[r:{rel_type}]->(t)
+        SET r.version = CASE WHEN item.version IS NOT NULL THEN item.version ELSE r.version END,
+            r.repoId = CASE WHEN item.repo_id IS NOT NULL THEN item.repo_id ELSE r.repoId END,
+            r.type = item.dependency_type,
+            r.relationLevel = item.relation_level,
+            r.isTableFallback = CASE WHEN item.relation_level = 'table_fallback' THEN true ELSE coalesce(r.isTableFallback, false) END,
+            r.hasTableFallback = coalesce(r.hasTableFallback, false) OR item.relation_level = 'table_fallback',
+            r.lineageOrigin = item.lineage_origin,
+            r.confidence = item.confidence,
+            r.validationNote = CASE WHEN item.validation_note IS NOT NULL THEN item.validation_note ELSE r.validationNote END,
+            r.snippet = CASE
+                WHEN item.snippet IS NOT NULL AND trim(item.snippet) <> '' THEN item.snippet
+                ELSE r.snippet
+            END,
+            r.createdAt = CASE WHEN r.createdAt IS NULL THEN datetime() ELSE r.createdAt END,
+            r.relationLevels = reduce(levels = coalesce(r.relationLevels, []), level IN item.relation_levels |
+                CASE WHEN level IN levels THEN levels ELSE levels + level END),
+            r.lineageOrigins = reduce(origins = coalesce(r.lineageOrigins, []), origin IN item.lineage_origins |
+                CASE WHEN origin IN origins THEN origins ELSE origins + origin END),
+            r.sourceFiles = CASE
+                WHEN size(item.source_files) = 0 THEN coalesce(r.sourceFiles, [])
+                ELSE reduce(files = coalesce(r.sourceFiles, []), file IN item.source_files |
+                    CASE WHEN file IN files THEN files ELSE files + file END)
+            END,
+            r.sourceColumns = CASE
+                WHEN size(item.source_columns) = 0 THEN coalesce(r.sourceColumns, [])
+                ELSE reduce(columns = coalesce(r.sourceColumns, []), column IN item.source_columns |
+                    CASE WHEN column IN columns THEN columns ELSE columns + column END)
+            END,
+            r.targetColumns = CASE
+                WHEN size(item.target_columns) = 0 THEN coalesce(r.targetColumns, [])
+                ELSE reduce(columns = coalesce(r.targetColumns, []), column IN item.target_columns |
+                    CASE WHEN column IN columns THEN columns ELSE columns + column END)
+            END
+        """
+        tx.run(query, batch=relationships)
 
     def create_column_lineage(self, dependencies: list):
         """
@@ -723,4 +799,3 @@ class Neo4jClient:
             
             result = session.run(query, col=column, table=table, version=version)
             return [dict(r) for r in result]
-

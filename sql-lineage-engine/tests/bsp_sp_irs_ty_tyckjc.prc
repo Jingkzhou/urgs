@@ -2,23 +2,23 @@ CREATE OR REPLACE PROCEDURE BSP_SP_IRS_TY_TYCKJC(IS_DATE    IN VARCHAR2,
                                                 OI_RETCODE OUT INTEGER,
                                                OI_RETCODE2 OUT VARCHAR2) AS
   ------------------------------------------------------------------------------------------------------
-  -- ³ÌÐòÃû
+  -- ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
   --    SP_IRS_FTY_FTYDWDKJCXXB
-  -- ÓÃÍ¾:Éú³É½Ó¿Ú±í JS_201_CLGRDK ´æÁ¿¸öÈË´û¿îÐÅÏ¢
-  -- ²ÎÊý
-  --    IS_DATE ÊäÈë±äÁ¿£¬´«ÈëÅÜÅúÈÕÆÚ
-  --    OI_RETCODE Êä³ö±äÁ¿£¬ÓÃÀ´±êÊ¶´æ´¢¹ý³ÌÖ´ÐÐ¹ý³ÌÖÐÊÇ·ñ³öÏÖÒì³£
+  -- ï¿½ï¿½Í¾:ï¿½ï¿½ï¿½É½Ó¿Ú±ï¿½ JS_201_CLGRDK ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë´ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢
+  -- ï¿½ï¿½ï¿½ï¿½
+  --    IS_DATE ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+  --    OI_RETCODE ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¶ï¿½æ´¢ï¿½ï¿½ï¿½ï¿½Ö´ï¿½Ð¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ç·ï¿½ï¿½ï¿½ï¿½ï¿½ì³£
   --    CAEATE BY USER AT 20200819
   --    MOD BY YANLINGBO AT 20200819
-  --    add ÒµÎñ²¹Â¼½ðÈÚ»ú¹¹ÀàÐÍ´úÂë
+  --    add Òµï¿½ï¿½Â¼ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½
   ------------------------------------------------------------------------------------------------------
 
-  VI_ERRORCODE      NUMBER DEFAULT 0; --ÊýÖµÐÍ  Òì³£´úÂë
-  VS_TEXT           VARCHAR2(500) DEFAULT NULL; --×Ö·ûÐÍ  ¹ý³ÌÃèÊö
-  VS_LAST_TEXT      VARCHAR2(10) DEFAULT NULL; --×Ö·ûÐÍ  ¹ý³ÌÃèÊö
-  VS_OWNER          VARCHAR2(32) DEFAULT NULL; --×Ö·ûÐÍ  ´æ´¢¹ý³Ìµ÷ÓÃÓÃ»§
-  VS_PROCEDURE_NAME VARCHAR2(32) DEFAULT NULL; --×Ö·ûÐÍ  ´æ´¢¹ý³ÌÃû³Æ
-  VS_STEP           VARCHAR2(10); --´æ´¢¹ý³ÌÖ´ÐÐ²½Öè±êÖ¾
+  VI_ERRORCODE      NUMBER DEFAULT 0; --ï¿½ï¿½Öµï¿½ï¿½  ï¿½ì³£ï¿½ï¿½ï¿½ï¿½
+  VS_TEXT           VARCHAR2(500) DEFAULT NULL; --ï¿½Ö·ï¿½ï¿½ï¿½  ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+  VS_LAST_TEXT      VARCHAR2(10) DEFAULT NULL; --ï¿½Ö·ï¿½ï¿½ï¿½  ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+  VS_OWNER          VARCHAR2(32) DEFAULT NULL; --ï¿½Ö·ï¿½ï¿½ï¿½  ï¿½æ´¢ï¿½ï¿½ï¿½Ìµï¿½ï¿½ï¿½ï¿½Ã»ï¿½
+  VS_PROCEDURE_NAME VARCHAR2(32) DEFAULT NULL; --ï¿½Ö·ï¿½ï¿½ï¿½  ï¿½æ´¢ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+  VS_STEP           VARCHAR2(10); --ï¿½æ´¢ï¿½ï¿½ï¿½ï¿½Ö´ï¿½Ð²ï¿½ï¿½ï¿½ï¿½Ö¾
   NUM               INTEGER;
   VS_LAST_DAY       VARCHAR2(10) DEFAULT NULL;
 BEGIN
@@ -26,10 +26,10 @@ BEGIN
   VS_LAST_TEXT := TO_CHAR(ADD_MONTHS(TO_DATE(IS_DATE, 'YYYYMMDD'), -1),
                           'YYYYMMDD');
   VS_LAST_DAY  := TO_CHAR(TO_DATE(IS_DATE, 'YYYYMMDD') - 1, 'YYYYMMDD');
-  -- ¼ÇÂ¼ÈÕÖ¾Ê¹ÓÃ
+  -- ï¿½ï¿½Â¼ï¿½ï¿½Ö¾Ê¹ï¿½ï¿½
   SELECT T.USERNAME INTO VS_OWNER FROM SYS.USER_USERS T;
   VS_PROCEDURE_NAME := 'SP_IRS_TY_TYCKJC';
-  -- ¿ªÊ¼ÈÕÖ¾
+  -- ï¿½ï¿½Ê¼ï¿½ï¿½Ö¾
   VS_STEP := 'START';
   SP_IRS_LOG(VS_PROCEDURE_NAME, VS_STEP, VI_ERRORCODE, IS_DATE, IS_DATE);
   -------------------------------------------------------------------------
@@ -49,9 +49,9 @@ SELECT *
  WHERE A.RN = '1';
 
 COMMIT;*/
-  -----ÒµÎñ²¹Â¼½ðÈÚ½ðÈÚ»ú¹¹´úÂë-----
+  -----Òµï¿½ï¿½Â¼ï¿½ï¿½ï¿½Ú½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½-----
 
-  ---Ç°Ò»ÌìÊý¾ÝÈÕÆÚµÄÍ¬Òµ¿Í»§ºÍ½ðÈÚ»ú¹¹ÀàÐÍ´úÂë
+  ---Ç°Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Úµï¿½Í¬Òµï¿½Í»ï¿½ï¿½Í½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½
 
   INSERT INTO TX_JRJG_YESTERDAY
     SELECT DISTINCT CUST_NAM, ORGTPCODE
@@ -77,7 +77,7 @@ COMMIT;*/
 
   COMMIT;
 
-  ---Ç°Ò»Ìì²¹Â¼µÄÍ¬Òµ¿Í»§½ðÈÚ»ú¹¹´úÂë ¸üÐÂ½øÅäÖÃ±í ºóÐø¹ØÁª´Ë±í£¬±£Ö¤²¹Â¼¹ýµÄ²»ÓÃÖØ¸´²¹Â¼
+  ---Ç°Ò»ï¿½ì²¹Â¼ï¿½ï¿½Í¬Òµï¿½Í»ï¿½ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Â½ï¿½ï¿½ï¿½ï¿½Ã±ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë±ï¿½ï¿½ï¿½ï¿½ï¿½Ö¤ï¿½ï¿½Â¼ï¿½ï¿½ï¿½Ä²ï¿½ï¿½ï¿½ï¿½Ø¸ï¿½ï¿½ï¿½Â¼
 
   MERGE INTO DATACORE_TMP_TX_JRJG A
   USING TX_JRJG_YESTERDAY B
@@ -88,7 +88,7 @@ COMMIT;*/
     INSERT (A.CUST_ID, A.JRJG) VALUES (B.CUST_NAM, B.ORGTPCODE);
   COMMIT;
 
-  -----ÕýÊ½Âß¼­´¦Àí¿ªÊ¼-----
+  -----ï¿½ï¿½Ê½ï¿½ß¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¼-----
 
 INSERT INTO CUST_TY_NEW
 SELECT CUST_NAM, ID_NO, CUST_ID, '1'
@@ -97,7 +97,7 @@ SELECT CUST_NAM, ID_NO, CUST_ID, '1'
 
 COMMIT;
 
---Í¬Òµ¿Í»§²¹³äÐÅÏ¢±íÈ¥ÖØ   add by chm 20230615
+--Í¬Òµï¿½Í»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½ï¿½È¥ï¿½ï¿½   add by chm 20230615
 INSERT INTO L_CUST_BILL_TY_CKTMP
 SELECT
   data_date              ,
@@ -127,8 +127,32 @@ SELECT
   cust_short_name        ,
   rn
 
-  FROM (SELECT A.*,
-               ROW_NUMBER() OVER(PARTITION BY A.FINA_ORG_NAME ORDER BY A.CUST_ID) RN
+  FROM (SELECT A.data_date              ,
+  A.org_num               ,
+  A.cust_id                ,
+  A.legal_name             ,
+  A.fina_org_code          ,
+  A.fina_code_new          ,
+  A.fina_org_name          ,
+  A.capital_amt            ,
+  A.borrower_register_addr ,
+  A.tyshxydm               ,
+  A.organizationcode       ,
+  A.ecif_cust_id           ,
+  A.legal_flag             ,
+  A.legal_tyshxydm         ,
+  A.cbrc_code              ,
+  A.nation_cd              ,
+  A.org_area               ,
+  A.aswift_code            ,
+  A.cust_bank_cd           ,
+  A.corp_scale             ,
+  A.corp_hold_type         ,
+  A.bussines_type          ,
+  A.fina_olic_num          ,
+  A.cus_risk_lev           ,
+  A.cust_short_name        ,
+  rn ROW_NUMBER() OVER(PARTITION BY A.FINA_ORG_NAME ORDER BY A.CUST_ID) RN
           FROM SMTMODS.L_CUST_BILL_TY A
          WHERE A.DATA_DATE = IS_DATE ) B
  WHERE B.RN = '1';
@@ -137,112 +161,112 @@ SELECT
 
 EXECUTE IMMEDIATE 'TRUNCATE TABLE DATACORE_IE_TY_TYCKJC ';
 INSERT INTO  DATACORE_IE_TY_TYCKJC
-    (datadate --Êý¾ÝÈÕÆÚ
+    (datadate --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     corpid --ÄÚ²¿»ú¹¹ºÅ
+     corpid --ï¿½Ú²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     custid --¿Í»§ºÅ
+     custid --ï¿½Í»ï¿½ï¿½ï¿½
     ,
-     orgtpcode --½ðÈÚ»ú¹¹ÀàÐÍ´úÂë
+     orgtpcode --ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½
     ,
-     accdepcode --´æ¿îÕË»§±àÂë
+     accdepcode --ï¿½ï¿½ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     finadeptype --´æ·ÅÒµÎñÀàÐÍ
+     finadeptype --ï¿½ï¿½ï¿½Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     startdate --ÆðÊ¼ÈÕÆÚ
+     startdate --ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½
     ,
-     maturedate --µ½ÆÚÈÕÆÚ
+     maturedate --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     deptermtype --´æ¿îÆÚÏÞÀàÐÍ
+     deptermtype --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     pricingtype --¶¨¼Û»ù×¼ÀàÐÍ
+     pricingtype --ï¿½ï¿½ï¿½Û»ï¿½×¼ï¿½ï¿½ï¿½ï¿½
     ,
-     ratetype --ÀûÂÊÀàÐÍ
+     ratetype --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     realrate --Êµ¼ÊÀûÂÊ
+     realrate --Êµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     baserate --»ù×¼ÀûÂÊ
+     baserate --ï¿½ï¿½×¼ï¿½ï¿½ï¿½ï¿½
     ,
-     floatfreq --ÀûÂÊ¸¡¶¯ÆµÂÊ
+     floatfreq --ï¿½ï¿½ï¿½Ê¸ï¿½ï¿½ï¿½Æµï¿½ï¿½
     ,
-     cust_name --¿Í»§Ãû³Æ    --20240909  ÐÂÔö¿Í»§Ãû³Æ×Ö¶Î£¬´úÌæÖ®Ç°µÄ¿Í»§ºÅ×Ö¶Î±£´æ½»Ò×¶ÔÊÖ¿Í»§Ãû³Æ
+     cust_name --ï¿½Í»ï¿½ï¿½ï¿½ï¿½ï¿½    --20240909  ï¿½ï¿½ï¿½ï¿½ï¿½Í»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¶Î£ï¿½ï¿½ï¿½ï¿½ï¿½Ö®Ç°ï¿½Ä¿Í»ï¿½ï¿½ï¿½ï¿½Ö¶Î±ï¿½ï¿½æ½»ï¿½×¶ï¿½ï¿½Ö¿Í»ï¿½ï¿½ï¿½ï¿½ï¿½
      )
 
 SELECT /*+ USE_HASH(T,A) PARALLEL(8)*/
-VS_TEXT    --Êý¾ÝÈÕÆÚ
+VS_TEXT    --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     T.org_num --ÄÚ²¿»ú¹¹ºÅ
-     /*,CASE WHEN T.CUST_ID = '6000884761' THEN '½­Î÷ÒøÐÐ¹É·ÝÓÐÏÞ¹«Ë¾'
-     WHEN T.CUST_ID = '8913394106' THEN '½­Î÷ÒøÐÐ¹É·ÝÓÐÏÞ¹«Ë¾'
-       ELSE NVL(A.CUST_NAM,T.CUST_ID) END  --¿Í»§ºÅ*/,
-     T.CUST_ID --¿Í»§ºÅ     --20240909    NR±í¼Ó¹¤ÐèÒª¿Í»§ºÅ£¬¶ÔÊý¾Ý½øÐÐÌáÈ¡£¬´ËÇ°Õâ¸ö×Ö¶Î´æµÄÊÇ½»Ò×¶ÔÊÖ¿Í»§Ãû³Æ
-     --,t.CPTYS_SHORT_NAME  --¿Í»§ºÅ£¨½»Ò×¶ÔÊÖ¿Í»§Ãû£©
+     T.org_num --ï¿½Ú²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+     /*,CASE WHEN T.CUST_ID = '6000884761' THEN 'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¹É·ï¿½ï¿½ï¿½ï¿½Þ¹ï¿½Ë¾'
+     WHEN T.CUST_ID = '8913394106' THEN 'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¹É·ï¿½ï¿½ï¿½ï¿½Þ¹ï¿½Ë¾'
+       ELSE NVL(A.CUST_NAM,T.CUST_ID) END  --ï¿½Í»ï¿½ï¿½ï¿½*/,
+     T.CUST_ID --ï¿½Í»ï¿½ï¿½ï¿½     --20240909    NRï¿½ï¿½ï¿½Ó¹ï¿½ï¿½ï¿½Òªï¿½Í»ï¿½ï¿½Å£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý½ï¿½ï¿½ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½Ç°ï¿½ï¿½ï¿½ï¿½Ö¶Î´ï¿½ï¿½ï¿½Ç½ï¿½ï¿½×¶ï¿½ï¿½Ö¿Í»ï¿½ï¿½ï¿½ï¿½ï¿½
+     --,t.CPTYS_SHORT_NAME  --ï¿½Í»ï¿½ï¿½Å£ï¿½ï¿½ï¿½ï¿½×¶ï¿½ï¿½Ö¿Í»ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     '' --½ðÈÚ»ú¹¹ÀàÐÍ´úÂë
+     '' --ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½
     ,
-    ref_num   --´æ¿îÕË»§±àÂë
-/*,CASE WHEN gl_item_code like '11401%' THEN 'A021'         --´æ·ÅÍ¬Òµ»îÆÚ¿îÏî
-      WHEN gl_item_code like '11402%' THEN 'A022'         --´æ·ÅÍ¬Òµ¶¨ÆÚ¿îÏî
-      WHEN gl_item_code like '23401%' THEN 'A011'         --Í¬Òµ´æ·Å»îÆÚ¿îÏî
-      WHEN gl_item_code like '23402%' THEN 'A012'         --Í¬Òµ´æ·Å¶¨ÆÚ¿îÏî
-      WHEN gl_item_code like '23403%' AND mature_date IS NOT NULL THEN 'A012'
-      WHEN gl_item_code like '23403%' AND gl_item_code IS NULL THEN 'A011'
-     ELSE NULL  END  --´æ·ÅÒµÎñÀàÐÍ*/,
+    ref_num   --ï¿½ï¿½ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ï¿½ï¿½
+/*,CASE WHEN t.gl_item_code like '11401%' THEN 'A021'         --ï¿½ï¿½ï¿½Í¬Òµï¿½ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
+      WHEN t.gl_item_code like '11402%' THEN 'A022'         --ï¿½ï¿½ï¿½Í¬Òµï¿½ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
+      WHEN t.gl_item_code like '23401%' THEN 'A011'         --Í¬Òµï¿½ï¿½Å»ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
+      WHEN t.gl_item_code like '23402%' THEN 'A012'         --Í¬Òµï¿½ï¿½Å¶ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
+      WHEN t.gl_item_code like '23403%' AND t.mature_date IS NOT NULL THEN 'A012'
+      WHEN t.gl_item_code like '23403%' AND t.gl_item_code IS NULL THEN 'A011'
+     ELSE NULL  END  --ï¿½ï¿½ï¿½Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½*/,
      CASE
-       WHEN gl_item_code like '101101%' THEN
-        'A021' --´æ·ÅÍ¬Òµ»îÆÚ¿îÏî
-       WHEN gl_item_code like '101102%' THEN
-        'A022' --´æ·ÅÍ¬Òµ¶¨ÆÚ¿îÏî
-       WHEN gl_item_code like '201201%' THEN
-        'A011' --Í¬Òµ´æ·Å»îÆÚ¿îÏî
-       WHEN gl_item_code like '201202%' THEN
-        'A012' --Í¬Òµ´æ·Å¶¨ÆÚ¿îÏî
-       WHEN gl_item_code like '250202%' AND mature_date IS NOT NULL THEN
-        'A012' --·¢ÐÐÍ¬Òµ´æµ¥
-       WHEN gl_item_code like '250202%' AND gl_item_code IS NULL THEN
+       WHEN t.gl_item_code like '101101%' THEN
+        'A021' --ï¿½ï¿½ï¿½Í¬Òµï¿½ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
+       WHEN t.gl_item_code like '101102%' THEN
+        'A022' --ï¿½ï¿½ï¿½Í¬Òµï¿½ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
+       WHEN t.gl_item_code like '201201%' THEN
+        'A011' --Í¬Òµï¿½ï¿½Å»ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
+       WHEN t.gl_item_code like '201202%' THEN
+        'A012' --Í¬Òµï¿½ï¿½Å¶ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
+       WHEN t.gl_item_code like '250202%' AND mature_date IS NOT NULL THEN
+        'A012' --ï¿½ï¿½ï¿½ï¿½Í¬Òµï¿½æµ¥
+       WHEN t.gl_item_code like '250202%' AND gl_item_code IS NULL THEN
         'A011'
        ELSE
         NULL
-     END --´æ·ÅÒµÎñÀàÐÍ
+     END --ï¿½ï¿½ï¿½Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     TO_CHAR(start_date, 'YYYY-MM-DD') --ÆðÊ¼ÈÕÆÚ
-    ,
-     CASE
-       WHEN TO_CHAR(mature_date, 'YYYYMMDD') = '99991231' THEN
-        ''
-       ELSE
-        TO_CHAR(mature_date, 'YYYY-MM-DD')
-     END --µ½ÆÚÈÕÆÚ
+     TO_CHAR(t.start_date, 'YYYY-MM-DD') --ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½
     ,
      CASE
-       WHEN mature_date IS NULL THEN
+       WHEN TO_CHAR(t.mature_date, 'YYYYMMDD') = '99991231' THEN
         ''
        ELSE
-        TO_CHAR(months_between(mature_date, start_date))
-     END --´æ¿îÆÚÏÞÀàÐÍ
+        TO_CHAR(t.mature_date, 'YYYY-MM-DD')
+     END --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     'TR99' --¶¨¼Û»ù×¼ÀàÐÍ
+     CASE
+       WHEN t.mature_date IS NULL THEN
+        ''
+       ELSE
+        TO_CHAR(t.months_between(mature_date, start_date))
+     END --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     'RF01' --ÀûÂÊÀàÐÍ
+     'TR99' --ï¿½ï¿½ï¿½Û»ï¿½×¼ï¿½ï¿½ï¿½ï¿½
     ,
-     real_int_rat --Êµ¼ÊÀûÂÊ
+     'RF01' --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     '' --»ù×¼ÀûÂÊ
+     t.real_int_rat --Êµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     '' --ÀûÂÊ¸¡¶¯ÆµÂÊ
+     '' --ï¿½ï¿½×¼ï¿½ï¿½ï¿½ï¿½
+    ,
+     '' --ï¿½ï¿½ï¿½Ê¸ï¿½ï¿½ï¿½Æµï¿½ï¿½
 
-    ,NVL(A.CUST_NAM, T.CUST_ID) --¿Í»§Ãû³Æ  20240909  ÐÂÔö¿Í»§Ãû³Æ×Ö¶Î£¬´úÌæÖ®Ç°µÄ¿Í»§ºÅ×Ö¶Î±£´æ½»Ò×¶ÔÊÖ¿Í»§Ãû³Æ
+    ,NVL(A.CUST_NAM, T.CUST_ID) --ï¿½Í»ï¿½ï¿½ï¿½ï¿½ï¿½  20240909  ï¿½ï¿½ï¿½ï¿½ï¿½Í»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¶Î£ï¿½ï¿½ï¿½ï¿½ï¿½Ö®Ç°ï¿½Ä¿Í»ï¿½ï¿½ï¿½ï¿½Ö¶Î±ï¿½ï¿½æ½»ï¿½×¶ï¿½ï¿½Ö¿Í»ï¿½ï¿½ï¿½ï¿½ï¿½
 FROM SMTMODS.L_ACCT_FUND_MMFUND  t
 /*LEFT JOIN SMTMODS.L_TY_CUSTID_INFO f
 ON T.CUST_ID=F.CUST_NM*/
 LEFT JOIN CUST_TY_NEW A
 ON (T.CUST_ID = A.CUST_ID OR T.CUST_ID = A.ID_NO)
 WHERE T.DATA_DATE=IS_DATE
---AND substr(gl_item_code,'1','3') in ('114','234')
-AND substr(gl_item_code,'1','4') in ('1011','2012')
-/*AND (substr(gl_item_code,'1','4') in ('1011')   --´æ·ÅÍ¬Òµ
-     OR substr(gl_item_code,'1','6') in ('201202','201203'))--Í¬Òµ´æ·Å*/
-AND TO_CHAR(mature_date,'YYYYMMDD') >=IS_DATE  --modify by haorui 20241219 É¾³ýOR mature_date IS NULL ¿¨µôÀúÊ·ÎÞÐ§Êý¾Ý£¨5Ìõ£©
+--AND substr(t.gl_item_code,'1','3') in ('114','234')
+AND substr(t.gl_item_code,'1','4') in ('1011','2012')
+/*AND (substr(t.gl_item_code,'1','4') in ('1011')   --ï¿½ï¿½ï¿½Í¬Òµ
+     OR substr(t.gl_item_code,'1','6') in ('201202','201203'))--Í¬Òµï¿½ï¿½ï¿½*/
+AND TO_CHAR(t.mature_date,'YYYYMMDD') >=IS_DATE  --modify by haorui 20241219 É¾ï¿½ï¿½OR mature_date IS NULL ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê·ï¿½ï¿½Ð§ï¿½ï¿½ï¿½Ý£ï¿½5ï¿½ï¿½ï¿½ï¿½
 AND T.CURR_CD IN ('CNY','USD','JPY','EUR','HKD')
 --AND T.REF_NUM <> '41038441'
 --AND T.ACCT_STS NOT LIKE 'D%'
@@ -251,95 +275,95 @@ AND T.CURR_CD IN ('CNY','USD','JPY','EUR','HKD')
 COMMIT;
 /*
 INSERT INTO  DATACORE_IE_TY_TYCKJC
-    (datadate --Êý¾ÝÈÕÆÚ
+    (datadate --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     corpid --ÄÚ²¿»ú¹¹ºÅ
+     corpid --ï¿½Ú²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     custid --¿Í»§ºÅ
+     custid --ï¿½Í»ï¿½ï¿½ï¿½
     ,
-     orgtpcode --½ðÈÚ»ú¹¹ÀàÐÍ´úÂë
+     orgtpcode --ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½
     ,
-     accdepcode --´æ¿îÕË»§±àÂë
+     accdepcode --ï¿½ï¿½ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     finadeptype --´æ·ÅÒµÎñÀàÐÍ
+     finadeptype --ï¿½ï¿½ï¿½Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     startdate --ÆðÊ¼ÈÕÆÚ
+     startdate --ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½
     ,
-     maturedate --µ½ÆÚÈÕÆÚ
+     maturedate --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     deptermtype --´æ¿îÆÚÏÞÀàÐÍ
+     deptermtype --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     pricingtype --¶¨¼Û»ù×¼ÀàÐÍ
+     pricingtype --ï¿½ï¿½ï¿½Û»ï¿½×¼ï¿½ï¿½ï¿½ï¿½
     ,
-     ratetype --ÀûÂÊÀàÐÍ
+     ratetype --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     realrate --Êµ¼ÊÀûÂÊ
+     realrate --Êµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     baserate --»ù×¼ÀûÂÊ
+     baserate --ï¿½ï¿½×¼ï¿½ï¿½ï¿½ï¿½
     ,
-     floatfreq --ÀûÂÊ¸¡¶¯ÆµÂÊ
+     floatfreq --ï¿½ï¿½ï¿½Ê¸ï¿½ï¿½ï¿½Æµï¿½ï¿½
      )
     SELECT \*+ USE_HASH(T,A) PARALLEL(8)*\
-     VS_TEXT --Êý¾ÝÈÕÆÚ
+     VS_TEXT --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     '510001' --ÄÚ²¿»ú¹¹ºÅ
+     '510001' --ï¿½Ú²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     NVL(A.CUST_NAM, T.CUST_ID) --¿Í»§ºÅ
-     --,t.CPTYS_SHORT_NAME  --¿Í»§ºÅ£¨½»Ò×¶ÔÊÖ¿Í»§Ãû£©
+     NVL(A.CUST_NAM, T.CUST_ID) --ï¿½Í»ï¿½ï¿½ï¿½
+     --,t.CPTYS_SHORT_NAME  --ï¿½Í»ï¿½ï¿½Å£ï¿½ï¿½ï¿½ï¿½×¶ï¿½ï¿½Ö¿Í»ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     'C07' --½ðÈÚ»ú¹¹ÀàÐÍ´úÂë
+     'C07' --ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½
     ,
-     ACCT_NUM --´æ¿îÕË»§±àÂë
-\*,CASE WHEN gl_item_code like '11401%' THEN 'A021'         --´æ·ÅÍ¬Òµ»îÆÚ¿îÏî
-      WHEN gl_item_code like '11402%' THEN 'A022'         --´æ·ÅÍ¬Òµ¶¨ÆÚ¿îÏî
-      WHEN gl_item_code like '23401%' THEN 'A011'         --Í¬Òµ´æ·Å»îÆÚ¿îÏî
-      WHEN gl_item_code like '23402%' THEN 'A012'         --Í¬Òµ´æ·Å¶¨ÆÚ¿îÏî
+     ACCT_NUM --ï¿½ï¿½ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ï¿½ï¿½
+\*,CASE WHEN gl_item_code like '11401%' THEN 'A021'         --ï¿½ï¿½ï¿½Í¬Òµï¿½ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
+      WHEN gl_item_code like '11402%' THEN 'A022'         --ï¿½ï¿½ï¿½Í¬Òµï¿½ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
+      WHEN gl_item_code like '23401%' THEN 'A011'         --Í¬Òµï¿½ï¿½Å»ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
+      WHEN gl_item_code like '23402%' THEN 'A012'         --Í¬Òµï¿½ï¿½Å¶ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
       WHEN gl_item_code like '23403%' AND mature_date IS NOT NULL THEN 'A012'
       WHEN gl_item_code like '23403%' AND gl_item_code IS NULL THEN 'A011'
-     ELSE NULL  END  --´æ·ÅÒµÎñÀàÐÍ*\,
+     ELSE NULL  END  --ï¿½ï¿½ï¿½Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½*\,
      CASE
-       WHEN gl_item_code like '101101%' THEN
-        'A011' --´æ·ÅÍ¬Òµ»îÆÚ¿îÏî
-       WHEN gl_item_code like '101102%' THEN
-        'A022' --´æ·ÅÍ¬Òµ¶¨ÆÚ¿îÏî
-       WHEN gl_item_code like '201201%' THEN
-        'A021' --Í¬Òµ´æ·Å»îÆÚ¿îÏî
-       WHEN gl_item_code like '201202%' THEN
-        'A022' --Í¬Òµ´æ·Å¶¨ÆÚ¿îÏî
-       WHEN gl_item_code like '250202%' AND mature_date IS NOT NULL THEN
-        'A022' --·¢ÐÐÍ¬Òµ´æµ¥
-       WHEN gl_item_code like '250202%' AND gl_item_code IS NULL THEN
+       WHEN t.gl_item_code like '101101%' THEN
+        'A011' --ï¿½ï¿½ï¿½Í¬Òµï¿½ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
+       WHEN t.gl_item_code like '101102%' THEN
+        'A022' --ï¿½ï¿½ï¿½Í¬Òµï¿½ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
+       WHEN t.gl_item_code like '201201%' THEN
+        'A021' --Í¬Òµï¿½ï¿½Å»ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
+       WHEN t.gl_item_code like '201202%' THEN
+        'A022' --Í¬Òµï¿½ï¿½Å¶ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½
+       WHEN t.gl_item_code like '250202%' AND mature_date IS NOT NULL THEN
+        'A022' --ï¿½ï¿½ï¿½ï¿½Í¬Òµï¿½æµ¥
+       WHEN t.gl_item_code like '250202%' AND gl_item_code IS NULL THEN
         'A021'
        ELSE
         NULL
-     END --´æ·ÅÒµÎñÀàÐÍ
+     END --ï¿½ï¿½ï¿½Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     TO_CHAR(start_date, 'YYYY-MM-DD') --ÆðÊ¼ÈÕÆÚ
+     TO_CHAR(t.start_date, 'YYYY-MM-DD') --ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½
     ,
      CASE
-       WHEN TO_CHAR(mature_date, 'YYYYMMDD') = '99991231' THEN
+       WHEN TO_CHAR(t.mature_date, 'YYYYMMDD') = '99991231' THEN
         ''
        ELSE
-        TO_CHAR(mature_date, 'YYYY-MM-DD')
-    END--µ½ÆÚÈÕÆÚ
+        TO_CHAR(t.mature_date, 'YYYY-MM-DD')
+    END--ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
      CASE
-       WHEN mature_date IS NULL OR
+       WHEN t.mature_date IS NULL OR
             TO_CHAR(T.MATURE_DATE, 'YYYYMMDD') = '99991231' THEN
         ''
        ELSE
-        TO_CHAR(months_between(mature_date, start_date))
-     END --´æ¿îÆÚÏÞÀàÐÍ
+        TO_CHAR(months_between(t.mature_date, start_date))
+     END --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     'TR99' --¶¨¼Û»ù×¼ÀàÐÍ
+     'TR99' --ï¿½ï¿½ï¿½Û»ï¿½×¼ï¿½ï¿½ï¿½ï¿½
     ,
-     'RF01' --ÀûÂÊÀàÐÍ
+     'RF01' --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     real_int_rat --Êµ¼ÊÀûÂÊ
+     t.real_int_rat --Êµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     '' --»ù×¼ÀûÂÊ
+     '' --ï¿½ï¿½×¼ï¿½ï¿½ï¿½ï¿½
     ,
-     '' --ÀûÂÊ¸¡¶¯ÆµÂÊ
+     '' --ï¿½ï¿½ï¿½Ê¸ï¿½ï¿½ï¿½Æµï¿½ï¿½
 FROM SMTMODS.L_ACCT_FUND_MMFUND  t
 
 LEFT JOIN CUST_TY_NEW A
@@ -351,18 +375,18 @@ AND (TO_CHAR(mature_date,'YYYYMMDD') >=IS_DATE OR
 mature_date IS NULL )
 AND T.CURR_CD IN ('CNY','USD','JPY','EUR','HKD')
 \*AND T.ACCT_NUM IN('60599235000000437_1')*\
---20231109wxb¸ù¾ÝÐèÇóÉ¾³ýAND T.ACCT_NUM IN('60599235000000437_1')Õâ¸öÌõ¼þ
+--20231109wxbï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É¾ï¿½ï¿½AND T.ACCT_NUM IN('60599235000000437_1')ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
 ;
-COMMIT;*/--20231120wxbÉÏÃæµÄÂß¼­¿ÉÒÔ³öÅÍÊ¯µÄÊý¾Ý
+COMMIT;*/--20231120wxbï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ß¼ï¿½ï¿½ï¿½ï¿½Ô³ï¿½ï¿½ï¿½Ê¯ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
-  ----µ±Ç°Êý¾ÝÈÕÆÚÐÂÔöµÄÍ¬Òµ´æ¿îÒµÎñµÄ¿Í»§¼°½ðÈÚ»ú¹¹ÀàÐÍ´úÂë add by chm 20231012
+  ----ï¿½ï¿½Ç°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¬Òµï¿½ï¿½ï¿½Òµï¿½ï¿½Ä¿Í»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½ add by chm 20231012
 
   INSERT INTO TX_JRJG_DIF
     SELECT DISTINCT CUST_NAM, ORGTPCODE
-      FROM (SELECT A.CUST_NAME AS CUST_NAM, --¿Í»§ºÅ      --½«Ö®Ç°´Ócust_idÈ¡ÊýÒÔ¼°Ïà¹ØµÄ¹ØÁªÌõ¼þ¸ÄÎªcust_name
-                   NVL(NVL(B.JRJG, TRIM(C.FINA_CODE_NEW)), A.ORGTPCODE) AS ORGTPCODE, --½ðÈÚ»ú¹¹ÀàÐÍ´úÂë
-                   ACCDEPCODE --´æ¿îÕË»§±àÂë
+      FROM (SELECT A.CUST_NAME AS CUST_NAM, --ï¿½Í»ï¿½ï¿½ï¿½      --ï¿½ï¿½Ö®Ç°ï¿½ï¿½cust_idÈ¡ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½ï¿½ØµÄ¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îªcust_name
+                   NVL(NVL(B.JRJG, TRIM(C.FINA_CODE_NEW)), A.ORGTPCODE) AS ORGTPCODE, --ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½
+                   a.ACCDEPCODE --ï¿½ï¿½ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ï¿½ï¿½
               FROM DATACORE_IE_TY_TYCKJC A
               LEFT JOIN DATACORE_TMP_TX_JRJG B
                 ON A.CUST_NAME = B.CUST_ID
@@ -384,116 +408,116 @@ COMMIT;*/--20231120wxbÉÏÃæµÄÂß¼­¿ÉÒÔ³öÅÍÊ¯µÄÊý¾Ý
  SP_IRS_PARTITIONS(IS_DATE,'IE_TY_TYCKJC',OI_RETCODE);
 
 INSERT INTO  IE_TY_TYCKJC
-    (datadate --Êý¾ÝÈÕÆÚ
+    (datadate --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     corpid --ÄÚ²¿»ú¹¹ºÅ
+     corpid --ï¿½Ú²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     custid --¿Í»§ºÅ
+     custid --ï¿½Í»ï¿½ï¿½ï¿½
     ,
-     orgtpcode --½ðÈÚ»ú¹¹ÀàÐÍ´úÂë
+     orgtpcode --ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½
     ,
-     accdepcode --´æ¿îÕË»§±àÂë
+     accdepcode --ï¿½ï¿½ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     finadeptype --´æ·ÅÒµÎñÀàÐÍ
+     finadeptype --ï¿½ï¿½ï¿½Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     startdate --ÆðÊ¼ÈÕÆÚ
+     startdate --ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½
     ,
-     maturedate --µ½ÆÚÈÕÆÚ
+     maturedate --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     deptermtype --´æ¿îÆÚÏÞÀàÐÍ
+     deptermtype --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     pricingtype --¶¨¼Û»ù×¼ÀàÐÍ
+     pricingtype --ï¿½ï¿½ï¿½Û»ï¿½×¼ï¿½ï¿½ï¿½ï¿½
     ,
-     ratetype --ÀûÂÊÀàÐÍ
+     ratetype --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     realrate --Êµ¼ÊÀûÂÊ
+     realrate --Êµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     baserate --»ù×¼ÀûÂÊ
+     baserate --ï¿½ï¿½×¼ï¿½ï¿½ï¿½ï¿½
     ,
-     floatfreq --ÀûÂÊ¸¡¶¯ÆµÂÊ
+     floatfreq --ï¿½ï¿½ï¿½Ê¸ï¿½ï¿½ï¿½Æµï¿½ï¿½
     ,
-     cjrq --²É¼¯ÈÕÆÚ
+     cjrq --ï¿½É¼ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     nbjgh --ÄÚ²¿»ú¹¹ºÅ
+     nbjgh --ï¿½Ú²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     biz_line_id --ÒµÎñÌõÏß
+     biz_line_id --Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     IRS_CORP_ID --·¨ÈË»ú¹¹ID
+     IRS_CORP_ID --ï¿½ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ID
      )
 
-   SELECT DATADATE --Êý¾ÝÈÕÆÚ
+   SELECT a.DATADATE --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           CORPID --ÄÚ²¿»ú¹¹ºÅ
+           a.CORPID --ï¿½Ú²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           A.CUSTID --¿Í»§ºÅ   add by chm 20231012 ÒµÎñÊÖ¶¯²¹Â¼½ðÈÚ»ú¹¹ÀàÐÍ´úÂë   20240909    NR±í¼Ó¹¤ÐèÒª¿Í»§ºÅ£¬¶ÔÊý¾Ý½øÐÐÌáÈ¡£¬´ËÇ°Õâ¸ö×Ö¶Î´æµÄÊÇ½»Ò×¶ÔÊÖ¿Í»§Ãû³Æ
+           A.CUSTID --ï¿½Í»ï¿½ï¿½ï¿½   add by chm 20231012 Òµï¿½ï¿½ï¿½Ö¶ï¿½ï¿½ï¿½Â¼ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½   20240909    NRï¿½ï¿½ï¿½Ó¹ï¿½ï¿½ï¿½Òªï¿½Í»ï¿½ï¿½Å£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý½ï¿½ï¿½ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½Ç°ï¿½ï¿½ï¿½ï¿½Ö¶Î´ï¿½ï¿½ï¿½Ç½ï¿½ï¿½×¶ï¿½ï¿½Ö¿Í»ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
            CASE
              WHEN D.CUST_NAM IS NOT NULL THEN
-              '¿Õ'
+              'ï¿½ï¿½'
              ELSE
               NVL(NVL(B.JRJG, TRIM(C.FINA_CODE_NEW)), A.ORGTPCODE)
-           END --½ðÈÚ»ú¹¹ÀàÐÍ´úÂë MDF BY CHM 20231012
+           END --ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½ MDF BY CHM 20231012
           ,
-           ACCDEPCODE --´æ¿îÕË»§±àÂë
+           a.ACCDEPCODE --ï¿½ï¿½ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           FINADEPTYPE --´æ·ÅÒµÎñÀàÐÍ
+           a.FINADEPTYPE --ï¿½ï¿½ï¿½Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           STARTDATE --ÆðÊ¼ÈÕÆÚ
+           a.STARTDATE --ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½
           ,
-           MATUREDATE --µ½ÆÚÈÕÆÚ
+           a.MATUREDATE --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
            CASE
-             WHEN (DEPTERMTYPE = '' OR DEPTERMTYPE IS NULL OR FINADEPTYPE = 'A011' OR FINADEPTYPE = 'A021') THEN   -- ´æ·ÅÒµÎñÀàÐÍÎªA011»òA021»îÆÚ´æ·ÅÊ±£¬´æ¿îÆÚÏÞÀàÐÍÎª01»îÆÚ mdf 20240220
+             WHEN (a.DEPTERMTYPE = '' OR a.DEPTERMTYPE IS NULL OR FINADEPTYPE = 'A011' OR FINADEPTYPE = 'A021') THEN   -- ï¿½ï¿½ï¿½Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÎªA011ï¿½ï¿½A021ï¿½ï¿½ï¿½Ú´ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îª01ï¿½ï¿½ï¿½ï¿½ mdf 20240220
               '01'
-             WHEN DEPTERMTYPE < 1 THEN
+             WHEN a.DEPTERMTYPE < 1 THEN
               '02'
-             WHEN DEPTERMTYPE = '1' THEN
+             WHEN a.DEPTERMTYPE = '1' THEN
               '03'
-             WHEN DEPTERMTYPE < 3 THEN
+             WHEN a.DEPTERMTYPE < 3 THEN
               '04'
-             WHEN DEPTERMTYPE = '3' THEN
+             WHEN a.DEPTERMTYPE = '3' THEN
               '05'
-             WHEN DEPTERMTYPE < 6 THEN
+             WHEN a.DEPTERMTYPE < 6 THEN
               '06'
-             WHEN DEPTERMTYPE = '6' THEN
+             WHEN a.DEPTERMTYPE = '6' THEN
               '07'
-             WHEN DEPTERMTYPE < 12 THEN
+             WHEN a.DEPTERMTYPE < 12 THEN
               '08'
-             WHEN DEPTERMTYPE = '12' THEN
+             WHEN a.DEPTERMTYPE = '12' THEN
               '09'
-             WHEN DEPTERMTYPE < 24 THEN
+             WHEN a.DEPTERMTYPE < 24 THEN
               '10'
-             WHEN DEPTERMTYPE = '24' THEN
+             WHEN a.DEPTERMTYPE = '24' THEN
               '11'
-             WHEN DEPTERMTYPE < 36 THEN
+             WHEN a.DEPTERMTYPE < 36 THEN
               '12'
-             WHEN DEPTERMTYPE = '36' THEN
+             WHEN a.DEPTERMTYPE = '36' THEN
               '13'
-             WHEN DEPTERMTYPE < 60 THEN
+             WHEN a.DEPTERMTYPE < 60 THEN
               '14'
-             WHEN DEPTERMTYPE = '60' THEN
+             WHEN a.DEPTERMTYPE = '60' THEN
               '15'
-             WHEN DEPTERMTYPE > 60 THEN
+             WHEN a.DEPTERMTYPE > 60 THEN
               '16'
              ELSE
               NULL
-           END --´æ¿îÆÚÏÞÀàÐÍ
+           END --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           PRICINGTYPE --¶¨¼Û»ù×¼ÀàÐÍ
+           a.PRICINGTYPE --ï¿½ï¿½ï¿½Û»ï¿½×¼ï¿½ï¿½ï¿½ï¿½
           ,
-           RATETYPE --ÀûÂÊÀàÐÍ
+           a.RATETYPE --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           REALRATE --Êµ¼ÊÀûÂÊ
+           a.REALRATE --Êµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           BASERATE --»ù×¼ÀûÂÊ
+           a.BASERATE --ï¿½ï¿½×¼ï¿½ï¿½ï¿½ï¿½
           ,
-           '' --ÀûÂÊ¸¡¶¯ÆµÂÊ
+           '' --ï¿½ï¿½ï¿½Ê¸ï¿½ï¿½ï¿½Æµï¿½ï¿½
           ,
-           IS_DATE --²É¼¯ÈÕÆÚ
+           IS_DATE --ï¿½É¼ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           CORPID --ÄÚ²¿»ú¹¹ºÅ
+           a.CORPID --ï¿½Ú²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           '99' --ÒµÎñÌõÏß
+           '99' --Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 ,CASE WHEN A.CORPID LIKE '51%' THEN '510000'
           WHEN A.CORPID LIKE '52%' THEN '520000'
           WHEN A.CORPID LIKE '53%' THEN '530000'
@@ -504,22 +528,22 @@ INSERT INTO  IE_TY_TYCKJC
           WHEN A.CORPID LIKE '58%' THEN '580000'
           WHEN A.CORPID LIKE '59%' THEN '590000'
           WHEN A.CORPID LIKE '60%' THEN '600000'
-           ELSE '990000' END  --·¨ÈË»ú¹¹ID
+           ELSE '990000' END  --ï¿½ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ID
 FROM DATACORE_IE_TY_TYCKJC A
 LEFT JOIN DATACORE_TMP_TX_JRJG B
        ON A.CUST_NAME=B.CUST_ID
-LEFT JOIN L_CUST_BILL_TY_CKTMP C  --add by chm 20230615 ¼õÉÙ½ðÈÚ»ú¹¹ÀàÐÍ´úÂëÊÖ¶¯²¹Â¼
+LEFT JOIN L_CUST_BILL_TY_CKTMP C  --add by chm 20230615 ï¿½ï¿½ï¿½Ù½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½ï¿½Ö¶ï¿½ï¿½ï¿½Â¼
  ON A.CUST_NAME = C.FINA_ORG_NAME
-      LEFT JOIN TX_JRJG_DIF D --ADD BY CHM 20231012 ÐÂÔöÍ¬Òµ¿Í»§£¬³ÊÏÖÔÚÓ¦ÓÃ¶Ë£¬ÒµÎñÊÖ¶¯²¹Â¼½ðÈÚ»ú¹¹ÀàÐÍ´úÂë
+      LEFT JOIN TX_JRJG_DIF D --ADD BY CHM 20231012 ï¿½ï¿½ï¿½ï¿½Í¬Òµï¿½Í»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½Ã¶Ë£ï¿½Òµï¿½ï¿½ï¿½Ö¶ï¿½ï¿½ï¿½Â¼ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½
         ON A.CUST_NAME = D.CUST_NAM
   --WHERE A.CORPID NOT LIKE '5100%';
-  WHERE A.CORPID NOT IN ('550005','550013')--add by wxb 20240221 ²×ÏØÕâÁ½¸ö»ú¹¹ÒÑ³·²¢
+  WHERE A.CORPID NOT IN ('550005','550013')--add by wxb 20240221 ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ñ³ï¿½ï¿½ï¿½
   ;
 COMMIT;
 
 
 
---Í¨¹ýÕâ¶ÎÂß¼­¸øÒµÎñ²éÑ¯½»Ò×¶ÔÊÖÃû³Æ
+--Í¨ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ß¼ï¿½ï¿½ï¿½Òµï¿½ï¿½ï¿½Ñ¯ï¿½ï¿½ï¿½×¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 /*
 
 
@@ -533,15 +557,15 @@ SELECT    a.custid,CASE
               D.CUST_NAM
              ELSE
               ''
-           END AS CUST_ID --¿Í»§ºÅ   add by chm 20231012 ÒµÎñÊÖ¶¯²¹Â¼½ðÈÚ»ú¹¹ÀàÐÍ´úÂë
+           END AS CUST_ID --ï¿½Í»ï¿½ï¿½ï¿½   add by chm 20231012 Òµï¿½ï¿½ï¿½Ö¶ï¿½ï¿½ï¿½Â¼ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½
 FROM DATACORE_IE_TY_TYCKJC A
 LEFT JOIN DATACORE_TMP_TX_JRJG B
        ON A.CUST_NAME=B.CUST_ID
-LEFT JOIN L_CUST_BILL_TY_CKTMP C  --add by chm 20230615 ¼õÉÙ½ðÈÚ»ú¹¹ÀàÐÍ´úÂëÊÖ¶¯²¹Â¼
+LEFT JOIN L_CUST_BILL_TY_CKTMP C  --add by chm 20230615 ï¿½ï¿½ï¿½Ù½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½ï¿½Ö¶ï¿½ï¿½ï¿½Â¼
  ON A.CUST_NAME = C.FINA_ORG_NAME
-      LEFT JOIN TX_JRJG_DIF D --ADD BY CHM 20231012 ÐÂÔöÍ¬Òµ¿Í»§£¬³ÊÏÖÔÚÓ¦ÓÃ¶Ë£¬ÒµÎñÊÖ¶¯²¹Â¼½ðÈÚ»ú¹¹ÀàÐÍ´úÂë
+      LEFT JOIN TX_JRJG_DIF D --ADD BY CHM 20231012 ï¿½ï¿½ï¿½ï¿½Í¬Òµï¿½Í»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½Ã¶Ë£ï¿½Òµï¿½ï¿½ï¿½Ö¶ï¿½ï¿½ï¿½Â¼ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½
         ON A.CUST_NAME = D.CUST_NAM
-  WHERE A.CORPID NOT IN ('550005','550013')--add by wxb 20240221 ²×ÏØÕâÁ½¸ö»ú¹¹ÒÑ³·²¢
+  WHERE A.CORPID NOT IN ('550005','550013')--add by wxb 20240221 ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ñ³ï¿½ï¿½ï¿½
   and a.custid = ''
   ;*/
 
@@ -550,142 +574,142 @@ LEFT JOIN L_CUST_BILL_TY_CKTMP C  --add by chm 20230615 ¼õÉÙ½ðÈÚ»ú¹¹ÀàÐÍ´úÂëÊÖ¶¯
 
 /*
  \* INSERT INTO IE_TY_TYCKJC
-    (datadate --Êý¾ÝÈÕÆÚ
+    (datadate --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     corpid --ÄÚ²¿»ú¹¹ºÅ
+     corpid --ï¿½Ú²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     custid --¿Í»§ºÅ
+     custid --ï¿½Í»ï¿½ï¿½ï¿½
     ,
-     orgtpcode --½ðÈÚ»ú¹¹ÀàÐÍ´úÂë
+     orgtpcode --ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½
     ,
-     accdepcode --´æ¿îÕË»§±àÂë
+     accdepcode --ï¿½ï¿½ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     finadeptype --´æ·ÅÒµÎñÀàÐÍ
+     finadeptype --ï¿½ï¿½ï¿½Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     startdate --ÆðÊ¼ÈÕÆÚ
+     startdate --ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½
     ,
-     maturedate --µ½ÆÚÈÕÆÚ
+     maturedate --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     deptermtype --´æ¿îÆÚÏÞÀàÐÍ
+     deptermtype --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     pricingtype --¶¨¼Û»ù×¼ÀàÐÍ
+     pricingtype --ï¿½ï¿½ï¿½Û»ï¿½×¼ï¿½ï¿½ï¿½ï¿½
     ,
-     ratetype --ÀûÂÊÀàÐÍ
+     ratetype --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     realrate --Êµ¼ÊÀûÂÊ
+     realrate --Êµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     baserate --»ù×¼ÀûÂÊ
+     baserate --ï¿½ï¿½×¼ï¿½ï¿½ï¿½ï¿½
     ,
-     floatfreq --ÀûÂÊ¸¡¶¯ÆµÂÊ
+     floatfreq --ï¿½ï¿½ï¿½Ê¸ï¿½ï¿½ï¿½Æµï¿½ï¿½
     ,
-     cjrq --²É¼¯ÈÕÆÚ
+     cjrq --ï¿½É¼ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     nbjgh --ÄÚ²¿»ú¹¹ºÅ
+     nbjgh --ï¿½Ú²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     biz_line_id --ÒµÎñÌõÏß
+     biz_line_id --Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     ,
-     IRS_CORP_ID --·¨ÈË»ú¹¹ID
+     IRS_CORP_ID --ï¿½ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ID
      )
-SELECT DATADATE --Êý¾ÝÈÕÆÚ
+SELECT a.DATADATE --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           CORPID --ÄÚ²¿»ú¹¹ºÅ
+           a.CORPID --ï¿½Ú²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           '' --¿Í»§ºÅ
+           '' --ï¿½Í»ï¿½ï¿½ï¿½
           ,
            CASE
              WHEN B.JRJG IS NOT NULL THEN
               B.JRJG
              ELSE
               A.ORGTPCODE
-           END --½ðÈÚ»ú¹¹ÀàÐÍ´úÂë
+           END --ï¿½ï¿½ï¿½Ú»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½
           ,
-           ACCDEPCODE --´æ¿îÕË»§±àÂë
+          a.ACCDEPCODE --ï¿½ï¿½ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           FINADEPTYPE --´æ·ÅÒµÎñÀàÐÍ
+           a.FINADEPTYPE --ï¿½ï¿½ï¿½Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           STARTDATE --ÆðÊ¼ÈÕÆÚ
+           a.STARTDATE --ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½
           ,
-           MATUREDATE --µ½ÆÚÈÕÆÚ
+           a.MATUREDATE --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
            CASE
-             WHEN (DEPTERMTYPE = '' OR DEPTERMTYPE IS NULL OR FINADEPTYPE = 'A011' OR FINADEPTYPE = 'A021') THEN -- ´æ·ÅÒµÎñÀàÐÍÎªA011»òA021»îÆÚ´æ·ÅÊ±£¬´æ¿îÆÚÏÞÀàÐÍÎª01»îÆÚ mdf 20240220
+             WHEN (a.DEPTERMTYPE = '' OR a.DEPTERMTYPE IS NULL OR FINADEPTYPE = 'A011' OR FINADEPTYPE = 'A021') THEN -- ï¿½ï¿½ï¿½Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÎªA011ï¿½ï¿½A021ï¿½ï¿½ï¿½Ú´ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îª01ï¿½ï¿½ï¿½ï¿½ mdf 20240220
               '01'
-             WHEN DEPTERMTYPE < 1 THEN
+             WHEN a.DEPTERMTYPE < 1 THEN
               '02'
-             WHEN DEPTERMTYPE = '1' THEN
+             WHEN a.DEPTERMTYPE = '1' THEN
               '03'
-             WHEN DEPTERMTYPE < 3 THEN
+             WHEN a.DEPTERMTYPE < 3 THEN
               '04'
-             WHEN DEPTERMTYPE = '3' THEN
+             WHEN a.DEPTERMTYPE = '3' THEN
               '05'
-             WHEN DEPTERMTYPE < 6 THEN
+             WHEN a.DEPTERMTYPE < 6 THEN
               '06'
-             WHEN DEPTERMTYPE = '6' THEN
+             WHEN a.DEPTERMTYPE = '6' THEN
               '07'
-             WHEN DEPTERMTYPE < 12 THEN
+             WHEN a.DEPTERMTYPE < 12 THEN
               '08'
-             WHEN DEPTERMTYPE = '12' THEN
+             WHEN a.DEPTERMTYPE = '12' THEN
               '09'
-             WHEN DEPTERMTYPE < 24 THEN
+             WHEN a.DEPTERMTYPE < 24 THEN
               '10'
-             WHEN DEPTERMTYPE = '24' THEN
+             WHEN a.DEPTERMTYPE = '24' THEN
               '11'
-             WHEN DEPTERMTYPE < 36 THEN
+             WHEN a.DEPTERMTYPE < 36 THEN
               '12'
-             WHEN DEPTERMTYPE = '36' THEN
+             WHEN a.DEPTERMTYPE = '36' THEN
               '13'
-             WHEN DEPTERMTYPE < 60 THEN
+             WHEN a.DEPTERMTYPE < 60 THEN
               '14'
-             WHEN DEPTERMTYPE = '60' THEN
+             WHEN a.DEPTERMTYPE = '60' THEN
               '15'
-             WHEN DEPTERMTYPE > 60 THEN
+             WHEN a.DEPTERMTYPE > 60 THEN
               '16'
              ELSE
               NULL
-           END --´æ¿îÆÚÏÞÀàÐÍ
+           END --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           PRICINGTYPE --¶¨¼Û»ù×¼ÀàÐÍ
+           a.PRICINGTYPE --ï¿½ï¿½ï¿½Û»ï¿½×¼ï¿½ï¿½ï¿½ï¿½
           ,
-           RATETYPE --ÀûÂÊÀàÐÍ
+           a.RATETYPE --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           REALRATE --Êµ¼ÊÀûÂÊ
+           a.REALRATE --Êµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           BASERATE --»ù×¼ÀûÂÊ
+           a.BASERATE --ï¿½ï¿½×¼ï¿½ï¿½ï¿½ï¿½
           ,
-           FLOATFREQ --ÀûÂÊ¸¡¶¯ÆµÂÊ
+           a.FLOATFREQ --ï¿½ï¿½ï¿½Ê¸ï¿½ï¿½ï¿½Æµï¿½ï¿½
           ,
-           IS_DATE --²É¼¯ÈÕÆÚ
+           IS_DATE --ï¿½É¼ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           CORPID --ÄÚ²¿»ú¹¹ºÅ
+           a.CORPID --ï¿½Ú²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           '99' --ÒµÎñÌõÏß
+           '99' --Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
           ,
-           '510000' --·¨ÈË»ú¹¹ID
+           '510000' --ï¿½ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ID
 FROM DATACORE_IE_TY_TYCKJC A
 LEFT JOIN DATACORE_TMP_TX_JRJG B
        ON A.CUSTID=B.CUST_ID
 WHERE A.CORPID LIKE '5100%'*\
  \*AND A.ACCDEPCODE = '60599235000000437_1'*\ ;
- --20231109wxb¸ù¾ÝÐèÇóÉ¾³ýÕâ¸öÌõ¼þAND A.ACCDEPCODE = '60599235000000437_1'
+ --20231109wxbï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½AND A.ACCDEPCODE = '60599235000000437_1'
 \*COMMIT;*\*/
   -------------------------------------------------------------------------
-  OI_RETCODE := 0; --ÉèÖÃÒì³£×´Ì¬Îª0 ³É¹¦×´Ì¬
---·µ»ØÖÐÎÄÃèÊö
-  OI_RETCODE2 := '³É¹¦!';
-  /*COMMIT; --·ÇÌØÊâ´¦ÀíÖ»ÄÜÔÚ×îºóÒ»´ÎÌá½»*/
-  -- ½áÊøÈÕÖ¾
+  OI_RETCODE := 0; --ï¿½ï¿½ï¿½ï¿½ï¿½ì³£×´Ì¬Îª0 ï¿½É¹ï¿½×´Ì¬
+--ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+  OI_RETCODE2 := 'ï¿½É¹ï¿½!';
+  /*COMMIT; --ï¿½ï¿½ï¿½ï¿½ï¿½â´¦ï¿½ï¿½Ö»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½á½»*/
+  -- ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¾
   VS_STEP := 'END';
   SP_IRS_LOG(VS_PROCEDURE_NAME, VS_STEP, VI_ERRORCODE, IS_DATE, IS_DATE);
 EXCEPTION
   WHEN OTHERS THEN
-    --Èç¹û³öÏÖÒì³£
-    VI_ERRORCODE := SQLCODE; --ÉèÖÃÒì³£´úÂë
+    --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ì³£
+    VI_ERRORCODE := SQLCODE; --ï¿½ï¿½ï¿½ï¿½ï¿½ì³£ï¿½ï¿½ï¿½ï¿½
     VS_TEXT      := VS_STEP || '|' || IS_DATE || '|' ||
-                    SUBSTR(SQLERRM, 1, 200); --ÉèÖÃÒì³£ÃèÊö
-    ROLLBACK; --Êý¾Ý»Ø¹ö
-    OI_RETCODE := -1; --ÉèÖÃÒì³£×´Ì¬Îª-1
-    --²åÈëÈÕÖ¾±í£¬¼ÇÂ¼´íÎó
-    --·µ»ØÖÐÎÄÃèÊö
+                    SUBSTR(SQLERRM, 1, 200); --ï¿½ï¿½ï¿½ï¿½ï¿½ì³£ï¿½ï¿½ï¿½ï¿½
+    ROLLBACK; --ï¿½ï¿½ï¿½Ý»Ø¹ï¿½
+    OI_RETCODE := -1; --ï¿½ï¿½ï¿½ï¿½ï¿½ì³£×´Ì¬Îª-1
+    --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â¼ï¿½ï¿½ï¿½ï¿½
+    --ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
     OI_RETCODE2 := SUBSTR(SQLERRM, 1, 200);
 

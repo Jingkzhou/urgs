@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Empty, message, Tag } from 'antd';
+import { Descriptions, Empty, Modal, Tag } from 'antd';
 import { LinkData, NodeData, RELATION_STYLES } from '../types';
 import CodeModal from './CodeModal';
 
@@ -24,6 +24,15 @@ interface SelectedCode {
     sourceFile?: string;
     linkType?: string;
     searchTerm?: string;
+}
+
+interface SelectedRelation {
+    link: LinkData;
+    sourceTable: string;
+    targetTable: string;
+    sourceColumns: string[];
+    targetColumns: string[];
+    sourceFile?: string;
 }
 
 const TABLE_LEVEL_COLUMN = '__table_level__';
@@ -101,6 +110,23 @@ const formatColumnSummary = (columns: string[], fallback: string) => {
     return `${columns.slice(0, 2).join('、')} 等 ${columns.length} 个字段`;
 };
 
+const formatDetailList = (items: string[]) => (items.length > 0 ? items.join('、') : '-');
+
+const getRelationLevelLabel = (level?: string) => {
+    switch (level) {
+        case 'table_fallback':
+            return '表级兜底';
+        case 'table_mixed':
+            return '字段聚合 + 表级兜底';
+        case 'table_from_column':
+            return '字段关系聚合';
+        case 'table_evidence':
+            return '表级解析证据';
+        default:
+            return level || '字段/表级聚合';
+    }
+};
+
 const getSourceColumnSearchTerm = (link: LinkData, nodes: NodeData[]) => {
     const sourceNode = nodes.find(node => node.id === link.sourceNodeId);
     const sourceCol = sourceNode?.columns.find(col => col.id === link.sourceColumnId);
@@ -130,7 +156,7 @@ const buildColumnUsage = (links: LinkData[]) => {
 
 const getColumnKey = (nodeId: string, colId?: string) => `${nodeId}::${colId || TABLE_LEVEL_COLUMN}`;
 
-const buildDownstreamHighlight = (startKey: string | null, links: LinkData[]) => {
+const buildLineageHighlight = (startKey: string | null, links: LinkData[]) => {
     const activeLinks = new Set<string>();
     const activeColumns = new Set<string>();
     if (!startKey) {
@@ -138,37 +164,42 @@ const buildDownstreamHighlight = (startKey: string | null, links: LinkData[]) =>
     }
 
     const outgoing = new Map<string, LinkData[]>();
-    const connected = new Map<string, LinkData[]>();
+    const incoming = new Map<string, LinkData[]>();
     links.forEach(link => {
         const sourceKey = getColumnKey(link.sourceNodeId, link.sourceColumnId);
         const targetKey = getColumnKey(link.targetNodeId, link.targetColumnId);
         outgoing.set(sourceKey, [...(outgoing.get(sourceKey) || []), link]);
-        connected.set(sourceKey, [...(connected.get(sourceKey) || []), link]);
-        connected.set(targetKey, [...(connected.get(targetKey) || []), link]);
+        incoming.set(targetKey, [...(incoming.get(targetKey) || []), link]);
     });
 
     activeColumns.add(startKey);
-    const queue = [startKey];
-    while (queue.length > 0) {
-        const currentKey = queue.shift()!;
-        (outgoing.get(currentKey) || []).forEach(link => {
-            if (activeLinks.has(link.id)) {
-                return;
-            }
-            activeLinks.add(link.id);
-            const targetKey = getColumnKey(link.targetNodeId, link.targetColumnId);
-            activeColumns.add(targetKey);
-            queue.push(targetKey);
-        });
-    }
 
-    if (activeLinks.size === 0) {
-        (connected.get(startKey) || []).forEach(link => {
-            activeLinks.add(link.id);
-            activeColumns.add(getColumnKey(link.sourceNodeId, link.sourceColumnId));
-            activeColumns.add(getColumnKey(link.targetNodeId, link.targetColumnId));
-        });
-    }
+    const walk = (
+        edgeMap: Map<string, LinkData[]>,
+        getNextKey: (link: LinkData) => string
+    ) => {
+        const visitedColumns = new Set<string>([startKey]);
+        const queue = [startKey];
+        while (queue.length > 0) {
+            const currentKey = queue.shift()!;
+            (edgeMap.get(currentKey) || []).forEach(link => {
+                activeLinks.add(link.id);
+                const sourceKey = getColumnKey(link.sourceNodeId, link.sourceColumnId);
+                const targetKey = getColumnKey(link.targetNodeId, link.targetColumnId);
+                activeColumns.add(sourceKey);
+                activeColumns.add(targetKey);
+
+                const nextKey = getNextKey(link);
+                if (!visitedColumns.has(nextKey)) {
+                    visitedColumns.add(nextKey);
+                    queue.push(nextKey);
+                }
+            });
+        }
+    };
+
+    walk(outgoing, link => getColumnKey(link.targetNodeId, link.targetColumnId));
+    walk(incoming, link => getColumnKey(link.sourceNodeId, link.sourceColumnId));
 
     return { activeLinks, activeColumns };
 };
@@ -254,8 +285,11 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
 }) => {
     const [activeLinkId, setActiveLinkId] = useState<string | null>(null);
     const [activeColumnKey, setActiveColumnKey] = useState<string | null>(null);
+    const [pinnedColumnKey, setPinnedColumnKey] = useState<string | null>(null);
     const [codeModalVisible, setCodeModalVisible] = useState(false);
     const [selectedCode, setSelectedCode] = useState<SelectedCode | null>(null);
+    const [relationModalVisible, setRelationModalVisible] = useState(false);
+    const [selectedRelation, setSelectedRelation] = useState<SelectedRelation | null>(null);
 
     const layout = useMemo(() => {
         const columnUsage = buildColumnUsage(links);
@@ -299,10 +333,11 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     }, [links, nodes, selectedField, selectedTable]);
 
     const selectedFieldKey = selectedField ? `${selectedField.nodeId}::${selectedField.colId}` : '';
+    const focusColumnKey = pinnedColumnKey || activeColumnKey;
     const highlighted = useMemo(() => (
-        buildDownstreamHighlight(activeColumnKey, links)
-    ), [activeColumnKey, links]);
-    const hasColumnHover = !!activeColumnKey;
+        buildLineageHighlight(focusColumnKey, links)
+    ), [focusColumnKey, links]);
+    const hasColumnFocus = !!focusColumnKey;
     const relationLegend = useMemo(() => {
         const order = new Map(Object.keys(RELATION_STYLES).map((type, index) => [type, index]));
         return Array.from(new Set(links.map(link => normalizeRelationType(link.type))))
@@ -317,7 +352,17 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     const handleLinkClick = (link: LinkData) => {
         const code = getLinkCode(link);
         if (!code) {
-            message.info('该连接线暂无逻辑/源码片段');
+            const sourceNode = nodes.find(node => node.id === link.sourceNodeId);
+            const targetNode = nodes.find(node => node.id === link.targetNodeId);
+            setSelectedRelation({
+                link,
+                sourceTable: sourceNode?.title || link.properties?.sourceTable || '-',
+                targetTable: targetNode?.title || link.properties?.targetTable || '-',
+                sourceColumns: normalizeArray(link.properties?.sourceColumns),
+                targetColumns: normalizeArray(link.properties?.targetColumns),
+                sourceFile: getSourceFile(link),
+            });
+            setRelationModalVisible(true);
             return;
         }
         setSelectedCode({
@@ -331,7 +376,11 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
 
     return (
         <div className="h-full w-full overflow-auto bg-[#f1f2f4]" style={{ minHeight: 640 }}>
-            <div className="relative" style={{ width: layout.width, height: layout.height }}>
+            <div
+                className="relative"
+                style={{ width: layout.width, height: layout.height }}
+                onClick={() => setPinnedColumnKey(null)}
+            >
                 <svg className="absolute inset-0" width={layout.width} height={layout.height}>
                     <defs>
                         {relationLegend.map(({ type, style }) => (
@@ -375,7 +424,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                                 strokeWidth={isActive ? 3 : 1.6}
                                 strokeDasharray={style.strokeDasharray}
                                 markerEnd={`url(#${getRelationMarkerId(relationType)})`}
-                                opacity={(activeLinkId || hasColumnHover) && !isActive ? 0.12 : (isActive ? 1 : 0.62)}
+                                opacity={(activeLinkId || hasColumnFocus) && !isActive ? 0.12 : (isActive ? 1 : 0.62)}
                                 style={{ cursor: hasCode ? 'pointer' : 'default', pointerEvents: 'stroke' }}
                                 onMouseEnter={() => setActiveLinkId(link.id)}
                                 onMouseLeave={() => setActiveLinkId(null)}
@@ -432,10 +481,24 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                                             style={{
                                                 background: isSelected ? '#fdebd3' : (isActive ? '#e5e7eb' : '#ffffff'),
                                                 fontWeight: isSelected || isActive ? 600 : 400,
-                                                opacity: hasColumnHover && !isActive ? 0.46 : 1,
+                                                opacity: hasColumnFocus && !isActive ? 0.46 : 1,
+                                                cursor: 'pointer',
                                             }}
-                                            onMouseEnter={() => setActiveColumnKey(rowKey)}
-                                            onMouseLeave={() => setActiveColumnKey(null)}
+                                            onMouseEnter={() => {
+                                                if (!pinnedColumnKey) {
+                                                    setActiveColumnKey(rowKey);
+                                                }
+                                            }}
+                                            onMouseLeave={() => {
+                                                if (!pinnedColumnKey) {
+                                                    setActiveColumnKey(null);
+                                                }
+                                            }}
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                setPinnedColumnKey(rowKey);
+                                                setActiveColumnKey(null);
+                                            }}
                                         >
                                             <span className="truncate" title={col.name}>{col.name}</span>
                                             {col.synthetic ? <Tag className="ml-auto" color="default">表级</Tag> : null}
@@ -479,6 +542,52 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                     linkType={selectedCode.linkType}
                     searchTerm={selectedCode.searchTerm}
                 />
+            ) : null}
+            {selectedRelation ? (
+                <Modal
+                    open={relationModalVisible}
+                    title="关系来源详情"
+                    footer={null}
+                    width={720}
+                    onCancel={() => setRelationModalVisible(false)}
+                >
+                    <Descriptions size="small" bordered column={1}>
+                        <Descriptions.Item label="源表">{selectedRelation.sourceTable}</Descriptions.Item>
+                        <Descriptions.Item label="目标表">{selectedRelation.targetTable}</Descriptions.Item>
+                        <Descriptions.Item label="关联类型">
+                            <Tag color={getRelationStyle(selectedRelation.link.type).color}>
+                                {getRelationLabel(selectedRelation.link.type)}
+                            </Tag>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="证据层级">
+                            {getRelationLevelLabel(selectedRelation.link.properties?.relationLevel)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="关系数量">
+                            共 {selectedRelation.link.properties?.relationCount || 1} 条
+                            {selectedRelation.link.properties?.fieldRelationCount !== undefined
+                                ? `，字段级 ${selectedRelation.link.properties.fieldRelationCount} 条`
+                                : ''}
+                            {selectedRelation.link.properties?.fallbackRelationCount
+                                ? `，表级兜底 ${selectedRelation.link.properties.fallbackRelationCount} 条`
+                                : ''}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="源字段">
+                            {formatDetailList(selectedRelation.sourceColumns)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="目标字段">
+                            {formatDetailList(selectedRelation.targetColumns)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="源文件">
+                            {selectedRelation.sourceFile || '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="解析来源">
+                            {formatDetailList(normalizeArray(selectedRelation.link.properties?.lineageOrigins))}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="说明">
+                            数据库中存在该血缘关系，但该关系没有保存可打开的 SQL snippet。若证据层级为表级兜底，表示解析器识别到了表到表影响，但没有拿到字段级映射。
+                        </Descriptions.Item>
+                    </Descriptions>
+                </Modal>
             ) : null}
         </div>
     );

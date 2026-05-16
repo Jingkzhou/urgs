@@ -265,7 +265,13 @@ def main():
                     if "relationships" in result and result["relationships"]:
                         for rel in result["relationships"]:
                             try:
-                                neo4j.create_lineage(rel.get("source"), rel.get("target"))
+                                neo4j.create_lineage(
+                                    rel.get("source"),
+                                    rel.get("target"),
+                                    relationship=rel,
+                                    version=version_id,
+                                    repo_id=args.repo_id,
+                                )
                                 inserted_any = True
                             except Exception as e:
                                 logger.error(f"Error storing table lineage: {e}")
@@ -275,7 +281,20 @@ def main():
                         for source in result["sources"]:
                             for target in result["targets"]:
                                 try:
-                                    neo4j.create_lineage(source, target)
+                                    neo4j.create_lineage(
+                                        source,
+                                        target,
+                                        relationship={
+                                            "source_file": file_path,
+                                            "snippet": content,
+                                            "lineage_origin": "source_target_fallback",
+                                            "relation_level": "table_fallback",
+                                            "confidence": "LOW",
+                                            "validation_note": "Fallback table lineage built from parsed sources and targets; column-level evidence was unavailable.",
+                                        },
+                                        version=version_id,
+                                        repo_id=args.repo_id,
+                                    )
                                 except Exception as e:
                                     logger.error(f"Error storing table lineage: {e}")
                     
@@ -375,7 +394,7 @@ def main():
                             logger.info(f"Syncing results to Neo4j... ({len(all_relationships)} tables, {len(all_column_deps)} columns)")
                             try:
                                 start_sync = time.time()
-                                neo4j.create_lineage_batch(all_relationships)
+                                neo4j.create_lineage_batch(all_relationships, version=version_id, repo_id=args.repo_id)
                                 neo4j.create_column_lineage_v2(all_column_deps, version=version_id, repo_id=args.repo_id)
                                 logger.info(f"Sync completed in {time.time() - start_sync:.2f}s")
                             except Exception as e:
@@ -443,5 +462,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 

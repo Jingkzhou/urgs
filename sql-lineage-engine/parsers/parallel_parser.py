@@ -85,7 +85,13 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
                     result["relationships"].append({
                         "source": source,
                         "target": target,
-                        "type": "fdd"
+                        "type": "fdd",
+                        "source_file": file_path,
+                        "snippet": sql_content,
+                        "lineage_origin": "source_target_fallback",
+                        "relation_level": "table_fallback",
+                        "confidence": "LOW",
+                        "validation_note": "Fallback table lineage built from parsed sources and targets; column-level evidence was unavailable."
                     })
         
         
