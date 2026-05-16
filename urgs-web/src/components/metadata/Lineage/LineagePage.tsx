@@ -8,7 +8,8 @@ import {
     FileTextOutlined,
     DownloadOutlined,
     UserOutlined,
-    RobotOutlined,
+    MenuFoldOutlined,
+    MenuUnfoldOutlined,
 } from '@ant-design/icons';
 import {
     searchTables,
@@ -44,7 +45,8 @@ const LineagePage: React.FC<LineagePageProps> = () => {
     const [loading, setLoading] = useState(false);
     const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
     const [expandedOwners, setExpandedOwners] = useState<Set<string>>(new Set());
-    const [viewMode, setViewMode] = useState<'canvas' | 'list'>('list');
+    const [searchCollapsed, setSearchCollapsed] = useState(false);
+    const [viewMode, setViewMode] = useState<'canvas' | 'list'>('canvas');
     const [directionOptions, setDirectionOptions] = useState<DirectionOption[]>(['upstream', 'downstream']);
     const queryDirection = useMemo<LineageGraphDirection>(() => (
         directionOptions.length === 2 ? 'both' : directionOptions[0] || 'both'
@@ -248,25 +250,71 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                             </Checkbox.Group>
                         </div>
                     </div>
-                    <Button
-                        icon={<RobotOutlined />}
-                        disabled={!canOpenAuditBoard}
-                        title={canOpenAuditBoard ? '在当前血缘页面打开 SQL 血缘事后校验看板' : '缺少 version:ai:audit 权限'}
-                        onClick={() => setShowAuditBoard(true)}
-                    >
-                        打开事后校验
-                    </Button>
-                    <LineageEngineToolbar controller={engineController} />
+                    <LineageEngineToolbar
+                        controller={engineController}
+                        canOpenAuditBoard={canOpenAuditBoard}
+                        onOpenAuditBoard={() => setShowAuditBoard(true)}
+                    />
                 </div>
             </div>
             <Layout style={{ flex: 1, minHeight: 0 }}>
-                <Sider width={300} theme="light" style={{ borderRight: '1px solid #f0f0f0' }}>
-
+                <Sider
+                    width={300}
+                    collapsedWidth={56}
+                    collapsible
+                    trigger={null}
+                    collapsed={searchCollapsed}
+                    theme="light"
+                    style={{ borderRight: '1px solid #f0f0f0' }}
+                    onMouseEnter={() => {
+                        if (searchCollapsed) {
+                            setSearchCollapsed(false);
+                        }
+                    }}
+                    onMouseLeave={() => {
+                        if (!searchCollapsed) {
+                            setSearchCollapsed(true);
+                        }
+                    }}
+                >
+                    {searchCollapsed ? (
+                        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '14px 8px', gap: 12, background: '#fff' }}>
+                            <Tooltip title="展开血缘搜索" placement="right">
+                                <Button
+                                    type="text"
+                                    icon={<MenuUnfoldOutlined />}
+                                    onClick={() => setSearchCollapsed(false)}
+                                />
+                            </Tooltip>
+                            <div style={{ width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#eff6ff', color: '#1677ff' }}>
+                                <SearchOutlined />
+                            </div>
+                            <div style={{ writingMode: 'vertical-rl', letterSpacing: 0, color: '#64748b', fontSize: 12, fontWeight: 600 }}>
+                                血缘搜索
+                            </div>
+                            <div style={{ writingMode: 'vertical-rl', letterSpacing: 0, color: '#94a3b8', fontSize: 11 }}>
+                                移入展开
+                            </div>
+                            {total > 0 ? (
+                                <Tag color="blue" style={{ margin: 0 }}>{total}</Tag>
+                            ) : null}
+                        </div>
+                    ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                         <div style={{ padding: '16px', borderBottom: '1px solid #f0f0f0' }}>
                             <div style={{ marginBottom: 16 }}>
-                                <h3>血缘搜索</h3>
-                                <p style={{ color: '#888', fontSize: '12px' }}>按用户/Schema 分组浏览，支持搜索用户、表、字段</p>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                    <h3 style={{ margin: 0 }}>血缘搜索</h3>
+                                    <Tooltip title="收起血缘搜索">
+                                        <Button
+                                            type="text"
+                                            size="small"
+                                            icon={<MenuFoldOutlined />}
+                                            onClick={() => setSearchCollapsed(true)}
+                                        />
+                                    </Tooltip>
+                                </div>
+                                <p style={{ color: '#888', fontSize: '12px', marginTop: 8, marginBottom: 0 }}>按用户/Schema 分组浏览，支持搜索用户、表、字段</p>
                             </div>
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 <Input
@@ -410,6 +458,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                             />
                         </div>
                     </div>
+                    )}
                 </Sider>
                 <Content style={{ background: '#fff', position: 'relative', minHeight: 640, display: 'flex' }}>
                     <LineageGraphContent
