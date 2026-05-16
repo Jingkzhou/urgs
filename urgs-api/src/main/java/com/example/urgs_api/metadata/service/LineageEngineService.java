@@ -307,6 +307,10 @@ public class LineageEngineService {
         record.setUpdateTime(LocalDateTime.now());
 
         analysisRecordMapper.insert(record);
+        if (StringUtils.hasText(record.getId()) && !StringUtils.hasText(record.getVersionId())) {
+            record.setVersionId(record.getId());
+            analysisRecordMapper.updateById(record);
+        }
         log.info("[LineageEngineDiagnostics] analysis record created: recordId={}, request={}", record.getId(), summarizeRequest(request));
         return record;
     }
@@ -597,6 +601,8 @@ public class LineageEngineService {
                 String versionId = parseVersionIdFromLog(logPath);
                 if (StringUtils.hasText(versionId)) {
                     record.setVersionId(versionId);
+                } else if (StringUtils.hasText(recordId) && !StringUtils.hasText(record.getVersionId())) {
+                    record.setVersionId(recordId);
                 }
 
                 record.setUpdateTime(LocalDateTime.now());
@@ -617,12 +623,22 @@ public class LineageEngineService {
             return null;
         try {
             List<String> lines = Files.readAllLines(logPath);
-            // Search from bottom for "Generated version ID: "
+            List<String> versionMarkers = List.of(
+                    "Generated version ID:",
+                    "Using provided version ID:",
+                    "Lineage stored with version:");
             for (int i = lines.size() - 1; i >= 0; i--) {
                 String line = lines.get(i);
-                if (line.contains("Generated version ID:")) {
-                    return line.substring(line.indexOf("Generated version ID:") + "Generated version ID:".length())
-                            .trim();
+                for (String marker : versionMarkers) {
+                    if (line.contains(marker)) {
+                        return line.substring(line.indexOf(marker) + marker.length()).trim();
+                    }
+                }
+                String bootMarker = "--version-id ";
+                if (line.contains(bootMarker)) {
+                    String value = line.substring(line.indexOf(bootMarker) + bootMarker.length()).trim();
+                    int nextSpace = value.indexOf(' ');
+                    return nextSpace >= 0 ? value.substring(0, nextSpace).trim() : value;
                 }
             }
         } catch (Exception e) {

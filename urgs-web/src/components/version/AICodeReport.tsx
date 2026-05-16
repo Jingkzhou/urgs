@@ -377,7 +377,14 @@ const AICodeReport: React.FC = () => {
         setSqlPreviewLoading(true);
         try {
             const data = await getLineageReviewTaskSqlPreview(task.id);
-            setSqlPreviews(data || []);
+            const normalized = (data || [])
+                .map(item => ({
+                    snippet: String(item.snippet || '').trim(),
+                    sourceFiles: Array.from(new Set((item.sourceFiles || []).filter(Boolean))),
+                    relationCount: item.relationCount || 0
+                }))
+                .filter(item => item.snippet.length > 0);
+            setSqlPreviews(normalized);
         } catch (error: any) {
             message.error(error?.message || '加载 SQL 片段失败');
             setSqlPreviews([]);
@@ -882,7 +889,7 @@ const AICodeReport: React.FC = () => {
                                     来源文件：{item.sourceFiles?.length ? item.sourceFiles.join('、') : '未记录'}
                                 </div>
                                 <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-900 p-4 text-xs text-slate-100">
-                                    {item.snippet}
+                                    {item.snippet || '未返回 SQL 片段内容'}
                                 </pre>
                             </Card>
                         ))}

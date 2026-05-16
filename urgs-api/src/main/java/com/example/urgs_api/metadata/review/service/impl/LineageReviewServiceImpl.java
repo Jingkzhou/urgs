@@ -111,6 +111,11 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             log.info("skip lineage review scheduling because record status is not success: {}", record.getId());
             return;
         }
+        String versionId = resolveReviewVersionId(record);
+        if (!StringUtils.hasText(versionId)) {
+            log.warn("skip lineage review scheduling because versionId is missing: {}", record.getId());
+            return;
+        }
         List<String> shardPaths = resolveShardPaths(record.getPaths());
         for (String shardPath : shardPaths) {
             LineageReviewTask task = upsertTask(record, shardPath, forceRerun);
@@ -163,20 +168,67 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     @Override
     public List<Map<String, Object>> getTaskSqlPreviews(Long taskId) {
         LineageReviewTask task = taskMapper.selectById(taskId);
-        if (task == null || !StringUtils.hasText(task.getVersionId())) {
+        if (task == null) {
+            log.warn("[LineageSqlPreviewDiag] marker=sql-preview-pathfix-20260516 taskId={} taskNotFound=true", taskId);
             return Collections.emptyList();
+        }
+        if (!StringUtils.hasText(task.getVersionId())) {
+            repairTaskVersionId(task);
+            if (!StringUtils.hasText(task.getVersionId())) {
+                log.warn("[LineageSqlPreviewDiag] marker=sql-preview-pathfix-20260516 taskId={} versionMissing=true pathPrefix={}",
+                        taskId, task.getPathPrefix());
+                return Collections.emptyList();
+            }
         }
         String filterPath = normalizePathPrefix(task.getPathPrefix());
         boolean hasRepoId = task.getRepoId() != null;
+        log.info("[LineageSqlPreviewDiag] marker=sql-preview-pathfix-20260516 taskId={} versionId={} repoId={} hasRepoId={} rawPathPrefix={} normalizedPathPrefix={}",
+                taskId, task.getVersionId(), task.getRepoId(), hasRepoId, task.getPathPrefix(), filterPath);
+        String diagnosticQuery = """
+                MATCH ()-[r:DERIVES_TO|FILTERS|JOINS|GROUPS|ORDERS|CALLS|REFERENCES|CASE_WHEN]->()
+                WITH r,
+                     [file IN coalesce(r.sourceFiles, []) WHERE file IS NOT NULL AND trim(toString(file)) <> ''] +
+                     CASE
+                        WHEN coalesce(r.source_file, r.sourceFile) IS NULL
+                          OR trim(toString(coalesce(r.source_file, r.sourceFile))) = ''
+                        THEN []
+                        ELSE [toString(coalesce(r.source_file, r.sourceFile))]
+                     END AS relationSourceFiles
+                WHERE r.version = $versionId
+                  AND ($hasRepoId = false OR r.repoId = $repoId)
+                WITH r,
+                     relationSourceFiles,
+                     (r.snippet IS NOT NULL AND trim(r.snippet) <> '') AS hasSnippet,
+                     ($pathPrefix = '' OR ANY(file IN relationSourceFiles
+                        WHERE toUpper(file) = toUpper($pathPrefix)
+                           OR toUpper(file) STARTS WITH toUpper($pathPrefix)
+                           OR toUpper(file) ENDS WITH '/' + toUpper($pathPrefix))) AS pathMatched
+                RETURN count(r) AS totalEdges,
+                       count(CASE WHEN hasSnippet THEN 1 END) AS snippetEdges,
+                       count(CASE WHEN hasSnippet AND pathMatched THEN 1 END) AS matchedSnippetEdges,
+                       collect(DISTINCT relationSourceFiles)[0..5] AS sourceFileSamples,
+                       collect(DISTINCT substring(coalesce(r.snippet, ''), 0, 120))[0..3] AS snippetSamples
+                """;
         String query = """
                 MATCH ()-[r:DERIVES_TO|FILTERS|JOINS|GROUPS|ORDERS|CALLS|REFERENCES|CASE_WHEN]->()
+                WITH r,
+                     [file IN coalesce(r.sourceFiles, []) WHERE file IS NOT NULL AND trim(toString(file)) <> ''] +
+                     CASE
+                        WHEN coalesce(r.source_file, r.sourceFile) IS NULL
+                          OR trim(toString(coalesce(r.source_file, r.sourceFile))) = ''
+                        THEN []
+                        ELSE [toString(coalesce(r.source_file, r.sourceFile))]
+                     END AS relationSourceFiles
                 WHERE r.version = $versionId
                   AND ($hasRepoId = false OR r.repoId = $repoId)
                   AND r.snippet IS NOT NULL
                   AND trim(r.snippet) <> ''
-                  AND ($pathPrefix = '' OR ANY(file IN coalesce(r.sourceFiles, []) WHERE file STARTS WITH $pathPrefix))
+                  AND ($pathPrefix = '' OR ANY(file IN relationSourceFiles
+                    WHERE toUpper(file) = toUpper($pathPrefix)
+                       OR toUpper(file) STARTS WITH toUpper($pathPrefix)
+                       OR toUpper(file) ENDS WITH '/' + toUpper($pathPrefix)))
                 RETURN r.snippet AS snippet,
-                       coalesce(r.sourceFiles, []) AS sourceFiles,
+                       relationSourceFiles AS sourceFiles,
                        count(*) AS relationCount
                 ORDER BY relationCount DESC
                 LIMIT 20
@@ -184,6 +236,15 @@ public class LineageReviewServiceImpl implements LineageReviewService {
 
         List<Map<String, Object>> results = new ArrayList<>();
         try (Session session = neo4jDriver.session()) {
+            Record diagnostic = session.run(diagnosticQuery, Map.of(
+                    "repoId", task.getRepoId() == null ? "" : String.valueOf(task.getRepoId()),
+                    "hasRepoId", hasRepoId,
+                    "versionId", task.getVersionId(),
+                    "pathPrefix", filterPath)).single();
+            if (diagnostic != null) {
+                log.info("[LineageSqlPreviewDiag] marker=sql-preview-pathfix-20260516 taskId={} diag={}",
+                        taskId, diagnostic.asMap());
+            }
             var cursor = session.run(query, Map.of(
                     "repoId", task.getRepoId() == null ? "" : String.valueOf(task.getRepoId()),
                     "hasRepoId", hasRepoId,
@@ -198,6 +259,8 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                 results.add(item);
             }
         }
+        log.info("[LineageSqlPreviewDiag] marker=sql-preview-pathfix-20260516 taskId={} returnedPreviews={}",
+                taskId, results.size());
         return results;
     }
 
@@ -236,7 +299,8 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                 .eq(LineageReviewTask::getPathPrefix, shardPath)
                 .last("LIMIT 1");
         LineageReviewTask existing = taskMapper.selectOne(query);
-        if (existing != null && !forceRerun && !"FAILED".equalsIgnoreCase(existing.getStatus())) {
+        boolean sameVersion = existing != null && Objects.equals(existing.getVersionId(), record.getVersionId());
+        if (existing != null && !forceRerun && sameVersion && !"FAILED".equalsIgnoreCase(existing.getStatus())) {
             return existing;
         }
         if (existing == null) {
@@ -286,6 +350,41 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         issueQuery.eq(LineageReviewIssue::getTaskId, existing.getId());
         issueMapper.delete(issueQuery);
         return existing;
+    }
+
+    private void repairTaskVersionId(LineageReviewTask task) {
+        if (task == null || StringUtils.hasText(task.getVersionId())) {
+            return;
+        }
+        LineageAnalysisRecord record = analysisRecordMapper.selectById(task.getAnalysisRecordId());
+        if (record == null) {
+            return;
+        }
+        String versionId = resolveReviewVersionId(record);
+        if (!StringUtils.hasText(versionId)) {
+            return;
+        }
+        task.setVersionId(versionId);
+        task.setRepoId(record.getRepoId());
+        task.setRef(record.getRef());
+        task.setUpdateTime(LocalDateTime.now());
+        taskMapper.updateById(task);
+        log.warn("lineage review repaired missing task versionId: taskId={}, analysisRecordId={}, versionId={}",
+                task.getId(), task.getAnalysisRecordId(), versionId);
+    }
+
+    private String resolveReviewVersionId(LineageAnalysisRecord record) {
+        if (StringUtils.hasText(record.getVersionId())) {
+            return record.getVersionId();
+        }
+        if (!StringUtils.hasText(record.getId())) {
+            return null;
+        }
+        record.setVersionId(record.getId());
+        record.setUpdateTime(LocalDateTime.now());
+        analysisRecordMapper.updateById(record);
+        log.warn("lineage review repaired missing analysis versionId from record id: recordId={}", record.getId());
+        return record.getVersionId();
     }
 
     private void runTask(Long taskId) {
@@ -423,15 +522,26 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         boolean hasRepoId = task.getRepoId() != null;
         String query = """
                 MATCH (source:Column)-[r:DERIVES_TO|FILTERS|JOINS|GROUPS|ORDERS|CALLS|REFERENCES|CASE_WHEN]->(target)
+                WITH source, target, r,
+                     [file IN coalesce(r.sourceFiles, []) WHERE file IS NOT NULL AND trim(toString(file)) <> ''] +
+                     CASE
+                        WHEN coalesce(r.source_file, r.sourceFile) IS NULL
+                          OR trim(toString(coalesce(r.source_file, r.sourceFile))) = ''
+                        THEN []
+                        ELSE [toString(coalesce(r.source_file, r.sourceFile))]
+                     END AS relationSourceFiles
                 WHERE r.version = $versionId
                   AND ($hasRepoId = false OR r.repoId = $repoId)
-                  AND ($pathPrefix = '' OR ANY(file IN coalesce(r.sourceFiles, []) WHERE file STARTS WITH $pathPrefix))
+                  AND ($pathPrefix = '' OR ANY(file IN relationSourceFiles
+                    WHERE toUpper(file) = toUpper($pathPrefix)
+                       OR toUpper(file) STARTS WITH toUpper($pathPrefix)
+                       OR toUpper(file) ENDS WITH '/' + toUpper($pathPrefix)))
                 WITH target, collect({
                     sourceTable: source.table,
                     sourceColumn: source.name,
                     relationType: type(r),
                     snippet: coalesce(r.snippet, ''),
-                    sourceFiles: coalesce(r.sourceFiles, [])
+                    sourceFiles: relationSourceFiles
                 }) AS upstreamRels
                 OPTIONAL MATCH (target:Column)-[:BELONGS_TO]->(targetTable:Table)
                 RETURN CASE WHEN 'Column' IN labels(target) THEN targetTable.name ELSE target.name END AS tableName,
@@ -469,13 +579,24 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         boolean hasRepoId = task.getRepoId() != null;
         String query = """
                 MATCH (source)-[r:DERIVES_TO|FILTERS|JOINS|GROUPS|ORDERS|CALLS|REFERENCES|CASE_WHEN]->(target)
+                WITH source, target, r,
+                     [file IN coalesce(r.sourceFiles, []) WHERE file IS NOT NULL AND trim(toString(file)) <> ''] +
+                     CASE
+                        WHEN coalesce(r.source_file, r.sourceFile) IS NULL
+                          OR trim(toString(coalesce(r.source_file, r.sourceFile))) = ''
+                        THEN []
+                        ELSE [toString(coalesce(r.source_file, r.sourceFile))]
+                     END AS relationSourceFiles
                 WHERE r.version = $versionId
                   AND ($hasRepoId = false OR r.repoId = $repoId)
                   AND r.snippet IS NOT NULL
                   AND trim(r.snippet) <> ''
-                  AND ($pathPrefix = '' OR ANY(file IN coalesce(r.sourceFiles, []) WHERE file STARTS WITH $pathPrefix))
+                  AND ($pathPrefix = '' OR ANY(file IN relationSourceFiles
+                    WHERE toUpper(file) = toUpper($pathPrefix)
+                       OR toUpper(file) STARTS WITH toUpper($pathPrefix)
+                       OR toUpper(file) ENDS WITH '/' + toUpper($pathPrefix)))
                 WITH r.snippet AS snippet,
-                     coalesce(r.sourceFiles, []) AS sourceFiles,
+                     relationSourceFiles AS sourceFiles,
                      collect(DISTINCT {
                         sourceTable: CASE WHEN source:Column THEN source.table ELSE source.name END,
                         sourceColumn: CASE WHEN source:Column THEN source.name ELSE null END,
