@@ -17,7 +17,6 @@ import {
     LineageSearchTableItem,
     LineageGraphDirection,
 } from '@/api/lineage';
-import LineageReportModal from './analysis/components/LineageReportModal';
 import LineageGraphContent from './analysis/components/LineageGraphContent';
 import LineageEngineToolbar from './analysis/components/LineageEngineToolbar';
 import { useLineageEngineController } from './analysis/hooks/useLineageEngineController';
@@ -45,7 +44,6 @@ const LineagePage: React.FC<LineagePageProps> = () => {
     const [loading, setLoading] = useState(false);
     const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
     const [expandedOwners, setExpandedOwners] = useState<Set<string>>(new Set());
-    const [showReportModal, setShowReportModal] = useState(false);
     const [viewMode, setViewMode] = useState<'canvas' | 'list'>('list');
     const [directionOptions, setDirectionOptions] = useState<DirectionOption[]>(['upstream', 'downstream']);
     const queryDirection = useMemo<LineageGraphDirection>(() => (
@@ -63,7 +61,6 @@ const LineagePage: React.FC<LineagePageProps> = () => {
         links,
         listNodes,
         listLinks,
-        graphMeta,
         graphLoading,
         listLoading,
         listDetailsLoaded,
@@ -100,7 +97,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
     }, []);
 
     useEffect(() => {
-        if (viewMode === 'list' && selectedTable && !listDetailsLoaded && !listLoading) {
+        if ((viewMode === 'list' || viewMode === 'canvas') && selectedTable && !listDetailsLoaded && !listLoading) {
             loadListDetails();
         }
     }, [listDetailsLoaded, listLoading, loadListDetails, selectedTable, viewMode]);
@@ -190,8 +187,42 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                 .ant-spin-nested-loading, .ant-spin-container {
                     height: 100% !important;
                 }
+                .lineage-page-toolbar {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 16px;
+                    flex-wrap: wrap;
+                }
+                .lineage-page-primary-actions,
+                .lineage-page-secondary-actions {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                }
+                .lineage-direction-filter {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 5px 12px;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 8px;
+                    background: #f8fafc;
+                    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.55);
+                    white-space: nowrap;
+                }
+                .lineage-direction-filter .ant-checkbox-group {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 10px;
+                }
+                .lineage-direction-filter .ant-checkbox-wrapper {
+                    margin-inline-start: 0;
+                    color: #1f2937;
+                }
             `}</style>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+            <div className="lineage-page-toolbar" style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', background: '#fff' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         <div>
                             <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>SQL Lineage</div>
@@ -199,21 +230,23 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                         </div>
                     {selectedQualifiedName && <Tag color="blue">{selectedQualifiedName}</Tag>}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                    <Segmented
-                        options={[
-                            { label: '流程图', value: 'canvas', icon: <TableOutlined /> },
-                            { label: '列表', value: 'list', icon: <FileTextOutlined /> },
-                        ]}
-                        value={viewMode}
-                        onChange={(val: any) => setViewMode(val)}
-                    />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 12px', border: '1px solid #e5e7eb', borderRadius: 8, background: '#f8fafc' }}>
-                        <span style={{ fontSize: 13, color: '#4b5563', whiteSpace: 'nowrap' }}>查询方向</span>
-                        <Checkbox.Group value={directionOptions} onChange={handleDirectionChange}>
-                            <Checkbox value="upstream">上游</Checkbox>
-                            <Checkbox value="downstream">下游</Checkbox>
-                        </Checkbox.Group>
+                <div className="lineage-page-primary-actions">
+                    <div className="lineage-page-secondary-actions">
+                        <Segmented
+                            options={[
+                                { label: '流程图', value: 'canvas', icon: <TableOutlined /> },
+                                { label: '列表', value: 'list', icon: <FileTextOutlined /> },
+                            ]}
+                            value={viewMode}
+                            onChange={(val: any) => setViewMode(val)}
+                        />
+                        <div className="lineage-direction-filter">
+                            <span style={{ fontSize: 13, color: '#4b5563' }}>查询方向</span>
+                            <Checkbox.Group value={directionOptions} onChange={handleDirectionChange}>
+                                <Checkbox value="upstream">上游</Checkbox>
+                                <Checkbox value="downstream">下游</Checkbox>
+                            </Checkbox.Group>
+                        </div>
                     </div>
                     <Button
                         icon={<RobotOutlined />}
@@ -378,7 +411,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                         </div>
                     </div>
                 </Sider>
-                <Content style={{ background: '#fff', position: 'relative', minHeight: 0 }}>
+                <Content style={{ background: '#fff', position: 'relative', minHeight: 640, display: 'flex' }}>
                     <LineageGraphContent
                         graphLoading={graphLoading}
                         nodes={nodes}
@@ -386,22 +419,11 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                         listLoading={listLoading}
                         listNodes={listNodes}
                         listLinks={listLinks}
-                        mode={queryDirection === 'downstream' ? 'impact' : 'trace'}
                         viewMode={viewMode}
                         selectedTable={selectedTable}
                         selectedField={selectedField}
-                        graphMeta={graphMeta}
-                        onGenerateReport={canExport ? () => setShowReportModal(true) : undefined}
                     />
                 </Content>
-                {canExport && showReportModal && selectedField && (
-                    <LineageReportModal
-                        visible={showReportModal}
-                        tableName={nodes.find(n => n.id === selectedField.nodeId)?.title || ''}
-                        columnName={nodes.find(n => n.id === selectedField.nodeId)?.columns.find(c => c.id === selectedField.colId)?.name || ''}
-                        onClose={() => setShowReportModal(false)}
-                    />
-                )}
                 <Drawer
                     title="SQL 血缘事后校验"
                     open={showAuditBoard}

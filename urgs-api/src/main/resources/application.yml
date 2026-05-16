@@ -41,3 +41,6 @@ deploy:
 
 executor:
   base-url: "${EXECUTOR_BASE_URL:http://127.0.0.1:8082}"
+
+urgs:
+  web-base-url: "${URGS_WEB_BASE_URL:}"

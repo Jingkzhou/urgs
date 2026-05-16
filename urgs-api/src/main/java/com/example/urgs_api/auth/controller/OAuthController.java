@@ -8,10 +8,15 @@ import com.example.urgs_api.system.service.SysSystemService;
 import com.example.urgs_api.user.model.User;
 import com.example.urgs_api.user.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
@@ -23,6 +28,9 @@ public class OAuthController {
     private final OAuthService oAuthService;
     private final UserService userService;
 
+    @Value("${urgs.web-base-url:}")
+    private String configuredWebBaseUrl;
+
     public OAuthController(SysSystemService sysSystemService, AuthTokenService authTokenService,
             OAuthService oAuthService,
             UserService userService) {
@@ -32,9 +40,37 @@ public class OAuthController {
         this.userService = userService;
     }
 
+    @GetMapping("/authorize")
+    public ResponseEntity<?> authorizeRedirect(@RequestParam("client_id") String clientId,
+            @RequestParam("redirect_uri") String redirectUri,
+            @RequestParam(value = "response_type", defaultValue = "code") String responseType,
+            @RequestParam(value = "state", required = false) String state,
+            HttpServletRequest request) {
+        if (!"code".equals(responseType)) {
+            return ResponseEntity.badRequest().body("Unsupported response_type");
+        }
+
+        SysSystem client = sysSystemService
+                .getOne(new LambdaQueryWrapper<SysSystem>().eq(SysSystem::getClientId, clientId.trim()));
+        if (client == null) {
+            return ResponseEntity.badRequest().body("Invalid client_id");
+        }
+        if (!isValidRedirectUri(client, redirectUri)) {
+            return ResponseEntity.badRequest().body("Invalid redirect_uri");
+        }
+
+        String loginUrl = resolveWebBaseUrl(request)
+                + "?client_id=" + encode(clientId.trim())
+                + "&redirect_uri=" + encode(redirectUri);
+        if (state != null && !state.isBlank()) {
+            loginUrl += "&state=" + encode(state);
+        }
+        return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(loginUrl)).build();
+    }
+
     @PostMapping("/authorize")
     public ResponseEntity<?> authorize(@RequestBody Map<String, String> params, HttpServletRequest request) {
-        String clientId = params.get("client_id");
+        String clientId = params.get("client_id") == null ? null : params.get("client_id").trim();
         String redirectUri = params.get("redirect_uri");
         String responseType = params.get("response_type");
 
@@ -49,11 +85,8 @@ public class OAuthController {
         }
 
         // Simple validation: redirect_uri must match configured callbackUrl
-        if (!client.getCallbackUrl().equals(redirectUri)) {
-            // For flexibility in demo, allow if it starts with configured URL
-            if (!redirectUri.startsWith(client.getCallbackUrl())) {
-                return ResponseEntity.badRequest().body("Invalid redirect_uri");
-            }
+        if (!isValidRedirectUri(client, redirectUri)) {
+            return ResponseEntity.badRequest().body("Invalid redirect_uri");
         }
 
         // Get current user ID from request (set by AuthenticationInterceptor)
@@ -64,7 +97,13 @@ public class OAuthController {
 
         String code = oAuthService.createCode(userId);
 
-        return ResponseEntity.ok(Map.of("code", code, "redirect_uri", redirectUri));
+        Map<String, String> result = new LinkedHashMap<>();
+        result.put("code", code);
+        result.put("redirect_uri", redirectUri);
+        if (params.get("state") != null) {
+            result.put("state", params.get("state"));
+        }
+        return ResponseEntity.ok(result);
     }
 
     @PostMapping("/token")
@@ -107,5 +146,27 @@ public class OAuthController {
                 "name", user.getName(),
                 "orgName", user.getOrgName(),
                 "roleName", user.getRoleName()));
+    }
+
+    private boolean isValidRedirectUri(SysSystem client, String redirectUri) {
+        if (redirectUri == null || client.getCallbackUrl() == null) {
+            return false;
+        }
+        return client.getCallbackUrl().equals(redirectUri) || redirectUri.startsWith(client.getCallbackUrl());
+    }
+
+    private String resolveWebBaseUrl(HttpServletRequest request) {
+        if (configuredWebBaseUrl != null && !configuredWebBaseUrl.isBlank()) {
+            return trimTrailingSlash(configuredWebBaseUrl);
+        }
+        return request.getScheme() + "://" + request.getServerName() + ":3000/";
+    }
+
+    private String trimTrailingSlash(String value) {
+        return value.endsWith("/") ? value : value + "/";
+    }
+
+    private String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 }

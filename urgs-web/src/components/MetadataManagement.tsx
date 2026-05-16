@@ -1,16 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Database, FileText, History, Search, Share2, GitBranch, GitMerge } from 'lucide-react';
+import { Database, Search, GitBranch } from 'lucide-react';
 import AssetManagement from './metadata/AssetManagement';
 import MetadataModel from './metadata/MetadataModel';
-import CodeDirectory from './metadata/CodeDirectory';
-import MaintenanceRecord from './metadata/MaintenanceRecord';
 import SqlConsole from './SqlConsole';
-import LineageOriginPage from './metadata/Lineage/origin';
 import LineageAnalysisPage from './metadata/Lineage/analysis';
 import Auth from './Auth';
 
 const MetadataManagement: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'asset' | 'model' | 'code' | 'maintenance' | 'query' | 'lineage-origin' | 'lineage-analysis'>('asset');
+    const [activeTab, setActiveTab] = useState<'asset' | 'model' | 'code' | 'maintenance' | 'query' | 'lineage'>('asset');
 
     useEffect(() => {
         const handleHashChange = () => {
@@ -18,7 +15,11 @@ const MetadataManagement: React.FC = () => {
             if (hash.includes('?')) {
                 const params = new URLSearchParams(hash.split('?')[1]);
                 const subtab = params.get('subtab');
-                if (subtab && ['asset', 'model', 'code', 'maintenance', 'query', 'lineage-origin', 'lineage-analysis'].includes(subtab)) {
+                if (subtab === 'lineage-origin' || subtab === 'lineage-analysis') {
+                    setActiveTab('lineage');
+                    return;
+                }
+                if (subtab && ['asset', 'model', 'code', 'maintenance', 'query', 'lineage'].includes(subtab)) {
                     setActiveTab(subtab as any);
                 }
             }
@@ -32,8 +33,7 @@ const MetadataManagement: React.FC = () => {
     const tabs = [
         { id: 'asset', label: '资产管理', icon: Database, code: 'metadata:asset', component: <AssetManagement /> },
         { id: 'model', label: '物理模型', icon: Database, code: 'metadata:model', component: <MetadataModel /> },
-        { id: 'lineage-origin', label: '血缘溯源', icon: GitMerge, code: 'metadata:lineage:origin', component: <LineageOriginPage mode="trace" /> },
-        { id: 'lineage-analysis', label: '影响分析', icon: GitBranch, code: 'metadata:lineage:analysis', component: <LineageAnalysisPage mode="impact" /> },
+        { id: 'lineage', label: '血缘模块', icon: GitBranch, code: 'metadata:lineage', component: <LineageAnalysisPage /> },
         { id: 'query', label: '数据查询', icon: Search, code: 'metadata:query', component: <SqlConsole /> },
     ];
 

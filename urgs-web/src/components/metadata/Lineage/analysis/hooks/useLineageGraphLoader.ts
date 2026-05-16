@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { message } from 'antd';
 import { getLineageGraph, LineageGraphDirection, LineageGraphResponse } from '@/api/lineage';
 import { LinkData, NodeData } from '../types';
-import { processLayoutImpact, processLayoutTrace } from '../utils/lineageLayout';
+import { processLayoutTrace } from '../utils/lineageLayout';
 
 export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
     const [selectedTable, setSelectedTable] = useState<string | null>(null);
@@ -17,10 +17,8 @@ export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
     const [listLoading, setListLoading] = useState(false);
     const [listDetailsLoaded, setListDetailsLoaded] = useState(false);
     const layoutGraph = useCallback((response: LineageGraphResponse, tableName: string) => (
-        direction === 'downstream'
-            ? processLayoutImpact(response.nodes, response.edges, tableName)
-            : processLayoutTrace(response.nodes, response.edges, tableName)
-    ), [direction]);
+        processLayoutTrace(response.nodes, response.edges, tableName)
+    ), []);
 
     const handleSelectTable = useCallback(async (tableName: string, qualifiedName?: string, targetColName?: string) => {
         setGraphLoading(true);

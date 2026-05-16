@@ -207,8 +207,11 @@ const buildNodeSummary = (nodeId: string | null, links: LinkData[]): GraphSummar
     };
 };
 
+const waitForFrame = () => new Promise<void>(resolve => {
+    window.requestAnimationFrame(() => resolve());
+});
+
 const G6LineageDiagram: React.FC<G6LineageDiagramProps> = ({
-    mode = 'impact',
     nodes,
     links,
     selectedTable,
@@ -288,6 +291,9 @@ const G6LineageDiagram: React.FC<G6LineageDiagramProps> = ({
             visibleNodeIds.add(link.sourceNodeId);
             visibleNodeIds.add(link.targetNodeId);
         });
+        if (!activeTrace && visibleNodeIds.size === 0) {
+            displayNodes.forEach(node => visibleNodeIds.add(node.id));
+        }
 
         if (activeTrace) {
             activeTrace.visitedNodes.forEach(nodeId => visibleNodeIds.add(nodeId));
@@ -321,7 +327,7 @@ const G6LineageDiagram: React.FC<G6LineageDiagramProps> = ({
 
         const hasActiveSelection = activeNodeIds.size > 0 || activeEdgeKeys.size > 0;
         const g6Nodes: G6NodeData[] = displayNodes
-            .filter(node => !activeTrace || visibleNodeIds.has(node.id))
+            .filter(node => visibleNodeIds.has(node.id))
             .map(node => {
                 const isSelected = selectedNodeId === node.id || (!!selectedTableLower && node.title.toLowerCase() === selectedTableLower);
                 const isNeighbor = !isSelected && activeNodeIds.has(node.id);
@@ -405,7 +411,7 @@ const G6LineageDiagram: React.FC<G6LineageDiagramProps> = ({
     }, [displayLinks]);
     const activeMeta = lastExpansionMeta || graphMeta;
     const isTruncated = !!activeMeta?.truncated;
-    const graphModeLabel = mode === 'trace' ? '溯源图' : '影响图';
+    const graphModeLabel = '血缘图';
 
     const focusNode = React.useCallback((nodeId: string) => {
         const graph = graphRef.current;
@@ -416,7 +422,17 @@ const G6LineageDiagram: React.FC<G6LineageDiagramProps> = ({
 
     const renderGraph = React.useCallback((graph: InstanceType<typeof Graph>) => {
         renderQueueRef.current = renderQueueRef.current.then(async () => {
-            if (graphRef.current === graph && mountedRef.current) await graph.render();
+            await waitForFrame();
+            await waitForFrame();
+            const container = containerRef.current;
+            const rect = container?.getBoundingClientRect();
+            if (rect && rect.width > 0 && rect.height > 0) {
+                graph.setSize(Math.floor(rect.width), Math.floor(rect.height));
+            }
+            if (graphRef.current === graph && mountedRef.current) {
+                await graph.render();
+                await graph.fitView({ padding: 56 }, { duration: 0 }).catch(() => undefined);
+            }
         }).catch(() => undefined);
     }, []);
 
@@ -584,7 +600,7 @@ const G6LineageDiagram: React.FC<G6LineageDiagramProps> = ({
     }
 
     return (
-        <div className="relative h-full w-full overflow-hidden bg-[#f8fafc]">
+        <div className="relative h-full w-full overflow-hidden bg-[#f8fafc]" style={{ minHeight: 640 }}>
             <div className="absolute inset-y-0 left-0 right-[340px]">
                 <div ref={containerRef} className="h-full w-full" />
             </div>

@@ -1,9 +1,8 @@
 import React from 'react';
 import { Empty, Spin } from 'antd';
 import LineageListView from './LineageListView';
-import G6LineageDiagram from './G6LineageDiagram';
+import ColumnLineageDiagram from './ColumnLineageDiagram';
 import { LinkData, NodeData } from '../types';
-import type { LineageGraphResponse } from '@/api/lineage';
 
 interface LineageGraphContentProps {
     graphLoading: boolean;
@@ -12,12 +11,9 @@ interface LineageGraphContentProps {
     listLoading: boolean;
     listNodes: NodeData[];
     listLinks: LinkData[];
-    mode: 'trace' | 'impact';
     viewMode: 'canvas' | 'list';
     selectedTable: string | null;
     selectedField: { nodeId: string; colId: string } | null;
-    graphMeta?: Partial<LineageGraphResponse> | null;
-    onGenerateReport?: () => void;
 }
 
 const LineageGraphContent: React.FC<LineageGraphContentProps> = ({
@@ -27,26 +23,25 @@ const LineageGraphContent: React.FC<LineageGraphContentProps> = ({
     listLoading,
     listNodes,
     listLinks,
-    mode,
     viewMode,
     selectedTable,
     selectedField,
-    graphMeta,
-    onGenerateReport,
 }) => {
+    const canvasNodes = listNodes.length > 0 ? listNodes : nodes;
+    const canvasLinks = listNodes.length > 0 ? listLinks : links;
+    const activeNodes = viewMode === 'canvas' ? canvasNodes : listNodes;
+
     return (
-        <Spin spinning={viewMode === 'list' ? listLoading : graphLoading} description="加载血缘关系...">
-            <div style={{ height: '100%', width: '100%' }}>
-                {nodes.length > 0 ? (
+        <div style={{ flex: 1, minHeight: viewMode === 'canvas' ? 640 : 0, width: '100%' }}>
+            <Spin spinning={viewMode === 'list' ? listLoading : graphLoading} description="加载血缘关系...">
+                <div style={{ height: '100%', minHeight: viewMode === 'canvas' ? 640 : 0, width: '100%' }}>
+                {activeNodes.length > 0 ? (
                     viewMode === 'canvas' ? (
-                        <G6LineageDiagram
-                            mode={mode}
-                            nodes={nodes}
-                            links={links}
+                        <ColumnLineageDiagram
+                            nodes={canvasNodes}
+                            links={canvasLinks}
                             selectedTable={selectedTable}
                             selectedField={selectedField}
-                            graphMeta={graphMeta}
-                            onGenerateReport={onGenerateReport}
                         />
                     ) : (
                         <LineageListView
@@ -57,10 +52,16 @@ const LineageGraphContent: React.FC<LineageGraphContentProps> = ({
                         />
                     )
                 ) : (
-                    !graphLoading && <Empty description="请从左侧选择表查看血缘" style={{ marginTop: '100px' }} />
+                    !graphLoading && (
+                        <Empty
+                            description={selectedTable ? '暂无流程图数据，请切换查询方向或选择其他表' : '请从左侧选择表查看血缘'}
+                            style={{ marginTop: '100px' }}
+                        />
+                    )
                 )}
-            </div>
-        </Spin>
+                </div>
+            </Spin>
+        </div>
     );
 };
 

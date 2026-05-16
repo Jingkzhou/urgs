@@ -6,7 +6,10 @@ set -euo pipefail
 # - linux/amd64 for the previous x86_64 server architecture
 
 STAMP="${PACKAGE_STAMP:-$(date +%Y%m%d%H%M%S)}"
-MODULES=("$@")
+MODULES=()
+if [ "$#" -gt 0 ]; then
+    MODULES=("$@")
+fi
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
@@ -41,13 +44,23 @@ run_package() {
     local compose_url="${!compose_url_var:-${COMPOSE_URL:-}}"
 
     printf '[dual-package] building %s package: %s\n' "$build_arch" "$package_name"
-    BUILD_ARCH="$build_arch" \
-    TARGET_ARCH="$target_arch" \
-    DIST_DIR="$dist_dir" \
-    PACKAGE_NAME="$package_name" \
-    DOCKER_STATIC_URL="$docker_url" \
-    COMPOSE_URL="$compose_url" \
-    ./package.sh "${MODULES[@]}"
+    if [ "${#MODULES[@]}" -gt 0 ]; then
+        BUILD_ARCH="$build_arch" \
+        TARGET_ARCH="$target_arch" \
+        DIST_DIR="$dist_dir" \
+        PACKAGE_NAME="$package_name" \
+        DOCKER_STATIC_URL="$docker_url" \
+        COMPOSE_URL="$compose_url" \
+        ./package.sh "${MODULES[@]}"
+    else
+        BUILD_ARCH="$build_arch" \
+        TARGET_ARCH="$target_arch" \
+        DIST_DIR="$dist_dir" \
+        PACKAGE_NAME="$package_name" \
+        DOCKER_STATIC_URL="$docker_url" \
+        COMPOSE_URL="$compose_url" \
+        ./package.sh
+    fi
 }
 
 run_package "linux/arm64" "aarch64" "urgs-dist-aarch64" "urgs-offline-aarch64-${STAMP}"

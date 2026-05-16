@@ -34,18 +34,12 @@ export default defineConfig(({ mode }) => {
       },
     },
     plugins: [react()],
+    esbuild: {
+      drop: mode === 'production' ? ['console', 'debugger'] : [],
+    },
     build: {
-      minify: 'terser',
+      minify: 'esbuild',
       sourcemap: false,
-      terserOptions: {
-        compress: {
-          drop_console: true,
-          drop_debugger: true,
-        },
-        format: {
-          comments: false,
-        },
-      },
     },
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),

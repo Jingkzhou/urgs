@@ -121,6 +121,7 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
       const params = new URLSearchParams(window.location.search);
       const clientId = params.get("client_id");
       const redirectUri = params.get("redirect_uri");
+      const state = params.get("state");
 
       if (clientId && redirectUri) {
         try {
@@ -134,12 +135,15 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
               client_id: clientId,
               redirect_uri: redirectUri,
               response_type: "code",
+              state,
             }),
           });
 
           if (authRes.ok) {
             const authData = await authRes.json();
-            window.location.href = `${authData.redirect_uri}?code=${authData.code}`;
+            const separator = authData.redirect_uri.includes("?") ? "&" : "?";
+            const stateQuery = authData.state ? `&state=${encodeURIComponent(authData.state)}` : "";
+            window.location.href = `${authData.redirect_uri}${separator}code=${encodeURIComponent(authData.code)}${stateQuery}`;
             return;
           } else {
             console.error("OAuth authorization failed");

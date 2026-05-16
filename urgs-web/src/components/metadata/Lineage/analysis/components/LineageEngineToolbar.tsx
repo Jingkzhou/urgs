@@ -78,9 +78,9 @@ const LineageEngineToolbar: React.FC<LineageEngineToolbarProps> = ({ controller 
 
     return (
         <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', border: '1px solid #f0f0f0', borderRadius: 8, background: '#fafafa' }}>
-                    <span style={{ fontSize: 12, color: '#8c8c8c' }}>引擎控制</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 34, padding: '5px 10px', border: '1px solid #e5e7eb', borderRadius: 8, background: '#f8fafc', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <span style={{ fontSize: 12, color: '#64748b' }}>引擎</span>
                     {canViewEngineStatus ? (
                         <>
                             <Badge status={engineStatusInfo.badge} text={engineStatusInfo.label} />
@@ -108,10 +108,11 @@ const LineageEngineToolbar: React.FC<LineageEngineToolbarProps> = ({ controller 
                         <Badge status="default" text="无权限" />
                     )}
                 </div>
-                <Space>
+                <Space size={8} wrap>
                     {canStartEngine ? (
                         <Button
                             type="primary"
+                            size="middle"
                             icon={<PlayCircleOutlined />}
                             loading={engineActionLoading === 'start'}
                             disabled={engineStatus === 'running' || engineStatus === 'starting'}
@@ -122,6 +123,7 @@ const LineageEngineToolbar: React.FC<LineageEngineToolbarProps> = ({ controller 
                     ) : null}
                     {canRestartEngine ? (
                         <Button
+                            size="middle"
                             icon={<ReloadOutlined />}
                             loading={engineActionLoading === 'restart'}
                             disabled={engineStatus !== 'running'}
@@ -133,6 +135,7 @@ const LineageEngineToolbar: React.FC<LineageEngineToolbarProps> = ({ controller 
                     {canStopEngine ? (
                         <Button
                             danger
+                            size="middle"
                             icon={<PoweroffOutlined />}
                             loading={engineActionLoading === 'stop'}
                             disabled={engineStatus !== 'running'}
@@ -142,13 +145,14 @@ const LineageEngineToolbar: React.FC<LineageEngineToolbarProps> = ({ controller 
                         </Button>
                     ) : null}
                     {canViewEngineLogs ? (
-                        <Button icon={<FileTextOutlined />} onClick={handleOpenLogs}>
+                        <Button size="middle" icon={<FileTextOutlined />} onClick={handleOpenLogs}>
                             查看日志
                         </Button>
                     ) : null}
                     {canStopEngine ? (
                         <Button
                             danger
+                            size="middle"
                             icon={<DeleteOutlined />}
                             loading={engineActionLoading === 'clear'}
                             onClick={handleClearDatabase}
