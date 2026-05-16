@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Empty, Tag } from 'antd';
+import { Empty, message, Tag } from 'antd';
 import { LinkData, NodeData, RELATION_STYLES } from '../types';
+import CodeModal from './CodeModal';
 
 interface ColumnLineageDiagramProps {
     nodes: NodeData[];
@@ -18,6 +19,13 @@ interface LayoutNode {
     columns: { id: string; name: string; synthetic?: boolean }[];
 }
 
+interface SelectedCode {
+    code: string;
+    sourceFile?: string;
+    linkType?: string;
+    searchTerm?: string;
+}
+
 const TABLE_LEVEL_COLUMN = '__table_level__';
 const CARD_WIDTH = 290;
 const HEADER_HEIGHT = 36;
@@ -26,6 +34,7 @@ const ROW_HEIGHT = 28;
 const RANK_GAP = 190;
 const NODE_GAP = 56;
 const PADDING = 72;
+const DEFAULT_RELATION_TYPE = 'DERIVES_TO';
 
 const splitQualifiedTitle = (title: string) => {
     const index = title.lastIndexOf('.');
@@ -42,9 +51,66 @@ const sameTable = (left: string, right?: string | null) => (
     !!right && left.toLowerCase() === right.toLowerCase()
 );
 
+const normalizeRelationType = (type?: string) => type || DEFAULT_RELATION_TYPE;
+
 const getRelationStyle = (type?: string) => (
-    RELATION_STYLES[type || 'DERIVES_TO'] || RELATION_STYLES.DERIVES_TO
+    RELATION_STYLES[normalizeRelationType(type)] || RELATION_STYLES[DEFAULT_RELATION_TYPE]
 );
+
+const getRelationLabel = (type?: string) => (
+    RELATION_STYLES[normalizeRelationType(type)]?.label || normalizeRelationType(type)
+);
+
+const getRelationMarkerId = (type?: string) => (
+    `column-lineage-arrow-${normalizeRelationType(type).replace(/[^a-zA-Z0-9_-]/g, '-')}`
+);
+
+const getLinkCode = (link: LinkData) => {
+    const value = link.properties?.snippet
+        || link.properties?.sql
+        || link.properties?.expression
+        || link.properties?.logic
+        || link.properties?.sourceCode
+        || link.properties?.code;
+    return value ? String(value) : '';
+};
+
+const getSourceFile = (link: LinkData) => {
+    const sourceFiles = link.properties?.sourceFiles;
+    if (Array.isArray(sourceFiles)) {
+        return sourceFiles[0] ? String(sourceFiles[0]) : undefined;
+    }
+    const value = sourceFiles || link.properties?.source_file || link.properties?.sourceFile;
+    return value ? String(value) : undefined;
+};
+
+const normalizeArray = (value: any): string[] => {
+    if (Array.isArray(value)) {
+        return value.filter(Boolean).map(String);
+    }
+    return value ? [String(value)] : [];
+};
+
+const formatColumnSummary = (columns: string[], fallback: string) => {
+    if (columns.length === 0) {
+        return fallback;
+    }
+    if (columns.length <= 2) {
+        return columns.join('、');
+    }
+    return `${columns.slice(0, 2).join('、')} 等 ${columns.length} 个字段`;
+};
+
+const getSourceColumnSearchTerm = (link: LinkData, nodes: NodeData[]) => {
+    const sourceNode = nodes.find(node => node.id === link.sourceNodeId);
+    const sourceCol = sourceNode?.columns.find(col => col.id === link.sourceColumnId);
+    const relationCount = Number(link.properties?.relationCount || 0);
+    const sourceColumns = normalizeArray(link.properties?.sourceColumns);
+    return sourceCol?.name
+        || link.properties?.sourceColumn
+        || link.properties?.sourceColumnName
+        || formatColumnSummary(sourceColumns, link.sourceColumnId || `表级关系(${relationCount || 1})`);
+};
 
 const buildColumnUsage = (links: LinkData[]) => {
     const usage = new Map<string, Set<string>>();
@@ -188,6 +254,8 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
 }) => {
     const [activeLinkId, setActiveLinkId] = useState<string | null>(null);
     const [activeColumnKey, setActiveColumnKey] = useState<string | null>(null);
+    const [codeModalVisible, setCodeModalVisible] = useState(false);
+    const [selectedCode, setSelectedCode] = useState<SelectedCode | null>(null);
 
     const layout = useMemo(() => {
         const columnUsage = buildColumnUsage(links);
@@ -235,22 +303,51 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         buildDownstreamHighlight(activeColumnKey, links)
     ), [activeColumnKey, links]);
     const hasColumnHover = !!activeColumnKey;
+    const relationLegend = useMemo(() => {
+        const order = new Map(Object.keys(RELATION_STYLES).map((type, index) => [type, index]));
+        return Array.from(new Set(links.map(link => normalizeRelationType(link.type))))
+            .sort((a, b) => (order.get(a) ?? 99) - (order.get(b) ?? 99) || a.localeCompare(b))
+            .map(type => ({ type, style: getRelationStyle(type), label: getRelationLabel(type) }));
+    }, [links]);
 
     if (nodes.length === 0) {
         return <Empty description="暂无流程图数据" style={{ marginTop: 100 }} />;
     }
+
+    const handleLinkClick = (link: LinkData) => {
+        const code = getLinkCode(link);
+        if (!code) {
+            message.info('该连接线暂无逻辑/源码片段');
+            return;
+        }
+        setSelectedCode({
+            code,
+            sourceFile: getSourceFile(link),
+            linkType: normalizeRelationType(link.type),
+            searchTerm: getSourceColumnSearchTerm(link, nodes),
+        });
+        setCodeModalVisible(true);
+    };
 
     return (
         <div className="h-full w-full overflow-auto bg-[#f1f2f4]" style={{ minHeight: 640 }}>
             <div className="relative" style={{ width: layout.width, height: layout.height }}>
                 <svg className="absolute inset-0" width={layout.width} height={layout.height}>
                     <defs>
-                        <marker id="lineage-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth">
-                            <path d="M 0 0 L 10 4 L 0 8 z" fill="#a6a8ab" />
-                        </marker>
-                        <marker id="lineage-arrow-active" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth">
-                            <path d="M 0 0 L 10 4 L 0 8 z" fill="#111827" />
-                        </marker>
+                        {relationLegend.map(({ type, style }) => (
+                            <marker
+                                key={type}
+                                id={getRelationMarkerId(type)}
+                                markerWidth="10"
+                                markerHeight="8"
+                                refX="9"
+                                refY="4"
+                                orient="auto"
+                                markerUnits="strokeWidth"
+                            >
+                                <path d="M 0 0 L 10 4 L 0 8 z" fill={style.highlightColor} />
+                            </marker>
+                        ))}
                     </defs>
                     {links.map(link => {
                         const sourceKey = getColumnKey(link.sourceNodeId, link.sourceColumnId);
@@ -266,20 +363,23 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                             || highlighted.activeLinks.has(link.id)
                             || sourceKey === selectedFieldKey
                             || targetKey === selectedFieldKey;
-                        const style = getRelationStyle(link.type);
+                        const relationType = normalizeRelationType(link.type);
+                        const style = getRelationStyle(relationType);
+                        const hasCode = !!getLinkCode(link);
                         return (
                             <path
                                 key={link.id}
                                 d={buildPath(source, target)}
                                 fill="none"
-                                stroke={isActive ? '#111827' : '#b8babf'}
-                                strokeWidth={isActive ? 2.8 : 1.5}
-                                strokeDasharray={isActive ? undefined : style.strokeDasharray}
-                                markerEnd={`url(#${isActive ? 'lineage-arrow-active' : 'lineage-arrow'})`}
-                                opacity={(activeLinkId || hasColumnHover) && !isActive ? 0.18 : 1}
-                                style={{ pointerEvents: 'stroke' }}
+                                stroke={isActive ? style.highlightColor : style.color}
+                                strokeWidth={isActive ? 3 : 1.6}
+                                strokeDasharray={style.strokeDasharray}
+                                markerEnd={`url(#${getRelationMarkerId(relationType)})`}
+                                opacity={(activeLinkId || hasColumnHover) && !isActive ? 0.12 : (isActive ? 1 : 0.62)}
+                                style={{ cursor: hasCode ? 'pointer' : 'default', pointerEvents: 'stroke' }}
                                 onMouseEnter={() => setActiveLinkId(link.id)}
                                 onMouseLeave={() => setActiveLinkId(null)}
+                                onClick={() => handleLinkClick(link)}
                             />
                         );
                     })}
@@ -346,7 +446,40 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                         </div>
                     );
                 })}
+                {relationLegend.length > 0 ? (
+                    <div className="sticky left-5 top-5 z-20 inline-flex max-w-[520px] flex-wrap gap-x-4 gap-y-2 rounded-md border border-slate-200 bg-white/92 px-3 py-2 text-xs text-slate-600 shadow-sm backdrop-blur">
+                        {relationLegend.map(({ type, style, label }) => (
+                            <div key={type} className="flex items-center gap-2">
+                                <svg width="34" height="10" viewBox="0 0 34 10" aria-hidden="true">
+                                    <line
+                                        x1="1"
+                                        y1="5"
+                                        x2="31"
+                                        y2="5"
+                                        stroke={style.color}
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeDasharray={style.strokeDasharray}
+                                    />
+                                    <path d="M 28 1 L 34 5 L 28 9 z" fill={style.color} />
+                                </svg>
+                                <span>{label}</span>
+                            </div>
+                        ))}
+                    </div>
+                ) : null}
             </div>
+            {selectedCode ? (
+                <CodeModal
+                    visible={codeModalVisible}
+                    onClose={() => setCodeModalVisible(false)}
+                    code={selectedCode.code}
+                    title="逻辑/源码"
+                    sourceFile={selectedCode.sourceFile}
+                    linkType={selectedCode.linkType}
+                    searchTerm={selectedCode.searchTerm}
+                />
+            ) : null}
         </div>
     );
 };
