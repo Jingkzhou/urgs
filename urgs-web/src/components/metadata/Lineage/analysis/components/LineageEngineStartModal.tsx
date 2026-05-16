@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Steps, Select, Tree, Form, Input, Card, Button, Space, Typography, Tag, Empty, Spin, message, Radio, Upload } from 'antd';
+import { Modal, Steps, Select, Tree, Form, Input, Card, Button, Space, Typography, Tag, Empty, Spin, message, Radio, Upload, Switch } from 'antd';
 import {
     GithubOutlined,
     BranchesOutlined,
@@ -91,6 +91,7 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                 ref: undefined,
                 user: undefined,
                 language: 'oracle',
+                enableAiReview: true,
             });
         }
     }, [open, form]);
@@ -213,6 +214,7 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                     paths: selectedPaths,
                     user: values.user,
                     language: values.language,
+                    enableAiReview: values.enableAiReview !== false,
                 };
                 onCancel();
                 onOk({
@@ -235,6 +237,7 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                 files,
                 user: values.user,
                 language: values.language,
+                enableAiReview: values.enableAiReview !== false,
             };
             onCancel();
             onOk({
@@ -513,6 +516,17 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                                 ]}
                             />
                         </Form.Item>
+                        <Form.Item
+                            label="AI 事后校验"
+                            name="enableAiReview"
+                            valuePropName="checked"
+                            tooltip="关闭后仍会保留校验批次和 SQL 片段预览，但不会调用 AI 生成疑点"
+                        >
+                            <Switch checkedChildren="启用" unCheckedChildren="关闭" />
+                        </Form.Item>
+                        <Paragraph type="secondary" style={{ marginTop: -12, marginBottom: 0, fontSize: 12 }}>
+                            关闭适合只做解析入库和人工抽查；启用后解析完成会自动调用 AI 对程序血缘进行二次检核。
+                        </Paragraph>
 
                         <div style={{ marginTop: 40, padding: 20, background: '#fffbe6', borderRadius: 12, border: '1px solid #ffe58f' }}>
                             <Space align="start">

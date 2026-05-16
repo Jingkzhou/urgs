@@ -57,6 +57,11 @@ public class LineageAnalysisRecord {
     private String language;
 
     /**
+     * 是否启用 AI 事后校验
+     */
+    private Boolean aiReviewEnabled;
+
+    /**
      * 状态: PENDING, RUNNING, SUCCESS, FAILED
      */
     private String status;

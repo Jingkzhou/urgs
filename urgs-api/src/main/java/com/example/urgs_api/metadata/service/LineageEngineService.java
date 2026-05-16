@@ -88,16 +88,19 @@ public class LineageEngineService {
         return queueStart(normalized);
     }
 
-    public Map<String, Object> startWithUpload(List<MultipartFile> files, String user, String language) {
+    public Map<String, Object> startWithUpload(List<MultipartFile> files, String user, String language,
+            Boolean enableAiReview) {
         StartEngineRequest request = new StartEngineRequest();
         request.setSourceType("upload");
         request.setUser(user);
         request.setLanguage(language);
-        log.info("[LineageEngineDiagnostics] startWithUpload received: fileCount={}, fileNames={}, user={}, language={}",
+        request.setEnableAiReview(enableAiReview);
+        log.info("[LineageEngineDiagnostics] startWithUpload received: fileCount={}, fileNames={}, user={}, language={}, enableAiReview={}",
                 files != null ? files.size() : 0,
                 files != null ? files.stream().map(MultipartFile::getOriginalFilename).toList() : List.of(),
                 user,
-                language);
+                language,
+                enableAiReview);
         try {
             synchronized (lock) {
                 this.lastRequest = request;
@@ -270,6 +273,9 @@ public class LineageEngineService {
             normalized.setRepoId(null);
             normalized.setRef(null);
         }
+        if (normalized.getEnableAiReview() == null) {
+            normalized.setEnableAiReview(true);
+        }
         return normalized;
     }
 
@@ -301,6 +307,7 @@ public class LineageEngineService {
         record.setPaths(request.getPaths());
         record.setDefaultUser(request.getUser());
         record.setLanguage(request.getLanguage());
+        record.setAiReviewEnabled(isAiReviewEnabled(request));
         record.setStatus("PENDING");
         record.setStartTime(LocalDateTime.now());
         record.setCreateTime(LocalDateTime.now());
@@ -325,6 +332,7 @@ public class LineageEngineService {
         record.setPaths(request.getPaths());
         record.setDefaultUser(request.getUser());
         record.setLanguage(request.getLanguage());
+        record.setAiReviewEnabled(isAiReviewEnabled(request));
         record.setStatus("RUNNING");
         record.setUpdateTime(LocalDateTime.now());
 
@@ -793,7 +801,12 @@ public class LineageEngineService {
                 + ", paths=" + request.getPaths()
                 + ", user=" + request.getUser()
                 + ", language=" + request.getLanguage()
-                + ", localPath=" + request.getLocalPath();
+                + ", localPath=" + request.getLocalPath()
+                + ", enableAiReview=" + request.getEnableAiReview();
+    }
+
+    private boolean isAiReviewEnabled(StartEngineRequest request) {
+        return request == null || !Boolean.FALSE.equals(request.getEnableAiReview());
     }
 
     private boolean isGitSource(StartEngineRequest request) {

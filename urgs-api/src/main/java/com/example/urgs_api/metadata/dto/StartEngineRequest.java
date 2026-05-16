@@ -12,4 +12,5 @@ public class StartEngineRequest {
     private String user;
     private String language;
     private String localPath;
+    private Boolean enableAiReview;
 }

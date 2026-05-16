@@ -265,6 +265,7 @@ export interface LineageAnalysisRecordItem {
     versionId?: string;
     defaultUser?: string;
     language?: string;
+    aiReviewEnabled?: boolean;
     status?: string;
     error?: string;
     startTime?: string;
@@ -379,6 +380,7 @@ export interface LineageEngineStartByGitParams {
     paths: string[];
     user?: string;
     language?: string;
+    enableAiReview?: boolean;
 }
 
 export interface LineageEngineStartByUploadParams {
@@ -386,6 +388,7 @@ export interface LineageEngineStartByUploadParams {
     files: File[];
     user?: string;
     language?: string;
+    enableAiReview?: boolean;
 }
 
 export type LineageEngineStartParams = LineageEngineStartByGitParams | LineageEngineStartByUploadParams;
@@ -404,6 +407,7 @@ export const startLineageEngine = (params: LineageEngineStartParams) => {
         if (params.language) {
             formData.append('language', params.language);
         }
+        formData.append('enableAiReview', String(params.enableAiReview !== false));
         return post('/api/metadata/lineage/engine/start', formData, startEngineOptions);
     }
     return post('/api/metadata/lineage/engine/start', params, startEngineOptions);

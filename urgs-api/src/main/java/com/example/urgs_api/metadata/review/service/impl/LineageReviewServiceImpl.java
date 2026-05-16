@@ -50,6 +50,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     private static final int RULE_AI_BUDGET = 50;
     private static final int SQL_AUDIT_LIMIT = 100;
     private static final int SQL_AUDIT_SNIPPET_LIMIT = 12000;
+    private static final int AI_REVIEW_DISABLED_BUDGET = 0;
 
     private final LineageAnalysisRecordMapper analysisRecordMapper;
     private final LineageReviewTaskMapper taskMapper;
@@ -294,13 +295,17 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     }
 
     private LineageReviewTask upsertTask(LineageAnalysisRecord record, String shardPath, boolean forceRerun) {
+        int tokenBudget = resolveTaskAiBudget(record);
         LambdaQueryWrapper<LineageReviewTask> query = new LambdaQueryWrapper<>();
         query.eq(LineageReviewTask::getAnalysisRecordId, record.getId())
                 .eq(LineageReviewTask::getPathPrefix, shardPath)
                 .last("LIMIT 1");
         LineageReviewTask existing = taskMapper.selectOne(query);
         boolean sameVersion = existing != null && Objects.equals(existing.getVersionId(), record.getVersionId());
-        if (existing != null && !forceRerun && sameVersion && !"FAILED".equalsIgnoreCase(existing.getStatus())) {
+        boolean sameAiMode = existing != null
+                && Objects.equals(normalizeTokenBudget(existing.getTokenBudget()), tokenBudget);
+        if (existing != null && !forceRerun && sameVersion && sameAiMode
+                && !"FAILED".equalsIgnoreCase(existing.getStatus())) {
             return existing;
         }
         if (existing == null) {
@@ -312,7 +317,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             existing.setPathPrefix(shardPath);
             existing.setSystemKey(deriveSystemKey(shardPath));
             existing.setTaskName(buildTaskName(record, shardPath));
-            existing.setTokenBudget(TASK_AI_BUDGET);
+            existing.setTokenBudget(tokenBudget);
             existing.setObjectCount(0);
             existing.setProcessedCount(0);
             existing.setIssueCount(0);
@@ -331,6 +336,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         existing.setVersionId(record.getVersionId());
         existing.setRepoId(record.getRepoId());
         existing.setRef(record.getRef());
+        existing.setTokenBudget(tokenBudget);
         existing.setStatus("PENDING");
         existing.setLastError(null);
         existing.setStartedAt(null);
@@ -410,6 +416,18 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             int cacheHits = 0;
             int batchCount = 0;
 
+            if (!isAiReviewEnabled(task)) {
+                processed = task.getObjectCount();
+                batchCount = estimateBatchCount(objects, sqlAuditObjects);
+                task.setStatus("COMPLETED");
+                task.setFinishedAt(LocalDateTime.now());
+                task.setLastError(null);
+                updateTaskProgress(task, processed, issueCount, failedCount, aiCallCount, cacheHits, batchCount);
+                log.info("lineage review AI disabled, taskId={}, objectCount={}, batchCount={}",
+                        taskId, task.getObjectCount(), batchCount);
+                return;
+            }
+
             for (int i = 0; i < objects.size(); i += TASK_BATCH_SIZE) {
                 List<Map<String, Object>> batch = objects.subList(i, Math.min(i + TASK_BATCH_SIZE, objects.size()));
                 batchCount++;
@@ -462,7 +480,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
 
             for (Map<String, Object> sqlAuditObject : sqlAuditObjects) {
                 try {
-                    if (aiCallCount >= TASK_AI_BUDGET) {
+                    if (aiCallCount >= resolveTaskAiBudget(task)) {
                         continue;
                     }
                     aiCallCount++;
@@ -509,7 +527,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         task.setAiCallCount(aiCallCount);
         task.setCacheHitCount(cacheHits);
         task.setBatchCount(batchCount);
-        task.setConsumedTokens(Math.min(task.getTokenBudget(), aiCallCount * 12));
+        task.setConsumedTokens(Math.min(resolveTaskAiBudget(task), aiCallCount * 12));
         task.setUpdateTime(LocalDateTime.now());
         taskMapper.updateById(task);
     }
@@ -779,6 +797,32 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             return false;
         }
         return !"LOW".equalsIgnoreCase(issue.getSeverity()) || issue.getRuleHits().size() >= 2;
+    }
+
+    private int resolveTaskAiBudget(LineageAnalysisRecord record) {
+        return record != null && Boolean.FALSE.equals(record.getAiReviewEnabled())
+                ? AI_REVIEW_DISABLED_BUDGET
+                : TASK_AI_BUDGET;
+    }
+
+    private int resolveTaskAiBudget(LineageReviewTask task) {
+        return normalizeTokenBudget(task != null ? task.getTokenBudget() : null);
+    }
+
+    private int normalizeTokenBudget(Integer tokenBudget) {
+        if (tokenBudget == null) {
+            return TASK_AI_BUDGET;
+        }
+        return Math.max(tokenBudget, AI_REVIEW_DISABLED_BUDGET);
+    }
+
+    private boolean isAiReviewEnabled(LineageReviewTask task) {
+        return resolveTaskAiBudget(task) > AI_REVIEW_DISABLED_BUDGET;
+    }
+
+    private int estimateBatchCount(List<Map<String, Object>> objects, List<Map<String, Object>> sqlAuditObjects) {
+        int objectBatches = objects.isEmpty() ? 0 : (int) Math.ceil((double) objects.size() / TASK_BATCH_SIZE);
+        return objectBatches + sqlAuditObjects.size();
     }
 
     private void downgradeRuleOnlyIssue(LineageReviewIssue issue) {
