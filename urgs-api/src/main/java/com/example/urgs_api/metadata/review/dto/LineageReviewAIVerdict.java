@@ -8,6 +8,8 @@ import java.util.List;
 @Data
 public class LineageReviewAIVerdict {
     private String issueType;
+    private String targetTable;
+    private String targetColumn;
     private String severity;
     private BigDecimal confidence;
     private String verdict;

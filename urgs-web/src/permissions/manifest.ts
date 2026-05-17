@@ -63,6 +63,12 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '3-5-3', name: '编辑配置', code: 'sys:system:edit', type: 'button', path: '-', level: 2, parentId: '3-5' },
     { id: '3-5-4', name: '删除配置', code: 'sys:system:del', type: 'button', path: '-', level: 2, parentId: '3-5' },
 
+    { id: '3-9', name: '首页指标走势配置', code: 'sys:metric', type: 'menu', path: '/admin/metric', level: 1, parentId: '3' },
+    { id: '3-9-1', name: '查询', code: 'sys:metric:query', type: 'button', path: '-', level: 2, parentId: '3-9' },
+    { id: '3-9-2', name: '新增', code: 'sys:metric:add', type: 'button', path: '-', level: 2, parentId: '3-9' },
+    { id: '3-9-3', name: '编辑', code: 'sys:metric:edit', type: 'button', path: '-', level: 2, parentId: '3-9' },
+    { id: '3-9-4', name: '删除', code: 'sys:metric:del', type: 'button', path: '-', level: 2, parentId: '3-9' },
+
     { id: '3-6', name: '数据源配置', code: 'sys:datasource', type: 'menu', path: '/admin/datasource', level: 1, parentId: '3' },
     { id: '3-6-1', name: '查询', code: 'datasource:list', type: 'button', path: '-', level: 2, parentId: '3-6' },
     { id: '3-7', name: 'AI 管理', code: 'sys:ai', type: 'menu', path: '/admin/ai', level: 1, parentId: '3' },

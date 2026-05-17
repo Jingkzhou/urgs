@@ -393,6 +393,103 @@ def test_subquery_projection_resolves_unqualified_columns_by_alias(mock_metadata
     ) not in actual
 
 
+def test_case_when_unqualified_condition_uses_single_projection_alias(mock_metadata_resolver):
+    """CASE 条件中的未限定字段在同一表达式只有一个明确别名时，应归属到该别名。"""
+    from parsers.sql_parser import LineageParser
+
+    sql = """
+    INSERT INTO IE_TY_TYCKJC (deptermtype)
+    SELECT CASE
+             WHEN A.DEPTERMTYPE IS NULL OR FINADEPTYPE = 'A011' THEN '01'
+             ELSE A.DEPTERMTYPE
+           END
+      FROM DATACORE_IE_TY_TYCKJC A
+      LEFT JOIN DATACORE_TMP_TX_JRJG B
+        ON A.CUST_NAME = B.CUST_ID
+    """
+
+    parser = LineageParser(dialect="oracle", default_schema="IRS_DATACORE")
+    actual = make_column_lineage_set(parser.get_column_lineage(sql))
+
+    assert (
+        "IRS_DATACORE.DATACORE_IE_TY_TYCKJC",
+        "FINADEPTYPE",
+        "IRS_DATACORE.IE_TY_TYCKJC",
+        "DEPTERMTYPE",
+        "case_when",
+    ) in actual
+
+
+def test_case_when_unqualified_condition_uses_single_case_alias(mock_metadata_resolver):
+    """CASE 条件中混用 T.COL 和 COL 时，未限定字段可归属到同一 CASE 表达式的唯一别名。"""
+    from parsers.sql_parser import LineageParser
+
+    sql = """
+    INSERT INTO DATACORE_IE_TY_TYCKJC (finadeptype)
+    SELECT CASE
+             WHEN T.GL_ITEM_CODE LIKE '250202%' AND MATURE_DATE IS NOT NULL THEN 'A012'
+             ELSE NULL
+           END
+      FROM SMTMODS.L_ACCT_FUND_MMFUND T
+      LEFT JOIN CUST_TY_NEW A
+        ON T.CUST_ID = A.CUST_ID
+    """
+
+    parser = LineageParser(dialect="oracle", default_schema="IRS_DATACORE")
+    actual = make_column_lineage_set(parser.get_column_lineage(sql))
+
+    assert (
+        "SMTMODS.L_ACCT_FUND_MMFUND",
+        "MATURE_DATE",
+        "IRS_DATACORE.DATACORE_IE_TY_TYCKJC",
+        "FINADEPTYPE",
+        "case_when",
+    ) in actual
+
+
+def test_minus_select_star_maps_each_left_projection_as_filter_dependency(mock_metadata_resolver):
+    """MINUS/EXCEPT 右侧 SELECT * 应按左侧投影逐列影响目标，不能只落到第一列。"""
+    from parsers.sql_parser import LineageParser
+
+    sql = """
+    INSERT INTO TX_JRJG_DIF
+    SELECT DISTINCT CUST_NAM, ORGTPCODE
+      FROM (SELECT A.CUST_NAME AS CUST_NAM,
+                   NVL(B.JRJG, A.ORGTPCODE) AS ORGTPCODE
+              FROM DATACORE_IE_TY_TYCKJC A
+              LEFT JOIN DATACORE_TMP_TX_JRJG B
+                ON A.CUST_NAME = B.CUST_ID)
+    MINUS
+    SELECT *
+      FROM TX_JRJG_YESTERDAY
+    """
+
+    parser = LineageParser(dialect="oracle", default_schema="IRS_DATACORE")
+    actual = make_column_lineage_set(parser.get_column_lineage(sql))
+
+    assert (
+        "IRS_DATACORE.TX_JRJG_YESTERDAY",
+        "CUST_NAM",
+        "IRS_DATACORE.TX_JRJG_DIF",
+        "CUST_NAM",
+        "fdr",
+    ) in actual
+    assert (
+        "IRS_DATACORE.TX_JRJG_YESTERDAY",
+        "ORGTPCODE",
+        "IRS_DATACORE.TX_JRJG_DIF",
+        "ORGTPCODE",
+        "fdr",
+    ) in actual
+    assert (
+        "IRS_DATACORE.TX_JRJG_YESTERDAY",
+        "*",
+        "IRS_DATACORE.TX_JRJG_DIF",
+        "CUST_NAM",
+        "fdd",
+    ) not in actual
+
+
 def test_statement_hash_ignores_comments_and_whitespace():
     from exporters.neo4j import Neo4jClient
 

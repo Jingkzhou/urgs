@@ -279,7 +279,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             sb.append("- 对象数: ").append(task.getObjectCount()).append("\n");
             sb.append("- 疑点数: ").append(task.getIssueCount()).append("\n\n");
         }
-        for (LineageReviewIssue issue : issues.stream().limit(100).toList()) {
+        for (LineageReviewIssue issue : issues.stream().filter(this::isFormalIssue).limit(100).toList()) {
             sb.append("## ")
                     .append(issue.getTableName())
                     .append(issue.getColumnName() != null ? "." + issue.getColumnName() : "")
@@ -289,7 +289,10 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             sb.append("- 置信度: ").append(issue.getConfidence()).append("\n");
             sb.append("- 判定: ").append(issue.getVerdict()).append("\n");
             sb.append("- 原因: ").append(issue.getReason()).append("\n");
-            sb.append("- 规则命中: ").append(issue.getRuleHits()).append("\n\n");
+            sb.append("- 规则命中: ").append(issue.getRuleHits()).append("\n");
+            appendMarkdownList(sb, "证据", issue.getEvidenceRefs());
+            appendMarkdownList(sb, "建议来源", issue.getSuggestedSources());
+            sb.append("\n");
         }
         return sb.toString().getBytes(StandardCharsets.UTF_8);
     }
@@ -759,8 +762,18 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             return null;
         }
         String issueType = StringUtils.hasText(verdict.getIssueType()) ? verdict.getIssueType() : "NEEDS_MANUAL_REVIEW";
-        String tableName = resolvePrimaryTarget(object, "targetTable");
-        String columnName = resolvePrimaryTarget(object, "targetColumn");
+        if (!hasVerdictEvidence(verdict)) {
+            log.warn("[LineageSqlAudit] drop issue without evidence taskId={} issueType={} target={}.{}",
+                    task.getId(), issueType, verdict.getTargetTable(), verdict.getTargetColumn());
+            return null;
+        }
+        String tableName = normalizeAuditTarget(verdict.getTargetTable());
+        String columnName = normalizeAuditTarget(verdict.getTargetColumn());
+        if (!StringUtils.hasText(tableName)) {
+            log.warn("[LineageSqlAudit] drop issue without target table taskId={} issueType={} reason={}",
+                    task.getId(), issueType, verdict.getReason());
+            return null;
+        }
         String statementHash = toText(object.get("statementHash"));
         String snippetHash = StringUtils.hasText(statementHash) ? statementHash : hashOf(toText(object.get("snippet")));
 
@@ -783,9 +796,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         issue.setReason(verdict.getReason());
         issue.setRuleHits(List.of("AI_SQL_LINEAGE_RECHECK", "AI_PROGRAM_LINEAGE_COMPARE"));
         issue.setSuggestedSources(verdict.getSuggestedSources() == null ? new ArrayList<>() : verdict.getSuggestedSources());
-        issue.setEvidenceRefs(verdict.getEvidenceRefs() == null || verdict.getEvidenceRefs().isEmpty()
-                ? buildSqlAuditEvidenceRefs(object)
-                : verdict.getEvidenceRefs());
+        issue.setEvidenceRefs(new ArrayList<>(verdict.getEvidenceRefs()));
         issue.setGraphSnapshot(evidence);
         issue.setFingerprint(hashOf(task.getAnalysisRecordId(), task.getPathPrefix(), snippetHash, issueType,
                 verdict.getReason(), String.valueOf(issue.getEvidenceRefs())));
@@ -793,6 +804,18 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         issue.setCreateTime(LocalDateTime.now());
         issue.setUpdateTime(LocalDateTime.now());
         return issue;
+    }
+
+    private boolean hasVerdictEvidence(LineageReviewAIVerdict verdict) {
+        return verdict.getEvidenceRefs() != null
+                && verdict.getEvidenceRefs().stream().anyMatch(StringUtils::hasText);
+    }
+
+    private String normalizeAuditTarget(String value) {
+        if (!StringUtils.hasText(value) || "null".equalsIgnoreCase(value.trim())) {
+            return null;
+        }
+        return value.trim();
     }
 
     private LineageReviewIssue buildIssueDraft(LineageReviewTask task, Map<String, Object> object) {
@@ -1149,6 +1172,18 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             return list.stream().filter(Objects::nonNull).map(String::valueOf).toList();
         }
         return new ArrayList<>();
+    }
+
+    private void appendMarkdownList(StringBuilder sb, String title, List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return;
+        }
+        sb.append("- ").append(title).append(":\n");
+        for (String value : values) {
+            if (StringUtils.hasText(value)) {
+                sb.append("  - ").append(value).append("\n");
+            }
+        }
     }
 
     private String toText(Object value) {

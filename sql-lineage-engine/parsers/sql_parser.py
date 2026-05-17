@@ -394,6 +394,9 @@ class LineageParser:
                                     "snippet": dep.get(
                                         "snippet"
                                     ),  # Pass through the SQL snippet
+                                    "context": dep.get("context"),
+                                    "lineage_origin": dep.get("lineage_origin"),
+                                    "relation_level": dep.get("relation_level"),
                                 }
                             )
                     except Exception as e:
@@ -456,6 +459,8 @@ class LineageParser:
             dependencies = self._resolve_cte_in_column_results(
                 dependencies, cte_registry
             )
+
+        dependencies = self._remove_set_operation_star_fallbacks(dependencies)
 
         # ===== 3. Metadata Validation & Star Expansion =====
         final_dependencies = []
@@ -553,6 +558,23 @@ class LineageParser:
                 dep["source_table"] = apply_schema(dep["source_table"])
 
         return final_dependencies
+
+    def _remove_set_operation_star_fallbacks(self, dependencies):
+        set_operation_pairs = {
+            (dep.get("source_table"), dep.get("target_table"))
+            for dep in dependencies
+            if dep.get("lineage_origin") == "set_operation"
+        }
+        if not set_operation_pairs:
+            return dependencies
+        return [
+            dep for dep in dependencies
+            if not (
+                dep.get("dependency_type") == "fdd"
+                and dep.get("source_column") == "*"
+                and (dep.get("source_table"), dep.get("target_table")) in set_operation_pairs
+            )
+        ]
 
     # ============================================================
     # CTE Resolution Methods

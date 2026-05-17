@@ -100,6 +100,9 @@ class IndirectFlowParser:
                     for scope in all_scopes:
                         # Pass the SQL statement for snippet storage
                         dependencies.extend(self._process_scope(scope, target_info, source_file, stmt_sql, stmt_obj=stmt))
+                    dependencies.extend(self._extract_set_operation_star_dependencies(
+                        stmt, target_info, source_file, stmt_sql
+                    ))
                         
             except Exception as e:
                 logging.debug(f"sqlglot parse error: {e}")
@@ -179,6 +182,7 @@ class IndirectFlowParser:
             dep_type = "fdr" # default
             neo4j_type = "RELATED_TO"
             specific_target_column = "*"
+            projection_item = None
 
             # 向上遍历以查找不同的上下文
             curr = col
@@ -237,7 +241,6 @@ class IndirectFlowParser:
             if target_info and is_top_level:
                 # 查找此列属于哪个投影项
                 curr = col
-                projection_item = None
                 
                 # 向上移动以查找 Select 语句的直接子项
                 # 我们需要小心不要越过 scope.expression
@@ -279,7 +282,7 @@ class IndirectFlowParser:
                      specific_target_column = curr.name
             
             # 解析物理来源
-            physical_tables = self._resolve_column_to_physical(col, scope)
+            physical_tables = self._resolve_column_to_physical(col, scope, projection_item)
             
             for table_name in physical_tables:
                 deps.append({
@@ -296,7 +299,79 @@ class IndirectFlowParser:
              
         return deps
 
-    def _resolve_column_to_physical(self, col: exp.Column, scope) -> Set[str]:
+    def _extract_set_operation_star_dependencies(self, stmt, target_info, source_file, stmt_sql: str = None) -> List[Dict]:
+        deps = []
+        expression = stmt.expression if isinstance(stmt, exp.Insert) else stmt
+        if expression is None:
+            return deps
+
+        for set_operation in self._iter_set_operations(expression):
+            left_select = set_operation.this
+            right_select = set_operation.args.get("expression")
+            if not isinstance(left_select, exp.Select) or not isinstance(right_select, exp.Select):
+                continue
+            if not any(isinstance(item, exp.Star) for item in right_select.expressions):
+                continue
+
+            source_tables = self._single_table_from_select(right_select)
+            if len(source_tables) != 1:
+                continue
+
+            source_table = source_tables[0]
+            source_columns = self._projection_names(left_select)
+            target_columns = self._projection_names(left_select, target_info)
+            for index, target_column in enumerate(target_columns):
+                if not target_column:
+                    continue
+                source_column = source_columns[index] if index < len(source_columns) else target_column
+                if not source_column:
+                    source_column = target_column
+                deps.append({
+                    "source_table": source_table,
+                    "source_column": source_column,
+                    "target_table": target_info["table"],
+                    "target_column": target_column,
+                    "dependency_type": "fdr",
+                    "neo4j_type": "FILTERS",
+                    "context": "SET_OPERATION",
+                    "lineage_origin": "set_operation",
+                    "relation_level": "set_operation",
+                    "source_file": source_file,
+                    "snippet": stmt_sql
+                })
+        return deps
+
+    def _iter_set_operations(self, expression):
+        if isinstance(expression, (exp.Except, exp.Intersect, exp.Union)):
+            yield expression
+        for child in expression.args.values():
+            if isinstance(child, list):
+                for item in child:
+                    if isinstance(item, exp.Expression):
+                        yield from self._iter_set_operations(item)
+            elif isinstance(child, exp.Expression):
+                yield from self._iter_set_operations(child)
+
+    def _projection_names(self, select, target_info=None) -> List[str]:
+        names = []
+        target_columns = (target_info or {}).get("columns") or {}
+        for index, projection in enumerate(select.expressions):
+            if target_columns and index in target_columns:
+                names.append(target_columns[index])
+                continue
+            output_name = self._projection_output_name(projection)
+            names.append(output_name if output_name and output_name != "*" else None)
+        return names
+
+    def _single_table_from_select(self, select) -> List[str]:
+        if list(select.find_all(exp.Subquery)):
+            return []
+        tables = list(select.find_all(exp.Table))
+        if len(tables) != 1:
+            return []
+        return [self._get_full_table_name(tables[0])]
+
+    def _resolve_column_to_physical(self, col: exp.Column, scope, context_expression=None) -> Set[str]:
         """使用 Scope 将列解析为其物理源表。"""
         tables = set()
         
@@ -340,9 +415,37 @@ class IndirectFlowParser:
                 # API 完全不可达时 matched_tables 为空，返回空集合（宁缺毋滥）
                 if matched_tables:
                     tables.update(matched_tables)
+                else:
+                    tables.update(self._resolve_unqualified_column_by_context(
+                        col, scope, context_expression
+                    ))
                 # else: 无法确定来源，不产生血缘（避免假阳性）
 
         return tables
+
+    def _resolve_unqualified_column_by_context(self, col: exp.Column, scope, context_expression) -> Set[str]:
+        """Resolve unqualified columns only when the surrounding expression has one clear alias."""
+        if context_expression is None:
+            return set()
+
+        aliases = {
+            candidate.table
+            for candidate in context_expression.find_all(exp.Column)
+            if candidate is not col and candidate.table
+        }
+        if len(aliases) != 1:
+            return set()
+
+        alias = next(iter(aliases))
+        source = scope.sources.get(alias)
+        if not source:
+            for scope_alias, candidate_source in scope.sources.items():
+                if scope_alias.upper() == alias.upper():
+                    source = candidate_source
+                    break
+        if not source:
+            return set()
+        return self._resolve_column_from_source(col.name, source)
 
     def _resolve_column_from_source(self, column_name: str, source) -> Set[str]:
         """Resolve a column through a physical table or a subquery projection."""
@@ -369,7 +472,7 @@ class IndirectFlowParser:
         columns = [inner] if isinstance(inner, exp.Column) else list(inner.find_all(exp.Column))
         tables = set()
         for source_col in columns:
-            tables.update(self._resolve_column_to_physical(source_col, scope))
+            tables.update(self._resolve_column_to_physical(source_col, scope, expression))
         return tables
 
     @staticmethod

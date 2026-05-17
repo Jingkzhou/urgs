@@ -49,6 +49,8 @@ public class LineageReviewAiService {
               "issues": [
                 {
                   "issueType": "MISSING_SOURCE|WRONG_SOURCE|WRONG_TARGET|WRONG_RELATION_TYPE|UNCERTAIN_MAPPING|NEEDS_MANUAL_REVIEW|NO_ISSUE",
+                  "targetTable": "schema.table",
+                  "targetColumn": "column_name 或 null",
                   "severity": "HIGH|MEDIUM|LOW",
                   "confidence": 0.0,
                   "verdict": "CONFIRMED|REJECTED|NEEDS_REVIEW",
@@ -59,7 +61,10 @@ public class LineageReviewAiService {
               ]
             }
             如果程序结果正确，请只返回一个 NO_ISSUE 且 verdict 为 REJECTED。
-            如果证据不足，请返回 UNCERTAIN_MAPPING 或 NEEDS_MANUAL_REVIEW，verdict 为 NEEDS_REVIEW。
+            每一条疑点必须明确 targetTable；字段级疑点必须明确 targetColumn，表级疑点 targetColumn 可为 null。
+            CONFIRMED 或 NEEDS_REVIEW 必须提供 evidenceRefs，证据必须来自 sqlSnippet 的原文片段或 programRelations 中的具体关系。
+            如果无法给出具体证据，不要列为疑点；常量、字符串字面量、数字字面量、存储过程参数或变量不是缺失的表字段来源。
+            如果证据不足，请不要输出该疑点，或返回 NO_ISSUE 且 verdict 为 REJECTED。
             """;
 
     private final AiClient aiClient;
@@ -169,6 +174,8 @@ public class LineageReviewAiService {
             for (JsonNode node : issues) {
                 LineageReviewAIVerdict verdict = new LineageReviewAIVerdict();
                 verdict.setIssueType(readText(node, "issueType", "NEEDS_MANUAL_REVIEW"));
+                verdict.setTargetTable(readText(node, "targetTable", null));
+                verdict.setTargetColumn(readText(node, "targetColumn", null));
                 verdict.setSeverity(readText(node, "severity", "MEDIUM"));
                 verdict.setConfidence(readDecimal(node, "confidence", BigDecimal.valueOf(0.60)));
                 verdict.setVerdict(readText(node, "verdict", "NEEDS_REVIEW"));

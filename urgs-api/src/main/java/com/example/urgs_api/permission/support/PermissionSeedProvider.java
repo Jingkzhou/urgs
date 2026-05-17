@@ -52,6 +52,12 @@ public class PermissionSeedProvider {
         list.add(new PermissionDTO(null, "新增配置", "sys:sso:add", "button", "-", 2, "3-5"));
         list.add(new PermissionDTO(null, "编辑配置", "sys:sso:edit", "button", "-", 2, "3-5"));
         list.add(new PermissionDTO(null, "删除配置", "sys:sso:del", "button", "-", 2, "3-5"));
+
+        list.add(new PermissionDTO(null, "首页指标走势配置", "sys:metric", "menu", "/admin/metric", 1, "3"));
+        list.add(new PermissionDTO(null, "查询", "sys:metric:query", "button", "-", 2, "3-9"));
+        list.add(new PermissionDTO(null, "新增", "sys:metric:add", "button", "-", 2, "3-9"));
+        list.add(new PermissionDTO(null, "编辑", "sys:metric:edit", "button", "-", 2, "3-9"));
+        list.add(new PermissionDTO(null, "删除", "sys:metric:del", "button", "-", 2, "3-9"));
         return list;
     }
 }

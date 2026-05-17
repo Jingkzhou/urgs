@@ -16,6 +16,8 @@ public class MetricType {
     private String typeName;
     private String unit;
     private String color;
+    private String defaultChartType;
+    private String supportedChartTypes;
     private Integer sortOrder;
     private Integer status;
     private LocalDateTime createdAt;
