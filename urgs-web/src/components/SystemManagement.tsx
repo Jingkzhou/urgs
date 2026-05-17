@@ -4,13 +4,12 @@ import RoleManagement from './system/RoleManagement';
 import UserManagement from './system/UserManagement';
 import MenuManagement from './system/MenuManagement';
 import RegSystemManagement from './system/RegSystemManagement';
-import MetricConfigManagement from './system/MetricConfigManagement';
 import AiManagement from './system/ai/AiManagement';
 import DockerLogManagement from './system/docker/log/DockerLogManagement';
 import DataSourceManager from './DataSourceManager';
 import Auth from './Auth';
 
-type SubModule = 'org' | 'role' | 'user' | 'menu' | 'system' | 'metric' | 'sso' | 'datasource' | 'ai' | 'docker';
+type SubModule = 'org' | 'role' | 'user' | 'menu' | 'system' | 'sso' | 'datasource' | 'ai' | 'docker';
 
 const SystemManagement: React.FC = () => {
   const [activeModule, setActiveModule] = useState<SubModule>('org');
@@ -21,7 +20,6 @@ const SystemManagement: React.FC = () => {
     { id: 'user', label: '用户管理', permission: 'sys:user' },
     { id: 'menu', label: '菜单功能', permission: 'sys:menu' },
     { id: 'system', label: '监管系统', permission: 'sys:system' },
-    { id: 'metric', label: '首页指标走势', permission: 'sys:metric' },
     { id: 'datasource', label: '数据源配置', permission: 'sys:datasource' },
     { id: 'ai', label: 'AI 管理', permission: 'sys:ai' },
     { id: 'docker', label: 'Docker管理', permission: 'sys:docker' },
@@ -80,11 +78,6 @@ const SystemManagement: React.FC = () => {
         {activeModule === 'system' && (
           <Auth code="sys:system:query">
             <RegSystemManagement />
-          </Auth>
-        )}
-        {activeModule === 'metric' && (
-          <Auth code="sys:metric:query">
-            <MetricConfigManagement />
           </Auth>
         )}
         {activeModule === 'datasource' && (

@@ -40,9 +40,16 @@ function chartTypeLabel(value?: string) {
   return chartTypeOptions.find((item) => item.value === value)?.label || '面积图';
 }
 
-const MetricConfigManagement: React.FC = () => {
+interface MetricConfigManagementProps {
+  fixedSystemId?: string;
+  fixedSystemName?: string;
+  onClose?: () => void;
+}
+
+const MetricConfigManagement: React.FC<MetricConfigManagementProps> = ({ fixedSystemId, fixedSystemName, onClose }) => {
+  const isFixedSystem = Boolean(fixedSystemId);
   const [systems, setSystems] = useState<MetricSystemVO[]>([]);
-  const [selectedSystemId, setSelectedSystemId] = useState('');
+  const [selectedSystemId, setSelectedSystemId] = useState(fixedSystemId || '');
   const [items, setItems] = useState<MetricTypeVO[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
@@ -70,7 +77,9 @@ const MetricConfigManagement: React.FC = () => {
   const loadSystems = async () => {
     const list = await fetchMetricConfigSystems();
     setSystems(list);
-    if (!selectedSystemId && list.length > 0) {
+    if (fixedSystemId) {
+      setSelectedSystemId(fixedSystemId);
+    } else if (!selectedSystemId && list.length > 0) {
       setSelectedSystemId(list[0].clientId);
     }
   };
@@ -79,7 +88,7 @@ const MetricConfigManagement: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchMetricTypeConfigs();
+      const data = await fetchMetricTypeConfigs(fixedSystemId);
       setItems(data || []);
     } catch (err) {
       setError('指标配置加载失败，请稍后重试');
@@ -91,12 +100,12 @@ const MetricConfigManagement: React.FC = () => {
   useEffect(() => {
     loadSystems();
     loadItems();
-  }, []);
+  }, [fixedSystemId]);
 
   const openForm = (item?: MetricTypeVO | null) => {
     const next = item
       ? { ...item, defaultChartType: normalizeChartType(item.defaultChartType), supportedChartTypes: normalizeChartType(item.defaultChartType) }
-      : { ...defaultForm, systemId: selectedSystemId || systems[0]?.clientId || '' };
+      : { ...defaultForm, systemId: fixedSystemId || selectedSystemId || systems[0]?.clientId || '' };
     setEditing(item || null);
     setFormData(next);
     setShowForm(true);
@@ -116,7 +125,11 @@ const MetricConfigManagement: React.FC = () => {
     }
     const chartType = normalizeChartType(formData.defaultChartType);
     const payload = {
-      ...formData,
+      systemId: formData.systemId,
+      typeCode: formData.typeCode,
+      typeName: formData.typeName,
+      unit: formData.unit,
+      color: formData.color,
       supportedChartTypes: chartType,
       defaultChartType: chartType,
       sortOrder: Number(formData.sortOrder || 0),
@@ -149,22 +162,33 @@ const MetricConfigManagement: React.FC = () => {
   return (
     <div className="space-y-4 animate-fade-in">
       <ActionToolbar
-        title="首页指标走势配置"
+        title={isFixedSystem ? `${fixedSystemName || fixedSystemId} / 指标走势配置` : '首页指标走势配置'}
         placeholder="搜索系统、指标编码或名称..."
         codePrefix="sys:metric"
         onAdd={() => openForm(null)}
         onSearch={setSearchTerm}
       >
-        <select
-          value={selectedSystemId}
-          onChange={(event) => setSelectedSystemId(event.target.value)}
-          className="px-3 py-2 border border-slate-200 rounded-md text-sm bg-white focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
-        >
-          <option value="">全部系统</option>
-          {systems.map((system) => (
-            <option key={system.clientId} value={system.clientId}>{system.name}</option>
-          ))}
-        </select>
+        {isFixedSystem && onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-2 rounded-md text-sm font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
+          >
+            关闭
+          </button>
+        )}
+        {!isFixedSystem && (
+          <select
+            value={selectedSystemId}
+            onChange={(event) => setSelectedSystemId(event.target.value)}
+            className="px-3 py-2 border border-slate-200 rounded-md text-sm bg-white focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+          >
+            <option value="">全部系统</option>
+            {systems.map((system) => (
+              <option key={system.clientId} value={system.clientId}>{system.name}</option>
+            ))}
+          </select>
+        )}
       </ActionToolbar>
 
       {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{error}</div>}
@@ -251,6 +275,7 @@ const MetricConfigManagement: React.FC = () => {
                     required
                     value={formData.systemId}
                     onChange={(event) => setFormData({ ...formData, systemId: event.target.value })}
+                    disabled={isFixedSystem}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white"
                   >
                     <option value="">请选择系统</option>

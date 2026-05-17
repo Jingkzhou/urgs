@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Edit, Trash2, Save, X } from 'lucide-react';
+import { BarChart3, Edit, Trash2, Save, X } from 'lucide-react';
 import { SsoConfig } from './types';
 import { ActionToolbar } from './Shared';
 import { IconRegistry, getIcon } from '../../utils/icons';
 import Auth from '../Auth';
 import Pagination from '../common/Pagination';
+import MetricConfigManagement from './MetricConfigManagement';
 
 const SsoForm: React.FC<{
     initialData?: SsoConfig | null;
@@ -162,6 +163,7 @@ const RegSystemManagement: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
     const [editing, setEditing] = useState<SsoConfig | null>(null);
+    const [metricTarget, setMetricTarget] = useState<SsoConfig | null>(null);
 
     // Pagination & Search State
     const [searchTerm, setSearchTerm] = useState('');
@@ -344,6 +346,16 @@ const RegSystemManagement: React.FC = () => {
                                 <td className="px-4 py-3 text-right">
                                     <div className="flex items-center justify-end gap-2">
                                         <button onClick={() => handlePing(item.id)} className="px-2 py-1 text-xs bg-slate-100 text-slate-700 rounded hover:bg-slate-200">心跳</button>
+                                        <Auth code="sys:metric:query">
+                                            <button
+                                                onClick={() => setMetricTarget(item)}
+                                                className="px-2 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100 inline-flex items-center gap-1"
+                                                title="指标走势"
+                                            >
+                                                <BarChart3 size={13} />
+                                                指标走势
+                                            </button>
+                                        </Auth>
                                         <Auth code="sys:system:edit">
                                             <button onClick={() => openForm(item)} className="p-1.5 text-slate-400 hover:text-blue-600 bg-slate-100 hover:bg-blue-50 rounded transition-colors" title="编辑">
                                                 <Edit size={14} />
@@ -386,6 +398,20 @@ const RegSystemManagement: React.FC = () => {
                     onClose={() => { setShowForm(false); setEditing(null); }}
                     onSave={handleSave}
                 />
+            )}
+
+            {metricTarget && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white w-[96vw] max-w-6xl rounded-xl shadow-2xl pointer-events-auto relative flex flex-col max-h-[90vh] overflow-hidden">
+                        <div className="p-4 overflow-y-auto">
+                            <MetricConfigManagement
+                                fixedSystemId={metricTarget.clientId}
+                                fixedSystemName={metricTarget.name}
+                                onClose={() => setMetricTarget(null)}
+                            />
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
