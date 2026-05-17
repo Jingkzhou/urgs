@@ -36,7 +36,7 @@ type DirectionOption = 'upstream' | 'downstream';
 
 const LineagePage: React.FC<LineagePageProps> = () => {
     const containerRef = useRef<HTMLDivElement>(null);
-    const lastDirectionRef = useRef<LineageGraphDirection>('both');
+    const lastDirectionRef = useRef<LineageGraphDirection>('downstream');
     const [searchText, setSearchText] = useState('');
     const [searchResults, setSearchResults] = useState<LineageSearchOwnerGroup[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
@@ -49,7 +49,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
     const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
     const [searchCollapsed, setSearchCollapsed] = useState(true);
     const [viewMode, setViewMode] = useState<'canvas' | 'list'>('canvas');
-    const [directionOptions, setDirectionOptions] = useState<DirectionOption[]>(['upstream', 'downstream']);
+    const [directionOptions, setDirectionOptions] = useState<DirectionOption[]>(['downstream']);
     const queryDirection = useMemo<LineageGraphDirection>(() => (
         directionOptions.length === 2 ? 'both' : directionOptions[0] || 'both'
     ), [directionOptions]);

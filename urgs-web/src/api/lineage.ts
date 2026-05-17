@@ -367,6 +367,9 @@ export const decideLineageReviewIssue = (
 export const getLineageReviewExportUrl = (taskId: number) =>
     `/api/metadata/lineage/review/export?taskId=${taskId}`;
 
+export const downloadLineageReviewReportMarkdown = (taskId: number) =>
+    get<Blob>('/api/metadata/lineage/review/export', { taskId }, { isBlob: true });
+
 // ============= 血缘引擎控制 API =============
 
 export const getLineageEngineStatus = () => {

@@ -20,7 +20,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import {
     decideLineageReviewIssue,
-    getLineageReviewExportUrl,
+    downloadLineageReviewReportMarkdown,
     getLineageReviewIssues,
     getLineageReviewRecords,
     getLineageReviewTaskSqlPreview,
@@ -156,6 +156,7 @@ const AICodeReport: React.FC = () => {
     const [sqlPreviewOpen, setSqlPreviewOpen] = useState(false);
     const [sqlPreviewLoading, setSqlPreviewLoading] = useState(false);
     const [sqlPreviewTask, setSqlPreviewTask] = useState<LineageReviewTask | null>(null);
+    const [reportDownloading, setReportDownloading] = useState(false);
     const [sqlPreviews, setSqlPreviews] = useState<Array<{
         snippet: string;
         sourceFiles: string[];
@@ -164,6 +165,17 @@ const AICodeReport: React.FC = () => {
 
     const canTrigger = hasPermission('version:ai:trigger');
     const canExport = hasPermission('version:ai:export');
+
+    const downloadBlob = (blob: Blob, fileName: string) => {
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+    };
 
     const loadTaskSummaries = async () => {
         try {
@@ -390,6 +402,22 @@ const AICodeReport: React.FC = () => {
             setSqlPreviews([]);
         } finally {
             setSqlPreviewLoading(false);
+        }
+    };
+
+    const handleDownloadMarkdownReport = async () => {
+        if (!selectedTask) {
+            return;
+        }
+        setReportDownloading(true);
+        try {
+            const blob = await downloadLineageReviewReportMarkdown(selectedTask.id);
+            downloadBlob(blob, `lineage-review-${selectedTask.id}.md`);
+            message.success('Markdown 报告下载开始');
+        } catch (error: any) {
+            message.error(error?.message || '下载 Markdown 报告失败');
+        } finally {
+            setReportDownloading(false);
         }
     };
 
@@ -659,11 +687,12 @@ const AICodeReport: React.FC = () => {
                                 <Button
                                     size="small"
                                     icon={<Download size={14} />}
+                                    loading={reportDownloading}
                                     disabled={!selectedTask || !canExport}
                                     title={canExport ? '' : '缺少 version:ai:export 权限'}
-                                    onClick={() => selectedTask && window.open(getLineageReviewExportUrl(selectedTask.id), '_blank')}
+                                    onClick={handleDownloadMarkdownReport}
                                 >
-                                    导出报告
+                                    下载 Markdown
                                 </Button>
                             </Space>
                         }
