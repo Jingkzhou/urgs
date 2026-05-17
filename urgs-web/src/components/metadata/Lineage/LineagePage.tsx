@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Layout, Input, Button, Drawer, message, Empty, Tag, Pagination, Tooltip, Segmented, Checkbox } from 'antd';
 import {
     SearchOutlined,
@@ -112,6 +112,11 @@ const LineagePage: React.FC<LineagePageProps> = () => {
         }
         setDirectionOptions(next);
     };
+
+    const handleGraphTableDoubleClick = useCallback((tableName: string, qualifiedName: string) => {
+        setViewMode('canvas');
+        handleSelectTable(tableName, qualifiedName);
+    }, [handleSelectTable]);
 
     const sortedOwnerGroups = useMemo(() => (
         [...searchResults].sort((a, b) => a.ownerName.localeCompare(b.ownerName))
@@ -536,6 +541,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                         viewMode={viewMode}
                         selectedTable={selectedTable}
                         selectedField={selectedField}
+                        onTableDoubleClick={handleGraphTableDoubleClick}
                     />
                 </Content>
                 <Drawer

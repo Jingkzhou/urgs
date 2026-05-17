@@ -14,6 +14,7 @@ interface LineageGraphContentProps {
     viewMode: 'canvas' | 'list';
     selectedTable: string | null;
     selectedField: { nodeId: string; colId: string } | null;
+    onTableDoubleClick?: (tableName: string, qualifiedName: string) => void;
 }
 
 const LineageGraphContent: React.FC<LineageGraphContentProps> = ({
@@ -26,6 +27,7 @@ const LineageGraphContent: React.FC<LineageGraphContentProps> = ({
     viewMode,
     selectedTable,
     selectedField,
+    onTableDoubleClick,
 }) => {
     const canvasNodes = listNodes.length > 0 ? listNodes : nodes;
     const canvasLinks = listNodes.length > 0 ? listLinks : links;
@@ -42,6 +44,7 @@ const LineageGraphContent: React.FC<LineageGraphContentProps> = ({
                             links={canvasLinks}
                             selectedTable={selectedTable}
                             selectedField={selectedField}
+                            onTableDoubleClick={onTableDoubleClick}
                         />
                     ) : (
                         <LineageListView

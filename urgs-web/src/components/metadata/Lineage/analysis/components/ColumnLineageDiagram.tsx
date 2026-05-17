@@ -8,6 +8,7 @@ interface ColumnLineageDiagramProps {
     links: LinkData[];
     selectedTable: string | null;
     selectedField: { nodeId: string; colId: string } | null;
+    onTableDoubleClick?: (tableName: string, qualifiedName: string) => void;
 }
 
 interface LayoutNode {
@@ -282,6 +283,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     links,
     selectedTable,
     selectedField,
+    onTableDoubleClick,
 }) => {
     const [activeLinkId, setActiveLinkId] = useState<string | null>(null);
     const [activeColumnKey, setActiveColumnKey] = useState<string | null>(null);
@@ -454,8 +456,12 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                         >
                             <div
                                 className="flex h-9 items-center justify-center px-3 text-base font-semibold text-white"
-                                style={{ background: headerColor }}
-                                title={item.node.title}
+                                style={{ background: headerColor, cursor: onTableDoubleClick ? 'pointer' : 'default' }}
+                                title={`${item.node.title}（双击切换为当前表）`}
+                                onDoubleClick={(event) => {
+                                    event.stopPropagation();
+                                    onTableDoubleClick?.(table, item.node.title);
+                                }}
                             >
                                 <span className="truncate">{table}</span>
                             </div>

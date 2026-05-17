@@ -393,6 +393,22 @@ def test_subquery_projection_resolves_unqualified_columns_by_alias(mock_metadata
     ) not in actual
 
 
+def test_statement_hash_ignores_comments_and_whitespace():
+    from exporters.neo4j import Neo4jClient
+
+    sql_with_comments = """
+    /* ignored block */
+    INSERT INTO TX_JRJG_YESTERDAY
+      SELECT CUST_NAM -- ignored line
+        FROM SMTMODS.L_CUST_ALL;
+    """
+    sql_without_comments = "INSERT  INTO TX_JRJG_YESTERDAY SELECT CUST_NAM FROM SMTMODS.L_CUST_ALL"
+
+    assert Neo4jClient._statement_hash(sql_with_comments) == Neo4jClient._statement_hash(
+        sql_without_comments
+    )
+
+
 # ============================================================
 # 汇总报告（作为最后一个测试运行）
 # ============================================================

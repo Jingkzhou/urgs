@@ -613,51 +613,143 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                     WHERE toUpper(file) = toUpper($pathPrefix)
                        OR toUpper(file) STARTS WITH toUpper($pathPrefix)
                        OR toUpper(file) ENDS WITH '/' + toUpper($pathPrefix)))
-                WITH r.snippet AS snippet,
-                     relationSourceFiles AS sourceFiles,
-                     collect(DISTINCT {
-                        sourceTable: CASE WHEN source:Column THEN source.table ELSE source.name END,
-                        sourceColumn: CASE WHEN source:Column THEN source.name ELSE null END,
-                        targetTable: CASE WHEN target:Column THEN target.table ELSE target.name END,
-                        targetColumn: CASE WHEN target:Column THEN target.name ELSE null END,
-                        relationType: type(r),
-                        relationLevel: coalesce(r.relationLevel, ''),
-                        confidence: coalesce(r.confidence, '')
-                     }) AS programRelations,
-                     count(*) AS relationCount
-                RETURN snippet, sourceFiles, programRelations, relationCount
-                ORDER BY relationCount DESC
-                LIMIT $limit
+                WITH source, target, r, relationSourceFiles,
+                     CASE
+                        WHEN size(coalesce(r.statementHashes, [])) > 0 THEN coalesce(r.statementHashes, [])
+                        ELSE [coalesce(r.statementHash, '')]
+                     END AS statementHashes,
+                     coalesce(r.snippets, []) AS snippets,
+                     coalesce(r.normalizedSnippets, []) AS normalizedSnippets
+                UNWIND range(0, size(statementHashes) - 1) AS statementIndex
+                WITH source, target, r, relationSourceFiles,
+                     statementHashes[statementIndex] AS statementHash,
+                     CASE
+                        WHEN statementIndex < size(snippets) THEN snippets[statementIndex]
+                        ELSE coalesce(r.snippet, '')
+                     END AS snippet,
+                     CASE
+                        WHEN statementIndex < size(normalizedSnippets) THEN normalizedSnippets[statementIndex]
+                        ELSE coalesce(r.normalizedSnippet, '')
+                     END AS normalizedSnippet
+                RETURN coalesce(statementHash, '') AS statementHash,
+                       coalesce(normalizedSnippet, '') AS normalizedSnippet,
+                       coalesce(snippet, '') AS snippet,
+                       relationSourceFiles AS sourceFiles,
+                       CASE WHEN source:Column THEN source.table ELSE source.name END AS sourceTable,
+                       CASE WHEN source:Column THEN source.name ELSE null END AS sourceColumn,
+                       CASE WHEN target:Column THEN target.table ELSE target.name END AS targetTable,
+                       CASE WHEN target:Column THEN target.name ELSE null END AS targetColumn,
+                       type(r) AS relationType,
+                       coalesce(r.relationLevel, '') AS relationLevel,
+                       coalesce(r.confidence, '') AS confidence
+                ORDER BY statementHash, snippet, relationType, sourceTable, sourceColumn
+                LIMIT $rowLimit
                 """;
 
-        List<Map<String, Object>> results = new ArrayList<>();
+        Map<String, Map<String, Object>> grouped = new LinkedHashMap<>();
         try (Session session = neo4jDriver.session()) {
             var cursor = session.run(query, Map.of(
                     "repoId", task.getRepoId() == null ? "" : String.valueOf(task.getRepoId()),
                     "hasRepoId", hasRepoId,
                     "versionId", task.getVersionId(),
                     "pathPrefix", filterPath,
-                    "limit", SQL_AUDIT_LIMIT));
+                    "rowLimit", SQL_AUDIT_LIMIT * 200));
             while (cursor.hasNext()) {
                 Record record = cursor.next();
-                Map<String, Object> item = new LinkedHashMap<>();
-                item.put("snippet", record.get("snippet").isNull() ? "" : record.get("snippet").asString());
-                item.put("sourceFiles", record.get("sourceFiles").asList(v -> v.asString()));
-                item.put("programRelations", record.get("programRelations").asList(v -> v.asMap()));
-                item.put("relationCount", record.get("relationCount").asInt());
-                results.add(item);
+                String statementHash = record.get("statementHash").asString("");
+                String normalizedSnippet = record.get("normalizedSnippet").asString("");
+                String snippet = record.get("snippet").asString("");
+                String normalizedForFallback = StringUtils.hasText(normalizedSnippet)
+                        ? normalizedSnippet
+                        : normalizeSqlForAudit(snippet);
+                String statementKey = StringUtils.hasText(statementHash)
+                        ? statementHash
+                        : hashOf(normalizedForFallback);
+
+                Map<String, Object> item = grouped.computeIfAbsent(statementKey, key -> {
+                    Map<String, Object> created = new LinkedHashMap<>();
+                    created.put("statementHash", StringUtils.hasText(statementHash) ? statementHash : key);
+                    created.put("normalizedSnippet", normalizedForFallback);
+                    created.put("snippet", snippet);
+                    created.put("sourceFiles", new ArrayList<String>());
+                    created.put("programRelations", new ArrayList<Map<String, Object>>());
+                    created.put("relationCount", 0);
+                    created.put("_relationKeys", new LinkedHashSet<String>());
+                    return created;
+                });
+
+                if (!StringUtils.hasText(toText(item.get("snippet"))) && StringUtils.hasText(snippet)) {
+                    item.put("snippet", snippet);
+                }
+                if (!StringUtils.hasText(toText(item.get("normalizedSnippet"))) && StringUtils.hasText(normalizedForFallback)) {
+                    item.put("normalizedSnippet", normalizedForFallback);
+                }
+
+                @SuppressWarnings("unchecked")
+                List<String> sourceFiles = (List<String>) item.get("sourceFiles");
+                List<String> rowSourceFiles = record.get("sourceFiles").asList(v -> v.asString());
+                for (String file : rowSourceFiles) {
+                    if (StringUtils.hasText(file) && !sourceFiles.contains(file)) {
+                        sourceFiles.add(file);
+                    }
+                }
+
+                Map<String, Object> relation = new LinkedHashMap<>();
+                relation.put("statementHash", item.get("statementHash"));
+                relation.put("sourceFiles", rowSourceFiles);
+                relation.put("sourceTable", record.get("sourceTable").isNull() ? null : record.get("sourceTable").asString());
+                relation.put("sourceColumn", record.get("sourceColumn").isNull() ? null : record.get("sourceColumn").asString());
+                relation.put("targetTable", record.get("targetTable").isNull() ? null : record.get("targetTable").asString());
+                relation.put("targetColumn", record.get("targetColumn").isNull() ? null : record.get("targetColumn").asString());
+                relation.put("relationType", record.get("relationType").asString(""));
+                relation.put("relationLevel", record.get("relationLevel").asString(""));
+                relation.put("confidence", record.get("confidence").asString(""));
+
+                String relationKey = String.join("|",
+                        Objects.toString(relation.get("sourceTable"), ""),
+                        Objects.toString(relation.get("sourceColumn"), ""),
+                        Objects.toString(relation.get("targetTable"), ""),
+                        Objects.toString(relation.get("targetColumn"), ""),
+                        Objects.toString(relation.get("relationType"), ""),
+                        Objects.toString(relation.get("relationLevel"), ""));
+                @SuppressWarnings("unchecked")
+                Set<String> relationKeys = (Set<String>) item.get("_relationKeys");
+                if (relationKeys.add(relationKey)) {
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> programRelations = (List<Map<String, Object>>) item.get("programRelations");
+                    programRelations.add(relation);
+                    item.put("relationCount", ((Integer) item.get("relationCount")) + 1);
+                }
             }
+        }
+
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (Map<String, Object> item : grouped.values()) {
+            item.remove("_relationKeys");
+            results.add(item);
+        }
+        results.sort((left, right) -> Integer.compare(
+                ((Number) right.getOrDefault("relationCount", 0)).intValue(),
+                ((Number) left.getOrDefault("relationCount", 0)).intValue()));
+        if (results.size() > SQL_AUDIT_LIMIT) {
+            return new ArrayList<>(results.subList(0, SQL_AUDIT_LIMIT));
         }
         return results;
     }
 
     private Map<String, Object> buildSqlAuditEvidence(Map<String, Object> object) {
         Map<String, Object> evidence = new LinkedHashMap<>();
+        evidence.put("statementHash", object.get("statementHash"));
+        evidence.put("normalizedSnippet", object.get("normalizedSnippet"));
         evidence.put("sqlSnippet", truncateSnippet(toText(object.get("snippet"))));
         evidence.put("sourceFiles", object.getOrDefault("sourceFiles", List.of()));
         evidence.put("programRelations", object.getOrDefault("programRelations", List.of()));
+        evidence.put("relationsByType", groupRelationsByType(object.get("programRelations")));
         evidence.put("relationCount", object.getOrDefault("relationCount", 0));
-        evidence.put("auditInstruction", "请判断 programRelations 相对于 sqlSnippet 是否有遗漏来源、错误来源、错误目标或关系类型错误。");
+        evidence.put("auditInstruction",
+                "请判断同一 statementHash 下的全部 programRelations 相对于 sqlSnippet 是否有遗漏来源、错误来源、错误目标或关系类型错误。"
+                        + "DERIVES_TO 表示字段值直接派生；JOINS/FILTERS/CASE_WHEN/GROUPS/ORDERS 表示影响结果集的关联、过滤、条件、分组或排序关系。"
+                        + "如果某个表已经以 JOINS/FILTERS/CASE_WHEN 等影响关系存在，不要把它判定为来源遗漏。");
         return evidence;
     }
 
@@ -669,7 +761,8 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         String issueType = StringUtils.hasText(verdict.getIssueType()) ? verdict.getIssueType() : "NEEDS_MANUAL_REVIEW";
         String tableName = resolvePrimaryTarget(object, "targetTable");
         String columnName = resolvePrimaryTarget(object, "targetColumn");
-        String snippetHash = hashOf(toText(object.get("snippet")));
+        String statementHash = toText(object.get("statementHash"));
+        String snippetHash = StringUtils.hasText(statementHash) ? statementHash : hashOf(toText(object.get("snippet")));
 
         LineageReviewIssue issue = new LineageReviewIssue();
         issue.setTaskId(task.getId());
@@ -980,6 +1073,44 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             return snippet;
         }
         return snippet.substring(0, SQL_AUDIT_SNIPPET_LIMIT) + "\n/* SQL snippet truncated for AI audit */";
+    }
+
+    private String normalizeSqlForAudit(String sql) {
+        if (!StringUtils.hasText(sql)) {
+            return "";
+        }
+        String normalized = sql.replaceAll("(?s)/\\*.*?\\*/", " ")
+                .replaceAll("(?m)--.*?$", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        if (normalized.endsWith(";")) {
+            normalized = normalized.substring(0, normalized.length() - 1).trim();
+        }
+        return normalized.toUpperCase(Locale.ROOT);
+    }
+
+    private Map<String, List<Map<String, Object>>> groupRelationsByType(Object relationsValue) {
+        Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
+        if (!(relationsValue instanceof List<?> relations)) {
+            return grouped;
+        }
+        for (Object value : relations) {
+            if (!(value instanceof Map<?, ?> rawRelation)) {
+                continue;
+            }
+            Map<String, Object> relation = new LinkedHashMap<>();
+            rawRelation.forEach((key, relValue) -> {
+                if (key != null) {
+                    relation.put(String.valueOf(key), relValue);
+                }
+            });
+            String relationType = toText(relation.get("relationType"));
+            if (!StringUtils.hasText(relationType)) {
+                relationType = "UNKNOWN";
+            }
+            grouped.computeIfAbsent(relationType, ignored -> new ArrayList<>()).add(relation);
+        }
+        return grouped;
     }
 
     private String resolvePrimaryTarget(Map<String, Object> object, String key) {

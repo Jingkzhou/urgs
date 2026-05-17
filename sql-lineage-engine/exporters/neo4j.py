@@ -1,4 +1,6 @@
 from neo4j import GraphDatabase
+import hashlib
+import re
 import sys
 import time
 from config.settings import settings
@@ -26,6 +28,24 @@ class Neo4jClient:
 
     def close(self):
         self.driver.close()
+
+    @staticmethod
+    def _normalize_sql_for_statement_hash(sql: str) -> str:
+        if not sql:
+            return ""
+        normalized = re.sub(r"/\*.*?\*/", " ", str(sql), flags=re.S)
+        normalized = re.sub(r"--.*?$", " ", normalized, flags=re.M)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        if normalized.endswith(";"):
+            normalized = normalized[:-1].strip()
+        return normalized.upper()
+
+    @classmethod
+    def _statement_hash(cls, sql: str) -> str:
+        normalized = cls._normalize_sql_for_statement_hash(sql)
+        if not normalized:
+            return ""
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
     
     def ensure_indexes(self):
         """
@@ -248,13 +268,18 @@ class Neo4jClient:
             relation_level = rel.get("relation_level") or rel.get("relationLevel") or "table_fallback"
             confidence = rel.get("confidence") or ("LOW" if relation_level == "table_fallback" else "MEDIUM")
             lineage_origin = rel.get("lineage_origin") or rel.get("lineageOrigin") or "table_parser"
+            snippet = rel.get("snippet") or rel.get("sql")
+            normalized_snippet = cls._normalize_sql_for_statement_hash(snippet)
+            statement_hash = rel.get("statementHash") or rel.get("statement_hash") or cls._statement_hash(snippet)
 
             normalized.append({
                 "source": source,
                 "target": target,
                 "dependency_type": dependency_type,
                 "neo4j_rel_type": neo4j_rel_type,
-                "snippet": rel.get("snippet") or rel.get("sql"),
+                "snippet": snippet,
+                "normalized_snippet": normalized_snippet,
+                "statement_hash": statement_hash,
                 "source_files": source_files,
                 "source_columns": source_columns,
                 "target_columns": target_columns,
@@ -324,6 +349,33 @@ class Neo4jClient:
             r.snippet = CASE
                 WHEN item.snippet IS NOT NULL AND trim(item.snippet) <> '' THEN item.snippet
                 ELSE r.snippet
+            END,
+            r.normalizedSnippet = CASE
+                WHEN item.normalized_snippet IS NOT NULL AND trim(item.normalized_snippet) <> '' THEN item.normalized_snippet
+                ELSE r.normalizedSnippet
+            END,
+            r.statementHash = CASE
+                WHEN item.statement_hash IS NOT NULL AND trim(item.statement_hash) <> '' THEN item.statement_hash
+                ELSE r.statementHash
+            END,
+            r.snippets = CASE
+                WHEN item.snippet IS NULL OR trim(item.snippet) = '' THEN coalesce(r.snippets, [])
+                WHEN item.statement_hash IS NOT NULL AND trim(item.statement_hash) <> ''
+                     AND item.statement_hash IN coalesce(r.statementHashes, []) THEN coalesce(r.snippets, [])
+                WHEN item.snippet IN coalesce(r.snippets, []) THEN coalesce(r.snippets, [])
+                ELSE coalesce(r.snippets, []) + item.snippet
+            END,
+            r.normalizedSnippets = CASE
+                WHEN item.normalized_snippet IS NULL OR trim(item.normalized_snippet) = '' THEN coalesce(r.normalizedSnippets, [])
+                WHEN item.statement_hash IS NOT NULL AND trim(item.statement_hash) <> ''
+                     AND item.statement_hash IN coalesce(r.statementHashes, []) THEN coalesce(r.normalizedSnippets, [])
+                WHEN item.normalized_snippet IN coalesce(r.normalizedSnippets, []) THEN coalesce(r.normalizedSnippets, [])
+                ELSE coalesce(r.normalizedSnippets, []) + item.normalized_snippet
+            END,
+            r.statementHashes = CASE
+                WHEN item.statement_hash IS NULL OR trim(item.statement_hash) = '' THEN coalesce(r.statementHashes, [])
+                WHEN item.statement_hash IN coalesce(r.statementHashes, []) THEN coalesce(r.statementHashes, [])
+                ELSE coalesce(r.statementHashes, []) + item.statement_hash
             END,
             r.createdAt = CASE WHEN r.createdAt IS NULL THEN datetime() ELSE r.createdAt END,
             r.relationLevels = reduce(levels = coalesce(r.relationLevels, []), level IN item.relation_levels |
@@ -424,6 +476,10 @@ class Neo4jClient:
             if not source_table or not source_column or not target_table:
                 continue
 
+            snippet = dep.get("snippet")
+            normalized_snippet = self._normalize_sql_for_statement_hash(snippet)
+            statement_hash = dep.get("statementHash") or dep.get("statement_hash") or self._statement_hash(snippet)
+
             item = {
                 "source_table": source_table,
                 "source_column": source_column,
@@ -431,7 +487,9 @@ class Neo4jClient:
                 "target_column": target_column,
                 "source_file": dep.get("source_file"),
                 "dependency_type": dep.get("dependency_type", "fdd"),
-                "snippet": dep.get("snippet"),
+                "snippet": snippet,
+                "normalized_snippet": normalized_snippet,
+                "statement_hash": statement_hash,
                 "version": version,
                 "repo_id": repo_id,
                 "confidence": dep.get("confidence", "MEDIUM"),
@@ -511,6 +569,33 @@ class Neo4jClient:
             r.validationNote = item.validation_note,
             r.isExpanded = item.is_expanded,
             r.snippet = CASE WHEN item.snippet IS NOT NULL THEN item.snippet ELSE r.snippet END,
+            r.normalizedSnippet = CASE
+                WHEN item.normalized_snippet IS NOT NULL AND trim(item.normalized_snippet) <> '' THEN item.normalized_snippet
+                ELSE r.normalizedSnippet
+            END,
+            r.statementHash = CASE
+                WHEN item.statement_hash IS NOT NULL AND trim(item.statement_hash) <> '' THEN item.statement_hash
+                ELSE r.statementHash
+            END,
+            r.snippets = CASE
+                WHEN item.snippet IS NULL OR trim(item.snippet) = '' THEN coalesce(r.snippets, [])
+                WHEN item.statement_hash IS NOT NULL AND trim(item.statement_hash) <> ''
+                     AND item.statement_hash IN coalesce(r.statementHashes, []) THEN coalesce(r.snippets, [])
+                WHEN item.snippet IN coalesce(r.snippets, []) THEN coalesce(r.snippets, [])
+                ELSE coalesce(r.snippets, []) + item.snippet
+            END,
+            r.normalizedSnippets = CASE
+                WHEN item.normalized_snippet IS NULL OR trim(item.normalized_snippet) = '' THEN coalesce(r.normalizedSnippets, [])
+                WHEN item.statement_hash IS NOT NULL AND trim(item.statement_hash) <> ''
+                     AND item.statement_hash IN coalesce(r.statementHashes, []) THEN coalesce(r.normalizedSnippets, [])
+                WHEN item.normalized_snippet IN coalesce(r.normalizedSnippets, []) THEN coalesce(r.normalizedSnippets, [])
+                ELSE coalesce(r.normalizedSnippets, []) + item.normalized_snippet
+            END,
+            r.statementHashes = CASE
+                WHEN item.statement_hash IS NULL OR trim(item.statement_hash) = '' THEN coalesce(r.statementHashes, [])
+                WHEN item.statement_hash IN coalesce(r.statementHashes, []) THEN coalesce(r.statementHashes, [])
+                ELSE coalesce(r.statementHashes, []) + item.statement_hash
+            END,
             r.createdAt = CASE WHEN r.createdAt IS NULL THEN datetime() ELSE r.createdAt END,
             r.sourceFiles = CASE 
                 WHEN r.sourceFiles IS NULL THEN [item.source_file]
@@ -538,6 +623,33 @@ class Neo4jClient:
             r.validationNote = item.validation_note,
             r.isExpanded = item.is_expanded,
             r.snippet = CASE WHEN item.snippet IS NOT NULL THEN item.snippet ELSE r.snippet END,
+            r.normalizedSnippet = CASE
+                WHEN item.normalized_snippet IS NOT NULL AND trim(item.normalized_snippet) <> '' THEN item.normalized_snippet
+                ELSE r.normalizedSnippet
+            END,
+            r.statementHash = CASE
+                WHEN item.statement_hash IS NOT NULL AND trim(item.statement_hash) <> '' THEN item.statement_hash
+                ELSE r.statementHash
+            END,
+            r.snippets = CASE
+                WHEN item.snippet IS NULL OR trim(item.snippet) = '' THEN coalesce(r.snippets, [])
+                WHEN item.statement_hash IS NOT NULL AND trim(item.statement_hash) <> ''
+                     AND item.statement_hash IN coalesce(r.statementHashes, []) THEN coalesce(r.snippets, [])
+                WHEN item.snippet IN coalesce(r.snippets, []) THEN coalesce(r.snippets, [])
+                ELSE coalesce(r.snippets, []) + item.snippet
+            END,
+            r.normalizedSnippets = CASE
+                WHEN item.normalized_snippet IS NULL OR trim(item.normalized_snippet) = '' THEN coalesce(r.normalizedSnippets, [])
+                WHEN item.statement_hash IS NOT NULL AND trim(item.statement_hash) <> ''
+                     AND item.statement_hash IN coalesce(r.statementHashes, []) THEN coalesce(r.normalizedSnippets, [])
+                WHEN item.normalized_snippet IN coalesce(r.normalizedSnippets, []) THEN coalesce(r.normalizedSnippets, [])
+                ELSE coalesce(r.normalizedSnippets, []) + item.normalized_snippet
+            END,
+            r.statementHashes = CASE
+                WHEN item.statement_hash IS NULL OR trim(item.statement_hash) = '' THEN coalesce(r.statementHashes, [])
+                WHEN item.statement_hash IN coalesce(r.statementHashes, []) THEN coalesce(r.statementHashes, [])
+                ELSE coalesce(r.statementHashes, []) + item.statement_hash
+            END,
             r.createdAt = CASE WHEN r.createdAt IS NULL THEN datetime() ELSE r.createdAt END,
             r.sourceFiles = CASE 
                 WHEN r.sourceFiles IS NULL THEN [item.source_file]
