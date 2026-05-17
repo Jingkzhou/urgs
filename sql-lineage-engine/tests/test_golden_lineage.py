@@ -345,6 +345,54 @@ def test_repeated_select_column_maps_by_position(mock_metadata_resolver):
     ) in actual
 
 
+def test_subquery_projection_resolves_unqualified_columns_by_alias(mock_metadata_resolver):
+    """外层无表别名字段必须按子查询输出列回溯，不能扩散到子查询内所有表。"""
+    from parsers.indirect_flow_parser import IndirectFlowParser
+
+    sql = """
+    INSERT INTO TX_JRJG_YESTERDAY
+    SELECT DISTINCT CUST_NAM, ORGTPCODE
+      FROM (SELECT A.ACCDEPCODE,
+                   B.REF_NUM,
+                   B.CUST_ID,
+                   C.CUST_NAM   AS CUST_NAM,
+                   A.ORGTPCODE  AS ORGTPCODE
+              FROM IE_TY_TYCKJC_YD A
+              LEFT JOIN SMTMODS.L_ACCT_FUND_MMFUND B
+                ON A.ACCDEPCODE = B.REF_NUM
+              LEFT JOIN SMTMODS.L_CUST_ALL C
+                ON B.CUST_ID = C.CUST_ID
+             WHERE A.ORGTPCODE IS NOT NULL)
+    """
+
+    deps = IndirectFlowParser("oracle").parse(sql)
+    actual = {
+        (
+            dep.get("source_table"),
+            dep.get("source_column"),
+            dep.get("target_table"),
+            dep.get("target_column"),
+            dep.get("dependency_type"),
+        )
+        for dep in deps
+    }
+
+    assert (
+        "IE_TY_TYCKJC_YD",
+        "ORGTPCODE",
+        "TX_JRJG_YESTERDAY",
+        "*",
+        "fdd",
+    ) in actual
+    assert (
+        "SMTMODS.L_CUST_ALL",
+        "ORGTPCODE",
+        "TX_JRJG_YESTERDAY",
+        "*",
+        "fdd",
+    ) not in actual
+
+
 # ============================================================
 # 汇总报告（作为最后一个测试运行）
 # ============================================================

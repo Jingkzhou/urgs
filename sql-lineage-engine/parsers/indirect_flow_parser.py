@@ -313,12 +313,12 @@ class IndirectFlowParser:
                         break
             
             if source:
-                tables.update(self._resolve_source_to_physical(source))
+                tables.update(self._resolve_column_from_source(col.name, source))
         else:
             # 无别名：如果 Scope 只有 1 个来源，则使用它
             if len(scope.sources) == 1:
                 source = list(scope.sources.values())[0]
-                tables.update(self._resolve_source_to_physical(source))
+                tables.update(self._resolve_column_from_source(col.name, source))
             # 否则如果有多个来源，调用 MetadataResolver 查询表字段进行推断
             elif len(scope.sources) > 1:
                 possible_tables = set()
@@ -343,6 +343,38 @@ class IndirectFlowParser:
                 # else: 无法确定来源，不产生血缘（避免假阳性）
 
         return tables
+
+    def _resolve_column_from_source(self, column_name: str, source) -> Set[str]:
+        """Resolve a column through a physical table or a subquery projection."""
+        if self._is_scope(source) and isinstance(source.expression, exp.Select):
+            return self._resolve_projected_column(column_name, source)
+        return self._resolve_source_to_physical(source)
+
+    def _resolve_projected_column(self, column_name: str, source_scope) -> Set[str]:
+        for projection in source_scope.expression.expressions:
+            output_name = self._projection_output_name(projection)
+            if output_name and output_name.upper() == column_name.upper():
+                return self._resolve_expression_to_physical(projection, source_scope)
+        return set()
+
+    def _projection_output_name(self, projection) -> str:
+        if isinstance(projection, exp.Alias):
+            return projection.alias
+        if isinstance(projection, exp.Column):
+            return projection.name
+        return getattr(projection, "alias_or_name", "") or ""
+
+    def _resolve_expression_to_physical(self, expression, scope) -> Set[str]:
+        inner = expression.this if isinstance(expression, exp.Alias) else expression
+        columns = [inner] if isinstance(inner, exp.Column) else list(inner.find_all(exp.Column))
+        tables = set()
+        for source_col in columns:
+            tables.update(self._resolve_column_to_physical(source_col, scope))
+        return tables
+
+    @staticmethod
+    def _is_scope(source) -> bool:
+        return type(source).__name__ == 'Scope' or hasattr(source, 'expression')
 
     def _resolve_source_to_physical(self, source) -> Set[str]:
         """递归地将 Scope/表源解析为物理表名。"""
