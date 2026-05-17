@@ -1,6 +1,7 @@
 package com.example.urgs_api.metadata.review.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -36,4 +37,31 @@ public class LineageReviewTask {
     private LocalDateTime finishedAt;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    @TableField(exist = false)
+    private Integer pendingIssueCount;
+
+    @TableField(exist = false)
+    private Integer confirmedIssueCount;
+
+    @TableField(exist = false)
+    private Integer falsePositiveIssueCount;
+
+    @TableField(exist = false)
+    private Integer resolvedIssueCount;
+
+    @TableField(exist = false)
+    private Integer ignoredIssueCount;
+
+    @TableField(exist = false)
+    private Integer reviewedIssueCount;
+
+    @TableField(exist = false)
+    private Integer totalReviewIssueCount;
+
+    @TableField(exist = false)
+    private Integer reviewCompletionRate;
+
+    @TableField(exist = false)
+    private Integer executionProgressRate;
 }

@@ -298,6 +298,15 @@ export interface LineageReviewTask {
     finishedAt?: string;
     createTime?: string;
     updateTime?: string;
+    pendingIssueCount?: number;
+    confirmedIssueCount?: number;
+    falsePositiveIssueCount?: number;
+    resolvedIssueCount?: number;
+    ignoredIssueCount?: number;
+    reviewedIssueCount?: number;
+    totalReviewIssueCount?: number;
+    reviewCompletionRate?: number;
+    executionProgressRate?: number;
 }
 
 export interface LineageReviewIssue {

@@ -57,6 +57,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     private final LineageReviewIssueMapper issueMapper;
     private final LineageReviewCacheMapper cacheMapper;
     private final LineageReviewAiService aiService;
+    private final LineageReviewTaskSummaryService taskSummaryService;
     private final Driver neo4jDriver;
     private final Executor taskExecutor;
 
@@ -65,6 +66,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             LineageReviewIssueMapper issueMapper,
             LineageReviewCacheMapper cacheMapper,
             LineageReviewAiService aiService,
+            LineageReviewTaskSummaryService taskSummaryService,
             Driver neo4jDriver,
             @Qualifier("aiTaskExecutor") Executor taskExecutor) {
         this.analysisRecordMapper = analysisRecordMapper;
@@ -72,6 +74,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         this.issueMapper = issueMapper;
         this.cacheMapper = cacheMapper;
         this.aiService = aiService;
+        this.taskSummaryService = taskSummaryService;
         this.neo4jDriver = neo4jDriver;
         this.taskExecutor = taskExecutor;
     }
@@ -82,7 +85,9 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         query.eq(StringUtils.hasText(analysisRecordId), LineageReviewTask::getAnalysisRecordId, analysisRecordId);
         query.eq(StringUtils.hasText(status), LineageReviewTask::getStatus, status);
         query.orderByDesc(LineageReviewTask::getCreateTime);
-        return taskMapper.selectList(query);
+        List<LineageReviewTask> tasks = taskMapper.selectList(query);
+        taskSummaryService.attachSummaries(tasks);
+        return tasks;
     }
 
     @Override
@@ -129,7 +134,9 @@ public class LineageReviewServiceImpl implements LineageReviewService {
 
     @Override
     public LineageReviewTask getTask(Long taskId) {
-        return taskMapper.selectById(taskId);
+        LineageReviewTask task = taskMapper.selectById(taskId);
+        taskSummaryService.attachSummary(task);
+        return task;
     }
 
     @Override

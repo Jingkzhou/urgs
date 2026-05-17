@@ -1,0 +1,215 @@
+import React from 'react';
+import { Alert, Button, Card, Progress, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import type { LineageAnalysisRecordItem, LineageReviewTask } from '@/api/lineage';
+import { Activity, Download } from 'lucide-react';
+import { statusColorMap } from './reviewConstants';
+import {
+    buildShardLabel,
+    formatDateTime,
+    getTaskExecutionRate,
+    getTaskIssueTotal,
+    getTaskReviewRate,
+    getTaskReviewedTotal,
+    TaskSourceMeta
+} from './reviewUtils';
+
+const { Paragraph } = Typography;
+
+interface ReviewTaskTableProps {
+    selectedRecord?: LineageAnalysisRecordItem;
+    selectedTask?: LineageReviewTask;
+    selectedTaskId?: number;
+    tasks: LineageReviewTask[];
+    pagedTasks: LineageReviewTask[];
+    loading: boolean;
+    triggerLoading: boolean;
+    reportDownloading: boolean;
+    canTrigger: boolean;
+    canExport: boolean;
+    taskPage: number;
+    taskPageSize: number;
+    getTaskSourceMeta: (task: LineageReviewTask) => TaskSourceMeta;
+    onForceRerun: () => void;
+    onDownloadMarkdown: () => void;
+    onOpenSqlPreview: (task: LineageReviewTask) => void;
+    onTaskSelect: (taskId: number) => void;
+    onPageChange: (page: number, pageSize: number) => void;
+}
+
+const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
+    selectedRecord,
+    selectedTask,
+    selectedTaskId,
+    tasks,
+    pagedTasks,
+    loading,
+    triggerLoading,
+    reportDownloading,
+    canTrigger,
+    canExport,
+    taskPage,
+    taskPageSize,
+    getTaskSourceMeta,
+    onForceRerun,
+    onDownloadMarkdown,
+    onOpenSqlPreview,
+    onTaskSelect,
+    onPageChange
+}) => {
+    const taskColumns: ColumnsType<LineageReviewTask> = [
+        {
+            title: '分片',
+            key: 'path',
+            render: (_, record) => (
+                <div>
+                    <div className="font-semibold text-slate-700">{buildShardLabel(record)}</div>
+                    <div className="text-xs text-slate-400">{record.systemKey || 'GLOBAL'}</div>
+                </div>
+            )
+        },
+        {
+            title: '源码',
+            key: 'source',
+            width: 240,
+            render: (_, record) => {
+                const sourceMeta = getTaskSourceMeta(record);
+                return (
+                    <div className="space-y-1">
+                        <Button type="link" className="!h-auto !p-0" onClick={() => onOpenSqlPreview(record)}>
+                            查看 SQL 片段
+                        </Button>
+                        <Tooltip title={<div style={{ whiteSpace: 'pre-wrap' }}>{sourceMeta.tooltip}</div>}>
+                            <Paragraph className="!mb-0 !text-slate-500" ellipsis={{ rows: 2 }}>
+                                {sourceMeta.text}
+                            </Paragraph>
+                        </Tooltip>
+                    </div>
+                );
+            }
+        },
+        {
+            title: '状态',
+            dataIndex: 'status',
+            width: 110,
+            render: (value?: string) => <Tag color={statusColorMap[value || ''] || 'default'}>{value || '-'}</Tag>
+        },
+        {
+            title: '进度',
+            key: 'progress',
+            width: 260,
+            render: (_, record) => {
+                const executionRate = getTaskExecutionRate(record);
+                const reviewRate = getTaskReviewRate(record);
+                const reviewed = getTaskReviewedTotal(record);
+                const issueTotal = getTaskIssueTotal(record);
+                return (
+                    <div className="space-y-2">
+                        <div>
+                            <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+                                <span>执行 {record.processedCount || 0}/{record.objectCount || '-'}</span>
+                                <span>{executionRate}%</span>
+                            </div>
+                            <Progress percent={executionRate} size="small" showInfo={false} />
+                        </div>
+                        <div>
+                            <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+                                <span>走查 {reviewed}/{issueTotal}</span>
+                                <span>{reviewRate}%</span>
+                            </div>
+                            <Progress percent={reviewRate} size="small" showInfo={false} status={issueTotal > 0 && record.pendingIssueCount ? 'active' : 'normal'} />
+                        </div>
+                    </div>
+                );
+            }
+        },
+        {
+            title: '疑点状态',
+            key: 'issueSummary',
+            width: 230,
+            render: (_, record) => (
+                <div className="flex flex-wrap gap-1 text-xs">
+                    <Tag>未确认 {record.pendingIssueCount || 0}</Tag>
+                    <Tag color="green">确认 {record.confirmedIssueCount || 0}</Tag>
+                    <Tag color="red">误报 {record.falsePositiveIssueCount || 0}</Tag>
+                    <Tag color="blue">已处理 {record.resolvedIssueCount || 0}</Tag>
+                </div>
+            )
+        },
+        {
+            title: '完成时间',
+            dataIndex: 'finishedAt',
+            width: 180,
+            render: (value?: string) => <span className="text-xs text-slate-500">{formatDateTime(value)}</span>
+        }
+    ];
+
+    return (
+        <Card
+            title={
+                <div className="flex items-center gap-2">
+                    <Activity size={16} className="text-sky-500" />
+                    <span>分片任务</span>
+                </div>
+            }
+            extra={
+                <Space>
+                    <Button
+                        size="small"
+                        loading={triggerLoading}
+                        disabled={!selectedRecord || !canTrigger}
+                        title={canTrigger ? '' : '缺少 version:ai:trigger 权限'}
+                        onClick={onForceRerun}
+                    >
+                        强制重跑
+                    </Button>
+                    <Button
+                        size="small"
+                        icon={<Download size={14} />}
+                        loading={reportDownloading}
+                        disabled={!selectedTask || !canExport}
+                        title={canExport ? '' : '缺少 version:ai:export 权限'}
+                        onClick={onDownloadMarkdown}
+                    >
+                        下载 Markdown
+                    </Button>
+                </Space>
+            }
+            bordered={false}
+            className="shadow-sm"
+        >
+            {selectedRecord && selectedRecord.status !== 'SUCCESS' && (
+                <Alert
+                    className="mb-4"
+                    type="warning"
+                    showIcon
+                    message="当前分析记录尚未成功完成"
+                    description="只有 SUCCESS 状态的血缘分析记录才会自动创建事后校验任务。"
+                />
+            )}
+            <Table
+                rowKey="id"
+                dataSource={pagedTasks}
+                columns={taskColumns}
+                loading={loading}
+                pagination={{
+                    current: taskPage,
+                    pageSize: taskPageSize,
+                    total: tasks.length,
+                    size: 'small',
+                    showSizeChanger: true,
+                    pageSizeOptions: ['10', '20', '50'],
+                    onChange: onPageChange
+                }}
+                locale={{ emptyText: '当前批次暂无校验任务' }}
+                rowSelection={{
+                    type: 'radio',
+                    selectedRowKeys: selectedTaskId ? [selectedTaskId] : [],
+                    onChange: keys => onTaskSelect(Number(keys[0]))
+                }}
+            />
+        </Card>
+    );
+};
+
+export default ReviewTaskTable;
