@@ -7,6 +7,7 @@ import { processLayoutTrace } from '../utils/lineageLayout';
 export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
     const [selectedTable, setSelectedTable] = useState<string | null>(null);
     const [selectedQualifiedName, setSelectedQualifiedName] = useState<string | null>(null);
+    const [selectedColumnName, setSelectedColumnName] = useState<string | null>(null);
     const [selectedField, setSelectedField] = useState<{ nodeId: string; colId: string } | null>(null);
     const [nodes, setNodes] = useState<NodeData[]>([]);
     const [links, setLinks] = useState<LinkData[]>([]);
@@ -24,6 +25,7 @@ export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
         setGraphLoading(true);
         setSelectedTable(tableName);
         setSelectedQualifiedName(qualifiedName || tableName);
+        setSelectedColumnName(targetColName || null);
         try {
             const response = await getLineageGraph(tableName, targetColName, {
                 depth: 2,
@@ -43,6 +45,7 @@ export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
                 setListNodes([]);
                 setListLinks([]);
                 setGraphMeta(null);
+                setSelectedColumnName(null);
                 return;
             }
 
@@ -104,6 +107,7 @@ export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
     return {
         selectedTable,
         selectedQualifiedName,
+        selectedColumnName,
         selectedField,
         nodes,
         links,

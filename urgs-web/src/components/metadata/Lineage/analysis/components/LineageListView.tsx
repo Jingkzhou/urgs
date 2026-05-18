@@ -3,6 +3,7 @@ import { Table, Tag, Tooltip, Empty, Typography, Button } from 'antd';
 import { NodeData, LinkData, RELATION_STYLES } from '../types';
 import { FileTextOutlined } from '@ant-design/icons';
 import CodeModal from './CodeModal';
+import { buildNodeRanks, splitQualifiedTitle, sameTableLoose } from '../utils/lineageGraphDensity';
 
 const { Text } = Typography;
 
@@ -21,6 +22,22 @@ const formatColumnSummary = (columns: string[], fallback: string) => {
         return columns.join('、');
     }
     return `${columns.slice(0, 2).join('、')} 等 ${columns.length} 个字段`;
+};
+
+const formatRankLabel = (rank: number) => {
+    if (rank < 0) {
+        return `上游 ${Math.abs(rank)}`;
+    }
+    if (rank > 0) {
+        return `下游 ${rank}`;
+    }
+    return '当前';
+};
+
+const formatLevelPath = (sourceRank: number, targetRank: number) => {
+    const sourceLabel = formatRankLabel(sourceRank);
+    const targetLabel = formatRankLabel(targetRank);
+    return sourceLabel === targetLabel ? sourceLabel : `${sourceLabel} → ${targetLabel}`;
 };
 
 interface LineageListViewProps {
@@ -47,6 +64,7 @@ const LineageListView: React.FC<LineageListViewProps> = ({
     const tableData = useMemo(() => {
         const colMap = new Map<string, { tableId: string, tableName: string, colName: string }>();
         const nodeMap = new Map<string, NodeData>();
+        const ranks = buildNodeRanks(nodes, links, selectedTable, selectedField);
 
         nodes.forEach(node => {
             nodeMap.set(node.id, node);
@@ -64,6 +82,12 @@ const LineageListView: React.FC<LineageListViewProps> = ({
             const targetCol = colMap.get(link.targetColumnId);
             const sourceNode = nodeMap.get(link.sourceNodeId);
             const targetNode = nodeMap.get(link.targetNodeId);
+            const sourceTable = sourceCol?.tableName || sourceNode?.title || link.properties?.sourceTable || 'Unknown';
+            const targetTable = targetCol?.tableName || targetNode?.title || link.properties?.targetTable || 'Unknown';
+            const sourceSchema = splitQualifiedTitle(sourceTable).owner || '-';
+            const targetSchema = splitQualifiedTitle(targetTable).owner || '-';
+            const sourceRank = ranks.get(sourceCol?.tableId || sourceNode?.id || link.sourceNodeId) ?? 0;
+            const targetRank = ranks.get(targetCol?.tableId || targetNode?.id || link.targetNodeId) ?? 0;
             const relationStyle = link.type ? RELATION_STYLES[link.type] : null;
             const relationCount = Number(link.properties?.relationCount || 0);
             const sourceColumns = normalizeArray(link.properties?.sourceColumns);
@@ -81,21 +105,35 @@ const LineageListView: React.FC<LineageListViewProps> = ({
 
             return {
                 key: link.id || `${index}`,
-                sourceTable: sourceCol?.tableName || sourceNode?.title || link.properties?.sourceTable || 'Unknown',
+                levelPath: formatLevelPath(sourceRank, targetRank),
+                levelSort: Math.min(sourceRank, targetRank),
+                sourceRank,
+                targetRank,
+                schemaPath: sourceSchema === targetSchema ? sourceSchema : `${sourceSchema} → ${targetSchema}`,
+                sourceSchema,
+                targetSchema,
+                sourceTable,
                 sourceColumn,
                 relationType: link.type || 'UNKNOWN',
                 relationLabel: relationStyle?.label || link.type || '未知关系',
                 relationColor: relationStyle?.color || '#8c8c8c',
-                targetTable: targetCol?.tableName || targetNode?.title || link.properties?.targetTable || 'Unknown',
+                targetTable,
                 targetColumn,
                 sourceColumnTooltip: sourceColumns.join('、'),
                 targetColumnTooltip: targetColumns.join('、'),
                 snippet: link.properties?.snippet,
                 sourceFile: sourceFile,
                 isHighlighted: (selectedField && (link.sourceColumnId === selectedField.colId || link.targetColumnId === selectedField.colId)) ||
-                    (!selectedField && selectedTable && (sourceCol?.tableName === selectedTable || targetCol?.tableName === selectedTable))
+                    (!selectedField && selectedTable && (sameTableLoose(sourceTable, selectedTable) || sameTableLoose(targetTable, selectedTable)))
             };
-        });
+        }).sort((a, b) => (
+            a.levelSort - b.levelSort
+            || a.sourceRank - b.sourceRank
+            || a.targetRank - b.targetRank
+            || a.sourceSchema.localeCompare(b.sourceSchema)
+            || a.sourceTable.localeCompare(b.sourceTable)
+            || a.targetTable.localeCompare(b.targetTable)
+        ));
     }, [nodes, links, selectedTable, selectedField]);
 
     const handleViewCode = (record: any) => {
@@ -109,6 +147,35 @@ const LineageListView: React.FC<LineageListViewProps> = ({
     };
 
     const columns = [
+        {
+            title: '层级',
+            dataIndex: 'levelPath',
+            key: 'levelPath',
+            width: 130,
+            fixed: 'left' as const,
+            render: (text: string) => <Tag color="geekblue">{text}</Tag>,
+            sorter: (a: any, b: any) => (
+                a.levelSort - b.levelSort
+                || a.sourceRank - b.sourceRank
+                || a.targetRank - b.targetRank
+            ),
+            defaultSortOrder: 'ascend' as const,
+        },
+        {
+            title: 'Schema',
+            dataIndex: 'schemaPath',
+            key: 'schemaPath',
+            width: 180,
+            render: (text: string, record: any) => (
+                <Tooltip title={`源: ${record.sourceSchema} / 目标: ${record.targetSchema}`}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>{text}</Text>
+                </Tooltip>
+            ),
+            sorter: (a: any, b: any) => (
+                a.sourceSchema.localeCompare(b.sourceSchema)
+                || a.targetSchema.localeCompare(b.targetSchema)
+            ),
+        },
         {
             title: '源表',
             dataIndex: 'sourceTable',

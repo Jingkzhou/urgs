@@ -21,7 +21,6 @@ interface ReviewTaskTableProps {
     selectedTask?: LineageReviewTask;
     selectedTaskId?: number;
     tasks: LineageReviewTask[];
-    pagedTasks: LineageReviewTask[];
     loading: boolean;
     triggerLoading: boolean;
     reportDownloading: boolean;
@@ -42,7 +41,6 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
     selectedTask,
     selectedTaskId,
     tasks,
-    pagedTasks,
     loading,
     triggerLoading,
     reportDownloading,
@@ -76,7 +74,14 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
                 const sourceMeta = getTaskSourceMeta(record);
                 return (
                     <div className="space-y-1">
-                        <Button type="link" className="!h-auto !p-0" onClick={() => onOpenSqlPreview(record)}>
+                        <Button
+                            type="link"
+                            className="!h-auto !p-0"
+                            onClick={event => {
+                                event.stopPropagation();
+                                onOpenSqlPreview(record);
+                            }}
+                        >
                             查看 SQL 片段
                         </Button>
                         <Tooltip title={<div style={{ whiteSpace: 'pre-wrap' }}>{sourceMeta.tooltip}</div>}>
@@ -189,7 +194,7 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
             )}
             <Table
                 rowKey="id"
-                dataSource={pagedTasks}
+                dataSource={tasks}
                 columns={taskColumns}
                 loading={loading}
                 pagination={{
@@ -204,9 +209,18 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
                 locale={{ emptyText: '当前批次暂无校验任务' }}
                 rowSelection={{
                     type: 'radio',
-                    selectedRowKeys: selectedTaskId ? [selectedTaskId] : [],
-                    onChange: keys => onTaskSelect(Number(keys[0]))
+                    selectedRowKeys: selectedTaskId == null ? [] : [selectedTaskId],
+                    onChange: keys => {
+                        if (keys.length > 0) {
+                            onTaskSelect(Number(keys[0]));
+                        }
+                    }
                 }}
+                onRow={record => ({
+                    onClick: () => {
+                        onTaskSelect(record.id);
+                    }
+                })}
             />
         </Card>
     );

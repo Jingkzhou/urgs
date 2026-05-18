@@ -11,9 +11,11 @@ interface LineageGraphContentProps {
     listLoading: boolean;
     listNodes: NodeData[];
     listLinks: LinkData[];
+    listDetailsLoaded: boolean;
     viewMode: 'canvas' | 'list';
     selectedTable: string | null;
     selectedField: { nodeId: string; colId: string } | null;
+    onLoadFieldDetails?: () => Promise<void>;
     onTableDoubleClick?: (tableName: string, qualifiedName: string) => void;
 }
 
@@ -24,13 +26,15 @@ const LineageGraphContent: React.FC<LineageGraphContentProps> = ({
     listLoading,
     listNodes,
     listLinks,
+    listDetailsLoaded,
     viewMode,
     selectedTable,
     selectedField,
+    onLoadFieldDetails,
     onTableDoubleClick,
 }) => {
-    const canvasNodes = listNodes.length > 0 ? listNodes : nodes;
-    const canvasLinks = listNodes.length > 0 ? listLinks : links;
+    const canvasNodes = nodes;
+    const canvasLinks = links;
     const activeNodes = viewMode === 'canvas' ? canvasNodes : listNodes;
 
     return (
@@ -42,8 +46,13 @@ const LineageGraphContent: React.FC<LineageGraphContentProps> = ({
                         <ColumnLineageDiagram
                             nodes={canvasNodes}
                             links={canvasLinks}
+                            fieldNodes={listNodes}
+                            fieldLinks={listLinks}
+                            fieldLoading={listLoading}
+                            fieldDetailsLoaded={listDetailsLoaded}
                             selectedTable={selectedTable}
                             selectedField={selectedField}
+                            onLoadFieldDetails={onLoadFieldDetails}
                             onTableDoubleClick={onTableDoubleClick}
                         />
                     ) : (

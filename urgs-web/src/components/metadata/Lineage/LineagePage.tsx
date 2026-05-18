@@ -60,6 +60,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
     const {
         selectedTable,
         selectedQualifiedName,
+        selectedColumnName,
         selectedField,
         nodes,
         links,
@@ -89,7 +90,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
     }, []);
 
     useEffect(() => {
-        if ((viewMode === 'list' || viewMode === 'canvas') && selectedTable && !listDetailsLoaded && !listLoading) {
+        if (viewMode === 'list' && selectedTable && !listDetailsLoaded && !listLoading) {
             loadListDetails();
         }
     }, [listDetailsLoaded, listLoading, loadListDetails, selectedTable, viewMode]);
@@ -100,9 +101,9 @@ const LineagePage: React.FC<LineagePageProps> = () => {
         }
         lastDirectionRef.current = queryDirection;
         if (selectedTable) {
-            handleSelectTable(selectedTable, selectedQualifiedName || undefined);
+            handleSelectTable(selectedTable, selectedQualifiedName || undefined, selectedColumnName || undefined);
         }
-    }, [handleSelectTable, queryDirection, selectedQualifiedName, selectedTable]);
+    }, [handleSelectTable, queryDirection, selectedColumnName, selectedQualifiedName, selectedTable]);
 
     const handleDirectionChange = (checkedValues: any[]) => {
         const next = checkedValues as DirectionOption[];
@@ -538,9 +539,11 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                         listLoading={listLoading}
                         listNodes={listNodes}
                         listLinks={listLinks}
+                        listDetailsLoaded={listDetailsLoaded}
                         viewMode={viewMode}
                         selectedTable={selectedTable}
                         selectedField={selectedField}
+                        onLoadFieldDetails={loadListDetails}
                         onTableDoubleClick={handleGraphTableDoubleClick}
                     />
                 </Content>

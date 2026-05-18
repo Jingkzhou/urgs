@@ -12,6 +12,9 @@ export interface NodeData {
     type: 'source' | 'transform' | 'aggregation' | 'result' | 'default';
     title: string;
     isCollapsed?: boolean;
+    isGroupNode?: boolean;
+    groupDirection?: 'upstream' | 'downstream' | 'same';
+    hiddenNodeCount?: number;
     columns: {
         id: string;
         name: string;
@@ -39,4 +42,3 @@ export interface LinkData {
     type?: string;  // 关系类型: DERIVES_TO, FILTERS, JOINS, GROUPS, ORDERS 等
     properties?: Record<string, any>;  // 关系属性 (version, sourceFile 等)
 }
-

@@ -51,6 +51,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     private static final int SQL_AUDIT_LIMIT = 100;
     private static final int SQL_AUDIT_SNIPPET_LIMIT = 12000;
     private static final int AI_REVIEW_DISABLED_BUDGET = 0;
+    private static final String AI_REVIEW_PROMPT_VERSION = "relation-type-v2";
 
     private final LineageAnalysisRecordMapper analysisRecordMapper;
     private final LineageReviewTaskMapper taskMapper;
@@ -755,10 +756,13 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         evidence.put("sourceFiles", object.getOrDefault("sourceFiles", List.of()));
         evidence.put("programRelations", object.getOrDefault("programRelations", List.of()));
         evidence.put("relationsByType", groupRelationsByType(object.get("programRelations")));
+        evidence.put("relationTypeDescriptions", relationTypeDescriptions());
         evidence.put("relationCount", object.getOrDefault("relationCount", 0));
         evidence.put("auditInstruction",
                 "请判断同一 statementHash 下的全部 programRelations 相对于 sqlSnippet 是否有遗漏来源、错误来源、错误目标或关系类型错误。"
-                        + "DERIVES_TO 表示字段值直接派生；JOINS/FILTERS/CASE_WHEN/GROUPS/ORDERS 表示影响结果集的关联、过滤、条件、分组或排序关系。"
+                        + "必须按 relationTypeDescriptions 理解每种关系类型。"
+                        + "CASE_WHEN 表示 CASE/IF 条件分支依赖，不是目标字段值的直接来源；"
+                        + "如果目标字段由 THEN/ELSE 常量或分类值生成，不得因缺少 DERIVES_TO 判定为疑点。"
                         + "如果某个表已经以 JOINS/FILTERS/CASE_WHEN 等影响关系存在，不要把它判定为来源遗漏。");
         return evidence;
     }
@@ -848,7 +852,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         String severity = "LOW";
         String reason = null;
 
-        if (columnName != null && !relationTypes.contains("DERIVES_TO")) {
+        if (columnName != null && !relationTypes.contains("DERIVES_TO") && !relationTypes.contains("CASE_WHEN")) {
             issueType = "RELATION_TYPE_MISMATCH";
             severity = relationTypes.isEmpty() ? "HIGH" : "MEDIUM";
             ruleHits.add("NO_DIRECT_DERIVATION");
@@ -911,6 +915,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         evidence.put("issueType", issue.getIssueType());
         evidence.put("ruleHits", issue.getRuleHits());
         evidence.put("upstreamRelations", object.get("upstreamRels"));
+        evidence.put("relationTypeDescriptions", relationTypeDescriptions());
         evidence.put("labels", object.get("labels"));
         return evidence;
     }
@@ -1035,7 +1040,8 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     }
 
     private String buildCacheKey(LineageReviewIssue issue) {
-        return hashOf(issue.getIssueType(), issue.getTableName(), issue.getColumnName(), issue.getFingerprint());
+        return hashOf(AI_REVIEW_PROMPT_VERSION, issue.getIssueType(), issue.getTableName(),
+                issue.getColumnName(), issue.getFingerprint());
     }
 
     private List<String> extractEvidenceRefs(List<Map<String, Object>> upstreamRels) {
@@ -1141,6 +1147,19 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             grouped.computeIfAbsent(relationType, ignored -> new ArrayList<>()).add(relation);
         }
         return grouped;
+    }
+
+    private Map<String, String> relationTypeDescriptions() {
+        Map<String, String> descriptions = new LinkedHashMap<>();
+        descriptions.put("DERIVES_TO", "直接数据派生：源字段值直接组成、转换、计算或复制到目标字段。");
+        descriptions.put("CASE_WHEN", "条件分支依赖：源字段出现在 CASE/IF 的 WHEN 条件中，只决定目标字段取哪个分支。");
+        descriptions.put("FILTERS", "过滤依赖：源字段出现在 WHERE/HAVING 条件中，只影响结果集是否保留。");
+        descriptions.put("JOINS", "关联依赖：源字段出现在 JOIN/ON 条件中，只影响表之间匹配。");
+        descriptions.put("GROUPS", "分组依赖：源字段出现在 GROUP BY 中，只影响聚合粒度。");
+        descriptions.put("ORDERS", "排序依赖：源字段出现在 ORDER BY 中，只影响排序或窗口顺序。");
+        descriptions.put("CALLS", "调用依赖：源对象通过函数、过程或动态调用参与计算。");
+        descriptions.put("REFERENCES", "引用依赖：源对象被 SQL 引用但不一定形成字段值派生。");
+        return descriptions;
     }
 
     private String resolvePrimaryTarget(Map<String, Object> object, String key) {

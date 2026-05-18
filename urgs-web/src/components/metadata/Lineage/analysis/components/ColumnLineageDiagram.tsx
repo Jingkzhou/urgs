@@ -1,13 +1,33 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Descriptions, Empty, Modal, Tag } from 'antd';
 import { LinkData, NodeData, RELATION_STYLES } from '../types';
 import CodeModal from './CodeModal';
+import LineageImpactPanel from './LineageImpactPanel';
+import {
+    TABLE_LEVEL_COLUMN,
+    buildDensityGraph,
+    buildImpactRows,
+    buildLocalFieldTraceGraph,
+    buildNodeRanks,
+    collectRelationOptions,
+    getRelationLabel,
+    getRelationStyle,
+    normalizeArray,
+    normalizeRelationType,
+    splitQualifiedTitle,
+    sameTableLoose,
+} from '../utils/lineageGraphDensity';
 
 interface ColumnLineageDiagramProps {
     nodes: NodeData[];
     links: LinkData[];
+    fieldNodes?: NodeData[];
+    fieldLinks?: LinkData[];
+    fieldLoading?: boolean;
+    fieldDetailsLoaded?: boolean;
     selectedTable: string | null;
     selectedField: { nodeId: string; colId: string } | null;
+    onLoadFieldDetails?: () => Promise<void>;
     onTableDoubleClick?: (tableName: string, qualifiedName: string) => void;
 }
 
@@ -36,7 +56,6 @@ interface SelectedRelation {
     sourceFile?: string;
 }
 
-const TABLE_LEVEL_COLUMN = '__table_level__';
 const CARD_WIDTH = 290;
 const HEADER_HEIGHT = 36;
 const OWNER_HEIGHT = 28;
@@ -44,32 +63,6 @@ const ROW_HEIGHT = 28;
 const RANK_GAP = 190;
 const NODE_GAP = 56;
 const PADDING = 72;
-const DEFAULT_RELATION_TYPE = 'DERIVES_TO';
-
-const splitQualifiedTitle = (title: string) => {
-    const index = title.lastIndexOf('.');
-    if (index <= 0 || index === title.length - 1) {
-        return { owner: '', table: title };
-    }
-    return {
-        owner: title.slice(0, index),
-        table: title.slice(index + 1),
-    };
-};
-
-const sameTable = (left: string, right?: string | null) => (
-    !!right && left.toLowerCase() === right.toLowerCase()
-);
-
-const normalizeRelationType = (type?: string) => type || DEFAULT_RELATION_TYPE;
-
-const getRelationStyle = (type?: string) => (
-    RELATION_STYLES[normalizeRelationType(type)] || RELATION_STYLES[DEFAULT_RELATION_TYPE]
-);
-
-const getRelationLabel = (type?: string) => (
-    RELATION_STYLES[normalizeRelationType(type)]?.label || normalizeRelationType(type)
-);
 
 const getRelationMarkerId = (type?: string) => (
     `column-lineage-arrow-${normalizeRelationType(type).replace(/[^a-zA-Z0-9_-]/g, '-')}`
@@ -92,13 +85,6 @@ const getSourceFile = (link: LinkData) => {
     }
     const value = sourceFiles || link.properties?.source_file || link.properties?.sourceFile;
     return value ? String(value) : undefined;
-};
-
-const normalizeArray = (value: any): string[] => {
-    if (Array.isArray(value)) {
-        return value.filter(Boolean).map(String);
-    }
-    return value ? [String(value)] : [];
 };
 
 const formatColumnSummary = (columns: string[], fallback: string) => {
@@ -205,53 +191,6 @@ const buildLineageHighlight = (startKey: string | null, links: LinkData[]) => {
     return { activeLinks, activeColumns };
 };
 
-const buildRanks = (nodes: NodeData[], links: LinkData[], selectedTable: string | null, selectedField: ColumnLineageDiagramProps['selectedField']) => {
-    const nodeIds = new Set(nodes.map(node => node.id));
-    const selectedNode = nodes.find(node => node.id === selectedField?.nodeId)
-        || nodes.find(node => sameTable(node.title, selectedTable))
-        || nodes[0];
-    const ranks = new Map<string, number>();
-    if (!selectedNode) {
-        return ranks;
-    }
-
-    const outgoing = new Map<string, string[]>();
-    const incoming = new Map<string, string[]>();
-    links.forEach(link => {
-        if (!nodeIds.has(link.sourceNodeId) || !nodeIds.has(link.targetNodeId)) {
-            return;
-        }
-        outgoing.set(link.sourceNodeId, [...(outgoing.get(link.sourceNodeId) || []), link.targetNodeId]);
-        incoming.set(link.targetNodeId, [...(incoming.get(link.targetNodeId) || []), link.sourceNodeId]);
-    });
-
-    const queue = [selectedNode.id];
-    ranks.set(selectedNode.id, 0);
-    while (queue.length > 0) {
-        const current = queue.shift()!;
-        const currentRank = ranks.get(current) || 0;
-        (incoming.get(current) || []).forEach(sourceId => {
-            if (!ranks.has(sourceId)) {
-                ranks.set(sourceId, currentRank - 1);
-                queue.push(sourceId);
-            }
-        });
-        (outgoing.get(current) || []).forEach(targetId => {
-            if (!ranks.has(targetId)) {
-                ranks.set(targetId, currentRank + 1);
-                queue.push(targetId);
-            }
-        });
-    }
-
-    nodes.forEach(node => {
-        if (!ranks.has(node.id)) {
-            ranks.set(node.id, Math.round((node.x || 0) / 480));
-        }
-    });
-    return ranks;
-};
-
 const getVisibleColumns = (
     node: NodeData,
     columnUsage: Map<string, Set<string>>,
@@ -281,23 +220,75 @@ const buildPath = (source: { x: number; y: number }, target: { x: number; y: num
 const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     nodes,
     links,
+    fieldNodes = [],
+    fieldLinks = [],
+    fieldLoading = false,
+    fieldDetailsLoaded = false,
     selectedTable,
     selectedField,
+    onLoadFieldDetails,
     onTableDoubleClick,
 }) => {
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
     const [activeLinkId, setActiveLinkId] = useState<string | null>(null);
     const [activeColumnKey, setActiveColumnKey] = useState<string | null>(null);
     const [pinnedColumnKey, setPinnedColumnKey] = useState<string | null>(null);
+    const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+    const [focusedLinkId, setFocusedLinkId] = useState<string | null>(null);
+    const [fieldTraceEnabled, setFieldTraceEnabled] = useState(false);
+    const [compactEnabled, setCompactEnabled] = useState(true);
+    const [perLayerLimit, setPerLayerLimit] = useState(12);
+    const relationOptions = useMemo(() => collectRelationOptions(links), [links]);
+    const relationOptionsKey = relationOptions.join('|');
+    const [selectedRelationTypes, setSelectedRelationTypes] = useState<string[]>([]);
     const [codeModalVisible, setCodeModalVisible] = useState(false);
     const [selectedCode, setSelectedCode] = useState<SelectedCode | null>(null);
     const [relationModalVisible, setRelationModalVisible] = useState(false);
     const [selectedRelation, setSelectedRelation] = useState<SelectedRelation | null>(null);
 
+    useEffect(() => {
+        setSelectedRelationTypes(relationOptions);
+    }, [relationOptionsKey]);
+
+    const activeRelationTypes = selectedRelationTypes.length > 0 ? selectedRelationTypes : relationOptions;
+    const graphInput = useMemo(() => (
+        fieldTraceEnabled
+            ? buildLocalFieldTraceGraph({
+                tableNodes: nodes,
+                tableLinks: links,
+                fieldNodes,
+                fieldLinks,
+                selectedTable,
+                focusedNodeId,
+                focusedLinkId,
+            })
+            : { nodes, links }
+    ), [fieldLinks, fieldNodes, fieldTraceEnabled, focusedLinkId, focusedNodeId, links, nodes, selectedTable]);
+
+    const densityGraph = useMemo(() => (
+        buildDensityGraph({
+            nodes: graphInput.nodes,
+            links: graphInput.links,
+            selectedTable,
+            selectedField,
+            focusedNodeId,
+            compactEnabled: !fieldTraceEnabled && compactEnabled,
+            perLayerLimit,
+            relationTypes: activeRelationTypes,
+        })
+    ), [activeRelationTypes, compactEnabled, fieldTraceEnabled, focusedNodeId, graphInput, perLayerLimit, selectedField, selectedTable]);
+
+    const displayNodes = densityGraph.nodes;
+    const displayLinks = densityGraph.links;
+    const impactRows = useMemo(() => (
+        buildImpactRows(nodes, links, selectedTable, selectedField)
+    ), [links, nodes, selectedField, selectedTable]);
+
     const layout = useMemo(() => {
-        const columnUsage = buildColumnUsage(links);
-        const ranks = buildRanks(nodes, links, selectedTable, selectedField);
+        const columnUsage = buildColumnUsage(displayLinks);
+        const ranks = buildNodeRanks(displayNodes, displayLinks, selectedTable, selectedField);
         const grouped = new Map<number, NodeData[]>();
-        nodes.forEach(node => {
+        displayNodes.forEach(node => {
             const rank = ranks.get(node.id) || 0;
             grouped.set(rank, [...(grouped.get(rank) || []), node]);
         });
@@ -332,30 +323,64 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         const width = Math.max(1200, ...layoutNodes.map(item => item.x + CARD_WIDTH + PADDING));
         const height = Math.max(640, ...layoutNodes.map(item => item.y + item.height + PADDING));
         return { layoutNodes, rowAnchors, width, height };
-    }, [links, nodes, selectedField, selectedTable]);
+    }, [displayLinks, displayNodes, selectedField, selectedTable]);
 
     const selectedFieldKey = selectedField ? `${selectedField.nodeId}::${selectedField.colId}` : '';
     const focusColumnKey = pinnedColumnKey || activeColumnKey;
     const highlighted = useMemo(() => (
-        buildLineageHighlight(focusColumnKey, links)
-    ), [focusColumnKey, links]);
+        buildLineageHighlight(focusColumnKey, displayLinks)
+    ), [displayLinks, focusColumnKey]);
     const hasColumnFocus = !!focusColumnKey;
     const relationLegend = useMemo(() => {
         const order = new Map(Object.keys(RELATION_STYLES).map((type, index) => [type, index]));
-        return Array.from(new Set(links.map(link => normalizeRelationType(link.type))))
+        return Array.from(new Set(displayLinks.map(link => normalizeRelationType(link.type))))
             .sort((a, b) => (order.get(a) ?? 99) - (order.get(b) ?? 99) || a.localeCompare(b))
             .map(type => ({ type, style: getRelationStyle(type), label: getRelationLabel(type) }));
-    }, [links]);
+    }, [displayLinks]);
+
+    useEffect(() => {
+        if (!focusedNodeId || !scrollContainerRef.current) {
+            return;
+        }
+        const item = layout.layoutNodes.find(node => node.node.id === focusedNodeId);
+        if (!item) {
+            return;
+        }
+        scrollContainerRef.current.scrollTo({
+            left: Math.max(0, item.x - 120),
+            top: Math.max(0, item.y - 120),
+            behavior: 'smooth',
+        });
+    }, [focusedNodeId, layout]);
 
     if (nodes.length === 0) {
         return <Empty description="暂无流程图数据" style={{ marginTop: 100 }} />;
     }
 
+    const handleFocusNode = (nodeId: string) => {
+        setFocusedNodeId(nodeId);
+        setFocusedLinkId(null);
+        setPinnedColumnKey(null);
+    };
+
+    const handleToggleFieldTrace = async () => {
+        if (fieldTraceEnabled) {
+            setFieldTraceEnabled(false);
+            return;
+        }
+        if (!fieldDetailsLoaded) {
+            await onLoadFieldDetails?.();
+        }
+        setFieldTraceEnabled(true);
+    };
+
     const handleLinkClick = (link: LinkData) => {
+        setFocusedLinkId(link.id);
+        setFocusedNodeId(null);
         const code = getLinkCode(link);
         if (!code) {
-            const sourceNode = nodes.find(node => node.id === link.sourceNodeId);
-            const targetNode = nodes.find(node => node.id === link.targetNodeId);
+            const sourceNode = displayNodes.find(node => node.id === link.sourceNodeId) || nodes.find(node => node.id === link.sourceNodeId);
+            const targetNode = displayNodes.find(node => node.id === link.targetNodeId) || nodes.find(node => node.id === link.targetNodeId);
             setSelectedRelation({
                 link,
                 sourceTable: sourceNode?.title || link.properties?.sourceTable || '-',
@@ -371,13 +396,14 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
             code,
             sourceFile: getSourceFile(link),
             linkType: normalizeRelationType(link.type),
-            searchTerm: getSourceColumnSearchTerm(link, nodes),
+            searchTerm: getSourceColumnSearchTerm(link, displayNodes),
         });
         setCodeModalVisible(true);
     };
 
     return (
-        <div className="h-full w-full overflow-auto bg-[#f1f2f4]" style={{ minHeight: 640 }}>
+        <div className="relative h-full w-full bg-[#f1f2f4]" style={{ minHeight: 640 }}>
+            <div ref={scrollContainerRef} className="h-full w-full overflow-auto pr-[420px]" style={{ minHeight: 640 }}>
             <div
                 className="relative"
                 style={{ width: layout.width, height: layout.height }}
@@ -400,7 +426,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                             </marker>
                         ))}
                     </defs>
-                    {links.map(link => {
+                    {displayLinks.map(link => {
                         const sourceKey = getColumnKey(link.sourceNodeId, link.sourceColumnId);
                         const targetKey = getColumnKey(link.targetNodeId, link.targetColumnId);
                         const sourceAnchor = layout.rowAnchors.get(sourceKey) || layout.rowAnchors.get(getColumnKey(link.sourceNodeId));
@@ -416,7 +442,6 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                             || targetKey === selectedFieldKey;
                         const relationType = normalizeRelationType(link.type);
                         const style = getRelationStyle(relationType);
-                        const hasCode = !!getLinkCode(link);
                         return (
                             <path
                                 key={link.id}
@@ -427,7 +452,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                                 strokeDasharray={style.strokeDasharray}
                                 markerEnd={`url(#${getRelationMarkerId(relationType)})`}
                                 opacity={(activeLinkId || hasColumnFocus) && !isActive ? 0.12 : (isActive ? 1 : 0.62)}
-                                style={{ cursor: hasCode ? 'pointer' : 'default', pointerEvents: 'stroke' }}
+                                style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
                                 onMouseEnter={() => setActiveLinkId(link.id)}
                                 onMouseLeave={() => setActiveLinkId(null)}
                                 onClick={() => handleLinkClick(link)}
@@ -438,10 +463,13 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
 
                 {layout.layoutNodes.map(item => {
                     const { owner, table } = splitQualifiedTitle(item.node.title);
-                    const isSelectedTable = sameTable(item.node.title, selectedTable) || item.node.id === selectedField?.nodeId;
-                    const hasOutgoing = links.some(link => link.sourceNodeId === item.node.id);
-                    const hasIncoming = links.some(link => link.targetNodeId === item.node.id);
-                    const headerColor = isSelectedTable ? '#b84f83' : (!hasOutgoing && hasIncoming ? '#d66b59' : '#8bc34a');
+                    const isSelectedTable = sameTableLoose(item.node.title, selectedTable) || item.node.id === selectedField?.nodeId;
+                    const hasOutgoing = displayLinks.some(link => link.sourceNodeId === item.node.id);
+                    const hasIncoming = displayLinks.some(link => link.targetNodeId === item.node.id);
+                    const isFocusedTable = focusedNodeId === item.node.id;
+                    const headerColor = item.node.isGroupNode
+                        ? '#64748b'
+                        : (isSelectedTable ? '#b84f83' : (!hasOutgoing && hasIncoming ? '#d66b59' : '#8bc34a'));
                     return (
                         <div
                             key={item.node.id}
@@ -451,16 +479,25 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                                 top: item.y,
                                 width: CARD_WIDTH,
                                 minHeight: item.height,
-                                borderColor: headerColor,
+                                borderColor: isFocusedTable ? '#1677ff' : headerColor,
+                                boxShadow: isFocusedTable ? '0 0 0 3px rgba(22, 119, 255, 0.18)' : undefined,
                             }}
                         >
                             <div
                                 className="flex h-9 items-center justify-center px-3 text-base font-semibold text-white"
-                                style={{ background: headerColor, cursor: onTableDoubleClick ? 'pointer' : 'default' }}
-                                title={`${item.node.title}（双击切换为当前表）`}
+                                style={{ background: headerColor, cursor: item.node.isGroupNode ? 'default' : 'pointer' }}
+                                title={item.node.isGroupNode ? item.node.title : `${item.node.title}（单击定位，双击切换为当前表）`}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    if (!item.node.isGroupNode) {
+                                        handleFocusNode(item.node.id);
+                                    }
+                                }}
                                 onDoubleClick={(event) => {
                                     event.stopPropagation();
-                                    onTableDoubleClick?.(table, item.node.title);
+                                    if (!item.node.isGroupNode) {
+                                        onTableDoubleClick?.(table, item.node.title);
+                                    }
                                 }}
                             >
                                 <span className="truncate">{table}</span>
@@ -474,7 +511,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                                 {item.columns.map(col => {
                                     const rowKey = getColumnKey(item.node.id, col.id);
                                     const isSelected = rowKey === selectedFieldKey;
-                                    const isLinkActive = links.some(link => (
+                                    const isLinkActive = displayLinks.some(link => (
                                         link.id === activeLinkId
                                         && ((link.sourceNodeId === item.node.id && (link.sourceColumnId || TABLE_LEVEL_COLUMN) === col.id)
                                             || (link.targetNodeId === item.node.id && (link.targetColumnId || TABLE_LEVEL_COLUMN) === col.id))
@@ -538,6 +575,23 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                     </div>
                 ) : null}
             </div>
+            </div>
+            <LineageImpactPanel
+                rows={impactRows}
+                stats={densityGraph.stats}
+                relationOptions={relationOptions}
+                selectedRelationTypes={activeRelationTypes}
+                perLayerLimit={perLayerLimit}
+                compactEnabled={compactEnabled}
+                fieldTraceEnabled={fieldTraceEnabled}
+                fieldTraceLoading={fieldLoading}
+                onRelationTypesChange={setSelectedRelationTypes}
+                onPerLayerLimitChange={setPerLayerLimit}
+                onCompactEnabledChange={setCompactEnabled}
+                onToggleFieldTrace={handleToggleFieldTrace}
+                onFocusTable={handleFocusNode}
+                onOpenTable={onTableDoubleClick}
+            />
             {selectedCode ? (
                 <CodeModal
                     visible={codeModalVisible}

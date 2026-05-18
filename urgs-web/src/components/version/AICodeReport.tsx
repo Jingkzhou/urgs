@@ -73,11 +73,6 @@ const AICodeReport: React.FC = () => {
         return records.slice(start, start + recordPageSize);
     }, [records, recordPage, recordPageSize]);
 
-    const pagedTasks = useMemo(() => {
-        const start = (taskPage - 1) * taskPageSize;
-        return tasks.slice(start, start + taskPageSize);
-    }, [tasks, taskPage, taskPageSize]);
-
     const filteredIssues = useMemo(() => {
         const keyword = searchTerm.trim().toLowerCase();
         if (!keyword) {
@@ -304,7 +299,6 @@ const AICodeReport: React.FC = () => {
                         selectedTask={selectedTask}
                         selectedTaskId={selectedTaskId}
                         tasks={tasks}
-                        pagedTasks={pagedTasks}
                         loading={taskLoading}
                         triggerLoading={triggerLoading}
                         reportDownloading={reportDownloading}
