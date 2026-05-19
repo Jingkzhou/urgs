@@ -52,6 +52,10 @@ public class VersionPackage {
     @Column(name = "previous_commit_sha", length = 100)
     private String previousCommitSha;
 
+    /** 需求编号 */
+    @Column(name = "requirement_number", length = 100)
+    private String requirementNumber;
+
     /** 包名 */
     @Column(name = "package_name", length = 255)
     private String packageName;

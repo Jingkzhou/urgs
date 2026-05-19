@@ -366,6 +366,7 @@ export interface VersionPackage {
     commitSha: string;
     previousGitRef?: string;
     previousCommitSha?: string;
+    requirementNumber?: string;
     packageName?: string;
     packageUrl?: string;
     packageSize?: number;
@@ -395,6 +396,7 @@ export interface ProductionPackageRequest {
     ssoId: number;
     gitRef: string;
     previousGitRef: string;
+    requirementNumber: string;
     description?: string;
     createdBy?: number;
     envId?: number;
@@ -432,6 +434,7 @@ export interface ProductionPackageGateResult {
     repoId: number;
     gitRef: string;
     previousGitRef: string;
+    requirementNumber?: string;
     packageType?: string;
     specPath?: string;
     status: 'passed' | 'failed' | string;

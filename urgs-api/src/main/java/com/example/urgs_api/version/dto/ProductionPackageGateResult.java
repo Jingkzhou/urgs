@@ -16,6 +16,7 @@ public class ProductionPackageGateResult {
     private Long repoId;
     private String gitRef;
     private String previousGitRef;
+    private String requirementNumber;
     private String packageType;
     private String specPath;
     private String status;

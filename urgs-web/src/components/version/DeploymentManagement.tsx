@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Checkbox, Descriptions, Dropdown, Form, Input, List, Modal, Select, Space, Steps, Tag, Upload, message } from 'antd';
+import { Button, Card, Dropdown, Form, Modal, Space, Tag, message } from 'antd';
 import * as XLSX from 'xlsx';
 import {
     AlertTriangle, CheckCircle, Clock, Download, Edit, GitBranch, Globe, History,
     Info, MoreVertical, Package, RefreshCw, Rocket, Server,
-    Tag as TagIcon, Trash2, UploadCloud, XCircle
+    Trash2, XCircle
 } from 'lucide-react';
 import {
     buildProductionPackage as buildProductionPackageApi,
@@ -27,8 +27,8 @@ import {
     ProductionPackageRequest,
     VersionPackage
 } from '@/api/version';
-
-const { Option } = Select;
+import ProductionPackagePanel from './ProductionPackagePanel';
+import DeploymentPackageModals from './DeploymentPackageModals';
 
 const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
     draft: { color: 'default', icon: <Edit size={14} />, label: '草稿' },
@@ -40,15 +40,12 @@ const statusConfig: Record<string, { color: string; icon: React.ReactNode; label
     failed: { color: 'error', icon: <XCircle size={14} />, label: '失败' },
     blocked: { color: 'warning', icon: <AlertTriangle size={14} />, label: '已阻断' },
 };
-
 const formatCommitDate = (value?: string) => {
     if (!value) return '-';
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 };
-
 const firstLine = (value?: string) => (value || '').split('\n')[0]?.trim() || '-';
-
 const formatProductionDescription = (gitRef: string, previousGitRef: string, commits: GitCommit[]) => {
     const lines = [
         `投产版本: ${gitRef}`,
@@ -68,7 +65,6 @@ const formatProductionDescription = (gitRef: string, previousGitRef: string, com
 
     return lines.join('\n');
 };
-
 const parseDeployLogStatus = (content: string): 'success' | 'failed' | 'blocked' | undefined => {
     const normalized = content.toLowerCase();
     if (content.includes('生产中的版本与GitLab中的投产前版本不一致')
@@ -93,7 +89,6 @@ const parseDeployLogStatus = (content: string): 'success' | 'failed' | 'blocked'
     }
     return undefined;
 };
-
 const logBelongsToPackage = (content: string, packageId: number) => {
     const id = String(packageId);
     return content.includes(`PACKAGE_ID=${id}`)
@@ -101,14 +96,11 @@ const logBelongsToPackage = (content: string, packageId: number) => {
         || content.includes(`"package_id":${id}`)
         || content.includes(`package_id=${id}`);
 };
-
 const fileNameSafe = (value?: string) => (value || 'unknown').replace(/[\\/:*?"<>|\p{C}]+/gu, '_');
-
 interface Props {
     ssoId?: number;
     repoId?: number;
 }
-
 const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const [environments, setEnvironments] = useState<DeployEnvironment[]>([]);
     const [versionPackages, setVersionPackages] = useState<VersionPackage[]>([]);
@@ -186,6 +178,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
     const watchedRepoId = Form.useWatch('repoId', productionForm);
     const watchedGitRef = Form.useWatch('gitRef', productionForm);
     const watchedPreviousGitRef = Form.useWatch('previousGitRef', productionForm);
+    const watchedRequirementNumber = Form.useWatch('requirementNumber', productionForm);
     const watchedRecordStatus = Form.useWatch('status', recordForm);
     const watchedManualChecked = Form.useWatch('manualChecked', recordForm);
 
@@ -233,6 +226,11 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
         };
     }, [watchedRepoId, watchedGitRef, watchedPreviousGitRef]);
 
+    useEffect(() => {
+        setGateResult(null);
+        setBuildResult(null);
+    }, [watchedRequirementNumber]);
+
     const loadTags = async (targetRepoId: number) => {
         setFetchingGit(true);
         setTags([]);
@@ -255,7 +253,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
 
     const handleRepoChange = (targetRepoId: number) => {
         setSelectedRepo(targetRepoId);
-        productionForm.setFieldsValue({ gitRef: undefined, previousGitRef: undefined, description: undefined });
+        productionForm.setFieldsValue({ gitRef: undefined, previousGitRef: undefined, requirementNumber: undefined, description: undefined });
         setReleaseCommits([]);
         loadTags(targetRepoId);
     };
@@ -266,6 +264,13 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
             previousGitRef: idx >= 0 && idx + 1 < tags.length ? tags[idx + 1].name : undefined,
             description: undefined
         });
+        setReleaseCommits([]);
+        setGateResult(null);
+        setBuildResult(null);
+    };
+
+    const handlePreviousTagChange = () => {
+        productionForm.setFieldValue('description', undefined);
         setReleaseCommits([]);
         setGateResult(null);
         setBuildResult(null);
@@ -493,6 +498,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
             { 字段: '包名', 内容: pkg.packageName || '-' },
             { 字段: '当前Tag', 内容: pkg.gitRef || '-' },
             { 字段: '基线Tag', 内容: pkg.previousGitRef || '-' },
+            { 字段: '需求编号', 内容: pkg.requirementNumber || '-' },
             { 字段: '环境', 内容: envName },
             { 字段: '状态', 内容: (statusConfig[pkg.status] || statusConfig.ready).label },
             { 字段: '门禁', 内容: pkg.gateStatus || '-' },
@@ -552,199 +558,12 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
 
     const currentStep = useMemo(() => {
         if (!watchedRepoId || !watchedGitRef || !watchedPreviousGitRef) return 0;
+        if (!watchedRequirementNumber) return 1;
         if (!gateResult) return 1;
         if (gateResult.status !== 'passed') return 2;
         if (!buildResult) return 3;
         return 4;
-    }, [watchedRepoId, watchedGitRef, watchedPreviousGitRef, gateResult, buildResult]);
-
-    const renderGatePanel = () => {
-        if (!gateResult) {
-            return (
-                <Alert
-                    type="info"
-                    showIcon
-                    message="等待门禁校验"
-                    description="系统会读取当前 Tag 中的 .urgs/release.yml，并基于当前 Tag 与上一投产 Tag 的差异生成门禁结果。"
-                />
-            );
-        }
-
-        const summary = gateResult.changeSummary;
-        return (
-            <div className="space-y-4">
-                <Alert
-                    type={gateResult.status === 'passed' ? 'success' : 'error'}
-                    showIcon
-                    message={gateResult.summary}
-                    description={gateResult.status === 'passed'
-                        ? '生产执行时会先校验存储过程生产版本与上一 Tag 基线版本，一旦不一致会在备份前终止。'
-                        : '门禁未通过，请按失败项补齐发布规格、备份或回滚内容后重新打 Tag。'}
-                />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {gateResult.gates.map(item => (
-                        <div key={item.key} className="border border-slate-200 rounded-lg p-3 bg-white">
-                            <div className="flex items-center justify-between mb-1">
-                                <span className="font-semibold text-slate-800 text-sm">{item.label}</span>
-                                <Tag color={item.status === 'passed' ? 'success' : 'error'}>{item.status === 'passed' ? '通过' : '失败'}</Tag>
-                            </div>
-                            <div className="text-xs text-slate-500 leading-5">{item.message || '-'}</div>
-                        </div>
-                    ))}
-                </div>
-                <Descriptions size="small" bordered column={2}>
-                    <Descriptions.Item label="规格文件">{gateResult.specPath || '-'}</Descriptions.Item>
-                    <Descriptions.Item label="投产类型">{gateResult.packageType || '-'}</Descriptions.Item>
-                    <Descriptions.Item label="SQL">{summary?.sqlFiles?.length || 0} 个</Descriptions.Item>
-                    <Descriptions.Item label="存储过程">{summary?.procedureFiles?.length || 0} 个</Descriptions.Item>
-                    <Descriptions.Item label="备份脚本">{summary?.backupFiles?.length || 0} 个</Descriptions.Item>
-                    <Descriptions.Item label="回滚脚本">{summary?.rollbackFiles?.length || 0} 个</Descriptions.Item>
-                </Descriptions>
-                <List
-                    size="small"
-                    bordered
-                    header={<span className="font-semibold">命中投产范围的差异文件</span>}
-                    dataSource={gateResult.includedFiles || []}
-                    locale={{ emptyText: '暂无差异文件' }}
-                    renderItem={item => <List.Item><span className="font-mono text-xs">{item}</span></List.Item>}
-                />
-            </div>
-        );
-    };
-
-    const renderReleaseWorkflow = () => (
-        <div className="space-y-5">
-            <Steps
-                size="small"
-                current={currentStep}
-                items={[
-                    { title: '选择 Tag' },
-                    { title: '读取规格' },
-                    { title: '门禁校验' },
-                    { title: '生成生产包' },
-                    { title: '回填结果' }
-                ]}
-            />
-
-            <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-5">
-                <Card title="生产投产参数" className="border-slate-200 shadow-sm">
-                    <Form form={productionForm} layout="vertical">
-                        <Form.Item name="repoId" label="Git 仓库" rules={[{ required: true, message: '请选择 Git 仓库' }]}>
-                            {repoId ? (
-                                <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                                    <div className="font-semibold text-slate-800">{repos.find(r => r.id === repoId)?.name || '当前仓库'}</div>
-                                    <div className="text-xs text-slate-400 font-mono break-all mt-1">{repos.find(r => r.id === repoId)?.cloneUrl}</div>
-                                </div>
-                            ) : (
-                                <Select placeholder="选择 Git 仓库" onChange={handleRepoChange}>
-                                    {repos.map(repo => <Option key={repo.id} value={repo.id}>{repo.name}</Option>)}
-                                </Select>
-                            )}
-                        </Form.Item>
-
-                        <Form.Item name="gitRef" label="当前投产 Tag" rules={[{ required: true, message: '请选择当前投产 Tag' }]}>
-                            <Select
-                                placeholder={selectedRepo ? '选择当前投产 Tag' : '请先选择仓库'}
-                                disabled={!selectedRepo}
-                                loading={fetchingGit}
-                                showSearch
-                                onChange={handleTagChange}
-                            >
-                                {tags.map(tag => (
-                                    <Option key={tag.name} value={tag.name}>
-                                        <Space>
-                                            <TagIcon size={14} />
-                                            <span>{tag.name}</span>
-                                            {tag.taggerDate && <span className="text-xs text-slate-400">{tag.taggerDate.split('T')[0]}</span>}
-                                        </Space>
-                                    </Option>
-                                ))}
-                            </Select>
-                        </Form.Item>
-
-                        <Form.Item name="previousGitRef" label="上一投产 Tag" rules={[{ required: true, message: '请选择上一投产 Tag' }]}>
-                            <Select
-                                placeholder={selectedRepo ? '选择上一投产 Tag' : '请先选择仓库'}
-                                disabled={!selectedRepo}
-                                loading={fetchingGit}
-                                showSearch
-                                onChange={() => {
-                                    productionForm.setFieldValue('description', undefined);
-                                    setReleaseCommits([]);
-                                    setGateResult(null);
-                                    setBuildResult(null);
-                                }}
-                            >
-                                {tags
-                                    .filter(tag => tag.name !== productionForm.getFieldValue('gitRef'))
-                                    .map(tag => (
-                                        <Option key={tag.name} value={tag.name}>
-                                            <Space>
-                                                <History size={14} />
-                                                <span>{tag.name}</span>
-                                                {tag.taggerDate && <span className="text-xs text-slate-400">{tag.taggerDate.split('T')[0]}</span>}
-                                            </Space>
-                                        </Option>
-                                    ))}
-                            </Select>
-                        </Form.Item>
-
-                        <Form.Item name="envId" hidden><Input /></Form.Item>
-
-                        <Form.Item name="description" label="投产说明">
-                            <Input.TextArea rows={8} placeholder="选择当前投产 Tag 和上一投产 Tag 后自动带出两次 Tag 之间的提交记录" />
-                        </Form.Item>
-                        <div className="mb-4 -mt-3 text-xs text-slate-500">
-                            {commitLoading
-                                ? '正在读取两次 Tag 之间的提交记录...'
-                                : watchedGitRef && watchedPreviousGitRef
-                                    ? `已带出 ${releaseCommits.length} 条提交记录，可在生成生产包前补充风险点和验证说明。`
-                                    : '选择完整 Tag 后自动带出提交记录。'}
-                        </div>
-
-                        <Space wrap>
-                            <Button icon={<RefreshCw size={14} />} onClick={handleGateCheck} loading={gateLoading}>
-                                执行门禁校验
-                            </Button>
-                            <Button type="primary" icon={<Package size={14} />} onClick={handleBuildPackage} loading={buildLoading} disabled={gateResult?.status !== 'passed'}>
-                                生成生产投产包
-                            </Button>
-                        </Space>
-                    </Form>
-                </Card>
-
-                <div className="space-y-4">
-                    <Card title="生产门禁" className="border-slate-200 shadow-sm">
-                        {renderGatePanel()}
-                    </Card>
-
-                    {buildResult && (
-                        <Card title="生产执行命令" className="border-emerald-200 shadow-sm bg-emerald-50/30">
-                            <div className="space-y-3">
-                                <Alert type="success" showIcon message="生产投产包已生成" description={buildResult.packageName} />
-                                <Descriptions size="small" bordered column={1}>
-                                    <Descriptions.Item label="部署命令">
-                                        <code>{buildResult.deployCommand}</code>
-                                    </Descriptions.Item>
-                                    <Descriptions.Item label="回滚命令">
-                                        <code>{buildResult.rollbackCommand}</code>
-                                    </Descriptions.Item>
-                                </Descriptions>
-                                <Space wrap>
-                                    <Button type="primary" icon={<Download size={14} />} onClick={() => handleDownloadProduction(buildResult.packageId, buildResult.packageName)}>
-                                        下载生产投产包
-                                    </Button>
-                                    <Button icon={<CheckCircle size={14} />} onClick={() => openRecordModal()}>
-                                        回填生产执行结果
-                                    </Button>
-                                </Space>
-                            </div>
-                        </Card>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
+    }, [watchedRepoId, watchedGitRef, watchedPreviousGitRef, watchedRequirementNumber, gateResult, buildResult]);
 
     const renderPackageCard = (pkg: VersionPackage) => {
         const config = statusConfig[pkg.status] || statusConfig.ready;
@@ -803,6 +622,7 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                     <Space><Globe size={14} />仓库: {repoName}</Space>
                     <Space><GitBranch size={14} />Tag: {pkg.gitRef}</Space>
                     <Space><History size={14} />基线: {pkg.previousGitRef || '-'}</Space>
+                    <Space><Info size={14} />需求: {pkg.requirementNumber || '-'}</Space>
                     <Space><Server size={14} />环境: {envName}</Space>
                     <Space><Info size={14} />门禁: {pkg.gateStatus || '-'}</Space>
                 </div>
@@ -893,7 +713,30 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                 <div className="p-6">
                     {activeTab === 'release' ? (
                         <div className="space-y-6">
-                            {renderReleaseWorkflow()}
+                            <ProductionPackagePanel
+                                productionForm={productionForm}
+                                repoId={repoId}
+                                repos={repos}
+                                selectedRepo={selectedRepo}
+                                tags={tags}
+                                fetchingGit={fetchingGit}
+                                gateLoading={gateLoading}
+                                buildLoading={buildLoading}
+                                commitLoading={commitLoading}
+                                releaseCommits={releaseCommits}
+                                watchedGitRef={watchedGitRef}
+                                watchedPreviousGitRef={watchedPreviousGitRef}
+                                gateResult={gateResult}
+                                buildResult={buildResult}
+                                currentStep={currentStep}
+                                onRepoChange={handleRepoChange}
+                                onTagChange={handleTagChange}
+                                onPreviousTagChange={handlePreviousTagChange}
+                                onGateCheck={handleGateCheck}
+                                onBuildPackage={handleBuildPackage}
+                                onDownloadProduction={handleDownloadProduction}
+                                onOpenRecordModal={() => openRecordModal()}
+                            />
                             <Card title="待执行投产包" className="border-slate-200 shadow-sm">
                                 {activePackages.length === 0 ? (
                                     <div className="py-12 text-center text-slate-400">暂无待执行投产包</div>
@@ -918,201 +761,38 @@ const DeploymentManagement: React.FC<Props> = ({ ssoId, repoId }) => {
                 </div>
             </div>
 
-            <Modal
-                title="投产包详情"
-                open={detailModalVisible}
-                onCancel={() => setDetailModalVisible(false)}
-                footer={selectedPackageDetail ? (
-                    <Space wrap>
-                        <Button
-                            icon={<Download size={14} />}
-                            onClick={() => {
-                                const isProductionPackage = !!selectedPackageDetail.deployCommand || selectedPackageDetail.packageUrl?.startsWith('generated://production');
-                                isProductionPackage
-                                    ? handleDownloadProduction(selectedPackageDetail.id, selectedPackageDetail.packageName)
-                                    : handleDownloadLegacy(selectedPackageDetail);
-                            }}
-                        >
-                            下载投产包
-                        </Button>
-                        <Button icon={<CheckCircle size={14} />} onClick={() => openRecordModal(selectedPackageDetail)}>
-                            回填生产执行结果
-                        </Button>
-                        <Button icon={<Download size={14} />} onClick={() => exportPackageExcel(selectedPackageDetail)}>
-                            导出 Excel
-                        </Button>
-                    </Space>
-                ) : null}
-                width={760}
-            >
-                {selectedPackageDetail && (
-                    <div className="space-y-4">
-                        <Descriptions size="small" bordered column={2}>
-                            <Descriptions.Item label="版本">{selectedPackageDetail.version || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="包名">{selectedPackageDetail.packageName || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="当前 Tag">{selectedPackageDetail.gitRef || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="基线 Tag">{selectedPackageDetail.previousGitRef || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="环境">
-                                {environments.find(e => String(e.id) === String(selectedPackageDetail.envId))?.name || '-'}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="状态">
-                                <Tag color={(statusConfig[selectedPackageDetail.status] || statusConfig.ready).color}>
-                                    {(statusConfig[selectedPackageDetail.status] || statusConfig.ready).label}
-                                </Tag>
-                            </Descriptions.Item>
-                            <Descriptions.Item label="门禁">{selectedPackageDetail.gateStatus || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="类型">{selectedPackageDetail.packageType || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="创建时间" span={2}>
-                                {selectedPackageDetail.createdAt ? new Date(selectedPackageDetail.createdAt).toLocaleString() : '-'}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="部署命令" span={2}>
-                                <code>{packageDeployCommand(selectedPackageDetail)}</code>
-                            </Descriptions.Item>
-                            <Descriptions.Item label="回滚命令" span={2}>
-                                <code>{packageRollbackCommand(selectedPackageDetail)}</code>
-                            </Descriptions.Item>
-                            <Descriptions.Item label="回填日志文件路径" span={2}>
-                                <div className="font-mono text-xs text-slate-700">{packageDeployLogPath()}</div>
-                            </Descriptions.Item>
-                        </Descriptions>
-                        {selectedPackageDetail.description && (
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                                <div className="mb-2 text-sm font-semibold text-slate-700">投产说明</div>
-                                <pre className="whitespace-pre-wrap break-words text-xs leading-5 text-slate-600">{selectedPackageDetail.description}</pre>
-                            </div>
-                        )}
-                        {selectedPackageDetail.buildLog && (
-                            <button
-                                type="button"
-                                className="w-full rounded-lg border border-slate-200 bg-slate-50 p-3 text-left text-xs text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
-                                onClick={() => openPackageFileList(selectedPackageDetail)}
-                            >
-                                {selectedPackageDetail.buildLog}
-                            </button>
-                        )}
-                    </div>
-                )}
-            </Modal>
-
-            <Modal
-                title="投产文件清单"
-                open={fileListModalVisible}
-                onCancel={() => setFileListModalVisible(false)}
-                footer={(
-                    <Space>
-                        <Button onClick={() => setFileListModalVisible(false)}>关闭</Button>
-                        <Button type="primary" icon={<Download size={14} />} onClick={() => exportPackageExcel(fileListPackage)}>
-                            导出 Excel
-                        </Button>
-                    </Space>
-                )}
-                width={760}
-            >
-                <div className="space-y-3">
-                    <Descriptions size="small" bordered column={2}>
-                        <Descriptions.Item label="投产包">
-                            {fileListPackage?.packageName || fileListPackage?.version || '-'}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="文件数">
-                            {parsePackageFiles(fileListPackage).length}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="当前 Tag">{fileListPackage?.gitRef || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="基线 Tag">{fileListPackage?.previousGitRef || '-'}</Descriptions.Item>
-                    </Descriptions>
-                    <List
-                        size="small"
-                        bordered
-                        dataSource={parsePackageFiles(fileListPackage)}
-                        locale={{ emptyText: '暂无投产文件记录' }}
-                        renderItem={(item, index) => (
-                            <List.Item>
-                                <span className="mr-3 text-xs text-slate-400">{index + 1}</span>
-                                <span className="font-mono text-xs text-slate-700">{item}</span>
-                            </List.Item>
-                        )}
-                    />
-                </div>
-            </Modal>
-
-            <Modal
-                title="回填生产执行结果"
-                open={recordModalVisible}
-                onOk={handleRecordResult}
-                onCancel={() => {
-                    setRecordModalVisible(false);
-                    setRecordPackage(null);
-                    setLogParseMessage('');
-                }}
-                okButtonProps={{ disabled: !watchedRecordStatus || !watchedManualChecked }}
-                okText="确认回填"
-                cancelText="取消"
-                width={720}
-            >
-                <Form form={recordForm} layout="vertical">
-                    {recordPackage && (
-                        <Alert
-                            className="mb-4"
-                            type="info"
-                            showIcon
-                            message="必须上传当前生产包 deploy.sh 产生的日志文件"
-                            description={`当前投产包：VP-${recordPackage.id.toString().padStart(6, '0')} / ${recordPackage.packageName || recordPackage.version || '-'}`}
-                        />
-                    )}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <Form.Item name="packageId" label="投产包 ID" rules={[{ required: true }]}>
-                            <Input disabled />
-                        </Form.Item>
-                        <Form.Item name="logFileName" label="日志文件">
-                            <Input disabled placeholder="上传后自动填入" />
-                        </Form.Item>
-                    </div>
-                    <Form.Item name="envId" hidden><Input /></Form.Item>
-                    <Form.Item name="logs" hidden rules={[{ required: true, message: '请上传生产执行日志文件' }]}>
-                        <Input.TextArea />
-                    </Form.Item>
-                    <Upload
-                        accept=".log"
-                        maxCount={1}
-                        beforeUpload={(file) => {
-                            handleDeploymentLogFile(file);
-                            return false;
-                        }}
-                        onRemove={() => {
-                            recordForm.setFieldsValue({ status: undefined, logs: '', logFileName: undefined, manualChecked: false });
-                            setLogParseStatus('info');
-                            setLogParseMessage('请上传当前投产包执行 deploy.sh 产生的日志文件，系统会自动识别执行结果。');
-                        }}
-                    >
-                        <Button icon={<UploadCloud size={14} />}>上传生产执行日志</Button>
-                    </Upload>
-                    {logParseMessage && (
-                        <Alert className="mt-3" type={logParseStatus} showIcon message={logParseMessage} />
-                    )}
-                    <Form.Item name="status" label="执行结果" rules={[{ required: true }]}>
-                        <Select disabled placeholder="上传日志后自动识别">
-                            <Option value="success">成功</Option>
-                            <Option value="failed">失败</Option>
-                            <Option value="blocked">被存储过程一致性校验阻断</Option>
-                        </Select>
-                    </Form.Item>
-                    <Form.Item
-                        name="manualChecked"
-                        valuePropName="checked"
-                        rules={[
-                            {
-                                validator: (_, value) => value
-                                    ? Promise.resolve()
-                                    : Promise.reject(new Error('请完成人工检核确认'))
-                            }
-                        ]}
-                    >
-                        <Checkbox>我已人工核验日志文件，确认该日志由当前投产包部署产生，且识别结果与日志一致</Checkbox>
-                    </Form.Item>
-                    <Form.Item name="remark" label="备注">
-                        <Input.TextArea rows={3} placeholder="填写验证结论、异常说明或回滚说明" />
-                    </Form.Item>
-                </Form>
-            </Modal>
+            <DeploymentPackageModals
+                statusConfig={statusConfig}
+                environments={environments}
+                detailModalVisible={detailModalVisible}
+                selectedPackageDetail={selectedPackageDetail}
+                fileListModalVisible={fileListModalVisible}
+                fileListPackage={fileListPackage}
+                recordModalVisible={recordModalVisible}
+                recordPackage={recordPackage}
+                recordForm={recordForm}
+                watchedRecordStatus={watchedRecordStatus}
+                watchedManualChecked={watchedManualChecked}
+                logParseMessage={logParseMessage}
+                logParseStatus={logParseStatus}
+                setDetailModalVisible={setDetailModalVisible}
+                setFileListModalVisible={setFileListModalVisible}
+                setRecordModalVisible={setRecordModalVisible}
+                setRecordPackage={setRecordPackage}
+                setLogParseMessage={setLogParseMessage}
+                setLogParseStatus={setLogParseStatus}
+                handleRecordResult={handleRecordResult}
+                handleDeploymentLogFile={handleDeploymentLogFile}
+                handleDownloadProduction={handleDownloadProduction}
+                handleDownloadLegacy={handleDownloadLegacy}
+                openRecordModal={openRecordModal}
+                openPackageFileList={openPackageFileList}
+                exportPackageExcel={exportPackageExcel}
+                parsePackageFiles={parsePackageFiles}
+                packageDeployCommand={packageDeployCommand}
+                packageRollbackCommand={packageRollbackCommand}
+                packageDeployLogPath={packageDeployLogPath}
+            />
         </div>
     );
 };

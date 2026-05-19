@@ -10,6 +10,7 @@ public class ProductionPackageRequest {
     private Long ssoId;
     private String gitRef;
     private String previousGitRef;
+    private String requirementNumber;
     private String description;
     private Long createdBy;
     private Long envId;

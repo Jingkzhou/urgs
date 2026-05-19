@@ -1,7 +1,6 @@
 package com.example.urgs_api.version.service;
 
 import com.example.urgs_api.version.dto.GitCommit;
-import com.example.urgs_api.version.dto.GitCommitDiff;
 import com.example.urgs_api.version.dto.ProductionPackageBuildResult;
 import com.example.urgs_api.version.dto.ProductionPackageGateResult;
 import com.example.urgs_api.version.dto.ProductionPackageRequest;
@@ -78,15 +77,15 @@ public class ProductionPackageService {
         }
         validateDatabaseSpec(spec, gates);
 
-        List<GitCommitDiff> diffs = gitPlatformService.compareRefs(
-                request.getRepoId(), request.getPreviousGitRef(), request.getGitRef());
-        List<String> includedFiles = filterIncludedFiles(diffs, includes);
+        List<String> includedFiles = findRequirementFiles(request, includes);
         ProductionPackageGateResult.ChangeSummary summary = summarize(includedFiles, spec);
 
         if (includedFiles.isEmpty()) {
-            gates.add(gate("diff", "Tag 差异文件", GATE_FAILED, "当前 Tag 与基线 Tag 没有命中投产范围的差异文件"));
+            gates.add(gate("requirementFiles", "需求编号匹配文件", GATE_FAILED,
+                    "当前 Tag 中没有匹配需求编号 " + request.getRequirementNumber() + " 且命中投产范围的文件"));
         } else {
-            gates.add(gate("diff", "Tag 差异文件", GATE_PASSED, "命中 " + includedFiles.size() + " 个投产文件"));
+            gates.add(gate("requirementFiles", "需求编号匹配文件", GATE_PASSED,
+                    "命中 " + includedFiles.size() + " 个投产文件"));
         }
 
         boolean hasSql = !summary.getSqlFiles().isEmpty();
@@ -124,6 +123,7 @@ public class ProductionPackageService {
         vp.setVersion(request.getGitRef());
         vp.setGitRef(request.getGitRef());
         vp.setPreviousGitRef(request.getPreviousGitRef());
+        vp.setRequirementNumber(normalizeRequirementNumber(request.getRequirementNumber()));
         vp.setDescription(request.getDescription());
         vp.setCreatedBy(request.getCreatedBy());
         vp.setEnvId(resolveEnvId(request));
@@ -221,6 +221,9 @@ public class ProductionPackageService {
         }
         if (isBlank(request.getPreviousGitRef())) {
             throw new IllegalArgumentException("previousGitRef 不能为空");
+        }
+        if (isBlank(request.getRequirementNumber())) {
+            throw new IllegalArgumentException("requirementNumber 不能为空");
         }
     }
 
@@ -449,6 +452,7 @@ public class ProductionPackageService {
                 .repoId(request.getRepoId())
                 .gitRef(request.getGitRef())
                 .previousGitRef(request.getPreviousGitRef())
+                .requirementNumber(normalizeRequirementNumber(request.getRequirementNumber()))
                 .packageType(spec != null ? spec.getType() : null)
                 .specPath(specPath)
                 .status(status)
@@ -463,21 +467,28 @@ public class ProductionPackageService {
                 .build();
     }
 
-    private List<String> filterIncludedFiles(List<GitCommitDiff> diffs, List<String> includes) {
-        if (diffs == null || includes == null || includes.isEmpty()) {
+    private List<String> findRequirementFiles(ProductionPackageRequest request, List<String> includes) {
+        if (includes == null || includes.isEmpty()) {
             return List.of();
         }
         List<Pattern> patterns = includes.stream().map(this::globToPattern).toList();
+        String requirementNumber = normalizeRequirementNumber(request.getRequirementNumber());
         Set<String> paths = new LinkedHashSet<>();
-        for (GitCommitDiff diff : diffs) {
-            String path = Boolean.TRUE.equals(diff.getDeletedFile()) ? diff.getOldPath() : diff.getNewPath();
-            if (isBlank(path)) {
-                path = diff.getNewPath() != null ? diff.getNewPath() : diff.getOldPath();
+        try (InputStream archive = gitPlatformService.downloadArchive(request.getRepoId(), request.getGitRef());
+             ZipInputStream zis = new ZipInputStream(archive)) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (!entry.isDirectory()) {
+                    String entryPath = normalizePath(cleanArchiveEntryName(entry.getName()));
+                    if (entryPath.contains(requirementNumber)
+                            && patterns.stream().anyMatch(pattern -> pattern.matcher(entryPath).matches())) {
+                        paths.add(entryPath);
+                    }
+                }
+                zis.closeEntry();
             }
-            String candidatePath = path;
-            if (!isBlank(candidatePath) && patterns.stream().anyMatch(p -> p.matcher(candidatePath).matches())) {
-                paths.add(candidatePath);
-            }
+        } catch (IOException e) {
+            throw new IllegalStateException("读取当前 Tag 归档匹配需求编号失败: " + e.getMessage(), e);
         }
         return paths.stream().sorted().toList();
     }
@@ -542,6 +553,7 @@ public class ProductionPackageService {
         manifest.put("version", vp.getVersion());
         manifest.put("git_ref", vp.getGitRef());
         manifest.put("previous_git_ref", vp.getPreviousGitRef());
+        manifest.put("requirement_number", vp.getRequirementNumber());
         manifest.put("commit_sha", vp.getCommitSha());
         manifest.put("package_type", vp.getPackageType());
         manifest.put("spec_path", vp.getSpecPath());
@@ -682,7 +694,9 @@ public class ProductionPackageService {
                 部署脚本会先把生产库当前存储过程导出到 production_procedure_backup，再与 GitLab 上一个投产 Tag 的基线版本对比。如果不一致，会在执行 db/backup、db/sql 和存储过程部署前终止。
 
                 """.stripIndent()
-                + "\n版本: " + vp.getVersion() + "\n基线: " + vp.getPreviousGitRef() + "\n";
+                + "\n版本: " + vp.getVersion()
+                + "\n基线: " + vp.getPreviousGitRef()
+                + "\n需求编号: " + nullToDash(vp.getRequirementNumber()) + "\n";
     }
 
     private List<String> readChangedFiles(VersionPackage vp) {
@@ -882,6 +896,22 @@ public class ProductionPackageService {
 
     private String shellQuote(String value) {
         return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private String normalizeRequirementNumber(String value) {
+        return value == null ? null : value.trim();
+    }
+
+    private String normalizePath(String path) {
+        String normalized = path == null ? "" : path.trim().replace("\\", "/");
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized;
+    }
+
+    private String nullToDash(String value) {
+        return isBlank(value) ? "-" : value;
     }
 
     private boolean isBlank(String value) {
