@@ -38,22 +38,26 @@ deploy/non-docker/templates/deploy.env
 
 ### 2. 准备 Nginx / Redis 离线包
 
-如果生产机不再手工安装组件，打包时必须提供目标服务器架构匹配的 Nginx 和 Redis tar 包，例如：
+当前生产服务器为 Linux ARM64 / `aarch64`（Kunpeng 920）。如果生产机不再手工安装组件，先在构建机生成 ARM64 的 Nginx 和 Redis 组件包：
 
-```text
-/path/to/nginx-linux-x86_64.tar.gz
-/path/to/redis-linux-x86_64.tar.gz
+```bash
+deploy/non-docker/build-arm64-components.sh
 ```
 
-选择 `nginx` / `redis` 组件时，默认要求提供对应 tar 包。这样可以把问题前移到打包阶段，避免到生产机才发现缺运行组件。
+生成结果默认在：
+
+```text
+deploy/non-docker/components-cache/nginx-linux-aarch64-<版本>.tar.gz
+deploy/non-docker/components-cache/redis-linux-aarch64-<版本>.tar.gz
+```
+
+`package-services.sh` 会自动使用 `components-cache/` 里的最新 ARM64 组件包。这样可以把问题前移到打包阶段，避免到生产机才发现缺运行组件。
 
 ### 3. 执行完整生产打包
 
 在项目根目录执行：
 
 ```bash
-NGINX_TARBALL=/path/to/nginx-linux-x86_64.tar.gz \
-REDIS_TARBALL=/path/to/redis-linux-x86_64.tar.gz \
 PACKAGE_NAME=urgs-prod \
 deploy/non-docker/package-services.sh full
 ```
@@ -62,6 +66,12 @@ deploy/non-docker/package-services.sh full
 
 ```text
 dist-packages/urgs-prod.tar.gz
+```
+
+打包完成后默认只保留 `.tar.gz` 文件，不保留展开的临时目录。如果需要保留临时目录用于检查内容，可以加：
+
+```bash
+KEEP_WORK_DIR=1
 ```
 
 如果不指定 `PACKAGE_NAME`，默认输出：
@@ -81,16 +91,12 @@ deploy/non-docker/package-services.sh api web executor rag
 应用和依赖组件一起打包：
 
 ```bash
-NGINX_TARBALL=/path/to/nginx-linux-x86_64.tar.gz \
-REDIS_TARBALL=/path/to/redis-linux-x86_64.tar.gz \
 deploy/non-docker/package-services.sh api web executor rag nginx redis
 ```
 
 完整应用包：
 
 ```bash
-NGINX_TARBALL=/path/to/nginx-linux-x86_64.tar.gz \
-REDIS_TARBALL=/path/to/redis-linux-x86_64.tar.gz \
 deploy/non-docker/package-services.sh full
 ```
 

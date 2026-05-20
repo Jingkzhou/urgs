@@ -3,10 +3,12 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT_DIR="${OUT_DIR:-${ROOT_DIR}/dist-packages}"
+COMPONENT_CACHE_DIR="${COMPONENT_CACHE_DIR:-${ROOT_DIR}/deploy/non-docker/components-cache}"
 STAMP="$(date +%Y%m%d%H%M%S)"
 PACKAGE_BASENAME="${PACKAGE_NAME:-urgs-nondocker-${STAMP}}"
 WORK_DIR="${OUT_DIR}/${PACKAGE_BASENAME}"
 SERVICES=()
+CLEAN_WORK_DIR_ON_EXIT=0
 
 usage() {
     cat <<'EOF'
@@ -21,8 +23,8 @@ Services:
   lineage      Package sql-lineage-engine source and requirements.
 
 Components:
-  nginx        Package nginx deployment config, or NGINX_TARBALL when provided.
-  redis        Package redis config, or REDIS_TARBALL when provided.
+  nginx        Package nginx deployment config and NGINX_TARBALL, or latest cached ARM64 package.
+  redis        Package redis config and REDIS_TARBALL, or latest cached ARM64 package.
 
 Groups:
   app-all      api web executor rag lineage
@@ -35,11 +37,15 @@ Examples:
   deploy/non-docker/package-services.sh full
   REDIS_TARBALL=/tmp/redis.tar.gz deploy/non-docker/package-services.sh api web redis
   NGINX_TARBALL=/tmp/nginx.tar.gz REDIS_TARBALL=/tmp/redis.tar.gz deploy/non-docker/package-services.sh full
+  deploy/non-docker/build-arm64-components.sh
+  deploy/non-docker/package-services.sh api web executor nginx redis
   ALLOW_HOST_COMPONENTS=1 deploy/non-docker/package-services.sh api web nginx
+  REUSE_BUILD_ARTIFACTS=1 deploy/non-docker/package-services.sh api web executor nginx redis
   OUT_DIR=/tmp/urgs-packages deploy/non-docker/package-services.sh api executor
 
 Output:
   dist-packages/<package>.tar.gz
+  Set KEEP_WORK_DIR=1 to keep the expanded staging directory.
 EOF
 }
 
@@ -51,6 +57,15 @@ die() {
     printf '[nondocker-package][error] %s\n' "$*" >&2
     exit 1
 }
+
+cleanup_work_dir() {
+    local status="$?"
+    if [ "$status" -ne 0 ] && [ "$CLEAN_WORK_DIR_ON_EXIT" = "1" ] && [ "${KEEP_WORK_DIR:-0}" != "1" ]; then
+        rm -rf "$WORK_DIR"
+    fi
+}
+
+trap cleanup_work_dir EXIT
 
 normalize_service() {
     case "$1" in
@@ -86,6 +101,31 @@ require_command() {
     command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
 }
 
+component_tarball_var() {
+    case "$1" in
+        nginx) echo "NGINX_TARBALL" ;;
+        redis) echo "REDIS_TARBALL" ;;
+        *) die "Unknown component: $1" ;;
+    esac
+}
+
+latest_cached_component_tarball() {
+    local component="$1"
+    find "$COMPONENT_CACHE_DIR" -maxdepth 1 -type f -name "${component}-linux-aarch64-*.tar.gz" 2>/dev/null | sort -V | tail -1
+}
+
+resolve_component_tarball() {
+    local component="$1"
+    local tarball_var
+    local tarball
+    tarball_var="$(component_tarball_var "$component")"
+    tarball="${!tarball_var:-}"
+    if [ -z "$tarball" ]; then
+        tarball="$(latest_cached_component_tarball "$component")"
+    fi
+    printf '%s\n' "$tarball"
+}
+
 copy_with_rsync() {
     local src="$1"
     local dst="$2"
@@ -108,8 +148,12 @@ latest_jar() {
 }
 
 build_api() {
-    log "Building urgs-api."
-    (cd "${ROOT_DIR}/urgs-api" && ./mvnw clean package -DskipTests)
+    if [ "${REUSE_BUILD_ARTIFACTS:-0}" = "1" ]; then
+        log "Reusing existing urgs-api build artifact."
+    else
+        log "Building urgs-api."
+        (cd "${ROOT_DIR}/urgs-api" && ./mvnw clean package -DskipTests)
+    fi
     local jar
     jar="$(latest_jar "${ROOT_DIR}/urgs-api/target")"
     [ -n "$jar" ] || die "urgs-api jar was not generated."
@@ -118,8 +162,12 @@ build_api() {
 }
 
 build_executor() {
-    log "Building urgs-executor."
-    (cd "${ROOT_DIR}/urgs-executor" && ./mvnw clean package -DskipTests)
+    if [ "${REUSE_BUILD_ARTIFACTS:-0}" = "1" ]; then
+        log "Reusing existing urgs-executor build artifact."
+    else
+        log "Building urgs-executor."
+        (cd "${ROOT_DIR}/urgs-executor" && ./mvnw clean package -DskipTests)
+    fi
     local jar
     jar="$(latest_jar "${ROOT_DIR}/urgs-executor/target")"
     [ -n "$jar" ] || die "urgs-executor jar was not generated."
@@ -128,12 +176,16 @@ build_executor() {
 }
 
 build_web() {
-    log "Building urgs-web."
-    require_command npm
-    if [ -f "${ROOT_DIR}/urgs-web/package-lock.json" ]; then
-        (cd "${ROOT_DIR}/urgs-web" && npm ci && npm run build)
+    if [ "${REUSE_BUILD_ARTIFACTS:-0}" = "1" ]; then
+        log "Reusing existing urgs-web dist."
     else
-        (cd "${ROOT_DIR}/urgs-web" && npm install && npm run build)
+        log "Building urgs-web."
+        require_command npm
+        if [ -f "${ROOT_DIR}/urgs-web/package-lock.json" ]; then
+            (cd "${ROOT_DIR}/urgs-web" && npm ci && npm run build)
+        else
+            (cd "${ROOT_DIR}/urgs-web" && npm install && npm run build)
+        fi
     fi
     [ -d "${ROOT_DIR}/urgs-web/dist" ] || die "urgs-web dist was not generated."
     mkdir -p "${WORK_DIR}/services/web"
@@ -157,16 +209,12 @@ package_lineage() {
 
 package_component() {
     local component="$1"
-    local tarball_var=""
+    local tarball_var
     local tarball=""
     log "Packaging ${component} component descriptor."
     mkdir -p "${WORK_DIR}/components/${component}"
-    case "$component" in
-        nginx) tarball_var="NGINX_TARBALL" ;;
-        redis) tarball_var="REDIS_TARBALL" ;;
-        *) die "Unknown component: ${component}" ;;
-    esac
-    tarball="${!tarball_var:-}"
+    tarball_var="$(component_tarball_var "$component")"
+    tarball="$(resolve_component_tarball "$component")"
     if [ -n "$tarball" ]; then
         [ -f "$tarball" ] || die "${tarball_var} does not exist: ${tarball}"
         cp "$tarball" "${WORK_DIR}/components/${component}/"
@@ -180,6 +228,22 @@ If a tarball was supplied during packaging, it is stored in this directory.
 If no tarball is present, bin/deploy.sh will use the target host installation
 when possible and report a clear error for missing runtime commands.
 EOF
+}
+
+validate_component_tarballs() {
+    local component tarball_var tarball
+    for component in "${SERVICES[@]}"; do
+        case "$component" in
+            nginx | redis) tarball_var="$(component_tarball_var "$component")" ;;
+            *) continue ;;
+        esac
+        tarball="$(resolve_component_tarball "$component")"
+        if [ -n "$tarball" ]; then
+            [ -f "$tarball" ] || die "${tarball_var} does not exist: ${tarball}"
+        elif [ "${ALLOW_HOST_COMPONENTS:-0}" != "1" ]; then
+            die "${component} was selected but no package was found. Run deploy/non-docker/build-arm64-components.sh first, provide ${tarball_var}, or set ALLOW_HOST_COMPONENTS=1 to rely on the target host installation."
+        fi
+    done
 }
 
 write_manifest() {
@@ -207,6 +271,9 @@ prepare_work_dir() {
 create_archive() {
     log "Creating package archive."
     (cd "$OUT_DIR" && tar -czf "${PACKAGE_BASENAME}.tar.gz" "$PACKAGE_BASENAME")
+    if [ "${KEEP_WORK_DIR:-0}" != "1" ]; then
+        rm -rf "$WORK_DIR"
+    fi
     log "Package ready: ${OUT_DIR}/${PACKAGE_BASENAME}.tar.gz"
 }
 
@@ -242,7 +309,9 @@ if has_service api || has_service executor; then
     require_command java
 fi
 
+validate_component_tarballs
 prepare_work_dir
+CLEAN_WORK_DIR_ON_EXIT=1
 
 for service in "${SERVICES[@]}"; do
     case "$service" in

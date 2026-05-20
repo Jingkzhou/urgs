@@ -29,6 +29,9 @@ WEB_STATIC_PORT="${WEB_STATIC_PORT:-3000}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 REDIS_BIND="${REDIS_BIND:-127.0.0.1}"
 REDIS_DATA_DIR="${REDIS_DATA_DIR:-${ROOT_DIR}/data/redis}"
+NGINX_LOG_DIR="${NGINX_LOG_DIR:-${ROOT_DIR}/logs/nginx}"
+NGINX_ERROR_LOG="${NGINX_ERROR_LOG:-${NGINX_LOG_DIR}/error.log}"
+NGINX_ACCESS_LOG="${NGINX_ACCESS_LOG:-${NGINX_LOG_DIR}/access.log}"
 
 log() {
     printf '[urgs-deploy] %s\n' "$*"
@@ -240,9 +243,10 @@ render_nginx_config() {
 }
 
 render_local_nginx_config() {
+    mkdir -p "$(dirname "$NGINX_LOCAL_CONF")" "$NGINX_LOG_DIR" "$PID_DIR"
     cat > "$NGINX_LOCAL_CONF" <<EOF
 worker_processes auto;
-error_log ${ROOT_DIR}/logs/nginx-error.log;
+error_log ${NGINX_ERROR_LOG};
 pid ${ROOT_DIR}/pids/nginx.pid;
 
 events {
@@ -254,6 +258,7 @@ http {
     default_type  application/octet-stream;
     sendfile      on;
     keepalive_timeout 65;
+    access_log ${NGINX_ACCESS_LOG};
 
 $(render_nginx_config)
 }
@@ -311,8 +316,8 @@ start_nginx() {
         install_nginx_config
     else
         render_local_nginx_config
-        "$nginx_bin" -p "${ROOT_DIR}/" -c "$NGINX_LOCAL_CONF" -t
-        start_background nginx "$nginx_bin" -p "${ROOT_DIR}/" -c "$NGINX_LOCAL_CONF" -g "daemon off;"
+        "$nginx_bin" -p "${ROOT_DIR}/" -e "$NGINX_ERROR_LOG" -c "$NGINX_LOCAL_CONF" -t
+        start_background nginx "$nginx_bin" -p "${ROOT_DIR}/" -e "$NGINX_ERROR_LOG" -c "$NGINX_LOCAL_CONF" -g "daemon off;"
     fi
 }
 
@@ -322,7 +327,7 @@ stop_nginx() {
         local nginx_bin
         nginx_bin="$(find_component_binary nginx nginx)"
         if [ -n "$nginx_bin" ] && [ -f "$NGINX_LOCAL_CONF" ]; then
-            "$nginx_bin" -p "${ROOT_DIR}/" -c "$NGINX_LOCAL_CONF" -s quit >/dev/null 2>&1 || true
+            "$nginx_bin" -p "${ROOT_DIR}/" -e "$NGINX_ERROR_LOG" -c "$NGINX_LOCAL_CONF" -s quit >/dev/null 2>&1 || true
             sleep 1
         else
             stop_service nginx
