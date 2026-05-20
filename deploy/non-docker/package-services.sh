@@ -41,6 +41,7 @@ Examples:
   deploy/non-docker/package-services.sh api web executor nginx redis
   ALLOW_HOST_COMPONENTS=1 deploy/non-docker/package-services.sh api web nginx
   REUSE_BUILD_ARTIFACTS=1 deploy/non-docker/package-services.sh api web executor nginx redis
+  WEB_REUSE_DIST_IF_NO_NODE_MODULES=0 deploy/non-docker/package-services.sh web
   OUT_DIR=/tmp/urgs-packages deploy/non-docker/package-services.sh api executor
 
 Output:
@@ -147,6 +148,10 @@ latest_jar() {
     find "$dir" -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | tail -1
 }
 
+node_modules_ready() {
+    [ -d "${ROOT_DIR}/urgs-web/node_modules/.bin" ] && [ -x "${ROOT_DIR}/urgs-web/node_modules/.bin/vite" ]
+}
+
 build_api() {
     if [ "${REUSE_BUILD_ARTIFACTS:-0}" = "1" ]; then
         log "Reusing existing urgs-api build artifact."
@@ -178,13 +183,21 @@ build_executor() {
 build_web() {
     if [ "${REUSE_BUILD_ARTIFACTS:-0}" = "1" ]; then
         log "Reusing existing urgs-web dist."
+    elif node_modules_ready; then
+        log "Building urgs-web with existing node_modules."
+        (cd "${ROOT_DIR}/urgs-web" && npm run build)
+    elif [ "${WEB_REUSE_DIST_IF_NO_NODE_MODULES:-1}" = "1" ] && [ -d "${ROOT_DIR}/urgs-web/dist" ]; then
+        log "urgs-web node_modules is missing; reusing existing dist. Set WEB_REUSE_DIST_IF_NO_NODE_MODULES=0 to force npm install and rebuild."
     else
         log "Building urgs-web."
         require_command npm
+        if [ -n "${NPM_REGISTRY:-}" ]; then
+            export npm_config_registry="$NPM_REGISTRY"
+        fi
         if [ -f "${ROOT_DIR}/urgs-web/package-lock.json" ]; then
-            (cd "${ROOT_DIR}/urgs-web" && npm ci && npm run build)
+            (cd "${ROOT_DIR}/urgs-web" && npm ci --prefer-offline --no-audit --progress=false && npm run build)
         else
-            (cd "${ROOT_DIR}/urgs-web" && npm install && npm run build)
+            (cd "${ROOT_DIR}/urgs-web" && npm install --prefer-offline --no-audit --progress=false && npm run build)
         fi
     fi
     [ -d "${ROOT_DIR}/urgs-web/dist" ] || die "urgs-web dist was not generated."
