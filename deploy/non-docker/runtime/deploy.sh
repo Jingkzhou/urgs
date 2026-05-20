@@ -21,7 +21,9 @@ RAG_PORT="${RAG_PORT:-8001}"
 WEB_LISTEN_PORT="${WEB_LISTEN_PORT:-80}"
 WEB_SERVER_NAME="${WEB_SERVER_NAME:-_}"
 NGINX_ENABLED="${NGINX_ENABLED:-1}"
+NGINX_USE_SYSTEM="${NGINX_USE_SYSTEM:-0}"
 NGINX_CONF_DIR="${NGINX_CONF_DIR:-/etc/nginx/conf.d}"
+NGINX_LOCAL_CONF="${NGINX_LOCAL_CONF:-${ROOT_DIR}/config/nginx.local.conf}"
 START_WEB_STATIC="${START_WEB_STATIC:-0}"
 WEB_STATIC_PORT="${WEB_STATIC_PORT:-3000}"
 REDIS_PORT="${REDIS_PORT:-6379}"
@@ -42,12 +44,13 @@ usage() {
 Usage:
   bin/deploy.sh install          Prepare runtime directories, Python venvs, and nginx config.
   bin/deploy.sh start            Start selected services.
+  bin/deploy.sh up               Install and start selected services.
   bin/deploy.sh stop             Stop selected services.
   bin/deploy.sh restart          Restart selected services.
   bin/deploy.sh status           Show selected service status.
   bin/deploy.sh nginx-config     Render nginx config to stdout.
 
-Before running, edit config/deploy.env for database, Neo4j, ports, and nginx paths.
+Before running, edit config/deploy.env only when the package was not generated with production values.
 EOF
 }
 
@@ -236,22 +239,97 @@ render_nginx_config() {
         "$template"
 }
 
+render_local_nginx_config() {
+    cat > "$NGINX_LOCAL_CONF" <<EOF
+worker_processes auto;
+error_log ${ROOT_DIR}/logs/nginx-error.log;
+pid ${ROOT_DIR}/pids/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       ${ROOT_DIR}/config/mime.types;
+    default_type  application/octet-stream;
+    sendfile      on;
+    keepalive_timeout 65;
+
+$(render_nginx_config)
+}
+EOF
+    cat > "${ROOT_DIR}/config/mime.types" <<'EOF'
+types {
+    text/html                             html htm;
+    text/css                              css;
+    application/javascript                js;
+    application/json                      json;
+    image/png                             png;
+    image/jpeg                            jpg jpeg;
+    image/gif                             gif;
+    image/svg+xml                         svg;
+    image/x-icon                          ico;
+    font/woff                             woff;
+    font/woff2                            woff2;
+    application/wasm                      wasm;
+}
+EOF
+}
+
 install_nginx_config() {
     service_enabled web || return 0
     [ "$NGINX_ENABLED" = "1" ] || return 0
-    [ -d "$NGINX_CONF_DIR" ] || {
-        log "Nginx config dir does not exist: ${NGINX_CONF_DIR}; skip nginx config install."
-        return 0
-    }
     render_runtime_config
-    render_nginx_config > "${NGINX_CONF_DIR}/urgs.conf"
-    if command -v nginx >/dev/null 2>&1; then
-        nginx -t
-        if command -v systemctl >/dev/null 2>&1; then
-            systemctl reload nginx || systemctl restart nginx || true
-        else
-            nginx -s reload || true
+    if [ "$NGINX_USE_SYSTEM" = "1" ] && [ -d "$NGINX_CONF_DIR" ]; then
+        render_nginx_config > "${NGINX_CONF_DIR}/urgs.conf"
+        if command -v nginx >/dev/null 2>&1; then
+            nginx -t
+            if command -v systemctl >/dev/null 2>&1; then
+                systemctl reload nginx || systemctl restart nginx || true
+            else
+                nginx -s reload || true
+            fi
         fi
+    elif service_enabled nginx; then
+        render_local_nginx_config
+        log "Rendered local nginx config: ${NGINX_LOCAL_CONF}."
+    else
+        log "Nginx component is not selected; skip nginx config install."
+    fi
+}
+
+start_nginx() {
+    service_enabled web || return 0
+    service_enabled nginx || return 0
+    [ "$NGINX_ENABLED" = "1" ] || return 0
+    extract_component_tarballs nginx
+    render_runtime_config
+    local nginx_bin
+    nginx_bin="$(find_component_binary nginx nginx)"
+    [ -n "$nginx_bin" ] || die "nginx not found. Install Nginx on target host or package with NGINX_TARBALL=/path/to/nginx.tar.gz."
+    if [ "$NGINX_USE_SYSTEM" = "1" ] && [ -d "$NGINX_CONF_DIR" ]; then
+        install_nginx_config
+    else
+        render_local_nginx_config
+        "$nginx_bin" -p "${ROOT_DIR}/" -c "$NGINX_LOCAL_CONF" -t
+        start_background nginx "$nginx_bin" -p "${ROOT_DIR}/" -c "$NGINX_LOCAL_CONF" -g "daemon off;"
+    fi
+}
+
+stop_nginx() {
+    service_enabled nginx || return 0
+    if is_running nginx; then
+        local nginx_bin
+        nginx_bin="$(find_component_binary nginx nginx)"
+        if [ -n "$nginx_bin" ] && [ -f "$NGINX_LOCAL_CONF" ]; then
+            "$nginx_bin" -p "${ROOT_DIR}/" -c "$NGINX_LOCAL_CONF" -s quit >/dev/null 2>&1 || true
+            sleep 1
+        else
+            stop_service nginx
+        fi
+        rm -f "$(pid_file nginx)"
+    elif [ -f "$(pid_file nginx)" ]; then
+        rm -f "$(pid_file nginx)"
     fi
 }
 
@@ -295,12 +373,14 @@ start_all() {
     start_api
     render_runtime_config
     install_nginx_config
+    start_nginx
     start_web_static
     true
 }
 
 stop_all() {
     service_enabled web && stop_service web-static
+    stop_nginx
     service_enabled api && stop_service api
     service_enabled executor && stop_service executor
     service_enabled rag && stop_service rag
@@ -313,15 +393,16 @@ status_all() {
     service_enabled executor && status_service executor
     service_enabled rag && status_service rag
     service_enabled redis && status_service redis
+    service_enabled nginx && status_service nginx
     service_enabled web && status_service web-static
     service_enabled lineage && printf '%-12s PACKAGED cli-only\n' "lineage"
-    service_enabled nginx && printf '%-12s CONFIGURED via %s\n' "nginx" "$NGINX_CONF_DIR"
     true
 }
 
 case "${1:-}" in
     install) install_all ;;
     start) start_all ;;
+    up) install_all; start_all ;;
     stop) stop_all ;;
     restart) stop_all; start_all ;;
     status) status_all ;;

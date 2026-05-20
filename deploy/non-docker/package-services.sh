@@ -34,6 +34,8 @@ Examples:
   deploy/non-docker/package-services.sh api web executor rag
   deploy/non-docker/package-services.sh full
   REDIS_TARBALL=/tmp/redis.tar.gz deploy/non-docker/package-services.sh api web redis
+  NGINX_TARBALL=/tmp/nginx.tar.gz REDIS_TARBALL=/tmp/redis.tar.gz deploy/non-docker/package-services.sh full
+  ALLOW_HOST_COMPONENTS=1 deploy/non-docker/package-services.sh api web nginx
   OUT_DIR=/tmp/urgs-packages deploy/non-docker/package-services.sh api executor
 
 Output:
@@ -168,6 +170,8 @@ package_component() {
     if [ -n "$tarball" ]; then
         [ -f "$tarball" ] || die "${tarball_var} does not exist: ${tarball}"
         cp "$tarball" "${WORK_DIR}/components/${component}/"
+    elif [ "${ALLOW_HOST_COMPONENTS:-0}" != "1" ]; then
+        die "${component} was selected but ${tarball_var} was not provided. Provide ${tarball_var} for a self-contained production package, or set ALLOW_HOST_COMPONENTS=1 to rely on the target host installation."
     fi
     cat > "${WORK_DIR}/components/${component}/README.txt" <<EOF
 ${component} component selected.
@@ -195,6 +199,7 @@ prepare_work_dir() {
     cp "${ROOT_DIR}/deploy/non-docker/runtime/deploy.sh" "${WORK_DIR}/bin/deploy.sh"
     cp "${ROOT_DIR}/deploy/non-docker/templates/deploy.env" "${WORK_DIR}/config/deploy.env"
     cp "${ROOT_DIR}/deploy/non-docker/templates/nginx.conf.template" "${WORK_DIR}/config/nginx.conf.template"
+    cp "${ROOT_DIR}/deploy/non-docker/README.md" "${WORK_DIR}/README.md"
     chmod +x "${WORK_DIR}/bin/deploy.sh"
     printf '%s\n' "${SERVICES[@]}" > "${WORK_DIR}/config/services.list"
 }
