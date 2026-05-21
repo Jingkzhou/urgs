@@ -129,4 +129,10 @@ public class QuartzController {
     public ResponseDTO<String> triggerNow(@RequestBody @Valid QuartzTriggerNowDTO triggerNowDTO) {
         return quartzTaskService.triggerNow(triggerNowDTO);
     }
+
+    @PostMapping("/internal/quartz/task/status/transfer-problem")
+    @ApiOperation(value = "内部接口：失败任务实例转存生产问题")
+    public ResponseDTO<String> transferProblemInstance(@RequestBody QuartzProblemTransferDTO transferDTO) {
+        return quartzTaskService.transferProblemInstance(transferDTO);
+    }
 }

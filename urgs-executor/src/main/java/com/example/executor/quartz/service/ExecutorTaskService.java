@@ -57,6 +57,9 @@ public class ExecutorTaskService {
     @Autowired
     private TaskNotificationService taskNotificationService;
 
+    @Autowired
+    private ProblemTransferClient problemTransferClient;
+
     // ===== 对外查询接口 =====
 
     public List<QuartzTaskEntity> queryAllActiveTasks() {
@@ -158,6 +161,9 @@ public class ExecutorTaskService {
         // 根据结果更新最终状态
         applyFinalStatus(status, result);
         updateStatus(status);
+        if (TaskExeStatusEnum.FAILED.getCode().equals(status.getStatus())) {
+            problemTransferClient.transferFailedInstance(task, status);
+        }
         taskExecutionLogService.finish(logContext, isSuccess(result), status.getMsg());
         taskNotificationService.notifyTaskResult(task, status, logConsumer);
     }

@@ -2,6 +2,12 @@ package com.example.urgs_api.quartz.service;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
+import com.example.urgs_api.issue.model.Issue;
+import com.example.urgs_api.issue.service.IssueService;
+import com.example.urgs_api.marketplace.dto.WorkCreateDTO;
+import com.example.urgs_api.marketplace.dto.WorkTaskCreateDTO;
+import com.example.urgs_api.marketplace.model.Work;
+import com.example.urgs_api.marketplace.service.WorkService;
 import com.example.urgs_api.quartz.support.constant.ResponseCodeConst;
 import com.example.urgs_api.quartz.support.domain.PageResultDTO;
 import com.example.urgs_api.quartz.support.domain.ResponseDTO;
@@ -20,8 +26,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -40,6 +49,12 @@ public class QuartzTaskService {
 
     @Autowired
     private ExecutorClientService executorClientService;
+
+    @Autowired
+    private IssueService issueService;
+
+    @Autowired
+    private WorkService workService;
 
     public ResponseDTO<PageResultDTO<QuartzTaskVO>> query(QuartzQueryDTO queryDTO) {
         Page<QuartzTaskVO> pageParam = SmartPageUtil.convert2QueryPage(queryDTO);
@@ -190,6 +205,73 @@ public class QuartzTaskService {
     }
 
     @Transactional(rollbackFor = Throwable.class)
+    public ResponseDTO<String> transferProblemInstance(QuartzProblemTransferDTO dto) {
+        if (dto.getPlanId() == null || dto.getDataDate() == null || dto.getDataDate().trim().isEmpty()) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "planId 和 dataDate 不能为空");
+        }
+
+        QuartzTaskStatusEntity status = quartzTaskStatusDao.selectByPlanIdAndDataDate(dto.getPlanId(), dto.getDataDate());
+        if (status == null) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "任务实例不存在");
+        }
+        if (!isProblematicStatus(status.getStatus())) {
+            return ResponseDTO.succData("当前实例不是失败或异常状态，无需转存");
+        }
+
+        QuartzTaskEntity task = quartzTaskDao.selectById(dto.getPlanId());
+        String title = buildProblemTitle(status, task);
+        long existingCount = issueService.lambdaQuery()
+                .eq(Issue::getTitle, title)
+                .count();
+        if (existingCount > 0) {
+            return ResponseDTO.succData("生产问题已存在，跳过重复转存");
+        }
+
+        String description = buildProblemDescription(status, task);
+        Issue issue = new Issue();
+        issue.setTitle(title);
+        issue.setDescription(description);
+        issue.setSystem(task != null && task.getTaskSystem() != null ? task.getTaskSystem() : "监管批量");
+        issue.setSolution("");
+        issue.setOccurTime(toLocalDateTime(firstNonNull(status.getEndTime(), status.getUpdateTime(), status.getBeginTime(), new Date())));
+        issue.setReporter("系统自动登记");
+        issue.setHandler("");
+        issue.setIssueType("批量任务处理");
+        issue.setStatus("新建");
+        issue.setWorkHours(BigDecimal.ZERO);
+        issue.setCreateTime(LocalDateTime.now());
+        issue.setCreateBy("system");
+        issue.setUpdateTime(LocalDateTime.now());
+        issueService.save(issue);
+
+        WorkCreateDTO workCreateDTO = new WorkCreateDTO();
+        workCreateDTO.setTitle(title);
+        workCreateDTO.setDescription(description);
+        workCreateDTO.setBackground(description);
+        workCreateDTO.setBusinessValue("尽快恢复批量任务执行链路，降低监管报送延误风险。");
+        workCreateDTO.setCategory("生产问题");
+        workCreateDTO.setPriority("P1");
+        workCreateDTO.setRequirementNumber("QUARTZ-INSTANCE-" + status.getId());
+
+        WorkTaskCreateDTO taskCreateDTO = new WorkTaskCreateDTO();
+        taskCreateDTO.setTitle("排查处理 " + (task != null ? task.getTaskName() : "任务 #" + status.getPlanId()) + " 异常");
+        taskCreateDTO.setDescription(description);
+        taskCreateDTO.setTaskType("运维");
+        taskCreateDTO.setDifficulty("中等");
+        taskCreateDTO.setRequiredSkills("批量调度,生产问题排查");
+        taskCreateDTO.setAcceptanceCriteria("确认失败原因，完成修复或补偿重跑，并在生产问题追踪中补充解决方案。");
+        taskCreateDTO.setPoints(3);
+        taskCreateDTO.setEstimatedHours(2);
+        taskCreateDTO.setAssignMode("COMPETE");
+        taskCreateDTO.setMaxApplicants(1);
+        workCreateDTO.setTasks(Collections.singletonList(taskCreateDTO));
+
+        Work work = workService.createWork(workCreateDTO, "system");
+        workService.publishWork(work.getId(), "system");
+        return ResponseDTO.succData("已转存生产问题并创建工作任务");
+    }
+
+    @Transactional(rollbackFor = Throwable.class)
     public ResponseDTO<String> batchForceStopTaskStatus(QuartzBatchForceStopDTO batchForceStopDTO) {
         List<Long> statusIds = batchForceStopDTO.getStatusIds() == null
                 ? Collections.emptyList()
@@ -230,11 +312,68 @@ public class QuartzTaskService {
         }
 
         quartzTaskStatusDao.batchForceStop(statusIds, "实例已被强制停止。");
+        statusList.forEach(statusEntity -> transferFailedStatusSilently(statusEntity.getPlanId(), statusEntity.getDataDate()));
         String resultMsg = String.format(
                 "批量强制停止完成：共 %d 条，执行器已取消 %d 条运行中任务，%d 条未检测到运行实例。",
                 statusIds.size(), cancelledCount, notRunningCount
         );
         return ResponseDTO.succData(resultMsg);
+    }
+
+    private void transferFailedStatusSilently(Long planId, String dataDate) {
+        try {
+            QuartzProblemTransferDTO dto = new QuartzProblemTransferDTO();
+            dto.setPlanId(planId);
+            dto.setDataDate(dataDate);
+            transferProblemInstance(dto);
+        } catch (Exception e) {
+            log.warn("自动转存生产问题失败, planId={}, dataDate={}, error={}", planId, dataDate, e.getMessage());
+        }
+    }
+
+    private boolean isProblematicStatus(Integer status) {
+        return status != null && (TaskExeStatusEnum.FAILED.getCode().equals(status) || !Arrays.asList(1, 2, 3, 4).contains(status));
+    }
+
+    private String buildProblemTitle(QuartzTaskStatusEntity status, QuartzTaskEntity task) {
+        String taskName = task != null && task.getTaskName() != null ? task.getTaskName() : "任务 #" + status.getPlanId();
+        return "[批量任务异常] " + taskName + " 实例 " + status.getId();
+    }
+
+    private String buildProblemDescription(QuartzTaskStatusEntity status, QuartzTaskEntity task) {
+        String statusLabel = TaskExeStatusEnum.FAILED.getCode().equals(status.getStatus()) ? "失败" : "异常状态 " + status.getStatus();
+        return String.join("\n",
+                "任务实例在 t_quartz_task_status 中返回" + statusLabel + "，已自动转入生产问题追踪。",
+                "",
+                "实例ID：" + valueOrDash(status.getId()),
+                "计划ID：" + valueOrDash(status.getPlanId()),
+                "任务名称：" + valueOrDash(task == null ? null : task.getTaskName()),
+                "涉及系统：" + valueOrDash(task == null ? null : task.getTaskSystem()),
+                "主题：" + valueOrDash(task == null ? null : task.getTheme()),
+                "数据日期：" + valueOrDash(status.getDataDate()),
+                "开始时间：" + valueOrDash(status.getBeginTime()),
+                "更新时间：" + valueOrDash(status.getUpdateTime()),
+                "结束时间：" + valueOrDash(status.getEndTime()),
+                "异常信息：" + valueOrDash(status.getMsg())
+        );
+    }
+
+    private String valueOrDash(Object value) {
+        return value == null ? "-" : String.valueOf(value);
+    }
+
+    @SafeVarargs
+    private final <T> T firstNonNull(T... values) {
+        for (T value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private LocalDateTime toLocalDateTime(Date date) {
+        return date.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
     }
 
     @Transactional(rollbackFor = Throwable.class)

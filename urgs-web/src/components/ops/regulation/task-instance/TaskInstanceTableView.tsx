@@ -101,7 +101,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                     <div>
                         <div className="text-lg font-bold text-slate-800">任务实例</div>
                         <div className="text-sm text-slate-500 mt-1">
-                            围绕 `t_quartz_task_status` 跟踪批量实例状态、时间线和失败信息。
+                            围绕 `t_quartz_task_status` 跟踪批量实例状态、时间线和失败信息；失败或异常状态会自动转入生产问题追踪并创建工作任务。
                         </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">

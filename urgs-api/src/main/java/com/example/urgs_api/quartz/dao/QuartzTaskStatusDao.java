@@ -51,6 +51,11 @@ public interface QuartzTaskStatusDao extends BaseMapper<QuartzTaskStatusEntity> 
     Integer getStatusByPlanIdAndDate(@Param("planId") Long planId, @Param("dataDate") String dataDate);
 
     /**
+     * 根据任务ID和数据日期查询状态记录
+     */
+    QuartzTaskStatusEntity selectByPlanIdAndDataDate(@Param("planId") Long planId, @Param("dataDate") String dataDate);
+
+    /**
      * 批量查询日期范围内的状态记录
      */
     List<QuartzTaskStatusEntity> getStatusBatch(@Param("planIds") List<Long> planIds,

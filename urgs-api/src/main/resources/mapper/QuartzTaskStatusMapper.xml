@@ -138,6 +138,22 @@
         LIMIT 1
     </select>
 
+    <select id="selectByPlanIdAndDataDate" resultType="com.example.urgs_api.quartz.domain.entity.QuartzTaskStatusEntity">
+        SELECT id,
+               plan_id AS planId,
+               data_date AS dataDate,
+               status,
+               begin_time AS beginTime,
+               end_time AS endTime,
+               msg,
+               create_time AS createTime,
+               update_time AS updateTime
+        FROM t_quartz_task_status
+        WHERE plan_id = #{planId}
+          AND data_date = #{dataDate}
+        LIMIT 1
+    </select>
+
     <select id="getStatusBatch" resultType="com.example.urgs_api.quartz.domain.entity.QuartzTaskStatusEntity">
         SELECT id,
                plan_id AS planId,
