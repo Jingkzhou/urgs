@@ -110,6 +110,8 @@ const App: React.FC = () => {
             const navIds = NAV_ITEMS.map(n => n.id);
             if (navIds.includes(path)) {
                 setActiveTab(path);
+            } else if (path === 'basic_info') {
+                setActiveTab('basic_info');
             } else if (path === '' || path === 'dashboard') {
                 setActiveTab('dashboard');
             }
@@ -207,7 +209,7 @@ const App: React.FC = () => {
             <div className="h-px bg-slate-100/80 my-1 mx-2"></div>
 
             <button
-                onClick={() => { setActiveTab('basic_info'); setShowUserMenu(false); }}
+                onClick={() => { setActiveTab('basic_info'); window.location.hash = '#/basic_info'; setShowUserMenu(false); }}
                 className="w-full flex items-center gap-4 px-4 py-3 text-[11px] font-black uppercase tracking-[0.15em] text-slate-500 hover:text-red-600 hover:bg-red-50/50 rounded-xl transition-all group"
             >
                 <User size={16} strokeWidth={2.5} className="group-hover:scale-110 transition-transform" />
@@ -238,7 +240,7 @@ const App: React.FC = () => {
         <div className={`flex h-screen bg-slate-50 ${layoutMode === 'topbar' ? 'flex-col' : 'flex-row'}`}>
             {layoutMode === 'sidebar' && (
                 <aside
-                    className="m-4 mr-0 flex w-[72px] shrink-0 flex-col rounded-[1.5rem] border border-slate-200/70 bg-white/85 text-slate-800 shadow-[0_24px_70px_-38px_rgba(15,23,42,0.45)] backdrop-blur-2xl z-20 relative overflow-hidden"
+                    className="m-4 mr-0 flex w-[72px] shrink-0 flex-col rounded-[1.5rem] border border-slate-200/70 bg-white/85 text-slate-800 shadow-[0_24px_70px_-38px_rgba(15,23,42,0.45)] backdrop-blur-2xl z-[120] relative overflow-visible"
                 >
                     <div className="flex h-20 shrink-0 items-center justify-center border-b border-slate-100">
                         <button
@@ -289,7 +291,7 @@ const App: React.FC = () => {
                                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                                         animate={{ opacity: 1, y: 0, scale: 1 }}
                                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                        className="absolute bottom-0 left-[calc(100%+14px)] w-60 rounded-[2rem] border border-white/60 bg-white/95 p-2 shadow-[0_40px_80px_-15px_rgba(0,0,0,0.2)] backdrop-blur-3xl z-[150]"
+                                        className="absolute bottom-0 left-[calc(100%+14px)] w-60 rounded-[2rem] border border-white/60 bg-white/95 p-2 shadow-[0_40px_80px_-15px_rgba(0,0,0,0.2)] backdrop-blur-3xl z-[220]"
                                     >
                                         <div className="absolute inset-0 bg-gradient-to-br from-red-500/[0.02] to-transparent pointer-events-none rounded-[2rem]"></div>
                                         <div className="relative z-10">
