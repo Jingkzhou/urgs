@@ -10,6 +10,7 @@ import {
   MetricTypeVO,
 } from '../../api/metrics';
 import MetricChartRenderer, { MetricChartPoint } from './MetricChartRenderer';
+import { useSmartPolling } from '../../hooks/useSmartPolling';
 
 const chartTypeLabels: Record<MetricChartType, string> = {
   area: '面积图',
@@ -39,7 +40,6 @@ const TrendAnalysisChart: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [systemDropdownOpen, setSystemDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const currentMetric = useMemo(
     () => metricTypes.find((m) => m.typeCode === selectedTypeCode),
@@ -119,16 +119,7 @@ const TrendAnalysisChart: React.FC = () => {
     }
   }, [selectedSystemId, selectedTypeCode, startDate, endDate]);
 
-  useEffect(() => {
-    loadTrend();
-  }, [loadTrend]);
-
-  useEffect(() => {
-    refreshTimerRef.current = setInterval(loadTrend, 60000);
-    return () => {
-      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-    };
-  }, [loadTrend]);
+  useSmartPolling(loadTrend, 300000, { enabled: !!selectedSystemId && !!selectedTypeCode });
 
   const selectedSystemName = systems.find((s) => s.clientId === selectedSystemId)?.name || '';
 

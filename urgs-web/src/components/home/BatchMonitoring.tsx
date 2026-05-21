@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Server, Activity, CheckCircle, Cpu, AlertCircle, Clock, PieChart as PieChartIcon } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, BarChart, Bar, Legend } from 'recharts';
 import { fetchDailyStats, fetchHourlyThroughput, fetchWorkflowStats, TaskInstanceStatsVO, WorkflowStatsVO } from '../../api/stats';
+import { useSmartPolling } from '../../hooks/useSmartPolling';
 
 // Placeholder for Task Instance type
 interface TaskInstance {
@@ -20,9 +21,8 @@ const BatchMonitoring: React.FC = () => {
     const [stats, setStats] = useState<TaskInstanceStatsVO | null>(null);
     const [hourlyData, setHourlyData] = useState<any[]>([]);
     const [workflowStats, setWorkflowStats] = useState<WorkflowStatsVO[]>([]);
-    const [currentTime, setCurrentTime] = useState(new Date());
 
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         try {
             const [dailyStats, hourly, wfStats] = await Promise.all([
                 fetchDailyStats(),
@@ -36,17 +36,9 @@ const BatchMonitoring: React.FC = () => {
         } catch (e) {
             console.error("Failed to load dashboard data", e);
         }
-    };
-
-    useEffect(() => {
-        loadData();
-        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-        const dataTimer = setInterval(loadData, 30000); // Refresh every 30s
-        return () => {
-            clearInterval(timer);
-            clearInterval(dataTimer);
-        };
     }, []);
+
+    useSmartPolling(loadData, 30000);
 
     const navigateToTaskInstance = (status?: string) => {
         sessionStorage.setItem(OPS_SCHEDULE_NAV_KEY, JSON.stringify({

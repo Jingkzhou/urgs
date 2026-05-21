@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { hasPermission } from './utils/permission';
-import { LayoutDashboard, Menu, Bell, Search, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Timer, Database, GitBranch, Activity, Lock, Palette, User, Sparkles, Award, BookOpen, ChevronDown } from 'lucide-react';
+import { LayoutDashboard, Bell, Search, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Timer, Database, GitBranch, Activity, Lock, Palette, User, Sparkles, Award, BookOpen, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Login from './components/Login';
 import Dashboard from './components/home/Dashboard';
@@ -55,7 +55,6 @@ const App: React.FC = () => {
         avatarUrl?: string;
         system?: string;
     } | null>(initialUser);
-    const [sidebarOpen, setSidebarOpen] = useState(false);
     const [layoutMode, setLayoutMode] = useState<'sidebar' | 'topbar'>(() => {
         if (typeof window !== 'undefined') {
             const savedMode = localStorage.getItem('user_layout_preference');
@@ -63,7 +62,7 @@ const App: React.FC = () => {
                 return savedMode;
             }
         }
-        return 'topbar';
+        return 'sidebar';
     });
     const [activeTab, setActiveTab] = useState('dashboard');
     const [showUserMenu, setShowUserMenu] = useState(false);
@@ -239,70 +238,49 @@ const App: React.FC = () => {
         <div className={`flex h-screen bg-slate-50 ${layoutMode === 'topbar' ? 'flex-col' : 'flex-row'}`}>
             {layoutMode === 'sidebar' && (
                 <aside
-                    className={`${sidebarOpen ? 'w-64' : 'w-24'} m-4 mr-0 rounded-[1.75rem] bg-white/85 backdrop-blur-2xl border border-slate-200/70 text-slate-800 transition-all duration-500 flex flex-col shadow-[0_24px_70px_-38px_rgba(15,23,42,0.45)] z-20 shrink-0 relative`}
+                    className="m-4 mr-0 flex w-[72px] shrink-0 flex-col rounded-[1.5rem] border border-slate-200/70 bg-white/85 text-slate-800 shadow-[0_24px_70px_-38px_rgba(15,23,42,0.45)] backdrop-blur-2xl z-20 relative overflow-hidden"
                 >
-                    <div className="h-20 flex items-center justify-between px-5 border-b border-slate-100 overflow-hidden shrink-0">
-                        {sidebarOpen && (
-                            <motion.div
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                className="flex flex-col items-center pl-1"
-                            >
-                                <img src={LOGO_URL} alt="Bank of Jilin" className="w-36 max-w-full h-auto object-contain brightness-110" />
-                            </motion.div>
-                        )}
+                    <div className="flex h-20 shrink-0 items-center justify-center border-b border-slate-100">
                         <button
-                            onClick={() => setSidebarOpen(!sidebarOpen)}
-                            className={`p-2.5 hover:bg-slate-100 rounded-xl text-slate-500 hover:text-red-600 transition-all flex-shrink-0 ${!sidebarOpen ? 'mx-auto' : ''}`}
+                            onClick={() => { setActiveTab('dashboard'); window.location.hash = '#/dashboard'; }}
+                            className="flex h-14 w-14 items-center justify-center p-0.5 transition-opacity hover:opacity-80"
+                            aria-label="返回工作台"
                         >
-                            <Menu size={18} strokeWidth={2.5} />
+                            <img src="/favicon_large.png" alt="Bank of Jilin" className="max-h-full max-w-full object-contain" />
                         </button>
                     </div>
 
-                    <nav className="flex-1 p-3 pt-6 space-y-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                    <nav className="flex-1 space-y-2.5 overflow-y-auto px-2 py-5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                         {NAV_ITEMS.filter(item => hasPermission(item.permission)).map((item) => (
                             <NavItem
                                 key={item.id}
-                                icon={<item.icon size={19} />}
+                                icon={<item.icon size={16} />}
                                 label={item.label}
                                 active={activeTab === item.id}
-                                isOpen={sidebarOpen}
                                 onClick={() => { setActiveTab(item.id); window.location.hash = '#/' + item.id; }}
                             />
                         ))}
                     </nav>
 
-                    <div className="p-3 border-t border-slate-100 flex flex-col gap-3 shrink-0">
-                        <div className={`flex ${sidebarOpen ? 'justify-start px-2' : 'justify-center'}`}>
-                            <button className="p-2.5 relative hover:bg-slate-100 rounded-xl text-slate-400 hover:text-red-500 transition-all group">
-                                <Bell size={20} strokeWidth={2.5} className="group-hover:rotate-12 transition-transform" />
-                                <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white shadow-sm"></span>
-                            </button>
-                        </div>
+                    <div className="flex shrink-0 flex-col items-center gap-3 border-t border-slate-100 px-2 py-4">
+                        <button className="group relative flex h-10 w-10 items-center justify-center rounded-2xl text-slate-400 transition-all hover:bg-slate-100 hover:text-red-500">
+                            <Bell size={17} strokeWidth={2.4} className="transition-transform group-hover:rotate-12" />
+                            <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full border-2 border-white bg-red-500 shadow-sm"></span>
+                        </button>
 
-                        <div className="relative" ref={userMenuRef}>
+                        <div className="relative w-full" ref={userMenuRef}>
                             <button
                                 onClick={() => setShowUserMenu(!showUserMenu)}
-                                className={`group relative w-full flex items-center gap-3 rounded-xl p-2 transition-all duration-300
-                                    ${showUserMenu ? 'bg-slate-50 border-slate-200' : 'hover:bg-slate-50 border-transparent'}
-                                    border
-                                    ${!sidebarOpen ? 'justify-center' : ''}
-                                `}
+                                className={`group relative mx-auto flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl border transition-all duration-300 ${
+                                    showUserMenu ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-100 hover:bg-slate-100 hover:border-slate-200'
+                                }`}
                             >
-                                <div className="relative w-10 h-10 rounded-xl overflow-hidden shrink-0 bg-slate-100 border border-slate-200 flex items-center justify-center">
-                                    {userInfo?.avatarUrl ? (
-                                        <img src={userInfo.avatarUrl} alt="Avatar" className="w-full h-full object-cover grayscale-[0.5] group-hover:grayscale-0 transition-all duration-700" />
-                                    ) : (
-                                        <UserCircle size={24} className="text-slate-400" />
-                                    )}
-                                    <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border border-white"></div>
-                                </div>
-                                {sidebarOpen && (
-                                    <div className="text-left flex-1 min-w-0 pr-1">
-                                        <p className="text-[13px] font-black text-slate-800 tracking-tight leading-none truncate mb-1">{userInfo?.name || '用户'}</p>
-                                        <p className="text-[9px] text-slate-400 font-bold uppercase truncate">{userInfo?.roleName || 'System Admin'}</p>
-                                    </div>
+                                {userInfo?.avatarUrl ? (
+                                    <img src={userInfo.avatarUrl} alt="Avatar" className="h-full w-full object-cover grayscale-[0.5] transition-all duration-700 group-hover:grayscale-0" />
+                                ) : (
+                                    <UserCircle size={22} className="text-slate-400" />
                                 )}
+                                <div className="absolute bottom-1 right-1 h-2 w-2 rounded-full border-2 border-white bg-green-500"></div>
                             </button>
 
                             <AnimatePresence>
@@ -311,7 +289,7 @@ const App: React.FC = () => {
                                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                                         animate={{ opacity: 1, y: 0, scale: 1 }}
                                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                        className="absolute left-0 bottom-[calc(100%+15px)] w-60 bg-white/95 backdrop-blur-3xl rounded-[2rem] shadow-[0_40px_80px_-15px_rgba(0,0,0,0.2)] border border-white/60 p-2 z-[150]"
+                                        className="absolute bottom-0 left-[calc(100%+14px)] w-60 rounded-[2rem] border border-white/60 bg-white/95 p-2 shadow-[0_40px_80px_-15px_rgba(0,0,0,0.2)] backdrop-blur-3xl z-[150]"
                                     >
                                         <div className="absolute inset-0 bg-gradient-to-br from-red-500/[0.02] to-transparent pointer-events-none rounded-[2rem]"></div>
                                         <div className="relative z-10">
@@ -513,40 +491,32 @@ interface NavItemProps {
     icon: React.ReactNode;
     label: string;
     active?: boolean;
-    isOpen: boolean;
     onClick: () => void;
 }
 
-const NavItem: React.FC<NavItemProps> = ({ icon, label, active, isOpen, onClick }) => (
+const NavItem: React.FC<NavItemProps> = ({ icon, label, active, onClick }) => (
     <button
         onClick={onClick}
-        className={`group relative flex items-center gap-3.5 w-full p-3.5 rounded-2xl transition-all duration-300
-        ${active ? 'text-red-600' : 'text-slate-500 hover:text-slate-900'}
-        ${!isOpen ? 'justify-center' : ''}
-    `}>
+        className={`group relative flex h-[62px] w-full flex-col items-center justify-center gap-1 rounded-xl px-1 text-center transition-all duration-300
+        ${active ? 'text-red-600' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/70'}
+    `}
+        title={label}
+    >
         {active && (
             <motion.div
                 layoutId="sidebarActivePill"
-                className="absolute inset-x-2 inset-y-1 bg-white border border-red-100 shadow-sm rounded-2xl z-[-1]"
+                className="absolute inset-x-0.5 inset-y-0 bg-white border border-red-100 shadow-sm rounded-xl z-[-1]"
                 transition={{ type: "spring", bounce: 0.25, duration: 0.5 }}
             />
         )}
 
-        <div className={`transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>
+        <div className={`flex h-6 items-center justify-center transition-transform duration-300 ${active ? 'scale-105' : 'group-hover:scale-105'}`}>
             {icon}
         </div>
 
-        {isOpen && (
-            <span className={`text-[11px] font-black tracking-[0.15em] uppercase transition-all duration-300 ${active ? 'opacity-100' : 'opacity-70 group-hover:opacity-100'}`}>
-                {label}
-            </span>
-        )}
-
-        {!isOpen && (
-            <div className="absolute left-[calc(100%+15px)] px-3 py-2 bg-slate-900/90 backdrop-blur-md text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50 whitespace-nowrap border border-white/10">
-                {label}
-            </div>
-        )}
+        <span className={`line-clamp-2 max-w-full text-[9px] font-bold leading-tight tracking-tight transition-all duration-300 ${active ? 'opacity-100' : 'opacity-75 group-hover:opacity-100'}`}>
+            {label}
+        </span>
     </button>
 );
 

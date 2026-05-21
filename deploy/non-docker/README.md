@@ -29,12 +29,24 @@ deploy/non-docker/templates/deploy.env
 - `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD`
 - `NEO4J_HOST` / `NEO4J_PORT_BOLT` / `NEO4J_USER` / `NEO4J_PASSWORD`
 - `LLM_API_BASE` / `LLM_MODEL` / `LLM_API_KEY`
+- `WEB_LISTEN_PORT`
 - `PUBLIC_HOST` / `WEB_WS_URL`
+- `API_TARGET` / `API_UPSTREAM_SERVERS` / `RAG_TARGET` / `IM_API_TARGET`
 - `API_JAVA_OPTS` / `EXECUTOR_JAVA_OPTS`
 - `NGINX_ENABLED=1`
 - `NGINX_USE_SYSTEM=0`
 
 默认 `NGINX_USE_SYSTEM=0` 表示使用包内本地 Nginx 配置，不依赖 `/etc/nginx/conf.d`。
+
+默认 `WEB_LISTEN_PORT=18080`，普通 `appuser` 可以直接启动。Linux 普通用户不能监听 80 端口；如果必须使用 80，请由运维在系统层做端口转发、负载均衡映射，或改用系统 Nginx/root 权限管理。
+
+默认 `WEB_WS_URL` 留空，前端会按浏览器当前访问地址自动生成 `ws://<host>:<port>/ws/im`，避免换端口后还写死 `127.0.0.1`。
+
+默认 `API_TARGET` / `RAG_TARGET` 留空，Nginx 会反代到本机 `API_PORT` / `RAG_PORT`。如果 Web/Nginx 和后端不在同一台服务器，打包前可以写成 `API_TARGET=http://<API服务器IP>:8080`、`RAG_TARGET=http://<RAG服务器IP>:8001`。
+
+如果普通 API 需要代理到两台后端服务器，可以填写 `API_UPSTREAM_SERVERS=<API服务器1IP>:8080,<API服务器2IP>:8080`。这个配置只写 `IP:端口`，不要带 `http://`。填写后，Nginx 会自动生成 upstream，普通 `/api`、`/uploads`、`/profile` 和普通 `/ws/` 会走该 upstream。
+
+默认 `IM_API_TARGET` 留空时跟随 `API_TARGET`。如果有两台 API 服务器但 WebSocket 不做共享会话，建议把 `IM_API_TARGET` 固定到其中一台，例如 `IM_API_TARGET=http://<IM服务器IP>:8080`，Nginx 会自动把 `/ws/im` 和 `/api/im` 路由到这台机器。
 
 ### 2. 准备 Nginx / Redis 离线包
 
@@ -92,6 +104,12 @@ deploy/non-docker/package-services.sh api web executor rag
 
 ```bash
 deploy/non-docker/package-services.sh api web executor rag nginx redis
+```
+
+如果本机没有完整 `urgs-web/node_modules`，但已有 `urgs-web/dist`，脚本默认复用现有前端产物，避免卡在 `npm ci`。需要强制重新安装依赖并重建前端时执行：
+
+```bash
+WEB_REUSE_DIST_IF_NO_NODE_MODULES=0 deploy/non-docker/package-services.sh api web executor nginx redis
 ```
 
 完整应用包：
@@ -193,6 +211,12 @@ config/nginx.local.conf
 ```
 
 `bin/deploy.sh start` 会优先使用随包 `components/nginx/` 中的 `nginx`，找不到时使用生产机 PATH 里的 `nginx`，并以本地配置启动，不需要手工创建 `/etc/nginx/conf.d`。
+
+随包本地 Nginx 默认监听 `18080`，部署后访问：
+
+```text
+http://<服务器IP>:18080/
+```
 
 如果设置 `NGINX_USE_SYSTEM=1` 且 `NGINX_CONF_DIR` 存在，会写入：
 

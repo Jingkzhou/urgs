@@ -80,6 +80,17 @@ resolve_node_runtime() {
   echo "Using NPM_BIN: $NPM_BIN"
 }
 
+ensure_npm_dependency() {
+  local package_dir="$1"
+  local required_bin="$2"
+
+  cd "$package_dir"
+  if [ ! -x "node_modules/.bin/$required_bin" ]; then
+    echo "Installing frontend dependencies in $package_dir (missing node_modules/.bin/$required_bin)..."
+    "$NPM_BIN" install
+  fi
+}
+
 kill_port_if_exists() {
   local port="$1"
   if command -v lsof >/dev/null 2>&1; then
@@ -147,9 +158,7 @@ start_frontend() {
   cd "$WEB_DIR"
   kill_port_if_exists 3000
   kill_port_if_exists 3001
-  if [ ! -d node_modules ]; then
-    "$NPM_BIN" install
-  fi
+  ensure_npm_dependency "$WEB_DIR" vite
 
   if [ "$ENVIRONMENT" = "dev" ]; then
     "$NPM_BIN" run dev -- --host &
@@ -193,9 +202,7 @@ start_presentation() {
   echo "Starting presentation platform..."
   cd "$PRESENTATION_DIR"
   kill_port_if_exists 3002
-  if [ ! -d node_modules ]; then
-    "$NPM_BIN" install
-  fi
+  ensure_npm_dependency "$PRESENTATION_DIR" vite
   "$NPM_BIN" run dev -- --host --port 3002 &
   pids+=($!)
 }

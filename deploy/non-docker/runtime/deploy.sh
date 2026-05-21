@@ -18,8 +18,12 @@ PIP_INSTALL="${PIP_INSTALL:-1}"
 API_PORT="${API_PORT:-8080}"
 EXECUTOR_PORT="${EXECUTOR_PORT:-8082}"
 RAG_PORT="${RAG_PORT:-8001}"
-WEB_LISTEN_PORT="${WEB_LISTEN_PORT:-80}"
+WEB_LISTEN_PORT="${WEB_LISTEN_PORT:-18080}"
 WEB_SERVER_NAME="${WEB_SERVER_NAME:-_}"
+API_TARGET="${API_TARGET:-http://127.0.0.1:${API_PORT}}"
+API_UPSTREAM_SERVERS="${API_UPSTREAM_SERVERS:-}"
+RAG_TARGET="${RAG_TARGET:-http://127.0.0.1:${RAG_PORT}}"
+IM_API_TARGET="${IM_API_TARGET:-${API_TARGET}}"
 NGINX_ENABLED="${NGINX_ENABLED:-1}"
 NGINX_USE_SYSTEM="${NGINX_USE_SYSTEM:-0}"
 NGINX_CONF_DIR="${NGINX_CONF_DIR:-/etc/nginx/conf.d}"
@@ -32,6 +36,7 @@ REDIS_DATA_DIR="${REDIS_DATA_DIR:-${ROOT_DIR}/data/redis}"
 NGINX_LOG_DIR="${NGINX_LOG_DIR:-${ROOT_DIR}/logs/nginx}"
 NGINX_ERROR_LOG="${NGINX_ERROR_LOG:-${NGINX_LOG_DIR}/error.log}"
 NGINX_ACCESS_LOG="${NGINX_ACCESS_LOG:-${NGINX_LOG_DIR}/access.log}"
+STOP_CONFLICTING_PORTS="${STOP_CONFLICTING_PORTS:-1}"
 
 log() {
     printf '[urgs-deploy] %s\n' "$*"
@@ -51,6 +56,7 @@ Usage:
   bin/deploy.sh stop             Stop selected services.
   bin/deploy.sh restart          Restart selected services.
   bin/deploy.sh status           Show selected service status.
+  bin/deploy.sh restart api      Restart one service: api, executor, rag, redis, nginx, web-static.
   bin/deploy.sh nginx-config     Render nginx config to stdout.
 
 Before running, edit config/deploy.env only when the package was not generated with production values.
@@ -109,6 +115,57 @@ is_running() {
     file="$(pid_file "$service")"
     [ -f "$file" ] || return 1
     kill -0 "$(cat "$file")" >/dev/null 2>&1
+}
+
+port_listener_pids() {
+    local port="$1"
+    if command -v lsof >/dev/null 2>&1; then
+        lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u
+    elif command -v fuser >/dev/null 2>&1; then
+        fuser "${port}/tcp" 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u
+    fi
+}
+
+stop_conflicting_port() {
+    local service="$1"
+    local port="$2"
+    [ "$STOP_CONFLICTING_PORTS" = "1" ] || return 0
+    [ -n "$port" ] || return 0
+
+    local current_pid=""
+    if is_running "$service"; then
+        current_pid="$(cat "$(pid_file "$service")")"
+    fi
+
+    local pid owner current_user command_line
+    current_user="$(id -un)"
+    for pid in $(port_listener_pids "$port"); do
+        [ -n "$pid" ] || continue
+        [ "$pid" = "$current_pid" ] && continue
+        owner="$(ps -o user= -p "$pid" 2>/dev/null | awk '{print $1}')"
+        command_line="$(ps -o command= -p "$pid" 2>/dev/null || true)"
+        if [ "$owner" != "$current_user" ]; then
+            die "${service} port ${port} is already used by pid ${pid} (${owner}). Stop it or change ${service} port."
+        fi
+        log "Stopping existing process on ${service} port ${port}: pid ${pid} ${command_line}"
+        kill "$pid" >/dev/null 2>&1 || true
+    done
+
+    for _ in $(seq 1 20); do
+        local remaining=""
+        for pid in $(port_listener_pids "$port"); do
+            [ "$pid" = "$current_pid" ] && continue
+            remaining="${remaining} ${pid}"
+        done
+        [ -z "$remaining" ] && return 0
+        sleep 1
+    done
+
+    for pid in $(port_listener_pids "$port"); do
+        [ "$pid" = "$current_pid" ] && continue
+        owner="$(ps -o user= -p "$pid" 2>/dev/null | awk '{print $1}')"
+        [ "$owner" = "$current_user" ] && kill -9 "$pid" >/dev/null 2>&1 || true
+    done
 }
 
 start_background() {
@@ -173,6 +230,7 @@ export_common_env() {
 start_api() {
     service_enabled api || return 0
     [ -f "${ROOT_DIR}/services/api/app.jar" ] || die "Missing services/api/app.jar"
+    stop_conflicting_port api "$API_PORT"
     export_common_env
     start_background api "$JAVA_BIN" ${API_JAVA_OPTS:-} -jar "${ROOT_DIR}/services/api/app.jar" --server.port="${API_PORT}"
 }
@@ -180,6 +238,7 @@ start_api() {
 start_executor() {
     service_enabled executor || return 0
     [ -f "${ROOT_DIR}/services/executor/app.jar" ] || die "Missing services/executor/app.jar"
+    stop_conflicting_port executor "$EXECUTOR_PORT"
     export URGS_EXECUTOR_PORT="$EXECUTOR_PORT"
     export URGS_EXECUTOR_DB_URL="${URGS_EXECUTOR_DB_URL:-jdbc:mysql://${DB_HOST:-127.0.0.1}:${DB_PORT:-3306}/${DB_NAME:-urgs}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}"
     export URGS_EXECUTOR_DB_USERNAME="${URGS_EXECUTOR_DB_USERNAME:-${DB_USER:-urgs}}"
@@ -205,6 +264,7 @@ ensure_venv() {
 start_rag() {
     service_enabled rag || return 0
     ensure_venv rag
+    stop_conflicting_port rag "$RAG_PORT"
     export LLM_API_BASE="${LLM_API_BASE:-}"
     export LLM_MODEL="${LLM_MODEL:-}"
     export LLM_API_KEY="${LLM_API_KEY:-}"
@@ -216,30 +276,72 @@ start_web_static() {
     service_enabled web || return 0
     [ "$START_WEB_STATIC" = "1" ] || return 0
     [ -d "${ROOT_DIR}/services/web/dist" ] || die "Missing services/web/dist"
+    stop_conflicting_port web-static "$WEB_STATIC_PORT"
     (cd "${ROOT_DIR}/services/web/dist" && start_background web-static "$PYTHON_BIN" -m http.server "$WEB_STATIC_PORT")
 }
 
 render_runtime_config() {
     service_enabled web || return 0
     [ -d "${ROOT_DIR}/services/web/dist" ] || return 0
-    local ws_host="${PUBLIC_HOST:-127.0.0.1}"
-    cat > "${ROOT_DIR}/services/web/dist/config.js" <<EOF
+    if [ -n "${WEB_WS_URL:-}" ]; then
+        cat > "${ROOT_DIR}/services/web/dist/config.js" <<EOF
 window.__RUNTIME_CONFIG__ = {
-    VITE_WS_URL: "${WEB_WS_URL:-ws://${ws_host}/ws/im}"
+    VITE_WS_URL: "${WEB_WS_URL}"
 };
 EOF
+    elif [ -n "${PUBLIC_HOST:-}" ]; then
+        cat > "${ROOT_DIR}/services/web/dist/config.js" <<EOF
+window.__RUNTIME_CONFIG__ = {
+    VITE_WS_URL: "ws://${PUBLIC_HOST}/ws/im"
+};
+EOF
+    else
+        cat > "${ROOT_DIR}/services/web/dist/config.js" <<'EOF'
+window.__RUNTIME_CONFIG__ = {
+    VITE_WS_URL: (window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host + "/ws/im"
+};
+EOF
+    fi
+}
+
+render_api_upstream_block() {
+    [ -n "$API_UPSTREAM_SERVERS" ] || return 0
+    printf 'upstream urgs_api_upstream {\n'
+    printf '%s' "$API_UPSTREAM_SERVERS" | tr ',' '\n' | while IFS= read -r server || [ -n "$server" ]; do
+        server="$(printf '%s' "$server" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        [ -n "$server" ] || continue
+        case "$server" in
+            http://* | https://*) die "API_UPSTREAM_SERVERS only accepts host:port values, for example 10.0.0.11:8080,10.0.0.12:8080." ;;
+        esac
+        printf '    server %s;\n' "$server"
+    done
+    printf '}\n'
 }
 
 render_nginx_config() {
     local template="${ROOT_DIR}/config/nginx.conf.template"
     [ -f "$template" ] || die "Missing nginx config template."
-    sed \
-        -e "s#__WEB_LISTEN_PORT__#${WEB_LISTEN_PORT}#g" \
-        -e "s#__WEB_SERVER_NAME__#${WEB_SERVER_NAME}#g" \
-        -e "s#__WEB_ROOT__#${ROOT_DIR}/services/web/dist#g" \
-        -e "s#__API_TARGET__#http://127.0.0.1:${API_PORT}#g" \
-        -e "s#__RAG_TARGET__#http://127.0.0.1:${RAG_PORT}#g" \
-        "$template"
+    local api_proxy_target="$API_TARGET"
+    local api_upstream_block=""
+    local web_root="${ROOT_DIR}/services/web/dist"
+    if [ -n "$API_UPSTREAM_SERVERS" ]; then
+        api_proxy_target="http://urgs_api_upstream"
+        api_upstream_block="$(render_api_upstream_block)"
+    fi
+    local line
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [ "$line" = "__API_UPSTREAM_BLOCK__" ]; then
+            [ -n "$api_upstream_block" ] && printf '%s\n' "$api_upstream_block"
+            continue
+        fi
+        line="${line//__WEB_LISTEN_PORT__/$WEB_LISTEN_PORT}"
+        line="${line//__WEB_SERVER_NAME__/$WEB_SERVER_NAME}"
+        line="${line//__WEB_ROOT__/$web_root}"
+        line="${line//__API_PROXY_TARGET__/$api_proxy_target}"
+        line="${line//__RAG_TARGET__/$RAG_TARGET}"
+        line="${line//__IM_API_TARGET__/$IM_API_TARGET}"
+        printf '%s\n' "$line"
+    done < "$template"
 }
 
 render_local_nginx_config() {
@@ -316,6 +418,7 @@ start_nginx() {
         install_nginx_config
     else
         render_local_nginx_config
+        stop_conflicting_port nginx "$WEB_LISTEN_PORT"
         "$nginx_bin" -p "${ROOT_DIR}/" -e "$NGINX_ERROR_LOG" -c "$NGINX_LOCAL_CONF" -t
         start_background nginx "$nginx_bin" -p "${ROOT_DIR}/" -e "$NGINX_ERROR_LOG" -c "$NGINX_LOCAL_CONF" -g "daemon off;"
     fi
@@ -368,6 +471,7 @@ start_redis() {
     local redis_bin
     redis_bin="$(find_component_binary redis redis-server)"
     [ -n "$redis_bin" ] || die "redis-server not found. Install Redis on target host or package with REDIS_TARBALL=/path/to/redis.tar.gz."
+    stop_conflicting_port redis "$REDIS_PORT"
     start_background redis "$redis_bin" "${ROOT_DIR}/config/redis.conf"
 }
 
@@ -383,6 +487,18 @@ start_all() {
     true
 }
 
+start_one() {
+    case "$1" in
+        api) start_api ;;
+        executor) start_executor ;;
+        rag) start_rag ;;
+        redis) start_redis ;;
+        nginx) install_nginx_config; start_nginx ;;
+        web-static) start_web_static ;;
+        *) die "Unknown service: $1" ;;
+    esac
+}
+
 stop_all() {
     service_enabled web && stop_service web-static
     stop_nginx
@@ -391,6 +507,14 @@ stop_all() {
     service_enabled rag && stop_service rag
     service_enabled redis && stop_service redis
     true
+}
+
+stop_one() {
+    case "$1" in
+        api | executor | rag | redis | web-static) stop_service "$1" ;;
+        nginx) stop_nginx ;;
+        *) die "Unknown service: $1" ;;
+    esac
 }
 
 status_all() {
@@ -404,13 +528,20 @@ status_all() {
     true
 }
 
+status_one() {
+    case "$1" in
+        api | executor | rag | redis | nginx | web-static) status_service "$1" ;;
+        *) die "Unknown service: $1" ;;
+    esac
+}
+
 case "${1:-}" in
     install) install_all ;;
-    start) start_all ;;
+    start) if [ -n "${2:-}" ]; then start_one "$2"; else start_all; fi ;;
     up) install_all; start_all ;;
-    stop) stop_all ;;
-    restart) stop_all; start_all ;;
-    status) status_all ;;
+    stop) if [ -n "${2:-}" ]; then stop_one "$2"; else stop_all; fi ;;
+    restart) if [ -n "${2:-}" ]; then stop_one "$2"; start_one "$2"; else stop_all; start_all; fi ;;
+    status) if [ -n "${2:-}" ]; then status_one "$2"; else status_all; fi ;;
     nginx-config) render_nginx_config ;;
     -h | --help | help | "") usage ;;
     *) die "Unknown command: $1" ;;

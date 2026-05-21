@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import SystemLinks from './SystemLinks';
 import { BatchStatusChart, TrendAnalysisChart } from './StatsSection';
 import Notices from './Notices';
@@ -7,12 +7,14 @@ import { hasPermission } from '../../utils/permission';
 import BatchMonitoring from './BatchMonitoring';
 import DevWorkbench from './DevWorkbench';
 import { fetchBatchStatusStats, TaskStatsVO } from '../../api/stats';
+import { useSmartPolling } from '../../hooks/useSmartPolling';
 
 const Dashboard: React.FC = () => {
   const [batchData, setBatchData] = useState<TaskStatsVO[]>([]);
   const [loadingBatch, setLoadingBatch] = useState(false);
+  const canViewStats = hasPermission('dash:stats');
 
-  const loadBatchData = async () => {
+  const loadBatchData = useCallback(async () => {
     setLoadingBatch(true);
     try {
       const data = await fetchBatchStatusStats();
@@ -22,11 +24,9 @@ const Dashboard: React.FC = () => {
     } finally {
       setLoadingBatch(false);
     }
-  };
-
-  useEffect(() => {
-    loadBatchData();
   }, []);
+
+  useSmartPolling(loadBatchData, 30000, { enabled: canViewStats });
 
   return (
     <div className="space-y-12 pb-12 pt-4">
@@ -37,7 +37,7 @@ const Dashboard: React.FC = () => {
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 relative z-10 items-start">
 
             {/* Left Side: Information & Operations (Stacked) */}
-            {(hasPermission('dash:notice:view') || hasPermission('dash:stats')) && (
+            {(hasPermission('dash:notice:view') || canViewStats) && (
               <div className={`grid grid-cols-1 gap-8 ${hasPermission('dash:systems') ? 'xl:col-span-8' : 'xl:col-span-12'}`}>
                 <Auth code="dash:notice:view">
                   <div className="relative transform transition-transform duration-500 hover:-translate-y-1">
