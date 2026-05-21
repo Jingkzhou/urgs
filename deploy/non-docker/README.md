@@ -31,7 +31,7 @@ deploy/non-docker/templates/deploy.env
 - `LLM_API_BASE` / `LLM_MODEL` / `LLM_API_KEY`
 - `WEB_LISTEN_PORT`
 - `PUBLIC_HOST` / `WEB_WS_URL`
-- `API_TARGET` / `API_UPSTREAM_SERVERS` / `RAG_TARGET` / `IM_API_TARGET`
+- `API_TARGET` / `API_UPSTREAM_SERVERS` / `API_UPSTREAM_STICKY` / `RAG_TARGET` / `IM_API_TARGET`
 - `API_JAVA_OPTS` / `EXECUTOR_JAVA_OPTS`
 - `NGINX_ENABLED=1`
 - `NGINX_USE_SYSTEM=0`
@@ -45,6 +45,8 @@ deploy/non-docker/templates/deploy.env
 默认 `API_TARGET` / `RAG_TARGET` 留空，Nginx 会反代到本机 `API_PORT` / `RAG_PORT`。如果 Web/Nginx 和后端不在同一台服务器，打包前可以写成 `API_TARGET=http://<API服务器IP>:8080`、`RAG_TARGET=http://<RAG服务器IP>:8001`。
 
 如果普通 API 需要代理到两台后端服务器，可以填写 `API_UPSTREAM_SERVERS=<API服务器1IP>:8080,<API服务器2IP>:8080`。这个配置只写 `IP:端口`，不要带 `http://`。填写后，Nginx 会自动生成 upstream，普通 `/api`、`/uploads`、`/profile` 和普通 `/ws/` 会走该 upstream。
+
+当前登录 token 保存在单个 API 进程内存中，不是 Redis/JWT 共享。因此多 API 节点必须保持 `API_UPSTREAM_STICKY=ip_hash`，保证同一个客户端登录和后续权限校验落到同一台 API。否则登录成功后，权限校验请求可能被轮询到另一台 API，返回 401 后前端会跳回登录页。
 
 默认 `IM_API_TARGET` 留空时跟随 `API_TARGET`。如果有两台 API 服务器但 WebSocket 不做共享会话，建议把 `IM_API_TARGET` 固定到其中一台，例如 `IM_API_TARGET=http://<IM服务器IP>:8080`，Nginx 会自动把 `/ws/im` 和 `/api/im` 路由到这台机器。
 

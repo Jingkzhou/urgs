@@ -22,6 +22,7 @@ WEB_LISTEN_PORT="${WEB_LISTEN_PORT:-18080}"
 WEB_SERVER_NAME="${WEB_SERVER_NAME:-_}"
 API_TARGET="${API_TARGET:-http://127.0.0.1:${API_PORT}}"
 API_UPSTREAM_SERVERS="${API_UPSTREAM_SERVERS:-}"
+API_UPSTREAM_STICKY="${API_UPSTREAM_STICKY:-ip_hash}"
 RAG_TARGET="${RAG_TARGET:-http://127.0.0.1:${RAG_PORT}}"
 IM_API_TARGET="${IM_API_TARGET:-${API_TARGET}}"
 NGINX_ENABLED="${NGINX_ENABLED:-1}"
@@ -307,6 +308,11 @@ EOF
 render_api_upstream_block() {
     [ -n "$API_UPSTREAM_SERVERS" ] || return 0
     printf 'upstream urgs_api_upstream {\n'
+    if [ "$API_UPSTREAM_STICKY" = "ip_hash" ]; then
+        printf '    ip_hash;\n'
+    elif [ "$API_UPSTREAM_STICKY" != "off" ]; then
+        die "API_UPSTREAM_STICKY only supports ip_hash or off."
+    fi
     printf '%s' "$API_UPSTREAM_SERVERS" | tr ',' '\n' | while IFS= read -r server || [ -n "$server" ]; do
         server="$(printf '%s' "$server" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
         [ -n "$server" ] || continue
