@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Drawer, Tabs, Tag } from 'antd';
 import {
     Activity,
@@ -59,6 +59,35 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
     onLocateInstanceFromDependency,
 }) => {
     const expandedImpactTaskIdSet = useMemo(() => new Set(expandedImpactTaskIds), [expandedImpactTaskIds]);
+    const logScrollRefs = useRef(new Map<number, HTMLDivElement | null>());
+    const shouldFollowLogTailRef = useRef(true);
+
+    const isLogScrolledToTail = (element: HTMLDivElement) =>
+        element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+
+    const scrollLogToTail = (element: HTMLDivElement | null) => {
+        if (!element) return;
+        element.scrollTop = element.scrollHeight;
+    };
+
+    useEffect(() => {
+        if (!selectedInstance || instanceDetailTabKey !== 'runtimeLog' || !shouldFollowLogTailRef.current) {
+            return;
+        }
+        window.requestAnimationFrame(() => {
+            selectedInstanceLogs.forEach(log => scrollLogToTail(logScrollRefs.current.get(log.id) || null));
+        });
+    }, [instanceDetailTabKey, selectedInstance, selectedInstanceLogs]);
+
+    useEffect(() => {
+        if (!selectedInstance || instanceDetailTabKey !== 'runtimeLog') {
+            return;
+        }
+        shouldFollowLogTailRef.current = true;
+        window.requestAnimationFrame(() => {
+            selectedInstanceLogs.forEach(log => scrollLogToTail(logScrollRefs.current.get(log.id) || null));
+        });
+    }, [instanceDetailTabKey, selectedInstance?.id]);
 
     const renderRelationStatus = (relation?: QuartzTaskStatus) => {
         if (!relation) {
@@ -748,7 +777,15 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
                                                                         <div className={detailItemClass}>
                                                                             <div className="mb-2 text-xs text-slate-400">逐步日志</div>
                                                                             <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-950/95">
-                                                                                <div className="max-h-[280px] overflow-auto p-3 font-mono text-xs text-slate-100">
+                                                                                <div
+                                                                                    ref={(element) => {
+                                                                                        logScrollRefs.current.set(log.id, element);
+                                                                                    }}
+                                                                                    onScroll={(event) => {
+                                                                                        shouldFollowLogTailRef.current = isLogScrolledToTail(event.currentTarget);
+                                                                                    }}
+                                                                                    className="max-h-[280px] overflow-auto p-3 font-mono text-xs text-slate-100"
+                                                                                >
                                                                                     {stepLines.length === 0 ? (
                                                                                         <div className="text-slate-400">无日志明细</div>
                                                                                     ) : (

@@ -188,11 +188,40 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
 
     useEffect(() => {
         const taskId = selectedInstance?.plan_id;
-        if (!taskId) {
+        const instanceId = selectedInstance?.id;
+        if (!taskId || !instanceId) {
             return;
         }
 
         let canceled = false;
+
+        const mergeSelectedInstance = (nextInstance: QuartzTaskStatus) => {
+            setInstanceList(prev => {
+                const exists = prev.some(instance => instance.id === nextInstance.id);
+                return exists
+                    ? prev.map(instance => instance.id === nextInstance.id ? nextInstance : instance)
+                    : [nextInstance, ...prev];
+            });
+            setSelectedInstance(prev => prev?.id === nextInstance.id ? nextInstance : prev);
+        };
+
+        const loadSelectedInstanceStatus = async () => {
+            try {
+                const response = await queryQuartzTaskStatus({ id: instanceId, pageNum: 1, pageSize: 1 });
+                if (!response?.success) {
+                    throw new Error(response?.msg || '刷新实例状态失败');
+                }
+                if (canceled) return;
+                const nextInstance = response.data?.list?.[0];
+                if (nextInstance) {
+                    mergeSelectedInstance(normalizeStatus(nextInstance));
+                }
+            } catch (error: any) {
+                if (!canceled) {
+                    console.warn(error?.message || '刷新实例状态失败');
+                }
+            }
+        };
 
         const loadLogs = async (silent = false) => {
             try {
@@ -211,15 +240,17 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
         };
 
         loadLogs();
+        void loadSelectedInstanceStatus();
         const timer = window.setInterval(() => {
             void loadLogs(true);
+            void loadSelectedInstanceStatus();
         }, 3000);
 
         return () => {
             canceled = true;
             window.clearInterval(timer);
         };
-    }, [selectedInstance?.plan_id]);
+    }, [selectedInstance?.id, selectedInstance?.plan_id]);
 
     const taskNameMap = useMemo(
         () => new Map(taskList.map(task => [task.id, task.task_name])),
@@ -730,6 +761,14 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     };
 
     const selectedTask = selectedInstance ? taskMap.get(selectedInstance.plan_id) || null : null;
+
+    useEffect(() => {
+        if (!selectedInstance) return;
+        const latestInstance = instanceList.find(instance => instance.id === selectedInstance.id);
+        if (latestInstance && latestInstance !== selectedInstance) {
+            setSelectedInstance(latestInstance);
+        }
+    }, [instanceList, selectedInstance]);
 
     const selectedInstanceLogs = useMemo(() => {
         const sortByCreateTimeDesc = (a: QuartzTaskExecutionLog, b: QuartzTaskExecutionLog) =>

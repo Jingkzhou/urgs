@@ -60,6 +60,10 @@ public class ExecutorClientService {
     }
 
     public ResponseDTO<String> triggerNow(Long planId, String dataDate) {
+        return triggerNow(planId, dataDate, "manual");
+    }
+
+    public ResponseDTO<String> triggerNow(Long planId, String dataDate, String triggerType) {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
@@ -67,6 +71,7 @@ public class ExecutorClientService {
             Map<String, Object> payload = new HashMap<>();
             payload.put("planId", planId);
             payload.put("dataDate", dataDate);
+            payload.put("triggerType", triggerType);
 
             @SuppressWarnings("unchecked")
             ResponseDTO<Object> response = restTemplate.postForObject(

@@ -49,7 +49,7 @@ public class ExecutorTaskController {
         if (executorTaskService.isTaskRunning(triggerNowDTO.getPlanId(), triggerNowDTO.getDataDate())) {
             return ResponseDTO.wrap(409, "任务已在执行中: " + triggerNowDTO.getPlanId() + "_" + triggerNowDTO.getDataDate());
         }
-        executorTaskService.submitTaskToPool(task, triggerNowDTO.getDataDate());
+        executorTaskService.submitTaskToPool(task, triggerNowDTO.getDataDate(), triggerNowDTO.getTriggerType());
         return ResponseDTO.succ();
     }
 }

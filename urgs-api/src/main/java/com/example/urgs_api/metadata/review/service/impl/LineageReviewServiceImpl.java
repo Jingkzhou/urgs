@@ -129,7 +129,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             if (task == null) {
                 continue;
             }
-            taskExecutor.execute(() -> runTask(task.getId()));
+            taskExecutor.execute(() -> runTask(task.getId(), forceRerun));
         }
     }
 
@@ -404,7 +404,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         return record.getVersionId();
     }
 
-    private void runTask(Long taskId) {
+    private void runTask(Long taskId, boolean forceRerun) {
         LineageReviewTask task = taskMapper.selectById(taskId);
         if (task == null) {
             return;
@@ -453,7 +453,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                         if (useAi) {
                             String cacheKey = buildCacheKey(issue);
                             issue.setCacheKey(cacheKey);
-                            LineageReviewCache cache = loadCache(cacheKey);
+                            LineageReviewCache cache = forceRerun ? null : loadCache(cacheKey);
                             if (cache != null) {
                                 cacheHits++;
                                 applyCache(issue, cache);

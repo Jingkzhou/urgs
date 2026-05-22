@@ -426,6 +426,7 @@ export interface QuartzTaskLogApiModel {
     taskId: number;
     taskName?: string | null;
     taskParams?: string | null;
+    triggerType?: string | null;
     processStatus?: number | null;
     processDuration?: number | null;
     processLog?: string | null;

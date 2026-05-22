@@ -6,4 +6,5 @@ import lombok.Data;
 public class ExecutorTriggerNowDTO {
     private Long planId;
     private String dataDate;
+    private String triggerType;
 }

@@ -94,7 +94,16 @@ public class ExecutorTaskService {
      * 若同一 planId+dataDate 已在运行，则跳过（幂等）。
      */
     public void submitTaskToPool(QuartzTaskEntity task, String dataDate) {
+        submitTaskToPool(task, dataDate, "schedule");
+    }
+
+    /**
+     * 将任务提交到线程池异步执行。
+     * 若同一 planId+dataDate 已在运行，则跳过（幂等）。
+     */
+    public void submitTaskToPool(QuartzTaskEntity task, String dataDate, String triggerType) {
         String taskKey = buildTaskKey(task.getId(), dataDate);
+        String normalizedTriggerType = normalizeTriggerType(triggerType);
         taskExecutorPool.submitTask(taskKey, () -> {
             try {
                 ResolvedDataSourceConfig resolvedDataSourceConfig = task.getDatasourceId() == null
@@ -112,7 +121,7 @@ public class ExecutorTaskService {
                 TaskExecutor executor = createExecutor(task, ds, resolvedDataSourceConfig);
                 // 注册 cancel 资源：调用 cancelTask() 时会触发 executor.cancel()
                 taskExecutorPool.registerResource(taskKey, executor::cancel);
-                taskDispatch(task, dataDate, executor);
+                taskDispatch(task, dataDate, executor, normalizedTriggerType);
             } catch (Exception e) {
                 log.error("{} task execute failed", taskTag(task, dataDate), e);
             }
@@ -125,6 +134,13 @@ public class ExecutorTaskService {
      * 任务调度主流程：状态流转 + 依赖检查 + 执行 + 重试。
      */
     void taskDispatch(QuartzTaskEntity task, String dataDate, TaskExecutor executor) {
+        taskDispatch(task, dataDate, executor, "schedule");
+    }
+
+    /**
+     * 任务调度主流程：状态流转 + 依赖检查 + 执行 + 重试。
+     */
+    void taskDispatch(QuartzTaskEntity task, String dataDate, TaskExecutor executor, String triggerType) {
         // 已在运行或已成功则跳过（防止重复执行）
         Integer currentStatus = quartzTaskStatusDao.getStatusByPlanIdAndDate(task.getId(), dataDate);
         if (currentStatus != null
@@ -152,7 +168,7 @@ public class ExecutorTaskService {
         status.setMsg("执行中");
         updateStatus(status);
 
-        TaskExecutionLogService.ExecutionLogContext logContext = taskExecutionLogService.start(task, dataDate);
+        TaskExecutionLogService.ExecutionLogContext logContext = taskExecutionLogService.start(task, dataDate, triggerType);
         Consumer<String> logConsumer = line -> taskExecutionLogService.append(logContext, line);
 
         // 执行（含重试）
@@ -166,6 +182,13 @@ public class ExecutorTaskService {
         }
         taskExecutionLogService.finish(logContext, isSuccess(result), status.getMsg());
         taskNotificationService.notifyTaskResult(task, status, logConsumer);
+    }
+
+    private String normalizeTriggerType(String triggerType) {
+        if ("manual".equals(triggerType) || "rerun".equals(triggerType) || "schedule".equals(triggerType)) {
+            return triggerType;
+        }
+        return "schedule";
     }
 
     /**

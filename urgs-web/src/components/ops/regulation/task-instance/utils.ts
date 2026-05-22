@@ -78,16 +78,23 @@ export const normalizeStatus = (item: QuartzTaskStatusApiModel): QuartzTaskStatu
 };
 
 export const normalizeLog = (item: QuartzTaskLogApiModel): QuartzTaskExecutionLog => {
-    const processStatus = Number(item.processStatus ?? 0);
-    const mappedStatus = processStatus === 0 ? 2 : 3;
+    const processStatus = item.processStatus === null || item.processStatus === undefined
+        ? null
+        : Number(item.processStatus);
     const dataDate = item.taskParams?.match(/dataDate=(\d{8})/)?.[1] ?? null;
+    const triggerType = (item.triggerType || item.taskParams?.match(/triggerType=([^;,\s]+)/)?.[1] || '').toLowerCase();
+    const triggerTypeLabel = triggerType === 'manual'
+        ? '手工执行'
+        : triggerType === 'rerun'
+          ? '补偿重跑'
+          : '定时触发';
     return {
         id: Number(item.id),
         task_id: Number(item.taskId),
         instance_id: null,
         data_date: dataDate,
-        status: mappedStatus as 0 | 1 | 2 | 3,
-        trigger_type: '定时触发',
+        status: processStatus === null ? 2 : processStatus === 0 ? 3 : 4,
+        trigger_type: triggerTypeLabel,
         begin_time: null,
         end_time: null,
         duration_ms: item.processDuration ?? null,

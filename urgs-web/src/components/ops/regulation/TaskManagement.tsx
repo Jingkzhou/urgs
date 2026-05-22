@@ -264,13 +264,30 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
 
     const handleSaveTask = async () => {
         try {
-            const values = await form.validateFields();
+            const validatedValues = await form.validateFields();
+            const values = {
+                ...getInitialFormValues(editingTask),
+                ...form.getFieldsValue(true),
+                ...validatedValues,
+            };
+            const taskName = typeof values.task_name === 'string' ? values.task_name.trim() : '';
+            const taskCron = typeof values.task_cron === 'string' ? values.task_cron.trim() : '';
+
+            if (!taskName) {
+                message.error('请填写任务名称');
+                return;
+            }
+            if (!taskCron) {
+                message.error('请选择 Cron 表达式');
+                return;
+            }
+
             const payload = {
                 id: editingTask?.id,
-                taskName: values.task_name.trim(),
+                taskName,
                 taskBean: editingTask?.task_bean ?? null,
                 taskParams: editingTask?.task_params ?? null,
-                taskCron: values.task_cron.trim(),
+                taskCron,
                 taskStatus: values.task_status,
                 remark: emptyToNull(values.remark),
                 taskType: toTaskTypeCode(values.task_type),
@@ -288,7 +305,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             if (!response?.success) throw new Error(response?.msg || '保存任务失败');
             await loadTasks(currentPage, pageSize);
             await loadTaskStatusSummary();
-            message.success(editingTask ? `已更新任务 ${values.task_name}` : `已创建任务 ${values.task_name}`);
+            message.success(editingTask ? `已更新任务 ${taskName}` : `已创建任务 ${taskName}`);
             closeTaskModal();
         } catch (error: any) {
             if (error?.errorFields) {

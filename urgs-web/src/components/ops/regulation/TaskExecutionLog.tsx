@@ -16,10 +16,10 @@ interface TaskExecutionLogProps {
 }
 
 const statusMap: Record<number, { label: string; className: string }> = {
-    0: { label: '等待中', className: 'bg-slate-100 text-slate-600 border-slate-200' },
-    1: { label: '运行中', className: 'bg-blue-50 text-blue-600 border-blue-200' },
-    2: { label: '成功', className: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
-    3: { label: '失败', className: 'bg-red-50 text-red-600 border-red-200' },
+    1: { label: '等待中', className: 'bg-slate-100 text-slate-600 border-slate-200' },
+    2: { label: '运行中', className: 'bg-blue-50 text-blue-600 border-blue-200' },
+    3: { label: '成功', className: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
+    4: { label: '失败', className: 'bg-red-50 text-red-600 border-red-200' },
 };
 
 const detailItemClass = 'rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3';
@@ -32,6 +32,12 @@ const formatDuration = (durationMs?: number | null) => {
     const minutes = Math.floor(seconds / 60);
     const remainSeconds = seconds % 60;
     return remainSeconds === 0 ? `${minutes} 分钟` : `${minutes} 分 ${remainSeconds} 秒`;
+};
+
+const formatTriggerType = (triggerType?: string | null) => {
+    if (triggerType === 'manual' || triggerType === '手工执行') return '手工执行';
+    if (triggerType === 'rerun' || triggerType === '补偿重跑') return '补偿重跑';
+    return '定时触发';
 };
 
 const TaskExecutionLog: React.FC<TaskExecutionLogProps> = ({
@@ -75,7 +81,7 @@ const TaskExecutionLog: React.FC<TaskExecutionLogProps> = ({
                 taskNameMap.get(log.task_id),
                 log.summary,
                 log.content,
-                log.trigger_type,
+                formatTriggerType(log.trigger_type),
                 log.instance_id ? String(log.instance_id) : '',
             ].some(value => value?.toLowerCase().includes(lowerKeyword));
             return matchesTask && matchesStatus && matchesDate && matchesKeyword;
@@ -109,10 +115,10 @@ const TaskExecutionLog: React.FC<TaskExecutionLogProps> = ({
                                 日志 {filteredLogs.length}
                             </span>
                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700">
-                                成功 {filteredLogs.filter(log => log.status === 2).length}
+                                成功 {filteredLogs.filter(log => log.status === 3).length}
                             </span>
                             <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-3 py-1.5 text-red-700">
-                                失败 {filteredLogs.filter(log => log.status === 3).length}
+                                失败 {filteredLogs.filter(log => log.status === 4).length}
                             </span>
                             {currentTaskName && !lockedTaskFilter && (
                                 <button
@@ -163,10 +169,10 @@ const TaskExecutionLog: React.FC<TaskExecutionLogProps> = ({
                             className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
                         >
                             <option value="">全部状态</option>
-                            <option value="0">等待中</option>
-                            <option value="1">运行中</option>
-                            <option value="2">成功</option>
-                            <option value="3">失败</option>
+                            <option value="1">等待中</option>
+                            <option value="2">运行中</option>
+                            <option value="3">成功</option>
+                            <option value="4">失败</option>
                         </select>
                     </div>
                 </div>
@@ -197,7 +203,7 @@ const TaskExecutionLog: React.FC<TaskExecutionLogProps> = ({
                                         </td>
                                     </tr>
                                 ) : filteredLogs.map(log => {
-                                    const mappedStatus = statusMap[log.status];
+                                    const mappedStatus = statusMap[log.status] || statusMap[1];
                                     return (
                                         <tr key={log.id} className="hover:bg-red-50/30 transition-colors">
                                             <td className="px-4 py-4 font-mono text-xs text-slate-600">{log.id}</td>
@@ -212,7 +218,7 @@ const TaskExecutionLog: React.FC<TaskExecutionLogProps> = ({
                                                     {mappedStatus.label}
                                                 </span>
                                             </td>
-                                            <td className="px-4 py-4 text-slate-600">{log.trigger_type}</td>
+                                            <td className="px-4 py-4 text-slate-600">{formatTriggerType(log.trigger_type)}</td>
                                             <td className="px-4 py-4 font-mono text-xs text-slate-500">{log.begin_time || '-'}</td>
                                             <td className="px-4 py-4 font-mono text-xs text-slate-500">{log.end_time || '-'}</td>
                                             <td className="px-4 py-4 text-slate-600">{formatDuration(log.duration_ms)}</td>
@@ -260,14 +266,14 @@ const TaskExecutionLog: React.FC<TaskExecutionLogProps> = ({
                             <div className={detailItemClass}>
                                 <div className="text-xs text-slate-400">当前状态</div>
                                 <div className="mt-1">
-                                    <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${statusMap[selectedLog.status].className}`}>
-                                        {statusMap[selectedLog.status].label}
+                                    <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${(statusMap[selectedLog.status] || statusMap[1]).className}`}>
+                                        {(statusMap[selectedLog.status] || statusMap[1]).label}
                                     </span>
                                 </div>
                             </div>
                             <div className={detailItemClass}>
                                 <div className="text-xs text-slate-400">触发方式</div>
-                                <div className="mt-1 text-slate-700">{selectedLog.trigger_type}</div>
+                                <div className="mt-1 text-slate-700">{formatTriggerType(selectedLog.trigger_type)}</div>
                             </div>
                         </div>
 

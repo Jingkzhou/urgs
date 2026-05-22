@@ -45,7 +45,7 @@ export interface QuartzTaskExecutionLog {
     task_id: number;
     instance_id?: number | null;
     data_date?: string | null;
-    status: 0 | 1 | 2 | 3;
+    status: number;
     trigger_type: '定时触发' | '手工执行' | '补偿重跑';
     begin_time?: string | null;
     end_time?: string | null;

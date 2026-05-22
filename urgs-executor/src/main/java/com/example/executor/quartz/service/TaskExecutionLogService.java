@@ -20,10 +20,15 @@ public class TaskExecutionLogService {
     private QuartzTaskLogDao quartzTaskLogDao;
 
     public ExecutionLogContext start(QuartzTaskEntity task, String dataDate) {
+        return start(task, dataDate, "schedule");
+    }
+
+    public ExecutionLogContext start(QuartzTaskEntity task, String dataDate, String triggerType) {
         QuartzTaskLogEntity entity = new QuartzTaskLogEntity();
         entity.setTaskId(task.getId());
         entity.setTaskName(task.getTaskName());
-        entity.setTaskParams("dataDate=" + dataDate);
+        String normalizedTriggerType = normalizeTriggerType(triggerType);
+        entity.setTaskParams("dataDate=" + dataDate + ";triggerType=" + normalizedTriggerType);
         entity.setProcessStatus(null);
         entity.setProcessDuration(null);
         entity.setProcessLog("");
@@ -34,8 +39,15 @@ public class TaskExecutionLogService {
         quartzTaskLogDao.insertLog(entity);
 
         ExecutionLogContext ctx = new ExecutionLogContext(entity.getId(), System.currentTimeMillis());
-        append(ctx, String.format("[START] taskId=%s, taskName=%s, dataDate=%s", task.getId(), task.getTaskName(), dataDate));
+        append(ctx, String.format("[START] taskId=%s, taskName=%s, dataDate=%s, triggerType=%s", task.getId(), task.getTaskName(), dataDate, normalizedTriggerType));
         return ctx;
+    }
+
+    private String normalizeTriggerType(String triggerType) {
+        if ("manual".equals(triggerType) || "rerun".equals(triggerType) || "schedule".equals(triggerType)) {
+            return triggerType;
+        }
+        return "schedule";
     }
 
     public void append(ExecutionLogContext ctx, String line) {
@@ -87,4 +99,3 @@ public class TaskExecutionLogService {
         }
     }
 }
-
