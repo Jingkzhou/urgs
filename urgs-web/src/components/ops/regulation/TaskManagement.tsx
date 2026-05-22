@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { DatePicker, Form, Modal, message } from 'antd';
 import dayjs from 'dayjs';
 import zhCN from 'antd/es/date-picker/locale/zh_CN';
-import { Search, Settings2, Plus } from 'lucide-react';
+import { RefreshCw, Search, Settings2, Plus } from 'lucide-react';
 import { QuartzTask } from './mockData';
 import TaskEditorModal from './TaskEditorModal';
 import TaskListTable from './TaskListTable';
@@ -64,6 +64,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
     const [regulationSystems, setRegulationSystems] = useState<SsoConfig[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
+    const [refreshing, setRefreshing] = useState(false);
 
     const taskTypes = useMemo(() => [...supportedTaskTypes], []);
 
@@ -249,6 +250,20 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
 
     // ===== 事件处理 =====
 
+    const handleRefreshTasks = async () => {
+        if (refreshing) return;
+        setRefreshing(true);
+        try {
+            await Promise.all([
+                loadTasks(currentPage, pageSize),
+                loadTaskStatusSummary(),
+            ]);
+            message.success('任务列表已刷新');
+        } finally {
+            setRefreshing(false);
+        }
+    };
+
     const openTaskModal = (task?: QuartzTask | null) => {
         setEditingTask(task || null);
         form.resetFields();
@@ -414,6 +429,14 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                 暂停 {taskStatusSummary.paused}
                             </span>
                             <button
+                                onClick={handleRefreshTasks}
+                                disabled={refreshing}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                            >
+                                <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+                                刷新
+                            </button>
+                            <button
                                 onClick={() => openTaskModal(null)}
                                 className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-red-700"
                             >
@@ -540,7 +563,6 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 taskList={taskList}
                 taskTypes={taskTypes}
                 systems={systems}
-                themes={themes}
                 datasourceOptions={datasourceOptions}
                 dataSourceLoading={dataSourceLoading}
                 editorLanguageMap={editorLanguageMap}

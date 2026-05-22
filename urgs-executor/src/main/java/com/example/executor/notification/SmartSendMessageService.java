@@ -2,6 +2,7 @@ package com.example.executor.notification;
 
 import com.example.executor.quartz.domain.entity.QuartzTaskEntity;
 import com.example.executor.quartz.domain.entity.QuartzTaskStatusEntity;
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +28,7 @@ public class SmartSendMessageService {
 
     private final RestTemplateService restTemplateService;
     private final ObjectMapper objectMapper;
+    private final ObjectMapper notificationObjectMapper;
 
     @Value("${sendmessage.shortmsgNewIp:25.18.17.139}")
     private String shortmsgNewIp;
@@ -43,6 +45,9 @@ public class SmartSendMessageService {
     public SmartSendMessageService(RestTemplateService restTemplateService, ObjectMapper objectMapper) {
         this.restTemplateService = restTemplateService;
         this.objectMapper = objectMapper;
+        this.notificationObjectMapper = objectMapper.copy()
+                .configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES, true)
+                .configure(JsonParser.Feature.ALLOW_SINGLE_QUOTES, true);
     }
 
     public List<NotificationSendResult> sendMessage(QuartzTaskEntity task, QuartzTaskStatusEntity taskStatus) {
@@ -70,7 +75,7 @@ public class SmartSendMessageService {
             return results;
         }
         try {
-            JsonNode root = objectMapper.readTree(notificationJson);
+            JsonNode root = parseNotificationConfig(notificationJson);
             if (!root.isArray()) {
                 log.warn("Notification config is not array, taskId={}, config={}", taskId, notificationJson);
                 results.add(NotificationSendResult.configError(taskId, dataDate, notifyType, notificationJson, "notification config is not array"));
@@ -85,11 +90,23 @@ public class SmartSendMessageService {
                     results.add(sendWeChatMessage(custId, content, taskId, dataDate, notifyType));
                 }
             }
+            if (custIds.isEmpty()) {
+                log.warn("Notification config has no valid custid, taskId={}, config={}", taskId, notificationJson);
+                results.add(NotificationSendResult.configError(taskId, dataDate, notifyType, notificationJson, "notification config has no valid custid"));
+            }
         } catch (Exception e) {
             log.error("Parse notification config failed, taskId={}, config={}", taskId, notificationJson, e);
             results.add(NotificationSendResult.configError(taskId, dataDate, notifyType, notificationJson, e.getMessage()));
         }
         return results;
+    }
+
+    private JsonNode parseNotificationConfig(String notificationJson) throws java.io.IOException {
+        try {
+            return objectMapper.readTree(notificationJson);
+        } catch (Exception strictParseError) {
+            return notificationObjectMapper.readTree(notificationJson);
+        }
     }
 
     public NotificationSendResult sendWeChatMessage(String cstNo, String content, Long taskId, String dataDate, String notifyType) {

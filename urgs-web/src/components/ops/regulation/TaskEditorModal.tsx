@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AutoComplete, Form, Input, InputNumber, Modal, Select } from 'antd';
+import { Form, Input, InputNumber, Modal, Select } from 'antd';
 import { Calendar, Clock3, Plus, Settings2, Trash2 } from 'lucide-react';
 import { QuartzTask } from './mockData';
 import LazyMonacoEditor from './LazyMonacoEditor';
@@ -45,7 +45,6 @@ interface TaskEditorModalProps {
     taskList: QuartzTask[];
     taskTypes: readonly string[];
     systems: string[];
-    themes: string[];
     datasourceOptions: DataSourceOption[];
     dataSourceLoading: boolean;
     editorLanguageMap: Record<string, string>;
@@ -64,7 +63,6 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
     taskList,
     taskTypes,
     systems,
-    themes,
     datasourceOptions,
     dataSourceLoading,
     editorLanguageMap,
@@ -343,13 +341,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                             />
                                         </Form.Item>
                                         <Form.Item name="theme" label="任务主题">
-                                            <AutoComplete
-                                                options={themes.map(theme => ({ value: theme }))}
-                                                placeholder="例如：日报 / 月报 / 回执"
-                                                filterOption={(inputValue, option) =>
-                                                    (option?.value ?? '').toUpperCase().includes(inputValue.toUpperCase())
-                                                }
-                                            />
+                                            <Input placeholder="例如：日报 / 月报 / 回执" />
                                         </Form.Item>
                                         <Form.Item name="remark" label="任务备注" className="md:col-span-2">
                                             <TextArea

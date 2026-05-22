@@ -105,6 +105,32 @@ kill_port_if_exists() {
   fi
 }
 
+load_env_file() {
+  if [ -f "$SCRIPT_DIR/../.env" ]; then
+    export $(grep -v '^#' "$SCRIPT_DIR/../.env" | xargs)
+  elif [ -f "$SCRIPT_DIR/.env" ]; then
+    export $(grep -v '^#' "$SCRIPT_DIR/.env" | xargs)
+  fi
+}
+
+configure_database_env() {
+  load_env_file
+
+  if [ -n "${DB_HOST:-}" ]; then
+    local jdbc_url="jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true"
+    export SPRING_DATASOURCE_URL="${SPRING_DATASOURCE_URL:-$jdbc_url}"
+    export SPRING_DATASOURCE_USERNAME="${SPRING_DATASOURCE_USERNAME:-${DB_USER}}"
+    export SPRING_DATASOURCE_PASSWORD="${SPRING_DATASOURCE_PASSWORD:-${DB_PASSWORD}}"
+    export URGS_EXECUTOR_DB_URL="${URGS_EXECUTOR_DB_URL:-$jdbc_url}"
+    export URGS_EXECUTOR_DB_USERNAME="${URGS_EXECUTOR_DB_USERNAME:-${DB_USER}}"
+    export URGS_EXECUTOR_DB_PASSWORD="${URGS_EXECUTOR_DB_PASSWORD:-${DB_PASSWORD}}"
+  elif [ -n "${SPRING_DATASOURCE_URL:-}" ]; then
+    export URGS_EXECUTOR_DB_URL="${URGS_EXECUTOR_DB_URL:-$SPRING_DATASOURCE_URL}"
+    export URGS_EXECUTOR_DB_USERNAME="${URGS_EXECUTOR_DB_USERNAME:-${SPRING_DATASOURCE_USERNAME:-root}}"
+    export URGS_EXECUTOR_DB_PASSWORD="${URGS_EXECUTOR_DB_PASSWORD:-${SPRING_DATASOURCE_PASSWORD:-}}"
+  fi
+}
+
 cleanup() {
   echo "Stopping services..."
   for pid in "${pids[@]:-}"; do
@@ -117,19 +143,7 @@ start_backend() {
   echo "Starting backend (profile: $ENVIRONMENT)..."
   cd "$API_DIR"
   kill_port_if_exists 8080
-  # Load .env if exists
-  if [ -f "$SCRIPT_DIR/../.env" ]; then
-    export $(grep -v '^#' "$SCRIPT_DIR/../.env" | xargs)
-  elif [ -f "$SCRIPT_DIR/.env" ]; then
-    export $(grep -v '^#' "$SCRIPT_DIR/.env" | xargs)
-  fi
-
-  # Construct DataSource URL if var exists
-  if [ -n "${DB_HOST:-}" ]; then
-    export SPRING_DATASOURCE_URL="jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useSSL=false&serverTimezone=UTC&characterEncoding=utf8&allowPublicKeyRetrieval=true"
-    export SPRING_DATASOURCE_USERNAME="${DB_USER}"
-    export SPRING_DATASOURCE_PASSWORD="${DB_PASSWORD}"
-  fi
+  configure_database_env
 
   # Explicitly export RAG properties to avoid placeholder resolution issues
   export RAG_BASE_URL="${RAG_SERVICE_URL:-http://localhost:8001}/api/rag"
@@ -191,8 +205,9 @@ start_rag() {
 start_executor() {
   echo "Starting executor..."
   cd "$EXECUTOR_DIR"
-  kill_port_if_exists 8081
-  ./mvnw spring-boot:run -Dspring-boot.run.profiles="$ENVIRONMENT" -Dspring-boot.run.arguments="--server.port=8081" &
+  kill_port_if_exists 8082
+  configure_database_env
+  ./mvnw spring-boot:run -Dspring-boot.run.profiles="$ENVIRONMENT" &
   pids+=($!)
 }
 
@@ -262,6 +277,11 @@ for choice in "${choices[@]}"; do
     *) echo "Unknown option: $choice (ignored)" ;;
   esac
 done
+
+if [ "$ENABLE_BACKEND" = true ] && [ "$ENABLE_FRONTEND" = true ] && [ "$ENABLE_EXECUTOR" != true ]; then
+  echo "Backend + frontend selected; enabling executor because task trigger APIs call urgs-executor on port 8082."
+  ENABLE_EXECUTOR=true
+fi
 
 if [ "$ENABLE_BACKEND" = true ]; then start_backend; fi
 if [ "$ENABLE_EXECUTOR" = true ]; then start_executor; fi

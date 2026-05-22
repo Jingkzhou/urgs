@@ -107,7 +107,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
         status?: string;
         taskSystem?: string;
         keyword?: string;
-    }) => {
+    }, options?: { silent?: boolean }) => {
         try {
             const queryParams = buildInstanceQueryParams(filters);
             const firstResponse = await queryQuartzTaskStatus(queryParams);
@@ -133,7 +133,9 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
 
             return mergedInstances;
         } catch (error: any) {
-            message.error(error?.message || '加载实例失败');
+            if (!options?.silent) {
+                message.error(error?.message || '加载实例失败');
+            }
             return null;
         }
     }, [buildInstanceQueryParams]);
@@ -152,8 +154,8 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
         status?: string;
         taskSystem?: string;
         keyword?: string;
-    }) => {
-        const mergedInstances = await queryAllInstances(filters);
+    }, options?: { silent?: boolean }) => {
+        const mergedInstances = await queryAllInstances(filters, options);
         if (mergedInstances) {
             setInstanceList(mergedInstances);
         }
@@ -180,6 +182,15 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
 
     useEffect(() => {
         loadInstances();
+    }, [loadInstances]);
+
+    useEffect(() => {
+        const timer = window.setInterval(() => {
+            void loadInstances(undefined, { silent: true });
+        }, 3000);
+        return () => {
+            window.clearInterval(timer);
+        };
     }, [loadInstances]);
 
     useEffect(() => {

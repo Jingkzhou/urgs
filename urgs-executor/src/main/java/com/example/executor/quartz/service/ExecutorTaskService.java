@@ -78,6 +78,34 @@ public class ExecutorTaskService {
         return taskExecutorPool.cancelTask(buildTaskKey(planId, dataDate));
     }
 
+    public String validateTaskReadyForSubmit(QuartzTaskEntity task) {
+        if (task == null) {
+            return "任务不存在";
+        }
+        if (task.getDatasourceId() == null) {
+            return "任务未绑定数据源，请先在任务配置中选择数据源";
+        }
+        ResolvedDataSourceConfig config;
+        try {
+            config = dataSourceConfigClient.getResolvedConfig(task.getDatasourceId());
+        } catch (Exception e) {
+            return "加载数据源配置失败: " + trimTo500(e.getMessage());
+        }
+        if (config == null || config.getId() == null) {
+            return "数据源配置不存在或不可用，请检查任务绑定的数据源";
+        }
+        if (isSqlTask(task)) {
+            if (isBlank(config.getUrl()) || isBlank(config.getDriver())) {
+                return "SQL 任务数据源缺少 JDBC URL 或驱动配置";
+            }
+            return null;
+        }
+        if (isBlank(config.getHost()) || isBlank(config.getUsername())) {
+            return "Shell 任务数据源缺少主机或用户名配置";
+        }
+        return null;
+    }
+
     public boolean checkPredecessors(QuartzTaskEntity task, String dataDate) {
         List<Long> dependIds = quartzTaskDao.getPreTaskIdsByTaskId(task.getId());
         if (dependIds == null || dependIds.isEmpty()) {
@@ -124,6 +152,7 @@ public class ExecutorTaskService {
                 taskDispatch(task, dataDate, executor, normalizedTriggerType);
             } catch (Exception e) {
                 log.error("{} task execute failed", taskTag(task, dataDate), e);
+                recordStartupFailure(task, dataDate, e);
             }
         });
     }
@@ -268,15 +297,34 @@ public class ExecutorTaskService {
     }
 
     private void updateStatus(QuartzTaskStatusEntity entity) {
-        entity.setUpdateTime(new Date());
+        Date now = new Date();
+        entity.setUpdateTime(now);
         if (TaskExeStatusEnum.RUNNING.getCode().equals(entity.getStatus())) {
-            entity.setBeginTime(new Date());
+            entity.setBeginTime(now);
         }
         if (TaskExeStatusEnum.FAILED.getCode().equals(entity.getStatus())
                 || TaskExeStatusEnum.SUCCESS.getCode().equals(entity.getStatus())) {
-            entity.setEndTime(new Date());
+            entity.setEndTime(now);
         }
         quartzTaskStatusDao.updateStatus(entity);
+    }
+
+    private void recordStartupFailure(QuartzTaskEntity task, String dataDate, Exception e) {
+        try {
+            quartzTaskStatusDao.deleteByPlanIdAndDataDate(task.getId(), dataDate);
+            QuartzTaskStatusEntity status = buildStatus(
+                    task.getId(),
+                    dataDate,
+                    TaskExeStatusEnum.FAILED.getCode(),
+                    "任务启动失败: " + trimTo500(e.getMessage())
+            );
+            Date now = new Date();
+            status.setBeginTime(now);
+            status.setEndTime(now);
+            insertStatus(status);
+        } catch (Exception statusException) {
+            log.warn("{} record startup failure status failed, error={}", taskTag(task, dataDate), statusException.getMessage());
+        }
     }
 
     private void applyFinalStatus(QuartzTaskStatusEntity status, Map<String, String> result) {
@@ -313,5 +361,9 @@ public class ExecutorTaskService {
     private String trimTo500(String value) {
         if (value == null) return null;
         return value.length() > 500 ? value.substring(0, 500) : value;
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 }

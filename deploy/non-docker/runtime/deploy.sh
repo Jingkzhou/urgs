@@ -15,6 +15,7 @@ fi
 JAVA_BIN="${JAVA_BIN:-java}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 PIP_INSTALL="${PIP_INSTALL:-1}"
+TZ="${TZ:-Asia/Shanghai}"
 API_PORT="${API_PORT:-8080}"
 EXECUTOR_PORT="${EXECUTOR_PORT:-8082}"
 RAG_PORT="${RAG_PORT:-8001}"
@@ -38,6 +39,10 @@ NGINX_LOG_DIR="${NGINX_LOG_DIR:-${ROOT_DIR}/logs/nginx}"
 NGINX_ERROR_LOG="${NGINX_ERROR_LOG:-${NGINX_LOG_DIR}/error.log}"
 NGINX_ACCESS_LOG="${NGINX_ACCESS_LOG:-${NGINX_LOG_DIR}/access.log}"
 STOP_CONFLICTING_PORTS="${STOP_CONFLICTING_PORTS:-1}"
+MYSQL_JDBC_PARAMS="${MYSQL_JDBC_PARAMS:-useSSL=false&serverTimezone=Asia/Shanghai&connectionTimeZone=Asia/Shanghai&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true}"
+MYSQL_EXECUTOR_JDBC_PARAMS="${MYSQL_EXECUTOR_JDBC_PARAMS:-useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&connectionTimeZone=Asia/Shanghai&forceConnectionTimeZoneToSession=true}"
+
+export TZ
 
 log() {
     printf '[urgs-deploy] %s\n' "$*"
@@ -216,7 +221,7 @@ status_service() {
 
 export_common_env() {
     export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-prod}"
-    export SPRING_DATASOURCE_URL="${SPRING_DATASOURCE_URL:-jdbc:mysql://${DB_HOST:-127.0.0.1}:${DB_PORT:-3306}/${DB_NAME:-urgs}?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true}"
+    export SPRING_DATASOURCE_URL="${SPRING_DATASOURCE_URL:-jdbc:mysql://${DB_HOST:-127.0.0.1}:${DB_PORT:-3306}/${DB_NAME:-urgs}?${MYSQL_JDBC_PARAMS}}"
     export SPRING_DATASOURCE_USERNAME="${SPRING_DATASOURCE_USERNAME:-${DB_USER:-urgs}}"
     export SPRING_DATASOURCE_PASSWORD="${SPRING_DATASOURCE_PASSWORD:-${DB_PASSWORD:-}}"
     export SPRING_NEO4J_URI="${SPRING_NEO4J_URI:-bolt://${NEO4J_HOST:-127.0.0.1}:${NEO4J_PORT_BOLT:-7687}}"
@@ -241,7 +246,7 @@ start_executor() {
     [ -f "${ROOT_DIR}/services/executor/app.jar" ] || die "Missing services/executor/app.jar"
     stop_conflicting_port executor "$EXECUTOR_PORT"
     export URGS_EXECUTOR_PORT="$EXECUTOR_PORT"
-    export URGS_EXECUTOR_DB_URL="${URGS_EXECUTOR_DB_URL:-jdbc:mysql://${DB_HOST:-127.0.0.1}:${DB_PORT:-3306}/${DB_NAME:-urgs}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}"
+    export URGS_EXECUTOR_DB_URL="${URGS_EXECUTOR_DB_URL:-jdbc:mysql://${DB_HOST:-127.0.0.1}:${DB_PORT:-3306}/${DB_NAME:-urgs}?${MYSQL_EXECUTOR_JDBC_PARAMS}}"
     export URGS_EXECUTOR_DB_USERNAME="${URGS_EXECUTOR_DB_USERNAME:-${DB_USER:-urgs}}"
     export URGS_EXECUTOR_DB_PASSWORD="${URGS_EXECUTOR_DB_PASSWORD:-${DB_PASSWORD:-}}"
     start_background executor "$JAVA_BIN" ${EXECUTOR_JAVA_OPTS:-} -jar "${ROOT_DIR}/services/executor/app.jar"
