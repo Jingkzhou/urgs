@@ -4,10 +4,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
 import com.example.urgs_api.issue.model.Issue;
 import com.example.urgs_api.issue.service.IssueService;
-import com.example.urgs_api.marketplace.dto.WorkCreateDTO;
-import com.example.urgs_api.marketplace.dto.WorkTaskCreateDTO;
-import com.example.urgs_api.marketplace.model.Work;
-import com.example.urgs_api.marketplace.service.WorkService;
 import com.example.urgs_api.quartz.support.constant.ResponseCodeConst;
 import com.example.urgs_api.quartz.support.domain.PageResultDTO;
 import com.example.urgs_api.quartz.support.domain.ResponseDTO;
@@ -52,9 +48,6 @@ public class QuartzTaskService {
 
     @Autowired
     private IssueService issueService;
-
-    @Autowired
-    private WorkService workService;
 
     public ResponseDTO<PageResultDTO<QuartzTaskVO>> query(QuartzQueryDTO queryDTO) {
         Page<QuartzTaskVO> pageParam = SmartPageUtil.convert2QueryPage(queryDTO);
@@ -244,31 +237,7 @@ public class QuartzTaskService {
         issue.setUpdateTime(LocalDateTime.now());
         issueService.save(issue);
 
-        WorkCreateDTO workCreateDTO = new WorkCreateDTO();
-        workCreateDTO.setTitle(title);
-        workCreateDTO.setDescription(description);
-        workCreateDTO.setBackground(description);
-        workCreateDTO.setBusinessValue("尽快恢复批量任务执行链路，降低监管报送延误风险。");
-        workCreateDTO.setCategory("生产问题");
-        workCreateDTO.setPriority("P1");
-        workCreateDTO.setRequirementNumber("QUARTZ-INSTANCE-" + status.getId());
-
-        WorkTaskCreateDTO taskCreateDTO = new WorkTaskCreateDTO();
-        taskCreateDTO.setTitle("排查处理 " + (task != null ? task.getTaskName() : "任务 #" + status.getPlanId()) + " 异常");
-        taskCreateDTO.setDescription(description);
-        taskCreateDTO.setTaskType("运维");
-        taskCreateDTO.setDifficulty("中等");
-        taskCreateDTO.setRequiredSkills("批量调度,生产问题排查");
-        taskCreateDTO.setAcceptanceCriteria("确认失败原因，完成修复或补偿重跑，并在生产问题追踪中补充解决方案。");
-        taskCreateDTO.setPoints(3);
-        taskCreateDTO.setEstimatedHours(2);
-        taskCreateDTO.setAssignMode("COMPETE");
-        taskCreateDTO.setMaxApplicants(1);
-        workCreateDTO.setTasks(Collections.singletonList(taskCreateDTO));
-
-        Work work = workService.createWork(workCreateDTO, "system");
-        workService.publishWork(work.getId(), "system");
-        return ResponseDTO.succData("已转存生产问题并创建工作任务");
+        return ResponseDTO.succData("已转存生产问题");
     }
 
     @Transactional(rollbackFor = Throwable.class)
