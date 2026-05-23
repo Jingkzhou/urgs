@@ -3,14 +3,9 @@ import { message } from 'antd';
 import dayjs from 'dayjs';
 import { batchExecuteQuartzTaskStatus, batchForcePassQuartzTaskStatus, batchForceStopQuartzTaskStatus, queryQuartzTaskLog, queryQuartzTasks, queryQuartzTaskStatus } from '@/api/ops';
 import { QuartzTask, QuartzTaskExecutionLog, QuartzTaskStatus } from './mockData';
-import { blockingStatusRank, incompleteInstanceStatuses } from './task-instance/constants';
 import TaskInstanceDetailDrawer from './task-instance/TaskInstanceDetailDrawer';
 import TaskInstanceTableView from './task-instance/TaskInstanceTableView';
 import {
-    BlockingDependencyItem,
-    DependencyInsightData,
-    DependencyRelationItem,
-    DownstreamImpactMeta,
     InstanceDetailTabKey,
     RowContextMenuState,
     TaskInstanceProps,
@@ -19,8 +14,8 @@ import {
     normalizeLog,
     normalizeStatus,
     normalizeTask,
-    parseDependIds,
 } from './task-instance/utils';
+import { useDependencyInsightData } from './task-instance/useDependencyInsightData';
 
 const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     const todayDate = dayjs().format('YYYY-MM-DD');
@@ -48,7 +43,6 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     const [selectedInstanceIds, setSelectedInstanceIds] = useState<number[]>([]);
     const [instanceDetailTabKey, setInstanceDetailTabKey] = useState<InstanceDetailTabKey>('overview');
     const [showImpactedOnly, setShowImpactedOnly] = useState(false);
-    const [expandedImpactTaskIds, setExpandedImpactTaskIds] = useState<number[]>([]);
     const [rowContextMenu, setRowContextMenu] = useState<RowContextMenuState | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
@@ -354,162 +348,12 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
         }
     }, [currentPage, filteredInstances.length, pageSize]);
 
-    const instanceByPlanDate = useMemo(() => {
-        const map = new Map<string, QuartzTaskStatus>();
-        instanceList.forEach(instance => {
-            const key = `${instance.plan_id}_${instance.data_date}`;
-            const existing = map.get(key);
-            if (!existing) {
-                map.set(key, instance);
-                return;
-            }
-            const existingTime = dayjs(existing.update_time || existing.create_time).valueOf();
-            const incomingTime = dayjs(instance.update_time || instance.create_time).valueOf();
-            if (incomingTime >= existingTime) {
-                map.set(key, instance);
-            }
-        });
-        return map;
-    }, [instanceList]);
-
-    const upstreamTaskIdMap = useMemo(() => {
-        const map = new Map<number, number[]>();
-        taskList.forEach(task => {
-            map.set(task.id, parseDependIds(task.depend_id));
-        });
-        return map;
-    }, [taskList]);
-
-    const downstreamTaskIdMap = useMemo(() => {
-        const map = new Map<number, number[]>();
-        taskList.forEach(task => {
-            parseDependIds(task.depend_id).forEach(preTaskId => {
-                const next = map.get(preTaskId) || [];
-                next.push(task.id);
-                map.set(preTaskId, next);
-            });
-        });
-        return map;
-    }, [taskList]);
-
-    const dependencyPanelData = useMemo<DependencyInsightData | null>(() => {
-        if (!selectedInstance) return null;
-
-        const selectedTask = taskMap.get(selectedInstance.plan_id);
-        const pickRelatedInstance = (taskId: number) => {
-            return instanceByPlanDate.get(`${taskId}_${selectedInstance.data_date}`);
-        };
-
-        const toRelationItem = (taskId: number): DependencyRelationItem => {
-            const relationTask = taskMap.get(taskId);
-            return {
-                taskId,
-                taskName: relationTask?.task_name || `任务 #${taskId}`,
-                taskSystem: relationTask?.task_system || '-',
-                theme: relationTask?.theme || '-',
-                relatedInstance: pickRelatedInstance(taskId),
-                missingTask: !relationTask,
-            };
-        };
-
-        const blockingUpstreamMap = new Map<number, BlockingDependencyItem>();
-        const upstreamQueue = (upstreamTaskIdMap.get(selectedInstance.plan_id) || []).map(taskId => ({ taskId, level: 1 }));
-        const visitedUpstreamIds = new Set<number>();
-
-        while (upstreamQueue.length > 0) {
-            const current = upstreamQueue.shift();
-            if (!current || visitedUpstreamIds.has(current.taskId)) {
-                continue;
-            }
-            visitedUpstreamIds.add(current.taskId);
-
-            const relation = toRelationItem(current.taskId);
-            const status = relation.relatedInstance?.status;
-            if (!status || incompleteInstanceStatuses.has(status)) {
-                blockingUpstreamMap.set(current.taskId, {
-                    ...relation,
-                    level: current.level,
-                });
-            }
-
-            (upstreamTaskIdMap.get(current.taskId) || []).forEach(nextTaskId => {
-                if (!visitedUpstreamIds.has(nextTaskId)) {
-                    upstreamQueue.push({ taskId: nextTaskId, level: current.level + 1 });
-                }
-            });
-        }
-
-        const downstreamMetaMap = new Map<number, DownstreamImpactMeta>();
-        const downstreamDescendantIdSetMap = new Map<number, Set<number>>();
-
-        const buildDownstreamMeta = (
-            taskId: number,
-            path: Set<number>
-        ): DownstreamImpactMeta => {
-            const cached = downstreamMetaMap.get(taskId);
-            if (cached) {
-                return cached;
-            }
-
-            const relation = toRelationItem(taskId);
-            const directChildIds = (downstreamTaskIdMap.get(taskId) || []).filter(childTaskId => !path.has(childTaskId));
-            const meta = {
-                ...relation,
-                impacted: relation.relatedInstance?.status !== 3,
-                hasImpactedDescendant: false,
-                directChildIds,
-                descendantCount: 0,
-            };
-            downstreamMetaMap.set(taskId, meta);
-
-            const descendantIdSet = new Set<number>();
-            let hasImpactedDescendant = false;
-
-            directChildIds.forEach(childTaskId => {
-                const nextPath = new Set(path);
-                nextPath.add(childTaskId);
-                const childMeta = buildDownstreamMeta(childTaskId, nextPath);
-                descendantIdSet.add(childTaskId);
-                const childDescendantIdSet = downstreamDescendantIdSetMap.get(childTaskId);
-                childDescendantIdSet?.forEach(descendantTaskId => {
-                    descendantIdSet.add(descendantTaskId);
-                });
-                if (childMeta.impacted || childMeta.hasImpactedDescendant) {
-                    hasImpactedDescendant = true;
-                }
-            });
-
-            downstreamDescendantIdSetMap.set(taskId, descendantIdSet);
-            meta.descendantCount = descendantIdSet.size;
-            meta.hasImpactedDescendant = hasImpactedDescendant;
-            return meta;
-        };
-
-        const downstreamRootTaskIds = downstreamTaskIdMap.get(selectedInstance.plan_id) || [];
-        downstreamRootTaskIds.forEach(taskId => {
-            buildDownstreamMeta(taskId, new Set([selectedInstance.plan_id, taskId]));
-        });
-
-        const blockingUpstream = Array.from(blockingUpstreamMap.values()).sort((a, b) => {
-            const aStatus = a.relatedInstance?.status ?? 99;
-            const bStatus = b.relatedInstance?.status ?? 99;
-            const rankDiff = (blockingStatusRank[aStatus] ?? 99) - (blockingStatusRank[bStatus] ?? 99);
-            if (rankDiff !== 0) {
-                return rankDiff;
-            }
-            return a.level - b.level;
-        });
-
-        return {
-            selectedTask,
-            blockingUpstream,
-            downstreamRootTaskIds,
-            downstreamMetaMap,
-            downstreamTotalCount: downstreamMetaMap.size,
-            impactedDownstreamCount: Array.from(downstreamMetaMap.values()).filter(item => item.impacted).length,
-            failedUpstreamCount: blockingUpstream.filter(item => item.relatedInstance?.status === 4).length,
-        };
-    }, [downstreamTaskIdMap, instanceByPlanDate, selectedInstance, taskMap, upstreamTaskIdMap]);
+    const dependencyPanelData = useDependencyInsightData({
+        selectedInstance,
+        taskList,
+        instanceList,
+        taskMap,
+    });
 
     const updateInstance = (instanceId: number, updater: (instance: QuartzTaskStatus) => QuartzTaskStatus) => {
         setInstanceList(prev => prev.map(instance => instance.id === instanceId ? updater(instance) : instance));
@@ -530,7 +374,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
             begin_time: null,
             update_time: now,
             end_time: null,
-            msg: '实例已批量重置为等待执行。',
+            msg: '实例已按数据依赖链路重置为等待执行。',
         };
     };
 
@@ -573,7 +417,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                 setSelectedInstanceIds(prev => prev.filter(id => id !== instance.id));
                 await loadInstances();
                 await loadTodaySummaryStats();
-                message.success(`已执行实例 #${instance.id}`);
+                message.success(response?.data || `已按数据依赖链路重跑实例 #${instance.id}`);
             })
             .catch((error: any) => {
                 message.error(error?.message || '执行任务失败');
@@ -643,7 +487,6 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
         setSelectedInstance(instance);
         setInstanceDetailTabKey(tab);
         setShowImpactedOnly(false);
-        setExpandedImpactTaskIds([]);
     };
 
     const locateInstanceFromDependency = (instance: QuartzTaskStatus) => {
@@ -706,7 +549,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
             setSelectedInstanceIds([]);
             await loadInstances();
             await loadTodaySummaryStats();
-            message.success(`已批量执行 ${selectedInstances.length} 条实例`);
+            message.success(response?.data || `已按数据依赖链路重跑 ${selectedInstances.length} 条实例`);
         } catch (error: any) {
             message.error(error?.message || '批量执行失败');
         }
@@ -761,14 +604,6 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
             .catch((error: any) => {
                 message.error(error?.message || '批量强制通过失败');
             });
-    };
-
-    const toggleImpactTaskExpanded = (taskId: number) => {
-        setExpandedImpactTaskIds(prev =>
-            prev.includes(taskId)
-                ? prev.filter(id => id !== taskId)
-                : [...prev, taskId]
-        );
     };
 
     const selectedTask = selectedInstance ? taskMap.get(selectedInstance.plan_id) || null : null;
@@ -879,11 +714,9 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                 dependencyPanelData={dependencyPanelData}
                 selectedInstanceLogs={selectedInstanceLogs}
                 showImpactedOnly={showImpactedOnly}
-                expandedImpactTaskIds={expandedImpactTaskIds}
                 onClose={() => setSelectedInstance(null)}
                 onTabChange={setInstanceDetailTabKey}
                 onShowImpactedOnlyChange={setShowImpactedOnly}
-                onToggleImpactTaskExpanded={toggleImpactTaskExpanded}
                 onLocateInstanceFromDependency={locateInstanceFromDependency}
             />
         </>

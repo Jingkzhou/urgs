@@ -51,11 +51,21 @@ public interface QuartzTaskDao extends BaseMapper<QuartzTaskEntity> {
 
     List<QuartzTaskVO> getPreTaskListByTaskId(@Param("taskId") Long taskId);
 
+    List<QuartzTaskVO> getPreTaskListByTaskIdAndType(@Param("taskId") Long taskId, @Param("dependencyType") String dependencyType);
+
     List<Long> getPreTaskIdsByTaskId(@Param("taskId") Long taskId);
+
+    List<Long> getPreTaskIdsByTaskIdAndType(@Param("taskId") Long taskId, @Param("dependencyType") String dependencyType);
+
+    List<Long> getDownstreamTaskIdsByPreTaskIdAndType(@Param("preTaskId") Long preTaskId, @Param("dependencyType") String dependencyType);
 
     void deleteDependenciesByTaskId(@Param("taskId") Long taskId);
 
+    void deleteDependenciesByTaskIdAndType(@Param("taskId") Long taskId, @Param("dependencyType") String dependencyType);
+
     int insertTaskDependency(@Param("taskId") Long taskId, @Param("preTaskId") Long preTaskId);
+
+    int insertTaskDependencyWithType(@Param("taskId") Long taskId, @Param("preTaskId") Long preTaskId, @Param("dependencyType") String dependencyType);
 
 
     void updateJobKey( @Param("taskEntity") QuartzTaskEntity taskEntity);

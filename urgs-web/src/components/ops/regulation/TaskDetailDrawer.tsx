@@ -1,5 +1,5 @@
 import React from 'react';
-import { Drawer } from 'antd';
+import { Collapse, Drawer, Input } from 'antd';
 import { Calendar, Clock3, Settings2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import { QuartzTask } from './mockData';
@@ -17,22 +17,76 @@ import {
 interface TaskDetailDrawerProps {
     selectedTask: QuartzTask | null;
     selectedTaskDetailTab: 'config' | 'dependency';
-    selectedTaskDependencies: QuartzTask[];
+    selectedTaskDataDependencies: QuartzTask[];
+    selectedTaskControlDependencies: QuartzTask[];
     selectedTaskDependencySummary: string;
     detailScriptEditorReady: boolean;
     onClose: () => void;
     onTabChange: (tab: 'config' | 'dependency') => void;
 }
 
+const dependencyTypeMeta = {
+    DATA: {
+        label: '数据依赖',
+        description: '参与调度检查；重跑时沿数据依赖链路传播。',
+        badgeClass: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+        dotClass: 'bg-emerald-500',
+    },
+    CONTROL: {
+        label: '控制依赖',
+        description: '参与调度检查；重跑时不沿控制依赖传播。',
+        badgeClass: 'border-amber-200 bg-amber-50 text-amber-700',
+        dotClass: 'bg-amber-500',
+    },
+} as const;
+
 const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
     selectedTask,
     selectedTaskDetailTab,
-    selectedTaskDependencies,
+    selectedTaskDataDependencies,
+    selectedTaskControlDependencies,
     selectedTaskDependencySummary,
     detailScriptEditorReady,
     onClose,
     onTabChange,
 }) => {
+    const dependencyTotal = selectedTaskDataDependencies.length + selectedTaskControlDependencies.length;
+    const [dependencySearchKeyword, setDependencySearchKeyword] = React.useState('');
+
+    React.useEffect(() => {
+        setDependencySearchKeyword('');
+    }, [selectedTask?.id]);
+
+    const normalizedDependencySearchKeyword = dependencySearchKeyword.trim().toLowerCase();
+
+    const filterDependencyTasks = React.useCallback((dependencies: QuartzTask[]) => {
+        if (!normalizedDependencySearchKeyword) return dependencies;
+        return dependencies.filter(task => {
+            const searchableText = [
+                task.id,
+                task.task_name,
+                task.task_system,
+                task.theme,
+                task.task_type,
+                task.job_key,
+            ].filter(value => value !== undefined && value !== null)
+                .join(' ')
+                .toLowerCase();
+            return searchableText.includes(normalizedDependencySearchKeyword);
+        });
+    }, [normalizedDependencySearchKeyword]);
+
+    const filteredDataDependencies = React.useMemo(
+        () => filterDependencyTasks(selectedTaskDataDependencies),
+        [filterDependencyTasks, selectedTaskDataDependencies]
+    );
+    const filteredControlDependencies = React.useMemo(
+        () => filterDependencyTasks(selectedTaskControlDependencies),
+        [filterDependencyTasks, selectedTaskControlDependencies]
+    );
+    const filteredDependencyTotal = filteredDataDependencies.length + filteredControlDependencies.length;
+    const hasDependencySearchKeyword = normalizedDependencySearchKeyword.length > 0;
+
     const renderNotificationContacts = (value?: string | null) => {
         const contacts = parseNotificationContacts(value);
         if (contacts.length === 0) {
@@ -52,6 +106,87 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
                     </div>
                 ))}
             </div>
+        );
+    };
+
+    const renderDependencyGroup = (
+        dependencyType: keyof typeof dependencyTypeMeta,
+        dependencies: QuartzTask[],
+        totalCount: number
+    ) => {
+        const meta = dependencyTypeMeta[dependencyType];
+        return (
+            <Collapse
+                defaultActiveKey={[]}
+                expandIconPosition="end"
+                className="overflow-hidden rounded-xl border border-slate-200 bg-white"
+                items={[
+                    {
+                        key: dependencyType,
+                        label: (
+                            <div className="flex items-start justify-between gap-3 pr-3">
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                                        <span className={`h-2 w-2 rounded-full ${meta.dotClass}`} />
+                                        {meta.label}
+                                    </div>
+                                    <div className="mt-1 text-xs text-slate-500">{meta.description}</div>
+                                </div>
+                                <span className={`shrink-0 rounded-full border px-2 py-1 text-xs font-semibold ${meta.badgeClass}`}>
+                                    {hasDependencySearchKeyword ? `${dependencies.length}/${totalCount} 项` : `${totalCount} 项`}
+                                </span>
+                            </div>
+                        ),
+                        children: (
+                            <div className="divide-y divide-slate-100">
+                                {dependencies.length === 0 ? (
+                                    <div className="px-4 py-8 text-center text-sm text-slate-500">
+                                        {hasDependencySearchKeyword ? '暂无匹配任务' : `暂无${meta.label}`}
+                                    </div>
+                                ) : (
+                                    dependencies.map(task => {
+                                        const mappedStatus = statusMap[task.task_status] || statusMap[0];
+                                        return (
+                                            <div key={`${dependencyType}-${task.id}`} className="px-4 py-4">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0 truncate text-sm font-semibold leading-6 text-slate-800" title={task.task_name}>
+                                                        {task.task_name}
+                                                    </div>
+                                                    <div className="flex shrink-0 items-center gap-1.5">
+                                                        <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold leading-none ${meta.badgeClass}`}>
+                                                            {meta.label}
+                                                        </span>
+                                                        <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold leading-none ${mappedStatus.className}`}>
+                                                            {mappedStatus.label}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                                    <span className={`${detailMetaBadgeClass} max-w-none font-mono text-slate-500`}>
+                                                        #{task.id}
+                                                    </span>
+                                                    <span className={detailMetaBadgeClass} title={task.task_system || '-'}>
+                                                        <span className="mr-1 text-slate-400">系统</span>
+                                                        <span className="truncate">{task.task_system || '-'}</span>
+                                                    </span>
+                                                    <span className={detailMetaBadgeClass} title={task.theme || '-'}>
+                                                        <span className="mr-1 text-slate-400">主题</span>
+                                                        <span className="truncate">{task.theme || '-'}</span>
+                                                    </span>
+                                                    <span className={detailMetaBadgeClass} title={task.task_type || '-'}>
+                                                        <span className="mr-1 text-slate-400">类型</span>
+                                                        <span className="truncate">{task.task_type || '-'}</span>
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        ),
+                    },
+                ]}
+            />
         );
     };
 
@@ -283,50 +418,28 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
                             <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
                                 <div>
                                     <div className="text-base font-semibold text-slate-900">依赖任务</div>
-                                    <div className="mt-1 text-sm text-slate-500">只读查看当前任务的前置依赖链路。</div>
+                                    <div className="mt-1 text-sm text-slate-500">只读查看当前任务的数据依赖与控制依赖前置链路。</div>
                                 </div>
                                 <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                                    {selectedTaskDependencies.length} 项
+                                    {hasDependencySearchKeyword ? `匹配 ${filteredDependencyTotal}/${dependencyTotal} 项` : `${dependencyTotal} 项`}
                                 </span>
                             </div>
-                            <div className="divide-y divide-slate-100">
-                                {selectedTaskDependencies.length === 0 ? (
-                                    <div className="px-5 py-12 text-center text-sm text-slate-500">
+                            <div className="space-y-4 p-5">
+                                {dependencyTotal === 0 ? (
+                                    <div className="rounded-xl border border-dashed border-slate-200 px-5 py-12 text-center text-sm text-slate-500">
                                         暂无依赖任务
                                     </div>
                                 ) : (
-                                    selectedTaskDependencies.map(task => {
-                                        const mappedStatus = statusMap[task.task_status] || statusMap[0];
-                                        return (
-                                            <div key={task.id} className="px-5 py-4">
-                                                <div className="flex items-start justify-between gap-3">
-                                                    <div className="min-w-0 truncate text-sm font-semibold leading-6 text-slate-800" title={task.task_name}>
-                                                        {task.task_name}
-                                                    </div>
-                                                    <span className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold leading-none ${mappedStatus.className}`}>
-                                                        {mappedStatus.label}
-                                                    </span>
-                                                </div>
-                                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                                    <span className={`${detailMetaBadgeClass} max-w-none font-mono text-slate-500`}>
-                                                        #{task.id}
-                                                    </span>
-                                                    <span className={detailMetaBadgeClass} title={task.task_system || '-'}>
-                                                        <span className="mr-1 text-slate-400">系统</span>
-                                                        <span className="truncate">{task.task_system || '-'}</span>
-                                                    </span>
-                                                    <span className={detailMetaBadgeClass} title={task.theme || '-'}>
-                                                        <span className="mr-1 text-slate-400">主题</span>
-                                                        <span className="truncate">{task.theme || '-'}</span>
-                                                    </span>
-                                                    <span className={detailMetaBadgeClass} title={task.task_type || '-'}>
-                                                        <span className="mr-1 text-slate-400">类型</span>
-                                                        <span className="truncate">{task.task_type || '-'}</span>
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        );
-                                    })
+                                    <>
+                                        <Input
+                                            allowClear
+                                            value={dependencySearchKeyword}
+                                            onChange={event => setDependencySearchKeyword(event.target.value)}
+                                            placeholder="搜索任务名称、ID、系统、主题、类型"
+                                        />
+                                        {renderDependencyGroup('DATA', filteredDataDependencies, selectedTaskDataDependencies.length)}
+                                        {renderDependencyGroup('CONTROL', filteredControlDependencies, selectedTaskControlDependencies.length)}
+                                    </>
                                 )}
                             </div>
                         </section>

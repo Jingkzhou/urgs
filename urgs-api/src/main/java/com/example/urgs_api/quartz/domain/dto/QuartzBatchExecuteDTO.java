@@ -14,4 +14,7 @@ public class QuartzBatchExecuteDTO {
     @NotEmpty(message = "请选择需要批量执行的实例")
     @ApiModelProperty("任务实例ID列表")
     private List<Long> statusIds;
+
+    @ApiModelProperty("是否沿数据依赖级联重跑下游")
+    private Boolean withDataDownstream;
 }

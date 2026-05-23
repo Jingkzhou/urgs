@@ -1,5 +1,6 @@
 package com.example.urgs_api.quartz.domain.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.annotations.ApiModelProperty;
 import com.example.urgs_api.quartz.support.domain.BaseEntity;
@@ -52,6 +53,18 @@ public class QuartzTaskEntity extends BaseEntity {
      * 依赖id
      */
     private String dependId;
+
+    /**
+     * 数据依赖ID
+     */
+    @TableField(exist = false)
+    private String dataDependId;
+
+    /**
+     * 控制依赖ID
+     */
+    @TableField(exist = false)
+    private String controlDependId;
 
     /**
      * shell绝对路径proc用户名称

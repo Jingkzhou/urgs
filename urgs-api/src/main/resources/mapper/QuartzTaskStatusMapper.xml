@@ -3,7 +3,7 @@
 <mapper namespace="com.example.urgs_api.quartz.dao.QuartzTaskStatusDao">
 
     <select id="getFinishCount" resultType="integer">
-        SELECT COUNT(1)
+        SELECT COUNT(DISTINCT plan_id)
         FROM t_quartz_task_status
         WHERE status = 3
           AND data_date = #{dataDate}
@@ -48,7 +48,24 @@
             t.remark AS remark,
             t.task_type AS taskType,
             t.exe_path AS exePath,
-            t.depend_id AS dependId,
+            (
+                SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+                FROM t_quartz_task_dependency d
+                WHERE d.task_id = t.id
+                  AND d.dependency_type = 'DATA'
+            ) AS dependId,
+            (
+                SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+                FROM t_quartz_task_dependency d
+                WHERE d.task_id = t.id
+                  AND d.dependency_type = 'DATA'
+            ) AS dataDependId,
+            (
+                SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+                FROM t_quartz_task_dependency d
+                WHERE d.task_id = t.id
+                  AND d.dependency_type = 'CONTROL'
+            ) AS controlDependId,
             t.datasource_id AS datasourceId,
             ds.name AS datasourceName,
             t.task_system AS taskSystem,
@@ -104,7 +121,24 @@
             t.exe_path AS exePath,
             t.datasource_id AS datasourceId,
             ds.name AS datasourceName,
-            t.depend_id AS dependId,
+            (
+                SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+                FROM t_quartz_task_dependency d
+                WHERE d.task_id = t.id
+                  AND d.dependency_type = 'DATA'
+            ) AS dependId,
+            (
+                SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+                FROM t_quartz_task_dependency d
+                WHERE d.task_id = t.id
+                  AND d.dependency_type = 'DATA'
+            ) AS dataDependId,
+            (
+                SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+                FROM t_quartz_task_dependency d
+                WHERE d.task_id = t.id
+                  AND d.dependency_type = 'CONTROL'
+            ) AS controlDependId,
             t.period AS period,
             t.task_system AS taskSystem,
             t.theme AS theme,

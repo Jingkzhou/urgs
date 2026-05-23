@@ -39,8 +39,10 @@ public class QuartzController {
 
     @GetMapping("/quartz/task/dependencies/{taskId}")
     @ApiOperation(value = "查询任务当前依赖明细")
-    public ResponseDTO<java.util.List<QuartzTaskVO>> queryDependencies(@PathVariable("taskId") Long taskId) {
-        return quartzTaskService.queryDependencies(taskId);
+    public ResponseDTO<java.util.List<QuartzTaskVO>> queryDependencies(
+            @PathVariable("taskId") Long taskId,
+            @RequestParam(value = "dependencyType", required = false) String dependencyType) {
+        return quartzTaskService.queryDependencies(taskId, dependencyType);
     }
     @PostMapping("/quartz/task/status/queryYl")
     @ApiOperation(value = "查询依赖任务")

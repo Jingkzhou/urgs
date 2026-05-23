@@ -317,6 +317,8 @@ export interface QuartzTaskApiModel {
     url?: string | null;
     exePath?: string | null;
     dependId?: string | null;
+    dataDependId?: string | null;
+    controlDependId?: string | null;
     username?: string | null;
     password?: string | null;
     driver?: string | null;
@@ -352,6 +354,8 @@ export interface QuartzTaskSavePayload {
     taskStatus?: number;
     remark?: string | null;
     dependId?: string | null;
+    dataDependId?: string | null;
+    controlDependId?: string | null;
     exePath?: string | null;
     url?: string | null;
     taskType: number;
@@ -370,8 +374,13 @@ export interface QuartzTaskSavePayload {
 export const queryQuartzTasks = (params: QuartzTaskQueryParams) =>
     post<ApiResponse<PageResult<QuartzTaskApiModel>>>('/api/quartz/task/query', params);
 
-export const queryQuartzTaskDependencies = (taskId: number) =>
-    get<ApiResponse<QuartzTaskApiModel[]>>(`/api/quartz/task/dependencies/${taskId}`);
+export type QuartzDependencyType = 'DATA' | 'CONTROL';
+
+export const queryQuartzTaskDependencies = (taskId: number, dependencyType?: QuartzDependencyType) =>
+    get<ApiResponse<QuartzTaskApiModel[]>>(
+        `/api/quartz/task/dependencies/${taskId}`,
+        dependencyType ? { dependencyType } : undefined
+    );
 
 export const saveOrUpdateQuartzTask = (payload: QuartzTaskSavePayload) =>
     post<ApiResponse<string>>('/api/quartz/task/saveOrUpdate', payload);
@@ -391,6 +400,8 @@ export interface QuartzTaskStatusApiModel {
     taskName?: string;
     dataDate: string;
     dependId?: string | null;
+    dataDependId?: string | null;
+    controlDependId?: string | null;
     taskType?: string | number | null;
     taskCron?: string | null;
     exePath?: string | null;
@@ -437,8 +448,8 @@ export interface QuartzTaskLogApiModel {
 export const queryQuartzTaskStatus = (params: QuartzTaskStatusQueryParams) =>
     post<ApiResponse<PageResult<QuartzTaskStatusApiModel>>>('/api/quartz/task/status/query', params);
 
-export const batchExecuteQuartzTaskStatus = (statusIds: number[]) =>
-    post<ApiResponse<string>>('/api/quartz/task/status/batchExecute', { statusIds });
+export const batchExecuteQuartzTaskStatus = (statusIds: number[], withDataDownstream: boolean = true) =>
+    post<ApiResponse<string>>('/api/quartz/task/status/batchExecute', { statusIds, withDataDownstream });
 
 export const batchForceStopQuartzTaskStatus = (statusIds: number[]) =>
     post<ApiResponse<string>>('/api/quartz/task/status/batchForceStop', { statusIds });

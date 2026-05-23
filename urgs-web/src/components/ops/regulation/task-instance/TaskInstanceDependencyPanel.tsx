@@ -10,7 +10,7 @@ import {
     Eye,
     EyeOff,
     GitBranch,
-    ListTree,
+    List,
     Search,
     X,
 } from 'lucide-react';
@@ -21,15 +21,13 @@ import {
     detailSectionHeaderClass,
     instanceStatusMap,
 } from './constants';
-import { BlockingDependencyItem, DependencyInsightData, DownstreamImpactMeta } from './types';
+import { BlockingDependencyItem, DependencyInsightData, DependencyRelationType, DownstreamImpactMeta } from './types';
 
 interface TaskInstanceDependencyPanelProps {
     selectedInstance: QuartzTaskStatus;
     dependencyPanelData: DependencyInsightData;
     showImpactedOnly: boolean;
-    expandedImpactTaskIds: number[];
     onShowImpactedOnlyChange: (nextValue: boolean) => void;
-    onToggleImpactTaskExpanded: (taskId: number) => void;
     onLocateInstanceFromDependency: (instance: QuartzTaskStatus) => void;
 }
 
@@ -39,7 +37,6 @@ interface ImpactTraversalRow {
     item: DownstreamImpactMeta;
     level: number;
     routeKey: string;
-    ancestorTaskIds: number[];
 }
 
 const statusFilterOptions: Array<{ value: ImpactStatusFilter; label: string }> = [
@@ -53,20 +50,22 @@ const statusFilterOptions: Array<{ value: ImpactStatusFilter; label: string }> =
 
 const taskMetaPillClass = 'rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-500';
 
+const dependencyTypeMeta: Record<DependencyRelationType, { label: string; className: string }> = {
+    DATA: { label: '数据依赖', className: 'border-blue-200 bg-blue-50 text-blue-700' },
+    CONTROL: { label: '控制依赖', className: 'border-violet-200 bg-violet-50 text-violet-700' },
+};
+
 const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = ({
     selectedInstance,
     dependencyPanelData,
     showImpactedOnly,
-    expandedImpactTaskIds,
     onShowImpactedOnlyChange,
-    onToggleImpactTaskExpanded,
     onLocateInstanceFromDependency,
 }) => {
     const [impactKeyword, setImpactKeyword] = useState('');
     const [impactStatusFilter, setImpactStatusFilter] = useState<ImpactStatusFilter>('all');
     const [showBlockingDetail, setShowBlockingDetail] = useState(false);
     const [showImpactDetail, setShowImpactDetail] = useState(false);
-    const expandedImpactTaskIdSet = useMemo(() => new Set(expandedImpactTaskIds), [expandedImpactTaskIds]);
     const normalizedImpactKeyword = impactKeyword.trim().toLowerCase();
 
     useEffect(() => {
@@ -125,7 +124,6 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                     item,
                     level,
                     routeKey: route.join('>'),
-                    ancestorTaskIds: ancestors.filter(id => id !== selectedInstance.plan_id),
                 });
                 walk(item.directChildIds, level + 1, route, new Set([...path, taskId]));
             });
@@ -134,6 +132,22 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
         walk(dependencyPanelData.downstreamRootTaskIds, 1, [selectedInstance.plan_id], new Set([selectedInstance.plan_id]));
         return rows;
     }, [dependencyPanelData.downstreamMetaMap, dependencyPanelData.downstreamRootTaskIds, selectedInstance.plan_id]);
+
+    const impactFlatRows = useMemo<ImpactTraversalRow[]>(() => {
+        const rowByTaskId = new Map<number, ImpactTraversalRow>();
+        impactTraversalRows.forEach(row => {
+            const existing = rowByTaskId.get(row.item.taskId);
+            if (!existing || row.level < existing.level) {
+                rowByTaskId.set(row.item.taskId, row);
+            }
+        });
+        return Array.from(rowByTaskId.values()).sort((a, b) => {
+            if (a.level !== b.level) {
+                return a.level - b.level;
+            }
+            return a.item.taskId - b.item.taskId;
+        });
+    }, [impactTraversalRows]);
 
     const renderRelationStatus = (relation?: QuartzTaskStatus) => {
         if (!relation) {
@@ -155,6 +169,22 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
             </span>
         );
     };
+
+    const renderDependencyTypeTags = (dependencyTypes: DependencyRelationType[]) => (
+        <>
+            {dependencyTypes.map(type => {
+                const meta = dependencyTypeMeta[type];
+                return (
+                    <span
+                        key={type}
+                        className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${meta.className}`}
+                    >
+                        {meta.label}
+                    </span>
+                );
+            })}
+        </>
+    );
 
     const matchesImpactKeyword = (item: DownstreamImpactMeta) => {
         if (!normalizedImpactKeyword) {
@@ -182,41 +212,18 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
     const matchesImpactFocus = (item: DownstreamImpactMeta) =>
         !showImpactedOnly || item.impacted || item.hasImpactedDescendant;
 
-    const hasActiveImpactFilter = normalizedImpactKeyword.length > 0 || impactStatusFilter !== 'all';
-
     const visibleImpactRows = useMemo(() => {
-        return impactTraversalRows.filter(row => {
-            if (!matchesImpactFocus(row.item) || !matchesImpactKeyword(row.item) || !matchesImpactStatus(row.item)) {
-                return false;
-            }
-            if (hasActiveImpactFilter) {
-                return true;
-            }
-            return row.ancestorTaskIds.every(taskId => expandedImpactTaskIdSet.has(taskId));
-        });
+        return impactFlatRows.filter(row =>
+            matchesImpactFocus(row.item) && matchesImpactKeyword(row.item) && matchesImpactStatus(row.item)
+        );
     }, [
-        expandedImpactTaskIdSet,
-        hasActiveImpactFilter,
-        impactTraversalRows,
+        impactFlatRows,
         impactStatusFilter,
         normalizedImpactKeyword,
         showImpactedOnly,
     ]);
 
     const hasImpactFilterValue = normalizedImpactKeyword.length > 0 || impactStatusFilter !== 'all';
-
-    const handleExpandFirstLevel = () => {
-        dependencyPanelData.downstreamRootTaskIds.forEach(taskId => {
-            const item = dependencyPanelData.downstreamMetaMap.get(taskId);
-            if (item && item.directChildIds.length > 0 && !expandedImpactTaskIdSet.has(taskId)) {
-                onToggleImpactTaskExpanded(taskId);
-            }
-        });
-    };
-
-    const handleCollapseAll = () => {
-        expandedImpactTaskIds.forEach(taskId => onToggleImpactTaskExpanded(taskId));
-    };
 
     const renderBlockingDependencyList = (items: BlockingDependencyItem[]) => {
         if (items.length === 0) {
@@ -256,6 +263,7 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                                         未纳入清单
                                     </span>
                                 )}
+                                {renderDependencyTypeTags(item.dependencyTypes)}
                             </div>
                             <div className="mt-2 flex flex-wrap items-center gap-1.5">
                                 <span className={taskMetaPillClass}>L{item.level}</span>
@@ -289,8 +297,6 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
     const renderImpactRow = (row: ImpactTraversalRow, index: number) => {
         const { item, level, routeKey } = row;
         const mappedStatus = instanceStatusMap[item.relatedInstance?.status ?? -1];
-        const hasChildren = item.directChildIds.length > 0;
-        const expanded = expandedImpactTaskIdSet.has(item.taskId);
         const isLast = index === visibleImpactRows.length - 1;
 
         return (
@@ -300,21 +306,9 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                     isLast ? '' : 'border-b'
                 } ${item.impacted ? 'bg-blue-50/55' : 'bg-white hover:bg-slate-50/70'}`}
             >
-                <div className="min-w-0" style={{ paddingLeft: Math.min((level - 1) * 18, 72) }}>
-                    <div className="flex min-w-0 items-center gap-2">
-                        {hasChildren ? (
-                            <button
-                                type="button"
-                                onClick={() => onToggleImpactTaskExpanded(item.taskId)}
-                                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 transition hover:border-blue-200 hover:text-blue-600"
-                                aria-label={expanded ? '收起下游' : '展开下游'}
-                                title={expanded ? '收起下游' : '展开下游'}
-                            >
-                                {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                            </button>
-                        ) : (
-                            <span className="h-6 w-6 shrink-0 rounded border border-transparent" />
-                        )}
+                <div className="min-w-0">
+                    <div className="flex min-w-0 items-start gap-2">
+                        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-400" />
                         <div className="min-w-0 flex-1">
                             <div className="flex min-w-0 items-center gap-2">
                                 <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500">
@@ -332,6 +326,7 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                                 <span className={taskMetaPillClass}>{item.theme}</span>
                                 <span className={taskMetaPillClass}>直接 {item.directChildIds.length}</span>
                                 <span className={taskMetaPillClass}>累计 {item.descendantCount}</span>
+                                {renderDependencyTypeTags(item.dependencyTypes)}
                                 {item.missingTask && (
                                     <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
                                         未纳入清单
@@ -397,7 +392,7 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                         <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
                             <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-700">
                                 <ArrowUpCircle size={13} />
-                                阻塞
+                                调度阻塞
                             </div>
                             <div className="mt-1 text-xl font-bold text-amber-700">{dependencyPanelData.blockingUpstream.length}</div>
                         </div>
@@ -411,7 +406,7 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                         <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
                             <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-700">
                                 <ArrowDownCircle size={13} />
-                                影响
+                                数据影响
                             </div>
                             <div className="mt-1 text-xl font-bold text-blue-700">{dependencyPanelData.impactedDownstreamCount}</div>
                         </div>
@@ -424,7 +419,7 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                     <div className="min-w-0">
                         <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                             <ArrowUpCircle size={16} className="text-amber-500" />
-                            阻塞原因
+                            调度阻塞原因
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
                             {dependencyPanelData.blockingUpstream.length > 0
@@ -457,11 +452,11 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                     <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                         <div className="min-w-0">
                             <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                                <ListTree size={16} className="text-blue-500" />
-                                重跑影响范围
+                            <List size={16} className="text-blue-500" />
+                                数据重跑影响范围
                             </div>
                             <div className="mt-1 text-xs text-slate-500">
-                                共 {dependencyPanelData.downstreamTotalCount} 个下游节点，最深 L{impactStats.maxLevel || 0}
+                                仅沿数据依赖传播，共 {dependencyPanelData.downstreamTotalCount} 个下游节点，最深 L{impactStats.maxLevel || 0}
                             </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -513,23 +508,6 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                                 >
                                     {showImpactedOnly ? <Eye size={14} /> : <EyeOff size={14} />}
                                     {showImpactedOnly ? '显示全部' : '只看影响'}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleExpandFirstLevel}
-                                    className="inline-flex h-8 items-center gap-1.5 rounded border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-                                >
-                                    <ChevronDown size={14} />
-                                    展开一级
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleCollapseAll}
-                                    disabled={expandedImpactTaskIds.length === 0}
-                                    className="inline-flex h-8 items-center gap-1.5 rounded border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
-                                >
-                                    <ChevronRight size={14} />
-                                    收起全部
                                 </button>
                             </div>
 
@@ -587,8 +565,7 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
                             <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs text-slate-500">
                                 <div>
-                                    展示 {visibleImpactRows.length} / {impactTraversalRows.length} 行
-                                    {hasActiveImpactFilter ? '，筛选结果已展开为平铺视图' : ''}
+                                    展示 {visibleImpactRows.length} / {impactFlatRows.length} 项
                                 </div>
                                 <div className="font-mono">
                                     {selectedInstance.data_date || '-'}

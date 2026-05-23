@@ -51,6 +51,12 @@ public class QuartzTaskDTO {
     @ApiModelProperty("依赖ID")
     private String dependId;
 
+    @ApiModelProperty("数据依赖ID")
+    private String dataDependId;
+
+    @ApiModelProperty("控制依赖ID")
+    private String controlDependId;
+
     @ApiModelProperty("执行文件")
     private String exePath;
 

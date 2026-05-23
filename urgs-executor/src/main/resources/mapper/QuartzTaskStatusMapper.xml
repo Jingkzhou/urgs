@@ -25,7 +25,7 @@
     </select>
 
     <select id="getFinishCount" resultType="int">
-        SELECT count(1)
+        SELECT count(DISTINCT plan_id)
         FROM t_quartz_task_status
         WHERE status = 3
           AND data_date = #{dataDate}

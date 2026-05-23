@@ -19,6 +19,8 @@ interface TaskFormValues {
     task_cron: string;
     offset?: number | null;
     depend_id?: string;
+    data_depend_id?: string;
+    control_depend_id?: string;
     period?: number | null;
     datasource_id?: number;
     script?: string;
@@ -78,6 +80,8 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
     const watchedTaskCron = Form.useWatch('task_cron', form) as string | undefined;
     const watchedOffset = Form.useWatch('offset', form) as number | null | undefined;
     const watchedDependId = Form.useWatch('depend_id', form) as string | undefined;
+    const watchedDataDependId = Form.useWatch('data_depend_id', form) as string | undefined;
+    const watchedControlDependId = Form.useWatch('control_depend_id', form) as string | undefined;
     const watchedTaskType = Form.useWatch('task_type', form) as string | undefined;
     const watchedScript = Form.useWatch('script', form) as string | undefined;
 
@@ -109,13 +113,22 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
             }
 
             try {
-                const response = await queryQuartzTaskDependencies(editingTask.id);
+                const [dataResponse, controlResponse] = await Promise.all([
+                    queryQuartzTaskDependencies(editingTask.id, 'DATA'),
+                    queryQuartzTaskDependencies(editingTask.id, 'CONTROL'),
+                ]);
                 if (!mounted) return;
-                if (!response?.success) {
+                if (!dataResponse?.success && !controlResponse?.success) {
                     setDependencyTasks([]);
                     return;
                 }
-                setDependencyTasks((response.data || []).map((item: QuartzTaskApiModel) => {
+                const dependencyMap = new Map<number, QuartzTaskApiModel>();
+                [...(dataResponse?.data || []), ...(controlResponse?.data || [])].forEach(item => {
+                    if (item.id !== undefined && item.id !== null) {
+                        dependencyMap.set(Number(item.id), item);
+                    }
+                });
+                setDependencyTasks(Array.from(dependencyMap.values()).map((item: QuartzTaskApiModel) => {
                     const datasourceId = item.datasourceId === null || item.datasourceId === undefined
                         ? null
                         : Number(item.datasourceId);
@@ -159,13 +172,22 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
     }, [open, editingTask?.id]);
 
     const selectedDependencyIds = useMemo(() => {
-        const raw = watchedDependId;
+        const raw = watchedDataDependId || watchedDependId;
         if (!raw) return [] as string[];
         return raw
             .split(',')
             .map(item => item.trim())
             .filter(Boolean);
-    }, [watchedDependId]);
+    }, [watchedDataDependId, watchedDependId]);
+
+    const selectedControlDependencyIds = useMemo(() => {
+        const raw = watchedControlDependId;
+        if (!raw) return [] as string[];
+        return raw
+            .split(',')
+            .map(item => item.trim())
+            .filter(Boolean);
+    }, [watchedControlDependId]);
 
     const dependencyTaskNameMap = useMemo(() => {
         const taskNameMap = new Map<string, string>();
@@ -208,7 +230,13 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
     }, [describeCron, editingTask, watchedOffset, watchedTaskCron, watchedTaskName]);
 
     const updateDependencySelection = (ids: string[]) => {
-        form.setFieldValue('depend_id', ids.length > 0 ? ids.join(',') : undefined);
+        const value = ids.length > 0 ? ids.join(',') : undefined;
+        form.setFieldValue('data_depend_id', value);
+        form.setFieldValue('depend_id', value);
+    };
+
+    const updateControlDependencySelection = (ids: string[]) => {
+        form.setFieldValue('control_depend_id', ids.length > 0 ? ids.join(',') : undefined);
     };
 
     return (
@@ -265,6 +293,12 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                     </div>
 
                     <Form.Item name="depend_id" hidden>
+                        <Input />
+                    </Form.Item>
+                    <Form.Item name="data_depend_id" hidden>
+                        <Input />
+                    </Form.Item>
+                    <Form.Item name="control_depend_id" hidden>
                         <Input />
                     </Form.Item>
 
@@ -620,10 +654,12 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                             taskList={taskList}
                             editingTaskId={editingTask?.id}
                             selectedDependencyIds={selectedDependencyIds}
+                            selectedControlDependencyIds={selectedControlDependencyIds}
                             dependencyTaskDetails={dependencyTasks}
                             systems={systems}
                             taskTypes={taskTypes}
                             onChangeSelectedDependencyIds={updateDependencySelection}
+                            onChangeSelectedControlDependencyIds={updateControlDependencySelection}
                         />
                     )}
                 </div>

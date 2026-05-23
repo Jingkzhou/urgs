@@ -51,7 +51,8 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
     const [themeFilter, setThemeFilter] = useState<string>('');
     const [selectedTask, setSelectedTask] = useState<QuartzTask | null>(null);
     const [selectedTaskDetailTab, setSelectedTaskDetailTab] = useState<'config' | 'dependency'>('config');
-    const [selectedTaskDependencies, setSelectedTaskDependencies] = useState<QuartzTask[]>([]);
+    const [selectedTaskDataDependencies, setSelectedTaskDataDependencies] = useState<QuartzTask[]>([]);
+    const [selectedTaskControlDependencies, setSelectedTaskControlDependencies] = useState<QuartzTask[]>([]);
     const [detailScriptEditorReady, setDetailScriptEditorReady] = useState(false);
     const [modalVisible, setModalVisible] = useState(false);
     const [editingTask, setEditingTask] = useState<QuartzTask | null>(null);
@@ -202,7 +203,8 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
 
     useEffect(() => {
         setSelectedTaskDetailTab('config');
-        setSelectedTaskDependencies([]);
+        setSelectedTaskDataDependencies([]);
+        setSelectedTaskControlDependencies([]);
         setDetailScriptEditorReady(false);
         if (!selectedTask?.id) return;
 
@@ -213,12 +215,18 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
 
         const loadSelectedTaskDependencies = async () => {
             try {
-                const response = await queryQuartzTaskDependencies(selectedTask.id);
+                const [dataResponse, controlResponse] = await Promise.all([
+                    queryQuartzTaskDependencies(selectedTask.id, 'DATA'),
+                    queryQuartzTaskDependencies(selectedTask.id, 'CONTROL'),
+                ]);
                 if (!mounted) return;
-                if (!response?.success) { setSelectedTaskDependencies([]); return; }
-                setSelectedTaskDependencies((response.data || []).map(normalizeQuartzTask));
+                setSelectedTaskDataDependencies(dataResponse?.success ? (dataResponse.data || []).map(normalizeQuartzTask) : []);
+                setSelectedTaskControlDependencies(controlResponse?.success ? (controlResponse.data || []).map(normalizeQuartzTask) : []);
             } catch {
-                if (mounted) setSelectedTaskDependencies([]);
+                if (mounted) {
+                    setSelectedTaskDataDependencies([]);
+                    setSelectedTaskControlDependencies([]);
+                }
             }
         };
 
@@ -241,12 +249,11 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
     }, [dataSources, fallbackDataSources]);
 
     const selectedTaskDependencySummary = useMemo(() => {
-        if (selectedTaskDependencies.length === 0) return '无前置依赖';
-        const labels = selectedTaskDependencies.slice(0, 2).map(task => task.task_name || `任务 ${task.id}`);
-        return selectedTaskDependencies.length > 2
-            ? `${labels.join('，')} 等 ${selectedTaskDependencies.length} 项`
-            : labels.join('，');
-    }, [selectedTaskDependencies]);
+        const dataCount = selectedTaskDataDependencies.length;
+        const controlCount = selectedTaskControlDependencies.length;
+        if (dataCount === 0 && controlCount === 0) return '无前置依赖';
+        return `数据依赖 ${dataCount} 项，控制依赖 ${controlCount} 项`;
+    }, [selectedTaskControlDependencies.length, selectedTaskDataDependencies.length]);
 
     // ===== 事件处理 =====
 
@@ -307,7 +314,9 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 remark: emptyToNull(values.remark),
                 taskType: toTaskTypeCode(values.task_type),
                 exePath: normalizeScript(values.script),
-                dependId: emptyToNull(values.depend_id),
+                dependId: emptyToNull(values.data_depend_id || values.depend_id),
+                dataDependId: emptyToNull(values.data_depend_id || values.depend_id),
+                controlDependId: emptyToNull(values.control_depend_id),
                 datasourceId: values.datasource_id ?? null,
                 period: values.period ?? null,
                 taskSystem: emptyToNull(values.task_system || undefined),
@@ -576,7 +585,8 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             <TaskDetailDrawer
                 selectedTask={selectedTask}
                 selectedTaskDetailTab={selectedTaskDetailTab}
-                selectedTaskDependencies={selectedTaskDependencies}
+                selectedTaskDataDependencies={selectedTaskDataDependencies}
+                selectedTaskControlDependencies={selectedTaskControlDependencies}
                 selectedTaskDependencySummary={selectedTaskDependencySummary}
                 detailScriptEditorReady={detailScriptEditorReady}
                 onClose={() => setSelectedTask(null)}

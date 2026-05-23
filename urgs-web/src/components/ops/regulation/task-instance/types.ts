@@ -1,5 +1,7 @@
 import { QuartzTask, QuartzTaskStatus } from '../mockData';
 
+export type DependencyRelationType = 'DATA' | 'CONTROL';
+
 export interface DependencyRelationItem {
     taskId: number;
     taskName: string;
@@ -7,6 +9,7 @@ export interface DependencyRelationItem {
     theme: string;
     relatedInstance?: QuartzTaskStatus;
     missingTask?: boolean;
+    dependencyTypes: DependencyRelationType[];
 }
 
 export interface BlockingDependencyItem extends DependencyRelationItem {

@@ -19,7 +19,7 @@
 
     <select id="getFinishCount" resultType="integer">
         SELECT
-        count(1)
+        count(DISTINCT plan_id)
         FROM
         t_quartz_task_status t
         where status = 3
@@ -61,7 +61,24 @@
             t.remark,
             t.task_type,
             t.exe_path,
-            t.depend_id,
+            (
+                SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+                FROM t_quartz_task_dependency d
+                WHERE d.task_id = t.id
+                  AND d.dependency_type = 'DATA'
+            ) AS depend_id,
+            (
+                SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+                FROM t_quartz_task_dependency d
+                WHERE d.task_id = t.id
+                  AND d.dependency_type = 'DATA'
+            ) AS data_depend_id,
+            (
+                SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+                FROM t_quartz_task_dependency d
+                WHERE d.task_id = t.id
+                  AND d.dependency_type = 'CONTROL'
+            ) AS control_depend_id,
             t.datasource_id,
             ds.name AS datasource_name,
             t.task_system,
@@ -120,7 +137,24 @@
         t.remark,
         t.task_type,
         t.exe_path,
-        t.depend_id,
+        (
+            SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+            FROM t_quartz_task_dependency d
+            WHERE d.task_id = t.id
+              AND d.dependency_type = 'DATA'
+        ) AS depend_id,
+        (
+            SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+            FROM t_quartz_task_dependency d
+            WHERE d.task_id = t.id
+              AND d.dependency_type = 'DATA'
+        ) AS data_depend_id,
+        (
+            SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+            FROM t_quartz_task_dependency d
+            WHERE d.task_id = t.id
+              AND d.dependency_type = 'CONTROL'
+        ) AS control_depend_id,
         t.datasource_id,
         ds.name AS datasource_name,
         t.task_system,

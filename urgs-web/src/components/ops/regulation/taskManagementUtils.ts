@@ -14,6 +14,8 @@ export interface TaskFormValues {
     task_cron: string;
     offset?: number | null;
     depend_id?: string;
+    data_depend_id?: string;
+    control_depend_id?: string;
     period?: number | null;
     datasource_id?: number;
     script?: string;
@@ -180,7 +182,9 @@ export const getInitialFormValues = (task?: QuartzTask | null): TaskFormValues =
     remark: task?.remark || undefined,
     task_cron: task?.task_cron || '0 0 * * * ?',
     offset: task?.offset ?? null,
-    depend_id: task?.depend_id || undefined,
+    depend_id: task?.data_depend_id || task?.depend_id || undefined,
+    data_depend_id: task?.data_depend_id || task?.depend_id || undefined,
+    control_depend_id: task?.control_depend_id || undefined,
     period: task?.period ?? null,
     datasource_id: task?.datasource_id === null || task?.datasource_id === undefined
         ? undefined
@@ -261,7 +265,9 @@ export const normalizeQuartzTask = (item: QuartzTaskApiModel): QuartzTask => {
         task_type: toTaskTypeLabel(item.taskType),
         url: item.url ?? null,
         script: item.exePath ?? null,
-        depend_id: item.dependId ?? null,
+        depend_id: item.dataDependId ?? item.dependId ?? null,
+        data_depend_id: item.dataDependId ?? item.dependId ?? null,
+        control_depend_id: item.controlDependId ?? null,
         username: item.username ?? null,
         password: item.password ?? null,
         driver: item.driver ?? null,

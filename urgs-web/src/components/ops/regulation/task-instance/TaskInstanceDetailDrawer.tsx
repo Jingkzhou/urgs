@@ -32,11 +32,9 @@ interface TaskInstanceDetailDrawerProps {
     dependencyPanelData: DependencyInsightData | null;
     selectedInstanceLogs: QuartzTaskExecutionLog[];
     showImpactedOnly: boolean;
-    expandedImpactTaskIds: number[];
     onClose: () => void;
     onTabChange: (key: InstanceDetailTabKey) => void;
     onShowImpactedOnlyChange: (nextValue: boolean) => void;
-    onToggleImpactTaskExpanded: (taskId: number) => void;
     onLocateInstanceFromDependency: (instance: QuartzTaskStatus) => void;
 }
 
@@ -48,11 +46,9 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
     dependencyPanelData,
     selectedInstanceLogs,
     showImpactedOnly,
-    expandedImpactTaskIds,
     onClose,
     onTabChange,
     onShowImpactedOnlyChange,
-    onToggleImpactTaskExpanded,
     onLocateInstanceFromDependency,
 }) => {
     const logScrollRefs = useRef(new Map<number, HTMLDivElement | null>());
@@ -368,9 +364,7 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
                                         selectedInstance={selectedInstance}
                                         dependencyPanelData={dependencyPanelData}
                                         showImpactedOnly={showImpactedOnly}
-                                        expandedImpactTaskIds={expandedImpactTaskIds}
                                         onShowImpactedOnlyChange={onShowImpactedOnlyChange}
-                                        onToggleImpactTaskExpanded={onToggleImpactTaskExpanded}
                                         onLocateInstanceFromDependency={onLocateInstanceFromDependency}
                                     />
                                 ) : (

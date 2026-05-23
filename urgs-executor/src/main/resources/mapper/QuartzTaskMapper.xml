@@ -20,7 +20,20 @@
             SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
             FROM t_quartz_task_dependency d
             WHERE d.task_id = t.id
+              AND d.dependency_type = 'DATA'
         ) AS depend_id,
+        (
+            SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+            FROM t_quartz_task_dependency d
+            WHERE d.task_id = t.id
+              AND d.dependency_type = 'DATA'
+        ) AS data_depend_id,
+        (
+            SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+            FROM t_quartz_task_dependency d
+            WHERE d.task_id = t.id
+              AND d.dependency_type = 'CONTROL'
+        ) AS control_depend_id,
         t.period,
         t.task_system,
         t.theme,
@@ -54,10 +67,10 @@
     </select>
 
     <select id="getPreTaskIdsByTaskId" resultType="java.lang.Long">
-        SELECT pre_task_id
+        SELECT DISTINCT pre_task_id
         FROM t_quartz_task_dependency
         WHERE task_id = #{taskId}
-        ORDER BY id
+        ORDER BY pre_task_id
     </select>
 
     <select id="queryReadyWaitingTasks" resultType="com.example.executor.quartz.domain.entity.QuartzTaskEntity">

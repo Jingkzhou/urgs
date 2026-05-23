@@ -35,6 +35,12 @@ public class QuartzTaskStatusVO {
     @ApiModelProperty("依赖任务ID")
     private String dependId;
 
+    @ApiModelProperty("数据依赖任务ID")
+    private String dataDependId;
+
+    @ApiModelProperty("控制依赖任务ID")
+    private String controlDependId;
+
     @ApiModelProperty("任务类型")
     private String taskType;
 

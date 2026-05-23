@@ -12,6 +12,8 @@ export interface QuartzTask {
     url?: string | null;
     script?: string | null;
     depend_id?: string | null;
+    data_depend_id?: string | null;
+    control_depend_id?: string | null;
     username?: string | null;
     password?: string | null;
     driver?: string | null;

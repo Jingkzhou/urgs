@@ -14,6 +14,15 @@ export const parseDependIds = (dependId?: string | null): number[] => {
         .filter(id => Number.isInteger(id));
 };
 
+export const getDataDependIds = (task: QuartzTask): number[] =>
+    parseDependIds(task.data_depend_id ?? task.depend_id);
+
+export const getControlDependIds = (task: QuartzTask): number[] =>
+    parseDependIds(task.control_depend_id);
+
+export const getAllDependIds = (task: QuartzTask): number[] =>
+    Array.from(new Set([...getDataDependIds(task), ...getControlDependIds(task)]));
+
 export const formatDuration = (durationMs?: number | null) => {
     if (durationMs === undefined || durationMs === null) return '-';
     if (durationMs < 1000) return `${durationMs} ms`;
@@ -47,7 +56,9 @@ export const normalizeTask = (item: QuartzTaskApiModel): QuartzTask => {
         create_time: item.createTime || now,
         task_type: toTaskTypeLabel(item.taskType),
         script: item.exePath ?? null,
-        depend_id: item.dependId ?? null,
+        depend_id: item.dataDependId ?? item.dependId ?? null,
+        data_depend_id: item.dataDependId ?? item.dependId ?? null,
+        control_depend_id: item.controlDependId ?? null,
         datasource_id: Number.isFinite(datasourceId) ? datasourceId : null,
         datasource_name: item.datasourceName ?? null,
         period: item.period ?? null,

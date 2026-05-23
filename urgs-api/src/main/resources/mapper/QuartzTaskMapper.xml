@@ -20,7 +20,20 @@
             SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
             FROM t_quartz_task_dependency d
             WHERE d.task_id = t.id
+              AND d.dependency_type = 'DATA'
         ) AS dependId,
+        (
+            SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+            FROM t_quartz_task_dependency d
+            WHERE d.task_id = t.id
+              AND d.dependency_type = 'DATA'
+        ) AS dataDependId,
+        (
+            SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
+            FROM t_quartz_task_dependency d
+            WHERE d.task_id = t.id
+              AND d.dependency_type = 'CONTROL'
+        ) AS controlDependId,
         t.period,
         t.task_system AS taskSystem,
         t.theme,
@@ -118,10 +131,26 @@
     </select>
 
     <select id="getPreTaskIdsByTaskId" resultType="java.lang.Long">
-        SELECT pre_task_id
+        SELECT DISTINCT pre_task_id
         FROM t_quartz_task_dependency
         WHERE task_id = #{taskId}
-        ORDER BY id
+        ORDER BY pre_task_id
+    </select>
+
+    <select id="getPreTaskIdsByTaskIdAndType" resultType="java.lang.Long">
+        SELECT DISTINCT pre_task_id
+        FROM t_quartz_task_dependency
+        WHERE task_id = #{taskId}
+          AND dependency_type = #{dependencyType}
+        ORDER BY pre_task_id
+    </select>
+
+    <select id="getDownstreamTaskIdsByPreTaskIdAndType" resultType="java.lang.Long">
+        SELECT DISTINCT task_id
+        FROM t_quartz_task_dependency
+        WHERE pre_task_id = #{preTaskId}
+          AND dependency_type = #{dependencyType}
+        ORDER BY task_id
     </select>
 
     <select id="getPreTaskListByTaskId" resultType="com.example.urgs_api.quartz.domain.dto.QuartzTaskVO">
@@ -134,13 +163,35 @@
         ORDER BY d.id
     </select>
 
+    <select id="getPreTaskListByTaskIdAndType" resultType="com.example.urgs_api.quartz.domain.dto.QuartzTaskVO">
+        SELECT
+        <include refid="baseSql"/>
+        FROM t_quartz_task t
+        LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
+        INNER JOIN t_quartz_task_dependency d ON d.pre_task_id = t.id
+        WHERE d.task_id = #{taskId}
+          AND d.dependency_type = #{dependencyType}
+        ORDER BY d.id
+    </select>
+
     <delete id="deleteDependenciesByTaskId">
         DELETE FROM t_quartz_task_dependency
         WHERE task_id = #{taskId}
     </delete>
 
+    <delete id="deleteDependenciesByTaskIdAndType">
+        DELETE FROM t_quartz_task_dependency
+        WHERE task_id = #{taskId}
+          AND dependency_type = #{dependencyType}
+    </delete>
+
     <insert id="insertTaskDependency">
-        INSERT IGNORE INTO t_quartz_task_dependency(task_id, pre_task_id)
-        VALUES (#{taskId}, #{preTaskId})
+        INSERT IGNORE INTO t_quartz_task_dependency(task_id, pre_task_id, dependency_type)
+        VALUES (#{taskId}, #{preTaskId}, 'DATA')
+    </insert>
+
+    <insert id="insertTaskDependencyWithType">
+        INSERT IGNORE INTO t_quartz_task_dependency(task_id, pre_task_id, dependency_type)
+        VALUES (#{taskId}, #{preTaskId}, #{dependencyType})
     </insert>
 </mapper>

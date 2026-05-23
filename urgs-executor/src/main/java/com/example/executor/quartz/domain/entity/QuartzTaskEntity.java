@@ -13,6 +13,8 @@ public class QuartzTaskEntity {
     private Integer taskStatus;
     private String remark;
     private String dependId;
+    private String dataDependId;
+    private String controlDependId;
     private String exePath;
     private Integer taskType;
     private Long period;

@@ -1,5 +1,6 @@
 package com.example.urgs_api.quartz.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
 import com.example.urgs_api.issue.model.Issue;
@@ -34,6 +35,9 @@ import java.util.stream.Collectors;
 @Service
 public class QuartzTaskService {
 
+    private static final String DATA_DEPENDENCY_TYPE = "DATA";
+    private static final String CONTROL_DEPENDENCY_TYPE = "CONTROL";
+
     @Autowired
     private QuartzTaskDao quartzTaskDao;
 
@@ -56,9 +60,13 @@ public class QuartzTaskService {
         return ResponseDTO.succData(SmartPageUtil.convert2PageResult(pageParam));
     }
 
-    public ResponseDTO<List<QuartzTaskVO>> queryDependencies(Long taskId) {
+    public ResponseDTO<List<QuartzTaskVO>> queryDependencies(Long taskId, String dependencyType) {
         if (taskId == null) {
             return ResponseDTO.succData(Collections.emptyList());
+        }
+        String normalizedType = normalizeDependencyType(dependencyType);
+        if (normalizedType != null) {
+            return ResponseDTO.succData(quartzTaskDao.getPreTaskListByTaskIdAndType(taskId, normalizedType));
         }
         return ResponseDTO.succData(quartzTaskDao.getPreTaskListByTaskId(taskId));
     }
@@ -93,10 +101,14 @@ public class QuartzTaskService {
         QuartzTaskEntity taskEntity = SmartBeanUtil.copy(quartzTaskDTO, QuartzTaskEntity.class);
         taskEntity.setTaskStatus(quartzTaskDTO.getTaskStatus() == null ? TaskStatusEnum.NORMAL.getStatus() : quartzTaskDTO.getTaskStatus());
         taskEntity.setDependId(null);
+        taskEntity.setDataDependId(null);
+        taskEntity.setControlDependId(null);
         taskEntity.setUpdateTime(new Date());
         taskEntity.setCreateTime(new Date());
         quartzTaskDao.insert(taskEntity);
-        syncTaskDependencies(taskEntity.getId(), quartzTaskDTO.getDependId());
+        syncTaskDependencies(taskEntity.getId(), DATA_DEPENDENCY_TYPE,
+                firstNotBlank(quartzTaskDTO.getDataDependId(), quartzTaskDTO.getDependId()));
+        syncTaskDependencies(taskEntity.getId(), CONTROL_DEPENDENCY_TYPE, quartzTaskDTO.getControlDependId());
         return ResponseDTO.succ();
     }
 
@@ -108,9 +120,13 @@ public class QuartzTaskService {
         QuartzTaskEntity taskEntity = SmartBeanUtil.copy(quartzTaskDTO, QuartzTaskEntity.class);
         taskEntity.setTaskStatus(oldEntity.getTaskStatus());
         taskEntity.setDependId(null);
+        taskEntity.setDataDependId(null);
+        taskEntity.setControlDependId(null);
         taskEntity.setUpdateTime(new Date());
         quartzTaskDao.updateById(taskEntity);
-        syncTaskDependencies(taskEntity.getId(), quartzTaskDTO.getDependId());
+        syncTaskDependencies(taskEntity.getId(), DATA_DEPENDENCY_TYPE,
+                firstNotBlank(quartzTaskDTO.getDataDependId(), quartzTaskDTO.getDependId()));
+        syncTaskDependencies(taskEntity.getId(), CONTROL_DEPENDENCY_TYPE, quartzTaskDTO.getControlDependId());
         return ResponseDTO.succ();
     }
 
@@ -167,7 +183,11 @@ public class QuartzTaskService {
             return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "部分任务实例不存在或已被删除，请刷新后重试");
         }
 
-        List<Long> invalidIds = statusList.stream()
+        List<QuartzTaskStatusEntity> executeStatusList = Boolean.TRUE.equals(batchExecuteDTO.getWithDataDownstream())
+                ? collectDataRerunStatusList(statusList)
+                : statusList;
+
+        List<Long> invalidIds = executeStatusList.stream()
                 .filter(item -> item.getStatus() != 3 && item.getStatus() != 4)
                 .map(QuartzTaskStatusEntity::getId)
                 .collect(Collectors.toList());
@@ -175,15 +195,28 @@ public class QuartzTaskService {
             return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "批量执行仅支持失败或已完成实例，存在非法状态实例: " + invalidIds);
         }
 
-        quartzTaskStatusDao.batchResetToWaiting(statusIds, "实例已批量重置为等待执行。");
+        List<Long> executeStatusIds = executeStatusList.stream()
+                .map(QuartzTaskStatusEntity::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (executeStatusIds.isEmpty()) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "未找到可重跑的任务实例");
+        }
+        quartzTaskStatusDao.batchResetToWaiting(executeStatusIds,
+                Boolean.TRUE.equals(batchExecuteDTO.getWithDataDownstream())
+                        ? "实例已按数据依赖链路重置为等待执行。"
+                        : "实例已批量重置为等待执行。");
 
-        for (QuartzTaskStatusEntity statusEntity : statusList) {
-            ResponseDTO<String> triggerResult = executorClientService.triggerNow(statusEntity.getPlanId(), statusEntity.getDataDate());
+        for (QuartzTaskStatusEntity statusEntity : executeStatusList) {
+            ResponseDTO<String> triggerResult = executorClientService.triggerNow(statusEntity.getPlanId(), statusEntity.getDataDate(), "rerun");
             if (!triggerResult.isSuccess()) {
                 log.warn("triggerNow failed after batchExecute, planId={}, dataDate={}, msg={}", statusEntity.getPlanId(), statusEntity.getDataDate(), triggerResult.getMsg());
             }
         }
-        return ResponseDTO.succ();
+        return ResponseDTO.succData(Boolean.TRUE.equals(batchExecuteDTO.getWithDataDownstream())
+                ? "已按数据依赖链路重置并触发 " + executeStatusIds.size() + " 条实例"
+                : "已重置并触发 " + executeStatusIds.size() + " 条实例");
     }
 
     public ResponseDTO<String> triggerNow(QuartzTriggerNowDTO dto) {
@@ -529,6 +562,50 @@ public class QuartzTaskService {
         return result;
     }
 
+    private List<QuartzTaskStatusEntity> collectDataRerunStatusList(List<QuartzTaskStatusEntity> rootStatusList) {
+        Map<String, QuartzTaskStatusEntity> statusMap = new LinkedHashMap<>();
+        for (QuartzTaskStatusEntity rootStatus : rootStatusList) {
+            collectDataRerunStatus(rootStatus.getPlanId(), rootStatus.getDataDate(), statusMap, new HashSet<>());
+        }
+        return new ArrayList<>(statusMap.values());
+    }
+
+    private void collectDataRerunStatus(Long taskId, String dataDate, Map<String, QuartzTaskStatusEntity> statusMap, Set<Long> visitedTaskIds) {
+        if (taskId == null || dataDate == null || !visitedTaskIds.add(taskId)) {
+            return;
+        }
+
+        QuartzTaskStatusEntity currentStatus = quartzTaskStatusDao.selectOne(new QueryWrapper<QuartzTaskStatusEntity>()
+                .eq("plan_id", taskId)
+                .eq("data_date", dataDate)
+                .last("LIMIT 1"));
+        if (currentStatus != null) {
+            statusMap.put(taskId + "_" + dataDate, currentStatus);
+        }
+
+        for (Long downstreamTaskId : quartzTaskDao.getDownstreamTaskIdsByPreTaskIdAndType(taskId, DATA_DEPENDENCY_TYPE)) {
+            collectDataRerunStatus(downstreamTaskId, dataDate, statusMap, visitedTaskIds);
+        }
+    }
+
+    private String normalizeDependencyType(String dependencyType) {
+        if (dependencyType == null || dependencyType.trim().isEmpty()) {
+            return null;
+        }
+        String normalized = dependencyType.trim().toUpperCase(Locale.ROOT);
+        if (DATA_DEPENDENCY_TYPE.equals(normalized) || CONTROL_DEPENDENCY_TYPE.equals(normalized)) {
+            return normalized;
+        }
+        return null;
+    }
+
+    private String firstNotBlank(String primary, String fallback) {
+        if (primary != null && !primary.trim().isEmpty()) {
+            return primary;
+        }
+        return fallback;
+    }
+
     private QuartzTaskEntity getByTaskId(Long taskId) {
         return quartzTaskDao.selectById(taskId);
     }
@@ -563,11 +640,11 @@ public class QuartzTaskService {
         return vo;
     }
 
-    private void syncTaskDependencies(Long taskId, String dependIdStr) {
-        quartzTaskDao.deleteDependenciesByTaskId(taskId);
+    private void syncTaskDependencies(Long taskId, String dependencyType, String dependIdStr) {
+        quartzTaskDao.deleteDependenciesByTaskIdAndType(taskId, dependencyType);
         for (Long preTaskId : parseDependIds(dependIdStr)) {
             if (!taskId.equals(preTaskId)) {
-                quartzTaskDao.insertTaskDependency(taskId, preTaskId);
+                quartzTaskDao.insertTaskDependencyWithType(taskId, preTaskId, dependencyType);
             }
         }
     }
