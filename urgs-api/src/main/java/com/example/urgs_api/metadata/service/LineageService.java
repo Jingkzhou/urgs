@@ -24,6 +24,8 @@ import com.example.urgs_api.metadata.dto.LineageExportDTO;
 public class LineageService {
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(LineageService.class);
+    private static final int CLEAR_RELATIONSHIP_BATCH_SIZE = 2000;
+    private static final int CLEAR_NODE_BATCH_SIZE = 2000;
 
     // 所有血缘关系类型
     private static final List<String> ALL_LINEAGE_RELATION_TYPES = Arrays.asList(
@@ -38,19 +40,28 @@ public class LineageService {
     public Map<String, Object> clearAll() {
         Map<String, Object> result = new HashMap<>();
         try (Session session = driver.session()) {
-            // 分批删除避免内存溢出
-            String deleteQuery = "MATCH (n) WITH n LIMIT 10000 DETACH DELETE n RETURN count(*) AS deleted";
+            // 先分批删除关系，再删除孤立节点，避免 DETACH DELETE 在高密度图上一批事务占用过多内存。
+            String deleteRelationshipsQuery = "MATCH ()-[r]->() WITH r LIMIT $batchSize DELETE r RETURN count(*) AS deleted";
+            String deleteNodesQuery = "MATCH (n) WITH n LIMIT $batchSize DELETE n RETURN count(*) AS deleted";
+            long totalRelationshipsDeleted = 0;
             long totalDeleted = 0;
             while (true) {
-                Result res = session.run(deleteQuery);
+                Result res = session.run(deleteRelationshipsQuery, Map.of("batchSize", CLEAR_RELATIONSHIP_BATCH_SIZE));
+                long deleted = res.single().get("deleted").asLong();
+                totalRelationshipsDeleted += deleted;
+                if (deleted == 0) break;
+            }
+            while (true) {
+                Result res = session.run(deleteNodesQuery, Map.of("batchSize", CLEAR_NODE_BATCH_SIZE));
                 long deleted = res.single().get("deleted").asLong();
                 totalDeleted += deleted;
                 if (deleted == 0) break;
             }
-            log.info("Neo4j 数据库已清空，共删除 {} 个节点", totalDeleted);
+            log.info("Neo4j 数据库已清空，共删除 {} 个节点、{} 条关系", totalDeleted, totalRelationshipsDeleted);
             result.put("success", true);
-            result.put("message", "数据库已清空，共删除 " + totalDeleted + " 个节点");
+            result.put("message", "数据库已清空，共删除 " + totalDeleted + " 个节点、" + totalRelationshipsDeleted + " 条关系");
             result.put("deletedCount", totalDeleted);
+            result.put("deletedRelationshipCount", totalRelationshipsDeleted);
         } catch (Exception e) {
             log.error("清空 Neo4j 数据库失败", e);
             result.put("success", false);

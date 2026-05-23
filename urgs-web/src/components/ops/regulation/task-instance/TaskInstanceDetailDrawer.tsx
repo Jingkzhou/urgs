@@ -1,10 +1,12 @@
 import React, { useEffect, useRef } from 'react';
-import { Drawer, Tabs, Tag } from 'antd';
+import { Drawer, Tabs, Tag, message } from 'antd';
 import {
     Activity,
     AlertCircle,
     CalendarRange,
     Clock3,
+    Copy,
+    Download,
     GitBranch,
 } from 'lucide-react';
 import dayjs from 'dayjs';
@@ -62,6 +64,93 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
         element.scrollTop = element.scrollHeight;
     };
 
+    const getTaskName = () => selectedTask?.task_name || taskNameMap.get(selectedInstance?.plan_id || 0) || '-';
+
+    const normalizeFilenamePart = (value: string | number | null | undefined) =>
+        String(value ?? 'unknown')
+            .trim()
+            .replace(/[\\/:*?"<>|]/g, '_')
+            .replace(/\s+/g, '_') || 'unknown';
+
+    const buildLogText = (log: QuartzTaskExecutionLog) => {
+        const mappedStatus = instanceStatusMap[log.status] || instanceStatusMap[1];
+        return [
+            `日志 #${log.id}`,
+            `任务名称: ${getTaskName()}`,
+            `实例ID: ${selectedInstance?.id ?? '-'}`,
+            `计划ID: ${selectedInstance?.plan_id ?? log.task_id ?? '-'}`,
+            `数据日期: ${selectedInstance?.data_date || log.data_date || '-'}`,
+            `触发类型: ${log.trigger_type || '-'}`,
+            `状态: ${mappedStatus?.label || log.status || '-'}`,
+            `开始时间: ${log.begin_time || '-'}`,
+            `结束时间: ${log.end_time || '-'}`,
+            `耗时: ${formatDuration(log.duration_ms)}`,
+            `创建时间: ${log.create_time || '-'}`,
+            '',
+            '执行摘要:',
+            log.summary || '-',
+            '',
+            '逐步日志:',
+            log.content || '无日志明细',
+        ].join('\n');
+    };
+
+    const buildAllLogsText = () => {
+        if (selectedInstanceLogs.length === 0) {
+            return selectedInstance?.msg || '';
+        }
+        return selectedInstanceLogs.map(buildLogText).join('\n\n---\n\n');
+    };
+
+    const copyText = async (text: string, successMessage: string) => {
+        if (!text.trim()) {
+            message.warning('暂无可复制日志');
+            return;
+        }
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.setAttribute('readonly', 'true');
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+            }
+            message.success(successMessage);
+        } catch {
+            message.error('复制日志失败');
+        }
+    };
+
+    const downloadText = (text: string, filename: string) => {
+        if (!text.trim()) {
+            message.warning('暂无可下载日志');
+            return;
+        }
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    const buildLogFilename = (log?: QuartzTaskExecutionLog) => {
+        const taskName = normalizeFilenamePart(getTaskName());
+        const instanceId = normalizeFilenamePart(selectedInstance?.id);
+        const dataDate = normalizeFilenamePart(selectedInstance?.data_date || log?.data_date);
+        const logId = log ? `_log_${normalizeFilenamePart(log.id)}` : '';
+        return `task_instance_${instanceId}_${taskName}_${dataDate}${logId}.log`;
+    };
+
     useEffect(() => {
         if (!selectedInstance || instanceDetailTabKey !== 'runtimeLog' || !shouldFollowLogTailRef.current) {
             return;
@@ -80,6 +169,9 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
             selectedInstanceLogs.forEach(log => scrollLogToTail(logScrollRefs.current.get(log.id) || null));
         });
     }, [instanceDetailTabKey, selectedInstance?.id]);
+
+    const allLogsText = buildAllLogsText();
+    const hasLogExportText = allLogsText.trim().length > 0;
 
     return (
         <Drawer
@@ -431,12 +523,34 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
                                 children: (
                                     <div className="space-y-4">
                                         <section className={detailSectionClass}>
-                                            <div className={detailSectionHeaderClass}>
-                                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                                                    <Activity size={16} className="text-red-500" />
-                                                    后台执行日志
+                                            <div className={`${detailSectionHeaderClass} flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between`}>
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                                                        <Activity size={16} className="text-red-500" />
+                                                        后台执行日志
+                                                    </div>
+                                                    <div className="mt-1 text-xs text-slate-500">按当前实例展示后台执行记录与逐步日志内容。</div>
                                                 </div>
-                                                <div className="mt-1 text-xs text-slate-500">按当前实例展示后台执行记录与逐步日志内容。</div>
+                                                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => copyText(allLogsText, '全部日志已复制')}
+                                                        disabled={!hasLogExportText}
+                                                        className="inline-flex h-8 items-center gap-1.5 rounded border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                                                    >
+                                                        <Copy size={14} />
+                                                        复制全部
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => downloadText(allLogsText, buildLogFilename())}
+                                                        disabled={!hasLogExportText}
+                                                        className="inline-flex h-8 items-center gap-1.5 rounded border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                                                    >
+                                                        <Download size={14} />
+                                                        下载全部
+                                                    </button>
+                                                </div>
                                             </div>
                                             <div className={detailSectionBodyClass}>
                                                 {selectedInstanceLogs.length === 0 ? (
@@ -467,6 +581,22 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
                                                                             日志 #{log.id}
                                                                         </div>
                                                                         <div className="flex flex-wrap items-center gap-2 text-xs">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => copyText(buildLogText(log), `日志 #${log.id} 已复制`)}
+                                                                                className="inline-flex h-7 items-center gap-1 rounded border border-slate-200 bg-white px-2 font-semibold text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                                                                            >
+                                                                                <Copy size={13} />
+                                                                                复制
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => downloadText(buildLogText(log), buildLogFilename(log))}
+                                                                                className="inline-flex h-7 items-center gap-1 rounded border border-slate-200 bg-white px-2 font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
+                                                                            >
+                                                                                <Download size={13} />
+                                                                                下载
+                                                                            </button>
                                                                             <span className={`inline-flex rounded-full border px-2 py-1 font-semibold ${mappedStatus.className}`}>
                                                                                 {mappedStatus.label}
                                                                             </span>

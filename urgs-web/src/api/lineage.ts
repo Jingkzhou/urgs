@@ -1,4 +1,4 @@
-import { get, post, put } from '@/utils/request';
+import { del, get, post, put } from '@/utils/request';
 
 export interface LineageSearchTableItem {
     ownerName: string;
@@ -347,6 +347,11 @@ export const getLineageReviewTasks = (params?: { analysisRecordId?: string; stat
 
 export const triggerLineageReview = (data: { analysisRecordId: string; forceRerun?: boolean }) =>
     post<{ success: boolean; message: string }>('/api/metadata/lineage/review/tasks/trigger', data);
+
+export const clearLineageReviewHistory = () =>
+    del<{ success: boolean; message: string; taskCount: number; issueCount: number; cacheCount: number }>(
+        '/api/metadata/lineage/review/history'
+    );
 
 export const getLineageReviewTask = (taskId: number) =>
     get<LineageReviewTask>(`/api/metadata/lineage/review/tasks/${taskId}`);

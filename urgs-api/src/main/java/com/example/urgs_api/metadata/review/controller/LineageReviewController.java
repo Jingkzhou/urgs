@@ -5,6 +5,7 @@ import com.example.urgs_api.metadata.review.dto.LineageReviewDecisionRequest;
 import com.example.urgs_api.metadata.review.dto.LineageReviewTriggerRequest;
 import com.example.urgs_api.metadata.review.entity.LineageReviewIssue;
 import com.example.urgs_api.metadata.review.entity.LineageReviewTask;
+import com.example.urgs_api.metadata.review.service.LineageReviewMaintenanceService;
 import com.example.urgs_api.metadata.review.service.LineageReviewService;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
@@ -22,9 +23,13 @@ import java.util.Map;
 public class LineageReviewController {
 
     private final LineageReviewService lineageReviewService;
+    private final LineageReviewMaintenanceService maintenanceService;
 
-    public LineageReviewController(LineageReviewService lineageReviewService) {
+    public LineageReviewController(
+            LineageReviewService lineageReviewService,
+            LineageReviewMaintenanceService maintenanceService) {
         this.lineageReviewService = lineageReviewService;
+        this.maintenanceService = maintenanceService;
     }
 
     @GetMapping("/records")
@@ -47,6 +52,12 @@ public class LineageReviewController {
         return ResponseEntity.ok(lineageReviewService.triggerByAnalysisRecord(
                 request.getAnalysisRecordId(),
                 Boolean.TRUE.equals(request.getForceRerun())));
+    }
+
+    @DeleteMapping("/history")
+    @RequirePermission("version:ai:trigger")
+    public ResponseEntity<Map<String, Object>> clearHistory() {
+        return ResponseEntity.ok(maintenanceService.clearHistory());
     }
 
     @GetMapping("/tasks/{taskId}")

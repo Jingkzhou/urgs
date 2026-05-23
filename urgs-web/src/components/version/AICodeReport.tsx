@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Descriptions, Drawer, Empty, message, Space, Spin, Tag } from 'antd';
+import { Button, Card, Descriptions, Drawer, Empty, message, Popconfirm, Space, Spin, Tag } from 'antd';
 import {
+    clearLineageReviewHistory,
     decideLineageReviewIssue,
     downloadLineageReviewReportMarkdown,
     getLineageReviewIssues,
@@ -44,6 +45,7 @@ const AICodeReport: React.FC = () => {
     const [sqlPreviewLoading, setSqlPreviewLoading] = useState(false);
     const [sqlPreviewTask, setSqlPreviewTask] = useState<LineageReviewTask | null>(null);
     const [reportDownloading, setReportDownloading] = useState(false);
+    const [clearHistoryLoading, setClearHistoryLoading] = useState(false);
     const [sqlPreviews, setSqlPreviews] = useState<Array<{
         snippet: string;
         sourceFiles: string[];
@@ -200,6 +202,24 @@ const AICodeReport: React.FC = () => {
         }
     };
 
+    const handleClearHistory = async () => {
+        setClearHistoryLoading(true);
+        try {
+            const result = await clearLineageReviewHistory();
+            setTasks([]);
+            setIssues([]);
+            setTaskSummaryMap({});
+            setSelectedTaskId(undefined);
+            setSelectedIssue(null);
+            await loadTaskSummaries();
+            message.success(result.message || '已清空历史校验结果');
+        } catch (error: any) {
+            message.error(error?.message || '清空历史校验结果失败');
+        } finally {
+            setClearHistoryLoading(false);
+        }
+    };
+
     const handleDecision = async (reviewStatus: string) => {
         if (!selectedIssue) {
             return;
@@ -264,6 +284,26 @@ const AICodeReport: React.FC = () => {
 
     return (
         <div className="space-y-6">
+            <div className="flex justify-end">
+                <Popconfirm
+                    title="清空历史校验结果"
+                    description="将删除所有事后校验任务、疑点和 AI 校验缓存，血缘分析批次会保留。"
+                    okText="清空"
+                    cancelText="取消"
+                    okButtonProps={{ danger: true, loading: clearHistoryLoading }}
+                    onConfirm={handleClearHistory}
+                >
+                    <Button
+                        danger
+                        loading={clearHistoryLoading}
+                        disabled={!canTrigger}
+                        title={canTrigger ? '' : '缺少 version:ai:trigger 权限'}
+                    >
+                        清空历史
+                    </Button>
+                </Popconfirm>
+            </div>
+
             <ReviewMetricCards
                 records={records}
                 tasks={tasks}
