@@ -48,7 +48,7 @@ const AICodeReport: React.FC = () => {
     const [selectedRecordId, setSelectedRecordId] = useState<string>();
     const [selectedTaskId, setSelectedTaskId] = useState<number>();
     const [severityFilter, setSeverityFilter] = useState<string>();
-    const [reviewStatusFilter, setReviewStatusFilter] = useState<string>();
+    const [reviewStatusFilter, setReviewStatusFilter] = useState<string>('PENDING');
     const [searchTerm, setSearchTerm] = useState('');
     const [recordPage, setRecordPage] = useState(1);
     const [recordPageSize, setRecordPageSize] = useState(6);
@@ -129,6 +129,67 @@ const AICodeReport: React.FC = () => {
         link.click();
         document.body.removeChild(link);
         window.URL.revokeObjectURL(url);
+    };
+
+    const normalizeMarkdownValue = (value?: string | number | null) => {
+        if (value === undefined || value === null || value === '') {
+            return '-';
+        }
+        return String(value);
+    };
+
+    const appendMarkdownList = (lines: string[], title: string, items?: string[]) => {
+        lines.push(`## ${title}`, '');
+        if (!items || items.length === 0) {
+            lines.push('- -', '');
+            return;
+        }
+        items.forEach(item => lines.push(`- ${item}`));
+        lines.push('');
+    };
+
+    const buildIssueMarkdownReport = (issue: LineageReviewIssue) => {
+        const target = `${issue.tableName || '-'}${issue.columnName ? `.${issue.columnName}` : ''}`;
+        const ruleHits = (issue.ruleHits || []).map(item => `${toDisplayLabel(item, ruleHitLabelMap)} (${item})`);
+        const lines = [
+            `# 血缘疑点详情 - ${target}`,
+            '',
+            '## 基础信息',
+            '',
+            `- 目标对象: ${target}`,
+            `- 对象类型: ${normalizeMarkdownValue(issue.objectType)}`,
+            `- 疑点类型: ${toDisplayLabel(issue.issueType, issueTypeLabelMap)} (${normalizeMarkdownValue(issue.issueType)})`,
+            `- 严重级别: ${toDisplayLabel(issue.severity, severityLabelMap)} (${normalizeMarkdownValue(issue.severity)})`,
+            `- AI 判定: ${toDisplayLabel(issue.verdict, verdictLabelMap)} / ${Number(issue.confidence || 0).toFixed(2)}`,
+            `- 人工状态: ${toDisplayLabel(issue.reviewStatus, reviewStatusLabelMap, '待处理')}`,
+            `- 原因说明: ${normalizeMarkdownValue(issue.reason)}`,
+            `- 确认问题类型: ${toDisplayLabel(issue.confirmedProblemType, confirmedProblemTypeLabelMap)}`,
+            `- 确认问题描述: ${normalizeMarkdownValue(issue.confirmedProblemDescription)}`,
+            `- 人工备注: ${normalizeMarkdownValue(issue.reviewerNote)}`,
+            ''
+        ];
+        appendMarkdownList(lines, '规则命中', ruleHits);
+        appendMarkdownList(lines, '建议来源', issue.suggestedSources);
+        appendMarkdownList(lines, '证据引用', issue.evidenceRefs);
+        lines.push('## 局部证据包', '', '```json', JSON.stringify(issue.graphSnapshot || {}, null, 2), '```', '');
+        return lines.join('\n');
+    };
+
+    const buildIssueMarkdownFileName = (issue: LineageReviewIssue) => {
+        const target = `${issue.tableName || 'unknown'}${issue.columnName ? `_${issue.columnName}` : ''}`;
+        const safeTarget = target.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '_').slice(0, 120);
+        return `lineage-review-issue-${issue.id || 'detail'}-${safeTarget}.md`;
+    };
+
+    const handleDownloadIssueMarkdown = () => {
+        if (!selectedIssue) {
+            return;
+        }
+        const blob = new Blob(['\uFEFF', buildIssueMarkdownReport(selectedIssue)], {
+            type: 'text/markdown;charset=utf-8'
+        });
+        downloadBlob(blob, buildIssueMarkdownFileName(selectedIssue));
+        message.success('疑点 Markdown 报告下载开始');
     };
 
     const loadTaskSummaries = async () => {
@@ -486,6 +547,7 @@ const AICodeReport: React.FC = () => {
                         taskPage={taskPage}
                         taskPageSize={taskPageSize}
                         getTaskSourceMeta={task => buildTaskSourceMeta(task, records)}
+                        onRefresh={() => loadTasks(selectedRecordId)}
                         onForceRerun={() => handleTrigger(true)}
                         onDownloadMarkdown={handleDownloadMarkdownReport}
                         onOpenSqlPreview={handleOpenSqlPreview}
@@ -521,6 +583,9 @@ const AICodeReport: React.FC = () => {
                 extra={
                     selectedIssue && (
                         <Space>
+                            <Button size="small" onClick={handleDownloadIssueMarkdown}>
+                                下载 Markdown
+                            </Button>
                             <Button
                                 size="small"
                                 loading={decisionLoading === 'CONFIRMED'}

@@ -67,7 +67,7 @@ public class LineageReviewTaskSummaryService {
         int ignored = 0;
 
         for (LineageReviewIssue issue : issues) {
-            String status = normalizeReviewStatus(issue.getReviewStatus());
+            String status = normalizeEffectiveReviewStatus(issue);
             switch (status) {
                 case "CONFIRMED" -> confirmed++;
                 case "FALSE_POSITIVE" -> falsePositive++;
@@ -88,6 +88,13 @@ public class LineageReviewTaskSummaryService {
         task.setTotalReviewIssueCount(total);
         task.setReviewCompletionRate(total == 0 ? terminalProgress(task) : percent(reviewed, total));
         task.setExecutionProgressRate(resolveExecutionProgress(task));
+    }
+
+    private String normalizeEffectiveReviewStatus(LineageReviewIssue issue) {
+        if (issue != null && "REJECTED".equalsIgnoreCase(issue.getVerdict())) {
+            return "FALSE_POSITIVE";
+        }
+        return normalizeReviewStatus(issue == null ? null : issue.getReviewStatus());
     }
 
     private String normalizeReviewStatus(String value) {

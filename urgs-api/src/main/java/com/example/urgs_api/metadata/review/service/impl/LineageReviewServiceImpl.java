@@ -147,6 +147,9 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         query.eq(StringUtils.hasText(severity), LineageReviewIssue::getSeverity, severity);
         query.eq(StringUtils.hasText(issueType), LineageReviewIssue::getIssueType, issueType);
         query.eq(StringUtils.hasText(reviewStatus), LineageReviewIssue::getReviewStatus, reviewStatus);
+        if ("PENDING".equalsIgnoreCase(reviewStatus)) {
+            query.ne(LineageReviewIssue::getVerdict, "REJECTED");
+        }
         query.orderByDesc(LineageReviewIssue::getSeverity)
                 .orderByDesc(LineageReviewIssue::getConfidence)
                 .orderByDesc(LineageReviewIssue::getCreateTime);
@@ -454,7 +457,6 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                     try {
                         LineageReviewIssue issue = buildIssueDraft(task, object);
                         if (issue == null) {
-                            processed++;
                             continue;
                         }
                         boolean useAi = shouldUseAi(issue, aiCallCount);
@@ -475,6 +477,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                         } else {
                             downgradeRuleOnlyIssue(issue);
                         }
+                        applyAutomaticReviewStatus(issue);
                         issue.setTaskId(task.getId());
                         issue.setAnalysisRecordId(task.getAnalysisRecordId());
                         issue.setRepoId(task.getRepoId());
@@ -540,7 +543,8 @@ public class LineageReviewServiceImpl implements LineageReviewService {
 
     private void updateTaskProgress(LineageReviewTask task, int processed, int issueCount,
             int failedCount, int aiCallCount, int cacheHits, int batchCount) {
-        task.setProcessedCount(processed);
+        int objectCount = task.getObjectCount() == null ? 0 : task.getObjectCount();
+        task.setProcessedCount(objectCount > 0 ? Math.min(processed, objectCount) : processed);
         task.setIssueCount(issueCount);
         task.setFailedCount(failedCount);
         task.setAiCallCount(aiCallCount);
@@ -924,11 +928,15 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             reason = "字段仅存在间接依赖，缺少直接派生关系";
         }
 
-        if (distinctSources.size() > 8) {
+        boolean tooManyColumnSources = columnName != null && distinctSources.size() > 8;
+        boolean tooManyTableSources = columnName == null && sourceTables.size() > 5 && distinctSources.size() > 16;
+        if (tooManyColumnSources || tooManyTableSources) {
             issueType = issueType == null ? "OVER_CONNECTED" : issueType;
             severity = "HIGH";
             ruleHits.add("TOO_MANY_SOURCES");
-            reason = "单个目标对象关联来源过多，可能存在过连或别名解析异常";
+            reason = columnName == null
+                    ? "表级目标关联来源表和字段均过多，可能存在过连或别名解析异常"
+                    : "单个目标字段关联来源过多，可能存在过连或别名解析异常";
         }
 
         if (columnName != null && sourceTables.size() > 1 && upstreamRels.stream()
@@ -1022,6 +1030,15 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         issue.setVerdict("NEEDS_REVIEW");
         issue.setConfidence(BigDecimal.valueOf(0.58).setScale(4, RoundingMode.HALF_UP));
         issue.setReason(issue.getReason() + "；当前按规则结果输出，未触发 AI 复核");
+    }
+
+    private void applyAutomaticReviewStatus(LineageReviewIssue issue) {
+        if ("REJECTED".equalsIgnoreCase(issue.getVerdict())) {
+            issue.setReviewStatus("FALSE_POSITIVE");
+            if (!StringUtils.hasText(issue.getReviewerNote())) {
+                issue.setReviewerNote("AI 判定无问题，自动排除人工待处理");
+            }
+        }
     }
 
     private void applyVerdict(LineageReviewIssue issue, LineageReviewAIVerdict verdict) {

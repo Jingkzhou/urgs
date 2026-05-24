@@ -2,7 +2,7 @@ import React from 'react';
 import { Alert, Button, Card, Progress, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { LineageAnalysisRecordItem, LineageReviewTask } from '@/api/lineage';
-import { Activity, Download } from 'lucide-react';
+import { Activity, Download, RefreshCw } from 'lucide-react';
 import { statusColorMap } from './reviewConstants';
 import {
     buildShardLabel,
@@ -29,6 +29,7 @@ interface ReviewTaskTableProps {
     taskPage: number;
     taskPageSize: number;
     getTaskSourceMeta: (task: LineageReviewTask) => TaskSourceMeta;
+    onRefresh: () => void;
     onForceRerun: () => void;
     onDownloadMarkdown: () => void;
     onOpenSqlPreview: (task: LineageReviewTask) => void;
@@ -49,6 +50,7 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
     taskPage,
     taskPageSize,
     getTaskSourceMeta,
+    onRefresh,
     onForceRerun,
     onDownloadMarkdown,
     onOpenSqlPreview,
@@ -108,11 +110,15 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
                 const reviewRate = getTaskReviewRate(record);
                 const reviewed = getTaskReviewedTotal(record);
                 const issueTotal = getTaskIssueTotal(record);
+                const executionTotal = record.objectCount || 0;
+                const executionProcessed = executionTotal > 0
+                    ? Math.min(record.processedCount || 0, executionTotal)
+                    : (record.processedCount || 0);
                 return (
                     <div className="space-y-2">
                         <div>
                             <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
-                                <span>执行 {record.processedCount || 0}/{record.objectCount || '-'}</span>
+                                <span>执行 {executionProcessed}/{record.objectCount || '-'}</span>
                                 <span>{executionRate}%</span>
                             </div>
                             <Progress percent={executionRate} size="small" showInfo={false} />
@@ -159,6 +165,15 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
             }
             extra={
                 <Space>
+                    <Button
+                        size="small"
+                        icon={<RefreshCw size={14} />}
+                        loading={loading}
+                        disabled={!selectedRecord}
+                        onClick={onRefresh}
+                    >
+                        刷新
+                    </Button>
                     <Button
                         size="small"
                         loading={triggerLoading}
