@@ -6,4 +6,7 @@ import lombok.Data;
 public class LineageReviewDecisionRequest {
     private String reviewStatus;
     private String reviewerNote;
+    private String falsePositiveReason;
+    private String confirmedProblemType;
+    private String confirmedProblemDescription;
 }

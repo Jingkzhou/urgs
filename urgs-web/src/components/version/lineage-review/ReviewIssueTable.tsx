@@ -2,7 +2,15 @@ import React from 'react';
 import { Card, Input, Select, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { LineageReviewIssue } from '@/api/lineage';
-import { reviewStatusColorMap, severityColorMap } from './reviewConstants';
+import {
+    issueTypeLabelMap,
+    reviewStatusColorMap,
+    reviewStatusLabelMap,
+    severityColorMap,
+    severityLabelMap,
+    toDisplayLabel,
+    verdictLabelMap
+} from './reviewConstants';
 
 const { Paragraph } = Typography;
 
@@ -49,13 +57,17 @@ const ReviewIssueTable: React.FC<ReviewIssueTableProps> = ({
             title: '疑点类型',
             dataIndex: 'issueType',
             width: 180,
-            render: (value?: string) => <Tag>{value || '-'}</Tag>
+            render: (value?: string) => <Tag>{toDisplayLabel(value, issueTypeLabelMap)}</Tag>
         },
         {
             title: '严重级别',
             dataIndex: 'severity',
             width: 110,
-            render: (value?: string) => <Tag color={severityColorMap[value || ''] || 'default'}>{value || '-'}</Tag>
+            render: (value?: string) => (
+                <Tag color={severityColorMap[value || ''] || 'default'}>
+                    {toDisplayLabel(value, severityLabelMap)}
+                </Tag>
+            )
         },
         {
             title: 'AI 判定',
@@ -63,7 +75,9 @@ const ReviewIssueTable: React.FC<ReviewIssueTableProps> = ({
             width: 150,
             render: (_, record) => (
                 <div>
-                    <div className="text-sm font-medium text-slate-700">{record.verdict || '-'}</div>
+                    <div className="text-sm font-medium text-slate-700">
+                        {toDisplayLabel(record.verdict, verdictLabelMap)}
+                    </div>
                     <div className="text-xs text-slate-400">置信度 {Number(record.confidence || 0).toFixed(2)}</div>
                 </div>
             )
@@ -72,7 +86,11 @@ const ReviewIssueTable: React.FC<ReviewIssueTableProps> = ({
             title: '人工状态',
             dataIndex: 'reviewStatus',
             width: 130,
-            render: (value?: string) => <Tag color={reviewStatusColorMap[value || ''] || 'default'}>{value || '-'}</Tag>
+            render: (value?: string) => (
+                <Tag color={reviewStatusColorMap[value || ''] || 'default'}>
+                    {toDisplayLabel(value, reviewStatusLabelMap)}
+                </Tag>
+            )
         },
         {
             title: '原因摘要',
@@ -106,9 +124,9 @@ const ReviewIssueTable: React.FC<ReviewIssueTableProps> = ({
                         value={severityFilter}
                         onChange={onSeverityChange}
                         options={[
-                            { label: 'HIGH', value: 'HIGH' },
-                            { label: 'MEDIUM', value: 'MEDIUM' },
-                            { label: 'LOW', value: 'LOW' }
+                            { label: '高', value: 'HIGH' },
+                            { label: '中', value: 'MEDIUM' },
+                            { label: '低', value: 'LOW' }
                         ]}
                     />
                     <Select
@@ -118,11 +136,11 @@ const ReviewIssueTable: React.FC<ReviewIssueTableProps> = ({
                         value={reviewStatusFilter}
                         onChange={onReviewStatusChange}
                         options={[
-                            { label: 'PENDING', value: 'PENDING' },
-                            { label: 'CONFIRMED', value: 'CONFIRMED' },
-                            { label: 'FALSE_POSITIVE', value: 'FALSE_POSITIVE' },
-                            { label: 'IGNORED', value: 'IGNORED' },
-                            { label: 'RESOLVED', value: 'RESOLVED' }
+                            { label: '待处理', value: 'PENDING' },
+                            { label: '已确认', value: 'CONFIRMED' },
+                            { label: '误报', value: 'FALSE_POSITIVE' },
+                            { label: '已忽略', value: 'IGNORED' },
+                            { label: '已处理', value: 'RESOLVED' }
                         ]}
                     />
                 </Space>

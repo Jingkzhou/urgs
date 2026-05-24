@@ -334,7 +334,30 @@ export interface LineageReviewIssue {
     reviewStatus?: string;
     reviewerId?: number;
     reviewerNote?: string;
+    confirmedProblemType?: string;
+    confirmedProblemDescription?: string;
     reviewTime?: string;
+    createTime?: string;
+    updateTime?: string;
+}
+
+export interface LineageReviewMemory {
+    id: number;
+    title: string;
+    status: string;
+    content: string;
+    targetPattern?: string;
+    issueType?: string;
+    ruleHits?: string[];
+    sourceIssueId?: number;
+    sourceTaskId?: number;
+    analysisRecordId?: string;
+    repoId?: number;
+    versionId?: string;
+    systemKey?: string;
+    pathPrefix?: string;
+    createdBy?: number;
+    updatedBy?: number;
     createTime?: string;
     updateTime?: string;
 }
@@ -374,9 +397,24 @@ export const getLineageReviewIssue = (issueId: number) =>
 
 export const decideLineageReviewIssue = (
     issueId: number,
-    data: { reviewStatus: string; reviewerNote?: string }
+    data: {
+        reviewStatus: string;
+        reviewerNote?: string;
+        falsePositiveReason?: string;
+        confirmedProblemType?: string;
+        confirmedProblemDescription?: string;
+    }
 ) =>
     put<LineageReviewIssue>(`/api/metadata/lineage/review/issues/${issueId}/decision`, data);
+
+export const getLineageReviewMemories = (params?: { status?: string }) =>
+    get<LineageReviewMemory[]>('/api/metadata/lineage/review/memories', params || {});
+
+export const updateLineageReviewMemory = (
+    memoryId: number,
+    data: { title?: string; content?: string; status?: string }
+) =>
+    put<LineageReviewMemory>(`/api/metadata/lineage/review/memories/${memoryId}`, data);
 
 export const getLineageReviewExportUrl = (taskId: number) =>
     `/api/metadata/lineage/review/export?taskId=${taskId}`;

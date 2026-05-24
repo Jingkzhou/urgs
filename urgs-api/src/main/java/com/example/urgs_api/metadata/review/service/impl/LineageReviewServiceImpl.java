@@ -168,6 +168,8 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         issue.setReviewStatus(StringUtils.hasText(request.getReviewStatus()) ? request.getReviewStatus() : "PENDING");
         issue.setReviewerId(reviewerId);
         issue.setReviewerNote(request.getReviewerNote());
+        issue.setConfirmedProblemType(request.getConfirmedProblemType());
+        issue.setConfirmedProblemDescription(request.getConfirmedProblemDescription());
         issue.setReviewTime(LocalDateTime.now());
         issue.setUpdateTime(LocalDateTime.now());
         issueMapper.updateById(issue);
@@ -297,6 +299,12 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             sb.append("- 置信度: ").append(issue.getConfidence()).append("\n");
             sb.append("- 判定: ").append(issue.getVerdict()).append("\n");
             sb.append("- 原因: ").append(issue.getReason()).append("\n");
+            if (StringUtils.hasText(issue.getConfirmedProblemType())) {
+                sb.append("- 人工确认问题类型: ").append(issue.getConfirmedProblemType()).append("\n");
+            }
+            if (StringUtils.hasText(issue.getConfirmedProblemDescription())) {
+                sb.append("- 人工确认问题描述: ").append(issue.getConfirmedProblemDescription()).append("\n");
+            }
             sb.append("- 规则命中: ").append(issue.getRuleHits()).append("\n");
             appendMarkdownList(sb, "证据", issue.getEvidenceRefs());
             appendMarkdownList(sb, "建议来源", issue.getSuggestedSources());
@@ -785,6 +793,11 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                     task.getId(), issueType, verdict.getReason());
             return null;
         }
+        if (!isPreciseSqlAuditVerdict(issueType, columnName, verdict)) {
+            log.warn("[LineageSqlAudit] drop imprecise issue taskId={} issueType={} target={}.{} reason={}",
+                    task.getId(), issueType, tableName, columnName, verdict.getReason());
+            return null;
+        }
         String statementHash = toText(object.get("statementHash"));
         String snippetHash = StringUtils.hasText(statementHash) ? statementHash : hashOf(toText(object.get("snippet")));
 
@@ -804,7 +817,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                 ? BigDecimal.valueOf(0.60).setScale(4, RoundingMode.HALF_UP)
                 : verdict.getConfidence());
         issue.setVerdict(StringUtils.hasText(verdict.getVerdict()) ? verdict.getVerdict() : "NEEDS_REVIEW");
-        issue.setReason(verdict.getReason());
+        issue.setReason(buildPreciseSqlAuditReason(issueType, tableName, columnName, verdict));
         issue.setRuleHits(List.of("AI_SQL_LINEAGE_RECHECK", "AI_PROGRAM_LINEAGE_COMPARE"));
         issue.setSuggestedSources(verdict.getSuggestedSources() == null ? new ArrayList<>() : verdict.getSuggestedSources());
         issue.setEvidenceRefs(new ArrayList<>(verdict.getEvidenceRefs()));
@@ -815,6 +828,58 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         issue.setCreateTime(LocalDateTime.now());
         issue.setUpdateTime(LocalDateTime.now());
         return issue;
+    }
+
+    private boolean isPreciseSqlAuditVerdict(String issueType, String columnName, LineageReviewAIVerdict verdict) {
+        if (!requiresColumnLevelAudit(issueType)) {
+            return true;
+        }
+        if (!StringUtils.hasText(columnName)) {
+            return false;
+        }
+        boolean hasColumnSource = verdict.getSuggestedSources() != null
+                && verdict.getSuggestedSources().stream()
+                        .map(this::toText)
+                        .anyMatch(this::looksLikeQualifiedColumn);
+        boolean hasColumnEvidence = verdict.getEvidenceRefs() != null
+                && verdict.getEvidenceRefs().stream()
+                        .map(this::toText)
+                        .anyMatch(ref -> ref.toUpperCase(Locale.ROOT).contains(columnName.toUpperCase(Locale.ROOT)));
+        return hasColumnSource || hasColumnEvidence;
+    }
+
+    private boolean requiresColumnLevelAudit(String issueType) {
+        return "MISSING_SOURCE".equalsIgnoreCase(issueType)
+                || "WRONG_SOURCE".equalsIgnoreCase(issueType)
+                || "WRONG_TARGET".equalsIgnoreCase(issueType)
+                || "WRONG_RELATION_TYPE".equalsIgnoreCase(issueType)
+                || "UNCERTAIN_MAPPING".equalsIgnoreCase(issueType);
+    }
+
+    private boolean looksLikeQualifiedColumn(String value) {
+        if (!StringUtils.hasText(value)) {
+            return false;
+        }
+        String normalized = value.trim();
+        int firstDot = normalized.indexOf('.');
+        int lastDot = normalized.lastIndexOf('.');
+        return firstDot > 0 && lastDot > firstDot && lastDot < normalized.length() - 1;
+    }
+
+    private String buildPreciseSqlAuditReason(String issueType, String tableName, String columnName,
+            LineageReviewAIVerdict verdict) {
+        String target = StringUtils.hasText(columnName) ? tableName + "." + columnName : tableName;
+        String sourceSummary = verdict.getSuggestedSources() == null || verdict.getSuggestedSources().isEmpty()
+                ? "未给出字段级建议来源"
+                : String.join(", ", verdict.getSuggestedSources());
+        String evidenceSummary = verdict.getEvidenceRefs() == null || verdict.getEvidenceRefs().isEmpty()
+                ? "未给出字段级证据"
+                : String.join("；", verdict.getEvidenceRefs());
+        return "目标字段: " + target
+                + "；疑点类型: " + issueType
+                + "；应有来源: " + sourceSummary
+                + "；字段级证据: " + evidenceSummary
+                + "；判断说明: " + toText(verdict.getReason());
     }
 
     private boolean hasVerdictEvidence(LineageReviewAIVerdict verdict) {

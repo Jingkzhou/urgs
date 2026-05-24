@@ -51,6 +51,8 @@ public class LineageReviewIssue {
     private String reviewStatus;
     private Long reviewerId;
     private String reviewerNote;
+    private String confirmedProblemType;
+    private String confirmedProblemDescription;
     private LocalDateTime reviewTime;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;

@@ -1,16 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Descriptions, Drawer, Empty, message, Popconfirm, Space, Spin, Tag } from 'antd';
+import { Alert, Button, Card, Descriptions, Drawer, Empty, Input, message, Modal, Popconfirm, Space, Spin, Tag } from 'antd';
 import {
     clearLineageReviewHistory,
     decideLineageReviewIssue,
     downloadLineageReviewReportMarkdown,
+    getLineageReviewMemories,
     getLineageReviewIssues,
     getLineageReviewRecords,
     getLineageReviewTaskSqlPreview,
     getLineageReviewTasks,
     triggerLineageReview,
+    updateLineageReviewMemory,
     LineageAnalysisRecordItem,
     LineageReviewIssue,
+    LineageReviewMemory,
     LineageReviewTask
 } from '@/api/lineage';
 import { hasPermission } from '@/utils/permission';
@@ -18,8 +21,20 @@ import ReviewIssueTable from './lineage-review/ReviewIssueTable';
 import ReviewMetricCards from './lineage-review/ReviewMetricCards';
 import ReviewRecordList from './lineage-review/ReviewRecordList';
 import ReviewTaskTable from './lineage-review/ReviewTaskTable';
-import { reviewStatusColorMap, severityColorMap } from './lineage-review/reviewConstants';
+import {
+    confirmedProblemTypeLabelMap,
+    issueTypeLabelMap,
+    reviewStatusColorMap,
+    reviewStatusLabelMap,
+    ruleHitLabelMap,
+    severityColorMap,
+    severityLabelMap,
+    toDisplayLabel,
+    verdictLabelMap
+} from './lineage-review/reviewConstants';
 import { buildShardLabel, buildTaskSourceMeta } from './lineage-review/reviewUtils';
+
+const { TextArea } = Input;
 
 const AICodeReport: React.FC = () => {
     const [records, setRecords] = useState<LineageAnalysisRecordItem[]>([]);
@@ -46,6 +61,17 @@ const AICodeReport: React.FC = () => {
     const [sqlPreviewTask, setSqlPreviewTask] = useState<LineageReviewTask | null>(null);
     const [reportDownloading, setReportDownloading] = useState(false);
     const [clearHistoryLoading, setClearHistoryLoading] = useState(false);
+    const [confirmProblemModalOpen, setConfirmProblemModalOpen] = useState(false);
+    const [confirmedProblemType, setConfirmedProblemType] = useState('SQL_STANDARD');
+    const [confirmedProblemDescription, setConfirmedProblemDescription] = useState('');
+    const [falsePositiveModalOpen, setFalsePositiveModalOpen] = useState(false);
+    const [falsePositiveReason, setFalsePositiveReason] = useState('');
+    const [memoryOpen, setMemoryOpen] = useState(false);
+    const [memoryLoading, setMemoryLoading] = useState(false);
+    const [memorySaving, setMemorySaving] = useState(false);
+    const [memories, setMemories] = useState<LineageReviewMemory[]>([]);
+    const [selectedMemoryId, setSelectedMemoryId] = useState<number>();
+    const [memoryDraft, setMemoryDraft] = useState({ title: '', content: '', status: 'ACTIVE' });
     const [sqlPreviews, setSqlPreviews] = useState<Array<{
         snippet: string;
         sourceFiles: string[];
@@ -68,6 +94,11 @@ const AICodeReport: React.FC = () => {
     const selectedTaskSourceMeta = useMemo(
         () => selectedTask ? buildTaskSourceMeta(selectedTask, records) : undefined,
         [records, selectedTask]
+    );
+
+    const selectedMemory = useMemo(
+        () => memories.find(item => item.id === selectedMemoryId),
+        [memories, selectedMemoryId]
     );
 
     const pagedRecords = useMemo(() => {
@@ -170,6 +201,34 @@ const AICodeReport: React.FC = () => {
         }
     };
 
+    const selectMemoryForEdit = (memory?: LineageReviewMemory) => {
+        setSelectedMemoryId(memory?.id);
+        setMemoryDraft({
+            title: memory?.title || '',
+            content: memory?.content || '',
+            status: memory?.status || 'ACTIVE'
+        });
+    };
+
+    const loadMemories = async () => {
+        setMemoryLoading(true);
+        try {
+            const data = await getLineageReviewMemories();
+            setMemories(data || []);
+            const current = data?.find(item => item.id === selectedMemoryId) || data?.[0];
+            selectMemoryForEdit(current);
+        } catch (error: any) {
+            message.error(error?.message || '加载走查记忆失败');
+        } finally {
+            setMemoryLoading(false);
+        }
+    };
+
+    const handleOpenMemory = async () => {
+        setMemoryOpen(true);
+        await loadMemories();
+    };
+
     useEffect(() => {
         loadRecords();
     }, []);
@@ -220,7 +279,11 @@ const AICodeReport: React.FC = () => {
         }
     };
 
-    const handleDecision = async (reviewStatus: string) => {
+    const handleDecision = async (
+        reviewStatus: string,
+        note = '',
+        extra?: { confirmedProblemType?: string; confirmedProblemDescription?: string }
+    ) => {
         if (!selectedIssue) {
             return;
         }
@@ -228,7 +291,10 @@ const AICodeReport: React.FC = () => {
         try {
             const updated = await decideLineageReviewIssue(selectedIssue.id, {
                 reviewStatus,
-                reviewerNote: ''
+                reviewerNote: note,
+                falsePositiveReason: reviewStatus === 'FALSE_POSITIVE' ? note : undefined,
+                confirmedProblemType: extra?.confirmedProblemType,
+                confirmedProblemDescription: extra?.confirmedProblemDescription
             });
             setSelectedIssue(updated);
             await loadIssues(selectedTaskId);
@@ -236,11 +302,81 @@ const AICodeReport: React.FC = () => {
             if (selectedRecordId) {
                 await loadTasks(selectedRecordId);
             }
-            message.success('人工判定已保存');
+            if (reviewStatus === 'FALSE_POSITIVE') {
+                await loadMemories();
+            }
+            message.success(reviewStatus === 'FALSE_POSITIVE' ? '误报原因已保存，并已沉淀到走查记忆' : '人工判定已保存');
         } catch (error: any) {
             message.error(error?.message || '保存判定失败');
         } finally {
             setDecisionLoading('');
+        }
+    };
+
+    const handleOpenConfirmProblemModal = () => {
+        if (!selectedIssue) {
+            return;
+        }
+        setConfirmedProblemType(selectedIssue.confirmedProblemType || 'SQL_STANDARD');
+        setConfirmedProblemDescription(selectedIssue.confirmedProblemDescription || selectedIssue.reviewerNote || '');
+        setConfirmProblemModalOpen(true);
+    };
+
+    const handleSubmitConfirmProblem = async () => {
+        if (!confirmedProblemType) {
+            message.warning('请选择问题类型');
+            return;
+        }
+        const description = confirmedProblemDescription.trim();
+        await handleDecision('CONFIRMED', description, {
+            confirmedProblemType,
+            confirmedProblemDescription: description
+        });
+        setConfirmProblemModalOpen(false);
+    };
+
+    const handleOpenFalsePositiveModal = () => {
+        if (!selectedIssue) {
+            return;
+        }
+        setFalsePositiveReason(selectedIssue.reviewerNote || '');
+        setFalsePositiveModalOpen(true);
+    };
+
+    const handleSubmitFalsePositive = async () => {
+        const reason = falsePositiveReason.trim();
+        if (!reason) {
+            message.warning('请填写误报原因');
+            return;
+        }
+        await handleDecision('FALSE_POSITIVE', reason);
+        setFalsePositiveModalOpen(false);
+    };
+
+    const handleSaveMemory = async () => {
+        if (!selectedMemoryId) {
+            return;
+        }
+        const title = memoryDraft.title.trim();
+        const content = memoryDraft.content.trim();
+        if (!title || !content) {
+            message.warning('标题和记忆内容不能为空');
+            return;
+        }
+        setMemorySaving(true);
+        try {
+            const updated = await updateLineageReviewMemory(selectedMemoryId, {
+                title,
+                content,
+                status: memoryDraft.status
+            });
+            setMemories(prev => prev.map(item => item.id === updated.id ? updated : item));
+            selectMemoryForEdit(updated);
+            message.success('走查记忆已更新');
+        } catch (error: any) {
+            message.error(error?.message || '保存走查记忆失败');
+        } finally {
+            setMemorySaving(false);
         }
     };
 
@@ -284,7 +420,10 @@ const AICodeReport: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+                <Button onClick={handleOpenMemory}>
+                    走查记忆
+                </Button>
                 <Popconfirm
                     title="清空历史校验结果"
                     description="将删除所有事后校验任务、疑点和 AI 校验缓存，血缘分析批次会保留。"
@@ -385,14 +524,14 @@ const AICodeReport: React.FC = () => {
                             <Button
                                 size="small"
                                 loading={decisionLoading === 'CONFIRMED'}
-                                onClick={() => handleDecision('CONFIRMED')}
+                                onClick={handleOpenConfirmProblemModal}
                             >
                                 确认问题
                             </Button>
                             <Button
                                 size="small"
                                 loading={decisionLoading === 'FALSE_POSITIVE'}
-                                onClick={() => handleDecision('FALSE_POSITIVE')}
+                                onClick={handleOpenFalsePositiveModal}
                             >
                                 标记误报
                             </Button>
@@ -414,25 +553,38 @@ const AICodeReport: React.FC = () => {
                                 {selectedIssue.tableName}
                                 {selectedIssue.columnName ? `.${selectedIssue.columnName}` : ''}
                             </Descriptions.Item>
-                            <Descriptions.Item label="疑点类型">{selectedIssue.issueType}</Descriptions.Item>
+                            <Descriptions.Item label="疑点类型">
+                                {toDisplayLabel(selectedIssue.issueType, issueTypeLabelMap)}
+                            </Descriptions.Item>
                             <Descriptions.Item label="严重级别">
-                                <Tag color={severityColorMap[selectedIssue.severity] || 'default'}>{selectedIssue.severity}</Tag>
+                                <Tag color={severityColorMap[selectedIssue.severity] || 'default'}>
+                                    {toDisplayLabel(selectedIssue.severity, severityLabelMap)}
+                                </Tag>
                             </Descriptions.Item>
                             <Descriptions.Item label="AI 判定">
-                                {selectedIssue.verdict} / {Number(selectedIssue.confidence || 0).toFixed(2)}
+                                {toDisplayLabel(selectedIssue.verdict, verdictLabelMap)} / {Number(selectedIssue.confidence || 0).toFixed(2)}
                             </Descriptions.Item>
                             <Descriptions.Item label="人工状态">
                                 <Tag color={reviewStatusColorMap[selectedIssue.reviewStatus || ''] || 'default'}>
-                                    {selectedIssue.reviewStatus || 'PENDING'}
+                                    {toDisplayLabel(selectedIssue.reviewStatus, reviewStatusLabelMap, '待处理')}
                                 </Tag>
                             </Descriptions.Item>
                             <Descriptions.Item label="原因说明">{selectedIssue.reason || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="确认问题类型">
+                                {toDisplayLabel(selectedIssue.confirmedProblemType, confirmedProblemTypeLabelMap)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="确认问题描述">
+                                {selectedIssue.confirmedProblemDescription || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="人工备注">{selectedIssue.reviewerNote || '-'}</Descriptions.Item>
                         </Descriptions>
 
                         <Card size="small" title="规则命中">
                             {(selectedIssue.ruleHits || []).length > 0 ? (
                                 <Space wrap>
-                                    {selectedIssue.ruleHits?.map(item => <Tag key={item}>{item}</Tag>)}
+                                    {selectedIssue.ruleHits?.map(item => (
+                                        <Tag key={item}>{toDisplayLabel(item, ruleHitLabelMap)}</Tag>
+                                    ))}
                                 </Space>
                             ) : (
                                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无规则命中" />
@@ -503,6 +655,165 @@ const AICodeReport: React.FC = () => {
                                 </pre>
                             </Card>
                         ))}
+                    </div>
+                )}
+            </Drawer>
+
+            <Modal
+                open={confirmProblemModalOpen}
+                title="确认问题"
+                okText="保存确认"
+                cancelText="取消"
+                confirmLoading={decisionLoading === 'CONFIRMED'}
+                onOk={handleSubmitConfirmProblem}
+                onCancel={() => setConfirmProblemModalOpen(false)}
+            >
+                <div className="space-y-4">
+                    <div>
+                        <div className="mb-2 text-sm font-medium text-slate-700">问题类型</div>
+                        <Space>
+                            <Button
+                                type={confirmedProblemType === 'SQL_STANDARD' ? 'primary' : 'default'}
+                                onClick={() => setConfirmedProblemType('SQL_STANDARD')}
+                            >
+                                SQL 书写规范
+                            </Button>
+                            <Button
+                                type={confirmedProblemType === 'PARSER_BUG' ? 'primary' : 'default'}
+                                onClick={() => setConfirmedProblemType('PARSER_BUG')}
+                            >
+                                解析程序 BUG
+                            </Button>
+                        </Space>
+                    </div>
+                    <div>
+                        <div className="mb-2 text-sm font-medium text-slate-700">问题描述</div>
+                        <TextArea
+                            rows={5}
+                            value={confirmedProblemDescription}
+                            placeholder="补充具体字段、SQL 片段、解析偏差或规范问题说明"
+                            onChange={event => setConfirmedProblemDescription(event.target.value)}
+                        />
+                    </div>
+                </div>
+            </Modal>
+
+            <Modal
+                open={falsePositiveModalOpen}
+                title="填写误报原因"
+                okText="保存并复盘"
+                cancelText="取消"
+                confirmLoading={decisionLoading === 'FALSE_POSITIVE'}
+                onOk={handleSubmitFalsePositive}
+                onCancel={() => setFalsePositiveModalOpen(false)}
+            >
+                <div className="space-y-3">
+                    <Alert
+                        type="info"
+                        showIcon
+                        message="误报原因会保存到本条疑点，并结合 AI 复盘成走查记忆。后续血缘走查会自动带上这些记忆。"
+                    />
+                    <TextArea
+                        rows={5}
+                        value={falsePositiveReason}
+                        placeholder="例如：这是多步骤条件覆盖，不是同一句 SQL 内的同名字段歧义。"
+                        onChange={event => setFalsePositiveReason(event.target.value)}
+                    />
+                </div>
+            </Modal>
+
+            <Drawer
+                open={memoryOpen}
+                onClose={() => setMemoryOpen(false)}
+                size="large"
+                title="血缘走查记忆"
+                extra={
+                    <Space>
+                        <Button onClick={loadMemories} loading={memoryLoading}>
+                            刷新
+                        </Button>
+                        <Button
+                            type="primary"
+                            disabled={!selectedMemoryId || !canTrigger}
+                            loading={memorySaving}
+                            onClick={handleSaveMemory}
+                        >
+                            保存
+                        </Button>
+                    </Space>
+                }
+            >
+                {memoryLoading ? (
+                    <div className="flex items-center justify-center py-20">
+                        <Spin />
+                    </div>
+                ) : memories.length === 0 ? (
+                    <Empty description="暂无走查记忆。标记误报并填写原因后会自动生成。" />
+                ) : (
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+                        <div className="space-y-2">
+                            {memories.map(memory => (
+                                <button
+                                    key={memory.id}
+                                    type="button"
+                                    className={`w-full rounded-md border px-3 py-2 text-left text-sm ${
+                                        memory.id === selectedMemoryId
+                                            ? 'border-blue-300 bg-blue-50 text-blue-700'
+                                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                                    }`}
+                                    onClick={() => selectMemoryForEdit(memory)}
+                                >
+                                    <div className="font-medium">{memory.title}</div>
+                                    <div className="mt-1 text-xs text-slate-400">
+                                        {toDisplayLabel(memory.status, { ACTIVE: '生效中', ARCHIVED: '已归档' })}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="space-y-4">
+                            <Descriptions column={1} size="small" bordered>
+                                <Descriptions.Item label="适用对象">
+                                    {selectedMemory?.targetPattern || '-'}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="来源疑点">
+                                    {selectedMemory?.sourceIssueId ? `#${selectedMemory.sourceIssueId}` : '-'}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="更新时间">
+                                    {selectedMemory?.updateTime || '-'}
+                                </Descriptions.Item>
+                            </Descriptions>
+
+                            <Input
+                                value={memoryDraft.title}
+                                placeholder="记忆标题"
+                                disabled={!canTrigger}
+                                onChange={event => setMemoryDraft(prev => ({ ...prev, title: event.target.value }))}
+                            />
+                            <Space>
+                                <Button
+                                    type={memoryDraft.status === 'ACTIVE' ? 'primary' : 'default'}
+                                    disabled={!canTrigger}
+                                    onClick={() => setMemoryDraft(prev => ({ ...prev, status: 'ACTIVE' }))}
+                                >
+                                    生效中
+                                </Button>
+                                <Button
+                                    type={memoryDraft.status === 'ARCHIVED' ? 'primary' : 'default'}
+                                    disabled={!canTrigger}
+                                    onClick={() => setMemoryDraft(prev => ({ ...prev, status: 'ARCHIVED' }))}
+                                >
+                                    已归档
+                                </Button>
+                            </Space>
+                            <TextArea
+                                rows={18}
+                                value={memoryDraft.content}
+                                disabled={!canTrigger}
+                                placeholder="Markdown 形式的走查记忆"
+                                onChange={event => setMemoryDraft(prev => ({ ...prev, content: event.target.value }))}
+                            />
+                        </div>
                     </div>
                 )}
             </Drawer>

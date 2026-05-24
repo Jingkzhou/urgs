@@ -2,10 +2,13 @@ package com.example.urgs_api.metadata.review.controller;
 
 import com.example.urgs_api.auth.annotation.RequirePermission;
 import com.example.urgs_api.metadata.review.dto.LineageReviewDecisionRequest;
+import com.example.urgs_api.metadata.review.dto.LineageReviewMemoryRequest;
 import com.example.urgs_api.metadata.review.dto.LineageReviewTriggerRequest;
 import com.example.urgs_api.metadata.review.entity.LineageReviewIssue;
+import com.example.urgs_api.metadata.review.entity.LineageReviewMemory;
 import com.example.urgs_api.metadata.review.entity.LineageReviewTask;
 import com.example.urgs_api.metadata.review.service.LineageReviewMaintenanceService;
+import com.example.urgs_api.metadata.review.service.LineageReviewMemoryService;
 import com.example.urgs_api.metadata.review.service.LineageReviewService;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
@@ -24,12 +27,15 @@ public class LineageReviewController {
 
     private final LineageReviewService lineageReviewService;
     private final LineageReviewMaintenanceService maintenanceService;
+    private final LineageReviewMemoryService memoryService;
 
     public LineageReviewController(
             LineageReviewService lineageReviewService,
-            LineageReviewMaintenanceService maintenanceService) {
+            LineageReviewMaintenanceService maintenanceService,
+            LineageReviewMemoryService memoryService) {
         this.lineageReviewService = lineageReviewService;
         this.maintenanceService = maintenanceService;
+        this.memoryService = memoryService;
     }
 
     @GetMapping("/records")
@@ -96,7 +102,39 @@ public class LineageReviewController {
             @PathVariable Long issueId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId,
             @RequestBody LineageReviewDecisionRequest request) {
-        return ResponseEntity.ok(lineageReviewService.decideIssue(issueId, userId, request));
+        if (isFalsePositiveWithoutReason(request)) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (isConfirmedWithoutProblemType(request)) {
+            return ResponseEntity.badRequest().build();
+        }
+        normalizeFalsePositiveNote(request);
+        LineageReviewIssue issue = lineageReviewService.decideIssue(issueId, userId, request);
+        memoryService.captureFalsePositive(issue, userId, request);
+        return ResponseEntity.ok(issue);
+    }
+
+    @GetMapping("/memories")
+    @RequirePermission("version:ai:audit")
+    public ResponseEntity<List<LineageReviewMemory>> listMemories(
+            @RequestParam(required = false) String status) {
+        return ResponseEntity.ok(memoryService.listMemories(status));
+    }
+
+    @GetMapping("/memories/{memoryId}")
+    @RequirePermission("version:ai:audit")
+    public ResponseEntity<LineageReviewMemory> getMemory(@PathVariable Long memoryId) {
+        LineageReviewMemory memory = memoryService.getMemory(memoryId);
+        return memory == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(memory);
+    }
+
+    @PutMapping("/memories/{memoryId}")
+    @RequirePermission("version:ai:trigger")
+    public ResponseEntity<LineageReviewMemory> updateMemory(
+            @PathVariable Long memoryId,
+            @RequestHeader(value = "X-User-Id", required = false) Long userId,
+            @RequestBody LineageReviewMemoryRequest request) {
+        return ResponseEntity.ok(memoryService.updateMemory(memoryId, userId, request));
     }
 
     @GetMapping("/export")
@@ -107,5 +145,32 @@ public class LineageReviewController {
         response.setContentType(MediaType.TEXT_MARKDOWN_VALUE);
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment;filename*=utf-8''" + fileName);
         response.getOutputStream().write(body);
+    }
+
+    private boolean isFalsePositiveWithoutReason(LineageReviewDecisionRequest request) {
+        if (request == null || !"FALSE_POSITIVE".equalsIgnoreCase(request.getReviewStatus())) {
+            return false;
+        }
+        return !hasText(request.getFalsePositiveReason()) && !hasText(request.getReviewerNote());
+    }
+
+    private boolean isConfirmedWithoutProblemType(LineageReviewDecisionRequest request) {
+        if (request == null || !"CONFIRMED".equalsIgnoreCase(request.getReviewStatus())) {
+            return false;
+        }
+        return !hasText(request.getConfirmedProblemType());
+    }
+
+    private void normalizeFalsePositiveNote(LineageReviewDecisionRequest request) {
+        if (request == null || !"FALSE_POSITIVE".equalsIgnoreCase(request.getReviewStatus())) {
+            return;
+        }
+        if (!hasText(request.getReviewerNote()) && hasText(request.getFalsePositiveReason())) {
+            request.setReviewerNote(request.getFalsePositiveReason().trim());
+        }
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 }
