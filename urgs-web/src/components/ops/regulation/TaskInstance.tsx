@@ -4,17 +4,15 @@ import dayjs from 'dayjs';
 import { batchExecuteQuartzTaskStatus, batchForcePassQuartzTaskStatus, batchForceStopQuartzTaskStatus, queryQuartzTaskLog, queryQuartzTasks, queryQuartzTaskStatus } from '@/api/ops';
 import { QuartzTask, QuartzTaskExecutionLog, QuartzTaskStatus } from './mockData';
 import TaskInstanceDetailDrawer from './task-instance/TaskInstanceDetailDrawer';
+import TaskInstanceRerunExecutionDrawer from './task-instance/TaskInstanceRerunExecutionDrawer';
+import TaskInstanceRerunOptionModal from './task-instance/TaskInstanceRerunOptionModal';
 import TaskInstanceTableView from './task-instance/TaskInstanceTableView';
 import {
     InstanceDetailTabKey,
     RowContextMenuState,
     TaskInstanceProps,
 } from './task-instance/types';
-import {
-    normalizeLog,
-    normalizeStatus,
-    normalizeTask,
-} from './task-instance/utils';
+import { normalizeLog, normalizeStatus, normalizeTask } from './task-instance/utils';
 import { useDependencyInsightData } from './task-instance/useDependencyInsightData';
 
 const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
@@ -43,6 +41,10 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     const [selectedInstanceIds, setSelectedInstanceIds] = useState<number[]>([]);
     const [instanceDetailTabKey, setInstanceDetailTabKey] = useState<InstanceDetailTabKey>('overview');
     const [showImpactedOnly, setShowImpactedOnly] = useState(false);
+    const [rerunOptionInstance, setRerunOptionInstance] = useState<QuartzTaskStatus | null>(null);
+    const [rerunExecutionInstance, setRerunExecutionInstance] = useState<QuartzTaskStatus | null>(null);
+    const [selectedDependencyRerunStatusIds, setSelectedDependencyRerunStatusIds] = useState<number[]>([]);
+    const [dependencyRerunExecuting, setDependencyRerunExecuting] = useState(false);
     const [rowContextMenu, setRowContextMenu] = useState<RowContextMenuState | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
@@ -354,6 +356,12 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
         instanceList,
         taskMap,
     });
+    const rerunExecutionDependencyData = useDependencyInsightData({
+        selectedInstance: rerunExecutionInstance,
+        taskList,
+        instanceList,
+        taskMap,
+    });
 
     const updateInstance = (instanceId: number, updater: (instance: QuartzTaskStatus) => QuartzTaskStatus) => {
         setInstanceList(prev => prev.map(instance => instance.id === instanceId ? updater(instance) : instance));
@@ -374,7 +382,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
             begin_time: null,
             update_time: now,
             end_time: null,
-            msg: '实例已按数据依赖链路重置为等待执行。',
+            msg: '实例已重置为等待执行。',
         };
     };
 
@@ -402,26 +410,50 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
         };
     };
 
+    const executeCurrentNodeRerun = async (
+        statusIds: number[],
+        fallbackSuccessMessage: string,
+        fallbackErrorMessage: string
+    ) => {
+        try {
+            const response = await batchExecuteQuartzTaskStatus(statusIds, false);
+            if (!response?.success) {
+                throw new Error(response?.msg || fallbackErrorMessage);
+            }
+            updateInstances(statusIds, markInstanceWaiting);
+            setSelectedInstanceIds(prev => prev.filter(id => !statusIds.includes(id)));
+            await loadInstances();
+            await loadTodaySummaryStats();
+            message.success(response?.data || fallbackSuccessMessage);
+            return true;
+        } catch (error: any) {
+            message.error(error?.message || fallbackErrorMessage);
+            return false;
+        }
+    };
+
     const handleExecuteInstance = (instance: QuartzTaskStatus) => {
         if (instance.status !== 3 && instance.status !== 4) {
             message.error('执行任务仅支持失败或已完成实例，请检查当前实例状态');
             return;
         }
 
-        batchExecuteQuartzTaskStatus([instance.id])
-            .then(async (response) => {
-                if (!response?.success) {
-                    throw new Error(response?.msg || '执行任务失败');
-                }
-                updateInstance(instance.id, markInstanceWaiting);
-                setSelectedInstanceIds(prev => prev.filter(id => id !== instance.id));
-                await loadInstances();
-                await loadTodaySummaryStats();
-                message.success(response?.data || `已按数据依赖链路重跑实例 #${instance.id}`);
-            })
-            .catch((error: any) => {
-                message.error(error?.message || '执行任务失败');
-            });
+        setRerunOptionInstance(instance);
+    };
+
+    const handleExecuteCurrentInstance = async (instance: QuartzTaskStatus) => {
+        setRerunOptionInstance(null);
+        await executeCurrentNodeRerun(
+            [instance.id],
+            `已重跑当前节点实例 #${instance.id}`,
+            '执行任务失败'
+        );
+    };
+
+    const handleOpenDependencyRerunList = (instance: QuartzTaskStatus) => {
+        setRerunOptionInstance(null);
+        setRerunExecutionInstance(instance);
+        setSelectedDependencyRerunStatusIds([]);
     };
 
     const handleForceStopInstance = (instance: QuartzTaskStatus) => {
@@ -540,18 +572,13 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
             return;
         }
 
-        try {
-            const response = await batchExecuteQuartzTaskStatus(selectedInstanceIds);
-            if (!response?.success) {
-                throw new Error(response?.msg || '批量执行失败');
-            }
-            updateInstances(selectedInstanceIds, markInstanceWaiting);
+        const executed = await executeCurrentNodeRerun(
+            selectedInstanceIds,
+            `已重跑当前节点 ${selectedInstances.length} 条实例`,
+            '批量执行失败'
+        );
+        if (executed) {
             setSelectedInstanceIds([]);
-            await loadInstances();
-            await loadTodaySummaryStats();
-            message.success(response?.data || `已按数据依赖链路重跑 ${selectedInstances.length} 条实例`);
-        } catch (error: any) {
-            message.error(error?.message || '批量执行失败');
         }
     };
 
@@ -604,6 +631,28 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
             .catch((error: any) => {
                 message.error(error?.message || '批量强制通过失败');
             });
+    };
+
+    const handleExecuteSelectedDependencyRerun = async () => {
+        if (selectedDependencyRerunStatusIds.length === 0) {
+            message.warning('请选择需要一起重跑的下游实例');
+            return;
+        }
+
+        setDependencyRerunExecuting(true);
+        try {
+            const executed = await executeCurrentNodeRerun(
+                selectedDependencyRerunStatusIds,
+                `已重跑选中下游 ${selectedDependencyRerunStatusIds.length} 条实例`,
+                '重跑选中下游失败'
+            );
+            if (executed) {
+                setSelectedDependencyRerunStatusIds([]);
+                setRerunExecutionInstance(null);
+            }
+        } finally {
+            setDependencyRerunExecuting(false);
+        }
     };
 
     const selectedTask = selectedInstance ? taskMap.get(selectedInstance.plan_id) || null : null;
@@ -704,6 +753,28 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                     setCurrentPage(page);
                     setPageSize(size);
                 }}
+            />
+
+            <TaskInstanceRerunOptionModal
+                instance={rerunOptionInstance}
+                taskName={rerunOptionInstance ? taskNameMap.get(rerunOptionInstance.plan_id) || '' : ''}
+                onClose={() => setRerunOptionInstance(null)}
+                onExecuteCurrent={handleExecuteCurrentInstance}
+                onOpenDependencyList={handleOpenDependencyRerunList}
+            />
+
+            <TaskInstanceRerunExecutionDrawer
+                open={!!rerunExecutionInstance}
+                sourceInstance={rerunExecutionInstance}
+                dependencyPanelData={rerunExecutionDependencyData}
+                selectedStatusIds={selectedDependencyRerunStatusIds}
+                executing={dependencyRerunExecuting}
+                onClose={() => {
+                    setRerunExecutionInstance(null);
+                    setSelectedDependencyRerunStatusIds([]);
+                }}
+                onSelectedStatusIdsChange={setSelectedDependencyRerunStatusIds}
+                onExecute={handleExecuteSelectedDependencyRerun}
             />
 
             <TaskInstanceDetailDrawer

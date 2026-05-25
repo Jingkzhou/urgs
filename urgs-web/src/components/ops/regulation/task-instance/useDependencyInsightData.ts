@@ -95,6 +95,10 @@ export const useDependencyInsightData = ({
         () => buildDownstreamTaskIdMap(taskList, getDataDependIds),
         [taskList]
     );
+    const controlDownstreamTaskIdMap = useMemo(
+        () => buildDownstreamTaskIdMap(taskList, getControlDependIds),
+        [taskList]
+    );
 
     return useMemo<DependencyInsightData | null>(() => {
         if (!selectedInstance) return null;
@@ -170,6 +174,29 @@ export const useDependencyInsightData = ({
 
         const downstreamMetaMap = new Map<number, DownstreamImpactMeta>();
         const downstreamDescendantIdSetMap = new Map<number, Set<number>>();
+        const allDownstreamMetaMap = new Map<number, DownstreamImpactMeta>();
+        const allDownstreamDescendantIdSetMap = new Map<number, Set<number>>();
+
+        const mergeTaskIds = (...groups: number[][]) =>
+            Array.from(new Set(groups.flat()));
+
+        const getAllDownstreamChildEntries = (taskId: number) => {
+            const childTypeMap = new Map<number, DependencyRelationType[]>();
+            const append = (childTaskId: number, dependencyType: DependencyRelationType) => {
+                const types = childTypeMap.get(childTaskId) || [];
+                if (!types.includes(dependencyType)) {
+                    types.push(dependencyType);
+                }
+                childTypeMap.set(childTaskId, types);
+            };
+
+            (dataDownstreamTaskIdMap.get(taskId) || []).forEach(childTaskId => append(childTaskId, 'DATA'));
+            (controlDownstreamTaskIdMap.get(taskId) || []).forEach(childTaskId => append(childTaskId, 'CONTROL'));
+            return Array.from(childTypeMap.entries()).map(([childTaskId, dependencyTypes]) => ({
+                taskId: childTaskId,
+                dependencyTypes,
+            }));
+        };
 
         const buildDownstreamMeta = (
             taskId: number,
@@ -214,9 +241,63 @@ export const useDependencyInsightData = ({
             return meta;
         };
 
+        const buildAllDownstreamMeta = (
+            taskId: number,
+            path: Set<number>,
+            dependencyTypes: DependencyRelationType[]
+        ): DownstreamImpactMeta => {
+            const childEntries = getAllDownstreamChildEntries(taskId)
+                .filter(child => !path.has(child.taskId));
+            const directChildIds = childEntries.map(child => child.taskId);
+            const cached = allDownstreamMetaMap.get(taskId);
+            if (cached) {
+                dependencyTypes.forEach(type => mergeDependencyType(cached, type));
+                cached.directChildIds = mergeTaskIds(cached.directChildIds, directChildIds);
+                return cached;
+            }
+
+            const relation = toRelationItem(taskId, dependencyTypes);
+            const meta = {
+                ...relation,
+                impacted: relation.relatedInstance?.status !== 3,
+                hasImpactedDescendant: false,
+                directChildIds,
+                descendantCount: 0,
+            };
+            allDownstreamMetaMap.set(taskId, meta);
+
+            const descendantIdSet = new Set<number>();
+            let hasImpactedDescendant = false;
+
+            childEntries.forEach(child => {
+                const nextPath = new Set(path);
+                nextPath.add(child.taskId);
+                const childMeta = buildAllDownstreamMeta(child.taskId, nextPath, child.dependencyTypes);
+                descendantIdSet.add(child.taskId);
+                const childDescendantIdSet = allDownstreamDescendantIdSetMap.get(child.taskId);
+                childDescendantIdSet?.forEach(descendantTaskId => {
+                    descendantIdSet.add(descendantTaskId);
+                });
+                if (childMeta.impacted || childMeta.hasImpactedDescendant) {
+                    hasImpactedDescendant = true;
+                }
+            });
+
+            allDownstreamDescendantIdSetMap.set(taskId, descendantIdSet);
+            meta.descendantCount = descendantIdSet.size;
+            meta.hasImpactedDescendant = hasImpactedDescendant;
+            return meta;
+        };
+
         const downstreamRootTaskIds = dataDownstreamTaskIdMap.get(selectedInstance.plan_id) || [];
         downstreamRootTaskIds.forEach(taskId => {
             buildDownstreamMeta(taskId, new Set([selectedInstance.plan_id, taskId]));
+        });
+
+        const allDownstreamRootEntries = getAllDownstreamChildEntries(selectedInstance.plan_id);
+        const allDownstreamRootTaskIds = allDownstreamRootEntries.map(child => child.taskId);
+        allDownstreamRootEntries.forEach(child => {
+            buildAllDownstreamMeta(child.taskId, new Set([selectedInstance.plan_id, child.taskId]), child.dependencyTypes);
         });
 
         const blockingUpstream = Array.from(blockingUpstreamMap.values()).sort((a, b) => {
@@ -234,6 +315,8 @@ export const useDependencyInsightData = ({
             blockingUpstream,
             downstreamRootTaskIds,
             downstreamMetaMap,
+            allDownstreamRootTaskIds,
+            allDownstreamMetaMap,
             downstreamTotalCount: downstreamMetaMap.size,
             impactedDownstreamCount: Array.from(downstreamMetaMap.values()).filter(item => item.impacted).length,
             failedUpstreamCount: blockingUpstream.filter(item => item.relatedInstance?.status === 4).length,
@@ -241,6 +324,7 @@ export const useDependencyInsightData = ({
     }, [
         allUpstreamTaskIdMap,
         controlUpstreamTaskIdMap,
+        controlDownstreamTaskIdMap,
         dataDownstreamTaskIdMap,
         dataUpstreamTaskIdMap,
         instanceByPlanDate,

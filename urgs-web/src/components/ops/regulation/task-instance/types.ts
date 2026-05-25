@@ -28,6 +28,8 @@ export interface DependencyInsightData {
     blockingUpstream: BlockingDependencyItem[];
     downstreamRootTaskIds: number[];
     downstreamMetaMap: Map<number, DownstreamImpactMeta>;
+    allDownstreamRootTaskIds: number[];
+    allDownstreamMetaMap: Map<number, DownstreamImpactMeta>;
     downstreamTotalCount: number;
     impactedDownstreamCount: number;
     failedUpstreamCount: number;

@@ -101,7 +101,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                     <div>
                         <div className="text-lg font-bold text-slate-800">任务实例</div>
                         <div className="text-sm text-slate-500 mt-1">
-                            围绕 `t_quartz_task_status` 跟踪批量实例状态、时间线和失败信息；重跑会按数据依赖链路重置下游，执行放行仍检查全部依赖。
+                            围绕 `t_quartz_task_status` 跟踪批量实例状态、时间线和失败信息；单条重跑可进入依赖列表选择节点，批量重跑仅处理当前选中节点。
                         </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
@@ -231,7 +231,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                                 className={`${batchActionClass} border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-blue-50`}
                             >
                                 <Play size={14} />
-                                批量重跑数据链路
+                                批量重跑当前节点
                             </button>
                             <button
                                 onClick={onBatchForceStop}
@@ -289,7 +289,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                             className={contextMenuItemClass}
                         >
                             <Play size={14} className="text-blue-600" />
-                            重跑数据链路
+                            重跑数据
                         </button>
                         <button
                             onClick={() => onInvokeRowContextAction('stop')}
