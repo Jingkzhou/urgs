@@ -634,17 +634,15 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     };
 
     const handleExecuteSelectedDependencyRerun = async () => {
-        if (selectedDependencyRerunStatusIds.length === 0) {
-            message.warning('请选择需要一起重跑的下游实例');
-            return;
-        }
+        if (!rerunExecutionInstance) return;
 
+        const statusIds = Array.from(new Set([rerunExecutionInstance.id, ...selectedDependencyRerunStatusIds]));
         setDependencyRerunExecuting(true);
         try {
             const executed = await executeCurrentNodeRerun(
-                selectedDependencyRerunStatusIds,
-                `已重跑选中下游 ${selectedDependencyRerunStatusIds.length} 条实例`,
-                '重跑选中下游失败'
+                statusIds,
+                `已重跑当前任务及选中下游 ${statusIds.length} 条实例`,
+                '重跑当前任务及选中下游失败'
             );
             if (executed) {
                 setSelectedDependencyRerunStatusIds([]);

@@ -52,7 +52,7 @@ const TaskInstanceRerunOptionModal: React.FC<TaskInstanceRerunOptionModalProps> 
                     >
                         <div className="text-sm font-semibold text-slate-800">进入依赖列表</div>
                         <div className="mt-2 text-xs leading-5 text-slate-500">
-                            单独打开执行页面，只查看当前任务重跑后需要一起重跑的下游任务。
+                            单独打开执行页面，查看当前任务及需要一起重跑的影响任务。
                         </div>
                     </button>
                 </div>

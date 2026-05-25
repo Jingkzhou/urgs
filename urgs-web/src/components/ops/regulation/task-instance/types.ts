@@ -23,6 +23,12 @@ export interface DownstreamImpactMeta extends DependencyRelationItem {
     descendantCount: number;
 }
 
+export interface RerunImpactItem extends DownstreamImpactMeta {
+    level: number;
+    routeKey: string;
+    current?: boolean;
+}
+
 export interface DependencyInsightData {
     selectedTask?: QuartzTask;
     blockingUpstream: BlockingDependencyItem[];
@@ -30,6 +36,7 @@ export interface DependencyInsightData {
     downstreamMetaMap: Map<number, DownstreamImpactMeta>;
     allDownstreamRootTaskIds: number[];
     allDownstreamMetaMap: Map<number, DownstreamImpactMeta>;
+    rerunImpactItems: RerunImpactItem[];
     downstreamTotalCount: number;
     impactedDownstreamCount: number;
     failedUpstreamCount: number;

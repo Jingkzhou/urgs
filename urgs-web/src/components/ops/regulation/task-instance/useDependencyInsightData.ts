@@ -7,6 +7,7 @@ import {
     DependencyRelationItem,
     DependencyRelationType,
     DownstreamImpactMeta,
+    RerunImpactItem,
 } from './types';
 import { getAllDependIds, getControlDependIds, getDataDependIds } from './utils';
 
@@ -289,6 +290,155 @@ export const useDependencyInsightData = ({
             return meta;
         };
 
+        const rerunImpactItemMap = new Map<number, RerunImpactItem>();
+        const rerunImpactOrder: number[] = [];
+        const visitedRerunDataIds = new Set<number>();
+        const visitedRerunControlIds = new Set<number>();
+
+        const ensureRerunImpactItem = (
+            taskId: number,
+            dependencyTypes: DependencyRelationType[],
+            level: number,
+            routeKey: string,
+            current = false
+        ) => {
+            const existing = rerunImpactItemMap.get(taskId);
+            if (existing) {
+                dependencyTypes.forEach(type => mergeDependencyType(existing, type));
+                if (level < existing.level) {
+                    existing.level = level;
+                    existing.routeKey = routeKey;
+                }
+                existing.current = existing.current || current;
+                return existing;
+            }
+
+            const relation = toRelationItem(taskId, [...dependencyTypes]);
+            const relatedInstance = current ? selectedInstance : relation.relatedInstance;
+            const item: RerunImpactItem = {
+                ...relation,
+                relatedInstance,
+                impacted: relatedInstance?.status !== 3,
+                hasImpactedDescendant: false,
+                directChildIds: [],
+                descendantCount: 0,
+                level,
+                routeKey,
+                current,
+            };
+            rerunImpactItemMap.set(taskId, item);
+            rerunImpactOrder.push(taskId);
+            return item;
+        };
+
+        const splitRerunDataChildren = (taskIds: number[]) => {
+            const mainDataChildIds: number[] = [];
+            const leafDataChildIds: number[] = [];
+            taskIds.forEach(taskId => {
+                if ((dataDownstreamTaskIdMap.get(taskId) || []).length > 0) {
+                    mainDataChildIds.push(taskId);
+                    return;
+                }
+                leafDataChildIds.push(taskId);
+            });
+            return { mainDataChildIds, leafDataChildIds };
+        };
+
+        const visitRerunControlChain = (taskId: number, level: number, ancestors: number[]) => {
+            if (ancestors.includes(taskId)) {
+                return;
+            }
+
+            const route = [...ancestors, taskId];
+            const item = ensureRerunImpactItem(taskId, ['CONTROL'], level, route.join('>'));
+            if (visitedRerunDataIds.has(taskId) || visitedRerunControlIds.has(taskId)) {
+                return;
+            }
+            visitedRerunControlIds.add(taskId);
+
+            const childIds = (controlDownstreamTaskIdMap.get(taskId) || [])
+                .filter(childTaskId => !route.includes(childTaskId));
+            item.directChildIds = mergeTaskIds(item.directChildIds, childIds);
+            childIds.forEach(childTaskId => visitRerunControlChain(childTaskId, level + 1, route));
+        };
+
+        const visitRerunDataChain = (taskId: number, level: number, ancestors: number[]) => {
+            if (ancestors.includes(taskId)) {
+                return;
+            }
+
+            const route = [...ancestors, taskId];
+            const item = ensureRerunImpactItem(taskId, ['DATA'], level, route.join('>'));
+            if (visitedRerunDataIds.has(taskId)) {
+                return;
+            }
+            visitedRerunDataIds.add(taskId);
+
+            const dataChildIds = (dataDownstreamTaskIdMap.get(taskId) || [])
+                .filter(childTaskId => !route.includes(childTaskId));
+            const controlChildIds = (controlDownstreamTaskIdMap.get(taskId) || [])
+                .filter(childTaskId => !route.includes(childTaskId));
+            const { mainDataChildIds, leafDataChildIds } = splitRerunDataChildren(dataChildIds);
+            item.directChildIds = mergeTaskIds(item.directChildIds, mainDataChildIds, controlChildIds, leafDataChildIds);
+            mainDataChildIds.forEach(childTaskId => visitRerunDataChain(childTaskId, level + 1, route));
+            controlChildIds.forEach(childTaskId => visitRerunControlChain(childTaskId, level + 1, route));
+            leafDataChildIds.forEach(childTaskId => visitRerunDataChain(childTaskId, level + 1, route));
+        };
+
+        const sourceItem = ensureRerunImpactItem(
+            selectedInstance.plan_id,
+            [],
+            0,
+            `${selectedInstance.plan_id}`,
+            true
+        );
+        visitedRerunDataIds.add(selectedInstance.plan_id);
+        const sourceDataChildIds = (dataDownstreamTaskIdMap.get(selectedInstance.plan_id) || [])
+            .filter(childTaskId => childTaskId !== selectedInstance.plan_id);
+        const sourceControlChildIds = (controlDownstreamTaskIdMap.get(selectedInstance.plan_id) || [])
+            .filter(childTaskId => childTaskId !== selectedInstance.plan_id);
+        const sourceDataChildren = splitRerunDataChildren(sourceDataChildIds);
+        sourceItem.directChildIds = mergeTaskIds(
+            sourceItem.directChildIds,
+            sourceDataChildren.mainDataChildIds,
+            sourceControlChildIds,
+            sourceDataChildren.leafDataChildIds
+        );
+        sourceDataChildren.mainDataChildIds.forEach(childTaskId => visitRerunDataChain(childTaskId, 1, [selectedInstance.plan_id]));
+        sourceControlChildIds.forEach(childTaskId => visitRerunControlChain(childTaskId, 1, [selectedInstance.plan_id]));
+        sourceDataChildren.leafDataChildIds.forEach(childTaskId => visitRerunDataChain(childTaskId, 1, [selectedInstance.plan_id]));
+
+        const resolveRerunDescendants = (taskId: number, path: Set<number>) => {
+            const item = rerunImpactItemMap.get(taskId);
+            const descendantIds = new Set<number>();
+            if (!item) {
+                return descendantIds;
+            }
+
+            item.directChildIds = item.directChildIds.filter(childTaskId =>
+                rerunImpactItemMap.has(childTaskId) && !path.has(childTaskId)
+            );
+            let hasImpactedDescendant = false;
+            item.directChildIds.forEach(childTaskId => {
+                const nextPath = new Set(path);
+                nextPath.add(childTaskId);
+                const childDescendants = resolveRerunDescendants(childTaskId, nextPath);
+                const childItem = rerunImpactItemMap.get(childTaskId);
+                descendantIds.add(childTaskId);
+                childDescendants.forEach(descendantTaskId => descendantIds.add(descendantTaskId));
+                if (childItem?.impacted || childItem?.hasImpactedDescendant) {
+                    hasImpactedDescendant = true;
+                }
+            });
+            item.descendantCount = descendantIds.size;
+            item.hasImpactedDescendant = hasImpactedDescendant;
+            return descendantIds;
+        };
+        resolveRerunDescendants(selectedInstance.plan_id, new Set([selectedInstance.plan_id]));
+        const rerunImpactItems = rerunImpactOrder
+            .map(taskId => rerunImpactItemMap.get(taskId))
+            .filter((item): item is RerunImpactItem => !!item);
+
         const downstreamRootTaskIds = dataDownstreamTaskIdMap.get(selectedInstance.plan_id) || [];
         downstreamRootTaskIds.forEach(taskId => {
             buildDownstreamMeta(taskId, new Set([selectedInstance.plan_id, taskId]));
@@ -317,6 +467,7 @@ export const useDependencyInsightData = ({
             downstreamMetaMap,
             allDownstreamRootTaskIds,
             allDownstreamMetaMap,
+            rerunImpactItems,
             downstreamTotalCount: downstreamMetaMap.size,
             impactedDownstreamCount: Array.from(downstreamMetaMap.values()).filter(item => item.impacted).length,
             failedUpstreamCount: blockingUpstream.filter(item => item.relatedInstance?.status === 4).length,
