@@ -497,8 +497,11 @@ class Neo4jClient:
                 "is_expanded": dep.get("is_expanded", False)
             }
             
-            # 查找 Neo4j 关系类型
-            item["neo4j_rel_type"] = RELATION_TYPE_MAP.get(item["dependency_type"], "DERIVES_TO")
+            # 查找 Neo4j 关系类型，优先保留解析器已经细分出的 GROUPS/ORDERS 等类型。
+            neo4j_rel_type = dep.get("neo4j_type") or RELATION_TYPE_MAP.get(item["dependency_type"], "DERIVES_TO")
+            if neo4j_rel_type not in ALL_LINEAGE_RELATION_TYPES:
+                neo4j_rel_type = "DERIVES_TO"
+            item["neo4j_rel_type"] = neo4j_rel_type
 
             if target_column in ["*", "", None]:
                  indirect_items.append(item)

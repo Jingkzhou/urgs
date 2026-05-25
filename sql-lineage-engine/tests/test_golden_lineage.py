@@ -447,6 +447,33 @@ def test_case_when_unqualified_condition_uses_single_case_alias(mock_metadata_re
     ) in actual
 
 
+def test_group_by_column_preserves_group_relation_type(mock_metadata_resolver):
+    """GROUP BY 字段应保留 GROUPS 类型，不能被 fdr 默认映射覆盖成 FILTERS。"""
+    from parsers.sql_parser import LineageParser
+
+    sql = """
+    INSERT INTO JS_201_DBWXX_TMP01
+    SELECT T.ACCT_NUM, SUM(LOAN_ACCT_BAL) LOAN_ACCT_BAL
+      FROM SMTMODS.L_ACCT_LOAN T
+     WHERE T.DATA_DATE = IS_DATE
+       AND T.LOAN_STOCKEN_DATE IS NULL
+     GROUP BY T.ACCT_NUM
+    HAVING SUM(LOAN_ACCT_BAL) > 0
+    """
+
+    parser = LineageParser(dialect="oracle", default_schema="PBOCD_DATACORE")
+    deps = parser.get_column_lineage(sql)
+
+    assert any(
+        dep.get("source_table") == "SMTMODS.L_ACCT_LOAN"
+        and dep.get("source_column") == "ACCT_NUM"
+        and dep.get("target_table") == "PBOCD_DATACORE.JS_201_DBWXX_TMP01"
+        and dep.get("dependency_type") == "fdr"
+        and dep.get("neo4j_type") == "GROUPS"
+        for dep in deps
+    )
+
+
 def test_minus_select_star_maps_each_left_projection_as_filter_dependency(mock_metadata_resolver):
     """MINUS/EXCEPT 右侧 SELECT * 应按左侧投影逐列影响目标，不能只落到第一列。"""
     from parsers.sql_parser import LineageParser

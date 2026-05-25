@@ -274,9 +274,10 @@ const AICodeReport: React.FC = () => {
     const loadMemories = async () => {
         setMemoryLoading(true);
         try {
-            const data = await getLineageReviewMemories();
-            setMemories(data || []);
-            const current = data?.find(item => item.id === selectedMemoryId) || data?.[0];
+            const data = await getLineageReviewMemories({ status: 'ACTIVE' });
+            const activeSummaries = (data || []).filter(item => !item.sourceIssueId);
+            setMemories(activeSummaries);
+            const current = activeSummaries.find(item => item.id === selectedMemoryId) || activeSummaries[0];
             selectMemoryForEdit(current);
         } catch (error: any) {
             message.error(error?.message || '加载走查记忆失败');
@@ -366,7 +367,7 @@ const AICodeReport: React.FC = () => {
             if (reviewStatus === 'FALSE_POSITIVE') {
                 await loadMemories();
             }
-            message.success(reviewStatus === 'FALSE_POSITIVE' ? '误报原因已保存，并已沉淀到走查记忆' : '人工判定已保存');
+            message.success(reviewStatus === 'FALSE_POSITIVE' ? '误报原因已保存，并已更新误报复盘汇总' : '人工判定已保存');
         } catch (error: any) {
             message.error(error?.message || '保存判定失败');
         } finally {
@@ -776,7 +777,7 @@ const AICodeReport: React.FC = () => {
                     <Alert
                         type="info"
                         showIcon
-                        message="误报原因会保存到本条疑点，并结合 AI 复盘成走查记忆。后续血缘走查会自动带上这些记忆。"
+                        message="误报原因会保存到本条疑点，并与历史误报一起汇总成一条走查记忆。后续血缘走查会自动参考这条汇总。"
                     />
                     <TextArea
                         rows={5}
@@ -813,7 +814,7 @@ const AICodeReport: React.FC = () => {
                         <Spin />
                     </div>
                 ) : memories.length === 0 ? (
-                    <Empty description="暂无走查记忆。标记误报并填写原因后会自动生成。" />
+                    <Empty description="暂无走查记忆。标记误报并填写原因后会自动汇总生成。" />
                 ) : (
                     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
                         <div className="space-y-2">

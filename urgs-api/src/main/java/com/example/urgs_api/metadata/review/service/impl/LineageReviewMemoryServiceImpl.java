@@ -1,12 +1,14 @@
 package com.example.urgs_api.metadata.review.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.example.urgs_api.metadata.review.dto.LineageReviewDecisionRequest;
 import com.example.urgs_api.metadata.review.dto.LineageReviewMemoryRequest;
 import com.example.urgs_api.metadata.review.entity.LineageReviewCache;
 import com.example.urgs_api.metadata.review.entity.LineageReviewIssue;
 import com.example.urgs_api.metadata.review.entity.LineageReviewMemory;
 import com.example.urgs_api.metadata.review.mapper.LineageReviewCacheMapper;
+import com.example.urgs_api.metadata.review.mapper.LineageReviewIssueMapper;
 import com.example.urgs_api.metadata.review.mapper.LineageReviewMemoryMapper;
 import com.example.urgs_api.metadata.review.service.LineageReviewAiService;
 import com.example.urgs_api.metadata.review.service.LineageReviewMemoryService;
@@ -21,15 +23,22 @@ import java.util.List;
 public class LineageReviewMemoryServiceImpl implements LineageReviewMemoryService {
 
     private static final String STATUS_ACTIVE = "ACTIVE";
+    private static final String STATUS_ARCHIVED = "ARCHIVED";
+    private static final String SUMMARY_TARGET_PATTERN = "GLOBAL_FALSE_POSITIVE_SUMMARY";
+    private static final String SUMMARY_ISSUE_TYPE = "FALSE_POSITIVE_SUMMARY";
+    private static final int FALSE_POSITIVE_SAMPLE_LIMIT = 200;
 
     private final LineageReviewMemoryMapper memoryMapper;
+    private final LineageReviewIssueMapper issueMapper;
     private final LineageReviewCacheMapper cacheMapper;
     private final LineageReviewAiService aiService;
 
     public LineageReviewMemoryServiceImpl(LineageReviewMemoryMapper memoryMapper,
+            LineageReviewIssueMapper issueMapper,
             LineageReviewCacheMapper cacheMapper,
             LineageReviewAiService aiService) {
         this.memoryMapper = memoryMapper;
+        this.issueMapper = issueMapper;
         this.cacheMapper = cacheMapper;
         this.aiService = aiService;
     }
@@ -37,7 +46,11 @@ public class LineageReviewMemoryServiceImpl implements LineageReviewMemoryServic
     @Override
     public List<LineageReviewMemory> listMemories(String status) {
         LambdaQueryWrapper<LineageReviewMemory> query = new LambdaQueryWrapper<>();
-        query.eq(StringUtils.hasText(status), LineageReviewMemory::getStatus, status);
+        String targetStatus = StringUtils.hasText(status) ? status : STATUS_ACTIVE;
+        query.eq(LineageReviewMemory::getStatus, targetStatus);
+        if (STATUS_ACTIVE.equalsIgnoreCase(targetStatus)) {
+            query.isNull(LineageReviewMemory::getSourceIssueId);
+        }
         query.orderByDesc(LineageReviewMemory::getUpdateTime)
                 .orderByDesc(LineageReviewMemory::getCreateTime);
         return memoryMapper.selectList(query);
@@ -83,20 +96,21 @@ public class LineageReviewMemoryServiceImpl implements LineageReviewMemoryServic
             throw new IllegalArgumentException("标记误报时必须填写误报原因");
         }
 
-        LineageReviewMemory memory = findBySourceIssue(issue.getId());
+        archiveIssueLevelMemories();
+        LineageReviewMemory memory = findSummaryMemory();
         LocalDateTime now = LocalDateTime.now();
         if (memory == null) {
             memory = new LineageReviewMemory();
-            memory.setSourceIssueId(issue.getId());
+            memory.setTitle("误报复盘汇总");
+            memory.setTargetPattern(SUMMARY_TARGET_PATTERN);
+            memory.setIssueType(SUMMARY_ISSUE_TYPE);
             memory.setCreateTime(now);
             memory.setCreatedBy(userId);
         }
-        memory.setTitle(buildTitle(issue));
         memory.setStatus(STATUS_ACTIVE);
-        memory.setContent(aiService.summarizeFalsePositiveMemory(issue, falsePositiveReason));
-        memory.setTargetPattern(buildTargetPattern(issue));
-        memory.setIssueType(issue.getIssueType());
-        memory.setRuleHits(issue.getRuleHits());
+        memory.setContent(aiService.summarizeFalsePositiveMemories(loadFalsePositiveIssues()));
+        memory.setRuleHits(null);
+        memory.setSourceIssueId(null);
         memory.setSourceTaskId(issue.getTaskId());
         memory.setAnalysisRecordId(issue.getAnalysisRecordId());
         memory.setRepoId(issue.getRepoId());
@@ -119,13 +133,29 @@ public class LineageReviewMemoryServiceImpl implements LineageReviewMemoryServic
                 .isNotNull(LineageReviewCache::getId));
     }
 
-    private LineageReviewMemory findBySourceIssue(Long sourceIssueId) {
-        if (sourceIssueId == null) {
-            return null;
-        }
+    private void archiveIssueLevelMemories() {
+        LineageReviewMemory memory = new LineageReviewMemory();
+        memory.setStatus(STATUS_ARCHIVED);
+        memoryMapper.update(memory, new LambdaUpdateWrapper<LineageReviewMemory>()
+                .eq(LineageReviewMemory::getStatus, STATUS_ACTIVE)
+                .isNotNull(LineageReviewMemory::getSourceIssueId));
+    }
+
+    private LineageReviewMemory findSummaryMemory() {
         LambdaQueryWrapper<LineageReviewMemory> query = new LambdaQueryWrapper<>();
-        query.eq(LineageReviewMemory::getSourceIssueId, sourceIssueId).last("LIMIT 1");
+        query.eq(LineageReviewMemory::getTargetPattern, SUMMARY_TARGET_PATTERN)
+                .eq(LineageReviewMemory::getIssueType, SUMMARY_ISSUE_TYPE)
+                .last("LIMIT 1");
         return memoryMapper.selectOne(query);
+    }
+
+    private List<LineageReviewIssue> loadFalsePositiveIssues() {
+        LambdaQueryWrapper<LineageReviewIssue> query = new LambdaQueryWrapper<>();
+        query.eq(LineageReviewIssue::getReviewStatus, "FALSE_POSITIVE")
+                .orderByDesc(LineageReviewIssue::getReviewTime)
+                .orderByDesc(LineageReviewIssue::getUpdateTime)
+                .last("LIMIT " + FALSE_POSITIVE_SAMPLE_LIMIT);
+        return issueMapper.selectList(query);
     }
 
     private String resolveFalsePositiveReason(LineageReviewDecisionRequest request) {
@@ -138,15 +168,4 @@ public class LineageReviewMemoryServiceImpl implements LineageReviewMemoryServic
         return StringUtils.hasText(request.getReviewerNote()) ? request.getReviewerNote().trim() : null;
     }
 
-    private String buildTitle(LineageReviewIssue issue) {
-        return "误报复盘：" + issue.getIssueType() + " / " + buildTargetPattern(issue);
-    }
-
-    private String buildTargetPattern(LineageReviewIssue issue) {
-        String tableName = StringUtils.hasText(issue.getTableName()) ? issue.getTableName() : "UNKNOWN_TABLE";
-        if (!StringUtils.hasText(issue.getColumnName())) {
-            return tableName;
-        }
-        return tableName + "." + issue.getColumnName();
-    }
 }

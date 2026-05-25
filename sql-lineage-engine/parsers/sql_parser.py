@@ -190,6 +190,7 @@ class LineageParser:
                         "source_table": dep_source,
                         "source_column": dep["source_column"],
                         "dependency_type": dep["dependency_type"],
+                        "neo4j_type": dep.get("neo4j_type"),
                         "source_file": dep.get("source_file"),
                         "snippet": dep.get("snippet"),
                         "lineage_origin": "sqlglot_table",
@@ -390,6 +391,7 @@ class LineageParser:
                                     "source_table": dep["source_table"],
                                     "source_column": dep["source_column"],
                                     "dependency_type": dep["dependency_type"],
+                                    "neo4j_type": dep.get("neo4j_type"),
                                     "source_file": dep.get("source_file"),
                                     "snippet": dep.get(
                                         "snippet"

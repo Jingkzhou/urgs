@@ -38,6 +38,8 @@ public class LineageReviewAiService {
 
     private static final int MEMORY_LIMIT = 20;
     private static final int MEMORY_PROMPT_CHAR_LIMIT = 8000;
+    private static final int SUMMARY_MEMORY_CHAR_LIMIT = 8000;
+    private static final int SUMMARY_PROMPT_SAMPLE_CHAR_LIMIT = 12000;
 
     private static final String SYSTEM_PROMPT = """
             你是一名 SQL 血缘复核助手。
@@ -149,17 +151,21 @@ public class LineageReviewAiService {
         return config.getProvider() + "/" + config.getModel();
     }
 
-    public String summarizeFalsePositiveMemory(LineageReviewIssue issue, String falsePositiveReason) {
-        String fallback = buildFallbackFalsePositiveMemory(issue, falsePositiveReason);
+    public String summarizeFalsePositiveMemories(List<LineageReviewIssue> falsePositiveIssues) {
+        String fallback = buildFallbackFalsePositiveSummary(falsePositiveIssues);
         try {
             String response = aiClient.chat("""
                     你是一名 SQL 血缘走查复盘助手。
-                    请把一次人工确认的误报沉淀成可复用的走查记忆，供下次 AI 走查参考。
-                    输出 Markdown，内容要短、可执行、可迁移，不要输出 JSON。
-                    """, buildFalsePositiveMemoryPrompt(issue, falsePositiveReason));
-            return StringUtils.hasText(response) ? response.trim() : fallback;
+                    请把多次人工确认的误报样本合并成一份可复用的走查记忆。
+                    要求：
+                    1. 只提炼共性规则，不逐条复述样本；
+                    2. 内容简洁，突出下次判定准则；
+                    3. 总长度必须小于 8000 个字符；
+                    4. 输出 Markdown，不要输出 JSON。
+                    """, buildFalsePositiveSummaryPrompt(falsePositiveIssues));
+            return limitMemoryContent(StringUtils.hasText(response) ? response.trim() : fallback);
         } catch (Exception ex) {
-            return fallback + "\n\n> AI 复盘生成失败，已使用规则化模板：" + ex.getMessage();
+            return limitMemoryContent(fallback + "\n\n> AI 汇总生成失败，已使用规则化模板：" + ex.getMessage());
         }
     }
 
@@ -208,9 +214,9 @@ public class LineageReviewAiService {
                 """.formatted(RELATION_TYPE_GUIDE, loadActiveReviewMemory(), toJson(evidence));
     }
 
-    private String buildFalsePositiveMemoryPrompt(LineageReviewIssue issue, String falsePositiveReason) {
+    private String buildFalsePositiveSummaryPrompt(List<LineageReviewIssue> falsePositiveIssues) {
         return """
-                请根据人工误报确认，复盘出以后可直接放进走查上下文的记忆。
+                请基于以下人工误报样本，生成一条合并后的走查记忆。
 
                 输出结构：
                 ## 适用场景
@@ -222,50 +228,76 @@ public class LineageReviewAiService {
                 ## 证据线索
                 - ...
 
-                [人工误报原因]
+                [人工误报样本]
                 %s
-
-                [本次疑点与 AI 结论]
-                %s
-                """.formatted(falsePositiveReason, toJson(buildFalsePositiveEvidence(issue)));
+                """.formatted(limitPromptSamples(toJson(buildFalsePositiveSummaryEvidence(falsePositiveIssues))));
     }
 
-    private Map<String, Object> buildFalsePositiveEvidence(LineageReviewIssue issue) {
-        Map<String, Object> evidence = new LinkedHashMap<>();
-        evidence.put("tableName", issue.getTableName());
-        evidence.put("columnName", issue.getColumnName());
-        evidence.put("issueType", issue.getIssueType());
-        evidence.put("severity", issue.getSeverity());
-        evidence.put("aiVerdict", issue.getVerdict());
-        evidence.put("aiReason", issue.getReason());
-        evidence.put("ruleHits", issue.getRuleHits());
-        evidence.put("suggestedSources", issue.getSuggestedSources());
-        evidence.put("evidenceRefs", issue.getEvidenceRefs());
-        evidence.put("graphSnapshot", issue.getGraphSnapshot());
-        return evidence;
+    private List<Map<String, Object>> buildFalsePositiveSummaryEvidence(List<LineageReviewIssue> falsePositiveIssues) {
+        if (falsePositiveIssues == null || falsePositiveIssues.isEmpty()) {
+            return List.of();
+        }
+        return falsePositiveIssues.stream()
+                .map(issue -> {
+                    Map<String, Object> evidence = new LinkedHashMap<>();
+                    evidence.put("target", buildIssueTarget(issue));
+                    evidence.put("issueType", issue.getIssueType());
+                    evidence.put("ruleHits", issue.getRuleHits());
+                    evidence.put("aiReason", issue.getReason());
+                    evidence.put("manualReason", issue.getReviewerNote());
+                    evidence.put("evidenceRefs", issue.getEvidenceRefs());
+                    return evidence;
+                })
+                .toList();
     }
 
-    private String buildFallbackFalsePositiveMemory(LineageReviewIssue issue, String falsePositiveReason) {
-        return """
+    private String buildFallbackFalsePositiveSummary(List<LineageReviewIssue> falsePositiveIssues) {
+        Map<String, Long> issueTypeCounts = falsePositiveIssues == null ? Map.of() : falsePositiveIssues.stream()
+                .collect(Collectors.groupingBy(this::normalizeIssueType, LinkedHashMap::new, Collectors.counting()));
+        List<String> manualReasons = falsePositiveIssues == null ? List.of() : falsePositiveIssues.stream()
+                .map(LineageReviewIssue::getReviewerNote)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .limit(12)
+                .toList();
+        String summary = """
                 ## 适用场景
-                - 目标对象：%s
-                - 疑点类型：%s
-                - 规则命中：%s
+                - 人工已确认的 SQL 血缘走查误报样本，主要疑点类型：%s
 
                 ## 误报模式
-                - 人工确认为误报：%s
+                %s
 
                 ## 下次判定准则
-                - 遇到相同疑点类型和相似证据时，先检查是否属于该误报模式，再决定是否输出正式疑点。
+                - 优先核对关系类型定义，CASE_WHEN、FILTERS、JOINS、GROUPS、ORDERS 这类影响关系不要误判为缺少 DERIVES_TO。
+                - 只有能从 SQL 片段或程序关系列表定位到具体字段级缺失、错连或类型错误时，才输出正式疑点。
+                - 证据不足、只有表级笼统判断、或无法给出字段级 suggestedSources 时，不要输出 CONFIRMED 疑点。
 
                 ## 证据线索
-                - AI 原因：%s
+                - 参考人工误报原因和字段级证据，不逐条复述历史样本。
                 """.formatted(
-                buildIssueTarget(issue),
-                issue.getIssueType(),
-                issue.getRuleHits(),
-                falsePositiveReason,
-                issue.getReason());
+                issueTypeCounts,
+                manualReasons.isEmpty()
+                        ? "- 历史误报原因较少，按关系类型和字段级证据约束优先判断。"
+                        : manualReasons.stream().map(reason -> "- " + reason).collect(Collectors.joining("\n")));
+        return limitMemoryContent(summary);
+    }
+
+    private String limitMemoryContent(String content) {
+        if (!StringUtils.hasText(content) || content.length() <= SUMMARY_MEMORY_CHAR_LIMIT) {
+            return content;
+        }
+        return content.substring(0, SUMMARY_MEMORY_CHAR_LIMIT - 16) + "\n\n[记忆已截断]";
+    }
+
+    private String limitPromptSamples(String content) {
+        if (!StringUtils.hasText(content) || content.length() <= SUMMARY_PROMPT_SAMPLE_CHAR_LIMIT) {
+            return content;
+        }
+        return content.substring(0, SUMMARY_PROMPT_SAMPLE_CHAR_LIMIT) + "\n\n[误报样本已截断]";
+    }
+
+    private String normalizeIssueType(LineageReviewIssue issue) {
+        return StringUtils.hasText(issue.getIssueType()) ? issue.getIssueType() : "UNKNOWN";
     }
 
     private String buildIssueTarget(LineageReviewIssue issue) {
@@ -395,7 +427,7 @@ public class LineageReviewAiService {
         return raw;
     }
 
-    private String toJson(Map<String, Object> evidence) {
+    private String toJson(Object evidence) {
         try {
             return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(evidence);
         } catch (Exception ex) {
