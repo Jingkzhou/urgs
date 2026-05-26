@@ -44,9 +44,17 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
     const [candidatePage, setCandidatePage] = useState(1);
     const [candidatePageSize, setCandidatePageSize] = useState(10);
 
+    const selectedDataSet = useMemo(() => new Set(selectedDependencyIds), [selectedDependencyIds]);
+    const selectedControlSet = useMemo(() => new Set(selectedControlDependencyIds), [selectedControlDependencyIds]);
+
     const availableDependencyTasks = useMemo(() => {
-        return taskList.filter(task => task.id !== editingTaskId);
-    }, [taskList, editingTaskId]);
+        return taskList.filter(task => {
+            const taskId = String(task.id);
+            return task.id !== editingTaskId
+                && !selectedDataSet.has(taskId)
+                && !selectedControlSet.has(taskId);
+        });
+    }, [editingTaskId, selectedControlSet, selectedDataSet, taskList]);
 
     const filteredDependencyTasks = useMemo(() => {
         return availableDependencyTasks.filter(task => {
@@ -75,7 +83,7 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
             const remoteTask = dependencyTaskMap.get(id);
             if (remoteTask) return remoteTask;
 
-            const task = availableDependencyTasks.find(item => String(item.id) === id);
+            const task = taskList.find(item => String(item.id) === id);
             if (task) return task;
 
             return {
@@ -96,11 +104,11 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
 
     const selectedDataDependencyTasks = useMemo(
         () => buildSelectedTasks(selectedDependencyIds),
-        [availableDependencyTasks, dependencyTaskDetails, selectedDependencyIds]
+        [dependencyTaskDetails, selectedDependencyIds, taskList]
     );
     const selectedControlDependencyTasks = useMemo(
         () => buildSelectedTasks(selectedControlDependencyIds),
-        [availableDependencyTasks, dependencyTaskDetails, selectedControlDependencyIds]
+        [dependencyTaskDetails, selectedControlDependencyIds, taskList]
     );
 
     const filterSelectedTasks = (tasks: QuartzTask[]) => {
@@ -126,7 +134,7 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
 
     useEffect(() => {
         setCandidatePage(1);
-    }, [dependencyKeyword, dependencySystemFilter, dependencyTypeFilter]);
+    }, [dependencyKeyword, dependencySystemFilter, dependencyTypeFilter, selectedDependencyIds, selectedControlDependencyIds]);
 
     useEffect(() => {
         const maxPage = Math.max(1, Math.ceil(filteredDependencyTasks.length / candidatePageSize));
@@ -283,9 +291,6 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
         </section>
     );
 
-    const selectedDataSet = useMemo(() => new Set(selectedDependencyIds), [selectedDependencyIds]);
-    const selectedControlSet = useMemo(() => new Set(selectedControlDependencyIds), [selectedControlDependencyIds]);
-
     return (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between gap-3">
@@ -311,6 +316,7 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
                         <div className="flex items-center justify-between gap-2">
                             <div className="text-sm font-semibold text-slate-800">可选任务池</div>
                             <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500">可选 {filteredDependencyTasks.length} 项</span>
                                 <span className="text-xs text-slate-500">已勾选 {leftCheckedIds.length} 项</span>
                                 <button
                                     type="button"
@@ -358,20 +364,6 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
                         ) : pagedCandidateDependencyTasks.map(task => {
                             const taskId = String(task.id);
                             const checked = leftCheckedIds.includes(taskId);
-                            const badges = (
-                                <>
-                                    {selectedDataSet.has(taskId) && (
-                                        <span className="rounded border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
-                                            已是数据
-                                        </span>
-                                    )}
-                                    {selectedControlSet.has(taskId) && (
-                                        <span className="rounded border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
-                                            已是控制
-                                        </span>
-                                    )}
-                                </>
-                            );
                             return renderTaskOption(
                                 task,
                                 checked,
@@ -380,8 +372,7 @@ const TaskDependencyPanel: React.FC<TaskDependencyPanelProps> = ({
                                     nextChecked
                                         ? Array.from(new Set([...prev, taskId]))
                                         : prev.filter(id => id !== taskId)
-                                )),
-                                badges
+                                ))
                             );
                         })}
                     </div>

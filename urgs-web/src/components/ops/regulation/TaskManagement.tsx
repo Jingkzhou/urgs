@@ -41,6 +41,7 @@ interface TaskManagementProps {
 
 const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) => {
     const [taskList, setTaskList] = useState<QuartzTask[]>([]);
+    const [dependencyCandidateTaskList, setDependencyCandidateTaskList] = useState<QuartzTask[]>([]);
     const [taskTotal, setTaskTotal] = useState(0);
     const [taskStatusSummary, setTaskStatusSummary] = useState({ normal: 0, paused: 0 });
     const [form] = Form.useForm<TaskFormValues>();
@@ -74,21 +75,27 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
         regulationSystems.forEach(system => {
             if (system.name?.trim()) systemNames.add(system.name.trim());
         });
+        dependencyCandidateTaskList.forEach(task => {
+            if (task.task_system?.trim()) systemNames.add(task.task_system.trim());
+        });
         taskList.forEach(task => {
             if (task.task_system?.trim()) systemNames.add(task.task_system.trim());
         });
         if (editingTask?.task_system?.trim()) systemNames.add(editingTask.task_system.trim());
         return Array.from(systemNames);
-    }, [editingTask?.task_system, regulationSystems, taskList]);
+    }, [dependencyCandidateTaskList, editingTask?.task_system, regulationSystems, taskList]);
 
     const themes = useMemo(() => {
         const themeNames = new Set<string>();
+        dependencyCandidateTaskList.forEach(task => {
+            if (task.theme?.trim()) themeNames.add(task.theme.trim());
+        });
         taskList.forEach(task => {
             if (task.theme?.trim()) themeNames.add(task.theme.trim());
         });
         if (editingTask?.theme?.trim()) themeNames.add(editingTask.theme.trim());
         return Array.from(themeNames);
-    }, [editingTask?.theme, taskList]);
+    }, [dependencyCandidateTaskList, editingTask?.theme, taskList]);
 
     useEffect(() => {
         let mounted = true;
@@ -156,6 +163,33 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
         }
     }, [buildTaskQueryParams, currentPage, pageSize]);
 
+    const loadDependencyCandidateTasks = useCallback(async () => {
+        const candidatePageSize = 500;
+        const firstResponse = await queryQuartzTasks({ pageNum: 1, pageSize: candidatePageSize });
+        if (!firstResponse?.success) {
+            throw new Error(firstResponse?.msg || '依赖候选任务查询失败');
+        }
+
+        const allTasks = [...(firstResponse.data?.list || []).map(normalizeQuartzTask)];
+        const totalPages = Number(firstResponse.data?.pages || 1);
+
+        if (totalPages > 1) {
+            const restResponses = await Promise.all(
+                Array.from({ length: totalPages - 1 }, (_, index) =>
+                    queryQuartzTasks({ pageNum: index + 2, pageSize: candidatePageSize })
+                )
+            );
+
+            restResponses.forEach(response => {
+                if (response?.success) {
+                    allTasks.push(...(response.data?.list || []).map(normalizeQuartzTask));
+                }
+            });
+        }
+
+        setDependencyCandidateTaskList(allTasks);
+    }, []);
+
     const loadTaskStatusSummary = useCallback(async () => {
         try {
             const summaryPageSize = 500;
@@ -192,6 +226,12 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
     useEffect(() => {
         loadTasks(currentPage, pageSize);
     }, [currentPage, loadTasks, pageSize]);
+
+    useEffect(() => {
+        loadDependencyCandidateTasks().catch((error: any) => {
+            message.error(error?.message || '加载依赖候选任务失败');
+        });
+    }, [loadDependencyCandidateTasks]);
 
     useEffect(() => {
         loadTaskStatusSummary();
@@ -263,6 +303,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
         try {
             await Promise.all([
                 loadTasks(currentPage, pageSize),
+                loadDependencyCandidateTasks(),
                 loadTaskStatusSummary(),
             ]);
             message.success('任务列表已刷新');
@@ -327,8 +368,11 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             };
             const response = await saveOrUpdateQuartzTask(payload);
             if (!response?.success) throw new Error(response?.msg || '保存任务失败');
-            await loadTasks(currentPage, pageSize);
-            await loadTaskStatusSummary();
+            await Promise.all([
+                loadTasks(currentPage, pageSize),
+                loadDependencyCandidateTasks(),
+                loadTaskStatusSummary(),
+            ]);
             message.success(editingTask ? `已更新任务 ${taskName}` : `已创建任务 ${taskName}`);
             closeTaskModal();
         } catch (error: any) {
@@ -345,8 +389,11 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
         try {
             const response = await deleteQuartzTask(task.id);
             if (!response?.success) throw new Error(response?.msg || '删除任务失败');
-            await loadTasks(currentPage, pageSize);
-            await loadTaskStatusSummary();
+            await Promise.all([
+                loadTasks(currentPage, pageSize),
+                loadDependencyCandidateTasks(),
+                loadTaskStatusSummary(),
+            ]);
             setSelectedTask(prev => prev?.id === task.id ? null : prev);
             message.success(`已删除任务 ${task.task_name}`);
         } catch (error: any) {
@@ -385,8 +432,11 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
         try {
             const response = await pauseQuartzTask(task.id);
             if (!response?.success) throw new Error(response?.msg || '暂停任务失败');
-            await loadTasks(currentPage, pageSize);
-            await loadTaskStatusSummary();
+            await Promise.all([
+                loadTasks(currentPage, pageSize),
+                loadDependencyCandidateTasks(),
+                loadTaskStatusSummary(),
+            ]);
             message.success(`已暂停任务 ${task.task_name}`);
         } catch (error: any) {
             message.error(error?.message || '暂停任务失败');
@@ -398,8 +448,11 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
         try {
             const response = await resumeQuartzTask(task.id);
             if (!response?.success) throw new Error(response?.msg || '恢复任务失败');
-            await loadTasks(currentPage, pageSize);
-            await loadTaskStatusSummary();
+            await Promise.all([
+                loadTasks(currentPage, pageSize),
+                loadDependencyCandidateTasks(),
+                loadTaskStatusSummary(),
+            ]);
             message.success(`已恢复任务 ${task.task_name}`);
         } catch (error: any) {
             message.error(error?.message || '恢复任务失败');
@@ -569,7 +622,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 open={modalVisible}
                 editingTask={editingTask}
                 form={form}
-                taskList={taskList}
+                taskList={dependencyCandidateTaskList.length > 0 ? dependencyCandidateTaskList : taskList}
                 taskTypes={taskTypes}
                 systems={systems}
                 datasourceOptions={datasourceOptions}

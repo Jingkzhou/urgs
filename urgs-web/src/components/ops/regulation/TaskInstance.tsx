@@ -15,6 +15,8 @@ import {
 import { normalizeLog, normalizeStatus, normalizeTask } from './task-instance/utils';
 import { useDependencyInsightData } from './task-instance/useDependencyInsightData';
 
+const normalizeDateKey = (value?: string | null) => value?.replaceAll('-', '') || '';
+
 const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     const todayDate = dayjs().format('YYYY-MM-DD');
     const [taskList, setTaskList] = useState<QuartzTask[]>([]);
@@ -288,7 +290,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                 instance.msg || '',
             ].some(item => item.toLowerCase().includes(keyword));
             const matchesTaskSystem = !taskSystemFilter || (task?.task_system || '') === taskSystemFilter;
-            const matchesDataDate = !dataDateFilter || instance.data_date === dataDateFilter;
+            const matchesDataDate = !dataDateFilter || normalizeDateKey(instance.data_date) === normalizeDateKey(dataDateFilter);
             const matchesCreateDate = !createDateFilter || instance.create_date === createDateFilter.replaceAll('-', '');
             const matchesStatus = statusFilter === '' || String(instance.status ?? '') === statusFilter;
 
