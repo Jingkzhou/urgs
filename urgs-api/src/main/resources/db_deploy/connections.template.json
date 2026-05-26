@@ -18,9 +18,9 @@
     "type": "xinghuan",
     "user": "prod_user",
     "password": "your_password",
-    "jdbc_url": "jdbc:hive2://10.10.1.30:10000/business_prod",
-    "driver_class": "io.transwarp.jdbc.InceptorDriver",
-    "driver_jar": "bin/db_deploy/drivers/xinghuan/transwarp-jdbc.jar",
+    "jdbc_url": "jdbc:inceptor2://10.10.1.30:10000/business_prod",
+    "driver_class": "org.apache.hive.jdbc.HiveDriver",
+    "driver_jar": "bin/db_deploy/drivers/xinghuan/inceptor-sdk-studio-1.2.jar",
     "schema": "business_prod"
   }
 }

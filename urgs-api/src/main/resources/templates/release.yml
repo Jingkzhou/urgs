@@ -38,7 +38,7 @@ environment:
 # - /data/urgs/db_deploy/drivers/<dbType>/
 #
 # driverDir 写资源路径，不写本机绝对路径；生产包内会自动转换为 bin/db_deploy/drivers/<dbType>/。
-# driverJar 只写文件名，例如 ojdbc8.jar、mysql-connector-j-8.3.0.jar、transwarp-jdbc.jar、DmJdbcDriver18.jar。
+# driverJar 只写文件名，例如 ojdbc8.jar、mysql-connector-j-8.3.0.jar、inceptor-sdk-studio-1.2.jar、DmJdbcDriver18.jar。
 # 生产数据库服务器和数据库执行用户统一从本配置读取，页面不再单独选择。
 
 # 当前生效案例：MySQL
@@ -63,10 +63,10 @@ database:
 #   schema: business_prod
 #   user: prod_user
 #   password: change_me
-#   jdbcUrl: jdbc:hive2://10.10.1.30:10000/business_prod
+#   jdbcUrl: jdbc:inceptor2://10.10.1.30:10000/business_prod
 #   driverDir: db_deploy/drivers/xinghuan
-#   driverJar: transwarp-jdbc.jar
-#   jdbcDriverClass: io.transwarp.jdbc.InceptorDriver
+#   driverJar: inceptor-sdk-studio-1.2.jar
+#   jdbcDriverClass: org.apache.hive.jdbc.HiveDriver
 
 # Oracle 完整案例（原生连接）：
 # database:

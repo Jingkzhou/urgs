@@ -17,14 +17,23 @@ import org.apache.commons.net.ftp.FTPClient;
 import org.apache.commons.net.ftp.FTPReply;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.SimpleDriverDataSource;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import javax.sql.DataSource;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.Driver;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -33,9 +42,16 @@ import java.util.concurrent.ConcurrentHashMap;
 public class DynamicDataSourceService implements DisposableBean {
 
     private static final long CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+    private static final List<String> CHILD_FIRST_JDBC_DRIVER_PREFIXES = List.of(
+            "org.apache.hive.",
+            "org.apache.hadoop.hive.",
+            "io.transwarp.");
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ConcurrentHashMap<Long, CachedDataSource> dataSourceCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, URLClassLoader> jdbcDriverClassLoaders = new ConcurrentHashMap<>();
+    private final PathMatchingResourcePatternResolver resourceResolver = new PathMatchingResourcePatternResolver();
+    private final List<Path> extractedDriverJars = Collections.synchronizedList(new ArrayList<>());
 
     @Autowired
     private DataSourceConfigMapper configMapper;
@@ -140,11 +156,18 @@ public class DynamicDataSourceService implements DisposableBean {
             throw new UnsupportedOperationException("Unsupported or non-JDBC data source type: " + type);
         }
 
+        String username = getString(params, "username");
+        String password = getString(params, "password");
+
         HikariConfig hikariConfig = new HikariConfig();
-        hikariConfig.setJdbcUrl(url);
-        hikariConfig.setDriverClassName(driverClass);
-        hikariConfig.setUsername(getString(params, "username"));
-        hikariConfig.setPassword(getString(params, "password"));
+        if (isInceptorType(type)) {
+            hikariConfig.setDataSource(createDriverDataSource(type, url, driverClass, username, password));
+        } else {
+            hikariConfig.setJdbcUrl(url);
+            hikariConfig.setDriverClassName(driverClass);
+            hikariConfig.setUsername(username);
+            hikariConfig.setPassword(password);
+        }
         hikariConfig.setMaximumPoolSize(5);
         hikariConfig.setMinimumIdle(1);
         hikariConfig.setIdleTimeout(300_000);     // 5 minutes
@@ -153,7 +176,7 @@ public class DynamicDataSourceService implements DisposableBean {
         hikariConfig.setPoolName("dynamic-ds-" + dataSourceId);
 
         log.info("Creating connection pool for dataSourceId={}, type={}", dataSourceId, type);
-        return new CachedDataSource(new HikariDataSource(hikariConfig));
+        return new CachedDataSource(createHikariDataSource(type, hikariConfig));
     }
 
     /**
@@ -187,6 +210,14 @@ public class DynamicDataSourceService implements DisposableBean {
             try { c.dataSource.close(); } catch (Exception e) { log.warn("Error closing pool on shutdown: {}", e.getMessage()); }
         });
         dataSourceCache.clear();
+        jdbcDriverClassLoaders.values().forEach(loader -> {
+            try { loader.close(); } catch (Exception e) { log.warn("Error closing JDBC driver loader: {}", e.getMessage()); }
+        });
+        jdbcDriverClassLoaders.clear();
+        extractedDriverJars.forEach(path -> {
+            try { Files.deleteIfExists(path); } catch (Exception e) { log.warn("Error deleting extracted JDBC driver jar {}: {}", path, e.getMessage()); }
+        });
+        extractedDriverJars.clear();
     }
 
     public void testConnection(DataSourceConfig config) {
@@ -230,15 +261,69 @@ public class DynamicDataSourceService implements DisposableBean {
             // JDBC test: use a temporary connection (not from pool)
             String url = buildJdbcUrl(type, params);
             String driverClass = buildDriverClass(type, params);
-            org.springframework.jdbc.datasource.DriverManagerDataSource ds = new org.springframework.jdbc.datasource.DriverManagerDataSource();
-            ds.setDriverClassName(driverClass);
-            ds.setUrl(url);
-            ds.setUsername(getString(params, "username"));
-            ds.setPassword(getString(params, "password"));
-            ds.getConnection().close();
+            log.info("Testing JDBC connection type={}, driver={}, url={}", type, driverClass, url);
+            testJdbcConnection(type, params, url, driverClass);
         } catch (Exception e) {
             throw new RuntimeException("Connection failed: " + e.getMessage(), e);
         }
+    }
+
+    private HikariDataSource createHikariDataSource(String type, HikariConfig hikariConfig) {
+        if (!isInceptorType(type)) {
+            return new HikariDataSource(hikariConfig);
+        }
+        ClassLoader originalClassLoader = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader(resolveJdbcDriverClassLoader(type));
+        try {
+            return new HikariDataSource(hikariConfig);
+        } finally {
+            Thread.currentThread().setContextClassLoader(originalClassLoader);
+        }
+    }
+
+    private void testJdbcConnection(String type, Map<String, Object> params, String url, String driverClass) throws Exception {
+        ClassLoader originalClassLoader = Thread.currentThread().getContextClassLoader();
+        if (isInceptorType(type)) {
+            Thread.currentThread().setContextClassLoader(resolveJdbcDriverClassLoader(type));
+        }
+        try {
+            if (isInceptorType(type)) {
+                DataSource ds = createDriverDataSource(
+                        type,
+                        url,
+                        driverClass,
+                        getString(params, "username"),
+                        getString(params, "password"));
+                ds.getConnection().close();
+                return;
+            }
+            org.springframework.jdbc.datasource.DriverManagerDataSource driverManagerDataSource =
+                    new org.springframework.jdbc.datasource.DriverManagerDataSource();
+            driverManagerDataSource.setDriverClassName(driverClass);
+            driverManagerDataSource.setUrl(url);
+            driverManagerDataSource.setUsername(getString(params, "username"));
+            driverManagerDataSource.setPassword(getString(params, "password"));
+            driverManagerDataSource.getConnection().close();
+        } finally {
+            Thread.currentThread().setContextClassLoader(originalClassLoader);
+        }
+    }
+
+    private DataSource createDriverDataSource(
+            String type,
+            String url,
+            String driverClass,
+            String username,
+            String password) {
+        Driver driver = createJdbcDriver(type, driverClass);
+        try {
+            if (driver.acceptsURL(url)) {
+                return new SimpleDriverDataSource(driver, url, username, password);
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to validate JDBC url " + url + " with driver " + driverClass, e);
+        }
+        throw new IllegalStateException("JDBC driver " + driverClass + " does not accept url: " + url);
     }
 
     private String buildJdbcUrl(String type, Map<String, Object> params) {
@@ -271,16 +356,33 @@ public class DynamicDataSourceService implements DisposableBean {
         } else if (isInceptorType(type)) {
             String jdbcUrl = getString(params, "jdbcUrl");
             if (jdbcUrl != null && !jdbcUrl.isBlank()) {
-                return jdbcUrl;
+                return normalizeInceptorJdbcUrl(jdbcUrl, getString(params, "jdbcParams"));
             }
             int port = getInt(params, "port", 10000);
             String jdbcParams = getString(params, "jdbcParams");
-            String url = String.format("jdbc:hive2://%s:%d/%s", host, port, database);
-            return jdbcParams == null || jdbcParams.isBlank() ? url : url + ";" + jdbcParams;
+            if (jdbcParams == null || jdbcParams.isBlank()) {
+                jdbcParams = "auth=noSasl";
+            }
+            String url = String.format("jdbc:inceptor2://%s:%d/%s", host, port, database);
+            return normalizeInceptorJdbcUrl(url, jdbcParams);
         } else if ("generic".equalsIgnoreCase(type)) {
             return getString(params, "jdbcUrl");
         }
         return "";
+    }
+
+    private String normalizeInceptorJdbcUrl(String jdbcUrl, String jdbcParams) {
+        String normalizedUrl = jdbcUrl.trim();
+        if (normalizedUrl.startsWith("jdbc:hive2://")) {
+            normalizedUrl = "jdbc:inceptor2://" + normalizedUrl.substring("jdbc:hive2://".length());
+        }
+
+        String normalizedParams = jdbcParams == null || jdbcParams.isBlank() ? "auth=noSasl" : jdbcParams.trim();
+        String lowerUrl = normalizedUrl.toLowerCase();
+        if (lowerUrl.contains(";auth=") || lowerUrl.endsWith(";auth") || lowerUrl.contains(";principal=")) {
+            return normalizedUrl;
+        }
+        return normalizedUrl + (normalizedUrl.endsWith(";") ? "" : ";") + normalizedParams;
     }
 
     private String buildDriverClass(String type, Map<String, Object> params) {
@@ -299,7 +401,7 @@ public class DynamicDataSourceService implements DisposableBean {
         } else if (isInceptorType(type)) {
             String driverClass = getString(params, "driverClass");
             return driverClass == null || driverClass.isBlank()
-                    ? "io.transwarp.jdbc.InceptorDriver"
+                    ? "org.apache.hive.jdbc.HiveDriver"
                     : driverClass;
         } else if ("generic".equalsIgnoreCase(type)) {
             return getString(params, "driverClass");
@@ -307,10 +409,123 @@ public class DynamicDataSourceService implements DisposableBean {
         return "";
     }
 
+    private ClassLoader resolveJdbcDriverClassLoader(String type) {
+        if (!isInceptorType(type)) {
+            return Thread.currentThread().getContextClassLoader();
+        }
+        String normalizedType = normalizeInceptorType(type);
+        URLClassLoader loader = jdbcDriverClassLoaders.computeIfAbsent(normalizedType, this::createJdbcDriverClassLoader);
+        return loader == null ? Thread.currentThread().getContextClassLoader() : loader;
+    }
+
+    private Driver createJdbcDriver(String type, String driverClass) {
+        try {
+            ClassLoader loader = resolveJdbcDriverClassLoader(type);
+            Class<?> driverType = Class.forName(driverClass, true, loader);
+            Object driver = driverType.getDeclaredConstructor().newInstance();
+            if (!(driver instanceof Driver)) {
+                throw new IllegalArgumentException(driverClass + " is not a java.sql.Driver");
+            }
+            return (Driver) driver;
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException("JDBC driver class not found: " + driverClass
+                    + ". Put the Inceptor driver jar under src/main/resources/db_deploy/drivers/xinghuan/ or use a driverClass that exists in the runtime classpath.", e);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to initialize JDBC driver " + driverClass + " for " + type, e);
+        }
+    }
+
+    private URLClassLoader createJdbcDriverClassLoader(String type) {
+        List<URL> urls = new ArrayList<>();
+        for (String driverType : resolveDriverResourceTypes(type)) {
+            String pattern = "classpath*:db_deploy/drivers/" + driverType + "/*.jar";
+            try {
+                Resource[] resources = resourceResolver.getResources(pattern);
+                for (Resource resource : resources) {
+                    URL url = toDriverJarUrl(resource);
+                    if (url != null) {
+                        urls.add(url);
+                    }
+                }
+            } catch (IOException e) {
+                log.warn("Failed to scan JDBC driver resources for {}: {}", driverType, e.getMessage());
+            }
+        }
+
+        if (urls.isEmpty()) {
+            log.warn("No JDBC driver jars found under db_deploy/drivers/{} for dynamic datasource", type);
+            return new URLClassLoader(new URL[0], Thread.currentThread().getContextClassLoader());
+        }
+
+        log.info("Loaded {} JDBC driver jar(s) for dynamic datasource type {}", urls.size(), type);
+        return new ChildFirstJdbcDriverClassLoader(urls.toArray(new URL[0]), Thread.currentThread().getContextClassLoader());
+    }
+
+    private URL toDriverJarUrl(Resource resource) {
+        try {
+            if (resource.isFile()) {
+                return resource.getFile().toURI().toURL();
+            }
+            Path tempJar = Files.createTempFile("urgs-jdbc-driver-", ".jar");
+            try (InputStream inputStream = resource.getInputStream()) {
+                Files.copy(inputStream, tempJar, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            tempJar.toFile().deleteOnExit();
+            extractedDriverJars.add(tempJar);
+            return tempJar.toUri().toURL();
+        } catch (IOException e) {
+            log.warn("Failed to load JDBC driver jar resource {}: {}", resource.getDescription(), e.getMessage());
+            return null;
+        }
+    }
+
+    private List<String> resolveDriverResourceTypes(String type) {
+        String normalizedType = normalizeInceptorType(type);
+        if ("inceptor".equals(normalizedType)) {
+            return List.of("xinghuan", "transwarp", "inceptor");
+        }
+        return List.of(normalizedType);
+    }
+
+    private String normalizeInceptorType(String type) {
+        return type == null ? "" : type.trim().toLowerCase();
+    }
+
     private boolean isInceptorType(String type) {
         return "inceptor".equalsIgnoreCase(type)
                 || "xinghuan".equalsIgnoreCase(type)
                 || "transwarp".equalsIgnoreCase(type);
+    }
+
+    private static class ChildFirstJdbcDriverClassLoader extends URLClassLoader {
+        ChildFirstJdbcDriverClassLoader(URL[] urls, ClassLoader parent) {
+            super(urls, parent);
+        }
+
+        @Override
+        protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+            if (!shouldLoadChildFirst(name)) {
+                return super.loadClass(name, resolve);
+            }
+            synchronized (getClassLoadingLock(name)) {
+                Class<?> loadedClass = findLoadedClass(name);
+                if (loadedClass == null) {
+                    try {
+                        loadedClass = findClass(name);
+                    } catch (ClassNotFoundException ignored) {
+                        loadedClass = super.loadClass(name, false);
+                    }
+                }
+                if (resolve) {
+                    resolveClass(loadedClass);
+                }
+                return loadedClass;
+            }
+        }
+
+        private static boolean shouldLoadChildFirst(String className) {
+            return CHILD_FIRST_JDBC_DRIVER_PREFIXES.stream().anyMatch(className::startsWith);
+        }
     }
 
     private String getString(Map<String, Object> params, String key) {

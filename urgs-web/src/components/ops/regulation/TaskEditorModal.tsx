@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Form, Input, InputNumber, Modal, Select } from 'antd';
-import { Calendar, Clock3, Plus, Settings2, Trash2 } from 'lucide-react';
+import { Calendar, Clock3, Plus, Settings2, Trash2, SlidersHorizontal, Sparkles, Terminal, Database, User, BellRing, ArrowRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { QuartzTask } from './mockData';
 import LazyMonacoEditor from './LazyMonacoEditor';
 import CronPicker from '../schedule/forms/components/CronPicker';
@@ -56,7 +57,7 @@ interface TaskEditorModalProps {
     onSubmit: () => void;
 }
 
-const modalCardClass = 'rounded-2xl border border-slate-200 bg-white';
+const modalCardClass = 'relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)] transition-all duration-300';
 
 const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
     open,
@@ -133,28 +134,28 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                         ? null
                         : Number(item.datasourceId);
                     return {
-                    id: Number(item.id),
-                    task_name: item.taskName || '',
-                    task_bean: item.taskBean ?? null,
-                    task_params: item.taskParams ?? null,
-                    task_cron: item.taskCron || '',
-                    task_status: Number(item.taskStatus ?? 0) as 0 | 1,
-                    remark: item.remark ?? null,
-                    update_time: item.updateTime || '',
-                    create_time: item.createTime || '',
-                    task_type: item.taskType === 2 ? 'SQL' : 'SHELL',
-                    script: item.exePath ?? null,
-                    depend_id: item.dependId ?? null,
-                    datasource_id: Number.isFinite(datasourceId) ? datasourceId : null,
-                    datasource_name: item.datasourceName ?? null,
-                    period: item.period ?? null,
-                    task_system: item.taskSystem ?? null,
-                    theme: item.theme ?? null,
-                    offset: item.offset ?? null,
-                    data_date: item.dataDate ?? null,
-                    job_key: item.jobKey ?? null,
-                    notification_completed: item.notificationCompleted ?? null,
-                    notification_failed: item.notificationFailed ?? null,
+                        id: Number(item.id),
+                        task_name: item.taskName || '',
+                        task_bean: item.taskBean ?? null,
+                        task_params: item.taskParams ?? null,
+                        task_cron: item.taskCron || '',
+                        task_status: Number(item.taskStatus ?? 0) as 0 | 1,
+                        remark: item.remark ?? null,
+                        update_time: item.updateTime || '',
+                        create_time: item.createTime || '',
+                        task_type: item.taskType === 2 ? 'SQL' : 'SHELL',
+                        script: item.exePath ?? null,
+                        depend_id: item.dependId ?? null,
+                        datasource_id: Number.isFinite(datasourceId) ? datasourceId : null,
+                        datasource_name: item.datasourceName ?? null,
+                        period: item.period ?? null,
+                        task_system: item.taskSystem ?? null,
+                        theme: item.theme ?? null,
+                        offset: item.offset ?? null,
+                        data_date: item.dataDate ?? null,
+                        job_key: item.jobKey ?? null,
+                        notification_completed: item.notificationCompleted ?? null,
+                        notification_failed: item.notificationFailed ?? null,
                     };
                 }));
             } catch (error) {
@@ -205,7 +206,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
 
     const dependencySummary = useMemo(() => {
         if (selectedDependencyIds.length === 0) {
-            return '请选择依赖任务';
+            return '暂无前置依赖任务';
         }
 
         const labels = selectedDependencyIds
@@ -221,7 +222,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
 
     const portrait = useMemo(() => {
         return {
-            taskName: watchedTaskName?.trim() || editingTask?.task_name || '未命名任务',
+            taskName: watchedTaskName?.trim() || editingTask?.task_name || '未命名监管任务',
             schedule: describeCron(
                 watchedTaskCron || editingTask?.task_cron,
                 watchedOffset ?? editingTask?.offset ?? 0
@@ -243,34 +244,37 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
         <Modal
             title={null}
             open={open}
-            width={1120}
+            width={1160}
             onOk={onSubmit}
             onCancel={onCancel}
             destroyOnHidden
-            styles={{ body: { padding: 0 }, footer: { padding: '18px 24px' } }}
+            styles={{ body: { padding: 0 }, footer: { padding: '20px 28px', borderTop: '1px solid #f1f5f9' } }}
+            className="premium-task-modal"
             footer={
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left">
-                        <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
-                            当前状态
-                        </div>
-                        <div className="mt-1 text-sm font-semibold text-slate-700">
-                            {editingTask ? '编辑已有监管任务' : '待创建新的监管任务'}
-                        </div>
-                        <div className="mt-1 text-xs text-slate-500">
-                            {portrait.schedule}
+                    <div className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 px-4 py-2.5 text-left">
+                        <span className={`inline-flex h-2.5 w-2.5 rounded-full ${editingTask ? 'bg-blue-500 animate-pulse' : 'bg-emerald-500 animate-pulse'}`} />
+                        <div>
+                            <div className="text-xs font-bold uppercase tracking-[0.1em] text-slate-400">
+                                监管任务配置状态
+                            </div>
+                            <div className="mt-0.5 text-sm font-semibold text-slate-700">
+                                {editingTask ? `正在修改已存在的监管任务 (${editingTask.id})` : '正在配置全新监管任务数据'}
+                            </div>
                         </div>
                     </div>
                     <div className="flex items-center justify-end gap-3">
                         <button
+                            type="button"
                             onClick={onCancel}
-                            className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+                            className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-50 active:scale-95"
                         >
                             取消
                         </button>
                         <button
+                            type="button"
                             onClick={onSubmit}
-                            className="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-700"
+                            className="rounded-xl bg-gradient-to-r from-red-600 to-red-700 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-red-600/10 transition-all duration-200 hover:from-red-500 hover:to-red-600 hover:shadow-lg hover:shadow-red-500/20 active:scale-95"
                         >
                             {editingTask ? '保存修改' : '创建任务'}
                         </button>
@@ -282,14 +286,50 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                 form={form}
                 layout="vertical"
                 initialValues={getInitialFormValues(editingTask)}
-                className="p-6"
+                className="p-6 md:p-8"
             >
                 <div className="space-y-6">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                        <div className="text-sm font-semibold text-slate-800">
-                            {editingTask ? `编辑监管任务 · ${portrait.taskName}` : '新建监管任务'}
+                    {/* Header Banner - Premium Gradient with Glassmorphism Accent */}
+                    <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 p-6 text-white shadow-xl shadow-slate-950/20">
+                        {/* Gradient lights decoration */}
+                        <div className="absolute -right-16 -top-16 h-36 w-36 rounded-full bg-red-500/15 blur-3xl" />
+                        <div className="absolute -left-16 -bottom-16 h-36 w-36 rounded-full bg-blue-500/15 blur-3xl" />
+
+                        <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 backdrop-blur-md border border-white/15 shadow-inner">
+                                    <SlidersHorizontal className="h-6 w-6 text-red-400 animate-spin-slow" style={{ animationDuration: '8s' }} />
+                                </div>
+                                <div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <h2 className="text-lg font-bold tracking-wide text-white">
+                                            {editingTask ? '编辑监管任务' : '新建监管任务'}
+                                        </h2>
+                                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold backdrop-blur-md border ${
+                                            editingTask
+                                                ? 'bg-blue-500/10 border-blue-500/20 text-blue-300'
+                                                : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                                        }`}>
+                                            <span className={`h-1.5 w-1.5 rounded-full ${editingTask ? 'bg-blue-400 animate-pulse' : 'bg-emerald-400 animate-pulse'}`} />
+                                            {editingTask ? `TASK ID: ${editingTask.id}` : 'NEW MODE'}
+                                        </span>
+                                    </div>
+                                    <p className="mt-1 text-sm text-slate-300 font-medium tracking-wide">
+                                        {portrait.taskName}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 rounded-xl bg-white/5 backdrop-blur-sm border border-white/5 px-3.5 py-2 text-slate-200">
+                                <Clock3 className="h-4 w-4 text-red-400" />
+                                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                                    运行频率:
+                                </span>
+                                <span className="text-xs font-semibold text-slate-200">
+                                    {portrait.schedule || '暂无调度配置'}
+                                </span>
+                            </div>
                         </div>
-                        <div className="mt-1 text-xs text-slate-500">{portrait.schedule}</div>
                     </div>
 
                     <Form.Item name="depend_id" hidden>
@@ -302,106 +342,161 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                         <Input />
                     </Form.Item>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white p-1.5">
-                        <div className="grid grid-cols-2 gap-1">
+                    {/* Navigation Tab - Premium Capsule Segmented Control */}
+                    <div className="relative rounded-2xl border border-slate-200/80 bg-slate-50/70 p-1.5">
+                        <div className="relative flex gap-1">
                             <button
                                 type="button"
                                 onClick={() => setModalTab('config')}
-                                className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${modalTab === 'config' ? 'bg-red-50 text-red-700' : 'text-slate-500 hover:bg-slate-50'}`}
+                                className={`relative z-10 flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition-colors duration-300 ${
+                                    modalTab === 'config' ? 'text-red-700' : 'text-slate-500 hover:text-slate-800'
+                                }`}
                             >
-                                任务配置
+                                {modalTab === 'config' && (
+                                    <motion.div
+                                        layoutId="activeTabIndicator"
+                                        className="absolute inset-0 rounded-xl bg-white shadow-sm border border-slate-200/50"
+                                        transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                                    />
+                                )}
+                                <span className="relative z-20 flex items-center justify-center gap-2">
+                                    <Settings2 className={`h-4 w-4 transition-colors ${modalTab === 'config' ? 'text-red-500' : 'text-slate-400'}`} />
+                                    任务核心配置
+                                </span>
                             </button>
+
                             <button
                                 type="button"
                                 onClick={() => setModalTab('dependency')}
-                                className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${modalTab === 'dependency' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}
+                                className={`relative z-10 flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition-colors duration-300 ${
+                                    modalTab === 'dependency' ? 'text-blue-700' : 'text-slate-500 hover:text-slate-800'
+                                }`}
                             >
-                                依赖任务
+                                {modalTab === 'dependency' && (
+                                    <motion.div
+                                        layoutId="activeTabIndicator"
+                                        className="absolute inset-0 rounded-xl bg-white shadow-sm border border-slate-200/50"
+                                        transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                                    />
+                                )}
+                                <span className="relative z-20 flex items-center justify-center gap-2">
+                                    <Terminal className={`h-4 w-4 transition-colors ${modalTab === 'dependency' ? 'text-blue-500' : 'text-slate-400'}`} />
+                                    依赖关联任务
+                                </span>
                             </button>
                         </div>
                     </div>
 
                     {modalTab === 'config' ? (
                         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+                            {/* Left Column */}
                             <div className="space-y-6">
-                                <section className={modalCardClass}>
-                                    <div className="border-b border-slate-100 px-5 py-4">
-                                        <div className="text-base font-semibold text-slate-900">任务核心</div>
-                                        <div className="mt-1 text-sm text-slate-500">
-                                            先定义任务是什么，为谁服务，属于哪个系统和主题。
+                                {/* Card 1: 任务核心 */}
+                                <section className={`${modalCardClass} border-l-4 border-l-rose-500`}>
+                                    <div className="border-b border-slate-100 px-5 py-4 bg-slate-50/20">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50 text-rose-500">
+                                                <Sparkles size={15} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-base font-bold text-slate-800">任务核心</h3>
+                                                <p className="mt-0.5 text-xs text-slate-400">定义任务主体、所属系统与业务场景</p>
+                                            </div>
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
                                         <Form.Item
                                             name="task_name"
-                                            label="任务名称"
+                                            label={<span className="text-slate-600 font-semibold text-xs">任务名称</span>}
                                             rules={[{ required: true, message: '请填写任务名称' }]}
                                             className="md:col-span-2"
                                         >
                                             <Input
                                                 placeholder="例如：监管报送日切任务"
-                                                className="h-11 rounded-xl text-base"
+                                                className="h-10 rounded-xl bg-slate-50/50 border-slate-200 hover:border-slate-300 focus:border-slate-400 focus:bg-white text-sm"
                                             />
                                         </Form.Item>
                                         <Form.Item
                                             name="task_type"
-                                            label="任务类型"
+                                            label={<span className="text-slate-600 font-semibold text-xs">任务类型</span>}
                                             rules={[{ required: true, message: '请选择任务类型' }]}
                                         >
                                             <Select
                                                 placeholder="请选择任务类型"
+                                                className="premium-select"
                                                 options={taskTypes.map(type => ({ label: type, value: type }))}
                                             />
                                         </Form.Item>
                                         <Form.Item
                                             name="task_status"
-                                            label="初始状态"
+                                            label={<span className="text-slate-600 font-semibold text-xs">初始状态</span>}
                                             rules={[{ required: true, message: '请选择任务状态' }]}
                                         >
                                             <Select
+                                                className="premium-select"
                                                 options={[
                                                     { label: '正常', value: 0 },
                                                     { label: '暂停', value: 1 },
                                                 ]}
                                             />
                                         </Form.Item>
-                                        <Form.Item name="task_system" label="所属系统">
+                                        <Form.Item
+                                            name="task_system"
+                                            label={<span className="text-slate-600 font-semibold text-xs">所属系统</span>}
+                                        >
                                             <Select
                                                 showSearch
                                                 allowClear
+                                                className="premium-select"
                                                 options={systems.map(system => ({ label: system, value: system }))}
                                                 placeholder="请选择所属系统"
                                                 optionFilterProp="label"
                                             />
                                         </Form.Item>
-                                        <Form.Item name="theme" label="任务主题">
-                                            <Input placeholder="例如：日报 / 月报 / 回执" />
+                                        <Form.Item
+                                            name="theme"
+                                            label={<span className="text-slate-600 font-semibold text-xs">任务主题</span>}
+                                        >
+                                            <Input
+                                                placeholder="例如：日报 / 月报 / 回执"
+                                                className="h-10 rounded-xl bg-slate-50/50 border-slate-200 hover:border-slate-300 focus:border-slate-400 focus:bg-white text-sm"
+                                            />
                                         </Form.Item>
-                                        <Form.Item name="remark" label="任务备注" className="md:col-span-2">
+                                        <Form.Item
+                                            name="remark"
+                                            label={<span className="text-slate-600 font-semibold text-xs">任务备注说明</span>}
+                                            className="md:col-span-2"
+                                        >
                                             <TextArea
                                                 rows={4}
-                                                placeholder="用自然语言说明这个任务解决什么问题，什么时候需要关注它。"
+                                                placeholder="用简洁自然语言说明这个监管任务具体解决什么业务问题，什么时候需要额外关注它。"
+                                                className="rounded-xl bg-slate-50/50 border-slate-200 hover:border-slate-300 focus:border-slate-400 focus:bg-white text-sm"
                                             />
                                         </Form.Item>
                                     </div>
                                 </section>
 
-                                <section className={modalCardClass}>
-                                    <div className="border-b border-slate-100 px-5 py-4">
-                                        <div className="flex items-center gap-2 text-base font-semibold text-slate-900">
-                                            <Clock3 size={17} className="text-red-500" />
-                                            运行节奏
-                                        </div>
-                                        <div className="mt-1 text-sm text-slate-500">
-                                            这里决定任务何时触发、是否依赖前置任务，以及失败后多久轮询。
+                                {/* Card 2: 运行节奏 */}
+                                <section className={`${modalCardClass} border-l-4 border-l-blue-500`}>
+                                    <div className="border-b border-slate-100 px-5 py-4 bg-slate-50/20">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-500">
+                                                <Clock3 size={15} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-base font-bold text-slate-800">运行节奏</h3>
+                                                <p className="mt-0.5 text-xs text-slate-400">规划任务何时触发、是否依赖及重试策略</p>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="space-y-4 p-5">
-                                        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                                            <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
-                                                调度面板
+                                    <div className="space-y-5 p-5">
+                                        {/* Premium Cron Dashboard Grid */}
+                                        <div className="rounded-2xl border border-slate-200/60 bg-slate-50/30 p-4">
+                                            <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400 flex items-center gap-1.5">
+                                                <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
+                                                调度时序面板
                                             </div>
-                                            <Form.Item label="Cron 表达式" required className="mb-0">
+                                            <Form.Item label={null} required className="mb-0">
                                                 <Form.Item
                                                     noStyle
                                                     shouldUpdate={(prevValues, currentValues) =>
@@ -429,41 +524,60 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                                 </Form.Item>
                                             </Form.Item>
                                         </div>
+
                                         <div className="grid grid-cols-1 gap-4 md:grid-cols-[1.3fr_0.7fr]">
-                                            <Form.Item label="依赖任务" className="mb-0">
-                                                <div className="rounded-xl border border-slate-200 bg-white px-4 py-2.5">
-                                                    <div className={`truncate text-sm font-medium ${selectedDependencyIds.length > 0 ? 'text-slate-800' : 'text-slate-400'}`}>
+                                            <Form.Item
+                                                label={<span className="text-slate-600 font-semibold text-xs">依赖任务概览</span>}
+                                                className="mb-0"
+                                            >
+                                                <div className="flex flex-col justify-between rounded-xl border border-slate-200/80 bg-slate-50/20 px-4 py-3 hover:border-slate-300 transition-all duration-200 min-h-[72px]">
+                                                    <div className={`truncate text-sm font-semibold ${selectedDependencyIds.length > 0 ? 'text-slate-800' : 'text-slate-400'}`}>
                                                         {dependencySummary}
                                                     </div>
-                                                    <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
-                                                        <span>{selectedDependencyIds.length > 0 ? `已关联 ${selectedDependencyIds.length} 个前置任务` : '切换到“依赖任务”页签配置'}</span>
+                                                    <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+                                                        <span className="flex items-center gap-1">
+                                                            <Database size={11} className="text-slate-400" />
+                                                            {selectedDependencyIds.length > 0 ? `已关联 ${selectedDependencyIds.length} 个前置依赖` : '当前尚未配置任何前置依赖'}
+                                                        </span>
                                                         <button
                                                             type="button"
                                                             onClick={() => setModalTab('dependency')}
-                                                            className="rounded-md border border-red-200 bg-red-50 px-2 py-0.5 font-semibold text-red-600 transition hover:bg-red-100"
+                                                            className="flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1 text-[11px] font-bold text-blue-600 transition-all duration-200 hover:bg-blue-100 hover:border-blue-300 active:scale-95"
                                                         >
-                                                            去配置
+                                                            前往配置
+                                                            <ArrowRight size={10} />
                                                         </button>
                                                     </div>
                                                 </div>
                                             </Form.Item>
-                                            <Form.Item name="period" label="失败轮询间隔">
-                                                <InputNumber className="w-full" min={0} placeholder="例如：300000" />
+                                            <Form.Item
+                                                name="period"
+                                                label={<span className="text-slate-600 font-semibold text-xs">失败轮询间隔 (ms)</span>}
+                                            >
+                                                <InputNumber
+                                                    className="w-full h-10 premium-input-number"
+                                                    min={0}
+                                                    placeholder="例如：300000"
+                                                />
                                             </Form.Item>
                                         </div>
                                     </div>
                                 </section>
                             </div>
 
+                            {/* Right Column */}
                             <div className="space-y-6">
-                                <section className={modalCardClass}>
-                                    <div className="border-b border-slate-100 px-5 py-4">
-                                        <div className="flex items-center gap-2 text-base font-semibold text-slate-900">
-                                            <Settings2 size={17} className="text-blue-500" />
-                                            执行资源
-                                        </div>
-                                        <div className="mt-1 text-sm text-slate-500">
-                                            任务真正运行依赖的脚本内容和系统管理中的数据源，在这里统一绑定。
+                                {/* Card 3: 执行资源 */}
+                                <section className={`${modalCardClass} border-l-4 border-l-violet-500`}>
+                                    <div className="border-b border-slate-100 px-5 py-4 bg-slate-50/20">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-50 text-violet-500">
+                                                <Settings2 size={15} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-base font-bold text-slate-800">执行资源</h3>
+                                                <p className="mt-0.5 text-xs text-slate-400">绑定业务执行脚本与底层对应的数据源</p>
+                                            </div>
                                         </div>
                                     </div>
                                     <div className="space-y-4 p-5">
@@ -475,41 +589,69 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                             <Input.TextArea />
                                         </Form.Item>
                                         <div>
-                                            <div className="mb-2 text-sm text-slate-700">脚本</div>
-                                            {scriptEditorReady ? (
-                                                <LazyMonacoEditor
-                                                    loadingFallback={
-                                                        <div className="flex h-[260px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-400">
+                                            <div className="mb-2 text-slate-600 font-semibold text-xs flex items-center justify-between">
+                                                <span>执行脚本编辑器</span>
+                                                <span className="text-[10px] text-slate-400 font-mono">VS CODE STYLE</span>
+                                            </div>
+                                            {/* IDE Editor Shell Frame */}
+                                            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-900 shadow-md">
+                                                {/* Header Mockup */}
+                                                <div className="flex items-center justify-between bg-slate-950/90 px-4 py-2 text-xs border-b border-slate-800">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="h-2.5 w-2.5 rounded-full bg-rose-500/80" />
+                                                        <span className="h-2.5 w-2.5 rounded-full bg-amber-500/80" />
+                                                        <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/80" />
+                                                        <span className="ml-2 font-mono text-[10px] tracking-wider text-slate-500 flex items-center gap-1">
+                                                            <Terminal className="h-3 w-3 text-slate-600" />
+                                                            task_script.sh
+                                                        </span>
+                                                    </div>
+                                                    <div className="font-mono text-[9px] font-bold text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded border border-violet-500/20 uppercase tracking-wider">
+                                                        {watchedTaskType || editingTask?.task_type || 'SHELL'}
+                                                    </div>
+                                                </div>
+                                                {/* Body */}
+                                                <div className="relative p-1 bg-white">
+                                                    {scriptEditorReady ? (
+                                                        <LazyMonacoEditor
+                                                            loadingFallback={
+                                                                <div className="flex h-[260px] items-center justify-center bg-slate-900 text-sm text-slate-400 font-mono">
+                                                                    脚本编辑器加载中...
+                                                                </div>
+                                                            }
+                                                            height="260px"
+                                                            value={watchedScript || ''}
+                                                            language={editorLanguageMap[watchedTaskType || editingTask?.task_type || 'SHELL'] || 'shell'}
+                                                            theme="vs"
+                                                            onChange={(value) => form.setFieldValue('script', value ?? '')}
+                                                            options={{
+                                                                minimap: { enabled: false },
+                                                                scrollBeyondLastLine: false,
+                                                                automaticLayout: true,
+                                                                fontSize: 13,
+                                                                wordWrap: 'on',
+                                                                tabSize: 2,
+                                                                padding: { top: 12, bottom: 12 },
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <div className="flex h-[260px] items-center justify-center bg-slate-900 text-sm text-slate-400 font-mono">
                                                             脚本编辑器加载中...
                                                         </div>
-                                                    }
-                                                    height="260px"
-                                                    value={watchedScript || ''}
-                                                    language={editorLanguageMap[watchedTaskType || editingTask?.task_type || 'SHELL'] || 'shell'}
-                                                    theme="vs"
-                                                    onChange={(value) => form.setFieldValue('script', value ?? '')}
-                                                    options={{
-                                                        minimap: { enabled: false },
-                                                        scrollBeyondLastLine: false,
-                                                        automaticLayout: true,
-                                                        fontSize: 13,
-                                                        wordWrap: 'on',
-                                                        tabSize: 2,
-                                                        padding: { top: 12, bottom: 12 },
-                                                    }}
-                                                />
-                                            ) : (
-                                                <div className="flex h-[260px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-400">
-                                                    脚本编辑器加载中...
+                                                    )}
                                                 </div>
-                                            )}
+                                            </div>
                                         </div>
-                                        <Form.Item name="datasource_id" label="数据源">
+                                        <Form.Item
+                                            name="datasource_id"
+                                            label={<span className="text-slate-600 font-semibold text-xs">执行数据源</span>}
+                                        >
                                             <Select
                                                 showSearch
                                                 allowClear
                                                 loading={dataSourceLoading}
-                                                placeholder="请选择系统管理中的数据源"
+                                                className="premium-select"
+                                                placeholder="请选择系统管理中的对应数据源"
                                                 optionFilterProp="label"
                                                 options={datasourceOptions.map(item => ({
                                                     value: item.id,
@@ -527,120 +669,194 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                                         .includes(input.toLowerCase())
                                                 }
                                                 optionRender={(option) => (
-                                                    <div className="flex items-center justify-between gap-3">
+                                                    <div className="flex items-center justify-between gap-3 py-1">
                                                         <div className="min-w-0">
-                                                            <div className="truncate text-sm font-medium text-slate-800">{option.data.label}</div>
-                                                            <div className="mt-1 truncate text-xs text-slate-400">
-                                                                {option.data.connectionInfo || [option.data.typeName, option.data.category, option.data.typeCode].filter(Boolean).join(' · ') || '连接信息待补充'}
+                                                            <div className="truncate text-sm font-semibold text-slate-800">{option.data.label}</div>
+                                                            <div className="mt-0.5 truncate text-[11px] text-slate-400 font-mono">
+                                                                {option.data.connectionInfo || [option.data.typeName, option.data.category, option.data.typeCode].filter(Boolean).join(' · ') || '暂无可用连接信息'}
                                                             </div>
                                                         </div>
                                                     </div>
                                                 )}
-                                                notFoundContent={dataSourceLoading ? '数据源加载中...' : '系统管理中暂无可用数据源'}
+                                                notFoundContent={dataSourceLoading ? '数据源装载中...' : '系统管理中未查找到任何可用数据源'}
                                             />
                                         </Form.Item>
                                     </div>
                                 </section>
 
-                                <section className={modalCardClass}>
-                                    <div className="border-b border-slate-100 px-5 py-4">
-                                        <div className="flex items-center gap-2 text-base font-semibold text-slate-900">
-                                            <Calendar size={17} className="text-emerald-500" />
-                                            通知与托底
-                                        </div>
-                                        <div className="mt-1 text-sm text-slate-500">
-                                            任务跑完之后要通知谁，失败的时候要先叫醒谁，这里一次配好。
+                                {/* Card 4: 通知与托底 */}
+                                <section className={`${modalCardClass} border-l-4 border-l-emerald-500`}>
+                                    <div className="border-b border-slate-100 px-5 py-4 bg-slate-50/20">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-500">
+                                                <Calendar size={15} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-base font-bold text-slate-800">通知与托底</h3>
+                                                <p className="mt-0.5 text-xs text-slate-400">配置任务完成或异常状态的触达人员</p>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="space-y-4 p-5">
-                                        <Form.Item label="完成时通知" className="mb-0">
+                                    <div className="space-y-5 p-5">
+                                        {/* 完成时通知 */}
+                                        <Form.Item
+                                            label={<span className="text-slate-600 font-semibold text-xs">执行成功时通知对象</span>}
+                                            className="mb-0"
+                                        >
                                             <Form.List name="notification_completed_list">
                                                 {(fields, { add, remove }) => (
                                                     <div className="space-y-3">
-                                                        {fields.length === 0 ? (
-                                                            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                                                                暂无通知对象，可点击“新增通知对象”添加。
-                                                            </div>
-                                                        ) : fields.map((field) => (
-                                                            <div key={field.key} className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_auto]">
-                                                                <Form.Item
-                                                                    name={[field.name, 'name']}
-                                                                    className="mb-0"
-                                                                    rules={[{ required: true, message: '请输入姓名' }]}
+                                                        <AnimatePresence mode="popLayout">
+                                                            {fields.length === 0 ? (
+                                                                <motion.div
+                                                                    initial={{ opacity: 0 }}
+                                                                    animate={{ opacity: 1 }}
+                                                                    exit={{ opacity: 0 }}
+                                                                    className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-3 text-xs text-slate-400 text-center"
                                                                 >
-                                                                    <Input placeholder="姓名，如：胡滨" />
-                                                                </Form.Item>
-                                                                <Form.Item
-                                                                    name={[field.name, 'custid']}
-                                                                    className="mb-0"
-                                                                    rules={[{ required: true, message: '请输入客户号' }]}
-                                                                >
-                                                                    <Input placeholder="客户号，如：1001642473" />
-                                                                </Form.Item>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => remove(field.name)}
-                                                                    className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-600 transition hover:bg-red-100"
-                                                                >
-                                                                    <Trash2 size={14} />
-                                                                    删除
-                                                                </button>
-                                                            </div>
-                                                        ))}
-                                                        <button
+                                                                    暂无配置通知对象，请点击下方按钮新增。
+                                                                </motion.div>
+                                                            ) : (
+                                                                fields.map((field) => (
+                                                                    <motion.div
+                                                                        key={field.key}
+                                                                        initial={{ opacity: 0, y: 12, scale: 0.96 }}
+                                                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                                        exit={{ opacity: 0, y: -12, scale: 0.96, transition: { duration: 0.15 } }}
+                                                                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                                                        className="group relative flex flex-col gap-2 rounded-xl border border-slate-150 bg-slate-50/30 p-2.5 hover:border-slate-250 hover:bg-slate-50 transition-all duration-300 sm:flex-row sm:items-center"
+                                                                    >
+                                                                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200/50 text-slate-400 shadow-inner group-hover:bg-slate-200 group-hover:text-slate-600 transition-colors">
+                                                                            <User size={13} />
+                                                                        </div>
+                                                                        <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-2">
+                                                                            <Form.Item
+                                                                                name={[field.name, 'name']}
+                                                                                className="mb-0"
+                                                                                rules={[{ required: true, message: '姓名' }]}
+                                                                            >
+                                                                                <Input
+                                                                                    placeholder="通知姓名 (例如：胡滨)"
+                                                                                    variant="borderless"
+                                                                                    className="h-8 px-2.5 rounded-lg bg-white border border-slate-200/80 focus:border-slate-350 focus:bg-white text-xs font-semibold text-slate-700"
+                                                                                />
+                                                                            </Form.Item>
+                                                                            <Form.Item
+                                                                                name={[field.name, 'custid']}
+                                                                                className="mb-0"
+                                                                                rules={[{ required: true, message: '客户号' }]}
+                                                                            >
+                                                                                <Input
+                                                                                    placeholder="客户号 (例如：1001642)"
+                                                                                    variant="borderless"
+                                                                                    className="h-8 px-2.5 rounded-lg bg-white border border-slate-200/80 focus:border-slate-350 focus:bg-white text-xs font-mono text-slate-600"
+                                                                                />
+                                                                            </Form.Item>
+                                                                        </div>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => remove(field.name)}
+                                                                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-500 hover:text-white transition-all duration-200 self-end sm:self-auto shrink-0 shadow-sm"
+                                                                            title="删除此通知人"
+                                                                        >
+                                                                            <Trash2 size={13} />
+                                                                        </button>
+                                                                    </motion.div>
+                                                                ))
+                                                            )}
+                                                        </AnimatePresence>
+                                                        <motion.button
+                                                            whileHover={{ scale: 1.01 }}
+                                                            whileTap={{ scale: 0.99 }}
                                                             type="button"
                                                             onClick={() => add({ name: '', custid: '' })}
-                                                            className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                                                            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-250 bg-white hover:border-slate-400 py-2 text-xs font-semibold text-slate-600 transition-colors shadow-sm hover:bg-slate-50/50"
                                                         >
-                                                            <Plus size={14} />
+                                                            <Plus size={13} className="text-slate-400" />
                                                             新增通知对象
-                                                        </button>
+                                                        </motion.button>
                                                     </div>
                                                 )}
                                             </Form.List>
                                         </Form.Item>
-                                        <Form.Item label="失败时通知" className="mb-0">
+
+                                        {/* 失败时通知 */}
+                                        <Form.Item
+                                            label={<span className="text-slate-600 font-semibold text-xs">执行失败时通知对象</span>}
+                                            className="mb-0"
+                                        >
                                             <Form.List name="notification_failed_list">
                                                 {(fields, { add, remove }) => (
                                                     <div className="space-y-3">
-                                                        {fields.length === 0 ? (
-                                                            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                                                                暂无通知对象，可点击“新增通知对象”添加。
-                                                            </div>
-                                                        ) : fields.map((field) => (
-                                                            <div key={field.key} className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_auto]">
-                                                                <Form.Item
-                                                                    name={[field.name, 'name']}
-                                                                    className="mb-0"
-                                                                    rules={[{ required: true, message: '请输入姓名' }]}
+                                                        <AnimatePresence mode="popLayout">
+                                                            {fields.length === 0 ? (
+                                                                <motion.div
+                                                                    initial={{ opacity: 0 }}
+                                                                    animate={{ opacity: 1 }}
+                                                                    exit={{ opacity: 0 }}
+                                                                    className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-3 text-xs text-slate-400 text-center"
                                                                 >
-                                                                    <Input placeholder="姓名，如：胡滨" />
-                                                                </Form.Item>
-                                                                <Form.Item
-                                                                    name={[field.name, 'custid']}
-                                                                    className="mb-0"
-                                                                    rules={[{ required: true, message: '请输入客户号' }]}
-                                                                >
-                                                                    <Input placeholder="客户号，如：1001642473" />
-                                                                </Form.Item>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => remove(field.name)}
-                                                                    className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-600 transition hover:bg-red-100"
-                                                                >
-                                                                    <Trash2 size={14} />
-                                                                    删除
-                                                                </button>
-                                                            </div>
-                                                        ))}
-                                                        <button
+                                                                    暂无配置通知对象，请点击下方按钮新增。
+                                                                </motion.div>
+                                                            ) : (
+                                                                fields.map((field) => (
+                                                                    <motion.div
+                                                                        key={field.key}
+                                                                        initial={{ opacity: 0, y: 12, scale: 0.96 }}
+                                                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                                        exit={{ opacity: 0, y: -12, scale: 0.96, transition: { duration: 0.15 } }}
+                                                                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                                                        className="group relative flex flex-col gap-2 rounded-xl border border-slate-150 bg-slate-50/30 p-2.5 hover:border-slate-250 hover:bg-slate-50 transition-all duration-300 sm:flex-row sm:items-center"
+                                                                    >
+                                                                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200/50 text-slate-400 shadow-inner group-hover:bg-slate-200 group-hover:text-slate-600 transition-colors">
+                                                                            <User size={13} />
+                                                                        </div>
+                                                                        <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-2">
+                                                                            <Form.Item
+                                                                                name={[field.name, 'name']}
+                                                                                className="mb-0"
+                                                                                rules={[{ required: true, message: '姓名' }]}
+                                                                            >
+                                                                                <Input
+                                                                                    placeholder="通知姓名 (例如：胡滨)"
+                                                                                    variant="borderless"
+                                                                                    className="h-8 px-2.5 rounded-lg bg-white border border-slate-200/80 focus:border-slate-350 focus:bg-white text-xs font-semibold text-slate-700"
+                                                                                />
+                                                                            </Form.Item>
+                                                                            <Form.Item
+                                                                                name={[field.name, 'custid']}
+                                                                                className="mb-0"
+                                                                                rules={[{ required: true, message: '客户号' }]}
+                                                                            >
+                                                                                <Input
+                                                                                    placeholder="客户号 (例如：1001642)"
+                                                                                    variant="borderless"
+                                                                                    className="h-8 px-2.5 rounded-lg bg-white border border-slate-200/80 focus:border-slate-350 focus:bg-white text-xs font-mono text-slate-600"
+                                                                                />
+                                                                            </Form.Item>
+                                                                        </div>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => remove(field.name)}
+                                                                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-500 hover:text-white transition-all duration-200 self-end sm:self-auto shrink-0 shadow-sm"
+                                                                            title="删除此通知人"
+                                                                        >
+                                                                            <Trash2 size={13} />
+                                                                        </button>
+                                                                    </motion.div>
+                                                                ))
+                                                            )}
+                                                        </AnimatePresence>
+                                                        <motion.button
+                                                            whileHover={{ scale: 1.01 }}
+                                                            whileTap={{ scale: 0.99 }}
                                                             type="button"
                                                             onClick={() => add({ name: '', custid: '' })}
-                                                            className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                                                            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-250 bg-white hover:border-slate-400 py-2 text-xs font-semibold text-slate-600 transition-colors shadow-sm hover:bg-slate-50/50"
                                                         >
-                                                            <Plus size={14} />
+                                                            <Plus size={13} className="text-slate-400" />
                                                             新增通知对象
-                                                        </button>
+                                                        </motion.button>
                                                     </div>
                                                 )}
                                             </Form.List>
@@ -650,17 +866,19 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                             </div>
                         </div>
                     ) : (
-                        <TaskDependencyPanel
-                            taskList={taskList}
-                            editingTaskId={editingTask?.id}
-                            selectedDependencyIds={selectedDependencyIds}
-                            selectedControlDependencyIds={selectedControlDependencyIds}
-                            dependencyTaskDetails={dependencyTasks}
-                            systems={systems}
-                            taskTypes={taskTypes}
-                            onChangeSelectedDependencyIds={updateDependencySelection}
-                            onChangeSelectedControlDependencyIds={updateControlDependencySelection}
-                        />
+                        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
+                            <TaskDependencyPanel
+                                taskList={taskList}
+                                editingTaskId={editingTask?.id}
+                                selectedDependencyIds={selectedDependencyIds}
+                                selectedControlDependencyIds={selectedControlDependencyIds}
+                                dependencyTaskDetails={dependencyTasks}
+                                systems={systems}
+                                taskTypes={taskTypes}
+                                onChangeSelectedDependencyIds={updateDependencySelection}
+                                onChangeSelectedControlDependencyIds={updateControlDependencySelection}
+                            />
+                        </div>
                     )}
                 </div>
             </Form>

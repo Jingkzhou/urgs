@@ -7,13 +7,13 @@
 ```yaml
 database:
   dbType: xinghuan
-  driverJar: transwarp-jdbc.jar
+  driverJar: inceptor-sdk-studio-1.2.jar
 ```
 
-系统会把本目录下的 `transwarp-jdbc.jar` 打入生产投产包：
+系统会把本目录下的 `inceptor-sdk-studio-1.2.jar` 打入生产投产包：
 
 ```text
-bin/db_deploy/drivers/xinghuan/transwarp-jdbc.jar
+bin/db_deploy/drivers/xinghuan/inceptor-sdk-studio-1.2.jar
 ```
 
 ## 注意
