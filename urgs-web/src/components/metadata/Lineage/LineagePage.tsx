@@ -303,16 +303,6 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                     collapsed={searchCollapsed}
                     theme="light"
                     style={{ borderRight: '1px solid #f0f0f0' }}
-                    onMouseEnter={() => {
-                        if (searchCollapsed) {
-                            setSearchCollapsed(false);
-                        }
-                    }}
-                    onMouseLeave={() => {
-                        if (!searchCollapsed) {
-                            setSearchCollapsed(true);
-                        }
-                    }}
                 >
                     {searchCollapsed ? (
                         <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '14px 8px', gap: 12, background: '#fff' }}>
@@ -330,7 +320,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                                 血缘搜索
                             </div>
                             <div style={{ writingMode: 'vertical-rl', letterSpacing: 0, color: '#94a3b8', fontSize: 11 }}>
-                                移入展开
+                                点击展开
                             </div>
                             {total > 0 ? (
                                 <Tag color="blue" style={{ margin: 0 }}>{total}</Tag>

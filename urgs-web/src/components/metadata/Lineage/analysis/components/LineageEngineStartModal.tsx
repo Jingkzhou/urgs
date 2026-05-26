@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Steps, Select, Tree, Form, Input, Card, Button, Space, Typography, Tag, Empty, Spin, message, Radio, Upload, Switch } from 'antd';
+import { Modal, Steps, Select, Tree, Form, Card, Button, Space, Typography, Tag, Empty, Spin, message, Radio, Upload, Switch } from 'antd';
 import {
     GithubOutlined,
     BranchesOutlined,
@@ -20,6 +20,11 @@ import {
     GitBranch,
     GitFileEntry
 } from '@/api/version';
+import {
+    getLineagePhysicalDataSources,
+    getLineagePhysicalSchemas,
+    LineagePhysicalDataSource,
+} from '@/api/lineage';
 import type { LineageEngineStartParams } from '@/api/lineage';
 import type { UploadFile } from 'antd/es/upload/interface';
 
@@ -69,6 +74,11 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
     const [fileTreeLoading, setFileTreeLoading] = useState(false);
     const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
     const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
+    const [physicalSources, setPhysicalSources] = useState<LineagePhysicalDataSource[]>([]);
+    const [physicalSourcesLoading, setPhysicalSourcesLoading] = useState(false);
+    const [selectedPhysicalSourceId, setSelectedPhysicalSourceId] = useState<number | null>(null);
+    const [schemaOptions, setSchemaOptions] = useState<string[]>([]);
+    const [schemaLoading, setSchemaLoading] = useState(false);
     const [form] = Form.useForm();
 
     useEffect(() => {
@@ -82,6 +92,9 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
             setFileTree([]);
             setSelectedPaths([]);
             setUploadFiles([]);
+            setPhysicalSources([]);
+            setSelectedPhysicalSourceId(null);
+            setSchemaOptions([]);
         }
     }, [open, form]);
 
@@ -90,11 +103,57 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
             form.setFieldsValue({
                 ref: undefined,
                 user: undefined,
+                physicalDataSourceId: undefined,
                 language: 'oracle',
                 enableAiReview: true,
             });
         }
     }, [open, form]);
+
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        setPhysicalSourcesLoading(true);
+        getLineagePhysicalDataSources()
+            .then(res => {
+                const sources = res || [];
+                setPhysicalSources(sources);
+                const defaultSourceId = sources[0]?.id ?? null;
+                setSelectedPhysicalSourceId(defaultSourceId);
+                form.setFieldsValue({ physicalDataSourceId: defaultSourceId ?? undefined });
+            })
+            .catch(() => {
+                setPhysicalSources([]);
+                setSelectedPhysicalSourceId(null);
+                message.error('获取物理仓库失败');
+            })
+            .finally(() => setPhysicalSourcesLoading(false));
+    }, [open, form]);
+
+    useEffect(() => {
+        if (!open || !selectedPhysicalSourceId) {
+            setSchemaOptions([]);
+            form.setFieldsValue({ user: undefined });
+            return;
+        }
+        setSchemaLoading(true);
+        getLineagePhysicalSchemas(selectedPhysicalSourceId)
+            .then(res => {
+                const schemas = Array.isArray(res) ? res : [];
+                setSchemaOptions(schemas);
+                const currentUser = form.getFieldValue('user');
+                form.setFieldsValue({
+                    user: currentUser && schemas.includes(currentUser) ? currentUser : schemas[0] ?? undefined,
+                });
+            })
+            .catch(() => {
+                setSchemaOptions([]);
+                form.setFieldsValue({ user: undefined });
+                message.error('获取 Schema 列表失败');
+            })
+            .finally(() => setSchemaLoading(false));
+    }, [open, selectedPhysicalSourceId, form]);
 
     // Load Repositories
     useEffect(() => {
@@ -457,8 +516,9 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                                     accept={uploadAcceptTypes}
                                     beforeUpload={() => false}
                                     fileList={uploadFiles}
+                                    showUploadList={false}
                                     onChange={({ fileList }) => setUploadFiles(fileList)}
-                                    style={{ padding: '20px 12px', borderRadius: 12 }}
+                                    style={{ padding: '20px 12px', borderRadius: 12, minHeight: 180 }}
                                 >
                                     <p className="ant-upload-drag-icon">
                                         <InboxOutlined style={{ color: '#1677ff' }} />
@@ -469,7 +529,7 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                                     </p>
                                 </Dragger>
 
-                                <div style={{ marginTop: 20, flex: 1, overflow: 'auto', border: '1px solid #f0f0f0', borderRadius: 12, padding: 16, background: '#fff' }}>
+                                <div style={{ marginTop: 20, maxHeight: 180, overflow: 'auto', border: '1px solid #f0f0f0', borderRadius: 12, padding: 16, background: '#fff' }}>
                                     {uploadFiles.length === 0 ? (
                                         <Empty description="尚未选择上传文件" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                                     ) : (
@@ -496,11 +556,37 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                         <div style={{ padding: '20px 60px', animation: 'fadeIn 0.5s ease-out' }}>
                         <Title level={4} style={{ textAlign: 'center', marginBottom: 32 }}>最后一步：配置分析参数</Title>
                         <Form.Item
-                            label="默认用户"
-                            name="user"
-                            tooltip="在 SQL 解析过程中，如果未指定 Schema，将使用该用户作为默认前缀"
+                            label="物理仓库"
+                            name="physicalDataSourceId"
+                            tooltip="从物理模型中已配置的数据源选择 Schema 来源"
                         >
-                            <Input placeholder="请输入默认用户" prefix={<SettingOutlined style={{ color: '#bfbfbf' }} />} />
+                            <Select
+                                placeholder="请选择物理仓库"
+                                loading={physicalSourcesLoading}
+                                showSearch
+                                optionFilterProp="label"
+                                onChange={(value: number) => setSelectedPhysicalSourceId(value)}
+                                options={physicalSources.map(source => ({
+                                    label: `${source.name}${source.metaName ? `（${source.metaName}）` : ''}`,
+                                    value: source.id,
+                                }))}
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            label="默认 Schema"
+                            name="user"
+                            tooltip="在 SQL 解析过程中，如果未指定 Schema，将使用这里选择的 Schema 作为默认前缀"
+                        >
+                            <Select
+                                placeholder="请选择物理仓库中的 Schema"
+                                loading={schemaLoading}
+                                showSearch
+                                allowClear
+                                optionFilterProp="label"
+                                disabled={!selectedPhysicalSourceId || schemaOptions.length === 0}
+                                notFoundContent={schemaLoading ? '加载中...' : '当前物理仓库暂无已同步 Schema'}
+                                options={schemaOptions.map(schema => ({ label: schema, value: schema }))}
+                            />
                         </Form.Item>
                         <Form.Item
                             label="SQL 方言"

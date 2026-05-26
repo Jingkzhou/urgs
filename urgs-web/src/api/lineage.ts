@@ -448,6 +448,57 @@ export interface LineageEngineStartByUploadParams {
 
 export type LineageEngineStartParams = LineageEngineStartByGitParams | LineageEngineStartByUploadParams;
 
+export interface LineagePhysicalDataSource {
+    id: number;
+    name: string;
+    metaId: number;
+    status: number;
+    metaName?: string;
+    metaCategory?: string;
+    metaCode?: string;
+}
+
+interface LineageDataSourceMeta {
+    id: number;
+    code: string;
+    name: string;
+    category: string;
+}
+
+interface LineageDataSourceConfig {
+    id: number;
+    name: string;
+    metaId: number;
+    status: number;
+}
+
+export const getLineagePhysicalDataSources = async () => {
+    const [metaData, configData] = await Promise.all([
+        get<LineageDataSourceMeta[]>('/api/datasource/meta'),
+        get<LineageDataSourceConfig[]>('/api/datasource/config'),
+    ]);
+
+    const metas = Array.isArray(metaData) ? metaData : [];
+    const configs = Array.isArray(configData) ? configData : [];
+    const metaMap = new Map<number, LineageDataSourceMeta>();
+    metas.forEach((meta) => metaMap.set(meta.id, meta));
+
+    return configs
+        .map((config) => {
+            const meta = metaMap.get(config.metaId);
+            return {
+                ...config,
+                metaName: meta?.name,
+                metaCategory: meta?.category,
+                metaCode: meta?.code,
+            };
+        })
+        .filter((config) => (config.metaCategory || '').toUpperCase() === 'RDBMS');
+};
+
+export const getLineagePhysicalSchemas = (dataSourceId: number) =>
+    get<string[]>('/api/metadata/model-table/owners', { dataSourceId: String(dataSourceId) });
+
 export const startLineageEngine = (params: LineageEngineStartParams) => {
     const startEngineOptions = { timeoutMs: 90000 };
 
