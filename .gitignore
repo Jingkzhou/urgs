@@ -79,3 +79,4 @@ urgs-agent/urgs_agent.egg-info/
 .codex/
 dist-packages/
 backups/
+.hermes/

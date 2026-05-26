@@ -46,4 +46,14 @@ urgs:
   web-base-url: "${URGS_WEB_BASE_URL:}"
   inbound-sso:
     rsa:
-      private-key: "${URGS_INBOUND_SSO_RSA_PRIVATE_KEY:}"
+      private-key: |-
+        -----BEGIN PRIVATE KEY-----
+        MIIBUwIBADANBgkqhkiG9w0BAQEFAASCAT0wggE5AgEAAkEAwIuNNwqi3rH6Xav0
+        6WOA5g58jSqE87wSsrAR2LYSgf6J/PLELFz0IRvZvW1wvcl0R/MDvtDE+SNU1WUy
+        +ne/EQIDAQABAkBs1jVDmKKJyQbhrhKpXlJ9OFEVJqSydWwIT1g3LGv3yCKcG21x
+        gO57+coW1vduI3+cwBvGKpqIeAFPdHLwGZ91AiEA9MwT1TcRGY/B03sYN+LaEJj9
+        HbbM1zvL2TUuABTzFv8CIQDJW1Cg2WAPacJqCuc9SLyc1q1ct62R7tTD4QYqfxm5
+        7wIgWp4A6XiM9+1jTqnOeUGcf3BiolE82p/kAe/Rq24V3nkCIAuoH6jQLMF3q+ub
+        qftgRJsHyo19jKzQGL0mP8ciCIk9AiBV2xLoFu9nlEtfOr55ySkURxZxYvjp5Sev
+        6TO03HltfA==
+        -----END PRIVATE KEY-----

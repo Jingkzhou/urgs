@@ -135,7 +135,7 @@ const MetadataModel: React.FC = () => {
                         metaCode: meta?.code,
                     };
                 })
-                .filter((config) => (config.metaCategory || '').toUpperCase() === 'RDBMS');
+                .filter((config) => ['RDBMS', 'BIG DATA'].includes((config.metaCategory || '').toUpperCase()));
 
             setSources(dbSources);
             if (dbSources.length > 0) {
