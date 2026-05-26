@@ -268,6 +268,15 @@ public class DynamicDataSourceService implements DisposableBean {
         } else if ("clickhouse".equalsIgnoreCase(type)) {
             int port = getInt(params, "port", 8123);
             return String.format("jdbc:clickhouse://%s:%d/%s", host, port, database);
+        } else if (isInceptorType(type)) {
+            String jdbcUrl = getString(params, "jdbcUrl");
+            if (jdbcUrl != null && !jdbcUrl.isBlank()) {
+                return jdbcUrl;
+            }
+            int port = getInt(params, "port", 10000);
+            String jdbcParams = getString(params, "jdbcParams");
+            String url = String.format("jdbc:hive2://%s:%d/%s", host, port, database);
+            return jdbcParams == null || jdbcParams.isBlank() ? url : url + ";" + jdbcParams;
         } else if ("generic".equalsIgnoreCase(type)) {
             return getString(params, "jdbcUrl");
         }
@@ -287,10 +296,21 @@ public class DynamicDataSourceService implements DisposableBean {
             return "com.ibm.db2.jcc.DB2Driver";
         } else if ("clickhouse".equalsIgnoreCase(type)) {
             return "com.clickhouse.jdbc.ClickHouseDriver";
+        } else if (isInceptorType(type)) {
+            String driverClass = getString(params, "driverClass");
+            return driverClass == null || driverClass.isBlank()
+                    ? "io.transwarp.jdbc.InceptorDriver"
+                    : driverClass;
         } else if ("generic".equalsIgnoreCase(type)) {
             return getString(params, "driverClass");
         }
         return "";
+    }
+
+    private boolean isInceptorType(String type) {
+        return "inceptor".equalsIgnoreCase(type)
+                || "xinghuan".equalsIgnoreCase(type)
+                || "transwarp".equalsIgnoreCase(type);
     }
 
     private String getString(Map<String, Object> params, String key) {

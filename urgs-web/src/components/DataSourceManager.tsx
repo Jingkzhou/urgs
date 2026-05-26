@@ -256,7 +256,7 @@ const DataSourceManager: React.FC = () => {
                 const type = meta?.code || 'unknown';
 
                 let color = 'blue';
-                if (['hdfs', 'hive', 'odps', 'kudu'].includes(type)) color = 'orange';
+                if (['hdfs', 'hive', 'inceptor', 'xinghuan', 'transwarp', 'odps', 'kudu'].includes(type)) color = 'orange';
                 if (['mongodb', 'hbase', 'ots', 'redis', 'cassandra'].includes(type)) color = 'purple';
                 if (['txtfile', 'ftp', 'sftp', 'oss'].includes(type)) color = 'green';
                 if (['elasticsearch', 'opentsdb', 'tsdb', 'stream', 'http'].includes(type)) color = 'cyan';
@@ -280,7 +280,7 @@ const DataSourceManager: React.FC = () => {
                 if (!config) return '-';
 
                 // RDBMS & Standard DBs
-                if (['mysql', 'oracle', 'sqlserver', 'postgresql', 'db2', 'clickhouse', 'drds', 'redis', 'cassandra', 'mongodb'].includes(type || '')) {
+                if (['mysql', 'oracle', 'sqlserver', 'postgresql', 'db2', 'clickhouse', 'drds', 'redis', 'cassandra', 'mongodb', 'inceptor', 'xinghuan', 'transwarp'].includes(type || '')) {
                     return <span className="text-slate-500 font-mono text-xs">{config.host || config.address}:{config.port}/{config.database || config.serviceName || config.keyspace || ''}</span>;
                 }
                 // File Systems
