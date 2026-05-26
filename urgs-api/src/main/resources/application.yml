@@ -44,3 +44,6 @@ executor:
 
 urgs:
   web-base-url: "${URGS_WEB_BASE_URL:}"
+  inbound-sso:
+    rsa:
+      private-key: "${URGS_INBOUND_SSO_RSA_PRIVATE_KEY:}"

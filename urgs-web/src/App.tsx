@@ -100,7 +100,47 @@ const App: React.FC = () => {
     }, [layoutMode]);
 
     useEffect(() => {
-        if (initialToken) {
+        const params = new URLSearchParams(window.location.search);
+        const ssoLoginToken = params.get('sso_login_token');
+        if (ssoLoginToken) {
+            const target = params.get('sso_target');
+            params.delete('sso_login_token');
+            params.delete('sso_target');
+            const cleanUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash}`;
+            window.history.replaceState({}, document.title, cleanUrl);
+
+            fetch(`/api/auth/profile?token=${encodeURIComponent(ssoLoginToken)}`)
+                .then(res => {
+                    if (!res.ok) {
+                        throw new Error(`SSO profile failed ${res.status}`);
+                    }
+                    return res.json();
+                })
+                .then(async data => {
+                    const user = {
+                        id: data.id,
+                        empId: data.empId,
+                        name: data.name,
+                        roleName: data.roleName,
+                        roleId: data.roleId,
+                        system: data.system,
+                    };
+                    localStorage.setItem('auth_token', data.token);
+                    localStorage.setItem('auth_user', JSON.stringify(user));
+                    setUserInfo(user);
+                    await fetchPermissions(data.token);
+                    setIsAuthenticated(true);
+                    if (target) {
+                        window.location.hash = target.startsWith('#/') ? target : `#/${target.replace(/^\//, '')}`;
+                    }
+                })
+                .catch(err => {
+                    console.error('SSO login error', err);
+                    handleLogout();
+                });
+        }
+
+        if (!ssoLoginToken && initialToken) {
             fetchPermissions(initialToken);
         }
 
