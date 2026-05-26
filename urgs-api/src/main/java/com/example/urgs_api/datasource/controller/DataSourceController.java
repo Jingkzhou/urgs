@@ -4,11 +4,13 @@ import com.example.urgs_api.datasource.dto.ResolvedDataSourceConfigDTO;
 import com.example.urgs_api.datasource.entity.DataSourceConfig;
 import com.example.urgs_api.datasource.entity.DataSourceMeta;
 import com.example.urgs_api.datasource.service.DataSourceService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/datasource")
 public class DataSourceController {
@@ -25,6 +27,7 @@ public class DataSourceController {
             dynamicDataSourceService.testConnection(config);
             return org.springframework.http.ResponseEntity.ok("Connection successful!");
         } catch (Exception e) {
+            log.error("Test connection failed for config: {}", config, e);
             return org.springframework.http.ResponseEntity.badRequest().body(e.getMessage());
         }
     }

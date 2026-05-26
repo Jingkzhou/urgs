@@ -354,17 +354,17 @@ public class DynamicDataSourceService implements DisposableBean {
             int port = getInt(params, "port", 8123);
             return String.format("jdbc:clickhouse://%s:%d/%s", host, port, database);
         } else if (isInceptorType(type)) {
+            String jdbcParams = getString(params, "jdbcParams");
+            if (hasText(host) && hasText(database)) {
+                int port = getInt(params, "port", 10000);
+                String url = String.format("jdbc:inceptor2://%s:%d/%s", host, port, database);
+                return normalizeInceptorJdbcUrl(url, jdbcParams);
+            }
             String jdbcUrl = getString(params, "jdbcUrl");
             if (jdbcUrl != null && !jdbcUrl.isBlank()) {
-                return normalizeInceptorJdbcUrl(jdbcUrl, getString(params, "jdbcParams"));
+                return normalizeInceptorJdbcUrl(jdbcUrl, jdbcParams);
             }
-            int port = getInt(params, "port", 10000);
-            String jdbcParams = getString(params, "jdbcParams");
-            if (jdbcParams == null || jdbcParams.isBlank()) {
-                jdbcParams = "auth=noSasl";
-            }
-            String url = String.format("jdbc:inceptor2://%s:%d/%s", host, port, database);
-            return normalizeInceptorJdbcUrl(url, jdbcParams);
+            return "";
         } else if ("generic".equalsIgnoreCase(type)) {
             return getString(params, "jdbcUrl");
         }
@@ -377,12 +377,21 @@ public class DynamicDataSourceService implements DisposableBean {
             normalizedUrl = "jdbc:inceptor2://" + normalizedUrl.substring("jdbc:hive2://".length());
         }
 
-        String normalizedParams = jdbcParams == null || jdbcParams.isBlank() ? "auth=noSasl" : jdbcParams.trim();
+        if (jdbcParams == null || jdbcParams.isBlank()) {
+            return normalizedUrl;
+        }
+        String normalizedParams = jdbcParams.trim();
         String lowerUrl = normalizedUrl.toLowerCase();
-        if (lowerUrl.contains(";auth=") || lowerUrl.endsWith(";auth") || lowerUrl.contains(";principal=")) {
+        String lowerParams = normalizedParams.toLowerCase();
+        if ((lowerUrl.contains(";auth=") && lowerParams.contains("auth="))
+                || (lowerUrl.contains(";principal=") && lowerParams.contains("principal="))) {
             return normalizedUrl;
         }
         return normalizedUrl + (normalizedUrl.endsWith(";") ? "" : ";") + normalizedParams;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private String buildDriverClass(String type, Map<String, Object> params) {

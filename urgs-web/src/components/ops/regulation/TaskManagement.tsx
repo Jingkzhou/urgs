@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { DatePicker, Form, Modal, message } from 'antd';
 import dayjs from 'dayjs';
 import zhCN from 'antd/es/date-picker/locale/zh_CN';
-import { RefreshCw, Search, Settings2, Plus } from 'lucide-react';
+import { RefreshCw, Search, Settings2, Plus, Clock3, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { QuartzTask } from './mockData';
 import TaskEditorModal from './TaskEditorModal';
 import TaskListTable from './TaskListTable';
@@ -306,7 +307,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 loadDependencyCandidateTasks(),
                 loadTaskStatusSummary(),
             ]);
-            message.success('任务列表已刷新');
+            message.success('任务列表及统计数据已刷新');
         } finally {
             setRefreshing(false);
         }
@@ -373,12 +374,12 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 loadDependencyCandidateTasks(),
                 loadTaskStatusSummary(),
             ]);
-            message.success(editingTask ? `已更新任务 ${taskName}` : `已创建任务 ${taskName}`);
+            message.success(editingTask ? `已成功保存任务 ${taskName} 修改` : `已成功创建新任务 ${taskName}`);
             closeTaskModal();
         } catch (error: any) {
             if (error?.errorFields) {
                 const labels = error.errorFields.map((field: any) => field.errors?.[0]).filter(Boolean).join('、');
-                message.error(labels ? `请检查表单：${labels}` : '请完善表单信息');
+                message.error(labels ? `请检查必填项：${labels}` : '请完善表单配置信息');
                 return;
             }
             message.error(error?.message || '保存任务失败');
@@ -395,7 +396,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 loadTaskStatusSummary(),
             ]);
             setSelectedTask(prev => prev?.id === task.id ? null : prev);
-            message.success(`已删除任务 ${task.task_name}`);
+            message.success(`已删除监管任务 ${task.task_name}`);
         } catch (error: any) {
             message.error(error?.message || '删除任务失败');
         }
@@ -417,7 +418,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             const dataDateFormatted = startDataDate.replace(/-/g, '');
             const response = await triggerNowQuartzTask(pendingStartTask.id, dataDateFormatted);
             if (!response?.success) throw new Error(response?.msg || '立即执行失败');
-            message.success(`任务 ${pendingStartTask.task_name} 已触发执行`);
+            message.success(`任务 ${pendingStartTask.task_name} 已成功触发手动执行`);
             setStartTaskModalVisible(false);
             setPendingStartTask(null);
         } catch (error: any) {
@@ -437,7 +438,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 loadDependencyCandidateTasks(),
                 loadTaskStatusSummary(),
             ]);
-            message.success(`已暂停任务 ${task.task_name}`);
+            message.success(`已暂停调度任务 ${task.task_name}`);
         } catch (error: any) {
             message.error(error?.message || '暂停任务失败');
         }
@@ -453,7 +454,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 loadDependencyCandidateTasks(),
                 loadTaskStatusSummary(),
             ]);
-            message.success(`已恢复任务 ${task.task_name}`);
+            message.success(`已激活恢复调度任务 ${task.task_name}`);
         } catch (error: any) {
             message.error(error?.message || '恢复任务失败');
         }
@@ -464,115 +465,165 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             onViewExecutionLog(task);
             return;
         }
-        message.info(`前端稿占位：查看任务 ${task.task_name} 的执行日志`);
+        message.info(`查看任务 ${task.task_name} 的执行日志`);
     };
 
     return (
         <>
-            <div className="space-y-4">
-                {/* 顶部标题 + 筛选栏 */}
-                <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="space-y-6">
+                {/* Dashboard Main Panel Header card */}
+                <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-[0_8px_30px_rgba(0,0,0,0.03)] transition-all duration-300">
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
                         <div>
-                            <div className="text-lg font-bold text-slate-800">任务管理</div>
-                            <div className="text-sm text-slate-500 mt-1">
-                                围绕 `t_quartz_task` 展示监管批量任务定义、依赖关系和运行配置。
+                            <div className="flex items-center gap-2">
+                                <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2">
+                                    <Sparkles className="h-5 w-5 text-red-500" />
+                                    任务管理控制台
+                                </h1>
                             </div>
+                            <p className="text-sm text-slate-400 mt-1.5 font-medium tracking-wide">
+                                集中化管理监管报送批量任务周期定义（`t_quartz_task`）、拓扑依赖与告警通知托底。
+                            </p>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5">
-                                <Settings2 size={14} />
-                                共 {taskTotal} 条任务
-                            </span>
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700">
-                                正常 {taskStatusSummary.normal}
-                            </span>
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-amber-700">
-                                暂停 {taskStatusSummary.paused}
-                            </span>
-                            <button
-                                onClick={handleRefreshTasks}
-                                disabled={refreshing}
-                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                            >
-                                <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-                                刷新
-                            </button>
-                            <button
-                                onClick={() => openTaskModal(null)}
-                                className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-red-700"
-                            >
-                                <Plus size={14} />
-                                新建任务
-                            </button>
+                        
+                        {/* High-fidelity Statistics Metric Chips and Action Button Container */}
+                        <div className="flex flex-wrap items-center gap-3 text-xs">
+                            {/* Metric 1 */}
+                            <div className="flex items-center gap-2.5 rounded-xl border border-slate-200/80 bg-slate-50/50 px-3.5 py-2 transition-all duration-300 hover:bg-slate-50">
+                                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-200/60 text-slate-500">
+                                    <SlidersHorizontal size={13} />
+                                </div>
+                                <div>
+                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">总任务数</div>
+                                    <div className="text-sm font-bold text-slate-800 font-mono leading-none mt-0.5">{taskTotal}</div>
+                                </div>
+                            </div>
+                            {/* Metric 2 */}
+                            <div className="flex items-center gap-2.5 rounded-xl border border-emerald-100 bg-emerald-50/20 px-3.5 py-2 transition-all duration-300 hover:bg-emerald-50/40">
+                                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100/60 text-emerald-600">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                </div>
+                                <div>
+                                    <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">运行正常</div>
+                                    <div className="text-sm font-bold text-emerald-700 font-mono leading-none mt-0.5">{taskStatusSummary.normal}</div>
+                                </div>
+                            </div>
+                            {/* Metric 3 */}
+                            <div className="flex items-center gap-2.5 rounded-xl border border-amber-100 bg-amber-50/20 px-3.5 py-2 transition-all duration-300 hover:bg-amber-50/40">
+                                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-100/60 text-amber-600">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                </div>
+                                <div>
+                                    <div className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">当前暂停</div>
+                                    <div className="text-sm font-bold text-amber-700 font-mono leading-none mt-0.5">{taskStatusSummary.paused}</div>
+                                </div>
+                            </div>
+
+                            {/* Separator */}
+                            <span className="h-8 w-px bg-slate-200 hidden sm:block" />
+
+                            <div className="flex items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0 justify-end">
+                                <motion.button
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.98 }}
+                                    onClick={handleRefreshTasks}
+                                    disabled={refreshing}
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-250 bg-white px-4 py-2 text-xs font-bold text-slate-600 shadow-sm transition-all duration-200 hover:bg-slate-50 hover:border-slate-350 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    <RefreshCw size={13} className={`${refreshing ? 'animate-spin' : ''} text-slate-400`} />
+                                    刷新列表
+                                </motion.button>
+                                <motion.button
+                                    whileHover={{ scale: 1.02, y: -1 }}
+                                    whileTap={{ scale: 0.98 }}
+                                    onClick={() => openTaskModal(null)}
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-gradient-to-r from-red-600 to-red-700 px-4.5 py-2 text-xs font-bold text-white shadow-md shadow-red-600/10 transition-all duration-200 hover:from-red-500 hover:to-red-600 hover:shadow-lg hover:shadow-red-500/20"
+                                >
+                                    <Plus size={13} />
+                                    新建监管任务
+                                </motion.button>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
-                        <label className="relative">
-                            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input
-                                value={keyword}
-                                onChange={(event) => setKeyword(event.target.value)}
-                                placeholder="搜索任务名称 / 备注"
-                                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
-                            />
-                        </label>
-                        <select
-                            value={statusFilter}
-                            onChange={(event) => setStatusFilter(event.target.value)}
-                            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
-                        >
-                            <option value="">全部状态</option>
-                            <option value="0">正常</option>
-                            <option value="1">暂停</option>
-                        </select>
-                        <select
-                            value={typeFilter}
-                            onChange={(event) => setTypeFilter(event.target.value)}
-                            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
-                        >
-                            <option value="">全部任务类型</option>
-                            {taskTypes.map(type => (
-                                <option key={type} value={type}>{type}</option>
-                            ))}
-                        </select>
-                        <select
-                            value={systemFilter}
-                            onChange={(event) => setSystemFilter(event.target.value)}
-                            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
-                        >
-                            <option value="">全部系统</option>
-                            {systems.map(system => (
-                                <option key={system} value={system}>{system}</option>
-                            ))}
-                        </select>
-                        <select
-                            value={themeFilter}
-                            onChange={(event) => setThemeFilter(event.target.value)}
-                            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
-                        >
-                            <option value="">全部主题</option>
-                            {themes.map(theme => (
-                                <option key={theme} value={theme}>{theme}</option>
-                            ))}
-                        </select>
+                    {/* SaaS Control Grid Filter Bar */}
+                    <div className="mt-6 border-t border-slate-100 pt-5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+                            <div className="relative">
+                                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    value={keyword}
+                                    onChange={(event) => setKeyword(event.target.value)}
+                                    placeholder="搜索任务名称 / 说明备注"
+                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 pl-9 pr-3.5 text-xs text-slate-700 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
+                                />
+                            </div>
+                            <div>
+                                <select
+                                    value={statusFilter}
+                                    onChange={(event) => setStatusFilter(event.target.value)}
+                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
+                                >
+                                    <option value="">全部任务状态</option>
+                                    <option value="0">正常</option>
+                                    <option value="1">暂停</option>
+                                </select>
+                            </div>
+                            <div>
+                                <select
+                                    value={typeFilter}
+                                    onChange={(event) => setTypeFilter(event.target.value)}
+                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
+                                >
+                                    <option value="">全部任务类型</option>
+                                    {taskTypes.map(type => (
+                                        <option key={type} value={type}>{type}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <select
+                                    value={systemFilter}
+                                    onChange={(event) => setSystemFilter(event.target.value)}
+                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
+                                >
+                                    <option value="">全部所属系统</option>
+                                    {systems.map(system => (
+                                        <option key={system} value={system}>{system}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <select
+                                    value={themeFilter}
+                                    onChange={(event) => setThemeFilter(event.target.value)}
+                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
+                                >
+                                    <option value="">全部任务主题</option>
+                                    {themes.map(theme => (
+                                        <option key={theme} value={theme}>{theme}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                {/* 任务列表表格 */}
-                <TaskListTable
-                    taskList={taskList}
-                    onSelectTask={setSelectedTask}
-                    onEditTask={(task) => openTaskModal(task)}
-                    onPauseTask={handlePauseTask}
-                    onResumeTask={handleResumeTask}
-                    onStartTask={handleStartTask}
-                    onViewExecutionLog={handleViewExecutionLog}
-                    onDeleteTask={handleDeleteTask}
-                />
+                {/* 任务列表表格 - Beautiful container backdrop wrapper */}
+                <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                    <TaskListTable
+                        taskList={taskList}
+                        onSelectTask={setSelectedTask}
+                        onEditTask={(task) => openTaskModal(task)}
+                        onPauseTask={handlePauseTask}
+                        onResumeTask={handleResumeTask}
+                        onStartTask={handleStartTask}
+                        onViewExecutionLog={handleViewExecutionLog}
+                        onDeleteTask={handleDeleteTask}
+                    />
+                </div>
 
-                <div className="px-5">
+                <div className="px-5 py-2">
                     <Pagination
                         current={currentPage}
                         total={taskTotal}
@@ -586,33 +637,70 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 </div>
             </div>
 
-            {/* 立即开始 Modal */}
+            {/* 立即开始 Modal - Premium overlapping style */}
             <Modal
-                title={pendingStartTask ? `立即开始 · ${pendingStartTask.task_name}` : '立即开始'}
+                title={null}
                 open={startTaskModalVisible}
                 onCancel={() => {
                     setStartTaskModalVisible(false);
                     setPendingStartTask(null);
                 }}
                 onOk={handleConfirmStartTask}
-                okText="确认执行"
-                cancelText="取消"
                 confirmLoading={startTaskLoading}
                 destroyOnHidden
-            >
-                <div className="space-y-4 py-2">
-                    <div className="text-sm text-slate-500">
-                        为当前任务选择本次立即执行的数据日期。
+                className="premium-task-modal"
+                styles={{ body: { padding: 0 }, footer: { padding: '16px 24px', borderTop: '1px solid #f1f5f9' } }}
+                footer={
+                    <div className="flex items-center justify-end gap-3">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setStartTaskModalVisible(false);
+                                setPendingStartTask(null);
+                            }}
+                            className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-xs font-bold text-slate-600 transition-all duration-200 hover:bg-slate-50 active:scale-95"
+                        >
+                            取消
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleConfirmStartTask}
+                            disabled={startTaskLoading}
+                            className="rounded-xl bg-gradient-to-r from-red-600 to-red-700 px-5.5 py-2.5 text-xs font-bold text-white shadow-md shadow-red-600/10 transition-all duration-200 hover:from-red-500 hover:to-red-600 hover:shadow-lg hover:shadow-red-500/20 active:scale-95 disabled:opacity-50"
+                        >
+                            {startTaskLoading ? '执行中...' : '确认执行'}
+                        </button>
                     </div>
-                    <div>
-                        <div className="mb-2 text-sm font-medium text-slate-700">数据日期</div>
-                        <DatePicker
-                            value={startDataDate ? dayjs(startDataDate) : null}
-                            onChange={(value) => setStartDataDate(value ? value.format('YYYY-MM-DD') : '')}
-                            locale={zhCN}
-                            className="w-full"
-                            allowClear={false}
-                        />
+                }
+            >
+                <div className="p-6">
+                    <div className="flex items-center gap-3 border-b border-slate-100 pb-4 mb-4">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-500">
+                            <Clock3 size={18} />
+                        </div>
+                        <div>
+                            <h3 className="text-base font-bold text-slate-800">立即触发监管任务</h3>
+                            <p className="mt-0.5 text-xs text-slate-400 font-medium truncate max-w-[340px]">
+                                {pendingStartTask?.task_name || '任务运行配置'}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="space-y-4">
+                        <div className="rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500 border border-slate-100 leading-relaxed font-medium">
+                            立即执行将手动触发该定时任务。系统会为选中的“数据日期”生成运行实例并进入调度系统。请确保已核验其前置依赖。
+                        </div>
+                        <div>
+                            <label className="block mb-2 text-slate-600 font-semibold text-xs uppercase tracking-wider">
+                                选择数据日期 (Data Date)
+                            </label>
+                            <DatePicker
+                                value={startDataDate ? dayjs(startDataDate) : null}
+                                onChange={(value) => setStartDataDate(value ? value.format('YYYY-MM-DD') : '')}
+                                locale={zhCN}
+                                className="w-full h-10 rounded-xl bg-slate-50/50 border-slate-200 hover:border-slate-300 focus:border-slate-400 focus:bg-white text-sm"
+                                allowClear={false}
+                            />
+                        </div>
                     </div>
                 </div>
             </Modal>

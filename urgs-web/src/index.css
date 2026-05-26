@@ -395,3 +395,73 @@
 .code-modal-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(59, 130, 246, 0.5);
 }
+
+/* =========================================
+   TaskEditorModal - Premium CSS Overrides
+   ========================================= */
+
+/* Ant Design Modal rounding override */
+.premium-task-modal .ant-modal-content {
+  border-radius: 24px !important;
+  overflow: hidden !important;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.15) !important;
+  border: 1px solid rgba(226, 232, 240, 0.8) !important;
+}
+
+/* Premium Select styles overrides */
+.premium-select .ant-select-selector {
+  border-radius: 12px !important;
+  height: 40px !important;
+  padding: 4px 12px !important;
+  background-color: rgba(248, 250, 252, 0.5) !important;
+  border-color: #e2e8f0 !important;
+  transition: all 0.2s ease-in-out !important;
+}
+
+.premium-select .ant-select-selector:hover {
+  border-color: #cbd5e1 !important;
+}
+
+.premium-select.ant-select-focused .ant-select-selector {
+  border-color: #94a3b8 !important;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.1) !important;
+  background-color: #ffffff !important;
+}
+
+/* Premium Input Number overrides */
+.premium-input-number {
+  border-radius: 12px !important;
+  background-color: rgba(248, 250, 252, 0.5) !important;
+  border-color: #e2e8f0 !important;
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  transition: all 0.2s ease-in-out !important;
+}
+
+.premium-input-number:hover {
+  border-color: #cbd5e1 !important;
+}
+
+.premium-input-number.ant-input-number-focused {
+  border-color: #94a3b8 !important;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.1) !important;
+  background-color: #ffffff !important;
+}
+
+.premium-input-number .ant-input-number-input {
+  height: 38px !important;
+}
+
+/* Spin animation speed tweak */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-spin-slow {
+  animation: spin-slow 12s linear infinite;
+}

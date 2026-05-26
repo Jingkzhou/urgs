@@ -199,13 +199,7 @@ const AnnouncementManagement: React.FC = () => {
                         label="紧急通知"
                         value={stats.urgentCount}
                     />
-                    <StatCard
-                        icon={BellRing}
-                        iconColor="text-amber-500"
-                        iconBg="bg-amber-50"
-                        label="待审核"
-                        value={stats.pendingCount}
-                    />
+                   
                 </div>
             </header>
 
