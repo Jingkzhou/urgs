@@ -475,6 +475,21 @@ class LineageParser:
         dependencies = self._remove_set_operation_star_fallbacks(dependencies)
 
         # ===== 3. Metadata Validation & Star Expansion =====
+        explicit_star_positions = {}
+        for dep in dependencies:
+            src_col = dep.get("source_column")
+            tgt_col = dep.get("target_column")
+            if src_col == "*" and tgt_col not in ["UNKNOWN", "", None, "*"]:
+                key = (
+                    dep.get("source_table"),
+                    dep.get("target_table"),
+                    dep.get("source_file"),
+                    dep.get("snippet"),
+                )
+                index = explicit_star_positions.get(key, 0)
+                dep["_star_target_index"] = index
+                explicit_star_positions[key] = index + 1
+
         final_dependencies = []
         for dep in dependencies:
             src_table = dep["source_table"]
@@ -525,6 +540,8 @@ class LineageParser:
                 elif tgt_val.get("exists") is False:
                     dep["ambiguityCode"] = "MISSING_TARGET_COLUMN"
             final_dependencies.append(dep)
+
+        final_dependencies = self._deduplicate_column_dependencies(final_dependencies)
 
         # ===== Schema Fallback & Application =====
         schema_to_apply = self.default_schema
@@ -584,9 +601,41 @@ class LineageParser:
         target_fields = self.resolver.get_table_fields(tgt_table)
         target_is_star = tgt_col in ["UNKNOWN", "", None, "*"]
         can_pair_by_position = target_is_star and target_fields and len(target_fields) >= len(fields)
+        explicit_target_index = dep.get("_star_target_index")
+
+        if not target_is_star and explicit_target_index is not None:
+            if explicit_target_index < len(fields):
+                new_dep = dep.copy()
+                new_dep.pop("_star_target_index", None)
+                new_dep["source_column"] = fields[explicit_target_index]
+                new_dep["is_expanded"] = True
+                val_res = self.resolver.validate_column(src_table, new_dep["source_column"])
+                if not new_dep.get("confidence"):
+                    new_dep["confidence"] = val_res.get("confidence", "MEDIUM")
+                new_dep["validation_note"] = self._join_notes(
+                    new_dep.get("validation_note"),
+                    val_res.get("note"),
+                    "SELECT * expanded by explicit target column position",
+                )
+                new_dep["metadataMatched"] = val_res.get("metadata_matched")
+                new_dep["metadataPackHash"] = self.resolver.metadata_pack_hash
+                return [new_dep]
+
+            fallback = dep.copy()
+            fallback.pop("_star_target_index", None)
+            fallback["ambiguityCode"] = "STAR_EXPANSION_UNAVAILABLE"
+            fallback["confidence"] = "LOW"
+            fallback["validation_note"] = self._join_notes(
+                fallback.get("validation_note"),
+                "Target column position exceeds source SELECT * metadata field count",
+            )
+            fallback["metadataPackHash"] = self.resolver.metadata_pack_hash
+            return [fallback]
+
         expanded = []
         for index, f_name in enumerate(fields):
             new_dep = dep.copy()
+            new_dep.pop("_star_target_index", None)
             new_dep["source_column"] = f_name
             if can_pair_by_position:
                 new_dep["target_column"] = target_fields[index]
@@ -613,6 +662,42 @@ class LineageParser:
         right_score = conf_map.get((right or "MEDIUM").upper(), 2)
         score = min(left_score, right_score)
         return "HIGH" if score == 3 else ("MEDIUM" if score == 2 else "LOW")
+
+    def _deduplicate_column_dependencies(self, dependencies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        deduped = []
+        seen = {}
+        for dep in dependencies:
+            dep_type = dep.get("dependency_type")
+            edge_type = dep.get("neo4j_type")
+            if not edge_type and dep_type == "fdd":
+                edge_type = "DERIVES_TO"
+            key = (
+                dep.get("source_table"),
+                dep.get("source_column"),
+                dep.get("target_table"),
+                dep.get("target_column"),
+                dep_type,
+                edge_type,
+            )
+            existing = seen.get(key)
+            if not existing:
+                seen[key] = dep
+                deduped.append(dep)
+                continue
+
+            existing["confidence"] = self._min_confidence(
+                existing.get("confidence"),
+                dep.get("confidence"),
+            )
+            existing["validation_note"] = self._join_notes(
+                existing.get("validation_note"),
+                dep.get("validation_note"),
+            )
+            if not existing.get("ambiguityCode") and dep.get("ambiguityCode"):
+                existing["ambiguityCode"] = dep.get("ambiguityCode")
+            if "metadataMatched" not in existing and "metadataMatched" in dep:
+                existing["metadataMatched"] = dep.get("metadataMatched")
+        return deduped
 
     def _join_notes(self, *notes) -> str:
         clean = [str(note) for note in notes if note]

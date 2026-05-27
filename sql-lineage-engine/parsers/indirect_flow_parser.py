@@ -182,6 +182,8 @@ class IndirectFlowParser:
             dep_type = "fdr" # default
             neo4j_type = "RELATED_TO"
             specific_target_column = "*"
+            target_resolution_note = None
+            target_metadata_matched = False
             projection_item = None
 
             # 向上遍历以查找不同的上下文
@@ -265,6 +267,14 @@ class IndirectFlowParser:
                             # 1. 尝试位置映射 (INSERT INTO t (c1, c2) ...)
                             if target_info.get("columns") and idx in target_info["columns"]:
                                 specific_target_column = target_info["columns"][idx]
+                            elif not target_info.get("columns"):
+                                inferred_column = self._target_column_by_metadata(target_table, idx)
+                                if inferred_column:
+                                    specific_target_column = inferred_column
+                                    target_resolution_note = (
+                                        f"Target column inferred by metadata position {idx + 1}"
+                                    )
+                                    target_metadata_matched = True
                 except ValueError:
                     pass
 
@@ -306,6 +316,13 @@ class IndirectFlowParser:
                     dep["ambiguityCode"] = resolution.get("ambiguityCode")
                 if "metadataMatched" in resolution:
                     dep["metadataMatched"] = resolution.get("metadataMatched")
+                if target_resolution_note:
+                    dep["validation_note"] = self._join_notes(
+                        dep.get("validation_note"),
+                        target_resolution_note,
+                    )
+                    if target_metadata_matched and "metadataMatched" not in dep:
+                        dep["metadataMatched"] = True
                 deps.append(dep)
              
         return deps
@@ -373,6 +390,21 @@ class IndirectFlowParser:
             output_name = self._projection_output_name(projection)
             names.append(output_name if output_name and output_name != "*" else None)
         return names
+
+    def _target_column_by_metadata(self, table_name: str, index: int) -> Optional[str]:
+        if index is None or index < 0:
+            return None
+        try:
+            fields = self.resolver.get_table_fields(table_name)
+        except Exception:
+            return None
+        if index < len(fields):
+            return fields[index]
+        return None
+
+    def _join_notes(self, *notes) -> str:
+        clean = [str(note) for note in notes if note]
+        return "; ".join(dict.fromkeys(clean))
 
     def _single_table_from_select(self, select) -> List[str]:
         if list(select.find_all(exp.Subquery)):

@@ -189,3 +189,94 @@ def test_select_star_expands_with_metadata_pack(tmp_path):
 
     assert ("ODS.SRC", "C1", "MART.TGT", "C1") in pairs
     assert ("ODS.SRC", "C2", "MART.TGT", "C2") in pairs
+
+
+def test_select_star_with_explicit_target_columns_pairs_by_position(tmp_path):
+    path = write_pack(tmp_path)
+    parser = LineageParser.__new__(LineageParser)
+    parser.resolver = MetadataResolver(metadata_file=str(path))
+
+    first = parser._expand_star_dependency(
+        {
+            "source_table": "ODS.SRC",
+            "source_column": "*",
+            "target_table": "MART.TGT",
+            "target_column": "C1",
+            "dependency_type": "fdd",
+            "_star_target_index": 0,
+        }
+    )
+    second = parser._expand_star_dependency(
+        {
+            "source_table": "ODS.SRC",
+            "source_column": "*",
+            "target_table": "MART.TGT",
+            "target_column": "C2",
+            "dependency_type": "fdd",
+            "_star_target_index": 1,
+        }
+    )
+    pairs = {
+        (
+            dep.get("source_table"),
+            dep.get("source_column"),
+            dep.get("target_table"),
+            dep.get("target_column"),
+        )
+        for dep in first + second
+    }
+
+    assert pairs == {
+        ("ODS.SRC", "C1", "MART.TGT", "C1"),
+        ("ODS.SRC", "C2", "MART.TGT", "C2"),
+    }
+
+
+def test_duplicate_column_dependencies_are_merged():
+    parser = LineageParser.__new__(LineageParser)
+    deps = parser._deduplicate_column_dependencies(
+        [
+            {
+                "source_table": "ODS.SRC",
+                "source_column": "C1",
+                "target_table": "MART.TGT",
+                "target_column": "C1",
+                "dependency_type": "fdd",
+                "confidence": "HIGH",
+                "validation_note": "from gsp",
+            },
+            {
+                "source_table": "ODS.SRC",
+                "source_column": "C1",
+                "target_table": "MART.TGT",
+                "target_column": "C1",
+                "dependency_type": "fdd",
+                "neo4j_type": "DERIVES_TO",
+                "confidence": "HIGH",
+                "validation_note": "from metadata",
+            },
+        ]
+    )
+
+    assert len(deps) == 1
+    assert deps[0]["validation_note"] == "from gsp; from metadata"
+
+
+def test_insert_without_target_columns_uses_target_metadata_order(tmp_path):
+    path = write_pack(tmp_path)
+    parser = IndirectFlowParser("oracle", resolver=MetadataPackResolver(str(path)))
+    deps = parser.parse("INSERT INTO MART.TGT SELECT C1, C2 FROM ODS.SRC")
+    pairs = {
+        (
+            dep.get("source_table"),
+            dep.get("source_column"),
+            dep.get("target_table"),
+            dep.get("target_column"),
+        )
+        for dep in deps
+        if dep.get("context") == "SELECT"
+    }
+
+    assert ("ODS.SRC", "C1", "MART.TGT", "C1") in pairs
+    assert ("ODS.SRC", "C2", "MART.TGT", "C2") in pairs
+    assert not any(dep.get("target_column") == "*" for dep in deps if dep.get("context") == "SELECT")
