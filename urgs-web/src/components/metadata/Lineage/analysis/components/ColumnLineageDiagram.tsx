@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Descriptions, Empty, Modal, Tag } from 'antd';
+import { Button, Descriptions, Empty, Modal, Tag, Tooltip } from 'antd';
+import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { LinkData, NodeData, RELATION_STYLES } from '../types';
 import CodeModal from './CodeModal';
 import LineageImpactPanel from './LineageImpactPanel';
@@ -63,6 +64,8 @@ const ROW_HEIGHT = 28;
 const RANK_GAP = 190;
 const NODE_GAP = 56;
 const PADDING = 72;
+const MIN_ZOOM = 0.35, MAX_ZOOM = 2.5, ZOOM_STEP = 0.15;
+const clampZoom = (value: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
 
 const getRelationMarkerId = (type?: string) => (
     `column-lineage-arrow-${normalizeRelationType(type).replace(/[^a-zA-Z0-9_-]/g, '-')}`
@@ -230,6 +233,8 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     onTableDoubleClick,
 }) => {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const panStartRef = useRef({ clientX: 0, clientY: 0, scrollLeft: 0, scrollTop: 0 });
+    const zoomRef = useRef(1);
     const [activeLinkId, setActiveLinkId] = useState<string | null>(null);
     const [activeColumnKey, setActiveColumnKey] = useState<string | null>(null);
     const [pinnedColumnKey, setPinnedColumnKey] = useState<string | null>(null);
@@ -238,6 +243,8 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     const [fieldTraceEnabled, setFieldTraceEnabled] = useState(false);
     const [compactEnabled, setCompactEnabled] = useState(true);
     const [perLayerLimit, setPerLayerLimit] = useState(12);
+    const [zoom, setZoom] = useState(1);
+    const [isPanning, setIsPanning] = useState(false);
     const relationOptions = useMemo(() => collectRelationOptions(links), [links]);
     const relationOptionsKey = relationOptions.join('|');
     const [selectedRelationTypes, setSelectedRelationTypes] = useState<string[]>([]);
@@ -249,6 +256,10 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     useEffect(() => {
         setSelectedRelationTypes(relationOptions);
     }, [relationOptionsKey]);
+
+    useEffect(() => {
+        zoomRef.current = zoom;
+    }, [zoom]);
 
     const activeRelationTypes = selectedRelationTypes.length > 0 ? selectedRelationTypes : relationOptions;
     const graphInput = useMemo(() => (
@@ -346,12 +357,39 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         if (!item) {
             return;
         }
+        const currentZoom = zoomRef.current;
         scrollContainerRef.current.scrollTo({
-            left: Math.max(0, item.x - 120),
-            top: Math.max(0, item.y - 120),
+            left: Math.max(0, item.x * currentZoom - 120),
+            top: Math.max(0, item.y * currentZoom - 120),
             behavior: 'smooth',
         });
     }, [focusedNodeId, layout]);
+
+    useEffect(() => {
+        if (!isPanning) {
+            return;
+        }
+
+        const handleMouseMove = (event: MouseEvent) => {
+            const container = scrollContainerRef.current;
+            if (!container) {
+                return;
+            }
+            const deltaX = event.clientX - panStartRef.current.clientX;
+            const deltaY = event.clientY - panStartRef.current.clientY;
+            container.scrollLeft = panStartRef.current.scrollLeft - deltaX;
+            container.scrollTop = panStartRef.current.scrollTop - deltaY;
+        };
+
+        const handleMouseUp = () => setIsPanning(false);
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isPanning]);
 
     if (nodes.length === 0) {
         return <Empty description="暂无流程图数据" style={{ marginTop: 100 }} />;
@@ -401,14 +439,85 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         setCodeModalVisible(true);
     };
 
+    const updateZoom = (
+        nextZoom: number | ((currentZoom: number) => number),
+        clientPoint?: { x: number; y: number }
+    ) => {
+        const container = scrollContainerRef.current;
+        setZoom(currentZoom => {
+            const resolvedZoom = clampZoom(typeof nextZoom === 'function' ? nextZoom(currentZoom) : nextZoom);
+            if (Math.abs(resolvedZoom - currentZoom) < 0.001) {
+                return currentZoom;
+            }
+
+            if (container && clientPoint) {
+                const rect = container.getBoundingClientRect();
+                const pointerX = clientPoint.x - rect.left;
+                const pointerY = clientPoint.y - rect.top;
+                const graphX = (container.scrollLeft + pointerX) / currentZoom;
+                const graphY = (container.scrollTop + pointerY) / currentZoom;
+                window.requestAnimationFrame(() => {
+                    container.scrollLeft = Math.max(0, graphX * resolvedZoom - pointerX);
+                    container.scrollTop = Math.max(0, graphY * resolvedZoom - pointerY);
+                });
+            }
+
+            return resolvedZoom;
+        });
+    };
+
+    const handleCanvasWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        updateZoom(currentZoom => currentZoom - event.deltaY * 0.001, {
+            x: event.clientX,
+            y: event.clientY,
+        });
+    };
+
+    const handleCanvasMouseDown = (event: React.MouseEvent<SVGRectElement>) => {
+        if (event.button !== 0 || !scrollContainerRef.current) {
+            return;
+        }
+        event.preventDefault();
+        setPinnedColumnKey(null);
+        panStartRef.current = {
+            clientX: event.clientX,
+            clientY: event.clientY,
+            scrollLeft: scrollContainerRef.current.scrollLeft,
+            scrollTop: scrollContainerRef.current.scrollTop,
+        };
+        setIsPanning(true);
+    };
+
+    const handleResetViewport = () => {
+        setZoom(1);
+        window.requestAnimationFrame(() => {
+            scrollContainerRef.current?.scrollTo({ left: 0, top: 0, behavior: 'smooth' });
+        });
+    };
+
     return (
         <div className="relative h-full w-full bg-[#f1f2f4]" style={{ minHeight: 640 }}>
-            <div ref={scrollContainerRef} className="h-full w-full overflow-auto pr-[420px]" style={{ minHeight: 640 }}>
+            <div
+                ref={scrollContainerRef}
+                className="h-full w-full overflow-auto pr-[420px]"
+                style={{ minHeight: 640, cursor: isPanning ? 'grabbing' : undefined, userSelect: isPanning ? 'none' : undefined }}
+                onWheel={handleCanvasWheel}
+            >
             <div
                 className="relative"
-                style={{ width: layout.width, height: layout.height }}
+                style={{ width: layout.width * zoom, height: layout.height * zoom }}
                 onClick={() => setPinnedColumnKey(null)}
             >
+                <div
+                    className="absolute left-0 top-0"
+                    style={{
+                        width: layout.width,
+                        height: layout.height,
+                        transform: `scale(${zoom})`,
+                        transformOrigin: '0 0',
+                    }}
+                >
                 <svg className="absolute inset-0" width={layout.width} height={layout.height}>
                     <defs>
                         {relationLegend.map(({ type, style }) => (
@@ -426,6 +535,15 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                             </marker>
                         ))}
                     </defs>
+                    <rect
+                        x={0}
+                        y={0}
+                        width={layout.width}
+                        height={layout.height}
+                        fill="transparent"
+                        style={{ cursor: isPanning ? 'grabbing' : 'grab' }}
+                        onMouseDown={handleCanvasMouseDown}
+                    />
                     {displayLinks.map(link => {
                         const sourceKey = getColumnKey(link.sourceNodeId, link.sourceColumnId);
                         const targetKey = getColumnKey(link.targetNodeId, link.targetColumnId);
@@ -574,7 +692,33 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                         ))}
                     </div>
                 ) : null}
+                </div>
             </div>
+            </div>
+            <div className="absolute bottom-6 right-[436px] z-30 flex flex-col gap-2">
+                <Tooltip title="放大" placement="left">
+                    <Button
+                        shape="circle"
+                        icon={<ZoomIn size={16} />}
+                        disabled={zoom >= MAX_ZOOM}
+                        onClick={() => updateZoom(currentZoom => currentZoom + ZOOM_STEP)}
+                    />
+                </Tooltip>
+                <Tooltip title="缩小" placement="left">
+                    <Button
+                        shape="circle"
+                        icon={<ZoomOut size={16} />}
+                        disabled={zoom <= MIN_ZOOM}
+                        onClick={() => updateZoom(currentZoom => currentZoom - ZOOM_STEP)}
+                    />
+                </Tooltip>
+                <Tooltip title="重置视图" placement="left">
+                    <Button
+                        shape="circle"
+                        icon={<Maximize2 size={16} />}
+                        onClick={handleResetViewport}
+                    />
+                </Tooltip>
             </div>
             <LineageImpactPanel
                 rows={impactRows}

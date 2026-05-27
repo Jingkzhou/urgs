@@ -452,7 +452,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                         if (issue == null) {
                             continue;
                         }
-                        boolean useAi = shouldUseAi(issue, aiCallCount);
+                        boolean useAi = isAiReviewEnabled(task) && shouldUseAi(issue, aiCallCount);
                         if (useAi) {
                             String cacheKey = buildCacheKey(issue);
                             issue.setCacheKey(cacheKey);

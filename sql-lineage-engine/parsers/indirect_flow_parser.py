@@ -531,8 +531,11 @@ class IndirectFlowParser:
 
     def _resolve_column_from_source_refs(self, column_name: str, source) -> Set[Tuple[str, str]]:
         """Resolve a column through a physical table or a subquery projection."""
-        if self._is_scope(source) and isinstance(source.expression, exp.Select):
-            return self._resolve_projected_column_refs(column_name, source)
+        if self._is_scope(source):
+            if isinstance(source.expression, exp.Select):
+                return self._resolve_projected_column_refs(column_name, source)
+            if self._is_set_operation(source.expression):
+                return self._resolve_set_operation_column_refs(column_name, source)
         return {
             (table_name, column_name)
             for table_name in self._resolve_source_to_physical(source)
@@ -549,7 +552,93 @@ class IndirectFlowParser:
             output_name = self._projection_output_name(projection)
             if output_name and output_name.upper() == column_name.upper():
                 return self._resolve_expression_to_physical_refs(projection, source_scope)
+            star_refs = self._resolve_star_projection_column_refs(
+                column_name, projection, source_scope
+            )
+            if star_refs:
+                return star_refs
         return set()
+
+    def _resolve_star_projection_column_refs(self, column_name: str, projection, source_scope) -> Set[Tuple[str, str]]:
+        if not self._is_star_projection(projection):
+            return set()
+
+        source = None
+        table_alias = getattr(projection, "table", None)
+        if table_alias:
+            source = self._resolve_scope_source(source_scope, table_alias)
+        elif len(source_scope.sources) == 1:
+            source = list(source_scope.sources.values())[0]
+
+        if not source:
+            return set()
+
+        refs = set()
+        for table_name in self._resolve_source_to_physical(source):
+            try:
+                validation = self.resolver.validate_column(table_name, column_name)
+            except Exception:
+                validation = {}
+
+            if validation.get("exists") is False:
+                continue
+            refs.add((table_name, column_name))
+        return refs
+
+    def _resolve_set_operation_column_refs(self, column_name: str, source_scope) -> Set[Tuple[str, str]]:
+        """Resolve a derived UNION column to every branch projection at the same position."""
+        selects = self._iter_set_operation_selects(source_scope.expression)
+        if not selects:
+            return set()
+
+        first_select = selects[0]
+        matching_indexes = [
+            index
+            for index, projection in enumerate(first_select.expressions)
+            if (self._projection_output_name(projection) or "").upper() == column_name.upper()
+        ]
+        if not matching_indexes:
+            return set()
+
+        from sqlglot.optimizer.scope import build_scope
+
+        refs = set()
+        for index in matching_indexes:
+            for select in selects:
+                if index >= len(select.expressions):
+                    continue
+                branch_scope = build_scope(select)
+                if not branch_scope:
+                    continue
+                refs.update(
+                    self._resolve_expression_to_physical_refs(
+                        select.expressions[index],
+                        branch_scope,
+                    )
+                )
+        return refs
+
+    def _iter_set_operation_selects(self, expression) -> List[exp.Select]:
+        if isinstance(expression, exp.Select):
+            return [expression]
+        if isinstance(expression, exp.Union):
+            return (
+                self._iter_set_operation_selects(expression.this)
+                + self._iter_set_operation_selects(expression.expression)
+            )
+        if isinstance(expression, (exp.Except, exp.Intersect)):
+            return self._iter_set_operation_selects(expression.this)
+        return []
+
+    def _is_set_operation(self, expression) -> bool:
+        return isinstance(expression, (exp.Union, exp.Except, exp.Intersect))
+
+    def _is_star_projection(self, projection) -> bool:
+        if isinstance(projection, exp.Star):
+            return True
+        if isinstance(projection, exp.Column) and projection.name == "*":
+            return True
+        return False
 
     def _projection_output_name(self, projection) -> str:
         if isinstance(projection, exp.Alias):
@@ -589,9 +678,17 @@ class IndirectFlowParser:
                 tables.add(table_name)
             
         elif type(source).__name__ == 'Scope': # Scope 对象
-             # 递归进入子查询源
-             for sub_source in source.sources.values():
-                 tables.update(self._resolve_source_to_physical(sub_source))
+             if self._is_set_operation(source.expression):
+                 for select in self._iter_set_operation_selects(source.expression):
+                     from sqlglot.optimizer.scope import build_scope
+
+                     branch_scope = build_scope(select)
+                     if branch_scope:
+                         tables.update(self._resolve_source_to_physical(branch_scope))
+             else:
+                 # 递归进入子查询源
+                 for sub_source in source.sources.values():
+                     tables.update(self._resolve_source_to_physical(sub_source))
                  
         elif hasattr(source, 'expression') and isinstance(source.expression, exp.Table):
              tables.add(self._get_full_table_name(source.expression))

@@ -105,7 +105,7 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                 user: undefined,
                 physicalDataSourceId: undefined,
                 language: 'oracle',
-                enableAiReview: true,
+                enableAiReview: false,
             });
         }
     }, [open, form]);

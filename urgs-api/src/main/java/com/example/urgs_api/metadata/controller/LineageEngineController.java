@@ -2,8 +2,8 @@ package com.example.urgs_api.metadata.controller;
 
 import com.example.urgs_api.auth.annotation.RequirePermission;
 import com.example.urgs_api.metadata.dto.StartEngineRequest;
+import com.example.urgs_api.metadata.service.LineageClearService;
 import com.example.urgs_api.metadata.service.LineageEngineService;
-import com.example.urgs_api.metadata.service.LineageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -20,7 +20,7 @@ import java.util.Map;
 public class LineageEngineController {
 
     private final LineageEngineService lineageEngineService;
-    private final LineageService lineageService;
+    private final LineageClearService lineageClearService;
 
     @GetMapping("/status")
     @RequirePermission("metadata:lineage:engine:logs")
@@ -88,7 +88,7 @@ public class LineageEngineController {
     @RequirePermission("metadata:lineage:engine:stop")
     public Map<String, Object> clearDatabase() {
         log.info("[LineageEngineController] clear-database request received");
-        return lineageService.clearAll();
+        return lineageClearService.clearAll();
     }
 
     private String summarizeStartRequest(StartEngineRequest request) {

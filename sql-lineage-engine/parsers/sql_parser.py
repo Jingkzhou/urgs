@@ -169,6 +169,7 @@ class LineageParser:
 
         statements = SqlSplitter.split(sql)
         self._register_table_field_context(sql)
+        cte_registry = self._build_cte_registry(sql, current_dialect)
         sources = set()
         targets = set()
         relations = []
@@ -220,6 +221,10 @@ class LineageParser:
                     # Pre-processing: Remove "TABLE" keyword from "INSERT INTO TABLE"
                     final_stmt = re.sub(
                         r"(?i)(INSERT\s+INTO\s+)TABLE\s+", r"\1", final_stmt
+                    )
+                    self._merge_cte_registry(
+                        cte_registry,
+                        self._build_cte_registry(final_stmt, current_dialect),
                     )
 
                     result = self.parser.parse(final_stmt, current_dialect, source_file)
@@ -339,7 +344,6 @@ class LineageParser:
         # ===== 2.5. CTE Resolution - Resolve CTE aliases to physical tables =====
         # Must run AFTER indirect parsing because GSP may return empty for CTE queries,
         # and the CTE alias references come from the sqlglot indirect parser.
-        cte_registry = self._build_cte_registry(sql, current_dialect)
         if cte_registry:
             sources, targets, relations, detailed_statements = (
                 self._resolve_cte_in_table_results(
@@ -462,6 +466,7 @@ class LineageParser:
 
         statements = SqlSplitter.split(sql)
         self._register_table_field_context(sql)
+        cte_registry = self._build_cte_registry(sql, current_dialect)
         dependencies = []
 
         import re
@@ -495,6 +500,10 @@ class LineageParser:
                     # Pre-processing: Remove "TABLE" keyword from "INSERT INTO TABLE"
                     final_stmt = re.sub(
                         r"(?i)(INSERT\s+INTO\s+)TABLE\s+", r"\1", final_stmt
+                    )
+                    self._merge_cte_registry(
+                        cte_registry,
+                        self._build_cte_registry(final_stmt, current_dialect),
                     )
 
                     # 1. Indirect Dependencies (SQLGlot) - Run on final clean statement
@@ -588,7 +597,6 @@ class LineageParser:
                             )
 
         # ===== 2.5. CTE Resolution - Resolve CTE aliases to physical tables =====
-        cte_registry = self._build_cte_registry(sql, current_dialect)
         if cte_registry:
             dependencies = self._resolve_cte_in_column_results(
                 dependencies, cte_registry
@@ -893,6 +901,10 @@ class LineageParser:
         registry = {}
         try:
             statements = sqlglot.parse(sql, dialect=sg_dialect)
+            scope_registry = self._build_cte_registry_from_scopes(statements, dialect)
+            if scope_registry:
+                return scope_registry
+
             for stmt in statements:
                 if stmt is None:
                     continue
@@ -989,6 +1001,102 @@ class LineageParser:
 
         return registry
 
+    def _build_cte_registry_from_scopes(self, statements, dialect: str = None) -> Dict[str, Dict]:
+        """Build CTE output-column mappings from sqlglot scopes."""
+        try:
+            from sqlglot.optimizer.scope import build_scope
+        except ImportError:
+            return {}
+
+        helper = IndirectFlowParser(dialect or self.dialect, resolver=self.resolver)
+        registry = {}
+        for stmt in statements:
+            if stmt is None:
+                continue
+            try:
+                root_scope = build_scope(stmt)
+            except Exception:
+                root_scope = None
+            if not root_scope:
+                continue
+            self._collect_cte_scope_registry(root_scope, registry, helper)
+        return registry
+
+    def _collect_cte_scope_registry(self, scope, registry: Dict[str, Dict], helper: IndirectFlowParser):
+        cte_sources = getattr(scope, "cte_sources", None) or {}
+        for alias, cte_scope in cte_sources.items():
+            alias_upper = alias.upper()
+            if alias_upper in registry:
+                continue
+            self._collect_cte_scope_registry(cte_scope, registry, helper)
+            registry[alias_upper] = self._cte_info_from_scope(cte_scope, helper)
+
+    def _cte_info_from_scope(self, cte_scope, helper: IndirectFlowParser) -> Dict[str, Dict]:
+        physical_tables = helper._resolve_source_to_physical(cte_scope)
+        column_map = {}
+        expression = getattr(cte_scope, "expression", None)
+
+        if expression is None:
+            return {"physical_tables": physical_tables, "column_map": column_map}
+
+        if helper._is_set_operation(expression):
+            output_columns = self._set_operation_output_columns(expression, helper)
+            for output_column in output_columns:
+                refs = helper._resolve_set_operation_column_refs(output_column, cte_scope)
+                if refs:
+                    column_map[output_column.upper()] = self._normalize_cte_refs(refs)
+            return {"physical_tables": physical_tables, "column_map": column_map}
+
+        try:
+            from sqlglot import exp
+        except ImportError:
+            return {"physical_tables": physical_tables, "column_map": column_map}
+
+        if isinstance(expression, exp.Select):
+            for projection in expression.expressions:
+                output_column = helper._projection_output_name(projection)
+                if not output_column or output_column == "*":
+                    continue
+                refs = helper._resolve_expression_to_physical_refs(projection, cte_scope)
+                if refs:
+                    column_map[output_column.upper()] = self._normalize_cte_refs(refs)
+
+        return {"physical_tables": physical_tables, "column_map": column_map}
+
+    def _set_operation_output_columns(self, expression, helper: IndirectFlowParser) -> List[str]:
+        selects = helper._iter_set_operation_selects(expression)
+        if not selects:
+            return []
+        columns = []
+        for projection in selects[0].expressions:
+            output_column = helper._projection_output_name(projection)
+            if output_column and output_column != "*":
+                columns.append(output_column)
+        return columns
+
+    def _normalize_cte_refs(self, refs: Set[Tuple[str, str]]) -> List[Tuple[str, str]]:
+        return sorted(
+            {
+                (table_name, (column_name or "").upper())
+                for table_name, column_name in refs
+                if table_name and column_name
+            }
+        )
+
+    def _merge_cte_registry(self, base: Dict[str, Dict], extra: Dict[str, Dict]):
+        if not extra:
+            return
+        for alias, cte_info in extra.items():
+            if alias not in base:
+                base[alias] = cte_info
+                continue
+            base[alias].setdefault("physical_tables", set()).update(
+                cte_info.get("physical_tables", set())
+            )
+            base[alias].setdefault("column_map", {}).update(
+                cte_info.get("column_map", {})
+            )
+
     def _resolve_cte_table_alias(
         self, alias: str, select_stmt, physical_tables: set
     ) -> str:
@@ -1038,9 +1146,9 @@ class LineageParser:
         def resolve_table(table_name: str) -> set:
             """将表名解析为物理表集合（如果是 CTE 别名则展开）"""
             t_norm = normalize_table_name(table_name)
-            t_upper = t_norm.upper()
-            if t_upper in cte_registry and cte_registry[t_upper]["physical_tables"]:
-                return cte_registry[t_upper]["physical_tables"]
+            cte_key = self._lookup_cte_registry_key(t_norm, cte_registry)
+            if cte_key and cte_registry[cte_key]["physical_tables"]:
+                return cte_registry[cte_key]["physical_tables"]
             return {table_name}
 
         # 展开 sources（CTE 别名 → 物理表集合）
@@ -1077,15 +1185,28 @@ class LineageParser:
         for stmt in detailed_statements:
             stmt["sources"] = [
                 (
-                    next(iter(cte_registry[s.upper()]["physical_tables"]))
-                    if s.upper() in cte_registry
-                    and cte_registry[s.upper()]["physical_tables"]
+                    next(iter(cte_registry[cte_key]["physical_tables"]))
+                    if (
+                        (cte_key := self._lookup_cte_registry_key(s, cte_registry))
+                        and cte_registry[cte_key]["physical_tables"]
+                    )
                     else s
                 )
                 for s in stmt.get("sources", [])
             ]
 
         return new_sources, new_targets, new_relations, detailed_statements
+
+    def _lookup_cte_registry_key(self, table_name: str, cte_registry: dict) -> str:
+        if not table_name:
+            return ""
+        candidates = [table_name.upper()]
+        if "." in table_name:
+            candidates.append(table_name.split(".")[-1].upper())
+        for candidate in candidates:
+            if candidate in cte_registry:
+                return candidate
+        return ""
 
     def _resolve_cte_in_column_results(
         self, dependencies: list, cte_registry: dict
@@ -1099,11 +1220,12 @@ class LineageParser:
         resolved = []
         for dep in dependencies:
             dep = dict(dep)  # 复制
-            src_table = (dep.get("source_table") or "").upper()
+            src_table = dep.get("source_table") or ""
             src_col = (dep.get("source_column") or "").upper()
+            src_cte_key = self._lookup_cte_registry_key(src_table, cte_registry)
 
-            if src_table in cte_registry:
-                cte_info = cte_registry[src_table]
+            if src_cte_key:
+                cte_info = cte_registry[src_cte_key]
                 column_map = cte_info.get("column_map", {})
 
                 if src_col in column_map:
@@ -1126,9 +1248,10 @@ class LineageParser:
         final = []
         for dep in resolved:
             dep = dict(dep)
-            tgt_table = (dep.get("target_table") or "").upper()
-            if tgt_table in cte_registry:
-                phys = cte_registry[tgt_table].get("physical_tables", set())
+            tgt_table = dep.get("target_table") or ""
+            tgt_cte_key = self._lookup_cte_registry_key(tgt_table, cte_registry)
+            if tgt_cte_key:
+                phys = cte_registry[tgt_cte_key].get("physical_tables", set())
                 if phys:
                     dep["target_table"] = next(iter(phys))
             final.append(dep)

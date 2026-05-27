@@ -4,6 +4,9 @@ import { getLineageGraph, LineageGraphDirection, LineageGraphResponse } from '@/
 import { LinkData, NodeData } from '../types';
 import { processLayoutTrace } from '../utils/lineageLayout';
 
+const TRACE_GRAPH_DEPTH = -1;
+const TRACE_GRAPH_LIMIT = 5000;
+
 export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
     const [selectedTable, setSelectedTable] = useState<string | null>(null);
     const [selectedQualifiedName, setSelectedQualifiedName] = useState<string | null>(null);
@@ -28,10 +31,10 @@ export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
         setSelectedColumnName(targetColName || null);
         try {
             const response = await getLineageGraph(tableName, targetColName, {
-                depth: 2,
+                depth: TRACE_GRAPH_DEPTH,
                 qualifiedName,
                 direction,
-                limit: 1000,
+                limit: TRACE_GRAPH_LIMIT,
                 relationLevel: targetColName ? 'column' : 'table',
             });
 
@@ -81,10 +84,10 @@ export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
         setListLoading(true);
         try {
             const response = await getLineageGraph(selectedTable, undefined, {
-                depth: 2,
+                depth: TRACE_GRAPH_DEPTH,
                 qualifiedName: selectedQualifiedName || undefined,
                 direction,
-                limit: 5000,
+                limit: TRACE_GRAPH_LIMIT,
                 relationLevel: 'column',
             });
             if (!response || !response.nodes || response.nodes.length === 0) {

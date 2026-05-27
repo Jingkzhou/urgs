@@ -164,6 +164,150 @@ def test_subquery_window_alias_does_not_become_physical_column(tmp_path):
     assert {"CUST_ID", "DRAWDOWN_DT", "LOAN_NUM"}.issubset(case_sources)
 
 
+def test_subquery_star_projection_resolves_outer_column_to_physical_source(tmp_path):
+    path = write_pack(tmp_path)
+    parser = LineageParser("hive", metadata_file=str(path))
+    deps = parser.get_column_lineage(
+        """
+        INSERT INTO MART.TGT (C1)
+        SELECT ABS(A.C1) AS C1
+          FROM (SELECT S.* FROM ODS.SRC S) A
+        """
+    )
+
+    assert any(
+        dep.get("source_table") == "ODS.SRC"
+        and dep.get("source_column") == "C1"
+        and dep.get("target_table") == "MART.TGT"
+        and dep.get("target_column") == "C1"
+        and dep.get("dependency_type") == "fdd"
+        for dep in deps
+    )
+
+
+def test_cte_union_derived_table_expands_all_branch_sources(tmp_path):
+    path = write_pack(tmp_path)
+    parser = LineageParser("hive", default_schema="PM_RSDATA", metadata_file=str(path))
+    deps = parser.get_column_lineage(
+        """
+        WITH ACCT_LOAN_FARMING_FULL AS (
+          SELECT A.LOAN_NUM, A.SNDKFL, F.COOP_LAON_FLAG
+            FROM (
+              SELECT T.LOAN_NUM, T.SNDKFL
+                FROM smtmods_V_PUB_IDX_DK_GRSNDK T
+               WHERE T.DATA_DATE = i_date
+              UNION ALL
+              SELECT T.LOAN_NUM, T.SNDKFL
+                FROM smtmods_V_PUB_IDX_DK_GTGSHSNDK T
+               WHERE T.DATA_DATE = i_date
+              UNION ALL
+              SELECT A.LOAN_NUM, A.SNDKFL
+                FROM smtmods_V_PUB_IDX_DK_DGSNDK A
+                JOIN PM_RSDATA.SMTMODS_L_ACCT_LOAN B
+                  ON A.LOAN_NUM = B.LOAN_NUM
+                 AND B.DATA_DATE = i_date
+               WHERE A.DATA_DATE = i_date
+            ) A
+            JOIN PM_RSDATA.SMTMODS_L_ACCT_LOAN_FARMING F
+              ON A.LOAN_NUM = F.LOAN_NUM
+             AND F.DATA_DATE = i_date
+        )
+        INSERT INTO PM_RSDATA.TGT (LOAN_NUM, SNDKFL, COOP_LAON_FLAG)
+        SELECT X.LOAN_NUM, X.SNDKFL, X.COOP_LAON_FLAG
+          FROM ACCT_LOAN_FARMING_FULL X
+        """
+    )
+
+    actual = {
+        (
+            dep.get("source_table", "").upper(),
+            dep.get("source_column", "").upper(),
+            dep.get("target_table", "").upper(),
+            dep.get("target_column", "").upper(),
+        )
+        for dep in deps
+        if dep.get("dependency_type") == "fdd"
+    }
+
+    assert not any(
+        dep.get("source_table", "").upper() == "ACCT_LOAN_FARMING_FULL"
+        for dep in deps
+    )
+    assert {
+        (
+            "PM_RSDATA.SMTMODS_V_PUB_IDX_DK_GRSNDK",
+            "LOAN_NUM",
+            "PM_RSDATA.TGT",
+            "LOAN_NUM",
+        ),
+        (
+            "PM_RSDATA.SMTMODS_V_PUB_IDX_DK_GTGSHSNDK",
+            "LOAN_NUM",
+            "PM_RSDATA.TGT",
+            "LOAN_NUM",
+        ),
+        (
+            "PM_RSDATA.SMTMODS_V_PUB_IDX_DK_DGSNDK",
+            "LOAN_NUM",
+            "PM_RSDATA.TGT",
+            "LOAN_NUM",
+        ),
+        (
+            "PM_RSDATA.SMTMODS_V_PUB_IDX_DK_GRSNDK",
+            "SNDKFL",
+            "PM_RSDATA.TGT",
+            "SNDKFL",
+        ),
+        (
+            "PM_RSDATA.SMTMODS_V_PUB_IDX_DK_GTGSHSNDK",
+            "SNDKFL",
+            "PM_RSDATA.TGT",
+            "SNDKFL",
+        ),
+        (
+            "PM_RSDATA.SMTMODS_V_PUB_IDX_DK_DGSNDK",
+            "SNDKFL",
+            "PM_RSDATA.TGT",
+            "SNDKFL",
+        ),
+        (
+            "PM_RSDATA.SMTMODS_L_ACCT_LOAN_FARMING",
+            "COOP_LAON_FLAG",
+            "PM_RSDATA.TGT",
+            "COOP_LAON_FLAG",
+        ),
+    }.issubset(actual)
+
+
+def test_schema_qualified_cte_table_fallback_resolves_to_physical_sources(tmp_path):
+    path = write_pack(tmp_path)
+    parser = LineageParser("hive", default_schema="PM_RSDATA", metadata_file=str(path))
+    cte_registry = {
+        "S6301_DATA_COLLECT_GUARANTEE": {
+            "physical_tables": {"PM_RSDATA.SMTMODS_L_AGRE_GUA_RELATION"},
+            "column_map": {},
+        }
+    }
+    sources, targets, relations, _ = parser._resolve_cte_in_table_results(
+        {"PM_RSDATA.S6301_DATA_COLLECT_GUARANTEE"},
+        {"PM_RSDATA.YBT_T_6_27"},
+        [
+            {
+                "source": "PM_RSDATA.S6301_DATA_COLLECT_GUARANTEE",
+                "target": "PM_RSDATA.YBT_T_6_27",
+                "lineage_origin": "regex_fallback",
+                "relation_level": "table_fallback",
+            }
+        ],
+        [],
+        cte_registry,
+    )
+
+    assert sources == {"PM_RSDATA.SMTMODS_L_AGRE_GUA_RELATION"}
+    assert targets == {"PM_RSDATA.YBT_T_6_27"}
+    assert relations[0]["source"] == "PM_RSDATA.SMTMODS_L_AGRE_GUA_RELATION"
+
+
 def test_select_star_expands_with_metadata_pack(tmp_path):
     path = write_pack(tmp_path)
     parser = LineageParser.__new__(LineageParser)
