@@ -18,6 +18,126 @@ class LineageParser:
         self.resolver = MetadataResolver(metadata_file=metadata_file)
         self.indirect_parser = IndirectFlowParser(dialect, resolver=self.resolver)  # 注入共享实例
 
+    def _register_table_field_context(self, sql: str):
+        """Register target column lists from this SQL file as local table metadata."""
+        if not sql or not hasattr(self.resolver, "register_table_fields"):
+            return
+
+        for table_name, field_names in self._iter_insert_target_column_lists(sql):
+            if not table_name or not field_names:
+                continue
+            normalized_table = self._apply_default_schema_to_table(table_name)
+            self.resolver.register_table_fields(
+                normalized_table,
+                field_names,
+                source="insert_target_columns",
+            )
+
+    def _apply_default_schema_to_table(self, table_name: str) -> str:
+        from utils.normalize import normalize_table_name
+
+        normalized = normalize_table_name(table_name)
+        if normalized and self.default_schema and "." not in normalized:
+            return f"{self.default_schema}.{normalized}"
+        return normalized
+
+    def _iter_insert_target_column_lists(self, sql: str):
+        cleaned = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
+        cleaned = re.sub(r"--.*?$", "", cleaned, flags=re.MULTILINE)
+        identifier = r'(?:`[^`]+`|"[^"]+"|[A-Za-z_][\w$#]*)'
+        table_pattern = rf"{identifier}(?:\s*\.\s*{identifier}){{0,2}}"
+        pattern = re.compile(
+            rf"\bINSERT\s+(?:INTO|OVERWRITE)\s+(?:TABLE\s+)?(?P<table>{table_pattern})(?P<body>.*?)\bSELECT\b",
+            re.IGNORECASE | re.DOTALL,
+        )
+
+        for match in pattern.finditer(cleaned):
+            table_name = match.group("table")
+            body = match.group("body") or ""
+            partition_columns = self._extract_partition_columns(body)
+            body_without_partitions = re.sub(
+                r"\bPARTITION\s*\([^)]*\)",
+                " ",
+                body,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            column_text = self._first_parenthesized_group(body_without_partitions)
+            if column_text is None:
+                continue
+            field_names = self._parse_identifier_list(column_text)
+            for partition_column in partition_columns:
+                if partition_column.upper() not in {field.upper() for field in field_names}:
+                    field_names.append(partition_column)
+            if field_names:
+                yield table_name, field_names
+
+    def _extract_partition_columns(self, body: str) -> List[str]:
+        columns = []
+        for match in re.finditer(r"\bPARTITION\s*\((.*?)\)", body, flags=re.IGNORECASE | re.DOTALL):
+            for name in self._parse_identifier_list(match.group(1), allow_assignments=True):
+                if name.upper() not in {column.upper() for column in columns}:
+                    columns.append(name)
+        return columns
+
+    def _first_parenthesized_group(self, text: str):
+        start = text.find("(")
+        if start < 0:
+            return None
+        depth = 0
+        for index in range(start, len(text)):
+            char = text[index]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    return text[start + 1:index]
+        return None
+
+    def _parse_identifier_list(self, text: str, allow_assignments: bool = False) -> List[str]:
+        identifiers = []
+        for item in self._split_top_level_commas(text):
+            raw = item.strip()
+            if not raw:
+                continue
+            if allow_assignments and "=" in raw:
+                raw = raw.split("=", 1)[0].strip()
+            identifier = self._clean_identifier(raw)
+            if identifier and identifier.upper() not in {name.upper() for name in identifiers}:
+                identifiers.append(identifier)
+        return identifiers
+
+    def _split_top_level_commas(self, text: str) -> List[str]:
+        parts = []
+        depth = 0
+        quote = None
+        start = 0
+        for index, char in enumerate(text):
+            if quote:
+                if char == quote:
+                    quote = None
+                continue
+            if char in ["'", '"', "`"]:
+                quote = char
+                continue
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth = max(depth - 1, 0)
+            elif char == "," and depth == 0:
+                parts.append(text[start:index])
+                start = index + 1
+        parts.append(text[start:])
+        return parts
+
+    def _clean_identifier(self, raw: str):
+        value = raw.strip().strip("`\"'")
+        if "." in value:
+            value = value.split(".")[-1].strip().strip("`\"'")
+        if not re.match(r"^[A-Za-z_][\w$#]*$", value):
+            return None
+        return value
+
     def parse(self, sql: str, source_file: str = None) -> Dict[str, Any]:
         """
         Parse SQL and extract lineage information using GSP.
@@ -48,6 +168,7 @@ class LineageParser:
             detected_switch = True
 
         statements = SqlSplitter.split(sql)
+        self._register_table_field_context(sql)
         sources = set()
         targets = set()
         relations = []
@@ -340,6 +461,7 @@ class LineageParser:
             detected_switch = True
 
         statements = SqlSplitter.split(sql)
+        self._register_table_field_context(sql)
         dependencies = []
 
         import re
@@ -596,7 +718,17 @@ class LineageParser:
         tgt_col = dep.get("target_column")
         fields = self.resolver.get_table_fields(src_table)
         if not fields:
-            return []
+            fallback = dep.copy()
+            fallback.pop("_star_target_index", None)
+            fallback["ambiguityCode"] = "STAR_EXPANSION_UNAVAILABLE"
+            fallback["confidence"] = "LOW"
+            fallback["validation_note"] = self._join_notes(
+                fallback.get("validation_note"),
+                f"Source table metadata not found for SELECT * expansion: {src_table}",
+            )
+            fallback["metadataMatched"] = False
+            fallback["metadataPackHash"] = self.resolver.metadata_pack_hash
+            return [fallback]
 
         target_fields = self.resolver.get_table_fields(tgt_table)
         target_is_star = tgt_col in ["UNKNOWN", "", None, "*"]

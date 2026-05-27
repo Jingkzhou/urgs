@@ -280,3 +280,65 @@ def test_insert_without_target_columns_uses_target_metadata_order(tmp_path):
     assert ("ODS.SRC", "C1", "MART.TGT", "C1") in pairs
     assert ("ODS.SRC", "C2", "MART.TGT", "C2") in pairs
     assert not any(dep.get("target_column") == "*" for dep in deps if dep.get("context") == "SELECT")
+
+
+def test_select_star_uses_prior_insert_column_context_when_metadata_missing(tmp_path):
+    path = write_pack(tmp_path)
+    parser = LineageParser("hive", default_schema="PM_RSDATA", metadata_file=str(path))
+    deps = parser.get_column_lineage(
+        """
+        INSERT INTO PM_RSDATA.PBOCD_RESULT_JS_201_GRDKFS PARTITION (CJRQ = II_DATADATE)
+          (DATA_DATE, ASS_SEC_PRO_TYPE, BASE_INT_RAT)
+        SELECT S.C1, S.C2, S.K
+          FROM ODS.A S;
+
+        INSERT INTO PM_RSDATA.PBOCD_JS_201_GRDKFS_20251215
+        SELECT * FROM PM_RSDATA.PBOCD_RESULT_JS_201_GRDKFS
+         WHERE CJRQ = II_DATADATE;
+        """
+    )
+
+    pairs = {
+        (
+            dep.get("source_table"),
+            dep.get("source_column"),
+            dep.get("target_table"),
+            dep.get("target_column"),
+        )
+        for dep in deps
+        if dep.get("dependency_type") == "fdd"
+        and dep.get("source_table") == "PM_RSDATA.PBOCD_RESULT_JS_201_GRDKFS"
+        and dep.get("target_table") == "PM_RSDATA.PBOCD_JS_201_GRDKFS_20251215"
+    }
+
+    assert (
+        "PM_RSDATA.PBOCD_RESULT_JS_201_GRDKFS",
+        "ASS_SEC_PRO_TYPE",
+        "PM_RSDATA.PBOCD_JS_201_GRDKFS_20251215",
+        "ASS_SEC_PRO_TYPE",
+    ) in pairs
+    assert (
+        "PM_RSDATA.PBOCD_RESULT_JS_201_GRDKFS",
+        "BASE_INT_RAT",
+        "PM_RSDATA.PBOCD_JS_201_GRDKFS_20251215",
+        "BASE_INT_RAT",
+    ) in pairs
+    assert not any(
+        dep.get("source_table") == "PM_RSDATA.PBOCD_RESULT_JS_201_GRDKFS"
+        and dep.get("target_table") == "PM_RSDATA.PBOCD_JS_201_GRDKFS_20251215"
+        and dep.get("source_column") == "*"
+        for dep in deps
+    )
+
+
+def test_unexpandable_select_star_is_marked_low_confidence(tmp_path):
+    path = write_pack(tmp_path)
+    parser = LineageParser("hive", metadata_file=str(path))
+    deps = parser.get_column_lineage(
+        "INSERT INTO MART.UNKNOWN_TGT SELECT * FROM ODS.UNKNOWN_SRC"
+    )
+
+    star_deps = [dep for dep in deps if dep.get("source_column") == "*"]
+    assert star_deps
+    assert {dep.get("ambiguityCode") for dep in star_deps} == {"STAR_EXPANSION_UNAVAILABLE"}
+    assert {dep.get("confidence") for dep in star_deps} == {"LOW"}
