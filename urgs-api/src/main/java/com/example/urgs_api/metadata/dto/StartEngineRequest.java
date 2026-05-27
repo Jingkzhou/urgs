@@ -11,6 +11,7 @@ public class StartEngineRequest {
     private List<String> paths;
     private String user;
     private String language;
+    private Long physicalDataSourceId;
     private String localPath;
     private Boolean enableAiReview;
 }

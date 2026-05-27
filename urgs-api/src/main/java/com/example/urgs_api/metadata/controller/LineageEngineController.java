@@ -42,14 +42,16 @@ public class LineageEngineController {
             @RequestParam("files") List<MultipartFile> files,
             @RequestParam(value = "user", required = false) String user,
             @RequestParam(value = "language", required = false) String language,
+            @RequestParam(value = "physicalDataSourceId", required = false) Long physicalDataSourceId,
             @RequestParam(value = "enableAiReview", required = false) Boolean enableAiReview) {
-        log.info("[LineageEngineController] start(upload) request received: fileCount={}, fileNames={}, user={}, language={}, enableAiReview={}",
+        log.info("[LineageEngineController] start(upload) request received: fileCount={}, fileNames={}, user={}, language={}, physicalDataSourceId={}, enableAiReview={}",
                 files != null ? files.size() : 0,
                 files != null ? files.stream().map(MultipartFile::getOriginalFilename).toList() : List.of(),
                 user,
                 language,
+                physicalDataSourceId,
                 enableAiReview);
-        return lineageEngineService.startWithUpload(files, user, language, enableAiReview);
+        return lineageEngineService.startWithUpload(files, user, language, physicalDataSourceId, enableAiReview);
     }
 
     @PostMapping("/stop")
@@ -100,6 +102,7 @@ public class LineageEngineController {
                 + ", paths=" + request.getPaths()
                 + ", user=" + request.getUser()
                 + ", language=" + request.getLanguage()
+                + ", physicalDataSourceId=" + request.getPhysicalDataSourceId()
                 + ", localPath=" + request.getLocalPath()
                 + ", enableAiReview=" + request.getEnableAiReview();
     }

@@ -207,14 +207,16 @@ class Neo4jClient:
                     )
                 """, repoId=repo_id, files=file_batch)
                 
-            # 2. 清理孤立的 Column 和 Table 节点
-            # 删除关系后，某些节点可能不再有任何连接。
-            # 我们只删除完全没有任何关系的节点。
+            # 2. 清理不再参与任何血缘边的 Column 和 Table 节点。
+            # Column 只剩 BELONGS_TO 时也应删除，否则旧假字段会挂在表下面。
             print(f"  - 清理不再关联任何血缘的孤立节点...")
             session.run("""
                 MATCH (c:Column)
-                WHERE NOT (c)-[]-()
-                DELETE c
+                WHERE NOT EXISTS {
+                    MATCH (c)-[r]-()
+                    WHERE type(r) <> 'BELONGS_TO'
+                }
+                DETACH DELETE c
             """)
             session.run("""
                 MATCH (t:Table)
@@ -223,6 +225,40 @@ class Neo4jClient:
             """)
                 
             print(f"  - 相关血缘关系已智能清除（保留多文件关系）")
+
+    def clear_lineage_by_version(self, version: str):
+        """Clear lineage relationships for one analysis version."""
+        if not version:
+            return
+
+        print(f"正在清除版本 {version} 的旧血缘关系...")
+        with self.driver.session() as session:
+            session.run(
+                """
+                MATCH ()-[r]->()
+                WHERE r.version = $version
+                DELETE r
+                """,
+                version=version,
+            )
+            session.run(
+                """
+                MATCH (c:Column)
+                WHERE NOT EXISTS {
+                    MATCH (c)-[r]-()
+                    WHERE type(r) <> 'BELONGS_TO'
+                }
+                DETACH DELETE c
+                """
+            )
+            session.run(
+                """
+                MATCH (t:Table)
+                WHERE NOT (t)-[]-()
+                DELETE t
+                """
+            )
+        print("✓ 指定版本血缘清除完成")
 
 
     def create_lineage(self, source_table: str, target_table: str, relationship: dict = None,
@@ -293,6 +329,9 @@ class Neo4jClient:
                     or [lineage_origin],
                 "confidence": confidence,
                 "validation_note": rel.get("validation_note") or rel.get("validationNote"),
+                "ambiguity_code": rel.get("ambiguityCode") or rel.get("ambiguity_code"),
+                "metadata_matched": rel.get("metadataMatched") if rel.get("metadataMatched") is not None else rel.get("metadata_matched"),
+                "metadata_pack_hash": rel.get("metadataPackHash") or rel.get("metadata_pack_hash"),
             })
         return normalized
 
@@ -346,6 +385,9 @@ class Neo4jClient:
             r.lineageOrigin = item.lineage_origin,
             r.confidence = item.confidence,
             r.validationNote = CASE WHEN item.validation_note IS NOT NULL THEN item.validation_note ELSE r.validationNote END,
+            r.ambiguityCode = CASE WHEN item.ambiguity_code IS NOT NULL THEN item.ambiguity_code ELSE r.ambiguityCode END,
+            r.metadataMatched = CASE WHEN item.metadata_matched IS NOT NULL THEN item.metadata_matched ELSE r.metadataMatched END,
+            r.metadataPackHash = CASE WHEN item.metadata_pack_hash IS NOT NULL THEN item.metadata_pack_hash ELSE r.metadataPackHash END,
             r.snippet = CASE
                 WHEN item.snippet IS NOT NULL AND trim(item.snippet) <> '' THEN item.snippet
                 ELSE r.snippet
@@ -465,9 +507,14 @@ class Neo4jClient:
         # 分为直接血缘和间接血缘
         direct_items = []
         indirect_items = []
+        skipped_missing_source_columns = 0
         
         for dep in dependencies:
-             # 归一化处理
+            if self._is_missing_source_column_dependency(dep):
+                skipped_missing_source_columns += 1
+                continue
+
+            # 归一化处理
             source_table = (dep.get("source_table") or "").upper()
             source_column = (dep.get("source_column") or "").upper()
             target_table = (dep.get("target_table") or "").upper()
@@ -494,6 +541,9 @@ class Neo4jClient:
                 "repo_id": repo_id,
                 "confidence": dep.get("confidence", "MEDIUM"),
                 "validation_note": dep.get("validation_note"),
+                "ambiguity_code": dep.get("ambiguityCode") or dep.get("ambiguity_code"),
+                "metadata_matched": dep.get("metadataMatched") if dep.get("metadataMatched") is not None else dep.get("metadata_matched"),
+                "metadata_pack_hash": dep.get("metadataPackHash") or dep.get("metadata_pack_hash"),
                 "is_expanded": dep.get("is_expanded", False)
             }
             
@@ -504,9 +554,12 @@ class Neo4jClient:
             item["neo4j_rel_type"] = neo4j_rel_type
 
             if target_column in ["*", "", None]:
-                 indirect_items.append(item)
+                indirect_items.append(item)
             else:
-                 direct_items.append(item)
+                direct_items.append(item)
+
+        if skipped_missing_source_columns:
+            print(f"跳过 {skipped_missing_source_columns} 条源字段未通过 metadata 校验的字段依赖。", flush=True)
         
         # Helper to process batches by type
         def process_by_type(items, batch_func):
@@ -553,6 +606,16 @@ class Neo4jClient:
             process_by_type(indirect_items, self._create_indirect_column_batch_safe)
 
     @staticmethod
+    def _is_missing_source_column_dependency(dep: dict) -> bool:
+        ambiguity_code = (dep.get("ambiguityCode") or dep.get("ambiguity_code") or "").upper()
+        if ambiguity_code == "MISSING_SOURCE_COLUMN":
+            return True
+        source_exists = dep.get("sourceColumnExists")
+        if source_exists is None:
+            source_exists = dep.get("source_column_exists")
+        return source_exists is False
+
+    @staticmethod
     def _create_direct_column_batch_safe(tx, batch, rel_type):
         # 安全版本，其中 rel_type 在批次中是常量
         query = f"""
@@ -570,6 +633,9 @@ class Neo4jClient:
             r.isIndirect = false,
             r.confidence = item.confidence,
             r.validationNote = item.validation_note,
+            r.ambiguityCode = item.ambiguity_code,
+            r.metadataMatched = item.metadata_matched,
+            r.metadataPackHash = item.metadata_pack_hash,
             r.isExpanded = item.is_expanded,
             r.snippet = CASE WHEN item.snippet IS NOT NULL THEN item.snippet ELSE r.snippet END,
             r.normalizedSnippet = CASE
@@ -624,6 +690,9 @@ class Neo4jClient:
             r.isIndirect = true,
             r.confidence = item.confidence,
             r.validationNote = item.validation_note,
+            r.ambiguityCode = item.ambiguity_code,
+            r.metadataMatched = item.metadata_matched,
+            r.metadataPackHash = item.metadata_pack_hash,
             r.isExpanded = item.is_expanded,
             r.snippet = CASE WHEN item.snippet IS NOT NULL THEN item.snippet ELSE r.snippet END,
             r.normalizedSnippet = CASE

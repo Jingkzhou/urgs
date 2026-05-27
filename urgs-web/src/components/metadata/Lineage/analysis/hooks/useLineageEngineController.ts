@@ -46,6 +46,7 @@ const sanitizeStartParams = (params: LineageEngineStartParams) => {
             sourceType: params.sourceType,
             user: params.user,
             language: params.language,
+            physicalDataSourceId: params.physicalDataSourceId,
             fileCount: params.files.length,
             fileNames: params.files.map(file => file.name),
             fileSizes: params.files.map(file => file.size),
@@ -58,6 +59,7 @@ const sanitizeStartParams = (params: LineageEngineStartParams) => {
         ref: params.ref,
         user: params.user,
         language: params.language,
+        physicalDataSourceId: params.physicalDataSourceId,
         pathCount: params.paths.length,
         paths: params.paths,
     };
@@ -79,7 +81,7 @@ export const useLineageEngineController = () => {
     const latestLogFetchTokenRef = useRef(0);
     const operationSequenceRef = useRef(0);
     const previousStatusRef = useRef<EngineStatus>('stopped');
-    const previousRecordIdRef = useRef<string>();
+    const previousRecordIdRef = useRef<string | undefined>(undefined);
 
     const canViewEngineStatus = hasPermission('metadata:lineage:engine:logs');
     const canStartEngine = hasPermission('metadata:lineage:engine:start');

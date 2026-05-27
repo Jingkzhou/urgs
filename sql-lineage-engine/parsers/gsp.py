@@ -129,13 +129,32 @@ def _collect_jaxb_jars() -> List[str]:
     return filtered
 
 
-def _resolve_java_8_home() -> str | None:
-    """Prefer Java 8 when available because some GSP builds behave better with it."""
+def _resolve_java_home() -> str | None:
+    """Resolve a JVM compatible with the current JPype runtime."""
     env_java_home = os.environ.get("JAVA_HOME")
     if env_java_home and os.path.exists(env_java_home):
         return env_java_home
 
+    java_home_cmd = "/usr/libexec/java_home"
+    if os.path.exists(java_home_cmd):
+        for version in ["17", "11", None, "1.8"]:
+            try:
+                command = [java_home_cmd] if version is None else [java_home_cmd, "-v", version]
+                result = subprocess.run(
+                    command,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                java_home = result.stdout.strip()
+                if java_home and os.path.exists(java_home):
+                    return java_home
+            except Exception:
+                pass
+
     candidate_homes = [
+        "/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home",
+        "/opt/homebrew/Cellar/openjdk@17/17.0.18/libexec/openjdk.jdk/Contents/Home",
         "/Users/work/Library/Java/JavaVirtualMachines/corretto-1.8.0_392/Contents/Home",
         "/Library/Java/JavaVirtualMachines/corretto-1.8.0_392/Contents/Home",
         "/Library/Java/JavaVirtualMachines/amazon-corretto-8.jdk/Contents/Home",
@@ -145,21 +164,6 @@ def _resolve_java_8_home() -> str | None:
     for java_home in candidate_homes:
         if os.path.exists(java_home):
             return java_home
-
-    java_home_cmd = "/usr/libexec/java_home"
-    if os.path.exists(java_home_cmd):
-        try:
-            result = subprocess.run(
-                [java_home_cmd, "-v", "1.8"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            java_home = result.stdout.strip()
-            if java_home and os.path.exists(java_home):
-                return java_home
-        except Exception:
-            pass
 
     return None
 
@@ -188,7 +192,7 @@ class GSPParser:
 
         classpath = os.pathsep.join(classpath_entries)
 
-        java_home = _resolve_java_8_home()
+        java_home = _resolve_java_home()
         if java_home:
             os.environ["JAVA_HOME"] = java_home
             try:

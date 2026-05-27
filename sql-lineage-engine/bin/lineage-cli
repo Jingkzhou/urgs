@@ -33,8 +33,27 @@ def setup_logging():
 setup_logging()
 logger = logging.getLogger("Engine")
 
-# Supported SQL file extensions (case-insensitive)
-SQL_EXTENSIONS = ('.sql', '.prc', '.pkb', '.pks', '.plb', '.pls', '.fnc', '.trg', '.vw', '.ddl')
+# Supported SQL/script file extensions (case-insensitive).
+# Keep this aligned with the upload UI; many stored procedures arrive as .txt exports.
+SQL_EXTENSIONS = (
+    '.sql',
+    '.ddl',
+    '.dml',
+    '.hql',
+    '.txt',
+    '.proc',
+    '.prc',
+    '.pkg',
+    '.pkb',
+    '.pks',
+    '.plb',
+    '.pls',
+    '.fnc',
+    '.trg',
+    '.tpl',
+    '.view',
+    '.vw',
+)
 
 def is_sql_file(filename):
     """Check if a file is a SQL or stored procedure file based on extension."""
@@ -125,6 +144,7 @@ def main():
     sql_parser_cmd.add_argument("--ref", help="Git Ref")
     sql_parser_cmd.add_argument("--repo-root", help="Root directory of the repo (for calculating relative paths)")
     sql_parser_cmd.add_argument("--default-user", help="Default user/schema name for unqualified tables")
+    sql_parser_cmd.add_argument("--metadata-file", help="Path to fixed metadata-pack.json for physical model resolution")
     
     args = parser.parse_args()
 
@@ -176,21 +196,27 @@ def main():
         
         # Clear data logic
         if args.output == "neo4j" and neo4j and not args.no_clear:
-             if args.repo_id and relative_files:
-                 logger.info(f"Clearing lineage for repo {args.repo_id} and specific files...")
-                 try:
-                     neo4j.clear_lineage_by_repo_files(args.repo_id, relative_files)
-                 except Exception as e:
-                     logger.error(f"Failed to clear repo lineage data: {e}")
-             else:
-                 logger.warning("No repo-id or files provided, skipping specific clear. Use --no-clear to suppress this if intended.")
-                 # Fallback to old behavior if needed, or just do nothing safely
-                 # logger.info("Clearing existing lineage data from Neo4j...")
-                 # try:
-                 #     neo4j.clear_all_lineage_data()
-                 #     logger.info("Clearance completed.")
-                 # except Exception as e:
-                 #     logger.error(f"Failed to clear Neo4j data: {e}")
+            if args.repo_id and relative_files:
+                logger.info(f"Clearing lineage for repo {args.repo_id} and specific files...")
+                try:
+                    neo4j.clear_lineage_by_repo_files(args.repo_id, relative_files)
+                except Exception as e:
+                    logger.error(f"Failed to clear repo lineage data: {e}")
+            elif version_id:
+                logger.info(f"Clearing lineage for version {version_id}...")
+                try:
+                    neo4j.clear_lineage_by_version(version_id)
+                except Exception as e:
+                    logger.error(f"Failed to clear version lineage data: {e}")
+            else:
+                logger.warning("No repo-id or files provided, skipping specific clear. Use --no-clear to suppress this if intended.")
+                # Fallback to old behavior if needed, or just do nothing safely
+                # logger.info("Clearing existing lineage data from Neo4j...")
+                # try:
+                #     neo4j.clear_all_lineage_data()
+                #     logger.info("Clearance completed.")
+                # except Exception as e:
+                #     logger.error(f"Failed to clear Neo4j data: {e}")
 
         # Determine output stream
         output_stream = sys.stdout
@@ -323,7 +349,11 @@ def main():
                 )
             
             if args.sql:
-                lineage_parser = LineageParser(dialect=args.dialect, default_schema=args.default_user)
+                lineage_parser = LineageParser(
+                    dialect=args.dialect,
+                    default_schema=args.default_user,
+                    metadata_file=args.metadata_file,
+                )
                 process_sql_content(args.sql, parser=lineage_parser, file_path=None)
             elif args.file:
                 if os.path.isdir(args.file):
@@ -344,7 +374,12 @@ def main():
                         logger.warning("No SQL files found in the specified directory.")
                     else:
                         # 准备任务参数
-                        tasks = prepare_file_tasks(sql_files, args.dialect, default_schema=args.default_user)
+                        tasks = prepare_file_tasks(
+                            sql_files,
+                            args.dialect,
+                            default_schema=args.default_user,
+                            metadata_file=args.metadata_file,
+                        )
                         
                         # 确定进程数
                         env_workers = os.environ.get("LINEAGE_MAX_WORKERS")
@@ -427,7 +462,11 @@ def main():
                     try:
 
                         logger.info(f"Processing single file: {args.file}")
-                        lineage_parser = LineageParser(dialect=args.dialect, default_schema=args.default_user)
+                        lineage_parser = LineageParser(
+                            dialect=args.dialect,
+                            default_schema=args.default_user,
+                            metadata_file=args.metadata_file,
+                        )
                         # 尝试多种编码读取文件
                         sql_content = None
                         encodings_to_try = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'latin-1']
@@ -462,4 +501,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

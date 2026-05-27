@@ -202,7 +202,7 @@ const getVisibleColumns = (
         ? node.columns
         : node.columns.filter(col => used.has(col.id));
     const columns = baseColumns.length > 0 ? baseColumns : node.columns.slice(0, 16);
-    const result = columns.map(col => ({ id: col.id, name: col.name }));
+    const result: Array<{ id: string; name: string; synthetic?: boolean }> = columns.map(col => ({ id: col.id, name: col.name }));
     if (used.has(TABLE_LEVEL_COLUMN)) {
         result.unshift({ id: TABLE_LEVEL_COLUMN, name: '表级关系', synthetic: true });
     }

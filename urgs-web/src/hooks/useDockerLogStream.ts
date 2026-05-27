@@ -36,8 +36,8 @@ export function useDockerLogStream(
 
     const wsRef = useRef<WebSocket | null>(null);
     const retryCountRef = useRef(0);
-    const retryTimerRef = useRef<ReturnType<typeof setTimeout>>();
-    const heartbeatTimerRef = useRef<ReturnType<typeof setInterval>>();
+    const retryTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
     const containerIdsRef = useRef(containerIds);
 
     const MAX_RETRIES = 5;

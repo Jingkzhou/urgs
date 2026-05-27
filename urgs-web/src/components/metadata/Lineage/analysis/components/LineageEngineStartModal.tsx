@@ -271,6 +271,7 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                     repoId: selectedRepoId!,
                     ref: selectedRef,
                     paths: selectedPaths,
+                    physicalDataSourceId: values.physicalDataSourceId,
                     user: values.user,
                     language: values.language,
                     enableAiReview: values.enableAiReview !== false,
@@ -282,9 +283,7 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                 return;
             }
 
-            const files = uploadFiles
-                .map(file => file.originFileObj)
-                .filter((file): file is File => !!file);
+            const files: File[] = uploadFiles.flatMap(file => file.originFileObj ? [file.originFileObj] : []);
 
             if (files.length === 0) {
                 message.warning('请至少上传一个文件');
@@ -294,6 +293,7 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
             const payload: LineageEngineStartParams = {
                 sourceType: 'upload',
                 files,
+                physicalDataSourceId: values.physicalDataSourceId,
                 user: values.user,
                 language: values.language,
                 enableAiReview: values.enableAiReview !== false,

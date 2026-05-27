@@ -11,11 +11,11 @@ logging.getLogger("sqlglot").setLevel(logging.ERROR)
 
 
 class LineageParser:
-    def __init__(self, dialect: str = "mysql", default_schema: str = None):
+    def __init__(self, dialect: str = "mysql", default_schema: str = None, metadata_file: str = None):
         self.dialect = dialect
         self.default_schema = default_schema
         self.parser = GSPParser()
-        self.resolver = MetadataResolver()
+        self.resolver = MetadataResolver(metadata_file=metadata_file)
         self.indirect_parser = IndirectFlowParser(dialect, resolver=self.resolver)  # 注入共享实例
 
     def parse(self, sql: str, source_file: str = None) -> Dict[str, Any]:
@@ -157,6 +157,7 @@ class LineageParser:
                             rel.setdefault("lineage_origin", "gsp_table")
                             rel.setdefault("relation_level", "table_evidence")
                             rel.setdefault("confidence", "MEDIUM")
+                            rel.setdefault("metadataPackHash", self.resolver.metadata_pack_hash)
                         relations.extend(result["relationships"])
                         stmt_info["relationships"] = result["relationships"]
                         has_lineage = True
@@ -174,7 +175,7 @@ class LineageParser:
             if detected_switch:
                 from .indirect_flow_parser import IndirectFlowParser
 
-                indirect_parser_to_use = IndirectFlowParser(current_dialect)
+                indirect_parser_to_use = IndirectFlowParser(current_dialect, resolver=self.resolver)
 
             indirect_deps = indirect_parser_to_use.parse(sql, source_file)
             for dep in indirect_deps:
@@ -197,6 +198,9 @@ class LineageParser:
                         "relation_level": "table_from_column",
                         "confidence": dep.get("confidence", "MEDIUM"),
                         "validation_note": dep.get("validation_note"),
+                        "ambiguityCode": dep.get("ambiguityCode") or dep.get("ambiguity_code"),
+                        "metadataMatched": dep.get("metadataMatched") if dep.get("metadataMatched") is not None else dep.get("metadata_matched"),
+                        "metadataPackHash": self.resolver.metadata_pack_hash,
                         # Normalize for compatibility
                         "source": dep_source,
                         "target": dep_target,
@@ -378,7 +382,7 @@ class LineageParser:
                         if detected_switch:
                             from .indirect_flow_parser import IndirectFlowParser
 
-                            indirect_parser_to_use = IndirectFlowParser(current_dialect)
+                            indirect_parser_to_use = IndirectFlowParser(current_dialect, resolver=self.resolver)
 
                         indirect_deps = indirect_parser_to_use.parse(
                             final_stmt, source_file
@@ -399,6 +403,11 @@ class LineageParser:
                                     "context": dep.get("context"),
                                     "lineage_origin": dep.get("lineage_origin"),
                                     "relation_level": dep.get("relation_level"),
+                                    "confidence": dep.get("confidence"),
+                                    "validation_note": dep.get("validation_note"),
+                                    "ambiguityCode": dep.get("ambiguityCode") or dep.get("ambiguity_code"),
+                                    "metadataMatched": dep.get("metadataMatched") if dep.get("metadataMatched") is not None else dep.get("metadata_matched"),
+                                    "metadataPackHash": self.resolver.metadata_pack_hash,
                                 }
                             )
                     except Exception as e:
@@ -452,6 +461,7 @@ class LineageParser:
                                     "dependency_type": rel_type,  # 原始 GSP 类型
                                     "source_file": source_file,  # 来源文件
                                     "snippet": final_stmt,  # 添加 SQL 片段
+                                    "metadataPackHash": self.resolver.metadata_pack_hash,
                                 }
                             )
 
@@ -474,20 +484,9 @@ class LineageParser:
 
             # 3.1 Handle Star Expansion (Source Column is *)
             if src_col == "*":
-                fields = self.resolver.get_table_fields(src_table)
-                if fields:
-                    for f_name in fields:
-                        # Create a new dependency for each field
-                        new_dep = dep.copy()
-                        new_dep["source_column"] = f_name
-                        new_dep["is_expanded"] = True
-
-                        # Validate the newly created source and target (if target is not unknown)
-                        # Confidence
-                        val_res = self.resolver.validate_column(src_table, f_name)
-                        new_dep["confidence"] = val_res.get("confidence", "MEDIUM")
-                        new_dep["validation_note"] = val_res.get("note")
-                        final_dependencies.append(new_dep)
+                expanded = self._expand_star_dependency(dep)
+                if expanded:
+                    final_dependencies.extend(expanded)
                     continue  # Skip the original '*' dependency
 
             # 3.2 Regular Validation & Confidence Calculation
@@ -508,10 +507,23 @@ class LineageParser:
                 "HIGH" if min_score == 3 else ("MEDIUM" if min_score == 2 else "LOW")
             )
 
+            existing_conf = dep.get("confidence")
+            if existing_conf:
+                final_conf = self._min_confidence(existing_conf, final_conf)
             dep["confidence"] = final_conf
-            dep["validation_note"] = (
-                f"Src: {src_val.get('note') or 'OK'}; Tgt: {tgt_val.get('note') or 'OK'}"
+            dep["validation_note"] = self._join_notes(
+                dep.get("validation_note"),
+                f"Src: {src_val.get('note') or 'OK'}; Tgt: {tgt_val.get('note') or 'OK'}",
             )
+            dep["metadataMatched"] = bool(src_val.get("metadata_matched")) and bool(tgt_val.get("metadata_matched", True))
+            dep["metadataPackHash"] = self.resolver.metadata_pack_hash
+            dep["sourceColumnExists"] = src_val.get("exists")
+            dep["targetColumnExists"] = tgt_val.get("exists")
+            if not dep.get("ambiguityCode"):
+                if src_val.get("exists") is False:
+                    dep["ambiguityCode"] = "MISSING_SOURCE_COLUMN"
+                elif tgt_val.get("exists") is False:
+                    dep["ambiguityCode"] = "MISSING_TARGET_COLUMN"
             final_dependencies.append(dep)
 
         # ===== Schema Fallback & Application =====
@@ -560,6 +572,51 @@ class LineageParser:
                 dep["source_table"] = apply_schema(dep["source_table"])
 
         return final_dependencies
+
+    def _expand_star_dependency(self, dep: Dict[str, Any]) -> List[Dict[str, Any]]:
+        src_table = dep.get("source_table")
+        tgt_table = dep.get("target_table")
+        tgt_col = dep.get("target_column")
+        fields = self.resolver.get_table_fields(src_table)
+        if not fields:
+            return []
+
+        target_fields = self.resolver.get_table_fields(tgt_table)
+        target_is_star = tgt_col in ["UNKNOWN", "", None, "*"]
+        can_pair_by_position = target_is_star and target_fields and len(target_fields) >= len(fields)
+        expanded = []
+        for index, f_name in enumerate(fields):
+            new_dep = dep.copy()
+            new_dep["source_column"] = f_name
+            if can_pair_by_position:
+                new_dep["target_column"] = target_fields[index]
+            elif target_is_star:
+                new_dep["target_column"] = f_name
+                if not target_fields:
+                    new_dep["ambiguityCode"] = "STAR_EXPANSION_UNAVAILABLE"
+                    new_dep["confidence"] = "LOW"
+                    new_dep["validation_note"] = "Target table metadata not found for SELECT * expansion"
+            new_dep["is_expanded"] = True
+
+            val_res = self.resolver.validate_column(src_table, f_name)
+            if not new_dep.get("confidence"):
+                new_dep["confidence"] = val_res.get("confidence", "MEDIUM")
+            new_dep["validation_note"] = self._join_notes(new_dep.get("validation_note"), val_res.get("note"))
+            new_dep["metadataMatched"] = val_res.get("metadata_matched")
+            new_dep["metadataPackHash"] = self.resolver.metadata_pack_hash
+            expanded.append(new_dep)
+        return expanded
+
+    def _min_confidence(self, left: str, right: str) -> str:
+        conf_map = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
+        left_score = conf_map.get((left or "MEDIUM").upper(), 2)
+        right_score = conf_map.get((right or "MEDIUM").upper(), 2)
+        score = min(left_score, right_score)
+        return "HIGH" if score == 3 else ("MEDIUM" if score == 2 else "LOW")
+
+    def _join_notes(self, *notes) -> str:
+        clean = [str(note) for note in notes if note]
+        return "; ".join(dict.fromkeys(clean))
 
     def _remove_set_operation_star_fallbacks(self, dependencies):
         set_operation_pairs = {
@@ -925,6 +982,7 @@ class LineageParser:
                     "relation_level": "table_fallback",
                     "confidence": "LOW",
                     "validation_note": "Regex fallback table lineage; column-level evidence was unavailable.",
+                    "metadataPackHash": self.resolver.metadata_pack_hash,
                 })
 
         return {

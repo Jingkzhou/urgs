@@ -1,0 +1,191 @@
+import json
+
+from parsers.indirect_flow_parser import IndirectFlowParser
+from parsers.sql_parser import LineageParser
+from utils.metadata_resolver import MetadataResolver
+from utils.metadata_pack_resolver import MetadataPackResolver
+
+
+def write_pack(tmp_path):
+    pack = {
+        "packVersion": 1,
+        "recordId": "test-record",
+        "dataSourceId": 1,
+        "owner": "ODS",
+        "generatedAt": "2026-05-27T00:00:00",
+        "tableCount": 5,
+        "fieldCount": 12,
+        "tables": [
+            {
+                "id": "a",
+                "owner": "ODS",
+                "name": "A",
+                "qualifiedName": "ODS.A",
+                "fields": [
+                    {"name": "ID", "type": "VARCHAR(64)", "sortOrder": 1},
+                    {"name": "AMOUNT", "type": "DECIMAL(18,2)", "sortOrder": 2},
+                    {"name": "K", "type": "VARCHAR(64)", "sortOrder": 3},
+                ],
+            },
+            {
+                "id": "b",
+                "owner": "ODS",
+                "name": "B",
+                "qualifiedName": "ODS.B",
+                "fields": [
+                    {"name": "ID", "type": "VARCHAR(64)", "sortOrder": 1},
+                    {"name": "K", "type": "VARCHAR(64)", "sortOrder": 2},
+                ],
+            },
+            {
+                "id": "src",
+                "owner": "ODS",
+                "name": "SRC",
+                "qualifiedName": "ODS.SRC",
+                "fields": [
+                    {"name": "C1", "type": "VARCHAR(64)", "sortOrder": 1},
+                    {"name": "C2", "type": "VARCHAR(64)", "sortOrder": 2},
+                ],
+            },
+            {
+                "id": "tgt",
+                "owner": "MART",
+                "name": "TGT",
+                "qualifiedName": "MART.TGT",
+                "fields": [
+                    {"name": "C1", "type": "VARCHAR(64)", "sortOrder": 1},
+                    {"name": "C2", "type": "VARCHAR(64)", "sortOrder": 2},
+                ],
+            },
+            {
+                "id": "loan",
+                "owner": "ODS",
+                "name": "LOAN",
+                "qualifiedName": "ODS.LOAN",
+                "fields": [
+                    {"name": "LOAN_NUM", "type": "VARCHAR(64)", "sortOrder": 1},
+                    {"name": "CUST_ID", "type": "VARCHAR(64)", "sortOrder": 2},
+                    {"name": "DRAWDOWN_DT", "type": "DATE", "sortOrder": 3},
+                    {"name": "DATA_DATE", "type": "VARCHAR(8)", "sortOrder": 4},
+                ],
+            },
+        ],
+    }
+    path = tmp_path / "metadata-pack.json"
+    path.write_text(json.dumps(pack), encoding="utf-8")
+    return path
+
+
+def test_metadata_pack_resolves_tables_and_fields(tmp_path):
+    path = write_pack(tmp_path)
+    resolver = MetadataPackResolver(str(path))
+
+    assert resolver.get_table_fields("ODS.A") == ["ID", "AMOUNT", "K"]
+    assert resolver.get_table_fields("A") == ["ID", "AMOUNT", "K"]
+    assert resolver.validate_column("ODS.A", "amount")["confidence"] == "HIGH"
+    assert resolver.validate_column("ODS.A", "missing")["ambiguity_code"] == "MISSING_COLUMN"
+
+
+def test_unqualified_column_uses_unique_metadata_match(tmp_path):
+    path = write_pack(tmp_path)
+    parser = IndirectFlowParser("oracle", resolver=MetadataPackResolver(str(path)))
+    deps = parser.parse(
+        """
+        INSERT INTO MART.TGT (C1)
+        SELECT AMOUNT
+        FROM ODS.A A
+        JOIN ODS.B B ON A.K = B.K
+        """
+    )
+
+    assert any(
+        dep["source_table"] == "ODS.A"
+        and dep["source_column"].upper() == "AMOUNT"
+        and dep.get("confidence") == "HIGH"
+        for dep in deps
+    )
+
+
+def test_unqualified_column_ambiguity_is_marked_as_reference(tmp_path):
+    path = write_pack(tmp_path)
+    parser = IndirectFlowParser("oracle", resolver=MetadataPackResolver(str(path)))
+    deps = parser.parse(
+        """
+        INSERT INTO MART.TGT (C1)
+        SELECT ID
+        FROM ODS.A A
+        JOIN ODS.B B ON A.K = B.K
+        """
+    )
+
+    ambiguous = [dep for dep in deps if dep.get("ambiguityCode") == "AMBIGUOUS_COLUMN"]
+    assert ambiguous
+    assert {dep["source_table"] for dep in ambiguous} == {"ODS.A", "ODS.B"}
+    assert {dep["neo4j_type"] for dep in ambiguous} == {"REFERENCES"}
+
+
+def test_subquery_window_alias_does_not_become_physical_column(tmp_path):
+    path = write_pack(tmp_path)
+    parser = LineageParser("hive", metadata_file=str(path))
+    deps = parser.get_column_lineage(
+        """
+        INSERT INTO MART.TGT (C1)
+        SELECT CASE
+                 WHEN LA.RN = 1 THEN '1'
+                 WHEN LA.RN >= 2 THEN '0'
+               END AS C1
+          FROM ODS.A A
+          LEFT JOIN (
+                SELECT T.LOAN_NUM,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY T.CUST_ID
+                         ORDER BY T.DRAWDOWN_DT ASC, T.LOAN_NUM
+                       ) RN
+                  FROM ODS.LOAN T
+          ) LA ON A.ID = LA.LOAN_NUM
+        """
+    )
+
+    assert not [
+        dep
+        for dep in deps
+        if dep.get("source_table") == "ODS.LOAN"
+        and dep.get("source_column", "").upper() == "RN"
+    ]
+
+    case_sources = {
+        dep.get("source_column", "").upper()
+        for dep in deps
+        if dep.get("source_table") == "ODS.LOAN"
+        and dep.get("target_table") == "MART.TGT"
+        and dep.get("target_column") == "C1"
+        and dep.get("dependency_type") == "CASE_WHEN"
+    }
+    assert {"CUST_ID", "DRAWDOWN_DT", "LOAN_NUM"}.issubset(case_sources)
+
+
+def test_select_star_expands_with_metadata_pack(tmp_path):
+    path = write_pack(tmp_path)
+    parser = LineageParser.__new__(LineageParser)
+    parser.resolver = MetadataResolver(metadata_file=str(path))
+    deps = parser._expand_star_dependency(
+        {
+            "source_table": "ODS.SRC",
+            "source_column": "*",
+            "target_table": "MART.TGT",
+            "target_column": "*",
+            "dependency_type": "fdd",
+        }
+    )
+    pairs = {
+        (
+            dep.get("source_table"),
+            dep.get("source_column"),
+            dep.get("target_table"),
+            dep.get("target_column"),
+        )
+        for dep in deps
+    }
+
+    assert ("ODS.SRC", "C1", "MART.TGT", "C1") in pairs
+    assert ("ODS.SRC", "C2", "MART.TGT", "C2") in pairs

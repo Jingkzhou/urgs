@@ -35,6 +35,7 @@ public class LineageEngineService {
     private final LineageAnalysisRecordMapper analysisRecordMapper;
     private final LineageGitInputPreparer gitInputPreparer;
     private final LineageUploadInputPreparer uploadInputPreparer;
+    private final LineageMetadataPackService metadataPackService;
     private final LineageReviewService lineageReviewService;
     private final Executor taskExecutor;
 
@@ -72,12 +73,14 @@ public class LineageEngineService {
             LineageAnalysisRecordMapper analysisRecordMapper,
             LineageGitInputPreparer gitInputPreparer,
             LineageUploadInputPreparer uploadInputPreparer,
+            LineageMetadataPackService metadataPackService,
             LineageReviewService lineageReviewService,
             @Qualifier("aiTaskExecutor") Executor taskExecutor) {
         this.gitPlatformService = gitPlatformService;
         this.analysisRecordMapper = analysisRecordMapper;
         this.gitInputPreparer = gitInputPreparer;
         this.uploadInputPreparer = uploadInputPreparer;
+        this.metadataPackService = metadataPackService;
         this.lineageReviewService = lineageReviewService;
         this.taskExecutor = taskExecutor;
     }
@@ -89,17 +92,20 @@ public class LineageEngineService {
     }
 
     public Map<String, Object> startWithUpload(List<MultipartFile> files, String user, String language,
+            Long physicalDataSourceId,
             Boolean enableAiReview) {
         StartEngineRequest request = new StartEngineRequest();
         request.setSourceType("upload");
         request.setUser(user);
         request.setLanguage(language);
+        request.setPhysicalDataSourceId(physicalDataSourceId);
         request.setEnableAiReview(enableAiReview);
-        log.info("[LineageEngineDiagnostics] startWithUpload received: fileCount={}, fileNames={}, user={}, language={}, enableAiReview={}",
+        log.info("[LineageEngineDiagnostics] startWithUpload received: fileCount={}, fileNames={}, user={}, language={}, physicalDataSourceId={}, enableAiReview={}",
                 files != null ? files.size() : 0,
                 files != null ? files.stream().map(MultipartFile::getOriginalFilename).toList() : List.of(),
                 user,
                 language,
+                physicalDataSourceId,
                 enableAiReview);
         try {
             synchronized (lock) {
@@ -168,12 +174,14 @@ public class LineageEngineService {
             Path logPath = resolveLogPath(workingDir, recordId);
             Files.createDirectories(logPath.getParent());
 
-            List<String> command = buildStartCommand(request, inputPath, repoRoot, recordId, record);
+            LineageMetadataPackResult metadataPack = prepareMetadataPack(request, record, workingDir);
+            List<String> command = buildStartCommand(request, inputPath, repoRoot, recordId, record, metadataPack);
             writeBootstrapLog(logPath, "启动任务已创建");
             writeBootstrapLog(logPath, "诊断 operationId: " + operationId);
             writeBootstrapLog(logPath, "请求摘要: " + summarizeRequest(request));
             writeBootstrapLog(logPath, "工作目录: " + workingDir);
             writeBootstrapLog(logPath, "脚本路径: " + script);
+            writeBootstrapLog(logPath, "元数据包状态: " + summarizeMetadataPack(metadataPack));
             writeBootstrapLog(logPath, "日志路径: " + logPath);
             writeBootstrapLog(logPath, "执行命令: " + String.join(" ", command));
             ProcessBuilder builder = new ProcessBuilder(command);
@@ -213,7 +221,7 @@ public class LineageEngineService {
     }
 
     private List<String> buildStartCommand(StartEngineRequest request, String inputPath, String repoRoot,
-            String recordId, LineageAnalysisRecord record) {
+            String recordId, LineageAnalysisRecord record, LineageMetadataPackResult metadataPack) {
         List<String> command = new ArrayList<>();
         command.add("bash");
         command.add(resolveScriptPath(resolveWorkDir()).toString());
@@ -254,10 +262,58 @@ public class LineageEngineService {
             command.add("--dialect");
             command.add(request.getLanguage());
         }
+        if (metadataPack != null && metadataPack.hasFile()) {
+            command.add("--metadata-file");
+            command.add(metadataPack.path().toString());
+        }
 
         command.add("--output");
         command.add("neo4j");
         return command;
+    }
+
+    private LineageMetadataPackResult prepareMetadataPack(StartEngineRequest request, LineageAnalysisRecord record,
+            Path workingDir) {
+        try {
+            LineageMetadataPackResult result = metadataPackService.generate(request, record, workingDir);
+            applyMetadataPackResult(record, result);
+            log.info("[LineageEngineDiagnostics] metadata pack prepared: recordId={}, status={}, path={}, tableCount={}, fieldCount={}",
+                    record.getId(), result.status(), result.path(), result.tableCount(), result.fieldCount());
+            return result;
+        } catch (Exception e) {
+            LineageMetadataPackResult failed = new LineageMetadataPackResult("FAILED", null, null, 0, 0,
+                    LocalDateTime.now(), e.getMessage());
+            applyMetadataPackResult(record, failed);
+            log.warn("[LineageEngineDiagnostics] metadata pack failed, continue without metadata: recordId={}, error={}",
+                    record != null ? record.getId() : null, e.getMessage(), e);
+            return failed;
+        }
+    }
+
+    private void applyMetadataPackResult(LineageAnalysisRecord record, LineageMetadataPackResult result) {
+        if (record == null || result == null) {
+            return;
+        }
+        record.setMetadataPackStatus(result.status());
+        record.setMetadataPackPath(result.path() == null ? null : result.path().toString());
+        record.setMetadataPackHash(result.hash());
+        record.setMetadataTableCount(result.tableCount());
+        record.setMetadataFieldCount(result.fieldCount());
+        record.setMetadataGeneratedAt(result.generatedAt());
+        record.setUpdateTime(LocalDateTime.now());
+        analysisRecordMapper.updateById(record);
+    }
+
+    private String summarizeMetadataPack(LineageMetadataPackResult result) {
+        if (result == null) {
+            return "null";
+        }
+        return "status=" + result.status()
+                + ", path=" + result.path()
+                + ", hash=" + result.hash()
+                + ", tableCount=" + result.tableCount()
+                + ", fieldCount=" + result.fieldCount()
+                + (StringUtils.hasText(result.message()) ? ", message=" + result.message() : "");
     }
 
     private StartEngineRequest normalizeRequest(StartEngineRequest request) {
@@ -307,6 +363,8 @@ public class LineageEngineService {
         record.setPaths(request.getPaths());
         record.setDefaultUser(request.getUser());
         record.setLanguage(request.getLanguage());
+        record.setPhysicalDataSourceId(request.getPhysicalDataSourceId());
+        record.setMetadataOwner(request.getUser());
         record.setAiReviewEnabled(isAiReviewEnabled(request));
         record.setStatus("PENDING");
         record.setStartTime(LocalDateTime.now());
@@ -332,6 +390,8 @@ public class LineageEngineService {
         record.setPaths(request.getPaths());
         record.setDefaultUser(request.getUser());
         record.setLanguage(request.getLanguage());
+        record.setPhysicalDataSourceId(request.getPhysicalDataSourceId());
+        record.setMetadataOwner(request.getUser());
         record.setAiReviewEnabled(isAiReviewEnabled(request));
         record.setStatus("RUNNING");
         record.setUpdateTime(LocalDateTime.now());
@@ -801,6 +861,7 @@ public class LineageEngineService {
                 + ", paths=" + request.getPaths()
                 + ", user=" + request.getUser()
                 + ", language=" + request.getLanguage()
+                + ", physicalDataSourceId=" + request.getPhysicalDataSourceId()
                 + ", localPath=" + request.getLocalPath()
                 + ", enableAiReview=" + request.getEnableAiReview();
     }

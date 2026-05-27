@@ -10,7 +10,7 @@ Indirect Flow Parser - 使用 sqlglot 提取间接数据流依赖
 
 import sqlglot
 from sqlglot import exp
-from typing import List, Dict, Any, Set, Optional
+from typing import List, Dict, Any, Set, Optional, Tuple
 import logging
 
 
@@ -44,6 +44,8 @@ class IndirectFlowParser:
         else:
             from utils.metadata_resolver import MetadataResolver
             self.resolver = MetadataResolver()
+        self.local_table_registry = {}
+        self._last_resolution = {}
     
     def parse(self, sql: str, source_file: str = None) -> List[Dict[str, Any]]:
         """解析 SQL 并使用 Scope 提取间接依赖关系。"""
@@ -70,8 +72,6 @@ class IndirectFlowParser:
         else:
             sql_statements = self._extract_dml_statements(sql)
             
-        self.local_table_registry = {} 
-
         for stmt_sql in sql_statements:
             try:
                 # 解析单条语句
@@ -281,21 +281,32 @@ class IndirectFlowParser:
                 elif isinstance(curr, exp.Column):
                      specific_target_column = curr.name
             
-            # 解析物理来源
-            physical_tables = self._resolve_column_to_physical(col, scope, projection_item)
+            # 解析物理来源。对子查询派生列（如 ROW_NUMBER() AS RN）必须返回
+            # 派生表达式内部引用的真实字段，不能把外层别名 RN 当成物理字段。
+            physical_refs = self._resolve_column_to_physical_refs(col, scope, projection_item)
+            resolution = getattr(self, "_last_resolution", {}) or {}
             
-            for table_name in physical_tables:
-                deps.append({
+            for table_name, source_column in sorted(physical_refs):
+                dep = {
                     "source_table": table_name,
-                    "source_column": col.name,
+                    "source_column": source_column,
                     "target_table": target_table,
                     "target_column": specific_target_column, # 使用解析后的目标
-                    "dependency_type": dep_type,
-                    "neo4j_type": neo4j_type,
+                    "dependency_type": resolution.get("dependency_type") or dep_type,
+                    "neo4j_type": resolution.get("neo4j_type") or neo4j_type,
                     "context": context_name,
                     "source_file": source_file,
                     "snippet": stmt_sql  # 存储完整的 SQL 语句
-                })
+                }
+                if resolution.get("confidence"):
+                    dep["confidence"] = resolution.get("confidence")
+                if resolution.get("validation_note"):
+                    dep["validation_note"] = resolution.get("validation_note")
+                if resolution.get("ambiguityCode"):
+                    dep["ambiguityCode"] = resolution.get("ambiguityCode")
+                if "metadataMatched" in resolution:
+                    dep["metadataMatched"] = resolution.get("metadataMatched")
+                deps.append(dep)
              
         return deps
 
@@ -373,27 +384,27 @@ class IndirectFlowParser:
 
     def _resolve_column_to_physical(self, col: exp.Column, scope, context_expression=None) -> Set[str]:
         """使用 Scope 将列解析为其物理源表。"""
-        tables = set()
+        return {table_name for table_name, _ in self._resolve_column_to_physical_refs(col, scope, context_expression)}
+
+    def _resolve_column_to_physical_refs(
+        self, col: exp.Column, scope, context_expression=None
+    ) -> Set[Tuple[str, str]]:
+        """Resolve a SQL column to physical (table, column) pairs."""
+        refs = set()
+        self._last_resolution = {}
         
         table_alias = col.table
         
         # 如果找到显式别名
         if table_alias:
-            source = scope.sources.get(table_alias)
-            # 不区分大小写的回退
-            if not source:
-                for alias, src in scope.sources.items():
-                    if alias.upper() == table_alias.upper():
-                        source = src
-                        break
-            
+            source = self._resolve_scope_source(scope, table_alias)
             if source:
-                tables.update(self._resolve_column_from_source(col.name, source))
+                refs.update(self._resolve_column_from_source_refs(col.name, source))
         else:
             # 无别名：如果 Scope 只有 1 个来源，则使用它
             if len(scope.sources) == 1:
                 source = list(scope.sources.values())[0]
-                tables.update(self._resolve_column_from_source(col.name, source))
+                refs.update(self._resolve_column_from_source_refs(col.name, source))
             # 否则如果有多个来源，调用 MetadataResolver 查询表字段进行推断
             elif len(scope.sources) > 1:
                 possible_tables = set()
@@ -412,18 +423,55 @@ class IndirectFlowParser:
                     except Exception:
                         pass  # API 不可达，跳过此表，不做推断
 
-                # API 完全不可达时 matched_tables 为空，返回空集合（宁缺毋滥）
-                if matched_tables:
-                    tables.update(matched_tables)
+                if len(matched_tables) == 1:
+                    self._last_resolution = {
+                        "confidence": "HIGH",
+                        "validation_note": f"Metadata resolved unqualified column {col.name}",
+                        "metadataMatched": True,
+                    }
+                    refs.update((table_name, col.name) for table_name in matched_tables)
+                elif len(matched_tables) > 1:
+                    self._last_resolution = {
+                        "confidence": "LOW",
+                        "validation_note": (
+                            f"Unqualified column {col.name} matched multiple source tables: "
+                            + ", ".join(sorted(matched_tables))
+                        ),
+                        "ambiguityCode": "AMBIGUOUS_COLUMN",
+                        "dependency_type": "er",
+                        "neo4j_type": "REFERENCES",
+                        "metadataMatched": True,
+                    }
+                    refs.update((table_name, col.name) for table_name in matched_tables)
                 else:
-                    tables.update(self._resolve_unqualified_column_by_context(
+                    refs.update(self._resolve_unqualified_column_by_context_refs(
                         col, scope, context_expression
                     ))
                 # else: 无法确定来源，不产生血缘（避免假阳性）
 
-        return tables
+        return refs
+
+    def _resolve_scope_source(self, scope, table_alias: str):
+        source = scope.sources.get(table_alias)
+        if source:
+            return source
+        for alias, src in scope.sources.items():
+            if alias.upper() == table_alias.upper():
+                return src
+        return None
 
     def _resolve_unqualified_column_by_context(self, col: exp.Column, scope, context_expression) -> Set[str]:
+        """Resolve unqualified columns only when the surrounding expression has one clear alias."""
+        return {
+            table_name
+            for table_name, _ in self._resolve_unqualified_column_by_context_refs(
+                col, scope, context_expression
+            )
+        }
+
+    def _resolve_unqualified_column_by_context_refs(
+        self, col: exp.Column, scope, context_expression
+    ) -> Set[Tuple[str, str]]:
         """Resolve unqualified columns only when the surrounding expression has one clear alias."""
         if context_expression is None:
             return set()
@@ -437,27 +485,38 @@ class IndirectFlowParser:
             return set()
 
         alias = next(iter(aliases))
-        source = scope.sources.get(alias)
-        if not source:
-            for scope_alias, candidate_source in scope.sources.items():
-                if scope_alias.upper() == alias.upper():
-                    source = candidate_source
-                    break
+        source = self._resolve_scope_source(scope, alias)
         if not source:
             return set()
-        return self._resolve_column_from_source(col.name, source)
+        return self._resolve_column_from_source_refs(col.name, source)
 
     def _resolve_column_from_source(self, column_name: str, source) -> Set[str]:
         """Resolve a column through a physical table or a subquery projection."""
+        return {
+            table_name
+            for table_name, _ in self._resolve_column_from_source_refs(column_name, source)
+        }
+
+    def _resolve_column_from_source_refs(self, column_name: str, source) -> Set[Tuple[str, str]]:
+        """Resolve a column through a physical table or a subquery projection."""
         if self._is_scope(source) and isinstance(source.expression, exp.Select):
-            return self._resolve_projected_column(column_name, source)
-        return self._resolve_source_to_physical(source)
+            return self._resolve_projected_column_refs(column_name, source)
+        return {
+            (table_name, column_name)
+            for table_name in self._resolve_source_to_physical(source)
+        }
 
     def _resolve_projected_column(self, column_name: str, source_scope) -> Set[str]:
+        return {
+            table_name
+            for table_name, _ in self._resolve_projected_column_refs(column_name, source_scope)
+        }
+
+    def _resolve_projected_column_refs(self, column_name: str, source_scope) -> Set[Tuple[str, str]]:
         for projection in source_scope.expression.expressions:
             output_name = self._projection_output_name(projection)
             if output_name and output_name.upper() == column_name.upper():
-                return self._resolve_expression_to_physical(projection, source_scope)
+                return self._resolve_expression_to_physical_refs(projection, source_scope)
         return set()
 
     def _projection_output_name(self, projection) -> str:
@@ -468,12 +527,18 @@ class IndirectFlowParser:
         return getattr(projection, "alias_or_name", "") or ""
 
     def _resolve_expression_to_physical(self, expression, scope) -> Set[str]:
+        return {
+            table_name
+            for table_name, _ in self._resolve_expression_to_physical_refs(expression, scope)
+        }
+
+    def _resolve_expression_to_physical_refs(self, expression, scope) -> Set[Tuple[str, str]]:
         inner = expression.this if isinstance(expression, exp.Alias) else expression
         columns = [inner] if isinstance(inner, exp.Column) else list(inner.find_all(exp.Column))
-        tables = set()
+        refs = set()
         for source_col in columns:
-            tables.update(self._resolve_column_to_physical(source_col, scope, expression))
-        return tables
+            refs.update(self._resolve_column_to_physical_refs(source_col, scope, expression))
+        return refs
 
     @staticmethod
     def _is_scope(source) -> bool:
@@ -484,7 +549,12 @@ class IndirectFlowParser:
         tables = set()
         
         if isinstance(source, exp.Table):
-            tables.add(self._get_full_table_name(source))
+            table_name = self._get_full_table_name(source)
+            registry_key = self._lookup_local_table_key(table_name)
+            if registry_key:
+                tables.update(self.local_table_registry.get(registry_key, set()))
+            else:
+                tables.add(table_name)
             
         elif type(source).__name__ == 'Scope': # Scope 对象
              # 递归进入子查询源
@@ -498,6 +568,18 @@ class IndirectFlowParser:
              tables.add(self._get_full_table_name(source.this))
 
         return tables
+
+    def _lookup_local_table_key(self, table_name: str) -> Optional[str]:
+        if not table_name:
+            return None
+        candidates = [table_name]
+        if "." in table_name:
+            candidates.append(table_name.split(".")[-1])
+        for candidate in candidates:
+            for key in self.local_table_registry.keys():
+                if key.upper() == candidate.upper():
+                    return key
+        return None
     
     def _register_ctas(self, stmt):
         """解析 CTAS 语句并注册本地表"""

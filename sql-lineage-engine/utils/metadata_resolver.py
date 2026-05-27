@@ -1,6 +1,7 @@
 import logging
 from functools import lru_cache
 from typing import List, Dict, Any, Optional
+from utils.metadata_pack_resolver import MetadataPackResolver
 
 logger = logging.getLogger(__name__)
 
@@ -10,8 +11,16 @@ class MetadataResolver:
     通过调用 Java 后端 API 获取表和字段的真实元数据，用于血缘验证。
     """
     
-    def __init__(self, base_url: str = None):
+    def __init__(self, base_url: str = None, metadata_file: str = None):
         self.base_url = base_url
+        self.pack_resolver = MetadataPackResolver(metadata_file) if metadata_file else None
+
+    @property
+    def metadata_pack_hash(self) -> Optional[str]:
+        return self.pack_resolver.pack_hash if self.pack_resolver else None
+
+    def has_metadata(self) -> bool:
+        return bool(self.pack_resolver and self.pack_resolver.has_metadata())
         
     @lru_cache(maxsize=128)
     def get_table_metadata(self, full_table_name: str) -> Optional[Dict[str, Any]]:
@@ -19,6 +28,8 @@ class MetadataResolver:
         获取表的元数据（包含字段列表）
         使用 lru_cache 减少对 API 的重复调用。
         """
+        if self.pack_resolver:
+            return self.pack_resolver.get_table_metadata(full_table_name)
         # 临时禁用元数据 API 回查，避免血缘分析期间拖慢主系统。
         logger.info("Metadata API lookup disabled for table: %s", full_table_name)
         return None
@@ -34,6 +45,9 @@ class MetadataResolver:
         """
         if not table_name or not column_name or column_name == "*":
             return {"exists": True, "confidence": "HIGH", "note": "Skip validation for complex/empty/star"}
+
+        if self.pack_resolver:
+            return self.pack_resolver.validate_column(table_name, column_name)
 
         metadata = self.get_table_metadata(table_name)
         if not metadata:
@@ -67,6 +81,8 @@ class MetadataResolver:
 
     def get_table_fields(self, table_name: str) -> List[str]:
         """获取表的所有字段名，用于 SELECT * 展开"""
+        if self.pack_resolver:
+            return self.pack_resolver.get_table_fields(table_name)
         metadata = self.get_table_metadata(table_name)
         if metadata:
             return [f["name"] for f in metadata["fields"]]

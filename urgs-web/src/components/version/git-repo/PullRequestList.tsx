@@ -221,7 +221,6 @@ const PullRequestList: React.FC<PullRequestListProps> = ({ repoId, onBack, onCre
                                             {status === 'open' && <GitPullRequest size={18} className="text-[#1a7f37]" />}
                                             {status === 'merged' && <GitMerge size={18} className="text-[#8250df]" />}
                                             {status === 'closed' && <GitPullRequest size={18} className="text-[#cf222e]" />}
-                                            {status === 'draft' && <GitPullRequest size={18} className="text-slate-400" />}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 mb-1">

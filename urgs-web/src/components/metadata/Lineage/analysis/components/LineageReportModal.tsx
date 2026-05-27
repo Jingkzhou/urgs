@@ -263,7 +263,8 @@ const LineageReportModal: React.FC<LineageReportModalProps> = ({
             onCancel={onClose}
             width={1100}
             footer={null}
-            styles={{ body: { padding: 0 }, content: { borderRadius: 16, overflow: 'hidden' } }}
+            styles={{ body: { padding: 0 } }}
+            style={{ borderRadius: 16, overflow: 'hidden' }}
             centered
         >
             <div className="flex h-[600px]">

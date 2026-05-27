@@ -14,7 +14,7 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
     解析单个 SQL 文件（Worker 函数，在子进程中执行）
     
     Args:
-        args: (file_path, dialect, default_dialect, default_schema) 元组
+        args: (file_path, dialect, default_dialect, default_schema, metadata_file) 元组
               - file_path: SQL 文件路径
               - dialect: 路径自动检测到的方言 (可能为 None)
               - default_dialect: 默认方言
@@ -30,7 +30,11 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
             "column_dependencies": list  # 列级别血缘
         }
     """
-    file_path, detected_dialect, default_dialect, default_schema = args
+    if len(args) == 4:
+        file_path, detected_dialect, default_dialect, default_schema = args
+        metadata_file = None
+    else:
+        file_path, detected_dialect, default_dialect, default_schema, metadata_file = args
     
     result = {
         "file_path": file_path,
@@ -52,7 +56,7 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
         
         dialect = detected_dialect if detected_dialect else default_dialect
         dialect = detected_dialect if detected_dialect else default_dialect
-        parser = LineageParser(dialect=dialect, default_schema=default_schema)
+        parser = LineageParser(dialect=dialect, default_schema=default_schema, metadata_file=metadata_file)
         
         # 读取 SQL 文件 (尝试多种编码)
         sql_content = None
@@ -91,7 +95,8 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
                         "lineage_origin": "source_target_fallback",
                         "relation_level": "table_fallback",
                         "confidence": "LOW",
-                        "validation_note": "Fallback table lineage built from parsed sources and targets; column-level evidence was unavailable."
+                        "validation_note": "Fallback table lineage built from parsed sources and targets; column-level evidence was unavailable.",
+                        "metadataPackHash": parser.resolver.metadata_pack_hash,
                     })
         
         
@@ -130,7 +135,8 @@ def detect_dialect_from_path(file_path: str) -> str | None:
     return None
 
 
-def prepare_file_tasks(sql_files: List[str], default_dialect: str, default_schema: str = None) -> List[Tuple[str, str, str, str]]:
+def prepare_file_tasks(sql_files: List[str], default_dialect: str, default_schema: str = None,
+                       metadata_file: str = None) -> List[Tuple[str, str, str, str, str]]:
     """
     准备并行任务参数
     
@@ -145,5 +151,5 @@ def prepare_file_tasks(sql_files: List[str], default_dialect: str, default_schem
     tasks = []
     for file_path in sql_files:
         detected = detect_dialect_from_path(file_path)
-        tasks.append((file_path, detected, default_dialect, default_schema))
+        tasks.append((file_path, detected, default_dialect, default_schema, metadata_file))
     return tasks

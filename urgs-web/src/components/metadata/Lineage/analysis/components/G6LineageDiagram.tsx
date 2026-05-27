@@ -431,7 +431,7 @@ const G6LineageDiagram: React.FC<G6LineageDiagramProps> = ({
             }
             if (graphRef.current === graph && mountedRef.current) {
                 await graph.render();
-                await graph.fitView({ padding: 56 }, { duration: 0 }).catch(() => undefined);
+                await graph.fitView({ padding: 56 } as any, { duration: 0 }).catch(() => undefined);
             }
         }).catch(() => undefined);
     }, []);
@@ -554,11 +554,11 @@ const G6LineageDiagram: React.FC<G6LineageDiagramProps> = ({
         });
 
         graph.on(NodeEvent.CLICK, event => {
-            focusNode(String(event.target.id));
+            focusNode(String((event as any).target.id));
         });
 
         graph.on(EdgeEvent.CLICK, event => {
-            const edgeId = String(event.target.id);
+            const edgeId = String((event as any).target.id);
             setSelectedEdgeId(edgeId);
             setSelectedNodeId(null);
             const edge = graph.getElementData(edgeId) as AggregatedEdgeData;
@@ -764,7 +764,7 @@ const G6LineageDiagram: React.FC<G6LineageDiagramProps> = ({
                     <Button
                         shape="circle"
                         icon={<Maximize2 size={16} />}
-                        onClick={() => graphRef.current?.fitView({ padding: 56 }, { duration: 250 })}
+                        onClick={() => graphRef.current?.fitView({ padding: 56 } as any, { duration: 250 })}
                     />
                 </Tooltip>
                 {selectedNode && (
@@ -772,7 +772,7 @@ const G6LineageDiagram: React.FC<G6LineageDiagramProps> = ({
                         <Button
                             shape="circle"
                             icon={<Focus size={16} />}
-                            onClick={() => graphRef.current?.fitView({ padding: 80 }, { duration: 250 })}
+                            onClick={() => graphRef.current?.fitView({ padding: 80 } as any, { duration: 250 })}
                         />
                     </Tooltip>
                 )}

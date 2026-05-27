@@ -439,15 +439,8 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             int batchCount = 0;
 
             if (!isAiReviewEnabled(task)) {
-                processed = task.getObjectCount();
-                batchCount = estimateBatchCount(objects, sqlAuditObjects);
-                task.setStatus("COMPLETED");
-                task.setFinishedAt(LocalDateTime.now());
-                task.setLastError(null);
-                updateTaskProgress(task, processed, issueCount, failedCount, aiCallCount, cacheHits, batchCount);
-                log.info("lineage review AI disabled, taskId={}, objectCount={}, batchCount={}",
-                        taskId, task.getObjectCount(), batchCount);
-                return;
+                log.info("lineage review AI disabled, keep rule-only issue generation, taskId={}, objectCount={}",
+                        taskId, task.getObjectCount());
             }
 
             for (int i = 0; i < objects.size(); i += TASK_BATCH_SIZE) {
@@ -502,6 +495,9 @@ public class LineageReviewServiceImpl implements LineageReviewService {
 
             for (Map<String, Object> sqlAuditObject : sqlAuditObjects) {
                 try {
+                    if (!isAiReviewEnabled(task)) {
+                        continue;
+                    }
                     if (aiCallCount >= resolveTaskAiBudget(task)) {
                         continue;
                     }
@@ -581,6 +577,11 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                     sourceTable: source.table,
                     sourceColumn: source.name,
                     relationType: type(r),
+                    confidence: coalesce(r.confidence, ''),
+                    ambiguityCode: coalesce(r.ambiguityCode, ''),
+                    validationNote: coalesce(r.validationNote, ''),
+                    metadataMatched: r.metadataMatched,
+                    metadataPackHash: coalesce(r.metadataPackHash, ''),
                     snippet: coalesce(r.snippet, ''),
                     sourceFiles: relationSourceFiles
                 }) AS upstreamRels
@@ -664,7 +665,9 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                        CASE WHEN target:Column THEN target.name ELSE null END AS targetColumn,
                        type(r) AS relationType,
                        coalesce(r.relationLevel, '') AS relationLevel,
-                       coalesce(r.confidence, '') AS confidence
+                       coalesce(r.confidence, '') AS confidence,
+                       coalesce(r.ambiguityCode, '') AS ambiguityCode,
+                       coalesce(r.validationNote, '') AS validationNote
                 ORDER BY statementHash, snippet, relationType, sourceTable, sourceColumn
                 LIMIT $rowLimit
                 """;
@@ -727,6 +730,8 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                 relation.put("relationType", record.get("relationType").asString(""));
                 relation.put("relationLevel", record.get("relationLevel").asString(""));
                 relation.put("confidence", record.get("confidence").asString(""));
+                relation.put("ambiguityCode", record.get("ambiguityCode").asString(""));
+                relation.put("validationNote", record.get("validationNote").asString(""));
 
                 String relationKey = String.join("|",
                         Objects.toString(relation.get("sourceTable"), ""),
@@ -915,6 +920,13 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                 .map(rel -> toText(rel.get("sourceTable")))
                 .filter(StringUtils::hasText)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> ambiguityCodes = upstreamRels.stream()
+                .map(rel -> toText(rel.get("ambiguityCode")))
+                .filter(StringUtils::hasText)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        boolean hasLowConfidence = upstreamRels.stream()
+                .map(rel -> toText(rel.get("confidence")))
+                .anyMatch(value -> "LOW".equalsIgnoreCase(value));
 
         List<String> ruleHits = new ArrayList<>();
         String issueType = null;
@@ -926,6 +938,20 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             severity = relationTypes.isEmpty() ? "HIGH" : "MEDIUM";
             ruleHits.add("NO_DIRECT_DERIVATION");
             reason = "字段仅存在间接依赖，缺少直接派生关系";
+        }
+
+        if (!ambiguityCodes.isEmpty()) {
+            issueType = issueType == null ? "METADATA_AMBIGUITY" : issueType;
+            severity = "HIGH";
+            ruleHits.addAll(ambiguityCodes);
+            reason = reason == null
+                    ? "物理模型校验发现字段归属歧义或字段缺失: " + String.join(", ", ambiguityCodes)
+                    : reason + "；物理模型疑点: " + String.join(", ", ambiguityCodes);
+        } else if (hasLowConfidence) {
+            issueType = issueType == null ? "LOW_CONFIDENCE_LINEAGE" : issueType;
+            severity = "MEDIUM";
+            ruleHits.add("LOW_CONFIDENCE");
+            reason = reason == null ? "血缘解析置信度较低，需要人工复核" : reason + "；存在低置信血缘";
         }
 
         boolean tooManyColumnSources = columnName != null && distinctSources.size() > 8;
@@ -990,6 +1016,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         evidence.put("upstreamRelations", object.get("upstreamRels"));
         evidence.put("relationTypeDescriptions", relationTypeDescriptions());
         evidence.put("labels", object.get("labels"));
+        evidence.put("metadataReviewHint", "confidence=LOW 或 ambiguityCode 非空表示物理模型驱动解析需要人工确认");
         return evidence;
     }
 

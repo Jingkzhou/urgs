@@ -57,6 +57,37 @@ public class LineageAnalysisRecord {
     private String language;
 
     /**
+     * 物理模型数据源 ID
+     */
+    private Long physicalDataSourceId;
+
+    /**
+     * 物理模型 Schema/Owner
+     */
+    private String metadataOwner;
+
+    /**
+     * 固定到本次分析的元数据包路径
+     */
+    private String metadataPackPath;
+
+    /**
+     * 元数据包 SHA-256
+     */
+    private String metadataPackHash;
+
+    /**
+     * 元数据包状态: DISABLED, READY, EMPTY, FAILED
+     */
+    private String metadataPackStatus;
+
+    private Integer metadataTableCount;
+
+    private Integer metadataFieldCount;
+
+    private LocalDateTime metadataGeneratedAt;
+
+    /**
      * 是否启用 AI 事后校验
      */
     private Boolean aiReviewEnabled;

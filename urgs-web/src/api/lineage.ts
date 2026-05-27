@@ -265,6 +265,14 @@ export interface LineageAnalysisRecordItem {
     versionId?: string;
     defaultUser?: string;
     language?: string;
+    physicalDataSourceId?: number;
+    metadataOwner?: string;
+    metadataPackPath?: string;
+    metadataPackHash?: string;
+    metadataPackStatus?: string;
+    metadataTableCount?: number;
+    metadataFieldCount?: number;
+    metadataGeneratedAt?: string;
     aiReviewEnabled?: boolean;
     status?: string;
     error?: string;
@@ -433,6 +441,7 @@ export interface LineageEngineStartByGitParams {
     repoId: number;
     ref: string;
     paths: string[];
+    physicalDataSourceId?: number;
     user?: string;
     language?: string;
     enableAiReview?: boolean;
@@ -441,6 +450,7 @@ export interface LineageEngineStartByGitParams {
 export interface LineageEngineStartByUploadParams {
     sourceType: 'upload';
     files: File[];
+    physicalDataSourceId?: number;
     user?: string;
     language?: string;
     enableAiReview?: boolean;
@@ -493,7 +503,7 @@ export const getLineagePhysicalDataSources = async () => {
                 metaCode: meta?.code,
             };
         })
-        .filter((config) => (config.metaCategory || '').toUpperCase() === 'RDBMS');
+        .filter((config) => ['RDBMS', 'BIG DATA'].includes((config.metaCategory || '').toUpperCase()));
 };
 
 export const getLineagePhysicalSchemas = (dataSourceId: number) =>
@@ -512,6 +522,9 @@ export const startLineageEngine = (params: LineageEngineStartParams) => {
         }
         if (params.language) {
             formData.append('language', params.language);
+        }
+        if (params.physicalDataSourceId) {
+            formData.append('physicalDataSourceId', String(params.physicalDataSourceId));
         }
         formData.append('enableAiReview', String(params.enableAiReview !== false));
         return post('/api/metadata/lineage/engine/start', formData, startEngineOptions);
