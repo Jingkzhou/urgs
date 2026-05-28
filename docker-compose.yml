@@ -18,7 +18,7 @@ services:
       timeout: 5s
       retries: 30
     volumes:
-      - mysql_data:/var/lib/mysql
+      - ${DATA_ROOT:-/data/urgs}/mysql:/var/lib/mysql
     networks:
       - urgs-net
 
@@ -46,7 +46,7 @@ services:
       - "${HOST_PORT_NEO4J_HTTP}:7474"
       - "${HOST_PORT_NEO4J_BOLT}:7687"
     volumes:
-      - neo4j_data:/data
+      - ${DATA_ROOT:-/data/urgs}/neo4j:/data
     networks:
       - urgs-net
 
@@ -71,6 +71,11 @@ services:
       # 血缘引擎配置
       LINEAGE_ENGINE_WORKDIR: /app
       LINEAGE_ENGINE_SCRIPT: ./bridge.sh
+      LINEAGE_ENGINE_SHARED_DIR: /data/urgs/lineage/share
+      URGS_PROFILE: /data/urgs/api/uploads
+      IM_UPLOAD_PATH: /data/urgs/api/im-uploads
+      RAG_DOC_STORE_PATH: /data/urgs/rag/doc_store
+      DEPLOY_TOOL_WORKDIR: /data/urgs/db_deploy
     ports:
       - "${HOST_PORT_API}:8080"
     depends_on:
@@ -79,9 +84,9 @@ services:
     networks:
       - urgs-net
     volumes:
-      - ./urgs-api/uploads:/app/uploads
+      - ${DATA_ROOT:-/data/urgs}:/data/urgs
       - /var/run/docker.sock:/var/run/docker.sock
-      - /tmp/lineage-share:/tmp/lineage-share
+      - ${DATA_ROOT:-/data/urgs}/lineage/share:/data/urgs/lineage/share
 
   urgs-executor:
     build: ./urgs-executor
@@ -123,6 +128,10 @@ services:
       URGS_API_URL: ${URGS_API_URL:-http://urgs-api:8080}
       EMBEDDING_DEVICE: cpu
       RERANKER_DEVICE: cpu
+      CHROMA_PERSIST_DIRECTORY: /data/urgs/rag/chroma_db
+      DOC_STORAGE_PATH: /data/urgs/rag/doc_store
+      PARENT_DOC_STORE_PATH: /data/urgs/rag/parent_store
+      CLEAN_SAMPLE_DIR: /data/urgs/rag/clean_samples
     ports:
       - "${HOST_PORT_RAG}:8001"
     depends_on:
@@ -130,8 +139,7 @@ services:
     networks:
       - urgs-net
     volumes:
-      - rag_data:/app/data
-      - rag_doc_store:/app/doc_store
+      - ${DATA_ROOT:-/data/urgs}/rag:/data/urgs/rag
 
   urgs-presentation:
     build:
@@ -155,6 +163,7 @@ services:
       GOTO_NUM_THREADS: 1
       OMP_NUM_THREADS: 1
       LINEAGE_MAX_WORKERS: 8
+      LINEAGE_ENGINE_SHARED_DIR: /data/urgs/lineage/share
     entrypoint: [ "tail", "-f", "/dev/null" ]
 
     security_opt:
@@ -163,7 +172,7 @@ services:
     networks:
       - urgs-net
     volumes:
-      - /tmp/lineage-share:/tmp/lineage-share
+      - ${DATA_ROOT:-/data/urgs}/lineage/share:/data/urgs/lineage/share
 
   # ========================================
   # Dify Microservices (Synced from urgs-dify)
@@ -198,7 +207,7 @@ services:
       - urgs-dify-db
       - urgs-dify-redis
     volumes:
-      - ./urgs-dify/api/storage:/app/api/storage
+      - ${DATA_ROOT:-/data/urgs}/dify/storage:/data/urgs/dify/storage
 
   urgs-dify-web:
     build:
@@ -236,7 +245,7 @@ services:
       - urgs-dify-db
       - urgs-dify-redis
     volumes:
-      - ./urgs-dify/api/storage:/app/api/storage
+      - ${DATA_ROOT:-/data/urgs}/dify/storage:/data/urgs/dify/storage
     networks:
       - urgs-net
 
@@ -247,7 +256,7 @@ services:
       - POSTGRES_PASSWORD=${DIFY_DB_PASSWORD}
       - POSTGRES_DB=${DIFY_DB_NAME}
     volumes:
-      - dify_db_data:/var/lib/postgresql/data
+      - ${DATA_ROOT:-/data/urgs}/dify/postgres:/var/lib/postgresql/data
     networks:
       - urgs-net
 
@@ -305,9 +314,4 @@ networks:
     driver: bridge
 
 volumes:
-  mysql_data:
-  neo4j_data:
-  rag_data:
-  rag_doc_store:
-  dify_db_data:
   dify_weaviate_data:

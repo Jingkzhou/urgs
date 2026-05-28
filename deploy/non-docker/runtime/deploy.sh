@@ -34,7 +34,8 @@ START_WEB_STATIC="${START_WEB_STATIC:-0}"
 WEB_STATIC_PORT="${WEB_STATIC_PORT:-3000}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 REDIS_BIND="${REDIS_BIND:-127.0.0.1}"
-REDIS_DATA_DIR="${REDIS_DATA_DIR:-${ROOT_DIR}/data/redis}"
+DATA_ROOT="${DATA_ROOT:-/data/urgs}"
+REDIS_DATA_DIR="${REDIS_DATA_DIR:-${DATA_ROOT}/redis}"
 NGINX_LOG_DIR="${NGINX_LOG_DIR:-${ROOT_DIR}/logs/nginx}"
 NGINX_ERROR_LOG="${NGINX_ERROR_LOG:-${NGINX_LOG_DIR}/error.log}"
 NGINX_ACCESS_LOG="${NGINX_ACCESS_LOG:-${NGINX_LOG_DIR}/access.log}"
@@ -220,6 +221,7 @@ status_service() {
 }
 
 export_common_env() {
+    export DATA_ROOT="${DATA_ROOT:-/data/urgs}"
     export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-prod}"
     export SPRING_DATASOURCE_URL="${SPRING_DATASOURCE_URL:-jdbc:mysql://${DB_HOST:-127.0.0.1}:${DB_PORT:-3306}/${DB_NAME:-urgs}?${MYSQL_JDBC_PARAMS}}"
     export SPRING_DATASOURCE_USERNAME="${SPRING_DATASOURCE_USERNAME:-${DB_USER:-urgs}}"
@@ -230,7 +232,15 @@ export_common_env() {
     export RAG_BASE_URL="${RAG_BASE_URL:-http://127.0.0.1:${RAG_PORT}/api/rag}"
     export EXECUTOR_BASE_URL="${EXECUTOR_BASE_URL:-http://127.0.0.1:${EXECUTOR_PORT}}"
     export LINEAGE_ENGINE_WORKDIR="${LINEAGE_ENGINE_WORKDIR:-${ROOT_DIR}/services/lineage}"
-    export DEPLOY_TOOL_WORKDIR="${DEPLOY_TOOL_WORKDIR:-classpath:db_deploy}"
+    export URGS_PROFILE="${URGS_PROFILE:-${DATA_ROOT}/api/uploads}"
+    export IM_UPLOAD_PATH="${IM_UPLOAD_PATH:-${DATA_ROOT}/api/im-uploads}"
+    export RAG_DOC_STORE_PATH="${RAG_DOC_STORE_PATH:-${DATA_ROOT}/rag/doc_store}"
+    export CHROMA_PERSIST_DIRECTORY="${CHROMA_PERSIST_DIRECTORY:-${DATA_ROOT}/rag/chroma_db}"
+    export DOC_STORAGE_PATH="${DOC_STORAGE_PATH:-${DATA_ROOT}/rag/doc_store}"
+    export PARENT_DOC_STORE_PATH="${PARENT_DOC_STORE_PATH:-${DATA_ROOT}/rag/parent_store}"
+    export CLEAN_SAMPLE_DIR="${CLEAN_SAMPLE_DIR:-${DATA_ROOT}/rag/clean_samples}"
+    export DEPLOY_TOOL_WORKDIR="${DEPLOY_TOOL_WORKDIR:-${DATA_ROOT}/db_deploy}"
+    export LINEAGE_ENGINE_SHARED_DIR="${LINEAGE_ENGINE_SHARED_DIR:-${DATA_ROOT}/lineage/share}"
 }
 
 start_api() {
@@ -271,6 +281,7 @@ start_rag() {
     service_enabled rag || return 0
     ensure_venv rag
     stop_conflicting_port rag "$RAG_PORT"
+    export_common_env
     export LLM_API_BASE="${LLM_API_BASE:-}"
     export LLM_MODEL="${LLM_MODEL:-}"
     export LLM_API_KEY="${LLM_API_KEY:-}"
@@ -453,7 +464,10 @@ stop_nginx() {
 }
 
 install_all() {
-    mkdir -p "$LOG_DIR" "$PID_DIR" "${ROOT_DIR}/data"
+    export_common_env
+    mkdir -p "$LOG_DIR" "$PID_DIR" "$DATA_ROOT" "$URGS_PROFILE" "$IM_UPLOAD_PATH" \
+        "$RAG_DOC_STORE_PATH" "$CHROMA_PERSIST_DIRECTORY" "$PARENT_DOC_STORE_PATH" \
+        "$CLEAN_SAMPLE_DIR" "$DEPLOY_TOOL_WORKDIR" "$LINEAGE_ENGINE_SHARED_DIR"
     service_enabled nginx && extract_component_tarballs nginx
     service_enabled redis && extract_component_tarballs redis
     service_enabled rag && ensure_venv rag

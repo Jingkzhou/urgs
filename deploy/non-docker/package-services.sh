@@ -148,8 +148,62 @@ latest_jar() {
     find "$dir" -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | sort | tail -1
 }
 
+web_node_bin_dir() {
+    local candidates=()
+    local candidate
+    if [ -n "${NODE_BIN:-}" ]; then
+        candidates+=("$NODE_BIN")
+    fi
+    if command -v node >/dev/null 2>&1; then
+        candidates+=("$(command -v node)")
+    fi
+    candidates+=(
+        "/usr/local/bin/node"
+        "/opt/homebrew/bin/node"
+        "${HOME}/.nvm/versions/node/v20.14.0/bin/node"
+        "${HOME}/.nvm/versions/node/v22.22.2/bin/node"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        [ -x "$candidate" ] || continue
+        if ! node_modules_present || (cd "${ROOT_DIR}/urgs-web" && "$candidate" -e "require('rollup')" >/dev/null 2>&1); then
+            dirname "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
 node_modules_ready() {
-    [ -d "${ROOT_DIR}/urgs-web/node_modules/.bin" ] && [ -x "${ROOT_DIR}/urgs-web/node_modules/.bin/vite" ]
+    local node_bin_dir
+    node_bin_dir="$(web_node_bin_dir)" || return 1
+    [ -d "${ROOT_DIR}/urgs-web/node_modules/.bin" ] \
+        && [ -x "${ROOT_DIR}/urgs-web/node_modules/.bin/vite" ] \
+        && (cd "${ROOT_DIR}/urgs-web" && PATH="${node_bin_dir}:$PATH" node -e "import('vite').then(() => require('rollup'))" >/dev/null 2>&1)
+}
+
+node_modules_present() {
+    [ -d "${ROOT_DIR}/urgs-web/node_modules" ]
+}
+
+install_web_dependencies() {
+    local node_bin_dir
+    node_bin_dir="$(web_node_bin_dir)" || die "No usable node runtime found for urgs-web dependencies."
+    require_command npm
+    if [ -n "${NPM_REGISTRY:-}" ]; then
+        export npm_config_registry="$NPM_REGISTRY"
+    fi
+    if [ -f "${ROOT_DIR}/urgs-web/package-lock.json" ]; then
+        (cd "${ROOT_DIR}/urgs-web" && PATH="${node_bin_dir}:$PATH" npm ci --prefer-offline --no-audit --progress=false)
+    else
+        (cd "${ROOT_DIR}/urgs-web" && PATH="${node_bin_dir}:$PATH" npm install --prefer-offline --no-audit --progress=false)
+    fi
+}
+
+build_web_dist() {
+    local node_bin_dir
+    node_bin_dir="$(web_node_bin_dir)" || die "No usable node runtime found for urgs-web build."
+    (cd "${ROOT_DIR}/urgs-web" && PATH="${node_bin_dir}:$PATH" npm run build)
 }
 
 build_api() {
@@ -185,20 +239,17 @@ build_web() {
         log "Reusing existing urgs-web dist."
     elif node_modules_ready; then
         log "Building urgs-web with existing node_modules."
-        (cd "${ROOT_DIR}/urgs-web" && npm run build)
+        build_web_dist
+    elif node_modules_present; then
+        log "urgs-web node_modules exists but the Vite/Rollup toolchain is not usable; reinstalling dependencies."
+        install_web_dependencies
+        build_web_dist
     elif [ "${WEB_REUSE_DIST_IF_NO_NODE_MODULES:-1}" = "1" ] && [ -d "${ROOT_DIR}/urgs-web/dist" ]; then
         log "urgs-web node_modules is missing; reusing existing dist. Set WEB_REUSE_DIST_IF_NO_NODE_MODULES=0 to force npm install and rebuild."
     else
         log "Building urgs-web."
-        require_command npm
-        if [ -n "${NPM_REGISTRY:-}" ]; then
-            export npm_config_registry="$NPM_REGISTRY"
-        fi
-        if [ -f "${ROOT_DIR}/urgs-web/package-lock.json" ]; then
-            (cd "${ROOT_DIR}/urgs-web" && npm ci --prefer-offline --no-audit --progress=false && npm run build)
-        else
-            (cd "${ROOT_DIR}/urgs-web" && npm install --prefer-offline --no-audit --progress=false && npm run build)
-        fi
+        install_web_dependencies
+        build_web_dist
     fi
     [ -d "${ROOT_DIR}/urgs-web/dist" ] || die "urgs-web dist was not generated."
     mkdir -p "${WORK_DIR}/services/web"

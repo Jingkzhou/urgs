@@ -4,6 +4,7 @@ import com.example.urgs_api.metadata.dto.StartEngineRequest;
 import com.example.urgs_api.version.service.GitPlatformService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
@@ -19,6 +20,9 @@ import java.util.zip.ZipInputStream;
 @Component
 @RequiredArgsConstructor
 public class LineageGitInputPreparer {
+
+    @Value("${lineage.engine.shared-dir:/data/urgs/lineage/share}")
+    private String sharedDir;
 
     private final GitPlatformService gitPlatformService;
 
@@ -165,7 +169,7 @@ public class LineageGitInputPreparer {
     }
 
     private Path resolveSharedBaseDir() throws Exception {
-        Path baseDir = Path.of("/tmp/lineage-share");
+        Path baseDir = Path.of(sharedDir);
         if (!Files.exists(baseDir)) {
             Files.createDirectories(baseDir);
         }

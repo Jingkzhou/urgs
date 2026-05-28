@@ -2,6 +2,7 @@ package com.example.urgs_api.metadata.service;
 
 import com.example.urgs_api.metadata.dto.StartEngineRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -20,6 +21,9 @@ import java.util.zip.ZipInputStream;
 @Slf4j
 @Component
 public class LineageUploadInputPreparer {
+
+    @Value("${lineage.engine.shared-dir:/data/urgs/lineage/share}")
+    private String sharedDir;
 
     public void stageUploads(StartEngineRequest request, List<MultipartFile> uploadedFiles) throws Exception {
         if (uploadedFiles == null || uploadedFiles.isEmpty()) {
@@ -126,7 +130,7 @@ public class LineageUploadInputPreparer {
     }
 
     private Path resolveSharedBaseDir() throws Exception {
-        Path baseDir = Path.of("/tmp/lineage-share");
+        Path baseDir = Path.of(sharedDir);
         if (!Files.exists(baseDir)) {
             Files.createDirectories(baseDir);
         }
