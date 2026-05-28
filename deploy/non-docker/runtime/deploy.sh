@@ -40,8 +40,8 @@ NGINX_LOG_DIR="${NGINX_LOG_DIR:-${ROOT_DIR}/logs/nginx}"
 NGINX_ERROR_LOG="${NGINX_ERROR_LOG:-${NGINX_LOG_DIR}/error.log}"
 NGINX_ACCESS_LOG="${NGINX_ACCESS_LOG:-${NGINX_LOG_DIR}/access.log}"
 STOP_CONFLICTING_PORTS="${STOP_CONFLICTING_PORTS:-1}"
-MYSQL_JDBC_PARAMS="${MYSQL_JDBC_PARAMS:-useSSL=false&serverTimezone=Asia/Shanghai&connectionTimeZone=Asia/Shanghai&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true}"
-MYSQL_EXECUTOR_JDBC_PARAMS="${MYSQL_EXECUTOR_JDBC_PARAMS:-useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&connectionTimeZone=Asia/Shanghai&forceConnectionTimeZoneToSession=true}"
+MYSQL_JDBC_PARAMS="${MYSQL_JDBC_PARAMS:-useSSL=false&serverTimezone=%2B08:00&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true}"
+MYSQL_EXECUTOR_JDBC_PARAMS="${MYSQL_EXECUTOR_JDBC_PARAMS:-useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=%2B08:00&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true}"
 
 export TZ
 
