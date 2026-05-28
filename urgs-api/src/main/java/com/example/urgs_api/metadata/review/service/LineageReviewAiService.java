@@ -97,6 +97,7 @@ public class LineageReviewAiService {
             只有存储过程调用、整表 INSERT/DELETE 等确实无法定位字段的场景，才允许 targetColumn 为 null。
             CONFIRMED 或 NEEDS_REVIEW 必须提供 evidenceRefs，证据必须来自 sqlSnippet 的原文片段或 programRelations 中的具体关系。
             CONFIRMED 或 NEEDS_REVIEW 的 suggestedSources 必须精确到字段级 schema.table.column；只有表名没有字段名的来源不算有效证据。
+            你只负责给出复核候选结论，最终由人工判断是误报、解析程序 BUG，还是 SQL 书写规范问题；不要替人工填写最终处置类型。
             如果无法给出具体证据，不要列为疑点；常量、字符串字面量、数字字面量、存储过程参数或变量不是缺失的表字段来源。
             如果目标字段由 CASE WHEN 的 THEN/ELSE 常量、字面量或分类值生成，WHEN 条件字段使用 CASE_WHEN 已是正确关系；不得以缺少 DERIVES_TO 为理由列为疑点。
             如果证据不足，请不要输出该疑点，或返回 NO_ISSUE 且 verdict 为 REJECTED。
