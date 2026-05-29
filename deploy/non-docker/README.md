@@ -153,7 +153,84 @@ cd urgs-prod
 
 如果使用默认时间戳包名，则目录名是 `urgs-nondocker-<时间戳>`。
 
-### 2. 一键安装并启动
+### 2. 推荐：固定运行目录部署
+
+生产机建议只维护一个固定运行目录，例如：
+
+```bash
+export URGS_DEPLOY_HOME=/home/appuser/urgs-app
+```
+
+`URGS_DEPLOY_HOME` 只放应用运行文件、日志、pid、备份和组件；`DATA_ROOT` 仍用于上传文件、Redis 数据、RAG 文档库等业务数据，默认可以继续保持 `/data/urgs`。
+
+这样每个解压出来的包都只是安装源，真正运行的 JAR、前端静态文件、组件、日志和 pid 都固定在 `/home/appuser/urgs-app`。部分升级时，本包包含什么服务就只替换并重启什么服务，其他服务继续沿用固定运行目录中的旧版本，不会出现 `executor` 从包 1 启动、`api` 从包 3 启动后难以追踪的问题。
+
+第一次迁移到固定运行目录时，建议用一次完整包，让所有服务都进入同一个运行根目录：
+
+```bash
+tar -xzf urgs-prod.tar.gz
+cd urgs-prod
+URGS_DEPLOY_HOME=/home/appuser/urgs-app bin/deploy.sh up
+```
+
+后续只升级 API 和 Web：
+
+```bash
+tar -xzf urgs-api-web.tar.gz
+cd urgs-api-web
+URGS_DEPLOY_HOME=/home/appuser/urgs-app bin/deploy.sh up
+```
+
+这次只会同步并重启当前包里的服务，例如 `api web nginx`，不会重启未打入本包的 `executor` / `redis`。
+
+固定运行目录模式默认会先备份本次即将被覆盖的旧版本，再部署新版本。备份目录为：
+
+```text
+/home/appuser/urgs-app/backups/<时间戳>/
+```
+
+例如 `api web nginx` 增量包会备份：
+
+```text
+/home/appuser/urgs-app/backups/<时间戳>/services/api
+/home/appuser/urgs-app/backups/<时间戳>/services/web
+/home/appuser/urgs-app/backups/<时间戳>/components/nginx
+```
+
+没有包含在本包里的 `executor` / `redis` 不会被覆盖，也不会被重启。需要指定备份名时可以设置：
+
+```bash
+BACKUP_NAME=before-api-web-20260529 URGS_DEPLOY_HOME=/home/appuser/urgs-app bin/deploy.sh up
+```
+
+如果确认不需要备份，可以关闭：
+
+```bash
+BACKUP_BEFORE_DEPLOY=0 URGS_DEPLOY_HOME=/home/appuser/urgs-app bin/deploy.sh up
+```
+
+需要手工回退时，把备份目录中的对应服务复制回固定运行目录，然后只重启对应服务：
+
+```bash
+cd /home/appuser/urgs-app
+cp -a backups/<时间戳>/services/api services/api
+bin/deploy.sh restart api
+```
+
+查看全局运行状态时，进入固定运行目录执行：
+
+```bash
+cd /home/appuser/urgs-app
+bin/deploy.sh status
+```
+
+如果生产机本地改过 `/home/appuser/urgs-app/config/deploy.env`，增量包部署默认不会覆盖它；包内配置会另存为 `config/deploy.env.package`。确实需要用包内配置覆盖固定运行目录配置时执行：
+
+```bash
+URGS_DEPLOY_HOME=/home/appuser/urgs-app URGS_DEPLOY_ENV_OVERWRITE=1 bin/deploy.sh up
+```
+
+### 3. 兼容：在解压目录内运行
 
 ```bash
 bin/deploy.sh up
@@ -169,20 +246,22 @@ bin/deploy.sh up
 - 启动 RAG / executor / API
 - 启动 Nginx
 
-### 3. 查看运行状态
+这种方式会把当前解压目录作为运行目录。它适合临时测试；生产长期运行不推荐用这种方式混合部署多个包。
+
+### 4. 查看运行状态
 
 ```bash
 bin/deploy.sh status
 ```
 
-### 4. 停止或重启
+### 5. 停止或重启
 
 ```bash
 bin/deploy.sh stop
 bin/deploy.sh restart
 ```
 
-### 5. 仅在排错时拆开执行
+### 6. 仅在排错时拆开执行
 
 正常生产部署只执行 `bin/deploy.sh up`。如果需要排查，可以拆成：
 
@@ -191,7 +270,7 @@ bin/deploy.sh install
 bin/deploy.sh start
 ```
 
-### 6. deploy.sh 命令说明
+### 7. deploy.sh 命令说明
 
 `bin/deploy.sh` 会按 `config/services.list` 中的服务清单执行动作。不同包的服务清单不同，例如 `api web nginx` 包不会启动 `executor` / `redis`，`api web executor nginx redis` 包会启动这些服务。
 

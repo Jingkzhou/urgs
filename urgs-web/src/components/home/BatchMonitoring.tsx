@@ -15,7 +15,14 @@ interface TaskInstance {
     logContent?: string;
 }
 
-const OPS_SCHEDULE_NAV_KEY = 'ops_schedule_nav';
+const OPS_REGULATION_NAV_KEY = 'ops_regulation_nav';
+
+const taskInstanceStatusMap: Record<string, string> = {
+    WAITING_GROUP: '1',
+    RUNNING: '2',
+    SUCCESS: '3',
+    FAIL: '4',
+};
 
 const BatchMonitoring: React.FC = () => {
     const [stats, setStats] = useState<TaskInstanceStatsVO | null>(null);
@@ -41,10 +48,10 @@ const BatchMonitoring: React.FC = () => {
     useSmartPolling(loadData, 30000);
 
     const navigateToTaskInstance = (status?: string) => {
-        sessionStorage.setItem(OPS_SCHEDULE_NAV_KEY, JSON.stringify({
-            module: 'schedule',
+        sessionStorage.setItem(OPS_REGULATION_NAV_KEY, JSON.stringify({
+            module: 'regulation',
             view: 'task-instance',
-            filters: status ? { status } : {}
+            filters: status ? { status: taskInstanceStatusMap[status] || status } : {}
         }));
         window.location.href = '#/ops';
     };

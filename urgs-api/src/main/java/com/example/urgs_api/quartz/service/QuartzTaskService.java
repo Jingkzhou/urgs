@@ -208,15 +208,36 @@ public class QuartzTaskService {
                         ? "实例已按数据依赖链路重置为等待执行。"
                         : "实例已批量重置为等待执行。");
 
+        List<String> triggerFailures = new ArrayList<>();
         for (QuartzTaskStatusEntity statusEntity : executeStatusList) {
             ResponseDTO<String> triggerResult = executorClientService.triggerNow(statusEntity.getPlanId(), statusEntity.getDataDate(), "rerun");
             if (!triggerResult.isSuccess()) {
+                String failureMsg = trimTo500("触发执行器失败: " + firstNotBlank(triggerResult.getMsg(), "未知错误"));
                 log.warn("triggerNow failed after batchExecute, planId={}, dataDate={}, msg={}", statusEntity.getPlanId(), statusEntity.getDataDate(), triggerResult.getMsg());
+                markTriggerFailed(statusEntity, failureMsg);
+                triggerFailures.add(statusEntity.getPlanId() + "_" + statusEntity.getDataDate() + "(" + failureMsg + ")");
             }
+        }
+        if (!triggerFailures.isEmpty()) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM,
+                    "部分实例未实际执行，已标记失败: " + String.join("; ", triggerFailures));
         }
         return ResponseDTO.succData(Boolean.TRUE.equals(batchExecuteDTO.getWithDataDownstream())
                 ? "已按数据依赖链路重置并触发 " + executeStatusIds.size() + " 条实例"
                 : "已重置并触发 " + executeStatusIds.size() + " 条实例");
+    }
+
+    private void markTriggerFailed(QuartzTaskStatusEntity statusEntity, String msg) {
+        Date now = new Date();
+        QuartzTaskStatusEntity failedStatus = new QuartzTaskStatusEntity();
+        failedStatus.setPlanId(statusEntity.getPlanId());
+        failedStatus.setDataDate(statusEntity.getDataDate());
+        failedStatus.setStatus(TaskExeStatusEnum.FAILED.getCode());
+        failedStatus.setBeginTime(now);
+        failedStatus.setEndTime(now);
+        failedStatus.setUpdateTime(now);
+        failedStatus.setMsg(msg);
+        quartzTaskStatusDao.update(failedStatus);
     }
 
     public ResponseDTO<String> triggerNow(QuartzTriggerNowDTO dto) {
@@ -604,6 +625,13 @@ public class QuartzTaskService {
             return primary;
         }
         return fallback;
+    }
+
+    private String trimTo500(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.length() > 500 ? value.substring(0, 500) : value;
     }
 
     private QuartzTaskEntity getByTaskId(Long taskId) {

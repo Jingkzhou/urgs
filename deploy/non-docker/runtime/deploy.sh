@@ -1,11 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PACKAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEPLOY_HOME="${URGS_DEPLOY_HOME:-}"
+ROOT_DIR="$PACKAGE_DIR"
+
+if [ -n "$DEPLOY_HOME" ]; then
+    mkdir -p "$DEPLOY_HOME"
+    ROOT_DIR="$(cd "$DEPLOY_HOME" && pwd)"
+fi
+
 ENV_FILE="${ENV_FILE:-${ROOT_DIR}/config/deploy.env}"
-SERVICES_FILE="${ROOT_DIR}/config/services.list"
+ACTIVE_SERVICES_FILE="${ROOT_DIR}/config/services.list"
+PACKAGE_SERVICES_FILE="${URGS_PACKAGE_SERVICES_FILE:-${ROOT_DIR}/config/package-services.list}"
+SERVICES_FILE="${URGS_SELECTED_SERVICES_FILE:-${ACTIVE_SERVICES_FILE}}"
 LOG_DIR="${ROOT_DIR}/logs"
 PID_DIR="${ROOT_DIR}/pids"
+
+if [ -n "$DEPLOY_HOME" ] && [ "$PACKAGE_DIR" != "$ROOT_DIR" ]; then
+    mkdir -p "${ROOT_DIR}/config"
+    if [ ! -f "$ENV_FILE" ]; then
+        cp "${PACKAGE_DIR}/config/deploy.env" "$ENV_FILE"
+    fi
+fi
 
 if [ -f "$ENV_FILE" ]; then
     # shellcheck disable=SC1090
@@ -40,6 +57,9 @@ NGINX_LOG_DIR="${NGINX_LOG_DIR:-${ROOT_DIR}/logs/nginx}"
 NGINX_ERROR_LOG="${NGINX_ERROR_LOG:-${NGINX_LOG_DIR}/error.log}"
 NGINX_ACCESS_LOG="${NGINX_ACCESS_LOG:-${NGINX_LOG_DIR}/access.log}"
 STOP_CONFLICTING_PORTS="${STOP_CONFLICTING_PORTS:-1}"
+BACKUP_BEFORE_DEPLOY="${BACKUP_BEFORE_DEPLOY:-1}"
+BACKUP_ROOT="${BACKUP_ROOT:-${ROOT_DIR}/backups}"
+BACKUP_NAME="${BACKUP_NAME:-$(date +%Y%m%d%H%M%S)}"
 MYSQL_JDBC_PARAMS="${MYSQL_JDBC_PARAMS:-useSSL=false&serverTimezone=%2B08:00&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true}"
 MYSQL_EXECUTOR_JDBC_PARAMS="${MYSQL_EXECUTOR_JDBC_PARAMS:-useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=%2B08:00&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true}"
 
@@ -67,7 +87,101 @@ Usage:
   bin/deploy.sh nginx-config     Render nginx config to stdout.
 
 Before running, edit config/deploy.env only when the package was not generated with production values.
+
+Set URGS_DEPLOY_HOME=/home/appuser/urgs-app to install packages into one stable runtime
+directory. In this mode, the extracted package is only an installation source;
+only services included in this package are restarted, while other running
+services in URGS_DEPLOY_HOME are preserved.
 EOF
+}
+
+merge_services_list() {
+    local source_file="$1"
+    local target_file="$2"
+    local tmp_file="${target_file}.tmp"
+    mkdir -p "$(dirname "$target_file")"
+    {
+        [ -f "$target_file" ] && cat "$target_file"
+        [ -f "$source_file" ] && cat "$source_file"
+    } | awk 'NF && !seen[$0]++ { print }' > "$tmp_file"
+    mv "$tmp_file" "$target_file"
+}
+
+copy_dir_replace() {
+    local src="$1"
+    local dst="$2"
+    [ -d "$src" ] || return 0
+    rm -rf "$dst"
+    mkdir -p "$(dirname "$dst")"
+    cp -R "$src" "$dst"
+}
+
+backup_existing_path() {
+    local path="$1"
+    local backup_dir="$2"
+    local relative_path="$3"
+    [ "$BACKUP_BEFORE_DEPLOY" = "1" ] || return 0
+    [ -e "$path" ] || return 0
+    mkdir -p "${backup_dir}/$(dirname "$relative_path")"
+    cp -a "$path" "${backup_dir}/${relative_path}"
+    log "Backed up ${relative_path} to ${backup_dir}/${relative_path}."
+}
+
+copy_dir_replace_with_backup() {
+    local src="$1"
+    local dst="$2"
+    local backup_dir="$3"
+    local relative_path="$4"
+    [ -d "$src" ] || return 0
+    backup_existing_path "$dst" "$backup_dir" "$relative_path"
+    copy_dir_replace "$src" "$dst"
+}
+
+install_package_to_deploy_home() {
+    [ -n "$DEPLOY_HOME" ] || return 0
+    [ "$PACKAGE_DIR" != "$ROOT_DIR" ] || return 0
+    [ -f "${PACKAGE_DIR}/config/services.list" ] || die "Missing package config/services.list"
+
+    log "Installing package into stable deploy home: ${ROOT_DIR}."
+    mkdir -p "${ROOT_DIR}/bin" "${ROOT_DIR}/config" "${ROOT_DIR}/logs" "${ROOT_DIR}/pids" \
+        "${ROOT_DIR}/services" "${ROOT_DIR}/components"
+
+    local backup_dir="${BACKUP_ROOT}/${BACKUP_NAME}"
+    if [ "$BACKUP_BEFORE_DEPLOY" = "1" ]; then
+        mkdir -p "$backup_dir"
+        cp "${PACKAGE_DIR}/config/services.list" "${backup_dir}/package-services.list"
+        [ -f "${PACKAGE_DIR}/MANIFEST" ] && cp "${PACKAGE_DIR}/MANIFEST" "${backup_dir}/package.MANIFEST"
+        log "Backup directory for this deploy: ${backup_dir}."
+    fi
+
+    cp "${PACKAGE_DIR}/bin/deploy.sh" "${ROOT_DIR}/bin/deploy.sh"
+    chmod +x "${ROOT_DIR}/bin/deploy.sh"
+
+    if [ ! -f "${ROOT_DIR}/config/deploy.env" ] || [ "${URGS_DEPLOY_ENV_OVERWRITE:-0}" = "1" ]; then
+        backup_existing_path "${ROOT_DIR}/config/deploy.env" "$backup_dir" "config/deploy.env"
+        cp "${PACKAGE_DIR}/config/deploy.env" "${ROOT_DIR}/config/deploy.env"
+    elif [ -f "${PACKAGE_DIR}/config/deploy.env" ]; then
+        cp "${PACKAGE_DIR}/config/deploy.env" "${ROOT_DIR}/config/deploy.env.package"
+    fi
+
+    backup_existing_path "${ROOT_DIR}/config/nginx.conf.template" "$backup_dir" "config/nginx.conf.template"
+    cp "${PACKAGE_DIR}/config/nginx.conf.template" "${ROOT_DIR}/config/nginx.conf.template"
+    cp "${PACKAGE_DIR}/config/services.list" "$PACKAGE_SERVICES_FILE"
+    merge_services_list "$PACKAGE_SERVICES_FILE" "$ACTIVE_SERVICES_FILE"
+
+    local service
+    while IFS= read -r service || [ -n "$service" ]; do
+        [ -n "$service" ] || continue
+        case "$service" in
+            api | web | executor | rag | lineage)
+                copy_dir_replace_with_backup "${PACKAGE_DIR}/services/${service}" "${ROOT_DIR}/services/${service}" "$backup_dir" "services/${service}"
+                ;;
+            nginx | redis)
+                copy_dir_replace_with_backup "${PACKAGE_DIR}/components/${service}" "${ROOT_DIR}/components/${service}" "$backup_dir" "components/${service}"
+                rm -rf "${ROOT_DIR}/components/${service}/runtime"
+                ;;
+        esac
+    done < "${PACKAGE_DIR}/config/services.list"
 }
 
 service_enabled() {
@@ -559,6 +673,16 @@ status_one() {
         *) die "Unknown service: $1" ;;
     esac
 }
+
+if [ -n "$DEPLOY_HOME" ] && [ "$PACKAGE_DIR" != "$ROOT_DIR" ]; then
+    case "${1:-}" in
+        -h | --help | help | "") ;;
+        *)
+            install_package_to_deploy_home
+            SERVICES_FILE="$PACKAGE_SERVICES_FILE"
+            ;;
+    esac
+fi
 
 case "${1:-}" in
     install) install_all ;;

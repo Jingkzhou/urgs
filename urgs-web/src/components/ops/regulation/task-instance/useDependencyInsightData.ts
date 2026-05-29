@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { queryQuartzTaskStatus } from '@/api/ops';
 import { QuartzTask, QuartzTaskStatus } from '../mockData';
 import { blockingStatusRank, incompleteInstanceStatuses } from './constants';
 import {
@@ -9,7 +10,7 @@ import {
     DownstreamImpactMeta,
     RerunImpactItem,
 } from './types';
-import { getAllDependIds, getControlDependIds, getDataDependIds } from './utils';
+import { getAllDependIds, getControlDependIds, getDataDependIds, normalizeStatus } from './utils';
 
 interface UseDependencyInsightDataParams {
     selectedInstance: QuartzTaskStatus | null;
@@ -56,29 +57,100 @@ const mergeDependencyType = (item: DependencyRelationItem, dependencyType: Depen
     }
 };
 
+const mergeInstanceByPlanDate = (
+    map: Map<string, QuartzTaskStatus>,
+    instance: QuartzTaskStatus
+) => {
+    const key = `${instance.plan_id}_${instance.data_date}`;
+    const existing = map.get(key);
+    if (!existing) {
+        map.set(key, instance);
+        return;
+    }
+
+    const existingTime = new Date(existing.update_time || existing.create_time).getTime();
+    const incomingTime = new Date(instance.update_time || instance.create_time).getTime();
+    if (incomingTime >= existingTime) {
+        map.set(key, instance);
+    }
+};
+
 export const useDependencyInsightData = ({
     selectedInstance,
     taskList,
     instanceList,
     taskMap,
 }: UseDependencyInsightDataParams): DependencyInsightData | null => {
+    const [dateInstances, setDateInstances] = useState<QuartzTaskStatus[]>([]);
+
+    useEffect(() => {
+        const dataDate = selectedInstance?.data_date;
+        if (!dataDate) {
+            setDateInstances([]);
+            return;
+        }
+
+        let canceled = false;
+        const pageSize = 500;
+
+        const loadDateInstances = async () => {
+            try {
+                const firstResponse = await queryQuartzTaskStatus({
+                    dataDate,
+                    pageNum: 1,
+                    pageSize,
+                });
+                if (!firstResponse?.success) {
+                    throw new Error(firstResponse?.msg || '加载依赖实例失败');
+                }
+
+                const totalPages = Number(firstResponse.data?.pages || 1);
+                const mergedInstances = [...(firstResponse.data?.list || []).map(normalizeStatus)];
+
+                if (totalPages > 1) {
+                    const restResponses = await Promise.all(
+                        Array.from({ length: totalPages - 1 }, (_, index) =>
+                            queryQuartzTaskStatus({ dataDate, pageNum: index + 2, pageSize })
+                        )
+                    );
+                    restResponses.forEach(response => {
+                        if (response?.success) {
+                            mergedInstances.push(...(response.data?.list || []).map(normalizeStatus));
+                        }
+                    });
+                }
+
+                if (!canceled) {
+                    setDateInstances(mergedInstances);
+                }
+            } catch (error) {
+                if (!canceled) {
+                    console.warn(error);
+                    setDateInstances([]);
+                }
+            }
+        };
+
+        void loadDateInstances();
+
+        return () => {
+            canceled = true;
+        };
+    }, [selectedInstance?.data_date]);
+
     const instanceByPlanDate = useMemo(() => {
         const map = new Map<string, QuartzTaskStatus>();
-        instanceList.forEach(instance => {
-            const key = `${instance.plan_id}_${instance.data_date}`;
-            const existing = map.get(key);
-            if (!existing) {
-                map.set(key, instance);
-                return;
-            }
-            const existingTime = new Date(existing.update_time || existing.create_time).getTime();
-            const incomingTime = new Date(instance.update_time || instance.create_time).getTime();
-            if (incomingTime >= existingTime) {
-                map.set(key, instance);
-            }
+        dateInstances.forEach(instance => {
+            mergeInstanceByPlanDate(map, instance);
         });
+        instanceList.forEach(instance => {
+            mergeInstanceByPlanDate(map, instance);
+        });
+        if (selectedInstance) {
+            mergeInstanceByPlanDate(map, selectedInstance);
+        }
         return map;
-    }, [instanceList]);
+    }, [dateInstances, instanceList, selectedInstance]);
 
     const dataUpstreamTaskIdMap = useMemo(
         () => buildUpstreamTaskIdMap(taskList, getDataDependIds),

@@ -4,7 +4,7 @@ import { Calendar, Clock3, Plus, Settings2, Trash2, SlidersHorizontal, Sparkles,
 import { motion, AnimatePresence } from 'framer-motion';
 import { QuartzTask } from './mockData';
 import LazyMonacoEditor from './LazyMonacoEditor';
-import CronPicker from '../schedule/forms/components/CronPicker';
+import CronPicker from './CronPicker';
 import TaskDependencyPanel from './TaskDependencyPanel';
 import { queryQuartzTaskDependencies, QuartzTaskApiModel } from '@/api/ops';
 

@@ -183,13 +183,6 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '5-5-6', name: '查看血缘引擎日志', code: 'metadata:lineage:engine:logs', type: 'button', path: '-', level: 2, parentId: '5-5' },
 
     { id: '6', name: '运维管理', code: 'ops', type: 'menu', path: '/ops', level: 0, parentId: 'root' },
-    { id: '6-1', name: '调度管理', code: 'ops:schedule', type: 'menu', path: '/ops/schedule', level: 1, parentId: '6' },
-    { id: '6-1-1', name: '工作流管理', code: 'ops:schedule:workflow', type: 'menu', path: '/ops/schedule/workflow', level: 2, parentId: '6-1' },
-    { id: '6-1-1-1', name: '工作流定义', code: 'ops:schedule:workflow:define', type: 'menu', path: '/ops/schedule/workflow/define', level: 2, parentId: '6-1-1' },
-    { id: '6-1-1-2', name: '工作流实例', code: 'ops:schedule:workflow:instance', type: 'menu', path: '/ops/schedule/workflow/instance', level: 2, parentId: '6-1-1' },
-    { id: '6-1-2', name: '任务管理', code: 'ops:schedule:task', type: 'menu', path: '/ops/schedule/task', level: 2, parentId: '6-1' },
-    { id: '6-1-2-1', name: '任务定义', code: 'ops:schedule:task:define', type: 'menu', path: '/ops/schedule/task/define', level: 2, parentId: '6-1-2' },
-    { id: '6-1-2-2', name: '任务实例', code: 'ops:schedule:task:instance', type: 'menu', path: '/ops/schedule/task/instance', level: 2, parentId: '6-1-2' },
     { id: '6-4', name: '监管批量', code: 'ops:regulation:view', type: 'menu', path: '/ops/regulation', level: 1, parentId: '6' },
     { id: '6-4-1', name: '任务管理', code: 'ops:regulation:task', type: 'menu', path: '/ops/regulation/task', level: 2, parentId: '6-4' },
     { id: '6-4-2', name: '任务实例', code: 'ops:regulation:instance', type: 'menu', path: '/ops/regulation/instance', level: 2, parentId: '6-4' },

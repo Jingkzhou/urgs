@@ -26,8 +26,13 @@ const chunkArray = <T,>(items: T[], chunkSize: number) => {
     return chunks;
 };
 
-const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
+const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilters }) => {
     const todayDate = dayjs().format('YYYY-MM-DD');
+    const initialKeyword = initialFilters?.keyword?.trim() || '';
+    const initialTaskSystem = initialFilters?.taskSystem || '';
+    const initialDataDate = initialFilters?.dataDate || '';
+    const initialCreateDate = initialFilters?.createDate ?? todayDate;
+    const initialStatus = initialFilters?.status || '';
     const [taskList, setTaskList] = useState<QuartzTask[]>([]);
     const [instanceList, setInstanceList] = useState<QuartzTaskStatus[]>([]);
     const [summaryStats, setSummaryStats] = useState({
@@ -38,16 +43,16 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
         failedInstances: 0,
     });
     const [logList, setLogList] = useState<QuartzTaskExecutionLog[]>([]);
-    const [draftSearchKeyword, setDraftSearchKeyword] = useState('');
-    const [draftTaskSystemFilter, setDraftTaskSystemFilter] = useState('');
-    const [draftDataDateFilter, setDraftDataDateFilter] = useState('');
-    const [draftCreateDateFilter, setDraftCreateDateFilter] = useState(todayDate);
-    const [draftStatusFilter, setDraftStatusFilter] = useState<string>('');
-    const [searchKeyword, setSearchKeyword] = useState('');
-    const [taskSystemFilter, setTaskSystemFilter] = useState('');
-    const [dataDateFilter, setDataDateFilter] = useState('');
-    const [createDateFilter, setCreateDateFilter] = useState(todayDate);
-    const [statusFilter, setStatusFilter] = useState<string>('');
+    const [draftSearchKeyword, setDraftSearchKeyword] = useState(initialKeyword);
+    const [draftTaskSystemFilter, setDraftTaskSystemFilter] = useState(initialTaskSystem);
+    const [draftDataDateFilter, setDraftDataDateFilter] = useState(initialDataDate);
+    const [draftCreateDateFilter, setDraftCreateDateFilter] = useState(initialCreateDate);
+    const [draftStatusFilter, setDraftStatusFilter] = useState<string>(initialStatus);
+    const [searchKeyword, setSearchKeyword] = useState(initialKeyword);
+    const [taskSystemFilter, setTaskSystemFilter] = useState(initialTaskSystem);
+    const [dataDateFilter, setDataDateFilter] = useState(initialDataDate);
+    const [createDateFilter, setCreateDateFilter] = useState(initialCreateDate);
+    const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
     const [selectedInstance, setSelectedInstance] = useState<QuartzTaskStatus | null>(null);
     const [selectedInstanceIds, setSelectedInstanceIds] = useState<number[]>([]);
     const [instanceDetailTabKey, setInstanceDetailTabKey] = useState<InstanceDetailTabKey>('overview');

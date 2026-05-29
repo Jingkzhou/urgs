@@ -56,8 +56,17 @@ export interface TaskInstanceStats {
     failedInstances: number;
 }
 
+export interface TaskInstanceInitialFilters {
+    keyword?: string;
+    taskSystem?: string;
+    dataDate?: string;
+    createDate?: string;
+    status?: string;
+}
+
 export interface TaskInstanceProps {
     onStatsChange?: (stats: TaskInstanceStats) => void;
+    initialFilters?: TaskInstanceInitialFilters;
 }
 
 export type InstanceDetailTabKey =

@@ -7,8 +7,11 @@ import TaskExecutionLog from './regulation/TaskExecutionLog';
 import { queryQuartzTaskLog, queryQuartzTasks } from '@/api/ops';
 import { QuartzTask, QuartzTaskExecutionLog } from './regulation/mockData';
 import { normalizeLog, normalizeTask } from './regulation/task-instance/utils';
+import { TaskInstanceInitialFilters } from './regulation/task-instance/types';
 
 type RegulationView = 'task-management' | 'task-instance';
+
+const OPS_REGULATION_NAV_KEY = 'ops_regulation_nav';
 
 const navItems = [
     { id: 'task-management' as RegulationView, label: '任务管理', icon: ClipboardList },
@@ -17,6 +20,7 @@ const navItems = [
 
 const RegulationBatchManagement: React.FC = () => {
     const [activeView, setActiveView] = useState<RegulationView>('task-management');
+    const [initialTaskInstanceFilters, setInitialTaskInstanceFilters] = useState<TaskInstanceInitialFilters | undefined>();
     const [executionLogVisible, setExecutionLogVisible] = useState(false);
     const [tasks, setTasks] = useState<QuartzTask[]>([]);
     const [logs, setLogs] = useState<QuartzTaskExecutionLog[]>([]);
@@ -24,6 +28,23 @@ const RegulationBatchManagement: React.FC = () => {
         id: null,
         name: null,
     });
+
+    useEffect(() => {
+        const navData = sessionStorage.getItem(OPS_REGULATION_NAV_KEY);
+        if (!navData) return;
+
+        try {
+            const { view, filters } = JSON.parse(navData);
+            if (view === 'task-instance') {
+                setActiveView('task-instance');
+                setInitialTaskInstanceFilters(filters || undefined);
+            }
+        } catch (e) {
+            // ignore invalid data
+        } finally {
+            sessionStorage.removeItem(OPS_REGULATION_NAV_KEY);
+        }
+    }, []);
 
     useEffect(() => {
         let cancelled = false;
@@ -96,7 +117,7 @@ const RegulationBatchManagement: React.FC = () => {
     const renderContent = () => {
         switch (activeView) {
             case 'task-instance':
-                return <TaskInstance />;
+                return <TaskInstance initialFilters={initialTaskInstanceFilters} />;
             case 'task-management':
             default:
                 return <TaskManagement onViewExecutionLog={handleOpenTaskLog} />;

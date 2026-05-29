@@ -1,42 +1,30 @@
 import React, { useState } from 'react';
-import { Timer, AlertTriangle, Activity, Server, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, Activity, Server, ShieldCheck } from 'lucide-react';
 import Auth from './Auth';
-import ScheduleManagement from './ops/ScheduleManagement';
 import IssueTracking from './ops/IssueTracking';
 import InfrastructureManagement from './ops/InfrastructureManagement';
 import RegulationBatchManagement from './ops/RegulationBatchManagement';
 
-type SubModule = 'schedule' | 'issue' | 'infra' | 'regulation';
+type SubModule = 'issue' | 'infra' | 'regulation';
 
-const OPS_SCHEDULE_NAV_KEY = 'ops_schedule_nav';
+const OPS_REGULATION_NAV_KEY = 'ops_regulation_nav';
 
 const OpsManagement: React.FC = () => {
     const [activeModule, setActiveModule] = useState<SubModule>('regulation');
-    const [initialIssueData, setInitialIssueData] = useState<any>(null);
 
     React.useEffect(() => {
-        const navData = sessionStorage.getItem(OPS_SCHEDULE_NAV_KEY);
+        const navData = sessionStorage.getItem(OPS_REGULATION_NAV_KEY);
         if (!navData) return;
 
         try {
             const { module } = JSON.parse(navData);
-            if (module === 'schedule') {
-                setActiveModule('schedule');
+            if (module === 'regulation') {
+                setActiveModule('regulation');
             }
         } catch (e) {
             // ignore invalid data
         }
     }, []);
-
-    const handleTurnToIssue = (task: any) => {
-        setInitialIssueData({
-            title: `[调度异常] ${task.name} 任务执行失败`,
-            relatedTaskId: task.id,
-            description: `任务 ${task.name} (${task.id}) 在 ${task.lastRun} 执行失败。\n工作流: ${task.workflow}\nCron: ${task.cron}`,
-            system: 'DolphinScheduler' // Or derive from workflow
-        });
-        setActiveModule('issue');
-    };
 
     const tabs = [
         { id: 'infra', label: '基础设施管理', icon: Server, permission: 'ops:infra:view' },
@@ -84,11 +72,6 @@ const OpsManagement: React.FC = () => {
                         <InfrastructureManagement />
                     </Auth>
                 )}
-                {activeModule === 'schedule' && (
-                    <Auth code="ops:schedule">
-                        <ScheduleManagement onTurnToIssue={handleTurnToIssue} />
-                    </Auth>
-                )}
                 {activeModule === 'regulation' && (
                     <Auth code="ops:regulation:view">
                         <RegulationBatchManagement />
@@ -96,7 +79,7 @@ const OpsManagement: React.FC = () => {
                 )}
                 {activeModule === 'issue' && (
                     <Auth code="ops:issue">
-                        <IssueTracking initialData={initialIssueData} />
+                        <IssueTracking initialData={null} />
                     </Auth>
                 )}
             </div>

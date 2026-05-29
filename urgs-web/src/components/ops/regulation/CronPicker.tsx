@@ -10,7 +10,6 @@ interface CronPickerProps {
 }
 
 const CronPicker: React.FC<CronPickerProps> = ({ value, onChange, offset, onOffsetChange }) => {
-    // Default: 0 0 * * * ? (Daily at 00:00:00)
     const [parts, setParts] = useState<string[]>(['0', '0', '*', '*', '*', '?']);
 
     useEffect(() => {
@@ -19,7 +18,6 @@ const CronPicker: React.FC<CronPickerProps> = ({ value, onChange, offset, onOffs
             if (split.length >= 6) {
                 setParts(split);
             } else if (split.length === 5) {
-                // Handle 5-part cron (min hour day month week) -> convert to 6-part (sec min hour day month week)
                 setParts(['0', ...split]);
             }
         }
@@ -29,17 +27,12 @@ const CronPicker: React.FC<CronPickerProps> = ({ value, onChange, offset, onOffs
         const newParts = [...parts];
         newParts[index] = val;
 
-        // Smart handling for Day (index 3) vs Week (index 5)
-        // If Day is specified (not * and not ?), Week must be ?
         if (index === 3 && val !== '?' && val !== '*') {
             newParts[5] = '?';
         }
-        // If Week is specified (not * and not ?), Day must be ?
         if (index === 5 && val !== '?' && val !== '*') {
             newParts[3] = '?';
         }
-
-        // If both are * or ?, ensure one is ? to be valid Quartz (usually)
         if (newParts[3] === '*' && newParts[5] === '*') {
             newParts[5] = '?';
         }
@@ -55,18 +48,16 @@ const CronPicker: React.FC<CronPickerProps> = ({ value, onChange, offset, onOffs
         });
     };
 
-    // Custom styles for Select to look cleaner
     const selectProps = {
         size: 'small' as const,
         variant: 'borderless' as const,
-        className: "font-mono text-xs text-slate-600 bg-slate-50/50 hover:bg-slate-100 rounded transition-colors",
+        className: 'font-mono text-xs text-slate-600 bg-slate-50/50 hover:bg-slate-100 rounded transition-colors',
         style: { width: '100%' }
     };
 
     return (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="flex divide-x divide-slate-100">
-                {/* Time Section */}
                 <div className="flex-1 p-3 space-y-3">
                     <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
                         <Clock size={12} />
@@ -115,7 +106,6 @@ const CronPicker: React.FC<CronPickerProps> = ({ value, onChange, offset, onOffs
                     </div>
                 </div>
 
-                {/* Date Section */}
                 <div className="flex-[1.5] p-3 space-y-3 bg-slate-50/30">
                     <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
                         <Calendar size={12} />
@@ -171,10 +161,8 @@ const CronPicker: React.FC<CronPickerProps> = ({ value, onChange, offset, onOffs
                 </div>
             </div>
 
-            {/* Footer: Preview & Offset */}
             <div className="bg-slate-50 px-3 py-2 border-t border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    {/* Preview */}
                     <div className="flex items-center gap-2">
                         <Repeat size={12} className="text-slate-400" />
                         <span className="text-[10px] text-slate-500 font-medium">预览:</span>
@@ -183,7 +171,6 @@ const CronPicker: React.FC<CronPickerProps> = ({ value, onChange, offset, onOffs
                         </code>
                     </div>
 
-                    {/* Offset (Optional) */}
                     {onOffsetChange && (
                         <div className="flex items-center gap-2 pl-4 border-l border-slate-200">
                             <ArrowRightLeft size={12} className="text-slate-400" />
