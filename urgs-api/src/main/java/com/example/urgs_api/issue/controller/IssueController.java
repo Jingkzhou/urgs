@@ -6,6 +6,7 @@ import com.example.urgs_api.issue.model.Issue;
 import com.example.urgs_api.issue.service.IssueService;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -147,7 +148,8 @@ public class IssueController {
         return ResponseEntity.ok(issueService.getStats(frequency, startDate, endDate));
     }
 
-    private static final String UPLOAD_DIR = "/Users/work/Documents/JLbankGit/URGS/attachments";
+    @Value("${issue.attachment.path}")
+    private String uploadDir;
 
     @PostMapping("/upload")
     public ResponseEntity<String> uploadAttachment(@RequestParam("file") MultipartFile file) {
@@ -156,9 +158,9 @@ public class IssueController {
         }
 
         try {
-            File uploadDir = new File(UPLOAD_DIR);
-            if (!uploadDir.exists()) {
-                uploadDir.mkdirs();
+            File attachmentDir = new File(uploadDir);
+            if (!attachmentDir.exists()) {
+                attachmentDir.mkdirs();
             }
 
             String originalFilename = file.getOriginalFilename();
@@ -167,7 +169,7 @@ public class IssueController {
                 extension = originalFilename.substring(originalFilename.lastIndexOf("."));
             }
             String newFilename = UUID.randomUUID().toString() + extension;
-            Path path = Paths.get(UPLOAD_DIR, newFilename);
+            Path path = Paths.get(uploadDir, newFilename);
 
             Files.write(path, file.getBytes());
 

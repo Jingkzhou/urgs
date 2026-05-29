@@ -28,21 +28,23 @@ spring:
 ai:
   rag:
     base-url: "${RAG_BASE_URL:http://localhost:8001/api/rag}"
-    doc-store-path: "${RAG_DOC_STORE_PATH:${user.dir}/../urgs-rag/doc_store}"
+    doc-store-path: "${RAG_DOC_STORE_PATH:${user.dir}/data/rag/doc_store}"
 
 lineage:
   engine:
     workdir: "${LINEAGE_ENGINE_WORKDIR:${user.dir}/../sql-lineage-engine}"
+    shared-dir: "${LINEAGE_ENGINE_SHARED_DIR:${user.dir}/data/lineage/share}"
     script: "./run.sh"
 
 deploy:
   tool:
-    workdir: "${DEPLOY_TOOL_WORKDIR:classpath:db_deploy}"
+    workdir: "${DEPLOY_TOOL_WORKDIR:${user.dir}/data/db_deploy}"
 
 executor:
   base-url: "${EXECUTOR_BASE_URL:http://127.0.0.1:8082}"
 
 urgs:
+  profile: "${URGS_PROFILE:${user.dir}/data/api/uploads}"
   web-base-url: "${URGS_WEB_BASE_URL:}"
   inbound-sso:
     rsa:
@@ -57,3 +59,11 @@ urgs:
         qftgRJsHyo19jKzQGL0mP8ciCIk9AiBV2xLoFu9nlEtfOr55ySkURxZxYvjp5Sev
         6TO03HltfA==
         -----END PRIVATE KEY-----
+
+im:
+  upload:
+    path: "${IM_UPLOAD_PATH:${user.dir}/data/api/im-uploads}"
+
+issue:
+  attachment:
+    path: "${ISSUE_ATTACHMENT_PATH:${user.dir}/data/attachments}"

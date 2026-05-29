@@ -54,7 +54,7 @@ public class LineageReviewAiService {
               "severity": "HIGH|MEDIUM|LOW",
               "confidence": 0.0,
               "verdict": "CONFIRMED|REJECTED|NEEDS_REVIEW",
-              "reason": "简要理由",
+              "reason": "必须使用固定结构：现状：...\\n期待效果：...\\n问题：...\\n证据：...\\n建议排查：...",
               "suggestedSources": ["schema.table.column"],
               "evidenceRefs": ["证据1", "证据2"]
             }
@@ -86,7 +86,7 @@ public class LineageReviewAiService {
                   "severity": "HIGH|MEDIUM|LOW",
                   "confidence": 0.0,
                   "verdict": "CONFIRMED|REJECTED|NEEDS_REVIEW",
-                  "reason": "字段级说明，必须包含目标字段、程序当前来源或缺失状态、SQL中应有来源、为什么不一致",
+                  "reason": "必须使用固定结构：现状：...\\n期待效果：...\\n问题：...\\n证据：...\\n建议排查：...",
                   "suggestedSources": ["schema.table.column"],
                   "evidenceRefs": ["必须引用具体字段级 SQL 表达式或程序关系，例如 target_col <= source_alias.source_col"]
                 }
@@ -97,6 +97,12 @@ public class LineageReviewAiService {
             只有存储过程调用、整表 INSERT/DELETE 等确实无法定位字段的场景，才允许 targetColumn 为 null。
             CONFIRMED 或 NEEDS_REVIEW 必须提供 evidenceRefs，证据必须来自 sqlSnippet 的原文片段或 programRelations 中的具体关系。
             CONFIRMED 或 NEEDS_REVIEW 的 suggestedSources 必须精确到字段级 schema.table.column；只有表名没有字段名的来源不算有效证据。
+            reason 必须让人工能快速判断差异，按固定五段输出：
+            现状：程序当前抽取到了什么，或缺少哪条字段级关系。
+            期待效果：按 SQL 应该存在的源字段、目标字段和关系类型。
+            问题：程序结果和期待效果的差异，不要写成笼统结论。
+            证据：引用 SQL 原文表达式、SELECT 位置或已有程序关系。
+            建议排查：指出优先检查解析器、物理模型字段、SQL 写法还是证据范围。
             你只负责给出复核候选结论，最终由人工判断是误报、解析程序 BUG，还是 SQL 书写规范问题；不要替人工填写最终处置类型。
             如果无法给出具体证据，不要列为疑点；常量、字符串字面量、数字字面量、存储过程参数或变量不是缺失的表字段来源。
             如果目标字段由 CASE WHEN 的 THEN/ELSE 常量、字面量或分类值生成，WHEN 条件字段使用 CASE_WHEN 已是正确关系；不得以缺少 DERIVES_TO 为理由列为疑点。

@@ -18,7 +18,7 @@ services:
       timeout: 5s
       retries: 30
     volumes:
-      - ${DATA_ROOT:-/data/urgs}/mysql:/var/lib/mysql
+      - ${DATA_ROOT:-./data}/mysql:/var/lib/mysql
     networks:
       - urgs-net
 
@@ -46,7 +46,7 @@ services:
       - "${HOST_PORT_NEO4J_HTTP}:7474"
       - "${HOST_PORT_NEO4J_BOLT}:7687"
     volumes:
-      - ${DATA_ROOT:-/data/urgs}/neo4j:/data
+      - ${DATA_ROOT:-./data}/neo4j:/data
     networks:
       - urgs-net
 
@@ -84,9 +84,9 @@ services:
     networks:
       - urgs-net
     volumes:
-      - ${DATA_ROOT:-/data/urgs}:/data/urgs
+      - ${DATA_ROOT:-./data}:/data/urgs
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${DATA_ROOT:-/data/urgs}/lineage/share:/data/urgs/lineage/share
+      - ${DATA_ROOT:-./data}/lineage/share:/data/urgs/lineage/share
 
   urgs-executor:
     build: ./urgs-executor
@@ -139,7 +139,7 @@ services:
     networks:
       - urgs-net
     volumes:
-      - ${DATA_ROOT:-/data/urgs}/rag:/data/urgs/rag
+      - ${DATA_ROOT:-./data}/rag:/data/urgs/rag
 
   urgs-presentation:
     build:
@@ -172,7 +172,7 @@ services:
     networks:
       - urgs-net
     volumes:
-      - ${DATA_ROOT:-/data/urgs}/lineage/share:/data/urgs/lineage/share
+      - ${DATA_ROOT:-./data}/lineage/share:/data/urgs/lineage/share
 
   # ========================================
   # Dify Microservices (Synced from urgs-dify)
@@ -207,7 +207,7 @@ services:
       - urgs-dify-db
       - urgs-dify-redis
     volumes:
-      - ${DATA_ROOT:-/data/urgs}/dify/storage:/data/urgs/dify/storage
+      - ${DATA_ROOT:-./data}/dify/storage:/data/urgs/dify/storage
 
   urgs-dify-web:
     build:
@@ -245,7 +245,7 @@ services:
       - urgs-dify-db
       - urgs-dify-redis
     volumes:
-      - ${DATA_ROOT:-/data/urgs}/dify/storage:/data/urgs/dify/storage
+      - ${DATA_ROOT:-./data}/dify/storage:/data/urgs/dify/storage
     networks:
       - urgs-net
 
@@ -256,7 +256,7 @@ services:
       - POSTGRES_PASSWORD=${DIFY_DB_PASSWORD}
       - POSTGRES_DB=${DIFY_DB_NAME}
     volumes:
-      - ${DATA_ROOT:-/data/urgs}/dify/postgres:/var/lib/postgresql/data
+      - ${DATA_ROOT:-./data}/dify/postgres:/var/lib/postgresql/data
     networks:
       - urgs-net
 

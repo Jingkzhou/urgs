@@ -113,8 +113,34 @@ load_env_file() {
   fi
 }
 
+configure_storage_env() {
+  local default_data_root="$SCRIPT_DIR/data"
+  local effective_data_root="${DATA_ROOT:-$default_data_root}"
+
+  if [[ "$effective_data_root" != /* ]]; then
+    effective_data_root="$SCRIPT_DIR/${effective_data_root#./}"
+  fi
+
+  export DATA_ROOT="$effective_data_root"
+  export URGS_PROFILE="${URGS_PROFILE:-${DATA_ROOT}/api/uploads}"
+  export IM_UPLOAD_PATH="${IM_UPLOAD_PATH:-${DATA_ROOT}/api/im-uploads}"
+  export RAG_DOC_STORE_PATH="${RAG_DOC_STORE_PATH:-${DATA_ROOT}/rag/doc_store}"
+  export CHROMA_PERSIST_DIRECTORY="${CHROMA_PERSIST_DIRECTORY:-${DATA_ROOT}/rag/chroma_db}"
+  export DOC_STORAGE_PATH="${DOC_STORAGE_PATH:-${DATA_ROOT}/rag/doc_store}"
+  export PARENT_DOC_STORE_PATH="${PARENT_DOC_STORE_PATH:-${DATA_ROOT}/rag/parent_store}"
+  export CLEAN_SAMPLE_DIR="${CLEAN_SAMPLE_DIR:-${DATA_ROOT}/rag/clean_samples}"
+  export DEPLOY_TOOL_WORKDIR="${DEPLOY_TOOL_WORKDIR:-${DATA_ROOT}/db_deploy}"
+  export LINEAGE_ENGINE_SHARED_DIR="${LINEAGE_ENGINE_SHARED_DIR:-${DATA_ROOT}/lineage/share}"
+  export ISSUE_ATTACHMENT_PATH="${ISSUE_ATTACHMENT_PATH:-${DATA_ROOT}/attachments}"
+
+  mkdir -p "$URGS_PROFILE" "$IM_UPLOAD_PATH" "$RAG_DOC_STORE_PATH" \
+    "$CHROMA_PERSIST_DIRECTORY" "$PARENT_DOC_STORE_PATH" "$CLEAN_SAMPLE_DIR" \
+    "$DEPLOY_TOOL_WORKDIR" "$LINEAGE_ENGINE_SHARED_DIR" "$ISSUE_ATTACHMENT_PATH"
+}
+
 configure_database_env() {
   load_env_file
+  configure_storage_env
 
   if [ -n "${DB_HOST:-}" ]; then
     local jdbc_url="jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true"
@@ -148,7 +174,7 @@ start_backend() {
   # Explicitly export RAG properties to avoid placeholder resolution issues
   export RAG_BASE_URL="${RAG_SERVICE_URL:-http://localhost:8001}/api/rag"
   export AI_RAG_BASE_URL="$RAG_BASE_URL"
-  export AI_RAG_DOC_STORE_PATH="${RAG_DOC_STORE_PATH:-${SCRIPT_DIR}/../urgs-rag/doc_store}"
+  export AI_RAG_DOC_STORE_PATH="$RAG_DOC_STORE_PATH"
 
   # Construct Neo4j Properties if var exists
   if [ -n "${NEO4J_HOST:-}" ]; then
@@ -185,6 +211,8 @@ start_frontend() {
 start_rag() {
   echo "Starting rag..."
   cd "$RAG_DIR"
+  load_env_file
+  configure_storage_env
   
   if [ ! -d ".venv" ]; then
     echo "Creating virtual environment for RAG..."

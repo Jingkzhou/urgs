@@ -1137,11 +1137,84 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         String evidenceSummary = verdict.getEvidenceRefs() == null || verdict.getEvidenceRefs().isEmpty()
                 ? "未给出字段级证据"
                 : String.join("；", verdict.getEvidenceRefs());
-        return "目标字段: " + target
-                + "；疑点类型: " + issueType
-                + "；应有来源: " + sourceSummary
-                + "；字段级证据: " + evidenceSummary
-                + "；判断说明: " + toText(verdict.getReason());
+        String relationExpectation = expectedRelationDescription(issueType, verdict);
+        return "现状：" + currentStateDescription(issueType, target, sourceSummary)
+                + "\n期待效果：" + sourceSummary + " 应通过 " + relationExpectation + " 指向 " + target
+                + "\n问题：" + issueTypeDescription(issueType) + "。AI 判断说明：" + toText(verdict.getReason())
+                + "\n证据：" + evidenceSummary
+                + "\n建议排查：" + investigationHint(issueType, verdict);
+    }
+
+    private String currentStateDescription(String issueType, String target, String sourceSummary) {
+        if ("MISSING_SOURCE".equalsIgnoreCase(issueType)) {
+            return "程序当前未抽取到 " + sourceSummary + " 到目标字段 " + target + " 的字段级来源关系。";
+        }
+        if ("WRONG_SOURCE".equalsIgnoreCase(issueType)) {
+            return "程序当前目标字段 " + target + " 的来源与 SQL 证据中建议来源不一致，建议来源为 " + sourceSummary + "。";
+        }
+        if ("WRONG_TARGET".equalsIgnoreCase(issueType)) {
+            return "程序当前把来源字段连接到了疑似错误的目标字段，当前复核目标为 " + target + "。";
+        }
+        if ("WRONG_RELATION_TYPE".equalsIgnoreCase(issueType) || "RELATION_TYPE_MISMATCH".equalsIgnoreCase(issueType)) {
+            return "程序当前目标字段 " + target + " 的关系类型与 SQL 语义不一致。";
+        }
+        return "程序当前目标字段 " + target + " 的血缘结果需要人工复核。";
+    }
+
+    private String expectedRelationDescription(String issueType, LineageReviewAIVerdict verdict) {
+        String reason = toText(verdict.getReason()).toUpperCase(Locale.ROOT);
+        String evidence = verdict.getEvidenceRefs() == null
+                ? ""
+                : String.join(" ", verdict.getEvidenceRefs()).toUpperCase(Locale.ROOT);
+        if (reason.contains("CASE_WHEN") || evidence.contains("CASE WHEN")) {
+            return "CASE_WHEN 条件依赖";
+        }
+        if ("WRONG_RELATION_TYPE".equalsIgnoreCase(issueType) || "RELATION_TYPE_MISMATCH".equalsIgnoreCase(issueType)) {
+            return "SQL 语义对应的正确关系类型";
+        }
+        if ("MISSING_SOURCE".equalsIgnoreCase(issueType) || "WRONG_SOURCE".equalsIgnoreCase(issueType)) {
+            return "DERIVES_TO 数据流关系";
+        }
+        return "字段级血缘关系";
+    }
+
+    private String issueTypeDescription(String issueType) {
+        if ("MISSING_SOURCE".equalsIgnoreCase(issueType)) {
+            return "缺少上游来源关系";
+        }
+        if ("WRONG_SOURCE".equalsIgnoreCase(issueType)) {
+            return "上游来源字段可能错误";
+        }
+        if ("WRONG_TARGET".equalsIgnoreCase(issueType)) {
+            return "目标字段可能错连";
+        }
+        if ("WRONG_RELATION_TYPE".equalsIgnoreCase(issueType) || "RELATION_TYPE_MISMATCH".equalsIgnoreCase(issueType)) {
+            return "关系类型可能错误";
+        }
+        if ("UNCERTAIN_MAPPING".equalsIgnoreCase(issueType) || "NEEDS_MANUAL_REVIEW".equalsIgnoreCase(issueType)) {
+            return "映射关系需要人工确认";
+        }
+        return issueType;
+    }
+
+    private String investigationHint(String issueType, LineageReviewAIVerdict verdict) {
+        String reason = toText(verdict.getReason()).toUpperCase(Locale.ROOT);
+        String evidence = verdict.getEvidenceRefs() == null
+                ? ""
+                : String.join(" ", verdict.getEvidenceRefs()).toUpperCase(Locale.ROOT);
+        if (reason.contains("METADATA") || reason.contains("字段不存在") || reason.contains("不存在")) {
+            return "优先核对物理模型/metadata-pack 是否包含该源表字段，再判断是否为解析程序过滤了低置信边。";
+        }
+        if (reason.contains("CASE_WHEN") || evidence.contains("CASE WHEN")) {
+            return "优先确认该字段是值级派生还是条件影响；如果 THEN/ELSE 是常量，CASE_WHEN 通常比 DERIVES_TO 更准确。";
+        }
+        if ("MISSING_SOURCE".equalsIgnoreCase(issueType)) {
+            return "优先核对 SQL SELECT 位置、目标列顺序、字段别名解析和入图前字段校验过滤。";
+        }
+        if ("WRONG_RELATION_TYPE".equalsIgnoreCase(issueType) || "RELATION_TYPE_MISMATCH".equalsIgnoreCase(issueType)) {
+            return "优先核对该表达式属于数据流、条件、过滤、关联、分组还是排序关系。";
+        }
+        return "结合 SQL 原文、programRelations 和 graphFieldRelations 判断是解析缺陷、物理模型缺失还是 SQL 写法问题。";
     }
 
     private boolean hasVerdictEvidence(LineageReviewAIVerdict verdict) {
