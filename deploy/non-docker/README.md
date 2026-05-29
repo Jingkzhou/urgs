@@ -191,6 +191,38 @@ bin/deploy.sh install
 bin/deploy.sh start
 ```
 
+### 6. deploy.sh 命令说明
+
+`bin/deploy.sh` 会按 `config/services.list` 中的服务清单执行动作。不同包的服务清单不同，例如 `api web nginx` 包不会启动 `executor` / `redis`，`api web executor nginx redis` 包会启动这些服务。
+
+| 命令 | 作用 | 典型使用场景 |
+| --- | --- | --- |
+| `bin/deploy.sh install` | 只做安装准备，不启动服务。创建运行目录、解压随包 Nginx / Redis、创建 Python venv、渲染 Nginx 配置。 | 第一次部署前分步排查环境。 |
+| `bin/deploy.sh start` | 只启动 `services.list` 中启用的服务，不重新做安装准备。 | 已经执行过 `install`，只需要启动服务。 |
+| `bin/deploy.sh up` | 先执行 `install`，再执行 `start`。 | 第一次解压新包后推荐使用。 |
+| `bin/deploy.sh stop` | 停止 `services.list` 中启用的服务。 | 停机维护。 |
+| `bin/deploy.sh restart` | 停止再启动全部启用服务，不重新执行 `install`。 | 修改 `config/deploy.env` 后重启生效。 |
+| `bin/deploy.sh status` | 查看全部启用服务状态。 | 检查 API / Nginx / Redis / executor 是否运行。 |
+| `bin/deploy.sh nginx-config` | 将渲染后的 Nginx 配置打印到终端，不写文件、不启动。 | 检查 `API_UPSTREAM_SERVERS` / `IM_API_TARGET` / `RAG_TARGET` 渲染结果。 |
+
+支持对单个服务执行 `start` / `stop` / `restart` / `status`：
+
+```bash
+bin/deploy.sh restart api
+bin/deploy.sh restart nginx
+bin/deploy.sh restart executor
+bin/deploy.sh restart redis
+bin/deploy.sh status api
+```
+
+常见操作建议：
+
+- 第一次部署或上传新包后：`bin/deploy.sh up`
+- 只修改数据库、端口、JDBC 参数等 `config/deploy.env` 配置后：`bin/deploy.sh restart`
+- 只修 API 配置后：`bin/deploy.sh restart api`
+- 只调整 Nginx 代理、上游节点或 WebSocket 固定节点后：`bin/deploy.sh restart nginx`
+- 排查 502 时：先执行 `bin/deploy.sh status`，再查看 `logs/api.log` 和 `logs/nginx/error.log`
+
 ## 生产机前置要求
 
 - JDK 17+

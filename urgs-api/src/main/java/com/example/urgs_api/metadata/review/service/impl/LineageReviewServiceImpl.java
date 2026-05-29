@@ -484,7 +484,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                         continue;
                     }
                     aiCallCount++;
-                    Map<String, Object> evidence = buildSqlAuditEvidence(sqlAuditObject);
+                    Map<String, Object> evidence = buildSqlAuditEvidence(task, sqlAuditObject);
                     List<LineageReviewAIVerdict> verdicts = aiService.auditSqlLineage(evidence);
                     for (LineageReviewAIVerdict verdict : verdicts) {
                         LineageReviewIssue issue = buildSqlAuditIssue(task, sqlAuditObject, evidence, verdict);
@@ -805,23 +805,121 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         expanded.add(fieldRelation);
     }
 
-    private Map<String, Object> buildSqlAuditEvidence(Map<String, Object> object) {
+    private Map<String, Object> buildSqlAuditEvidence(LineageReviewTask task, Map<String, Object> object) {
+        List<Map<String, Object>> graphFieldRelations = loadGraphFieldRelationsForAudit(task, object);
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("statementHash", object.get("statementHash"));
         evidence.put("normalizedSnippet", object.get("normalizedSnippet"));
         evidence.put("sqlSnippet", truncateSnippet(toText(object.get("snippet"))));
         evidence.put("sourceFiles", object.getOrDefault("sourceFiles", List.of()));
         evidence.put("programRelations", object.getOrDefault("programRelations", List.of()));
+        evidence.put("graphFieldRelations", graphFieldRelations);
         evidence.put("relationsByType", groupRelationsByType(object.get("programRelations")));
         evidence.put("relationTypeDescriptions", relationTypeDescriptions());
         evidence.put("relationCount", object.getOrDefault("relationCount", 0));
         evidence.put("auditInstruction",
                 "请判断同一 statementHash 下的全部 programRelations 相对于 sqlSnippet 是否有遗漏来源、错误来源、错误目标或关系类型错误。"
                         + "必须按 relationTypeDescriptions 理解每种关系类型。"
+                        + "graphFieldRelations 是同版本、同源文件、同目标表下已经写入图谱的字段级关系，前台血缘查询也会使用这些关系。"
+                        + "如果 suggested source 到 target 的字段关系已存在于 graphFieldRelations，不得输出 MISSING_SOURCE。"
                         + "CASE_WHEN 表示 CASE/IF 条件分支依赖，不是目标字段值的直接来源；"
                         + "如果目标字段由 THEN/ELSE 常量或分类值生成，不得因缺少 DERIVES_TO 判定为疑点。"
                         + "如果某个表已经以 JOINS/FILTERS/CASE_WHEN 等影响关系存在，不要把它判定为来源遗漏。");
         return evidence;
+    }
+
+    private List<Map<String, Object>> loadGraphFieldRelationsForAudit(LineageReviewTask task, Map<String, Object> object) {
+        if (task == null || !StringUtils.hasText(task.getVersionId())) {
+            return Collections.emptyList();
+        }
+        String targetTable = resolvePrimaryTarget(object, "targetTable");
+        if (!StringUtils.hasText(targetTable)) {
+            return Collections.emptyList();
+        }
+        List<String> sourceFiles = asStringList(object.get("sourceFiles")).stream()
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+        String filterPath = normalizePathPrefix(task.getPathPrefix());
+        boolean hasSourceFiles = !sourceFiles.isEmpty();
+        boolean hasRepoId = task.getRepoId() != null;
+        String query = """
+                MATCH (source:Column)-[r:DERIVES_TO|FILTERS|JOINS|GROUPS|ORDERS|CALLS|REFERENCES|CASE_WHEN]->(target:Column)
+                WITH source, target, r,
+                     [file IN coalesce(r.sourceFiles, []) WHERE file IS NOT NULL AND trim(toString(file)) <> ''] +
+                     CASE
+                        WHEN coalesce(r.source_file, r.sourceFile) IS NULL
+                          OR trim(toString(coalesce(r.source_file, r.sourceFile))) = ''
+                        THEN []
+                        ELSE [toString(coalesce(r.source_file, r.sourceFile))]
+                     END AS relationSourceFiles
+                WHERE r.version = $versionId
+                  AND ($hasRepoId = false OR r.repoId = $repoId)
+                  AND toUpper(coalesce(target.table, '')) = toUpper($targetTable)
+                  AND (
+                    ($hasSourceFiles = true AND ANY(file IN relationSourceFiles WHERE file IN $sourceFiles))
+                    OR ($hasSourceFiles = false AND ($pathPrefix = '' OR ANY(file IN relationSourceFiles
+                      WHERE toUpper(file) = toUpper($pathPrefix)
+                         OR toUpper(file) STARTS WITH toUpper($pathPrefix)
+                         OR toUpper(file) ENDS WITH '/' + toUpper($pathPrefix))))
+                  )
+                RETURN source.table AS sourceTable,
+                       source.name AS sourceColumn,
+                       target.table AS targetTable,
+                       target.name AS targetColumn,
+                       type(r) AS relationType,
+                       coalesce(r.relationLevel, '') AS relationLevel,
+                       coalesce(r.confidence, '') AS confidence,
+                       coalesce(r.ambiguityCode, '') AS ambiguityCode,
+                       coalesce(r.validationNote, '') AS validationNote,
+                       coalesce(r.statementHash, '') AS statementHash,
+                       relationSourceFiles AS sourceFiles
+                ORDER BY relationType, sourceTable, sourceColumn, targetColumn
+                LIMIT 500
+                """;
+
+        List<Map<String, Object>> relations = new ArrayList<>();
+        try (Session session = neo4jDriver.session()) {
+            var cursor = session.run(query, Map.of(
+                    "repoId", task.getRepoId() == null ? "" : String.valueOf(task.getRepoId()),
+                    "hasRepoId", hasRepoId,
+                    "versionId", task.getVersionId(),
+                    "targetTable", targetTable,
+                    "sourceFiles", sourceFiles,
+                    "hasSourceFiles", hasSourceFiles,
+                    "pathPrefix", filterPath));
+            Set<String> seen = new LinkedHashSet<>();
+            while (cursor.hasNext()) {
+                Record record = cursor.next();
+                Map<String, Object> relation = new LinkedHashMap<>();
+                relation.put("sourceTable", record.get("sourceTable").asString(""));
+                relation.put("sourceColumn", record.get("sourceColumn").asString(""));
+                relation.put("targetTable", record.get("targetTable").asString(""));
+                relation.put("targetColumn", record.get("targetColumn").asString(""));
+                relation.put("relationType", record.get("relationType").asString(""));
+                relation.put("relationLevel", record.get("relationLevel").asString(""));
+                relation.put("confidence", record.get("confidence").asString(""));
+                relation.put("ambiguityCode", record.get("ambiguityCode").asString(""));
+                relation.put("validationNote", record.get("validationNote").asString(""));
+                relation.put("statementHash", record.get("statementHash").asString(""));
+                relation.put("sourceFiles", record.get("sourceFiles").asList(v -> v.isNull() ? "" : v.asString()));
+                relation.put("evidenceScope", "version_source_file_graph");
+                String key = String.join("|",
+                        Objects.toString(relation.get("sourceTable"), ""),
+                        Objects.toString(relation.get("sourceColumn"), ""),
+                        Objects.toString(relation.get("targetTable"), ""),
+                        Objects.toString(relation.get("targetColumn"), ""),
+                        Objects.toString(relation.get("relationType"), ""));
+                if (seen.add(key)) {
+                    relations.add(relation);
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("[LineageSqlAudit] failed to load graph field relations taskId={} targetTable={} reason={}",
+                    task.getId(), targetTable, ex.getMessage());
+            return Collections.emptyList();
+        }
+        return relations;
     }
 
     private LineageReviewIssue buildSqlAuditIssue(LineageReviewTask task, Map<String, Object> object,
@@ -929,8 +1027,8 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                 || verdict.getSuggestedSources().isEmpty()) {
             return false;
         }
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> relations = (List<Map<String, Object>>) evidence.getOrDefault("programRelations", List.of());
+        List<Map<String, Object>> relations = new ArrayList<>(asRelationMapList(evidence.get("programRelations")));
+        relations.addAll(asRelationMapList(evidence.get("graphFieldRelations")));
         if (relations.isEmpty()) {
             return false;
         }
@@ -943,6 +1041,26 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         }
         return suggestedSources.stream()
                 .allMatch(source -> hasFieldRelation(relations, source.get("table"), source.get("column"), tableName, columnName));
+    }
+
+    private List<Map<String, Object>> asRelationMapList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return Collections.emptyList();
+        }
+        List<Map<String, Object>> relations = new ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> rawMap)) {
+                continue;
+            }
+            Map<String, Object> relation = new LinkedHashMap<>();
+            rawMap.forEach((key, mapValue) -> {
+                if (key != null) {
+                    relation.put(String.valueOf(key), mapValue);
+                }
+            });
+            relations.add(relation);
+        }
+        return relations;
     }
 
     private Map<String, String> parseQualifiedColumn(String value) {
