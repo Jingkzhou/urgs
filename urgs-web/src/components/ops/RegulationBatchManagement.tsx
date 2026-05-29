@@ -14,12 +14,12 @@ type RegulationView = 'task-management' | 'task-instance';
 const OPS_REGULATION_NAV_KEY = 'ops_regulation_nav';
 
 const navItems = [
-    { id: 'task-management' as RegulationView, label: '任务管理', icon: ClipboardList },
     { id: 'task-instance' as RegulationView, label: '任务实例', icon: TimerReset },
+    { id: 'task-management' as RegulationView, label: '任务管理', icon: ClipboardList },
 ];
 
 const RegulationBatchManagement: React.FC = () => {
-    const [activeView, setActiveView] = useState<RegulationView>('task-management');
+    const [activeView, setActiveView] = useState<RegulationView>('task-instance');
     const [initialTaskInstanceFilters, setInitialTaskInstanceFilters] = useState<TaskInstanceInitialFilters | undefined>();
     const [executionLogVisible, setExecutionLogVisible] = useState(false);
     const [tasks, setTasks] = useState<QuartzTask[]>([]);
