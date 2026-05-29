@@ -27,6 +27,7 @@ interface TaskInstanceTableViewProps {
     createDateFilter: string;
     statusFilter: string;
     selectedInstanceIds: number[];
+    batchRerunExecuting: boolean;
     allVisibleSelected: boolean;
     rowContextMenu: RowContextMenuState | null;
     rowContextMenuStyle?: React.CSSProperties;
@@ -66,6 +67,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     createDateFilter,
     statusFilter,
     selectedInstanceIds,
+    batchRerunExecuting,
     allVisibleSelected,
     rowContextMenu,
     rowContextMenuStyle,
@@ -227,11 +229,11 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                         <div className="flex flex-wrap items-center gap-2">
                             <button
                                 onClick={onBatchExecute}
-                                disabled={!canBatchExecute}
+                                disabled={!canBatchExecute || batchRerunExecuting}
                                 className={`${batchActionClass} border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-blue-50`}
                             >
                                 <Play size={14} />
-                                批量重跑当前节点
+                                {batchRerunExecuting ? '批量重跑中...' : '批量重跑当前节点'}
                             </button>
                             <button
                                 onClick={onBatchForceStop}

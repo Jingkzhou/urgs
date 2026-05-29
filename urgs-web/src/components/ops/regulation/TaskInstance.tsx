@@ -16,6 +16,15 @@ import { normalizeLog, normalizeStatus, normalizeTask } from './task-instance/ut
 import { useDependencyInsightData } from './task-instance/useDependencyInsightData';
 
 const normalizeDateKey = (value?: string | null) => value?.replaceAll('-', '') || '';
+const BATCH_RERUN_CHUNK_SIZE = 20;
+
+const chunkArray = <T,>(items: T[], chunkSize: number) => {
+    const chunks: T[][] = [];
+    for (let index = 0; index < items.length; index += chunkSize) {
+        chunks.push(items.slice(index, index + chunkSize));
+    }
+    return chunks;
+};
 
 const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     const todayDate = dayjs().format('YYYY-MM-DD');
@@ -47,6 +56,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     const [rerunExecutionInstance, setRerunExecutionInstance] = useState<QuartzTaskStatus | null>(null);
     const [selectedDependencyRerunStatusIds, setSelectedDependencyRerunStatusIds] = useState<number[]>([]);
     const [dependencyRerunExecuting, setDependencyRerunExecuting] = useState(false);
+    const [batchRerunExecuting, setBatchRerunExecuting] = useState(false);
     const [rowContextMenu, setRowContextMenu] = useState<RowContextMenuState | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
@@ -184,12 +194,15 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
 
     useEffect(() => {
         const timer = window.setInterval(() => {
+            if (batchRerunExecuting) {
+                return;
+            }
             void loadInstances(undefined, { silent: true });
         }, 3000);
         return () => {
             window.clearInterval(timer);
         };
-    }, [loadInstances]);
+    }, [batchRerunExecuting, loadInstances]);
 
     useEffect(() => {
         loadTodaySummaryStats();
@@ -415,7 +428,8 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     const executeCurrentNodeRerun = async (
         statusIds: number[],
         fallbackSuccessMessage: string,
-        fallbackErrorMessage: string
+        fallbackErrorMessage: string,
+        options?: { refresh?: boolean; silentSuccess?: boolean }
     ) => {
         try {
             const response = await batchExecuteQuartzTaskStatus(statusIds, false);
@@ -424,9 +438,13 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
             }
             updateInstances(statusIds, markInstanceWaiting);
             setSelectedInstanceIds(prev => prev.filter(id => !statusIds.includes(id)));
-            await loadInstances();
-            await loadTodaySummaryStats();
-            message.success(response?.data || fallbackSuccessMessage);
+            if (options?.refresh !== false) {
+                await loadInstances();
+                await loadTodaySummaryStats();
+            }
+            if (!options?.silentSuccess) {
+                message.success(response?.data || fallbackSuccessMessage);
+            }
             return true;
         } catch (error: any) {
             message.error(error?.message || fallbackErrorMessage);
@@ -565,22 +583,46 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
     };
 
     const handleBatchExecute = async () => {
-        if (selectedInstanceIds.length === 0) return;
+        if (selectedInstanceIds.length === 0 || batchRerunExecuting) return;
 
-        const selectedInstances = instanceList.filter(instance => selectedInstanceIds.includes(instance.id));
+        const targetIds = [...selectedInstanceIds];
+        const selectedInstances = instanceList.filter(instance => targetIds.includes(instance.id));
         const invalidInstances = selectedInstances.filter(instance => instance.status !== 3 && instance.status !== 4);
         if (invalidInstances.length > 0) {
             message.error('批量执行仅支持失败或已完成实例，当前选择中包含非允许状态，请检查后重试');
             return;
         }
 
-        const executed = await executeCurrentNodeRerun(
-            selectedInstanceIds,
-            `已重跑当前节点 ${selectedInstances.length} 条实例`,
-            '批量执行失败'
-        );
-        if (executed) {
-            setSelectedInstanceIds([]);
+        setBatchRerunExecuting(true);
+        const chunks = chunkArray(targetIds, BATCH_RERUN_CHUNK_SIZE);
+        let executedCount = 0;
+        try {
+            for (let index = 0; index < chunks.length; index += 1) {
+                const chunk = chunks[index];
+                const executed = await executeCurrentNodeRerun(
+                    chunk,
+                    `批量重跑进度 ${Math.min(executedCount + chunk.length, targetIds.length)}/${targetIds.length}`,
+                    `批量执行失败（第 ${index + 1}/${chunks.length} 批）`,
+                    { refresh: false, silentSuccess: true }
+                );
+                if (!executed) {
+                    break;
+                }
+                executedCount += chunk.length;
+            }
+
+            await loadInstances();
+            await loadTodaySummaryStats();
+
+            if (executedCount === targetIds.length) {
+                setSelectedInstanceIds([]);
+                message.success(`已分批重跑当前节点 ${executedCount} 条实例`);
+            } else if (executedCount > 0) {
+                setSelectedInstanceIds(prev => prev.filter(id => !targetIds.slice(0, executedCount).includes(id)));
+                message.warning(`已重跑 ${executedCount}/${targetIds.length} 条实例，剩余实例未提交成功`);
+            }
+        } finally {
+            setBatchRerunExecuting(false);
         }
     };
 
@@ -727,6 +769,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange }) => {
                 createDateFilter={draftCreateDateFilter}
                 statusFilter={draftStatusFilter}
                 selectedInstanceIds={selectedInstanceIds}
+                batchRerunExecuting={batchRerunExecuting}
                 allVisibleSelected={allVisibleSelected}
                 rowContextMenu={rowContextMenu}
                 rowContextMenuStyle={rowContextMenuStyle}
