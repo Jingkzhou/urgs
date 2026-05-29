@@ -528,3 +528,61 @@ def test_unexpandable_select_star_is_marked_low_confidence(tmp_path):
     assert star_deps
     assert {dep.get("ambiguityCode") for dep in star_deps} == {"STAR_EXPANSION_UNAVAILABLE"}
     assert {dep.get("confidence") for dep in star_deps} == {"LOW"}
+
+
+def test_select_star_expansion_applies_default_schema_before_metadata_lookup(tmp_path):
+    pack = {
+        "packVersion": 1,
+        "recordId": "test-record",
+        "dataSourceId": 1,
+        "owner": "PM_RSDATA",
+        "tables": [
+            {
+                "id": "ods-src",
+                "owner": "ODS",
+                "name": "SRC",
+                "qualifiedName": "ODS.SRC",
+                "fields": [{"name": "OTHER", "sortOrder": 1}],
+            },
+            {
+                "id": "pm-src",
+                "owner": "PM_RSDATA",
+                "name": "SRC",
+                "qualifiedName": "PM_RSDATA.SRC",
+                "fields": [
+                    {"name": "C1", "sortOrder": 1},
+                    {"name": "C2", "sortOrder": 2},
+                ],
+            },
+            {
+                "id": "pm-tgt",
+                "owner": "PM_RSDATA",
+                "name": "TGT",
+                "qualifiedName": "PM_RSDATA.TGT",
+                "fields": [
+                    {"name": "C1", "sortOrder": 1},
+                    {"name": "C2", "sortOrder": 2},
+                ],
+            },
+        ],
+    }
+    path = tmp_path / "metadata-pack.json"
+    path.write_text(json.dumps(pack), encoding="utf-8")
+
+    parser = LineageParser("hive", default_schema="PM_RSDATA", metadata_file=str(path))
+    deps = parser.get_column_lineage("INSERT INTO TGT SELECT * FROM SRC")
+
+    pairs = {
+        (
+            dep.get("source_table"),
+            dep.get("source_column"),
+            dep.get("target_table"),
+            dep.get("target_column"),
+        )
+        for dep in deps
+        if dep.get("dependency_type") == "fdd"
+    }
+
+    assert ("PM_RSDATA.SRC", "C1", "PM_RSDATA.TGT", "C1") in pairs
+    assert ("PM_RSDATA.SRC", "C2", "PM_RSDATA.TGT", "C2") in pairs
+    assert not any(dep.get("source_column") == "*" for dep in deps)

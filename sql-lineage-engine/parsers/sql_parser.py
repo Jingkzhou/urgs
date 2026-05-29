@@ -785,7 +785,7 @@ class LineageParser:
         src_table = dep.get("source_table")
         tgt_table = dep.get("target_table")
         tgt_col = dep.get("target_column")
-        fields = self.resolver.get_table_fields(src_table)
+        src_table, fields = self._get_table_fields_for_expansion(src_table)
         if not fields:
             fallback = dep.copy()
             fallback.pop("_star_target_index", None)
@@ -799,7 +799,7 @@ class LineageParser:
             fallback["metadataPackHash"] = self.resolver.metadata_pack_hash
             return [fallback]
 
-        target_fields = self.resolver.get_table_fields(tgt_table)
+        tgt_table, target_fields = self._get_table_fields_for_expansion(tgt_table)
         target_is_star = tgt_col in ["UNKNOWN", "", None, "*"]
         can_pair_by_position = target_is_star and target_fields and len(target_fields) >= len(fields)
         explicit_target_index = dep.get("_star_target_index")
@@ -808,6 +808,8 @@ class LineageParser:
             if explicit_target_index < len(fields):
                 new_dep = dep.copy()
                 new_dep.pop("_star_target_index", None)
+                new_dep["source_table"] = src_table
+                new_dep["target_table"] = tgt_table
                 new_dep["source_column"] = fields[explicit_target_index]
                 new_dep["is_expanded"] = True
                 val_res = self.resolver.validate_column(src_table, new_dep["source_column"])
@@ -837,6 +839,8 @@ class LineageParser:
         for index, f_name in enumerate(fields):
             new_dep = dep.copy()
             new_dep.pop("_star_target_index", None)
+            new_dep["source_table"] = src_table
+            new_dep["target_table"] = tgt_table
             new_dep["source_column"] = f_name
             if can_pair_by_position:
                 new_dep["target_column"] = target_fields[index]
@@ -856,6 +860,26 @@ class LineageParser:
             new_dep["metadataPackHash"] = self.resolver.metadata_pack_hash
             expanded.append(new_dep)
         return expanded
+
+    def _get_table_fields_for_expansion(self, table_name: str) -> Tuple[str, List[str]]:
+        candidates = []
+        default_schema = getattr(self, "default_schema", None)
+        if default_schema:
+            schema_applied = self._apply_default_schema_to_table(table_name)
+        else:
+            from utils.normalize import normalize_table_name
+
+            schema_applied = normalize_table_name(table_name)
+        if schema_applied:
+            candidates.append(schema_applied)
+        if table_name and table_name not in candidates:
+            candidates.append(table_name)
+
+        for candidate in candidates:
+            fields = self.resolver.get_table_fields(candidate)
+            if fields:
+                return candidate, fields
+        return table_name, []
 
     def _min_confidence(self, left: str, right: str) -> str:
         conf_map = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}

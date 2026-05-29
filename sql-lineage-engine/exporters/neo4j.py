@@ -338,7 +338,15 @@ class Neo4jClient:
         if value is None:
             return []
         values = value if isinstance(value, list) else [value]
-        return [str(item) for item in values if item not in (None, "")]
+        return [
+            str(item)
+            for item in values
+            if item not in (None, "") and str(item).strip() != "*"
+        ]
+
+    @staticmethod
+    def _is_placeholder_column(column_name):
+        return not column_name or str(column_name).strip() == "*"
 
     def _normalize_table_relationships(self, relationships: list, version: str = None, repo_id: str = None):
         normalized = []
@@ -601,20 +609,20 @@ class Neo4jClient:
         MERGE (fact)-[:IN_STATEMENT]->(stmt)
         MERGE (st:Table {name: sourceTable})
         MERGE (tt:Table {name: targetTable})
-        FOREACH (_ IN CASE WHEN sourceColumn <> '' THEN [1] ELSE [] END |
+        FOREACH (_ IN CASE WHEN sourceColumn <> '' AND sourceColumn <> '*' THEN [1] ELSE [] END |
             MERGE (sc:Column {name: sourceColumn, table: sourceTable})
             MERGE (sc)-[:BELONGS_TO]->(st)
             MERGE (fact)-[:FROM_COLUMN]->(sc)
         )
-        FOREACH (_ IN CASE WHEN sourceColumn = '' THEN [1] ELSE [] END |
+        FOREACH (_ IN CASE WHEN sourceColumn = '' OR sourceColumn = '*' THEN [1] ELSE [] END |
             MERGE (fact)-[:FROM_TABLE]->(st)
         )
-        FOREACH (_ IN CASE WHEN targetColumn <> '' THEN [1] ELSE [] END |
+        FOREACH (_ IN CASE WHEN targetColumn <> '' AND targetColumn <> '*' THEN [1] ELSE [] END |
             MERGE (tc:Column {name: targetColumn, table: targetTable})
             MERGE (tc)-[:BELONGS_TO]->(tt)
             MERGE (fact)-[:TO_COLUMN]->(tc)
         )
-        FOREACH (_ IN CASE WHEN targetColumn = '' THEN [1] ELSE [] END |
+        FOREACH (_ IN CASE WHEN targetColumn = '' OR targetColumn = '*' THEN [1] ELSE [] END |
             MERGE (fact)-[:TO_TABLE]->(tt)
         )
         """
@@ -658,6 +666,15 @@ class Neo4jClient:
             "target_table": (d.get("target_table") or "").upper(),
             "target_column": (d.get("target_column") or "").upper()
         } for d in dependencies]
+        normalized_deps = [
+            dep for dep in normalized_deps
+            if dep["source_table"]
+            and dep["target_table"]
+            and not Neo4jClient._is_placeholder_column(dep["source_column"])
+            and not Neo4jClient._is_placeholder_column(dep["target_column"])
+        ]
+        if not normalized_deps:
+            return
         
         query = (
             "UNWIND $batch AS dep "
@@ -685,6 +702,7 @@ class Neo4jClient:
         # 分为直接血缘和间接血缘
         direct_items = []
         indirect_items = []
+        fact_only_items = []
         skipped_missing_source_columns = 0
         
         for dep in dependencies:
@@ -757,7 +775,9 @@ class Neo4jClient:
             item["parser_relation_uid"] = dep.get("parserRelationUid") or dep.get("parser_relation_uid") or dep.get("relationUid") or dep.get("relation_uid")
             item["relation_uid"] = relation_uid(version, repo_id, uid_input)
 
-            if target_column in ["*", "", None]:
+            if self._is_placeholder_column(source_column):
+                fact_only_items.append(item)
+            elif self._is_placeholder_column(target_column):
                 indirect_items.append(item)
             else:
                 direct_items.append(item)
@@ -809,7 +829,7 @@ class Neo4jClient:
             print(f"正在处理 {len(indirect_items)} 条间接字段依赖...", flush=True)
             process_by_type(indirect_items, self._create_indirect_column_batch_safe)
 
-        fact_items = direct_items + indirect_items
+        fact_items = direct_items + indirect_items + fact_only_items
         if fact_items:
             batch_size = 2000
             with self.driver.session() as session:
