@@ -596,6 +596,135 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     }
 
     private List<Map<String, Object>> loadSqlAuditObjects(LineageReviewTask task) {
+        List<Map<String, Object>> factObjects = loadSqlAuditObjectsFromFacts(task);
+        if (!factObjects.isEmpty()) {
+            return factObjects;
+        }
+        return loadLegacySqlAuditObjects(task);
+    }
+
+    private List<Map<String, Object>> loadSqlAuditObjectsFromFacts(LineageReviewTask task) {
+        if (!StringUtils.hasText(task.getVersionId())) {
+            return Collections.emptyList();
+        }
+        String filterPath = normalizePathPrefix(task.getPathPrefix());
+        boolean hasRepoId = task.getRepoId() != null;
+        String query = """
+                MATCH (fact:LineageFact)-[:IN_STATEMENT]->(stmt:SqlStatement)
+                WITH fact, stmt,
+                     [file IN coalesce(fact.sourceFiles, stmt.sourceFiles, []) WHERE file IS NOT NULL AND trim(toString(file)) <> ''] AS sourceFiles
+                WHERE fact.version = $versionId
+                  AND ($hasRepoId = false OR fact.repoId = $repoId)
+                  AND ($pathPrefix = '' OR ANY(file IN sourceFiles
+                    WHERE toUpper(file) = toUpper($pathPrefix)
+                       OR toUpper(file) STARTS WITH toUpper($pathPrefix)
+                       OR toUpper(file) ENDS WITH '/' + toUpper($pathPrefix)))
+                WITH coalesce(stmt.statementUid, fact.statementUid, '') AS selectedStatementUid,
+                     count(fact) AS relationCount
+                WHERE selectedStatementUid <> ''
+                ORDER BY relationCount DESC, selectedStatementUid
+                LIMIT $statementLimit
+                WITH collect(selectedStatementUid) AS selectedStatementUids
+                MATCH (fact:LineageFact)-[:IN_STATEMENT]->(stmt:SqlStatement)
+                WITH selectedStatementUids, fact, stmt,
+                     [file IN coalesce(fact.sourceFiles, stmt.sourceFiles, []) WHERE file IS NOT NULL AND trim(toString(file)) <> ''] AS sourceFiles
+                WHERE coalesce(stmt.statementUid, fact.statementUid, '') IN selectedStatementUids
+                RETURN coalesce(stmt.statementUid, fact.statementUid, '') AS statementUid,
+                       coalesce(stmt.statementHash, fact.statementHash, '') AS statementHash,
+                       coalesce(stmt.normalizedSnippet, fact.normalizedSnippet, '') AS normalizedSnippet,
+                       coalesce(stmt.sqlText, fact.snippet, '') AS snippet,
+                       sourceFiles AS sourceFiles,
+                       fact.relationUid AS relationUid,
+                       coalesce(fact.sourceTable, '') AS sourceTable,
+                       CASE WHEN coalesce(fact.sourceColumn, '') = '' THEN null ELSE fact.sourceColumn END AS sourceColumn,
+                       coalesce(fact.targetTable, '') AS targetTable,
+                       CASE WHEN coalesce(fact.targetColumn, '') = '' THEN null ELSE fact.targetColumn END AS targetColumn,
+                       coalesce(fact.relationType, '') AS relationType,
+                       coalesce(fact.relationLevel, '') AS relationLevel,
+                       coalesce(fact.confidence, '') AS confidence,
+                       coalesce(fact.ambiguityCode, '') AS ambiguityCode,
+                       coalesce(fact.validationNote, '') AS validationNote,
+                       fact.projectionIndex AS projectionIndex,
+                       coalesce(fact.sourceExpression, '') AS sourceExpression,
+                       coalesce(fact.targetExpression, '') AS targetExpression,
+                       coalesce(fact.context, '') AS context,
+                       coalesce(fact.lineageOrigin, '') AS lineageOrigin
+                ORDER BY statementUid, projectionIndex, relationType, sourceTable, sourceColumn, targetTable, targetColumn
+                """;
+
+        Map<String, Map<String, Object>> grouped = new LinkedHashMap<>();
+        try (Session session = neo4jDriver.session()) {
+            var cursor = session.run(query, Map.of(
+                    "repoId", task.getRepoId() == null ? "" : String.valueOf(task.getRepoId()),
+                    "hasRepoId", hasRepoId,
+                    "versionId", task.getVersionId(),
+                    "pathPrefix", filterPath,
+                    "statementLimit", SQL_AUDIT_LIMIT));
+            while (cursor.hasNext()) {
+                Record record = cursor.next();
+                String statementUid = record.get("statementUid").asString("");
+                String statementHash = record.get("statementHash").asString("");
+                String normalizedSnippet = record.get("normalizedSnippet").asString("");
+                String snippet = record.get("snippet").asString("");
+                String statementKey = StringUtils.hasText(statementUid)
+                        ? statementUid
+                        : (StringUtils.hasText(statementHash) ? statementHash : hashOf(normalizedSnippet, snippet));
+                Map<String, Object> item = grouped.computeIfAbsent(statementKey, key -> {
+                    Map<String, Object> created = new LinkedHashMap<>();
+                    created.put("statementUid", statementUid);
+                    created.put("statementHash", statementHash);
+                    created.put("normalizedSnippet", normalizedSnippet);
+                    created.put("snippet", snippet);
+                    created.put("sourceFiles", new ArrayList<String>());
+                    created.put("programRelations", new ArrayList<Map<String, Object>>());
+                    created.put("relationCount", 0);
+                    created.put("_relationKeys", new LinkedHashSet<String>());
+                    return created;
+                });
+                mergeSourceFiles(item, record.get("sourceFiles").asList(v -> v.isNull() ? "" : v.asString()));
+
+                Map<String, Object> relation = new LinkedHashMap<>();
+                relation.put("statementUid", statementUid);
+                relation.put("statementHash", statementHash);
+                relation.put("relationUid", record.get("relationUid").isNull() ? null : record.get("relationUid").asString());
+                relation.put("sourceFiles", record.get("sourceFiles").asList(v -> v.isNull() ? "" : v.asString()));
+                relation.put("sourceTable", record.get("sourceTable").asString(""));
+                relation.put("sourceColumn", record.get("sourceColumn").isNull() ? null : record.get("sourceColumn").asString());
+                relation.put("targetTable", record.get("targetTable").asString(""));
+                relation.put("targetColumn", record.get("targetColumn").isNull() ? null : record.get("targetColumn").asString());
+                relation.put("relationType", record.get("relationType").asString(""));
+                relation.put("relationLevel", record.get("relationLevel").asString(""));
+                relation.put("confidence", record.get("confidence").asString(""));
+                relation.put("ambiguityCode", record.get("ambiguityCode").asString(""));
+                relation.put("validationNote", record.get("validationNote").asString(""));
+                relation.put("projectionIndex", record.get("projectionIndex").isNull() ? null : record.get("projectionIndex").asObject());
+                relation.put("sourceExpression", record.get("sourceExpression").asString(""));
+                relation.put("targetExpression", record.get("targetExpression").asString(""));
+                relation.put("context", record.get("context").asString(""));
+                relation.put("lineageOrigin", record.get("lineageOrigin").asString(""));
+                relation.put("evidenceScope", "lineage_fact_statement");
+                addProgramRelation(item, relation);
+            }
+        } catch (Exception ex) {
+            log.warn("[LineageSqlAudit] failed to load fact audit objects taskId={} reason={}",
+                    task.getId(), ex.getMessage());
+            return Collections.emptyList();
+        }
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (Map<String, Object> item : grouped.values()) {
+            item.remove("_relationKeys");
+            results.add(item);
+        }
+        results.sort((left, right) -> Integer.compare(
+                ((Number) right.getOrDefault("relationCount", 0)).intValue(),
+                ((Number) left.getOrDefault("relationCount", 0)).intValue()));
+        if (results.size() > SQL_AUDIT_LIMIT) {
+            return new ArrayList<>(results.subList(0, SQL_AUDIT_LIMIT));
+        }
+        return results;
+    }
+
+    private List<Map<String, Object>> loadLegacySqlAuditObjects(LineageReviewTask task) {
         if (!StringUtils.hasText(task.getVersionId())) {
             return Collections.emptyList();
         }
@@ -708,21 +837,30 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                 relation.put("statementHash", item.get("statementHash"));
                 relation.put("sourceFiles", rowSourceFiles);
                 relation.put("sourceTable", record.get("sourceTable").isNull() ? null : record.get("sourceTable").asString());
-                relation.put("sourceColumn", record.get("sourceColumn").isNull() ? null : record.get("sourceColumn").asString());
+                String sourceColumn = record.get("sourceColumn").isNull() ? null : record.get("sourceColumn").asString();
+                String targetColumn = record.get("targetColumn").isNull() ? null : record.get("targetColumn").asString();
+                relation.put("sourceColumn", sourceColumn);
                 relation.put("targetTable", record.get("targetTable").isNull() ? null : record.get("targetTable").asString());
-                relation.put("targetColumn", record.get("targetColumn").isNull() ? null : record.get("targetColumn").asString());
+                relation.put("targetColumn", targetColumn);
                 relation.put("relationType", record.get("relationType").asString(""));
                 relation.put("relationLevel", record.get("relationLevel").asString(""));
                 relation.put("confidence", record.get("confidence").asString(""));
                 relation.put("ambiguityCode", record.get("ambiguityCode").asString(""));
                 relation.put("validationNote", record.get("validationNote").asString(""));
-                relation.put("sourceColumns", record.get("sourceColumns").asList(v -> v.isNull() ? "" : v.asString()));
-                relation.put("targetColumns", record.get("targetColumns").asList(v -> v.isNull() ? "" : v.asString()));
+                boolean fieldLevelRelation = StringUtils.hasText(sourceColumn) && StringUtils.hasText(targetColumn);
+                if (fieldLevelRelation) {
+                    relation.put("sourceColumns", record.get("sourceColumns").asList(v -> v.isNull() ? "" : v.asString()));
+                    relation.put("targetColumns", record.get("targetColumns").asList(v -> v.isNull() ? "" : v.asString()));
+                } else {
+                    relation.put("tableRelationSourceColumnSummary",
+                            record.get("sourceColumns").asList(v -> v.isNull() ? "" : v.asString()));
+                    relation.put("tableRelationTargetColumnSummary",
+                            record.get("targetColumns").asList(v -> v.isNull() ? "" : v.asString()));
+                    relation.put("tableRelationColumnSummaryNote",
+                            "表级关系上的字段清单是该表边的聚合摘要，不代表当前 SQL 片段存在字段级映射。");
+                }
 
                 addProgramRelation(item, relation);
-                for (Map<String, Object> expandedRelation : expandTableEvidenceRelation(relation)) {
-                    addProgramRelation(item, expandedRelation);
-                }
             }
         }
 
@@ -759,54 +897,20 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         item.put("relationCount", ((Integer) item.get("relationCount")) + 1);
     }
 
-    private List<Map<String, Object>> expandTableEvidenceRelation(Map<String, Object> relation) {
-        if (StringUtils.hasText(toText(relation.get("sourceColumn")))
-                || StringUtils.hasText(toText(relation.get("targetColumn")))) {
-            return Collections.emptyList();
-        }
-        List<String> sourceColumns = normalizeStringList(relation.get("sourceColumns"));
-        List<String> targetColumns = normalizeStringList(relation.get("targetColumns"));
-        if (sourceColumns.isEmpty() || targetColumns.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<Map<String, Object>> expanded = new ArrayList<>();
-        Set<String> usedPairs = new LinkedHashSet<>();
-        for (String sourceColumn : sourceColumns) {
-            for (String targetColumn : targetColumns) {
-                if (!sourceColumn.equalsIgnoreCase(targetColumn)) {
-                    continue;
-                }
-                addExpandedFieldRelation(relation, sourceColumn, targetColumn, expanded, usedPairs);
+    @SuppressWarnings("unchecked")
+    private void mergeSourceFiles(Map<String, Object> item, List<String> rowSourceFiles) {
+        List<String> sourceFiles = (List<String>) item.get("sourceFiles");
+        for (String file : rowSourceFiles) {
+            if (StringUtils.hasText(file) && !sourceFiles.contains(file)) {
+                sourceFiles.add(file);
             }
         }
-        if (expanded.isEmpty() && sourceColumns.size() == targetColumns.size()) {
-            for (int i = 0; i < sourceColumns.size(); i++) {
-                addExpandedFieldRelation(relation, sourceColumns.get(i), targetColumns.get(i), expanded, usedPairs);
-            }
-        }
-        return expanded;
-    }
-
-    private void addExpandedFieldRelation(Map<String, Object> relation, String sourceColumn, String targetColumn,
-            List<Map<String, Object>> expanded, Set<String> usedPairs) {
-        if (!StringUtils.hasText(sourceColumn) || !StringUtils.hasText(targetColumn)) {
-            return;
-        }
-        String key = sourceColumn.toUpperCase(Locale.ROOT) + "->" + targetColumn.toUpperCase(Locale.ROOT);
-        if (!usedPairs.add(key)) {
-            return;
-        }
-        Map<String, Object> fieldRelation = new LinkedHashMap<>(relation);
-        fieldRelation.put("sourceColumn", sourceColumn);
-        fieldRelation.put("targetColumn", targetColumn);
-        fieldRelation.put("relationLevel", "field_evidence_from_table");
-        fieldRelation.put("evidenceDerivedFrom", "table_relation_columns");
-        expanded.add(fieldRelation);
     }
 
     private Map<String, Object> buildSqlAuditEvidence(LineageReviewTask task, Map<String, Object> object) {
-        List<Map<String, Object>> graphFieldRelations = loadGraphFieldRelationsForAudit(task, object);
+        List<Map<String, Object>> graphFieldRelations = StringUtils.hasText(toText(object.get("statementUid")))
+                ? fieldLevelProgramRelations(object)
+                : loadGraphFieldRelationsForAudit(task, object);
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("statementHash", object.get("statementHash"));
         evidence.put("normalizedSnippet", object.get("normalizedSnippet"));
@@ -818,14 +922,24 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         evidence.put("relationTypeDescriptions", relationTypeDescriptions());
         evidence.put("relationCount", object.getOrDefault("relationCount", 0));
         evidence.put("auditInstruction",
-                "请判断同一 statementHash 下的全部 programRelations 相对于 sqlSnippet 是否有遗漏来源、错误来源、错误目标或关系类型错误。"
+                "请判断同一 statementUid/statementHash 下的全部 programRelations 相对于 sqlSnippet 是否有遗漏来源、错误来源、错误目标或关系类型错误。"
+                        + "当 programRelations 的 evidenceScope 为 lineage_fact_statement 时，它们来自 LineageFact 事实层，只代表当前 SQL 片段解析出的关系。"
                         + "必须按 relationTypeDescriptions 理解每种关系类型。"
-                        + "graphFieldRelations 是同版本、同源文件、同目标表下已经写入图谱的字段级关系，前台血缘查询也会使用这些关系。"
+                        + "graphFieldRelations 是同片段事实层或兼容旧图谱查询得到的字段级关系，前台血缘查询也会使用这些关系。"
                         + "如果 suggested source 到 target 的字段关系已存在于 graphFieldRelations，不得输出 MISSING_SOURCE。"
+                        + "表级 programRelations 上的 tableRelationSourceColumnSummary/tableRelationTargetColumnSummary 只是表边聚合摘要，"
+                        + "不代表当前 SQL 片段存在同名、一一或笛卡尔字段映射；只有 sourceColumn/targetColumn 明确非空的关系才是字段级证据。"
                         + "CASE_WHEN 表示 CASE/IF 条件分支依赖，不是目标字段值的直接来源；"
                         + "如果目标字段由 THEN/ELSE 常量或分类值生成，不得因缺少 DERIVES_TO 判定为疑点。"
                         + "如果某个表已经以 JOINS/FILTERS/CASE_WHEN 等影响关系存在，不要把它判定为来源遗漏。");
         return evidence;
+    }
+
+    private List<Map<String, Object>> fieldLevelProgramRelations(Map<String, Object> object) {
+        return asRelationMapList(object.get("programRelations")).stream()
+                .filter(rel -> StringUtils.hasText(toText(rel.get("sourceColumn")))
+                        && StringUtils.hasText(toText(rel.get("targetColumn"))))
+                .collect(Collectors.toCollection(ArrayList::new));
     }
 
     private List<Map<String, Object>> loadGraphFieldRelationsForAudit(LineageReviewTask task, Map<String, Object> object) {
@@ -1091,32 +1205,8 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             if (directColumnMatched) {
                 return true;
             }
-            List<String> sourceColumns = normalizeStringList(rel.get("sourceColumns"));
-            List<String> targetColumns = normalizeStringList(rel.get("targetColumns"));
-            return columnArraysContainRelation(sourceColumns, targetColumns, sourceColumn, targetColumn);
+            return false;
         });
-    }
-
-    private boolean columnArraysContainRelation(List<String> sourceColumns, List<String> targetColumns,
-            String sourceColumn, String targetColumn) {
-        if (sourceColumns.isEmpty() || targetColumns.isEmpty()) {
-            return false;
-        }
-        if (sourceColumn.equalsIgnoreCase(targetColumn)
-                && sourceColumns.stream().anyMatch(sourceColumn::equalsIgnoreCase)
-                && targetColumns.stream().anyMatch(targetColumn::equalsIgnoreCase)) {
-            return true;
-        }
-        if (sourceColumns.size() != targetColumns.size()) {
-            return false;
-        }
-        for (int i = 0; i < sourceColumns.size(); i++) {
-            if (sourceColumn.equalsIgnoreCase(sourceColumns.get(i))
-                    && targetColumn.equalsIgnoreCase(targetColumns.get(i))) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private boolean sameQualifiedName(String left, String right) {

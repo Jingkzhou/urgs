@@ -3,6 +3,7 @@ from .gsp import GSPParser
 from .indirect_flow_parser import IndirectFlowParser
 from utils.splitter import SqlSplitter
 from utils.metadata_resolver import MetadataResolver
+from utils.lineage_identity import parser_statement_uid, relation_uid, statement_hash
 import logging
 import re
 
@@ -17,6 +18,25 @@ class LineageParser:
         self.parser = GSPParser()
         self.resolver = MetadataResolver(metadata_file=metadata_file)
         self.indirect_parser = IndirectFlowParser(dialect, resolver=self.resolver)  # 注入共享实例
+
+    def _statement_meta(self, sql: str, source_file: str, statement_index: int) -> Dict[str, Any]:
+        stmt_hash = statement_hash(sql)
+        return {
+            "statementHash": stmt_hash,
+            "statement_hash": stmt_hash,
+            "parserStatementUid": parser_statement_uid(source_file, statement_index, sql),
+            "statementUid": parser_statement_uid(source_file, statement_index, sql),
+            "statement_uid": parser_statement_uid(source_file, statement_index, sql),
+            "statementIndex": statement_index,
+            "statement_index": statement_index,
+        }
+
+    def _attach_statement_meta(self, item: Dict[str, Any], meta: Dict[str, Any], overwrite: bool = False):
+        for key, value in meta.items():
+            if overwrite:
+                item[key] = value
+            else:
+                item.setdefault(key, value)
 
     def _register_table_field_context(self, sql: str):
         """Register target column lists from this SQL file as local table metadata."""
@@ -182,6 +202,7 @@ class LineageParser:
         detailed_statements = []
         gsp_tables = set()  # 用于存储 GSP 识别的表名（标准化后）
         import re
+        statement_index = 0
 
         # Aggregate results
         for stmt in statements:
@@ -222,6 +243,8 @@ class LineageParser:
                     final_stmt = re.sub(
                         r"(?i)(INSERT\s+INTO\s+)TABLE\s+", r"\1", final_stmt
                     )
+                    stmt_meta = self._statement_meta(final_stmt, source_file, statement_index)
+                    statement_index += 1
                     self._merge_cte_registry(
                         cte_registry,
                         self._build_cte_registry(final_stmt, current_dialect),
@@ -263,6 +286,7 @@ class LineageParser:
                         "targets": [],
                         "relationships": [],
                         "gsp_json": result.get("gsp_json"),
+                        **stmt_meta,
                     }
 
                     # Extract sources/targets/relationships
@@ -284,6 +308,12 @@ class LineageParser:
                             rel.setdefault("relation_level", "table_evidence")
                             rel.setdefault("confidence", "MEDIUM")
                             rel.setdefault("metadataPackHash", self.resolver.metadata_pack_hash)
+                            self._attach_statement_meta(rel, stmt_meta)
+                            parser_relation_uid = relation_uid("", "", rel)
+                            rel.setdefault("parserRelationUid", parser_relation_uid)
+                            rel.setdefault("parser_relation_uid", parser_relation_uid)
+                            rel.setdefault("relationUid", parser_relation_uid)
+                            rel.setdefault("relation_uid", parser_relation_uid)
                         relations.extend(result["relationships"])
                         stmt_info["relationships"] = result["relationships"]
                         has_lineage = True
@@ -310,8 +340,7 @@ class LineageParser:
                 dep_source = normalize_table_name(dep["source_table"])
 
                 # 添加关系，使用标准化后的表名
-                relations.append(
-                    {
+                table_relation = {
                         "target_table": dep_target,
                         "target_column": dep["target_column"],
                         "source_table": dep_source,
@@ -327,11 +356,23 @@ class LineageParser:
                         "ambiguityCode": dep.get("ambiguityCode") or dep.get("ambiguity_code"),
                         "metadataMatched": dep.get("metadataMatched") if dep.get("metadataMatched") is not None else dep.get("metadata_matched"),
                         "metadataPackHash": self.resolver.metadata_pack_hash,
+                        "statementHash": dep.get("statementHash") or dep.get("statement_hash"),
+                        "statement_hash": dep.get("statement_hash") or dep.get("statementHash"),
+                        "statementUid": dep.get("statementUid") or dep.get("statement_uid"),
+                        "statement_uid": dep.get("statement_uid") or dep.get("statementUid"),
+                        "parserStatementUid": dep.get("parserStatementUid") or dep.get("parser_statement_uid"),
+                        "statementIndex": dep.get("statementIndex") if dep.get("statementIndex") is not None else dep.get("statement_index"),
+                        "statement_index": dep.get("statement_index") if dep.get("statement_index") is not None else dep.get("statementIndex"),
                         # Normalize for compatibility
                         "source": dep_source,
                         "target": dep_target,
                     }
-                )
+                parser_relation_uid = relation_uid("", "", table_relation)
+                table_relation.setdefault("parserRelationUid", parser_relation_uid)
+                table_relation.setdefault("parser_relation_uid", parser_relation_uid)
+                table_relation.setdefault("relationUid", parser_relation_uid)
+                table_relation.setdefault("relation_uid", parser_relation_uid)
+                relations.append(table_relation)
 
                 # 添加到 sources/targets（标准化后）
                 sources.add(dep_source)
@@ -470,6 +511,7 @@ class LineageParser:
         dependencies = []
 
         import re
+        statement_index = 0
 
         for stmt in statements:
             stmts_to_process = [stmt]
@@ -501,6 +543,8 @@ class LineageParser:
                     final_stmt = re.sub(
                         r"(?i)(INSERT\s+INTO\s+)TABLE\s+", r"\1", final_stmt
                     )
+                    stmt_meta = self._statement_meta(final_stmt, source_file, statement_index)
+                    statement_index += 1
                     self._merge_cte_registry(
                         cte_registry,
                         self._build_cte_registry(final_stmt, current_dialect),
@@ -519,8 +563,7 @@ class LineageParser:
                             final_stmt, source_file
                         )
                         for dep in indirect_deps:
-                            dependencies.append(
-                                {
+                            new_dep = {
                                     "target_table": dep["target_table"],
                                     "target_column": dep["target_column"],
                                     "source_table": dep["source_table"],
@@ -539,8 +582,15 @@ class LineageParser:
                                     "ambiguityCode": dep.get("ambiguityCode") or dep.get("ambiguity_code"),
                                     "metadataMatched": dep.get("metadataMatched") if dep.get("metadataMatched") is not None else dep.get("metadata_matched"),
                                     "metadataPackHash": self.resolver.metadata_pack_hash,
+                                    "projectionIndex": dep.get("projectionIndex") if dep.get("projectionIndex") is not None else dep.get("projection_index"),
+                                    "projection_index": dep.get("projection_index") if dep.get("projection_index") is not None else dep.get("projectionIndex"),
+                                    "sourceExpression": dep.get("sourceExpression") or dep.get("source_expression"),
+                                    "source_expression": dep.get("source_expression") or dep.get("sourceExpression"),
+                                    "targetExpression": dep.get("targetExpression") or dep.get("target_expression"),
+                                    "target_expression": dep.get("target_expression") or dep.get("targetExpression"),
                                 }
-                            )
+                            self._attach_statement_meta(new_dep, stmt_meta, overwrite=True)
+                            dependencies.append(new_dep)
                     except Exception as e:
                         pass
 
@@ -583,8 +633,7 @@ class LineageParser:
                             )
                             source_column = src.get("column", "UNKNOWN")
 
-                            dependencies.append(
-                                {
+                            new_dep = {
                                     "target_table": target_table,
                                     "target_column": target_column,
                                     "source_table": source_table,
@@ -593,8 +642,13 @@ class LineageParser:
                                     "source_file": source_file,  # 来源文件
                                     "snippet": final_stmt,  # 添加 SQL 片段
                                     "metadataPackHash": self.resolver.metadata_pack_hash,
+                                    "sourceExpression": source_column,
+                                    "source_expression": source_column,
+                                    "targetExpression": target_column,
+                                    "target_expression": target_column,
                                 }
-                            )
+                            self._attach_statement_meta(new_dep, stmt_meta, overwrite=True)
+                            dependencies.append(new_dep)
 
         # ===== 2.5. CTE Resolution - Resolve CTE aliases to physical tables =====
         if cte_registry:
@@ -718,6 +772,13 @@ class LineageParser:
                 dep["target_table"] = apply_schema(dep["target_table"])
                 dep["source_table"] = apply_schema(dep["source_table"])
 
+        for dep in final_dependencies:
+            parser_relation_uid = relation_uid("", "", dep)
+            dep.setdefault("parserRelationUid", parser_relation_uid)
+            dep.setdefault("parser_relation_uid", parser_relation_uid)
+            dep.setdefault("relationUid", parser_relation_uid)
+            dep.setdefault("relation_uid", parser_relation_uid)
+
         return final_dependencies
 
     def _expand_star_dependency(self, dep: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -812,6 +873,7 @@ class LineageParser:
             if not edge_type and dep_type == "fdd":
                 edge_type = "DERIVES_TO"
             key = (
+                dep.get("statementUid") or dep.get("statement_uid"),
                 dep.get("source_table"),
                 dep.get("source_column"),
                 dep.get("target_table"),

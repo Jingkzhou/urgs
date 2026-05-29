@@ -406,6 +406,48 @@ def test_duplicate_column_dependencies_are_merged():
     assert deps[0]["validation_note"] == "from gsp; from metadata"
 
 
+def test_duplicate_column_dependencies_are_not_merged_across_statements():
+    parser = LineageParser.__new__(LineageParser)
+    deps = parser._deduplicate_column_dependencies(
+        [
+            {
+                "statementUid": "stmt-1",
+                "source_table": "ODS.SRC",
+                "source_column": "C1",
+                "target_table": "MART.TGT",
+                "target_column": "C1",
+                "dependency_type": "fdd",
+            },
+            {
+                "statementUid": "stmt-2",
+                "source_table": "ODS.SRC",
+                "source_column": "C1",
+                "target_table": "MART.TGT",
+                "target_column": "C1",
+                "dependency_type": "fdd",
+            },
+        ]
+    )
+
+    assert len(deps) == 2
+
+
+def test_indirect_parser_outputs_statement_and_expression_identity(tmp_path):
+    path = write_pack(tmp_path)
+    parser = IndirectFlowParser("oracle", resolver=MetadataPackResolver(str(path)))
+    deps = parser.parse(
+        "INSERT INTO MART.TGT (C1, C2) SELECT S.C1 AS C1, S.C2 FROM ODS.SRC S",
+        source_file="/tmp/proc.sql",
+    )
+    c1_dep = next(dep for dep in deps if dep.get("target_column") == "C1")
+
+    assert c1_dep.get("statementUid")
+    assert c1_dep.get("statementHash")
+    assert c1_dep.get("projectionIndex") == 0
+    assert c1_dep.get("sourceExpression").upper() == "S.C1"
+    assert "S.C1" in c1_dep.get("targetExpression").upper()
+
+
 def test_insert_without_target_columns_uses_target_metadata_order(tmp_path):
     path = write_pack(tmp_path)
     parser = IndirectFlowParser("oracle", resolver=MetadataPackResolver(str(path)))

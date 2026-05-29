@@ -80,3 +80,4 @@ urgs-agent/urgs_agent.egg-info/
 dist-packages/
 backups/
 .hermes/
+data/

@@ -15,7 +15,10 @@ import {
     Calendar,
     ArrowRight,
     Activity,
-    DatabaseZap
+    DatabaseZap,
+    Upload,
+    X,
+    FileText
 } from 'lucide-react';
 import Pagination from '../common/Pagination';
 import { get, post } from '@/utils/request';
@@ -27,6 +30,9 @@ interface DataSourceConfig {
     metaId: number;
     connectionParams: Record<string, any>;
     status: number;
+    typeName?: string;
+    typeCode?: string;
+    category?: string;
     metaName?: string;
     metaCategory?: string;
     metaCode?: string;
@@ -72,6 +78,12 @@ interface PageResult<T> {
     total: number;
 }
 
+interface ModelDdlImportResult {
+    tableCount: number;
+    fieldCount: number;
+    language: string;
+}
+
 const MetadataModel: React.FC = () => {
     // --- State ---
     const [sources, setSources] = useState<DataSourceConfig[]>([]);
@@ -100,6 +112,10 @@ const MetadataModel: React.FC = () => {
     const [loadingFields, setLoadingFields] = useState(false);
     const [loadingDomain, setLoadingDomain] = useState(false);
     const [syncing, setSyncing] = useState(false);
+    const [ddlImportOpen, setDdlImportOpen] = useState(false);
+    const [ddlImporting, setDdlImporting] = useState(false);
+    const [ddlText, setDdlText] = useState('');
+    const [ddlImportMessage, setDdlImportMessage] = useState<string | null>(null);
     const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
 
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -107,9 +123,19 @@ const MetadataModel: React.FC = () => {
 
     // --- Memoed ---
     const selectedSource = useMemo(
-        () => sources.find((source) => source.id === selectedSourceId),
+        () => sources.find((source) => String(source.id) === String(selectedSourceId)),
         [sources, selectedSourceId]
     );
+
+    const ddlLanguage = useMemo(() => {
+        const code = (selectedSource?.metaCode || '').toLowerCase();
+        if (['inceptor', 'xinghuan', 'transwarp'].includes(code)) {
+            return 'Inceptor SQL';
+        }
+        return '暂不支持';
+    }, [selectedSource?.metaCode]);
+
+    const canImportDdl = ddlLanguage !== '暂不支持';
 
     // --- Actions ---
     const fetchSources = async () => {
@@ -122,24 +148,26 @@ const MetadataModel: React.FC = () => {
 
             const metas = Array.isArray(metaData) ? metaData : [];
             const configs = Array.isArray(configData) ? configData : [];
-            const metaMap = new Map<number, DataSourceMeta>();
-            metas.forEach((meta) => metaMap.set(meta.id, meta));
+            const metaMap = new Map<string, DataSourceMeta>();
+            metas.forEach((meta) => metaMap.set(String(meta.id), meta));
 
             const dbSources = configs
                 .map((config) => {
-                    const meta = metaMap.get(config.metaId);
+                    const meta = metaMap.get(String(config.metaId));
                     return {
                         ...config,
-                        metaName: meta?.name,
-                        metaCategory: meta?.category,
-                        metaCode: meta?.code,
+                        metaName: config.typeName || meta?.name,
+                        metaCategory: config.category || meta?.category,
+                        metaCode: config.typeCode || meta?.code,
                     };
                 })
                 .filter((config) => ['RDBMS', 'BIG DATA'].includes((config.metaCategory || '').toUpperCase()));
 
             setSources(dbSources);
             if (dbSources.length > 0) {
-                setSelectedSourceId((prev) => (prev && dbSources.some((item) => item.id === prev) ? prev : dbSources[0].id));
+                setSelectedSourceId((prev) => (
+                    prev && dbSources.some((item) => String(item.id) === String(prev)) ? prev : Number(dbSources[0].id)
+                ));
             } else {
                 setSelectedSourceId(null);
             }
@@ -238,6 +266,39 @@ const MetadataModel: React.FC = () => {
             console.error('Sync failed:', error);
         } finally {
             setSyncing(false);
+        }
+    };
+
+    const handleDdlFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        const text = await file.text();
+        setDdlText(text);
+        setDdlImportMessage(`已读取 ${file.name}`);
+    };
+
+    const handleDdlImport = async () => {
+        if (!selectedSourceId || !ddlText.trim() || !canImportDdl) return;
+        setDdlImporting(true);
+        setDdlImportMessage(null);
+        try {
+            const result = await post<ModelDdlImportResult>('/api/metadata/model-table/import-ddl', {
+                dataSourceId: selectedSourceId,
+                owner: selectedOwner,
+                ddl: ddlText,
+            });
+            setDdlImportMessage(`导入完成：${result.tableCount} 张表，${result.fieldCount} 个字段，语言 ${result.language}`);
+            setDdlText('');
+            await fetchOwners(selectedSourceId);
+            await fetchTables(selectedSourceId, selectedOwner, 1, tableSize);
+            setTablePage(1);
+            setSelectedTable(null);
+        } catch (error: any) {
+            console.error('DDL import failed:', error);
+            setDdlImportMessage(error?.message || 'DDL 导入失败');
+        } finally {
+            setDdlImporting(false);
         }
     };
 
@@ -380,6 +441,19 @@ const MetadataModel: React.FC = () => {
 
                     {/* Sidebar Footer */}
                     <div className="border-t border-slate-100 p-6">
+                        <Auth code="metadata:model:sync">
+                            <button
+                                onClick={() => {
+                                    setDdlImportOpen(true);
+                                    setDdlImportMessage(null);
+                                }}
+                                disabled={!selectedSourceId}
+                                className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 py-3 text-sm font-semibold text-indigo-700 shadow-sm transition-all hover:border-indigo-200 hover:bg-indigo-100 disabled:opacity-50"
+                            >
+                                <Upload size={16} />
+                                DDL 导入物理表
+                            </button>
+                        </Auth>
                         <Auth code="metadata:model:sync">
                             <button
                                 onClick={handleSync}
@@ -680,6 +754,94 @@ const MetadataModel: React.FC = () => {
                     </div>
                 </div>
             </aside>
+
+            {ddlImportOpen && (
+                <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/30 p-6 backdrop-blur-sm">
+                    <div className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+                            <div className="flex items-center gap-3">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                                    <FileText size={20} />
+                                </div>
+                                <div>
+                                    <h2 className="text-base font-bold text-slate-900">DDL 导入物理表资产</h2>
+                                    <p className="text-xs text-slate-500">
+                                        {selectedSource?.name || '未选择数据源'} · {ddlLanguage}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setDdlImportOpen(false)}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-6">
+                            <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                                <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Schema / Owner</p>
+                                    <p className="mt-1 truncate text-sm font-semibold text-slate-700">{selectedOwner || '按 DDL 或数据源默认值'}</p>
+                                </div>
+                                <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">数据源类型</p>
+                                    <p className="mt-1 truncate text-sm font-semibold text-slate-700">{selectedSource?.metaName || selectedSource?.metaCode || '未知'}</p>
+                                </div>
+                                <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">DDL 语言</p>
+                                    <p className={`mt-1 truncate text-sm font-semibold ${canImportDdl ? 'text-indigo-700' : 'text-rose-600'}`}>{ddlLanguage}</p>
+                                </div>
+                            </div>
+
+                            {!canImportDdl && (
+                                <div className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+                                    当前先支持星环 Inceptor 数据源的 DDL 导入。
+                                </div>
+                            )}
+
+                            <div className="mb-3 flex items-center justify-between">
+                                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">CREATE TABLE DDL</label>
+                                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition-colors hover:border-indigo-200 hover:text-indigo-700">
+                                    <Upload size={14} />
+                                    选择 .sql 文件
+                                    <input type="file" accept=".sql,.ddl,.txt" className="hidden" onChange={handleDdlFileChange} />
+                                </label>
+                            </div>
+                            <textarea
+                                value={ddlText}
+                                onChange={(event) => setDdlText(event.target.value)}
+                                placeholder="CREATE TABLE pm_rsdata.table_name (...);"
+                                className="h-80 w-full resize-none rounded-xl border border-slate-200 bg-slate-950 p-4 font-mono text-xs leading-5 text-slate-100 outline-none transition-all placeholder:text-slate-500 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10"
+                                spellCheck={false}
+                            />
+
+                            {ddlImportMessage && (
+                                <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+                                    {ddlImportMessage}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-6 py-4">
+                            <button
+                                onClick={() => setDdlImportOpen(false)}
+                                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={handleDdlImport}
+                                disabled={ddlImporting || !ddlText.trim() || !canImportDdl}
+                                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-slate-200 transition-all hover:bg-indigo-600 hover:shadow-indigo-200 disabled:opacity-50"
+                            >
+                                <Upload size={16} className={ddlImporting ? 'animate-pulse' : ''} />
+                                {ddlImporting ? '导入中...' : '开始导入'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Custom Styles for Scrollbar and additional effects */}
             <style dangerouslySetInnerHTML={{

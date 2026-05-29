@@ -12,6 +12,7 @@ import sqlglot
 from sqlglot import exp
 from typing import List, Dict, Any, Set, Optional, Tuple
 import logging
+from utils.lineage_identity import parser_statement_uid, statement_hash
 
 
 class IndirectFlowParser:
@@ -51,7 +52,7 @@ class IndirectFlowParser:
         """解析 SQL 并使用 Scope 提取间接依赖关系。"""
         from sqlglot.optimizer.scope import build_scope
         import re
-        
+
         dependencies = []
         
         # 首先移除所有路径的注释
@@ -71,9 +72,20 @@ class IndirectFlowParser:
                  sql_statements = [cleaned_sql]
         else:
             sql_statements = self._extract_dml_statements(sql)
-            
+
+        statement_index = 0
         for stmt_sql in sql_statements:
             try:
+                stmt_meta = {
+                    "statementHash": statement_hash(stmt_sql),
+                    "statement_hash": statement_hash(stmt_sql),
+                    "parserStatementUid": parser_statement_uid(source_file, statement_index, stmt_sql),
+                    "statementUid": parser_statement_uid(source_file, statement_index, stmt_sql),
+                    "statement_uid": parser_statement_uid(source_file, statement_index, stmt_sql),
+                    "statementIndex": statement_index,
+                    "statement_index": statement_index,
+                }
+                statement_index += 1
                 # 解析单条语句
                 statements = sqlglot.parse(stmt_sql, dialect=self.dialect)
                 
@@ -99,10 +111,16 @@ class IndirectFlowParser:
                     all_scopes = self._traverse_all_scopes(root)
                     for scope in all_scopes:
                         # Pass the SQL statement for snippet storage
-                        dependencies.extend(self._process_scope(scope, target_info, source_file, stmt_sql, stmt_obj=stmt))
-                    dependencies.extend(self._extract_set_operation_star_dependencies(
+                        scope_deps = self._process_scope(scope, target_info, source_file, stmt_sql, stmt_obj=stmt)
+                        for dep in scope_deps:
+                            dep.update(stmt_meta)
+                        dependencies.extend(scope_deps)
+                    star_deps = self._extract_set_operation_star_dependencies(
                         stmt, target_info, source_file, stmt_sql
-                    ))
+                    )
+                    for dep in star_deps:
+                        dep.update(stmt_meta)
+                    dependencies.extend(star_deps)
                         
             except Exception as e:
                 logging.debug(f"sqlglot parse error: {e}")
@@ -185,6 +203,7 @@ class IndirectFlowParser:
             target_resolution_note = None
             target_metadata_matched = False
             projection_item = None
+            projection_index = None
 
             # 向上遍历以查找不同的上下文
             curr = col
@@ -264,6 +283,7 @@ class IndirectFlowParser:
                             None,
                         )
                         if idx is not None:
+                            projection_index = idx
                             # 1. 尝试位置映射 (INSERT INTO t (c1, c2) ...)
                             if target_info.get("columns") and idx in target_info["columns"]:
                                 specific_target_column = target_info["columns"][idx]
@@ -306,7 +326,13 @@ class IndirectFlowParser:
                     "neo4j_type": resolution.get("neo4j_type") or neo4j_type,
                     "context": context_name,
                     "source_file": source_file,
-                    "snippet": stmt_sql  # 存储完整的 SQL 语句
+                    "snippet": stmt_sql,  # 存储完整的 SQL 语句
+                    "projectionIndex": projection_index,
+                    "projection_index": projection_index,
+                    "sourceExpression": self._safe_sql(col),
+                    "source_expression": self._safe_sql(col),
+                    "targetExpression": self._safe_sql(projection_item) if projection_item is not None else specific_target_column,
+                    "target_expression": self._safe_sql(projection_item) if projection_item is not None else specific_target_column,
                 }
                 if resolution.get("confidence"):
                     dep["confidence"] = resolution.get("confidence")
@@ -365,7 +391,13 @@ class IndirectFlowParser:
                     "lineage_origin": "set_operation",
                     "relation_level": "set_operation",
                     "source_file": source_file,
-                    "snippet": stmt_sql
+                    "snippet": stmt_sql,
+                    "projectionIndex": index,
+                    "projection_index": index,
+                    "sourceExpression": source_column,
+                    "source_expression": source_column,
+                    "targetExpression": target_column,
+                    "target_expression": target_column,
                 })
         return deps
 
@@ -664,6 +696,14 @@ class IndirectFlowParser:
     @staticmethod
     def _is_scope(source) -> bool:
         return type(source).__name__ == 'Scope' or hasattr(source, 'expression')
+
+    def _safe_sql(self, expression) -> str:
+        if expression is None:
+            return ""
+        try:
+            return expression.sql(dialect=self.dialect)
+        except Exception:
+            return str(expression)
 
     def _resolve_source_to_physical(self, source) -> Set[str]:
         """递归地将 Scope/表源解析为物理表名。"""

@@ -2,6 +2,8 @@ package com.example.urgs_api.metadata.controller;
 
 import com.example.urgs_api.metadata.dto.ModelSyncRequest;
 import com.example.urgs_api.metadata.dto.ModelSyncResult;
+import com.example.urgs_api.metadata.dto.ModelDdlImportRequest;
+import com.example.urgs_api.metadata.dto.ModelDdlImportResult;
 import com.example.urgs_api.metadata.model.ModelTable;
 import com.example.urgs_api.metadata.service.ModelTableService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,6 +67,17 @@ public class ModelTableController {
     @PostMapping("/sync")
     public ModelSyncResult sync(@RequestBody ModelSyncRequest request) {
         return modelTableService.syncFromDataSource(request.getDataSourceId(), request.getOwner());
+    }
+
+    /**
+     * 从 DDL 导入物理表资产
+     *
+     * @param request DDL 导入请求
+     * @return 导入结果
+     */
+    @PostMapping("/import-ddl")
+    public ModelDdlImportResult importDdl(@RequestBody ModelDdlImportRequest request) {
+        return modelTableService.importFromDdl(request);
     }
 
     /**

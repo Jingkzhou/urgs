@@ -4,13 +4,20 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.example.urgs_api.datasource.entity.DataSourceConfig;
+import com.example.urgs_api.datasource.entity.DataSourceMeta;
+import com.example.urgs_api.datasource.repository.DataSourceConfigMapper;
+import com.example.urgs_api.datasource.repository.DataSourceMetaMapper;
 import com.example.urgs_api.datasource.service.DynamicDataSourceService;
+import com.example.urgs_api.metadata.dto.ModelDdlImportRequest;
+import com.example.urgs_api.metadata.dto.ModelDdlImportResult;
 import com.example.urgs_api.metadata.dto.ModelSyncResult;
 import com.example.urgs_api.metadata.model.ModelField;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.urgs_api.metadata.mapper.ModelTableMapper;
 import com.example.urgs_api.metadata.model.ModelDirectory;
 import com.example.urgs_api.metadata.model.ModelTable;
+import com.example.urgs_api.metadata.service.ModelDdlParser;
 import com.example.urgs_api.metadata.service.ModelDirectoryService;
 import com.example.urgs_api.metadata.service.ModelTableService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +32,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -38,6 +47,15 @@ public class ModelTableServiceImpl extends ServiceImpl<ModelTableMapper, ModelTa
 
     @Autowired
     private DynamicDataSourceService dynamicDataSourceService;
+
+    @Autowired
+    private DataSourceConfigMapper dataSourceConfigMapper;
+
+    @Autowired
+    private DataSourceMetaMapper dataSourceMetaMapper;
+
+    @Autowired
+    private ModelDdlParser modelDdlParser;
 
     @Override
     /**
@@ -315,6 +333,119 @@ public class ModelTableServiceImpl extends ServiceImpl<ModelTableMapper, ModelTa
         private String catalog;
         private String owner;
         private String comment;
+    }
+
+    @Override
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    public ModelDdlImportResult importFromDdl(ModelDdlImportRequest request) {
+        if (request == null || request.getDataSourceId() == null) {
+            throw new IllegalArgumentException("dataSourceId is required");
+        }
+        if (request.getDdl() == null || request.getDdl().isBlank()) {
+            throw new IllegalArgumentException("DDL 内容不能为空");
+        }
+
+        DataSourceConfig config = dataSourceConfigMapper.selectById(request.getDataSourceId());
+        if (config == null) {
+            throw new IllegalArgumentException("DataSource not found: " + request.getDataSourceId());
+        }
+        DataSourceMeta meta = dataSourceMetaMapper.selectById(config.getMetaId());
+        if (meta == null) {
+            throw new IllegalArgumentException("DataSource Meta not found for ID: " + config.getMetaId());
+        }
+
+        String language = resolveDdlLanguage(meta.getCode());
+        String defaultOwner = normalizeOwner(request.getOwner());
+        if (defaultOwner == null) {
+            defaultOwner = resolveDefaultOwner(config);
+        }
+
+        List<ModelDdlParser.DdlTable> parsedTables = modelDdlParser.parse(request.getDdl(), defaultOwner, language);
+        LocalDateTime now = LocalDateTime.now();
+        int fieldCount = 0;
+
+        for (ModelDdlParser.DdlTable parsedTable : parsedTables) {
+            String owner = normalizeOwner(parsedTable.getOwner());
+            if (owner == null) {
+                owner = defaultOwner == null ? "default" : defaultOwner;
+            }
+
+            ModelTable existing = getOne(new LambdaQueryWrapper<ModelTable>()
+                    .eq(ModelTable::getDataSourceId, request.getDataSourceId())
+                    .eq(ModelTable::getOwner, owner)
+                    .eq(ModelTable::getName, parsedTable.getName())
+                    .last("LIMIT 1"));
+            if (existing != null) {
+                modelFieldService.remove(new LambdaQueryWrapper<ModelField>()
+                        .eq(ModelField::getTableId, existing.getId()));
+                removeById(existing.getId());
+            }
+
+            ModelTable table = new ModelTable();
+            table.setId(IdWorker.getIdStr());
+            table.setName(parsedTable.getName());
+            table.setCnName(parsedTable.getComment());
+            table.setOwner(owner);
+            table.setDataSourceId(request.getDataSourceId());
+            table.setCreateTime(now);
+            table.setUpdateTime(now);
+            save(table);
+
+            List<ModelField> fields = new ArrayList<>();
+            int sortOrder = 1;
+            for (ModelDdlParser.DdlField parsedField : parsedTable.getFields()) {
+                ModelField field = new ModelField();
+                field.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
+                field.setTableId(table.getId());
+                field.setName(parsedField.getName());
+                field.setCnName(parsedField.getComment());
+                field.setType(parsedField.getType());
+                field.setIsPk(parsedField.isPrimaryKey());
+                field.setNullable(parsedField.isNullable());
+                field.setRemark(parsedField.isPartitionField() ? "分区字段" : null);
+                field.setSortOrder(sortOrder++);
+                field.setCreateTime(now);
+                field.setUpdateTime(now);
+                fields.add(field);
+            }
+            if (!fields.isEmpty()) {
+                modelFieldService.saveBatch(fields, 500);
+                fieldCount += fields.size();
+            }
+        }
+
+        ModelDdlImportResult result = new ModelDdlImportResult();
+        result.setTableCount(parsedTables.size());
+        result.setFieldCount(fieldCount);
+        result.setLanguage(language);
+        return result;
+    }
+
+    private String resolveDdlLanguage(String metaCode) {
+        String code = metaCode == null ? "" : metaCode.trim().toLowerCase(Locale.ROOT);
+        if ("inceptor".equals(code) || "xinghuan".equals(code) || "transwarp".equals(code)) {
+            return "Inceptor SQL";
+        }
+        throw new IllegalArgumentException("当前数据源类型暂不支持 DDL 导入: " + metaCode);
+    }
+
+    private String resolveDefaultOwner(DataSourceConfig config) {
+        Map<String, Object> params = config.getConnectionParams();
+        if (params == null) {
+            return "default";
+        }
+        Object database = params.get("database");
+        if (database != null && !String.valueOf(database).isBlank()) {
+            return String.valueOf(database).trim();
+        }
+        return "default";
+    }
+
+    private String normalizeOwner(String owner) {
+        if (owner == null || owner.isBlank()) {
+            return null;
+        }
+        return owner.trim();
     }
 
     @Override

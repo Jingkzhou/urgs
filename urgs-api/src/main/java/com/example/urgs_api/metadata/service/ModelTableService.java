@@ -1,6 +1,8 @@
 package com.example.urgs_api.metadata.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.example.urgs_api.metadata.dto.ModelDdlImportRequest;
+import com.example.urgs_api.metadata.dto.ModelDdlImportResult;
 import com.example.urgs_api.metadata.model.ModelTable;
 
 import com.example.urgs_api.metadata.dto.ModelTableOperationDTO;
@@ -49,6 +51,14 @@ public interface ModelTableService extends IService<ModelTable> {
      * @return 同步结果
      */
     com.example.urgs_api.metadata.dto.ModelSyncResult syncFromDataSource(Long dataSourceId, String owner);
+
+    /**
+     * 从 DDL 导入物理表资产
+     *
+     * @param request DDL 导入请求
+     * @return 导入结果
+     */
+    ModelDdlImportResult importFromDdl(ModelDdlImportRequest request);
 
     /**
      * 创建模型表并记录维护日志

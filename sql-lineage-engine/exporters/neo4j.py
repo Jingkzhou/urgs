@@ -1,9 +1,14 @@
 from neo4j import GraphDatabase
-import hashlib
-import re
 import sys
 import time
 from config.settings import settings
+from utils.lineage_identity import (
+    normalize_sql_for_hash,
+    parser_statement_uid,
+    relation_uid,
+    scoped_statement_uid,
+    statement_hash,
+)
 
 # GSP 关系类型到 Neo4j 关系类型的映射
 RELATION_TYPE_MAP = {
@@ -31,21 +36,37 @@ class Neo4jClient:
 
     @staticmethod
     def _normalize_sql_for_statement_hash(sql: str) -> str:
-        if not sql:
-            return ""
-        normalized = re.sub(r"/\*.*?\*/", " ", str(sql), flags=re.S)
-        normalized = re.sub(r"--.*?$", " ", normalized, flags=re.M)
-        normalized = re.sub(r"\s+", " ", normalized).strip()
-        if normalized.endswith(";"):
-            normalized = normalized[:-1].strip()
-        return normalized.upper()
+        return normalize_sql_for_hash(sql)
 
     @classmethod
     def _statement_hash(cls, sql: str) -> str:
-        normalized = cls._normalize_sql_for_statement_hash(sql)
-        if not normalized:
-            return ""
-        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        return statement_hash(sql)
+
+    @staticmethod
+    def _first_value(values):
+        if isinstance(values, list):
+            return values[0] if values else None
+        return values
+
+    def _statement_identity_for_item(self, item: dict, version: str = None, repo_id: str = None) -> tuple[str, str]:
+        snippet = item.get("snippet") or item.get("sql")
+        statement_index = item.get("statementIndex")
+        if statement_index is None:
+            statement_index = item.get("statement_index")
+        source_file = (
+            item.get("source_file")
+            or item.get("sourceFile")
+            or self._first_value(item.get("source_files"))
+            or self._first_value(item.get("sourceFiles"))
+        )
+        parser_uid = (
+            item.get("parserStatementUid")
+            or item.get("parser_statement_uid")
+            or item.get("statementUid")
+            or item.get("statement_uid")
+            or parser_statement_uid(source_file, statement_index or 0, snippet or "")
+        )
+        return parser_uid, scoped_statement_uid(version, repo_id, parser_uid)
     
     def ensure_indexes(self):
         """
@@ -63,6 +84,11 @@ class Neo4jClient:
             # LineageVersion 节点唯一性约束
             "CREATE CONSTRAINT constraint_version_id IF NOT EXISTS FOR (v:LineageVersion) REQUIRE v.id IS UNIQUE",
             "CREATE INDEX idx_version_created IF NOT EXISTS FOR (v:LineageVersion) ON (v.createdAt)",
+            "CREATE CONSTRAINT constraint_sql_statement_uid IF NOT EXISTS FOR (s:SqlStatement) REQUIRE s.statementUid IS UNIQUE",
+            "CREATE CONSTRAINT constraint_lineage_fact_uid IF NOT EXISTS FOR (f:LineageFact) REQUIRE f.relationUid IS UNIQUE",
+            "CREATE INDEX idx_sql_statement_version IF NOT EXISTS FOR (s:SqlStatement) ON (s.version)",
+            "CREATE INDEX idx_lineage_fact_statement_uid IF NOT EXISTS FOR (f:LineageFact) ON (f.statementUid)",
+            "CREATE INDEX idx_lineage_fact_version IF NOT EXISTS FOR (f:LineageFact) ON (f.version)",
         ]
         
         with self.driver.session() as session:
@@ -140,6 +166,14 @@ class Neo4jClient:
         with self.driver.session() as session:
             # 使用 CALL IN TRANSACTIONS 批量删除，避免大数据量时内存溢出
             # 每批删除 10000 个节点/关系
+            session.run("""
+                MATCH (f:LineageFact)
+                DETACH DELETE f
+            """)
+            session.run("""
+                MATCH (s:SqlStatement)
+                DETACH DELETE s
+            """)
             
             # 1. 批量删除 Column 节点（会自动删除相关关系）
             session.run("""
@@ -192,6 +226,18 @@ class Neo4jClient:
             batch_size = 1000
             for i in range(0, len(files), batch_size):
                 file_batch = files[i:i + batch_size]
+                session.run("""
+                    MATCH (f:LineageFact)
+                    WHERE f.repoId = $repoId
+                      AND ANY(file IN coalesce(f.sourceFiles, []) WHERE file IN $files)
+                    DETACH DELETE f
+                """, repoId=repo_id, files=file_batch)
+                session.run("""
+                    MATCH (s:SqlStatement)
+                    WHERE s.repoId = $repoId
+                      AND ANY(file IN coalesce(s.sourceFiles, []) WHERE file IN $files)
+                    DETACH DELETE s
+                """, repoId=repo_id, files=file_batch)
                 
                 # 智能删除：先过滤 sourceFiles，再根据结果决定删除或更新
                 session.run("""
@@ -233,6 +279,22 @@ class Neo4jClient:
 
         print(f"正在清除版本 {version} 的旧血缘关系...")
         with self.driver.session() as session:
+            session.run(
+                """
+                MATCH (f:LineageFact)
+                WHERE f.version = $version
+                DETACH DELETE f
+                """,
+                version=version,
+            )
+            session.run(
+                """
+                MATCH (s:SqlStatement)
+                WHERE s.version = $version
+                DETACH DELETE s
+                """,
+                version=version,
+            )
             session.run(
                 """
                 MATCH ()-[r]->()
@@ -278,8 +340,7 @@ class Neo4jClient:
         values = value if isinstance(value, list) else [value]
         return [str(item) for item in values if item not in (None, "")]
 
-    @classmethod
-    def _normalize_table_relationships(cls, relationships: list, version: str = None, repo_id: str = None):
+    def _normalize_table_relationships(self, relationships: list, version: str = None, repo_id: str = None):
         normalized = []
         for rel in relationships:
             source = (rel.get("source") or rel.get("source_table") or "").upper()
@@ -292,21 +353,33 @@ class Neo4jClient:
             if neo4j_rel_type not in ALL_LINEAGE_RELATION_TYPES:
                 neo4j_rel_type = "DERIVES_TO"
 
-            source_columns = cls._as_clean_list(
+            source_columns = self._as_clean_list(
                 rel.get("sourceColumns") or rel.get("source_columns") or rel.get("source_column")
             )
-            target_columns = cls._as_clean_list(
+            target_columns = self._as_clean_list(
                 rel.get("targetColumns") or rel.get("target_columns") or rel.get("target_column")
             )
-            source_files = cls._as_clean_list(
+            source_files = self._as_clean_list(
                 rel.get("sourceFiles") or rel.get("source_files") or rel.get("source_file") or rel.get("sourceFile")
             )
             relation_level = rel.get("relation_level") or rel.get("relationLevel") or "table_fallback"
             confidence = rel.get("confidence") or ("LOW" if relation_level == "table_fallback" else "MEDIUM")
             lineage_origin = rel.get("lineage_origin") or rel.get("lineageOrigin") or "table_parser"
             snippet = rel.get("snippet") or rel.get("sql")
-            normalized_snippet = cls._normalize_sql_for_statement_hash(snippet)
-            statement_hash = rel.get("statementHash") or rel.get("statement_hash") or cls._statement_hash(snippet)
+            normalized_snippet = self._normalize_sql_for_statement_hash(snippet)
+            statement_hash = rel.get("statementHash") or rel.get("statement_hash") or self._statement_hash(snippet)
+            parser_statement_uid_value, statement_uid = self._statement_identity_for_item(rel, version, repo_id)
+            normalized_for_uid = {
+                "statementUid": statement_uid,
+                "relationType": neo4j_rel_type,
+                "sourceTable": source,
+                "targetTable": target,
+                "projectionIndex": rel.get("projectionIndex") if rel.get("projectionIndex") is not None else rel.get("projection_index"),
+                "sourceExpression": rel.get("sourceExpression") or rel.get("source_expression"),
+                "targetExpression": rel.get("targetExpression") or rel.get("target_expression"),
+            }
+            parser_relation_uid = rel.get("parserRelationUid") or rel.get("parser_relation_uid") or rel.get("relationUid") or rel.get("relation_uid")
+            scoped_relation_uid = relation_uid(version, repo_id, normalized_for_uid)
 
             normalized.append({
                 "source": source,
@@ -316,16 +389,24 @@ class Neo4jClient:
                 "snippet": snippet,
                 "normalized_snippet": normalized_snippet,
                 "statement_hash": statement_hash,
+                "parser_statement_uid": parser_statement_uid_value,
+                "statement_uid": statement_uid,
+                "parser_relation_uid": parser_relation_uid,
+                "relation_uid": scoped_relation_uid,
                 "source_files": source_files,
                 "source_columns": source_columns,
                 "target_columns": target_columns,
                 "version": version or rel.get("version"),
                 "repo_id": repo_id or rel.get("repo_id") or rel.get("repoId"),
+                "statement_index": rel.get("statementIndex") if rel.get("statementIndex") is not None else rel.get("statement_index"),
+                "projection_index": rel.get("projectionIndex") if rel.get("projectionIndex") is not None else rel.get("projection_index"),
+                "source_expression": rel.get("sourceExpression") or rel.get("source_expression"),
+                "target_expression": rel.get("targetExpression") or rel.get("target_expression"),
                 "relation_level": relation_level,
-                "relation_levels": cls._as_clean_list(rel.get("relationLevels") or rel.get("relation_levels"))
+                "relation_levels": self._as_clean_list(rel.get("relationLevels") or rel.get("relation_levels"))
                     or [relation_level],
                 "lineage_origin": lineage_origin,
-                "lineage_origins": cls._as_clean_list(rel.get("lineageOrigins") or rel.get("lineage_origins"))
+                "lineage_origins": self._as_clean_list(rel.get("lineageOrigins") or rel.get("lineage_origins"))
                     or [lineage_origin],
                 "confidence": confidence,
                 "validation_note": rel.get("validation_note") or rel.get("validationNote"),
@@ -368,6 +449,8 @@ class Neo4jClient:
                         sys.stdout.write(f"\r    Processed {processed_all}/{total_all} table relationships...")
                         sys.stdout.flush()
             print("") # Newline after done
+            for i in range(0, len(normalized), batch_size):
+                session.execute_write(self._create_lineage_facts_batch, normalized[i:i + batch_size])
 
     @staticmethod
     def _create_tables_batch(tx, relationships, rel_type):
@@ -388,6 +471,11 @@ class Neo4jClient:
             r.ambiguityCode = CASE WHEN item.ambiguity_code IS NOT NULL THEN item.ambiguity_code ELSE r.ambiguityCode END,
             r.metadataMatched = CASE WHEN item.metadata_matched IS NOT NULL THEN item.metadata_matched ELSE r.metadataMatched END,
             r.metadataPackHash = CASE WHEN item.metadata_pack_hash IS NOT NULL THEN item.metadata_pack_hash ELSE r.metadataPackHash END,
+            r.statementUid = CASE WHEN item.statement_uid IS NOT NULL THEN item.statement_uid ELSE r.statementUid END,
+            r.relationUid = CASE WHEN item.relation_uid IS NOT NULL THEN item.relation_uid ELSE r.relationUid END,
+            r.projectionIndex = CASE WHEN item.projection_index IS NOT NULL THEN item.projection_index ELSE r.projectionIndex END,
+            r.sourceExpression = CASE WHEN item.source_expression IS NOT NULL THEN item.source_expression ELSE r.sourceExpression END,
+            r.targetExpression = CASE WHEN item.target_expression IS NOT NULL THEN item.target_expression ELSE r.targetExpression END,
             r.snippet = CASE
                 WHEN item.snippet IS NOT NULL AND trim(item.snippet) <> '' THEN item.snippet
                 ELSE r.snippet
@@ -419,6 +507,16 @@ class Neo4jClient:
                 WHEN item.statement_hash IN coalesce(r.statementHashes, []) THEN coalesce(r.statementHashes, [])
                 ELSE coalesce(r.statementHashes, []) + item.statement_hash
             END,
+            r.statementUids = CASE
+                WHEN item.statement_uid IS NULL OR trim(item.statement_uid) = '' THEN coalesce(r.statementUids, [])
+                WHEN item.statement_uid IN coalesce(r.statementUids, []) THEN coalesce(r.statementUids, [])
+                ELSE coalesce(r.statementUids, []) + item.statement_uid
+            END,
+            r.relationUids = CASE
+                WHEN item.relation_uid IS NULL OR trim(item.relation_uid) = '' THEN coalesce(r.relationUids, [])
+                WHEN item.relation_uid IN coalesce(r.relationUids, []) THEN coalesce(r.relationUids, [])
+                ELSE coalesce(r.relationUids, []) + item.relation_uid
+            END,
             r.createdAt = CASE WHEN r.createdAt IS NULL THEN datetime() ELSE r.createdAt END,
             r.relationLevels = reduce(levels = coalesce(r.relationLevels, []), level IN item.relation_levels |
                 CASE WHEN level IN levels THEN levels ELSE levels + level END),
@@ -441,6 +539,86 @@ class Neo4jClient:
             END
         """
         tx.run(query, batch=relationships)
+
+    @staticmethod
+    def _create_lineage_facts_batch(tx, facts):
+        query = """
+        UNWIND $batch AS item
+        WITH item,
+             coalesce(item.source_table, item.source, '') AS sourceTable,
+             coalesce(item.target_table, item.target, '') AS targetTable,
+             coalesce(item.source_column, '') AS sourceColumn,
+             coalesce(item.target_column, '') AS targetColumn,
+             CASE
+                WHEN item.source_files IS NOT NULL THEN item.source_files
+                WHEN item.source_file IS NULL THEN []
+                ELSE [item.source_file]
+             END AS sourceFiles
+        WHERE item.relation_uid IS NOT NULL AND trim(item.relation_uid) <> ''
+          AND sourceTable <> '' AND targetTable <> ''
+        MERGE (stmt:SqlStatement {statementUid: item.statement_uid})
+        SET stmt.parserStatementUid = item.parser_statement_uid,
+            stmt.statementHash = item.statement_hash,
+            stmt.statementIndex = item.statement_index,
+            stmt.sqlText = item.snippet,
+            stmt.normalizedSnippet = item.normalized_snippet,
+            stmt.version = item.version,
+            stmt.repoId = item.repo_id,
+            stmt.sourceFiles = sourceFiles,
+            stmt.createdAt = CASE WHEN stmt.createdAt IS NULL THEN datetime() ELSE stmt.createdAt END,
+            stmt.updatedAt = datetime()
+        MERGE (fact:LineageFact {relationUid: item.relation_uid})
+        SET fact.parserRelationUid = item.parser_relation_uid,
+            fact.statementUid = item.statement_uid,
+            fact.parserStatementUid = item.parser_statement_uid,
+            fact.statementHash = item.statement_hash,
+            fact.statementIndex = item.statement_index,
+            fact.relationType = item.neo4j_rel_type,
+            fact.dependencyType = item.dependency_type,
+            fact.sourceTable = sourceTable,
+            fact.sourceColumn = sourceColumn,
+            fact.targetTable = targetTable,
+            fact.targetColumn = targetColumn,
+            fact.projectionIndex = item.projection_index,
+            fact.sourceExpression = item.source_expression,
+            fact.targetExpression = item.target_expression,
+            fact.context = item.context,
+            fact.lineageOrigin = item.lineage_origin,
+            fact.relationLevel = item.relation_level,
+            fact.confidence = item.confidence,
+            fact.validationNote = item.validation_note,
+            fact.ambiguityCode = item.ambiguity_code,
+            fact.metadataMatched = item.metadata_matched,
+            fact.metadataPackHash = item.metadata_pack_hash,
+            fact.isExpanded = item.is_expanded,
+            fact.version = item.version,
+            fact.repoId = item.repo_id,
+            fact.sourceFiles = sourceFiles,
+            fact.snippet = item.snippet,
+            fact.normalizedSnippet = item.normalized_snippet,
+            fact.createdAt = CASE WHEN fact.createdAt IS NULL THEN datetime() ELSE fact.createdAt END,
+            fact.updatedAt = datetime()
+        MERGE (fact)-[:IN_STATEMENT]->(stmt)
+        MERGE (st:Table {name: sourceTable})
+        MERGE (tt:Table {name: targetTable})
+        FOREACH (_ IN CASE WHEN sourceColumn <> '' THEN [1] ELSE [] END |
+            MERGE (sc:Column {name: sourceColumn, table: sourceTable})
+            MERGE (sc)-[:BELONGS_TO]->(st)
+            MERGE (fact)-[:FROM_COLUMN]->(sc)
+        )
+        FOREACH (_ IN CASE WHEN sourceColumn = '' THEN [1] ELSE [] END |
+            MERGE (fact)-[:FROM_TABLE]->(st)
+        )
+        FOREACH (_ IN CASE WHEN targetColumn <> '' THEN [1] ELSE [] END |
+            MERGE (tc:Column {name: targetColumn, table: targetTable})
+            MERGE (tc)-[:BELONGS_TO]->(tt)
+            MERGE (fact)-[:TO_COLUMN]->(tc)
+        )
+        FOREACH (_ IN CASE WHEN targetColumn = '' THEN [1] ELSE [] END |
+            MERGE (fact)-[:TO_TABLE]->(tt)
+        )
+        """
+        tx.run(query, batch=facts)
 
     def create_column_lineage(self, dependencies: list):
         """
@@ -526,6 +704,10 @@ class Neo4jClient:
             snippet = dep.get("snippet")
             normalized_snippet = self._normalize_sql_for_statement_hash(snippet)
             statement_hash = dep.get("statementHash") or dep.get("statement_hash") or self._statement_hash(snippet)
+            parser_statement_uid_value, statement_uid = self._statement_identity_for_item(dep, version, repo_id)
+            projection_index = dep.get("projectionIndex") if dep.get("projectionIndex") is not None else dep.get("projection_index")
+            source_expression = dep.get("sourceExpression") or dep.get("source_expression")
+            target_expression = dep.get("targetExpression") or dep.get("target_expression")
 
             item = {
                 "source_table": source_table,
@@ -537,8 +719,17 @@ class Neo4jClient:
                 "snippet": snippet,
                 "normalized_snippet": normalized_snippet,
                 "statement_hash": statement_hash,
+                "parser_statement_uid": parser_statement_uid_value,
+                "statement_uid": statement_uid,
                 "version": version,
                 "repo_id": repo_id,
+                "statement_index": dep.get("statementIndex") if dep.get("statementIndex") is not None else dep.get("statement_index"),
+                "projection_index": projection_index,
+                "source_expression": source_expression,
+                "target_expression": target_expression,
+                "context": dep.get("context"),
+                "lineage_origin": dep.get("lineage_origin") or dep.get("lineageOrigin") or "column_parser",
+                "relation_level": dep.get("relation_level") or dep.get("relationLevel") or "",
                 "confidence": dep.get("confidence", "MEDIUM"),
                 "validation_note": dep.get("validation_note"),
                 "ambiguity_code": dep.get("ambiguityCode") or dep.get("ambiguity_code"),
@@ -552,6 +743,19 @@ class Neo4jClient:
             if neo4j_rel_type not in ALL_LINEAGE_RELATION_TYPES:
                 neo4j_rel_type = "DERIVES_TO"
             item["neo4j_rel_type"] = neo4j_rel_type
+            uid_input = {
+                "statementUid": statement_uid,
+                "relationType": neo4j_rel_type,
+                "sourceTable": source_table,
+                "sourceColumn": source_column,
+                "targetTable": target_table,
+                "targetColumn": target_column,
+                "projectionIndex": projection_index,
+                "sourceExpression": source_expression,
+                "targetExpression": target_expression,
+            }
+            item["parser_relation_uid"] = dep.get("parserRelationUid") or dep.get("parser_relation_uid") or dep.get("relationUid") or dep.get("relation_uid")
+            item["relation_uid"] = relation_uid(version, repo_id, uid_input)
 
             if target_column in ["*", "", None]:
                 indirect_items.append(item)
@@ -605,6 +809,13 @@ class Neo4jClient:
             print(f"正在处理 {len(indirect_items)} 条间接字段依赖...", flush=True)
             process_by_type(indirect_items, self._create_indirect_column_batch_safe)
 
+        fact_items = direct_items + indirect_items
+        if fact_items:
+            batch_size = 2000
+            with self.driver.session() as session:
+                for i in range(0, len(fact_items), batch_size):
+                    session.execute_write(self._create_lineage_facts_batch, fact_items[i:i + batch_size])
+
     @staticmethod
     def _is_missing_source_column_dependency(dep: dict) -> bool:
         ambiguity_code = (dep.get("ambiguityCode") or dep.get("ambiguity_code") or "").upper()
@@ -637,6 +848,14 @@ class Neo4jClient:
             r.metadataMatched = item.metadata_matched,
             r.metadataPackHash = item.metadata_pack_hash,
             r.isExpanded = item.is_expanded,
+            r.statementUid = item.statement_uid,
+            r.relationUid = item.relation_uid,
+            r.projectionIndex = item.projection_index,
+            r.sourceExpression = item.source_expression,
+            r.targetExpression = item.target_expression,
+            r.context = item.context,
+            r.lineageOrigin = item.lineage_origin,
+            r.relationLevel = item.relation_level,
             r.snippet = CASE WHEN item.snippet IS NOT NULL THEN item.snippet ELSE r.snippet END,
             r.normalizedSnippet = CASE
                 WHEN item.normalized_snippet IS NOT NULL AND trim(item.normalized_snippet) <> '' THEN item.normalized_snippet
@@ -664,6 +883,16 @@ class Neo4jClient:
                 WHEN item.statement_hash IS NULL OR trim(item.statement_hash) = '' THEN coalesce(r.statementHashes, [])
                 WHEN item.statement_hash IN coalesce(r.statementHashes, []) THEN coalesce(r.statementHashes, [])
                 ELSE coalesce(r.statementHashes, []) + item.statement_hash
+            END,
+            r.statementUids = CASE
+                WHEN item.statement_uid IS NULL OR trim(item.statement_uid) = '' THEN coalesce(r.statementUids, [])
+                WHEN item.statement_uid IN coalesce(r.statementUids, []) THEN coalesce(r.statementUids, [])
+                ELSE coalesce(r.statementUids, []) + item.statement_uid
+            END,
+            r.relationUids = CASE
+                WHEN item.relation_uid IS NULL OR trim(item.relation_uid) = '' THEN coalesce(r.relationUids, [])
+                WHEN item.relation_uid IN coalesce(r.relationUids, []) THEN coalesce(r.relationUids, [])
+                ELSE coalesce(r.relationUids, []) + item.relation_uid
             END,
             r.createdAt = CASE WHEN r.createdAt IS NULL THEN datetime() ELSE r.createdAt END,
             r.sourceFiles = CASE 
@@ -694,6 +923,14 @@ class Neo4jClient:
             r.metadataMatched = item.metadata_matched,
             r.metadataPackHash = item.metadata_pack_hash,
             r.isExpanded = item.is_expanded,
+            r.statementUid = item.statement_uid,
+            r.relationUid = item.relation_uid,
+            r.projectionIndex = item.projection_index,
+            r.sourceExpression = item.source_expression,
+            r.targetExpression = item.target_expression,
+            r.context = item.context,
+            r.lineageOrigin = item.lineage_origin,
+            r.relationLevel = item.relation_level,
             r.snippet = CASE WHEN item.snippet IS NOT NULL THEN item.snippet ELSE r.snippet END,
             r.normalizedSnippet = CASE
                 WHEN item.normalized_snippet IS NOT NULL AND trim(item.normalized_snippet) <> '' THEN item.normalized_snippet
@@ -721,6 +958,16 @@ class Neo4jClient:
                 WHEN item.statement_hash IS NULL OR trim(item.statement_hash) = '' THEN coalesce(r.statementHashes, [])
                 WHEN item.statement_hash IN coalesce(r.statementHashes, []) THEN coalesce(r.statementHashes, [])
                 ELSE coalesce(r.statementHashes, []) + item.statement_hash
+            END,
+            r.statementUids = CASE
+                WHEN item.statement_uid IS NULL OR trim(item.statement_uid) = '' THEN coalesce(r.statementUids, [])
+                WHEN item.statement_uid IN coalesce(r.statementUids, []) THEN coalesce(r.statementUids, [])
+                ELSE coalesce(r.statementUids, []) + item.statement_uid
+            END,
+            r.relationUids = CASE
+                WHEN item.relation_uid IS NULL OR trim(item.relation_uid) = '' THEN coalesce(r.relationUids, [])
+                WHEN item.relation_uid IN coalesce(r.relationUids, []) THEN coalesce(r.relationUids, [])
+                ELSE coalesce(r.relationUids, []) + item.relation_uid
             END,
             r.createdAt = CASE WHEN r.createdAt IS NULL THEN datetime() ELSE r.createdAt END,
             r.sourceFiles = CASE 
