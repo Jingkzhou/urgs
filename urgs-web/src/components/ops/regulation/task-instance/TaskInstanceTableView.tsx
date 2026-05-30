@@ -38,6 +38,7 @@ interface TaskInstanceTableViewProps {
     onDataDateFilterChange: (value: string) => void;
     onCreateDateFilterChange: (value: string) => void;
     onStatusFilterChange: (value: string) => void;
+    onSummaryStatusClick: (status: string) => void;
     onSearch: () => void;
     onResetFilters: () => void;
     onToggleSelectAllVisible: (checked: boolean) => void;
@@ -78,6 +79,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     onDataDateFilterChange,
     onCreateDateFilterChange,
     onStatusFilterChange,
+    onSummaryStatusClick,
     onSearch,
     onResetFilters,
     onToggleSelectAllVisible,
@@ -107,21 +109,41 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                         </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5">
+                        <button
+                            type="button"
+                            onClick={() => onSummaryStatusClick('')}
+                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 transition-colors hover:bg-slate-200 ${statusFilter === '' ? 'bg-slate-200 font-semibold text-slate-700' : 'bg-slate-100'}`}
+                        >
                             全部 {summaryStats.totalInstances}
-                        </span>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5">
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => onSummaryStatusClick('1')}
+                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 transition-colors hover:bg-slate-200 ${statusFilter === '1' ? 'bg-slate-200 font-semibold text-slate-700' : 'bg-slate-100'}`}
+                        >
                             等待 {summaryStats.waitingInstances}
-                        </span>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1.5 text-blue-700">
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => onSummaryStatusClick('2')}
+                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-blue-700 transition-colors hover:bg-blue-100 ${statusFilter === '2' ? 'bg-blue-100 font-semibold' : 'bg-blue-50'}`}
+                        >
                             执行中 {summaryStats.runningInstances}
-                        </span>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700">
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => onSummaryStatusClick('3')}
+                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-emerald-700 transition-colors hover:bg-emerald-100 ${statusFilter === '3' ? 'bg-emerald-100 font-semibold' : 'bg-emerald-50'}`}
+                        >
                             成功 {summaryStats.successInstances}
-                        </span>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-3 py-1.5 text-red-700">
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => onSummaryStatusClick('4')}
+                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-red-700 transition-colors hover:bg-red-100 ${statusFilter === '4' ? 'bg-red-100 font-semibold' : 'bg-red-50'}`}
+                        >
                             失败 {summaryStats.failedInstances}
-                        </span>
+                        </button>
                     </div>
                 </div>
 

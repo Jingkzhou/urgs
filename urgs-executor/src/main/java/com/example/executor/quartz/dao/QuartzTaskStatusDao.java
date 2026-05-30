@@ -15,9 +15,9 @@ public interface QuartzTaskStatusDao {
 
     int getFinishCount(@Param("dependIds") List<Long> dependIds, @Param("dataDate") String dataDate);
 
-    int deleteByPlanIdAndDataDate(@Param("planId") Long planId, @Param("dataDate") String dataDate);
-
     int insertStatus(@Param("entity") QuartzTaskStatusEntity entity);
+
+    int resetStatusForDispatch(@Param("entity") QuartzTaskStatusEntity entity);
 
     int updateStatus(@Param("entity") QuartzTaskStatusEntity entity);
 }

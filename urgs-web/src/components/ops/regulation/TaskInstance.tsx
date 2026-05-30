@@ -349,6 +349,30 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         loadInstances,
     ]);
 
+    const handleSummaryStatusClick = useCallback((nextStatus: string) => {
+        const nextKeyword = draftSearchKeyword.trim();
+        setDraftStatusFilter(nextStatus);
+        setSearchKeyword(nextKeyword);
+        setTaskSystemFilter(draftTaskSystemFilter);
+        setDataDateFilter(draftDataDateFilter);
+        setCreateDateFilter(draftCreateDateFilter);
+        setStatusFilter(nextStatus);
+        setCurrentPage(1);
+        void loadInstances({
+            keyword: nextKeyword,
+            taskSystem: draftTaskSystemFilter,
+            dataDate: draftDataDateFilter,
+            createDate: draftCreateDateFilter,
+            status: nextStatus,
+        });
+    }, [
+        draftCreateDateFilter,
+        draftDataDateFilter,
+        draftSearchKeyword,
+        draftTaskSystemFilter,
+        loadInstances,
+    ]);
+
     const handleResetFilters = useCallback(() => {
         setDraftSearchKeyword('');
         setDraftTaskSystemFilter('');
@@ -785,6 +809,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
                 onDataDateFilterChange={setDraftDataDateFilter}
                 onCreateDateFilterChange={setDraftCreateDateFilter}
                 onStatusFilterChange={setDraftStatusFilter}
+                onSummaryStatusClick={handleSummaryStatusClick}
                 onSearch={handleSearch}
                 onResetFilters={handleResetFilters}
                 onToggleSelectAllVisible={toggleSelectAllVisible}

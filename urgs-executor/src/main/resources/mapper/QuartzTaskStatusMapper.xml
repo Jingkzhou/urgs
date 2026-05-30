@@ -35,18 +35,22 @@
           </foreach>
     </select>
 
-    <delete id="deleteByPlanIdAndDataDate">
-        DELETE
-        FROM t_quartz_task_status
-        WHERE plan_id = #{planId}
-          AND data_date = #{dataDate}
-    </delete>
-
     <insert id="insertStatus">
         INSERT INTO t_quartz_task_status(plan_id, data_date, status, begin_time, end_time, msg, update_time, create_time, create_date)
         VALUES (#{entity.planId}, #{entity.dataDate}, #{entity.status}, #{entity.beginTime}, #{entity.endTime}, #{entity.msg},
                 #{entity.updateTime}, #{entity.createTime}, DATE_FORMAT(#{entity.createTime}, '%Y%m%d'))
     </insert>
+
+    <update id="resetStatusForDispatch">
+        UPDATE t_quartz_task_status
+        SET status = #{entity.status},
+            begin_time = NULL,
+            end_time = NULL,
+            msg = #{entity.msg},
+            update_time = #{entity.updateTime}
+        WHERE plan_id = #{entity.planId}
+          AND data_date = #{entity.dataDate}
+    </update>
 
     <update id="updateStatus">
         UPDATE t_quartz_task_status

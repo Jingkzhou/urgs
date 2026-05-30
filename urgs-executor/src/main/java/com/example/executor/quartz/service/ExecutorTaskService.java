@@ -179,11 +179,11 @@ public class ExecutorTaskService {
             return;
         }
 
-        // 初始化状态记录
-        quartzTaskStatusDao.deleteByPlanIdAndDataDate(task.getId(), dataDate);
+        // 初始化状态记录。重跑场景下 API 会先把同一实例重置为等待中，
+        // 这里避免 DELETE+INSERT 和批量重跑/扫描线程争抢同一行锁。
         QuartzTaskStatusEntity status = buildStatus(task.getId(), dataDate,
                 TaskExeStatusEnum.WAITING.getCode(), "等待执行");
-        insertStatus(status);
+        resetOrInsertStatus(status, currentStatus);
 
         // 依赖检查：前置任务未完成则等待
         if (!checkPredecessors(task, dataDate)) {
@@ -296,6 +296,16 @@ public class ExecutorTaskService {
         quartzTaskStatusDao.insertStatus(entity);
     }
 
+    private void resetOrInsertStatus(QuartzTaskStatusEntity entity, Integer currentStatus) {
+        if (currentStatus == null) {
+            insertStatus(entity);
+            return;
+        }
+        Date now = new Date();
+        entity.setUpdateTime(now);
+        quartzTaskStatusDao.resetStatusForDispatch(entity);
+    }
+
     private void updateStatus(QuartzTaskStatusEntity entity) {
         Date now = new Date();
         entity.setUpdateTime(now);
@@ -311,7 +321,6 @@ public class ExecutorTaskService {
 
     private void recordStartupFailure(QuartzTaskEntity task, String dataDate, Exception e) {
         try {
-            quartzTaskStatusDao.deleteByPlanIdAndDataDate(task.getId(), dataDate);
             QuartzTaskStatusEntity status = buildStatus(
                     task.getId(),
                     dataDate,
@@ -321,7 +330,12 @@ public class ExecutorTaskService {
             Date now = new Date();
             status.setBeginTime(now);
             status.setEndTime(now);
-            insertStatus(status);
+            Integer currentStatus = quartzTaskStatusDao.getStatusByPlanIdAndDate(task.getId(), dataDate);
+            if (currentStatus == null) {
+                insertStatus(status);
+            } else {
+                updateStatus(status);
+            }
         } catch (Exception statusException) {
             log.warn("{} record startup failure status failed, error={}", taskTag(task, dataDate), statusException.getMessage());
         }
