@@ -34,7 +34,7 @@ public class AiChatController {
         // 如果有 sessionId，则使用持久化逻辑；否则仅流式返回
         String sessionId = (String) request.get("sessionId");
 
-        SseEmitter emitter = new SseEmitter(300000L); // 5分钟超时
+        SseEmitter emitter = new SseEmitter(900000L); // 15分钟超时，覆盖 Agent App 长任务
 
         if (sessionId != null && !sessionId.isEmpty()) {
             aiChatService.streamChatWithPersistence(sessionId, systemPrompt, userPrompt, emitter);

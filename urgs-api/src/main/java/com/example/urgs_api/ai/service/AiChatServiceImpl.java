@@ -1,6 +1,9 @@
 package com.example.urgs_api.ai.service;
 
 import com.example.urgs_api.ai.entity.AiApiConfig;
+import com.example.urgs_api.ai.service.agent.AgentAppBuildModeHandler;
+import com.example.urgs_api.ai.service.agent.DifyBuildModeHandler;
+import com.example.urgs_api.ai.service.agent.RagBuildModeHandler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -48,10 +51,13 @@ public class AiChatServiceImpl implements AiChatService {
     private com.example.urgs_api.ai.repository.AgentRepository agentRepository;
 
     @Autowired
-    private com.example.urgs_api.ai.repository.KnowledgeBaseRepository knowledgeBaseRepository;
+    private AgentAppBuildModeHandler agentAppBuildModeHandler;
 
     @Autowired
-    private RagService ragService;
+    private RagBuildModeHandler ragBuildModeHandler;
+
+    @Autowired
+    private DifyBuildModeHandler difyBuildModeHandler;
 
     @Override
     public String chat(String systemPrompt, String userPrompt) {
@@ -105,220 +111,24 @@ public class AiChatServiceImpl implements AiChatService {
         // 1. 保存用户消息 (Save User Message)
         aiChatHistoryService.saveMessage(sessionId, "user", userPrompt);
 
-        // ==========================================
-        // Multi-Agent & RAG Logic
-        // ==========================================
+        com.example.urgs_api.ai.entity.Agent sessionAgent = resolveSessionAgent(sessionId);
+        if (agentAppBuildModeHandler.supports(sessionAgent)) {
+            agentAppBuildModeHandler.streamWithPersistence(sessionId, sessionAgent, userPrompt, emitter);
+            return;
+        }
+
         String contextAugmentation = "";
-        try {
-            com.example.urgs_api.ai.entity.AiChatSession sessionInfo = aiChatHistoryService.getSession(sessionId);
-            if (sessionInfo != null && sessionInfo.getAgentId() != null) {
-                com.example.urgs_api.ai.entity.Agent agent = agentRepository.selectById(sessionInfo.getAgentId());
-                if (agent != null) {
-
-                    log.info("Checking Agent Configuration - ID: {}, Name: {}, KB: {}",
-                            agent.getId(), agent.getName(), agent.getKnowledgeBase());
-
-                    // 1. Agent System Prompt Override
-                    if (agent.getSystemPrompt() != null && !agent.getSystemPrompt().isBlank()) {
-                        systemPrompt = agent.getSystemPrompt();
-                    }
-
-                    // 2. RAG Retrieval (SKIP if Agent uses Dify, as Dify handles its own RAG)
-                    boolean useDify = agent.getDifyApiKey() != null && !agent.getDifyApiKey().isBlank();
-                    if (!useDify && agent.getKnowledgeBase() != null && !agent.getKnowledgeBase().isBlank()) {
-                        java.util.List<String> collectionNames = new java.util.ArrayList<>();
-                        String[] kbIds = agent.getKnowledgeBase().split(",");
-                        for (String kbIdStr : kbIds) {
-                            String target = kbIdStr.trim();
-                            if (target.isEmpty())
-                                continue;
-
-                            com.example.urgs_api.ai.entity.KnowledgeBase kb = null;
-                            try {
-                                if (target.matches("\\d+")) { // Check if it's a number
-                                    Long kbId = Long.parseLong(target);
-                                    kb = knowledgeBaseRepository.selectById(kbId);
-                                }
-                            } catch (Exception e) {
-                                log.warn("Failed to parse KB ID: {}", target);
-                            }
-
-                            if (kb == null) {
-                                // Try lookup by name or collection name
-                                try {
-                                    kb = knowledgeBaseRepository.selectOne(
-                                            new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.example.urgs_api.ai.entity.KnowledgeBase>()
-                                                    .eq(com.example.urgs_api.ai.entity.KnowledgeBase::getName, target)
-                                                    .or()
-                                                    .eq(com.example.urgs_api.ai.entity.KnowledgeBase::getCollectionName,
-                                                            target));
-                                } catch (Exception e) {
-                                    log.warn("KB lookup by name/collection failed for: {}", target);
-                                }
-                            }
-
-                            if (kb != null) {
-                                log.info("Found KnowledgeBase - ID: {}, Collection: {}", kb.getId(),
-                                        kb.getCollectionName());
-                                if (kb.getCollectionName() != null) {
-                                    collectionNames.add(kb.getCollectionName());
-                                }
-                            } else {
-                                log.warn("KnowledgeBase not found for target: {}", target);
-                            }
-                        }
-
-                        if (!collectionNames.isEmpty()) {
-                            log.info("Performing RAG Query for Agent {} on Collections: {}", agent.getName(),
-                                    collectionNames);
-
-                            // Send status update to frontend
-                            try {
-                                emitter.send(SseEmitter.event().name("status").data("searching"));
-                            } catch (Exception e) {
-                                log.warn("Failed to send searching status", e);
-                            }
-
-                            com.example.urgs_api.ai.dto.RagQueryRequest ragReq = new com.example.urgs_api.ai.dto.RagQueryRequest();
-                            ragReq.setQuery(userPrompt);
-                            ragReq.setCollectionNames(collectionNames);
-                            ragReq.setK(4);
-
-                            try {
-                                com.example.urgs_api.ai.dto.RagQueryResponse ragRes = ragService.query(ragReq);
-
-                                // [New] Send Intent
-                                if (ragRes != null && ragRes.getIntent() != null) {
-                                    try {
-                                        // Send as JSON object to be easily parsed by frontend (which ignores event
-                                        // names mostly)
-                                        String intentJson = objectMapper
-                                                .writeValueAsString(Map.of("intent", ragRes.getIntent()));
-                                        emitter.send(SseEmitter.event().data(intentJson));
-                                        log.info("Sent intent: {}", ragRes.getIntent());
-                                    } catch (Exception e) {
-                                        log.warn("Failed to send intent SSE", e);
-                                    }
-                                }
-
-                                if (ragRes != null && ragRes.getEffectiveResults() != null
-                                        && !ragRes.getEffectiveResults().isEmpty()) {
-                                    StringBuilder sourcesBuilder = new StringBuilder();
-                                    List<Map<String, Object>> sourceList = new java.util.ArrayList<>();
-
-                                    // ===== [RELEVANCE THRESHOLD] Filter low-score results =====
-                                    // RRF scores typically range 0~0.1, so threshold must be low
-                                    final double SCORE_THRESHOLD = 0.02; // Minimum relevance score for RRF
-                                    List<Map<String, Object>> filteredResults = ragRes.getEffectiveResults().stream()
-                                            .filter(r -> {
-                                                Object scoreObj = r.get("score");
-                                                if (scoreObj instanceof Number) {
-                                                    return ((Number) scoreObj).doubleValue() >= SCORE_THRESHOLD;
-                                                }
-                                                return false; // Discard if no score
-                                            })
-                                            .collect(java.util.stream.Collectors.toList());
-
-                                    log.info("RAG Results: {} total, {} after threshold filter (>= {})",
-                                            ragRes.getEffectiveResults().size(), filteredResults.size(),
-                                            SCORE_THRESHOLD);
-
-                                    // ===== [DOCUMENT GROUPING] Group by source file =====
-                                    Map<String, List<Map<String, Object>>> groupedByFile = new java.util.LinkedHashMap<>();
-                                    Map<String, Double> fileMaxScore = new java.util.HashMap<>();
-
-                                    for (Map<String, Object> res : filteredResults) {
-                                        Object metadata = res.get("metadata");
-                                        String fileName = "Unknown";
-                                        if (metadata instanceof Map) {
-                                            @SuppressWarnings("unchecked")
-                                            Map<String, Object> metaMap = (Map<String, Object>) metadata;
-                                            Object fileNameObj = metaMap.get("file_name");
-                                            fileName = fileNameObj != null ? String.valueOf(fileNameObj) : "Unknown";
-                                        }
-
-                                        groupedByFile.computeIfAbsent(fileName, k -> new java.util.ArrayList<>())
-                                                .add(res);
-
-                                        // Track max score per file
-                                        Object scoreObj = res.get("score");
-                                        double score = (scoreObj instanceof Number) ? ((Number) scoreObj).doubleValue()
-                                                : 0;
-                                        fileMaxScore.merge(fileName, score, Math::max);
-                                    }
-
-                                    // Sort files by max score (highest first)
-                                    List<String> sortedFiles = groupedByFile.keySet().stream()
-                                            .sorted((a, b) -> Double.compare(fileMaxScore.getOrDefault(b, 0.0),
-                                                    fileMaxScore.getOrDefault(a, 0.0)))
-                                            .collect(java.util.stream.Collectors.toList());
-
-                                    log.info("RAG grouped into {} documents, top: {}", sortedFiles.size(),
-                                            sortedFiles.isEmpty() ? "none" : sortedFiles.get(0));
-
-                                    // ===== [FORMAT WITH SOURCE ATTRIBUTION] =====
-                                    sourcesBuilder.setLength(0); // Clear and reuse
-
-                                    int docIndex = 1;
-                                    for (String fileName : sortedFiles) {
-                                        List<Map<String, Object>> chunks = groupedByFile.get(fileName);
-                                        double maxScore = fileMaxScore.getOrDefault(fileName, 0.0);
-
-                                        sourcesBuilder.append(String.format("\n【参考资料 %d - 来源: %s (相关度: %.0f%%)】\n",
-                                                docIndex++, fileName, maxScore * 100));
-
-                                        for (Map<String, Object> res : chunks) {
-                                            Object content = res.get("content");
-                                            if (content != null) {
-                                                sourcesBuilder.append(content.toString()).append("\n");
-
-                                                // Prepare structured source for frontend
-                                                Object metadata = res.get("metadata");
-                                                if (metadata instanceof Map) {
-                                                    @SuppressWarnings("unchecked")
-                                                    Map<String, Object> metaMap = (Map<String, Object>) metadata;
-                                                    sourceList.add(Map.of(
-                                                            "fileName", metaMap.getOrDefault("file_name", "Unknown"),
-                                                            "content", content.toString(),
-                                                            "score", res.getOrDefault("score", 0)));
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    if (sourcesBuilder.length() > 0) {
-                                        contextAugmentation = "\n\n【参考知识库 / Reference Context】\n" +
-                                                "(注：资料按相关度从高到低排列，请优先参考排名靠前的来源)\n" +
-                                                sourcesBuilder.toString();
-                                    }
-
-                                    // Send sources via SSE
-                                    try {
-                                        emitter.send(SseEmitter.event().name("sources")
-                                                .data(objectMapper.writeValueAsString(sourceList)));
-                                    } catch (Exception e) {
-                                        log.warn("Failed to send sources SSE", e);
-                                    }
-                                } else {
-                                    // Send empty sources to indicate RAG was attempted but found nothing
-                                    try {
-                                        emitter.send(SseEmitter.event().name("sources").data("[]"));
-                                        log.info("RAG yielded no results for agent {}", agent.getName());
-                                    } catch (Exception e) {
-                                        log.warn("Failed to send empty sources SSE", e);
-                                    }
-                                }
-                            } catch (Exception e) {
-                                log.error("RAG Query Failed", e);
-                            }
-                        } else {
-                            log.warn("Agent has KB configured but no valid collections found.");
-                        }
-                    }
-                }
+        if (sessionAgent != null) {
+            log.info("Checking Agent Configuration - ID: {}, Name: {}, Mode: {}, KB: {}",
+                    sessionAgent.getId(), sessionAgent.getName(), sessionAgent.getBuildMode(), sessionAgent.getKnowledgeBase());
+            if (ragBuildModeHandler.supports(sessionAgent)) {
+                RagBuildModeHandler.RagPreparation preparation = ragBuildModeHandler
+                        .prepare(sessionAgent, systemPrompt, userPrompt, emitter);
+                systemPrompt = preparation.systemPrompt();
+                contextAugmentation = preparation.contextAugmentation();
+            } else if (sessionAgent.getSystemPrompt() != null && !sessionAgent.getSystemPrompt().isBlank()) {
+                systemPrompt = sessionAgent.getSystemPrompt();
             }
-        } catch (Exception e) {
-            log.error("Agent enhancement failed", e);
         }
 
         // Merge Context to User Prompt logic moved to AFTER message construction to
@@ -344,76 +154,9 @@ public class AiChatServiceImpl implements AiChatService {
         // 构建消息列表：System + [Summary] + Recent History (Pruned)
         List<Map<String, String>> messages = buildContextMessages(systemPrompt, history, sessionSummary);
 
-        // [RAG ENHANCEMENT]: Inject Context & Strict Instructions directly into the
-        // messages list
-        if (!contextAugmentation.isEmpty() && !messages.isEmpty()) {
+        if (!contextAugmentation.isEmpty()) {
             log.info("Injecting RAG Context into Request Messages");
-
-            // 1. Inject Strict System Requirements
-            Map<String, String> sysMsg = messages.get(0);
-            if ("system".equals(sysMsg.get("role"))) {
-                // Default Instructions (Strengthened to prevent cross-document pollution)
-                String ragInstructions = """
-                        [RAG Mode Active]
-                        You are a knowledge-grounded AI assistant. Follow these rules STRICTLY:
-
-                        [CORE RULES]
-                        1. You MUST answer ONLY based on the provided Reference Context below.
-                        2. If the context does NOT contain relevant information, reply: "抱歉，知识库中未找到相关信息。"
-                        3. Do NOT use any knowledge outside of the provided context. No guessing or fabricating.
-                        4. If the context is UNRELATED to the user's question, reply: "检索到的内容与您的问题不相关，暂时无法回答。"
-
-                        [MULTI-SOURCE HANDLING - CRITICAL]
-                        5. Reference materials are sorted by relevance (highest first). PRIORITIZE the top-ranked source.
-                        6. Do NOT mix or combine information from multiple unrelated documents.
-                        7. If different sources discuss different topics, use ONLY the one most relevant to the question.
-                        8. When citing, always mention which source (参考资料 1, 参考资料 2, etc.) you are referencing.
-
-                        [ANSWER GUIDELINES]
-                        - Quote or summarize accurately from the source.
-                        - Keep answers professional and concise.
-                        - When context contradicts your internal knowledge, prioritize the context.
-
-                        [End of Instructions]
-
-                        """;
-
-                // Override with Agent-specific configuration if available
-                com.example.urgs_api.ai.entity.Agent activeAgent = null;
-                try {
-                    com.example.urgs_api.ai.entity.AiChatSession sessionInfo = aiChatHistoryService
-                            .getSession(sessionId);
-                    if (sessionInfo != null && sessionInfo.getAgentId() != null) {
-                        activeAgent = agentRepository.selectById(sessionInfo.getAgentId());
-                    }
-                } catch (Exception e) {
-                }
-
-                if (activeAgent != null && activeAgent.getRagInstruction() != null
-                        && !activeAgent.getRagInstruction().isBlank()) {
-                    log.info("Applying Custom RAG Instructions for Agent: {}", activeAgent.getName());
-                    ragInstructions = activeAgent.getRagInstruction() + "\n\n";
-                }
-
-                // Modifying the map in place (if mutable) or replacing
-                // List.of returns immutable maps, so we must replace the element with a fresh
-                // map
-                messages.set(0, Map.of("role", "system", "content", ragInstructions + sysMsg.get("content")));
-            }
-
-            // 2. Inject Context into the User Message (Last Message)
-            int lastIdx = messages.size() - 1;
-            Map<String, String> lastMsg = messages.get(lastIdx);
-            if ("user".equals(lastMsg.get("role"))) {
-                String originalContent = lastMsg.get("content");
-                String newContent = String.format("""
-                        【用户问题 / User Question】:
-                        %s
-
-                        %s
-                        """, originalContent, contextAugmentation);
-                messages.set(lastIdx, Map.of("role", "user", "content", newContent));
-            }
+            ragBuildModeHandler.applyContextToMessages(sessionAgent, messages, contextAugmentation);
         }
 
         // 计算当前上下文 Token 用量，用于前端展示 (Calculate usage for frontend display)
@@ -613,6 +356,25 @@ public class AiChatServiceImpl implements AiChatService {
         return messages;
     }
 
+    private com.example.urgs_api.ai.entity.Agent resolveSessionAgent(String sessionId) {
+        try {
+            com.example.urgs_api.ai.entity.AiChatSession sessionInfo = resolveSession(sessionId);
+            if (sessionInfo != null && sessionInfo.getAgentId() != null) {
+                return agentRepository.selectById(sessionInfo.getAgentId());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to resolve session agent for session {}", sessionId, e);
+        }
+        return null;
+    }
+
+    private com.example.urgs_api.ai.entity.AiChatSession resolveSession(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+        return aiChatHistoryService.getSession(sessionId);
+    }
+
     // Internal helper for SSE Emitter non-persistence
     private void streamChat(String sessionId, List<Map<String, String>> messages, String requestType,
             SseEmitter emitter) {
@@ -707,155 +469,12 @@ public class AiChatServiceImpl implements AiChatService {
         String errorMessage = null;
 
         try {
-            // Check if governed by Dify
-            boolean useDify = false;
-            String difyApiKey = null;
-            String difyApiBase = "https://api.dify.ai/v1";
-            com.example.urgs_api.ai.entity.AiChatSession sessionInfo = null;
-            com.example.urgs_api.ai.entity.Agent agent = null;
-
-            if (sessionId != null) {
-                sessionInfo = aiChatHistoryService.getSession(sessionId);
-                if (sessionInfo != null && sessionInfo.getAgentId() != null) {
-                    agent = agentRepository.selectById(sessionInfo.getAgentId());
-                    if (agent != null && agent.getDifyApiKey() != null && !agent.getDifyApiKey().isBlank()) {
-                        useDify = true;
-                        difyApiKey = agent.getDifyApiKey();
-                        if (agent.getDifyApiBase() != null && !agent.getDifyApiBase().isBlank()) {
-                            difyApiBase = agent.getDifyApiBase();
-                        }
-                    }
-                }
-            }
-
-            if (useDify) {
-                log.info("Delegating stream request to Dify API for session {}", sessionId);
-
-                boolean isWorkflowApp = false;
-                HttpURLConnection conn = null;
-                int responseCode = 0;
-                String errorBody = "";
-
-                for (int attempt = 0; attempt < 2; attempt++) {
-                    String difyEndpoint = difyApiBase;
-                    if (!difyEndpoint.endsWith("/"))
-                        difyEndpoint += "/";
-                    difyEndpoint += isWorkflowApp ? "workflows/run" : "chat-messages";
-
-                    String query = "";
-                    if (!messages.isEmpty()) {
-                        query = messages.get(messages.size() - 1).getOrDefault("content", "");
-                    }
-                    String difyConversationId = sessionInfo.getDifyConversationId();
-
-                    Map<String, Object> difyReq = new java.util.HashMap<>();
-                    difyReq.put("response_mode", "streaming");
-                    difyReq.put("user", sessionInfo != null && sessionInfo.getUserId() != null ? sessionInfo.getUserId()
-                            : "system");
-
-                    if (isWorkflowApp) {
-                        Map<String, Object> inputs = new java.util.HashMap<>();
-                        inputs.put("query", query);
-                        inputs.put("user_question", query);
-                        inputs.put("input", query);
-                        difyReq.put("inputs", inputs);
-                    } else {
-                        difyReq.put("inputs", new java.util.HashMap<>());
-                        difyReq.put("query", query);
-                        if (difyConversationId != null && !difyConversationId.isBlank()) {
-                            difyReq.put("conversation_id", difyConversationId);
-                        }
-                    }
-
-                    String jsonBody = objectMapper.writeValueAsString(difyReq);
-
-                    conn = (HttpURLConnection) URI.create(difyEndpoint).toURL().openConnection();
-                    conn.setRequestMethod("POST");
-                    conn.setRequestProperty(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
-                    conn.setRequestProperty(HttpHeaders.AUTHORIZATION, "Bearer " + difyApiKey);
-                    conn.setRequestProperty(HttpHeaders.ACCEPT, "text/event-stream");
-                    conn.setDoOutput(true);
-                    conn.setConnectTimeout(30000);
-                    conn.setReadTimeout(120000);
-
-                    try (OutputStream os = conn.getOutputStream()) {
-                        os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
-                    } catch (Exception e) {
-                        // ignore
-                    }
-
-                    responseCode = conn.getResponseCode();
-                    if (responseCode == 200) {
-                        break; // Success
-                    } else {
-                        errorBody = new String(conn.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-                        if (!isWorkflowApp && responseCode == 400 && errorBody.contains("not_chat_app")) {
-                            log.info("Dify app is not a chat app, retrying as workflow app...");
-                            isWorkflowApp = true;
-                            continue;
-                        }
-                        throw new RuntimeException("Dify API 调用失败: " + responseCode + " - " + errorBody);
-                    }
-                }
-
-                try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    boolean isFirstDetailedMessage = true;
-                    while ((line = reader.readLine()) != null) {
-                        if (line.startsWith("data: ")) {
-                            String data = line.substring(6).trim();
-                            if (data.isEmpty())
-                                continue;
-
-                            try {
-                                JsonNode node = objectMapper.readTree(data);
-                                String event = node.has("event") ? node.get("event").asText() : "";
-
-                                if (!isWorkflowApp) {
-                                    if ("message".equals(event) || "agent_message".equals(event)) {
-                                        if (node.has("answer")) {
-                                            String answer = node.get("answer").asText();
-                                            if (answer != null && !answer.isEmpty()) {
-                                                chunkConsumer.accept(answer);
-                                            }
-                                        }
-                                    } else if ("message_end".equals(event)) {
-                                        break;
-                                    }
-
-                                    // Capture conversation_id on the first meaningful message
-                                    if (isFirstDetailedMessage && node.has("conversation_id")) {
-                                        String newConvId = node.get("conversation_id").asText();
-                                        if (newConvId != null && !newConvId.isBlank() && sessionInfo != null
-                                                && (sessionInfo.getDifyConversationId() == null
-                                                        || sessionInfo.getDifyConversationId().isBlank())) {
-                                            sessionInfo.setDifyConversationId(newConvId);
-                                            aiChatHistoryService.updateSession(sessionInfo);
-                                            isFirstDetailedMessage = false;
-                                            log.info("Saved new Dify Conversation ID: {}", newConvId);
-                                        }
-                                    }
-                                } else {
-                                    // Workflow app parsing
-                                    if ("text_chunk".equals(event) || "node_chunk".equals(event)) {
-                                        if (node.has("data") && node.get("data").has("text")) {
-                                            String text = node.get("data").get("text").asText();
-                                            if (text != null && !text.isEmpty()) {
-                                                chunkConsumer.accept(text);
-                                            }
-                                        }
-                                    } else if ("workflow_finished".equals(event)) {
-                                        break;
-                                    }
-                                }
-                            } catch (Exception e) {
-                                log.warn("Failed to parse Dify SSE data: {} | Exception: {}", data, e.getMessage());
-                            }
-                        }
-                    }
-                }
-
+            com.example.urgs_api.ai.entity.AiChatSession sessionInfo = resolveSession(sessionId);
+            com.example.urgs_api.ai.entity.Agent agent = sessionInfo != null && sessionInfo.getAgentId() != null
+                    ? agentRepository.selectById(sessionInfo.getAgentId())
+                    : null;
+            if (difyBuildModeHandler.supports(agent)) {
+                difyBuildModeHandler.stream(sessionId, sessionInfo, agent, messages, chunkConsumer);
                 success = true;
                 onComplete.run();
                 return;

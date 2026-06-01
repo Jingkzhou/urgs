@@ -23,6 +23,9 @@ public class Agent {
     // 0: Disabled, 1: Enabled
     private Integer status;
 
+    @TableField("build_mode")
+    private String buildMode;
+
     @TableField("knowledge_base")
     private String knowledgeBase;
 
@@ -37,6 +40,9 @@ public class Agent {
 
     @TableField("dify_api_base")
     private String difyApiBase;
+
+    @TableField("agent_app_tools")
+    private String agentAppTools;
 
     @TableField("updated_at")
     private Date updatedAt;

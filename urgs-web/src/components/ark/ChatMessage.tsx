@@ -98,6 +98,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                                 <span className="text-slate-400 text-sm font-medium animate-pulse">
                                     {message.status === 'searching' ? '正在检索知识库...' :
                                         message.status === 'compressing' ? '正在压缩对话历史...' :
+                                            message.status === 'agent_app_running' ? '正在调用 Agent App...' :
                                             '思考中...'}
                                 </span>
                             </div>

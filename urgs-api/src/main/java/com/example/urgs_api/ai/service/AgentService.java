@@ -49,6 +49,7 @@ public class AgentService {
     }
 
     public Agent saveAgent(Agent agent) {
+        normalizeBuildMode(agent);
         agent.setUpdatedAt(new Date());
         if (agent.getId() == null) {
             agentRepository.insert(agent);
@@ -60,5 +61,42 @@ public class AgentService {
 
     public void deleteAgent(Long id) {
         agentRepository.deleteById(id);
+    }
+
+    private void normalizeBuildMode(Agent agent) {
+        String buildMode = agent.getBuildMode();
+        if (isBlank(buildMode)) {
+            if (!isBlank(agent.getDifyApiKey())) {
+                buildMode = "DIFY";
+            } else if (!isBlank(agent.getAgentAppTools())) {
+                buildMode = "AGENT_APP";
+            } else {
+                buildMode = "RAG";
+            }
+        }
+
+        if (!"DIFY".equals(buildMode) && !"RAG".equals(buildMode) && !"AGENT_APP".equals(buildMode)) {
+            buildMode = "RAG";
+        }
+        agent.setBuildMode(buildMode);
+
+        if ("DIFY".equals(buildMode)) {
+            agent.setKnowledgeBase(null);
+            agent.setRagInstruction(null);
+            agent.setAgentAppTools(null);
+        } else if ("RAG".equals(buildMode)) {
+            agent.setDifyApiKey(null);
+            agent.setDifyApiBase(null);
+            agent.setAgentAppTools(null);
+        } else {
+            agent.setKnowledgeBase(null);
+            agent.setRagInstruction(null);
+            agent.setDifyApiKey(null);
+            agent.setDifyApiBase(null);
+        }
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }
