@@ -32,16 +32,28 @@ const getIntentConfig = (intent: string) => {
 }
 
 const normalizeMarkdownContent = (content: string) => {
+    let inFence = false;
     return content
         .split('\n')
         .map(line => {
             const trimmed = line.trim();
+            if (/^(```|~~~)/.test(trimmed)) {
+                inFence = !inFence;
+                return line;
+            }
             if (/^[╭╮╰╯─━═┄┈│┊┆┌┐└┘\s]{8,}$/.test(trimmed)) {
                 return '---';
+            }
+            if (!inFence && /^\s{4,}\S/.test(line) && /[\u4e00-\u9fff]/.test(trimmed)) {
+                return trimmed;
             }
             return line;
         })
         .join('\n');
+};
+
+const isIndentedProseCode = (value: string) => {
+    return value.length > 24 && /[\u4e00-\u9fff]/.test(value) && /[，。！？：；「」《》、]/.test(value);
 };
 
 const ScoreTooltip: React.FC<ScoreDetailProps> = ({ details }) => {
@@ -135,6 +147,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                                             const isBlock = Boolean(match) || codeContent.includes('\n');
                                             if (isBlock) {
                                                 return <CodeBlock language={match?.[1] || 'text'} value={codeContent} />;
+                                            }
+                                            if (!isUser && isIndentedProseCode(codeContent)) {
+                                                return <span {...props}>{children}</span>;
                                             }
                                             return (
                                                 <code className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[0.9em] text-slate-900" {...props}>
