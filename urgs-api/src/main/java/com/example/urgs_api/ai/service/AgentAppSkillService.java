@@ -3,20 +3,28 @@ package com.example.urgs_api.ai.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.urgs_api.ai.entity.AgentAppSkill;
 import com.example.urgs_api.ai.repository.AgentAppSkillRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @Service
 public class AgentAppSkillService {
+
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final List<DefaultSkill> DEFAULT_SKILLS = List.of(
             new DefaultSkill("plan", "任务规划", "拆解用户请求，给出执行计划和风险点。"),
@@ -103,11 +111,13 @@ public class AgentAppSkillService {
 
     private List<AgentAppSkill> syncHermesSkills() {
         List<HermesSkillRow> rows = queryHermesSkills();
+        Map<String, String> descriptions = readHermesSkillDescriptions();
         List<AgentAppSkill> synced = new ArrayList<>();
         for (int i = 0; i < rows.size(); i++) {
             HermesSkillRow row = rows.get(i);
+            String description = descriptions.getOrDefault(row.name(), "Hermes Skill");
             AgentAppSkill skill = upsertSkill("hermesagent", row.name(), row.name(),
-                    buildHermesDescription(row), "使用 Hermes skill: " + row.name(), (i + 1) * 10);
+                    description, "使用 Hermes skill: " + row.name(), (i + 1) * 10);
             synced.add(skill);
         }
         return synced;
@@ -186,6 +196,39 @@ public class AgentAppSkillService {
         return rows;
     }
 
+    private Map<String, String> readHermesSkillDescriptions() {
+        Map<String, String> descriptions = new HashMap<>();
+        Path snapshotPath = Path.of(System.getProperty("user.home"), ".hermes", ".skills_prompt_snapshot.json");
+        if (!Files.isRegularFile(snapshotPath)) {
+            return descriptions;
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(snapshotPath.toFile());
+            JsonNode skills = root.path("skills");
+            if (!skills.isArray()) {
+                return descriptions;
+            }
+            for (JsonNode skill : skills) {
+                String description = skill.path("description").asText("");
+                if (description.isBlank()) {
+                    continue;
+                }
+                addDescription(descriptions, skill.path("skill_name").asText(""), description);
+                addDescription(descriptions, skill.path("frontmatter_name").asText(""), description);
+            }
+        } catch (Exception e) {
+            return descriptions;
+        }
+        return descriptions;
+    }
+
+    private void addDescription(Map<String, String> descriptions, String name, String description) {
+        if (name != null && !name.isBlank()) {
+            descriptions.put(name.trim(), description.trim());
+        }
+    }
+
     private AgentAppSkill upsertSkill(String appCode, String code, String name, String description, String instruction,
             Integer sortOrder) {
         AgentAppSkill skill = skillRepository.selectOne(new QueryWrapper<AgentAppSkill>()
@@ -211,20 +254,6 @@ public class AgentAppSkillService {
             skillRepository.updateById(skill);
         }
         return skill;
-    }
-
-    private String buildHermesDescription(HermesSkillRow row) {
-        List<String> parts = new ArrayList<>();
-        if (!row.category().isBlank()) {
-            parts.add(row.category());
-        }
-        if (!row.source().isBlank()) {
-            parts.add(row.source());
-        }
-        if (!row.trust().isBlank()) {
-            parts.add(row.trust());
-        }
-        return parts.isEmpty() ? "Hermes Skill" : String.join(" / ", parts);
     }
 
     private String resolveExecutable(String executableName) {

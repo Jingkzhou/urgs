@@ -189,7 +189,7 @@ const AiAgentAppSkillManager: React.FC = () => {
                     </div>
                     <Space>
                         <Button icon={<ReloadOutlined />} onClick={handleSyncDefaults}>
-                            加载默认技能
+                            {selectedAppCode === 'hermesagent' ? '查询 Hermes 技能列表' : '加载默认技能'}
                         </Button>
                         <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
                             新建技能

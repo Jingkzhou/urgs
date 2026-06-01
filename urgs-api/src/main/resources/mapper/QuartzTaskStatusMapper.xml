@@ -94,7 +94,14 @@
             AND t.id = #{queryDTO.id}
         </if>
         <if test="queryDTO.taskName != null and queryDTO.taskName != ''">
-            AND INSTR(t.task_name, #{queryDTO.taskName})
+            AND (
+                INSTR(CAST(s.id AS CHAR), #{queryDTO.taskName})
+                OR INSTR(CAST(s.plan_id AS CHAR), #{queryDTO.taskName})
+                OR INSTR(t.task_name, #{queryDTO.taskName})
+                OR INSTR(s.msg, #{queryDTO.taskName})
+                OR INSTR(t.theme, #{queryDTO.taskName})
+                OR INSTR(t.remark, #{queryDTO.taskName})
+            )
         </if>
         <if test="queryDTO.taskSystem != null and queryDTO.taskSystem != ''">
             AND INSTR(t.task_system, #{queryDTO.taskSystem})

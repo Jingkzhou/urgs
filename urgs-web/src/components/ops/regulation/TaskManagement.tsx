@@ -142,15 +142,21 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
         return () => { mounted = false; };
     }, []);
 
-    const buildTaskQueryParams = useCallback((pageNum: number, size: number) => ({
-        pageNum,
-        pageSize: size,
-        taskName: emptyToNull(keyword) || undefined,
-        taskStatus: statusFilter === '' ? undefined : Number(statusFilter),
-        taskType: typeFilter ? toTaskTypeCode(typeFilter) : undefined,
-        taskSystem: systemFilter || undefined,
-        theme: themeFilter || undefined,
-    }), [keyword, statusFilter, systemFilter, themeFilter, typeFilter]);
+    const buildTaskQueryParams = useCallback((pageNum: number, size: number) => {
+        const normalizedKeyword = emptyToNull(keyword);
+        const keywordTaskId = normalizedKeyword && /^\d+$/.test(normalizedKeyword) ? Number(normalizedKeyword) : undefined;
+
+        return {
+            pageNum,
+            pageSize: size,
+            id: keywordTaskId,
+            taskName: keywordTaskId === undefined ? normalizedKeyword || undefined : undefined,
+            taskStatus: statusFilter === '' ? undefined : Number(statusFilter),
+            taskType: typeFilter ? toTaskTypeCode(typeFilter) : undefined,
+            taskSystem: systemFilter || undefined,
+            theme: themeFilter || undefined,
+        };
+    }, [keyword, statusFilter, systemFilter, themeFilter, typeFilter]);
 
     const loadTasks = useCallback(async (pageNum = currentPage, size = pageSize) => {
         try {
@@ -554,7 +560,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                 <input
                                     value={keyword}
                                     onChange={(event) => setKeyword(event.target.value)}
-                                    placeholder="搜索任务名称 / 说明备注"
+                                    placeholder="搜索任务ID / 名称 / 说明备注"
                                     className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 pl-9 pr-3.5 text-xs text-slate-700 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
                                 />
                             </div>
