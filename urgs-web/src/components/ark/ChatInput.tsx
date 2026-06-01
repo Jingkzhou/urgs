@@ -38,9 +38,9 @@ const ChatInput: React.FC<ChatInputProps> = ({ value, onChange, onSubmit, isGene
             >
                 <div className="flex items-end px-4 py-3">
                     {/* Attachment Button */}
-                    <button className="p-2 mb-0.5 text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 rounded-full transition-colors mr-2 flex-shrink-0">
+                    {/* <button className="p-2 mb-0.5 text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 rounded-full transition-colors mr-2 flex-shrink-0">
                         <Plus size={22} strokeWidth={2.5} />
-                    </button>
+                    </button> */}
 
                     {/* Auto-growing Textarea */}
                     <textarea
@@ -48,7 +48,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ value, onChange, onSubmit, isGene
                         value={value}
                         onChange={(e) => onChange(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder="输入消息或通过 @ 提及 Agent..."
+                        placeholder="输入消息"
                         rows={1}
                         className="flex-1 bg-transparent border-none outline-none text-[#0d0d0d] placeholder:text-slate-500 text-[16px] px-2 font-normal resize-none py-3 max-h-[200px] overflow-y-auto custom-scrollbar leading-[1.6]"
                         style={{ minHeight: '52px' }}
@@ -56,7 +56,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ value, onChange, onSubmit, isGene
 
                     <div className="flex items-end gap-2 mb-1 flex-shrink-0 ml-2">
                         {/* Voice Input (Mock) */}
-                        {!value.trim() && (
+                        {/* {!value.trim() && (
                             <button className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 rounded-full transition-colors" title="语音输入">
                                 <Mic size={22} />
                             </button>
@@ -65,7 +65,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ value, onChange, onSubmit, isGene
                             <button className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 rounded-full transition-colors" title="上传图片">
                                 <Image size={22} />
                             </button>
-                        )}
+                        )} */}
 
                         {/* Submit / Stop Button */}
                         <AnimatePresence mode="wait">
