@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Plus, Mic, ArrowUp, Image, Paperclip, X } from 'lucide-react';
+import { Plus, Mic, ArrowUp, Image } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface ChatInputProps {
@@ -8,12 +8,11 @@ interface ChatInputProps {
     onSubmit: () => void;
     isGenerating: boolean;
     onStop: () => void;
+    isWide?: boolean;
 }
 
-const ChatInput: React.FC<ChatInputProps> = ({ value, onChange, onSubmit, isGenerating, onStop }) => {
+const ChatInput: React.FC<ChatInputProps> = ({ value, onChange, onSubmit, isGenerating, onStop, isWide = false }) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const [isFocused, setIsFocused] = useState(false);
-
     // Auto-resize textarea
     useEffect(() => {
         if (textareaRef.current) {
@@ -32,13 +31,10 @@ const ChatInput: React.FC<ChatInputProps> = ({ value, onChange, onSubmit, isGene
     };
 
     return (
-        <div className="w-full relative group max-w-4xl mx-auto">
+        <div className={`w-full relative group mx-auto ${isWide ? 'max-w-7xl' : 'max-w-6xl'}`}>
             <motion.div
-                animate={{
-                    boxShadow: isFocused ? "0 8px 30px rgba(0,0,0,0.06)" : "0 4px 20px rgba(0,0,0,0.03)",
-                    backgroundColor: "#f0f4f9"
-                }}
-                className="relative flex flex-col rounded-[32px] overflow-hidden transition-all duration-300 border border-transparent focus-within:border-[#e3e8ef]"
+                animate={{ backgroundColor: "#f4f4f4" }}
+                className="relative flex flex-col overflow-hidden rounded-[28px] border border-slate-200 transition-colors duration-200 focus-within:border-slate-300"
             >
                 <div className="flex items-end px-4 py-3">
                     {/* Attachment Button */}
@@ -52,11 +48,9 @@ const ChatInput: React.FC<ChatInputProps> = ({ value, onChange, onSubmit, isGene
                         value={value}
                         onChange={(e) => onChange(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        onFocus={() => setIsFocused(true)}
-                        onBlur={() => setIsFocused(false)}
                         placeholder="输入消息或通过 @ 提及 Agent..."
                         rows={1}
-                        className="flex-1 bg-transparent border-none outline-none text-[#1f1f1f] placeholder:text-slate-500 text-[16px] px-2 font-normal resize-none py-3 max-h-[200px] overflow-y-auto custom-scrollbar leading-[1.6]"
+                        className="flex-1 bg-transparent border-none outline-none text-[#0d0d0d] placeholder:text-slate-500 text-[16px] px-2 font-normal resize-none py-3 max-h-[200px] overflow-y-auto custom-scrollbar leading-[1.6]"
                         style={{ minHeight: '52px' }}
                     />
 
@@ -94,11 +88,11 @@ const ChatInput: React.FC<ChatInputProps> = ({ value, onChange, onSubmit, isGene
                                     animate={{
                                         scale: value.trim() ? 1 : 0.9,
                                         opacity: value.trim() ? 1 : 0.5,
-                                        backgroundColor: value.trim() ? "#0b57d0" : "transparent"
+                                        backgroundColor: value.trim() ? "#0d0d0d" : "transparent"
                                     }}
                                     onClick={onSubmit}
                                     className={`w-10 h-10 flex items-center justify-center rounded-full transition-all duration-200 ${value.trim()
-                                        ? 'text-[#041e49] hover:bg-black/5'
+                                        ? 'text-white hover:bg-black'
                                         : 'text-slate-400 cursor-not-allowed'
                                         }`}
                                     disabled={!value.trim()}

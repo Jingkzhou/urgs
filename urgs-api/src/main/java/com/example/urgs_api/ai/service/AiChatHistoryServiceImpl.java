@@ -26,7 +26,7 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
         AiChatSession session = new AiChatSession();
         session.setId(UUID.randomUUID().toString());
         session.setUserId(userId);
-        session.setTitle(title);
+        session.setTitle((title == null || title.isBlank()) ? "New Chat" : title);
         session.setAgentId(agentId);
         session.setCreateTime(LocalDateTime.now());
         session.setUpdateTime(LocalDateTime.now());
@@ -38,9 +38,13 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
 
     @Override
     public List<AiChatSession> getUserSessions(String userId) {
-        return sessionMapper.selectList(new LambdaQueryWrapper<AiChatSession>()
+        List<AiChatSession> sessions = sessionMapper.selectList(new LambdaQueryWrapper<AiChatSession>()
                 .eq(AiChatSession::getUserId, userId)
                 .orderByDesc(AiChatSession::getUpdateTime));
+        for (AiChatSession session : sessions) {
+            repairInvalidSessionTitle(session);
+        }
+        return sessions;
     }
 
     @Override
@@ -114,11 +118,20 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
 
         // 2. Prepare prompt
         StringBuilder conversation = new StringBuilder();
-        // Limit to first few messages to avoid token limit and focus on topic
-        int limit = Math.min(messages.size(), 4);
-        for (int i = 0; i < limit; i++) {
+        int appended = 0;
+        for (int i = 0; i < messages.size() && appended < 4; i++) {
             AiChatMessage msg = messages.get(i);
-            conversation.append(msg.getRole()).append(": ").append(msg.getContent()).append("\n");
+            String content = normalizeTitleSourceContent(msg.getContent());
+            if (content == null) {
+                continue;
+            }
+            conversation.append(msg.getRole()).append(": ").append(content).append("\n");
+            appended++;
+        }
+        if (conversation.length() == 0) {
+            String fallbackTitle = fallbackTitleFromMessages(messages);
+            updateSessionTitle(sessionId, fallbackTitle);
+            return fallbackTitle;
         }
 
         String systemPrompt = "You are a helpful assistant. Analyze the following conversation start and generate a short, concise title (max 10 words). strictly return ONLY the title text, no quotes, no explanations.";
@@ -136,7 +149,7 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
             if (generatedTitle.startsWith("\"") && generatedTitle.endsWith("\"")) {
                 generatedTitle = generatedTitle.substring(1, generatedTitle.length() - 1).trim();
             }
-            if (!generatedTitle.isEmpty()) {
+            if (!generatedTitle.isEmpty() && !isInvalidGeneratedTitle(generatedTitle)) {
                 isValid = true;
             }
             // Truncate if too long (backup safety)
@@ -146,18 +159,55 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
         }
 
         if (!isValid) {
-            // Fallback: use first message content or default
-            if (!messages.isEmpty() && messages.get(0).getContent() != null) {
-                String firstMsg = messages.get(0).getContent().trim();
-                generatedTitle = firstMsg.length() > 20 ? firstMsg.substring(0, 20) + "..." : firstMsg;
-            } else {
-                generatedTitle = "New Chat";
-            }
+            generatedTitle = fallbackTitleFromMessages(messages);
         }
 
         // 5. Update session
         updateSessionTitle(sessionId, generatedTitle);
         return generatedTitle;
+    }
+
+    private boolean isInvalidGeneratedTitle(String title) {
+        String normalized = title.trim().toLowerCase();
+        return normalized.matches("^(null)+.*") || normalized.matches("^(undefined)+.*");
+    }
+
+    private void repairInvalidSessionTitle(AiChatSession session) {
+        String title = session.getTitle();
+        if (title != null && !title.isBlank() && !isInvalidGeneratedTitle(title)) {
+            return;
+        }
+        String fallbackTitle = fallbackTitleFromMessages(getSessionMessages(session.getId()));
+        session.setTitle(fallbackTitle);
+        updateSessionTitle(session.getId(), fallbackTitle);
+    }
+
+    private String fallbackTitleFromMessages(List<AiChatMessage> messages) {
+        for (AiChatMessage message : messages) {
+            if (!"user".equals(message.getRole())) {
+                continue;
+            }
+            String content = normalizeTitleSourceContent(message.getContent());
+            if (content != null) {
+                return truncateTitle(content);
+            }
+        }
+        return "New Chat";
+    }
+
+    private String normalizeTitleSourceContent(String content) {
+        if (content == null) {
+            return null;
+        }
+        String normalized = content.trim();
+        if (normalized.isEmpty() || isInvalidGeneratedTitle(normalized)) {
+            return null;
+        }
+        return normalized;
+    }
+
+    private String truncateTitle(String title) {
+        return title.length() > 20 ? title.substring(0, 20) + "..." : title;
     }
 
     @Override

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { RobotOutlined } from '@ant-design/icons';
-import { Sparkles, Database, ChevronRight, User, Cpu, Layers, PenTool, Settings, Sliders, ArrowDown } from 'lucide-react';
+import { Sparkles, Database, ChevronRight, User, Cpu, Layers, PenTool, Settings, Sliders, ArrowDown, PanelLeftClose, PanelLeftOpen, SquarePen } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from './Sidebar';
 import ChatMessage from './ChatMessage';
@@ -32,6 +32,7 @@ const ArkPage: React.FC = () => {
     const [activeAgent, setActiveAgent] = useState<any | null>(null);
     const [sessions, setSessions] = useState<Session[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
     const [measurementVersion, setMeasurementVersion] = useState(0);
@@ -533,15 +534,52 @@ const ArkPage: React.FC = () => {
     }
 
     return (
-        <div className="flex h-full ark-mesh-bg ark-noise-overlay font-sans text-slate-800 overflow-hidden">
-            <Sidebar
-                currentSessionId={currentSessionId}
-                onSessionSelect={handleSessionSelect}
-                onNewChat={handleNewChat}
-                refreshTrigger={sidebarRefreshTrigger}
-            />
+        <div className="flex h-full flex-col bg-white font-sans text-slate-800 overflow-hidden">
+            <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-slate-100 bg-white px-3">
+                <div className="flex items-center gap-1.5">
+                    <button
+                        onClick={() => setIsSidebarCollapsed(prev => !prev)}
+                        className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                        title={isSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
+                    >
+                        {isSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+                    </button>
+                    <button
+                        onClick={() => handleNewChat()}
+                        className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                        title="新建对话"
+                    >
+                        <SquarePen size={18} />
+                    </button>
+                    <div className="ml-2 flex items-center gap-2">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-600 text-white">
+                            <Sparkles size={15} strokeWidth={2.5} />
+                        </div>
+                        <span className="text-sm font-semibold tracking-tight text-slate-900">ARK / 方舟</span>
+                    </div>
+                </div>
+                <div className="min-w-0 flex-1 px-6 text-center">
+                    <span className="inline-block max-w-full truncate text-sm font-medium text-slate-700">
+                        {activeAgent ? activeAgent.name : 'AI 助手'}
+                    </span>
+                </div>
+                <div className="w-[96px]" />
+            </header>
 
-            <main className="flex-1 flex flex-col relative min-w-0">
+            <div className="flex min-h-0 flex-1">
+                <AnimatePresence initial={false}>
+                    {!isSidebarCollapsed && (
+                        <Sidebar
+                            currentSessionId={currentSessionId}
+                            onSessionSelect={handleSessionSelect}
+                            onNewChat={handleNewChat}
+                            refreshTrigger={sidebarRefreshTrigger}
+                            isCollapsed={false}
+                        />
+                    )}
+                </AnimatePresence>
+
+                <main className="flex-1 flex flex-col relative min-w-0">
                 <AnimatePresence mode="wait">
                     {!currentSessionId ? (
                         // ... Welcome Hub Code (No changes here, omitted for brevity if possible, keeping context keys) ...
@@ -633,7 +671,7 @@ const ArkPage: React.FC = () => {
                             animate={{ opacity: 1 }}
                             ref={scrollContainerRef}
                             onScroll={handleScroll}
-                            className="flex-1 overflow-y-auto custom-scrollbar flex flex-col items-center"
+                            className="flex-1 overflow-y-auto custom-scrollbar flex flex-col items-center bg-white"
                         >
                             {messages.length === 0 ? (
                                 <motion.div
@@ -688,6 +726,7 @@ const ArkPage: React.FC = () => {
                                                     index={messageIndex}
                                                     isStreaming={isGenerating && msg.id === streamingMessageIdRef.current}
                                                     onHeightChange={handleItemResize}
+                                                    isWide={isSidebarCollapsed}
                                                 />
                                             );
                                         })}
@@ -710,7 +749,7 @@ const ArkPage: React.FC = () => {
                                 scrollToBottom();
                                 setShowScrollBottom(false);
                             }}
-                            className="absolute bottom-32 -translate-x-1/2 left-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-500 shadow-md ring-1 ring-slate-200/50 transition-colors hover:bg-slate-50 hover:text-blue-600"
+                            className="absolute bottom-32 -translate-x-1/2 left-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-500 ring-1 ring-slate-200 transition-colors hover:bg-slate-50 hover:text-slate-900"
                         >
                             <ArrowDown size={16} />
                         </motion.button>
@@ -730,14 +769,15 @@ const ArkPage: React.FC = () => {
                 )}
 
                 {/* Bottom Input Area */}
-                <div className="absolute bottom-0 left-0 w-full px-6 pb-8 pt-20 bg-gradient-to-t from-white via-white/95 to-transparent pointer-events-none flex justify-center z-10">
-                    <div className="w-full max-w-4xl pointer-events-auto">
+                <div className="absolute bottom-0 left-0 w-full px-6 pb-8 pt-16 bg-gradient-to-t from-white via-white to-transparent pointer-events-none flex justify-center z-10">
+                    <div className={`w-full pointer-events-auto ${isSidebarCollapsed ? 'max-w-7xl' : 'max-w-6xl'}`}>
                         <ChatInput
                             value={inputValue}
                             onChange={setInputValue}
                             onSubmit={handleSubmit}
                             isGenerating={isGenerating}
                             onStop={handleStop}
+                            isWide={isSidebarCollapsed}
                         />
                         <div className="text-center mt-4 flex items-center justify-center gap-4 relative">
                             <span className="text-[11px] text-slate-400 font-medium tracking-tight">
@@ -807,7 +847,8 @@ const ArkPage: React.FC = () => {
                         </div>
                     </div>
                 </div>
-            </main>
+                </main>
+            </div>
         </div>
     );
 };
@@ -818,6 +859,7 @@ interface VirtualizedMessageRowProps {
     index: number;
     isStreaming: boolean;
     onHeightChange: (id: string, height: number, index: number) => void;
+    isWide: boolean;
 }
 
 const VirtualizedMessageRow: React.FC<VirtualizedMessageRowProps> = React.memo(({
@@ -825,7 +867,8 @@ const VirtualizedMessageRow: React.FC<VirtualizedMessageRowProps> = React.memo((
     top,
     index,
     isStreaming,
-    onHeightChange
+    onHeightChange,
+    isWide
 }) => {
     const rowRef = useRef<HTMLDivElement>(null);
 
@@ -846,7 +889,7 @@ const VirtualizedMessageRow: React.FC<VirtualizedMessageRowProps> = React.memo((
 
     return (
         <div ref={rowRef} className="absolute left-0 right-0 pb-8" style={{ top }}>
-            <div className="w-full max-w-4xl mx-auto px-6">
+            <div className={`w-full mx-auto px-6 ${isWide ? 'max-w-7xl' : 'max-w-6xl'}`}>
                 <motion.div
                     initial={{ opacity: 0, y: 15 }}
                     animate={{ opacity: 1, y: 0 }}

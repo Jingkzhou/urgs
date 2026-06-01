@@ -18,7 +18,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 @Component
@@ -28,7 +27,6 @@ public class AgentAppBuildModeHandler {
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final ExecutorService executor = Executors.newCachedThreadPool();
     private static final int AGENT_APP_TIMEOUT_SECONDS = 600;
-    private static final int AGENT_APP_HEARTBEAT_SECONDS = 20;
     private static final int MAX_CONTEXT_TOKENS = 30000;
     private static final List<String> AGENT_APP_TOOL_ALLOWLIST = List.of("hermesagent", "opencode", "openclaw");
 
@@ -85,46 +83,19 @@ public class AgentAppBuildModeHandler {
         builder.directory(resolveAgentAppWorkingDir());
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        AtomicLong lastOutputAt = new AtomicLong(System.currentTimeMillis());
 
         Future<?> readerFuture = executor.submit(() -> {
             try (InputStreamReader reader = new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8)) {
                 char[] buffer = new char[512];
-                StringBuilder pending = new StringBuilder();
                 int len;
                 while ((len = reader.read(buffer)) != -1) {
                     String content = stripAnsi(new String(buffer, 0, len)).replace('\r', '\n');
                     if (!content.isBlank()) {
-                        String progress = filterAgentAppOutput(commandConfig.tool(), content, pending);
-                        if (!progress.isBlank()) {
-                            lastOutputAt.set(System.currentTimeMillis());
-                            chunkConsumer.accept(progress);
-                        }
+                        chunkConsumer.accept(content);
                     }
-                }
-                String progress = flushAgentAppOutput(commandConfig.tool(), pending);
-                if (!progress.isBlank()) {
-                    lastOutputAt.set(System.currentTimeMillis());
-                    chunkConsumer.accept(progress);
                 }
             } catch (Exception e) {
                 throw new RuntimeException(e);
-            }
-        });
-
-        Future<?> heartbeatFuture = executor.submit(() -> {
-            while (process.isAlive()) {
-                try {
-                    Thread.sleep(AGENT_APP_HEARTBEAT_SECONDS * 1000L);
-                    long quietMillis = System.currentTimeMillis() - lastOutputAt.get();
-                    if (process.isAlive() && quietMillis >= AGENT_APP_HEARTBEAT_SECONDS * 1000L) {
-                        lastOutputAt.set(System.currentTimeMillis());
-                        chunkConsumer.accept("\n`Hermes 仍在执行，等待下一步输出...`\n");
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
             }
         });
 
@@ -135,7 +106,6 @@ public class AgentAppBuildModeHandler {
         }
 
         readerFuture.get(5, TimeUnit.SECONDS);
-        heartbeatFuture.cancel(true);
         int exitCode = process.exitValue();
         if (exitCode != 0) {
             throw new RuntimeException("Agent App CLI 执行失败: " + commandConfig.tool() + "，退出码 " + exitCode);
@@ -185,7 +155,7 @@ public class AgentAppBuildModeHandler {
 
     private List<String> buildAgentAppCommand(String tool, String executable, String userPrompt) {
         if ("hermesagent".equals(tool)) {
-            return List.of(executable, "chat", "--verbose", "--query", userPrompt);
+            return List.of(executable, "chat",  "--query", userPrompt);
         }
         if ("opencode".equals(tool)) {
             return List.of(executable, "run", "--format", "default", "--dir", resolveAgentAppWorkingDir().getAbsolutePath(),
@@ -234,84 +204,6 @@ public class AgentAppBuildModeHandler {
 
     private String stripAnsi(String text) {
         return text == null ? "" : text.replaceAll("\\u001B\\[[;\\d]*[ -/]*[@-~]", "");
-    }
-
-    private String filterAgentAppOutput(String tool, String chunk, StringBuilder pending) {
-        if (!"hermesagent".equals(tool)) {
-            return chunk;
-        }
-        pending.append(chunk);
-        String text = pending.toString();
-        int lastNewline = text.lastIndexOf('\n');
-        if (lastNewline < 0) {
-            return "";
-        }
-
-        String complete = text.substring(0, lastNewline + 1);
-        pending.setLength(0);
-        pending.append(text.substring(lastNewline + 1));
-        return compactHermesProgress(complete);
-    }
-
-    private String flushAgentAppOutput(String tool, StringBuilder pending) {
-        if (pending.isEmpty()) {
-            return "";
-        }
-        String text = pending.toString();
-        pending.setLength(0);
-        return "hermesagent".equals(tool) ? compactHermesProgress(text) : text;
-    }
-
-    private String compactHermesProgress(String text) {
-        StringBuilder result = new StringBuilder();
-        for (String line : text.split("\\R")) {
-            String normalized = normalizeHermesLine(line);
-            if (!normalized.isBlank()) {
-                result.append(normalized).append('\n');
-            }
-        }
-        return result.toString();
-    }
-
-    private String normalizeHermesLine(String line) {
-        if (line == null) {
-            return "";
-        }
-        String trimmed = line.trim();
-        if (trimmed.isEmpty()) {
-            return "";
-        }
-        if (trimmed.contains("Hermes")) {
-            return "\n**Hermes**";
-        }
-        if (trimmed.startsWith("│")) {
-            String message = trimmed.replaceFirst("^│\\s*", "").trim();
-            if (!message.isBlank() && !message.matches("[─╭╰╮╯│ ]+")) {
-                return "> " + shortenHermesPath(message);
-            }
-            return "";
-        }
-
-        String withoutPrefix = trimmed.replaceFirst("^[│┊┃╎╏|]+\\s*", "").trim();
-        if (isHermesProgressLine(withoutPrefix)) {
-            return "`" + shortenHermesPath(withoutPrefix) + "`";
-        }
-        return "";
-    }
-
-    private boolean isHermesProgressLine(String line) {
-        return line.startsWith("preparing ")
-                || line.startsWith("read ")
-                || line.startsWith("find ")
-                || line.startsWith("skill ")
-                || line.startsWith("plan ")
-                || line.startsWith("todo ")
-                || line.startsWith("search ")
-                || line.matches("^[📖🔎📚📋📝✅]\\s+.*");
-    }
-
-    private String shortenHermesPath(String text) {
-        return text.replaceAll("(/[^\\s]+/)([^/\\s]+\\.\\w+)", ".../$2");
     }
 
     private record AgentAppCommand(String tool, String executable) {

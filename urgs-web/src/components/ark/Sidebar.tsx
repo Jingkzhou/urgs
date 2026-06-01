@@ -1,23 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Search, Plus, PenTool, Image, Grid, Globe, Database, Sparkles, Folder, MessageSquare,
-    MoreHorizontal, Trash2, Pencil, Check, X, Menu, Settings, History
+    MessageSquare, Trash2, Pencil, Check, Settings, History
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Session, getSessions, createSession, deleteSession, saveSession } from '../../api/chat';
+import { Session, getSessions, deleteSession, updateSession } from '../../api/chat';
 
 interface SidebarProps {
     currentSessionId: string | null;
     onSessionSelect: (id: string, agentId?: number) => void;
     onNewChat: () => void;
     refreshTrigger?: number;
+    isCollapsed: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, onNewChat, refreshTrigger }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, onNewChat, refreshTrigger, isCollapsed }) => {
     const [sessions, setSessions] = useState<Session[]>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editTitle, setEditTitle] = useState('');
-    const [isCollapsed, setIsCollapsed] = useState(false);
 
     const loadSessions = async () => {
         try {
@@ -57,7 +56,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
     const saveEdit = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (editingId && editTitle.trim()) {
-            const { updateSession } = require('../../api/chat');
             await updateSession(editingId, editTitle);
             await loadSessions();
             setEditingId(null);
@@ -71,41 +69,19 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
 
     return (
         <motion.aside
-            initial={false}
-            animate={{ width: isCollapsed ? 88 : 300 }}
-            className="flex-shrink-0 bg-white flex flex-col h-full font-sans transition-all duration-500 relative border-r border-slate-100 z-[50]"
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: isCollapsed ? 64 : 300, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: "easeInOut" }}
+            className="flex-shrink-0 bg-white flex flex-col h-full font-sans relative border-r border-slate-100 z-[40] overflow-hidden"
         >
-            {/* Header: Logo & Interaction */}
-            <div className="p-6 pb-2">
-                <div className="flex items-center justify-between mb-8 overflow-hidden">
-                    <AnimatePresence mode="wait">
-                        {!isCollapsed && (
-                            <motion.div
-                                initial={{ opacity: 0, x: -10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: -10 }}
-                                className="flex items-center gap-2"
-                            >
-                                <div className="w-8 h-8 bg-red-600 rounded-xl flex items-center justify-center shadow-lg shadow-red-500/20">
-                                    <Sparkles size={16} className="text-white" strokeWidth={2.5} />
-                                </div>
-                                <span className="text-lg font-black tracking-tighter italic text-slate-800 uppercase">Ark / 方舟</span>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                    <button
-                        onClick={() => setIsCollapsed(!isCollapsed)}
-                        className={`p-2.5 bg-slate-100/50 hover:bg-white rounded-xl transition-all text-slate-400 hover:text-red-500 border border-transparent hover:border-slate-100 shadow-sm ${isCollapsed ? 'mx-auto' : ''}`}
-                    >
-                        <Menu size={18} strokeWidth={2.5} />
-                    </button>
-                </div>
-
+            <div className={`${isCollapsed ? 'px-2 pt-3' : 'px-4 pt-3'}`}>
                 <button
                     onClick={() => onNewChat()}
-                    className={`group relative overflow-hidden flex items-center justify-start gap-3 bg-[#f0f4f9] text-slate-700 rounded-xl transition-all duration-300 hover:bg-[#e3e8ef] active:scale-95 ${isCollapsed ? 'w-12 h-12 mx-auto justify-center' : 'w-full px-5 py-3.5'}`}
+                    className={`group relative overflow-hidden flex items-center justify-start gap-3 bg-[#f4f4f4] text-slate-700 rounded-xl transition-all duration-200 hover:bg-[#ececec] active:scale-95 ${isCollapsed ? 'w-10 h-10 mx-auto justify-center' : 'w-full px-4 py-3'}`}
+                    title="新建对话"
                 >
-                    <Plus size={20} className="text-slate-600" />
+                    <span className="text-xl leading-none text-slate-700">+</span>
                     <AnimatePresence>
                         {!isCollapsed && (
                             <motion.span
@@ -122,7 +98,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
             </div>
 
             {/* Chat History Section */}
-            <div className={`px-4 flex-1 overflow-y-auto custom-scrollbar pt-10 scroll-smooth`}>
+            <div className={`${isCollapsed ? 'px-2 pt-8' : 'px-4 pt-10'} flex-1 overflow-y-auto custom-scrollbar scroll-smooth`}>
                 <AnimatePresence mode="wait">
                     {!isCollapsed && (
                         <motion.h3
@@ -141,7 +117,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
                             key={session.id}
                             layout
                             onClick={() => onSessionSelect(session.id, session.agentId)}
-                            className={`group flex items-center gap-3 px-5 py-2.5 rounded-full transition-all cursor-pointer relative overflow-hidden
+                            title={isCollapsed ? session.title : undefined}
+                            className={`group flex items-center gap-3 rounded-full transition-all cursor-pointer relative overflow-hidden
+                                ${isCollapsed ? 'h-10 w-10 justify-center px-0 py-0 mx-auto' : 'px-5 py-2.5'}
                                 ${currentSessionId === session.id
                                     ? 'bg-[#d3e3fd] text-[#041e49]'
                                     : 'hover:bg-[#f0f4f9] text-[#1f1f1f]'
@@ -184,12 +162,12 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
             </div>
 
             {/* Bottom Menu - Premium Utilities */}
-            <div className={`p-6 border-t border-slate-200/30 space-y-2`}>
-                <button className="w-full flex items-center justify-center gap-4 px-4 py-3 text-slate-400 hover:text-slate-800 hover:bg-white/80 rounded-[1.25rem] transition-all group overflow-hidden">
+            <div className={`${isCollapsed ? 'p-2' : 'p-6'} border-t border-slate-200/30 space-y-2`}>
+                <button className={`w-full flex items-center justify-center gap-4 text-slate-400 hover:text-slate-800 hover:bg-slate-50 rounded-[1.25rem] transition-all group overflow-hidden ${isCollapsed ? 'h-10 px-0 py-0' : 'px-4 py-3'}`}>
                     <History size={18} strokeWidth={2.5} className="group-hover:rotate-[-10deg] transition-transform" />
                     {!isCollapsed && <span className="flex-1 text-left text-[11px] font-black uppercase tracking-widest">分析流</span>}
                 </button>
-                <button className="w-full flex items-center justify-center gap-4 px-4 py-3 text-slate-400 hover:text-slate-800 hover:bg-white/80 rounded-[1.25rem] transition-all group overflow-hidden">
+                <button className={`w-full flex items-center justify-center gap-4 text-slate-400 hover:text-slate-800 hover:bg-slate-50 rounded-[1.25rem] transition-all group overflow-hidden ${isCollapsed ? 'h-10 px-0 py-0' : 'px-4 py-3'}`}>
                     <Settings size={18} strokeWidth={2.5} className="group-hover:rotate-[20deg] transition-transform" />
                     {!isCollapsed && <span className="flex-1 text-left text-[11px] font-black uppercase tracking-widest">操作核心</span>}
                 </button>

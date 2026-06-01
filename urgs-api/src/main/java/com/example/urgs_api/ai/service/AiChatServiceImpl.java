@@ -555,12 +555,12 @@ public class AiChatServiceImpl implements AiChatService {
                             if (choices != null && choices.isArray() && !choices.isEmpty()) {
                                 JsonNode delta = choices.get(0).get("delta");
                                 if (delta != null) {
-                                    if (delta.has("content")) {
+                                    if (delta.has("content") && !delta.get("content").isNull()) {
                                         String content = delta.get("content").asText();
                                         if (content != null && !content.isEmpty()) {
                                             chunkConsumer.accept(content);
                                         }
-                                    } else if (delta.has("reasoning_content")) {
+                                    } else if (delta.has("reasoning_content") && !delta.get("reasoning_content").isNull()) {
                                         // Handle reasoning content (Doubao/DeepSeek)
                                         String reasoning = delta.get("reasoning_content").asText();
                                         if (reasoning != null && !reasoning.isEmpty()) {

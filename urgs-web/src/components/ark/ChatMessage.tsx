@@ -6,7 +6,7 @@ import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Copy, Check, Sparkles, SearchX, Quote, ChevronDown, ChevronRight, HelpCircle, BookOpen, Scale, Wrench, MessageCircle } from 'lucide-react';
+import { Copy, Check, Sparkles, SearchX, ChevronDown, HelpCircle, BookOpen, Scale, Wrench, MessageCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Message } from '../../api/chat';
 import 'katex/dist/katex.min.css';
@@ -30,6 +30,19 @@ const getIntentConfig = (intent: string) => {
         default: return { label: '通用对话', color: 'bg-slate-100/50 text-slate-600', icon: <MessageCircle size={12} /> };
     }
 }
+
+const normalizeMarkdownContent = (content: string) => {
+    return content
+        .split('\n')
+        .map(line => {
+            const trimmed = line.trim();
+            if (/^[╭╮╰╯─━═┄┈│┊┆┌┐└┘\s]{8,}$/.test(trimmed)) {
+                return '---';
+            }
+            return line;
+        })
+        .join('\n');
+};
 
 const ScoreTooltip: React.FC<ScoreDetailProps> = ({ details }) => {
     if (!details || Object.keys(details).length === 0) return null;
@@ -66,12 +79,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
 
     return (
         <div className={`w-full group ${isUser ? 'flex justify-end' : 'flex justify-start'}`}>
-            <div className={`flex gap-4 max-w-4xl w-full ${isUser ? 'flex-row-reverse' : ''}`}>
+            <div className={`flex w-full gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
                 {/* Avatar / Icon */}
                 <div className="flex-shrink-0 mt-1">
                     {!isUser && (
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-600 via-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-lg ring-4 ring-white ark-avatar-glow transition-transform duration-500 group-hover:rotate-12">
-                            <Sparkles size={18} fill="currentColor" />
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700">
+                            <Sparkles size={16} />
                         </div>
                     )}
                 </div>
@@ -79,10 +92,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                 {/* Content */}
                 <div className={`flex-1 min-w-0 ${isUser ? 'flex justify-end' : ''}`}>
                     <div className={`
-                        max-w-none w-full
+                        ${isUser ? 'max-w-[78%]' : 'max-w-none w-full'}
                         ${isUser
-                            ? 'bg-[#d3e3fd] px-6 py-3.5 rounded-[28px] rounded-tr-lg text-[#041e49] font-medium shadow-sm leading-relaxed inline-block'
-                            : 'bg-white text-[#1f1f1f] text-[16px] leading-[1.8] font-normal transition-opacity duration-300'
+                            ? 'inline-block rounded-[1.45rem] bg-[#f4f4f4] px-5 py-3 text-[15px] leading-7 text-[#0d0d0d]'
+                            : 'text-[#0d0d0d] text-[16px] leading-7 font-normal transition-opacity duration-300'
                         }
                     `}>
                         {!isUser && !message.content ? (
@@ -103,7 +116,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                                 </span>
                             </div>
                         ) : (
-                            <div className={`markdown-body ${isUser ? 'text-[#041e49]' : ''}`}>
+                            <div className={`markdown-body ${isUser ? 'text-[#0d0d0d]' : ''}`}>
                                 {/* Intent Badge */}
                                 {!isUser && message.intent && message.intent !== 'GENERAL' && (
                                     <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mb-4 border border-white/50 shadow-sm ${getIntentConfig(message.intent).color}`}>
@@ -119,51 +132,52 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                                         code({ node, inline, className, children, ...props }: any) {
                                             const match = /language-(\w+)/.exec(className || '');
                                             const codeContent = String(children).replace(/\n$/, '');
-                                            if (!inline && match) {
-                                                return <CodeBlock language={match[1]} value={codeContent} />;
+                                            if (!inline) {
+                                                return <CodeBlock language={match?.[1] || 'text'} value={codeContent} />;
                                             }
                                             return (
-                                                <code className={`bg-slate-100 text-[#1f1f1f] px-1.5 py-0.5 rounded-md text-sm font-mono font-semibold`} {...props}>
+                                                <code className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[0.9em] text-slate-900" {...props}>
                                                     {children}
                                                 </code>
                                             );
                                         },
                                         p({ children }) {
-                                            return <p className="mb-6 last:mb-0 leading-[1.8]">{children}</p>;
+                                            return <p className="mb-4 last:mb-0 leading-7">{children}</p>;
                                         },
                                         ul({ children }) {
-                                            return <ul className="list-disc pl-6 mb-6 space-y-2">{children}</ul>;
+                                            return <ul className="mb-4 list-disc space-y-1.5 pl-6">{children}</ul>;
                                         },
                                         ol({ children }) {
-                                            return <ol className="list-decimal pl-6 mb-6 space-y-2">{children}</ol>;
+                                            return <ol className="mb-4 list-decimal space-y-1.5 pl-6">{children}</ol>;
                                         },
                                         li({ children }) {
-                                            return <li className="pl-2">{children}</li>;
+                                            return <li className="pl-1 leading-7">{children}</li>;
                                         },
-                                        h1: ({ children }) => <h1 className="text-3xl font-bold mb-6 text-slate-900">{children}</h1>,
-                                        h2: ({ children }) => <h2 className="text-2xl font-bold mb-5 mt-8 text-slate-800 border-b border-slate-100 pb-2">{children}</h2>,
-                                        h3: ({ children }) => <h3 className="text-xl font-bold mb-4 mt-6 text-slate-800">{children}</h3>,
+                                        h1: ({ children }) => <h1 className="mb-4 mt-7 text-2xl font-semibold leading-tight text-slate-950 first:mt-0">{children}</h1>,
+                                        h2: ({ children }) => <h2 className="mb-3 mt-7 text-xl font-semibold leading-tight text-slate-950 first:mt-0">{children}</h2>,
+                                        h3: ({ children }) => <h3 className="mb-3 mt-6 text-lg font-semibold leading-tight text-slate-900 first:mt-0">{children}</h3>,
                                         blockquote: ({ children }) => (
-                                            <blockquote className="border-l-4 border-blue-200 bg-blue-50/30 px-6 py-4 rounded-r-2xl mb-6 italic text-slate-600 flex gap-3">
-                                                <Quote size={20} className="text-blue-300 flex-shrink-0" />
-                                                <div>{children}</div>
+                                            <blockquote className="mb-4 border-l-2 border-slate-300 pl-4 text-slate-600">
+                                                <div className="[&>p:last-child]:mb-0">{children}</div>
                                             </blockquote>
                                         ),
                                         table({ children }) {
                                             return (
-                                                <div className="overflow-x-auto my-8 rounded-2xl border border-slate-200/60 shadow-sm bg-white">
-                                                    <table className="min-w-full divide-y divide-slate-200 text-[14px]">
+                                                <div className="my-5 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                                    <table className="min-w-full divide-y divide-slate-200 text-sm">
                                                         {children}
                                                     </table>
                                                 </div>
                                             );
                                         },
-                                        thead: ({ children }) => <thead className="bg-[#f8fbff] text-slate-900">{children}</thead>,
-                                        th: ({ children }) => <th className="px-5 py-4 text-left font-bold border-b border-slate-200/60">{children}</th>,
-                                        td: ({ children }) => <td className="px-5 py-4 border-t border-slate-100/60 text-slate-700 leading-relaxed">{children}</td>
+                                        thead: ({ children }) => <thead className="bg-slate-50 text-slate-900">{children}</thead>,
+                                        th: ({ children }) => <th className="border-b border-slate-200 px-4 py-3 text-left font-semibold">{children}</th>,
+                                        td: ({ children }) => <td className="border-t border-slate-100 px-4 py-3 leading-6 text-slate-700">{children}</td>,
+                                        a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer" className="text-blue-600 underline underline-offset-2 hover:text-blue-700">{children}</a>,
+                                        hr: () => <hr className="my-6 w-full border-0 border-t border-slate-200" />
                                     }}
                                 >
-                                    {message.content}
+                                    {normalizeMarkdownContent(message.content)}
                                 </ReactMarkdown>
                             </div>
                         )}
@@ -254,26 +268,27 @@ const CodeBlock = ({ language, value }: { language: string, value: string }) => 
             setTimeout(() => setCopied(false), 2000);
         }
     };
+    const label = language === 'text' ? 'Plain text' : language;
 
     return (
-        <div className="rounded-[20px] overflow-hidden border border-slate-200/80 my-8 shadow-md bg-[#fafafa]">
-            <div className="flex items-center justify-between px-6 py-3 bg-[#f8fbff] border-b border-slate-200/60">
-                <span className="text-[11px] font-bold uppercase tracking-widest text-blue-600">{language}</span>
+        <div className="my-5 overflow-hidden rounded-[1.25rem] bg-[#f4f4f4]">
+            <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm font-semibold text-[#0d0d0d]">{label}</span>
                 <button
                     onClick={handleCopy}
-                    className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-[#1f1f1f] hover:text-blue-700 transition-colors"
+                    className="flex items-center gap-2 rounded-md px-2 py-1 text-sm font-semibold text-[#0d0d0d] transition-colors hover:bg-black/5"
                 >
-                    {copied ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
-                    {copied ? '已复制' : '复制代码'}
+                    {copied ? <Check size={16} className="text-emerald-600" /> : <Copy size={16} />}
+                    {copied ? '已复制' : '复制'}
                 </button>
             </div>
             <SyntaxHighlighter
                 language={language}
                 style={oneLight}
-                customStyle={{ margin: 0, padding: '1.5rem', background: 'transparent', fontSize: '14px', lineHeight: '1.6' }}
-                showLineNumbers={true}
-                lineNumberStyle={{ minWidth: '2.5em', paddingRight: '1.5em', color: '#cbd5e1', textAlign: 'right', fontSize: '12px' }}
+                customStyle={{ margin: 0, padding: '0 1rem 1rem', background: '#f4f4f4', fontSize: '14px', lineHeight: '1.7' }}
+                codeTagProps={{ style: { fontFamily: 'var(--font-mono)' } }}
                 wrapLines={true}
+                wrapLongLines={false}
             >
                 {value}
             </SyntaxHighlighter>
