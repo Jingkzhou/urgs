@@ -160,7 +160,7 @@ const BatchMonitoring: React.FC = () => {
                         </div>
                     </div>
                     <div className="h-[340px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <BarChart data={workflowStats.map(stat => ({
                                 ...stat,
                                 remaining: Math.max(0, stat.total - stat.success - stat.failed)
@@ -214,7 +214,7 @@ const BatchMonitoring: React.FC = () => {
                     </div>
 
                     <div className="h-[260px] relative mt-2">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <PieChart>
                                 <Pie
                                     data={statusDataFixed}

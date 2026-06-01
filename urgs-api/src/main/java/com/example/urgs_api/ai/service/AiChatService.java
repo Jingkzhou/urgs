@@ -41,6 +41,7 @@ public interface AiChatService {
             Runnable onComplete,
             Consumer<Exception> onError);
 
-    void streamChatWithPersistence(String sessionId, String systemPrompt, String userPrompt, SseEmitter emitter);
+    void streamChatWithPersistence(String sessionId, String systemPrompt, String userPrompt,
+            String agentAppSkillAppCode, String agentAppSkillCode, SseEmitter emitter);
 
 }

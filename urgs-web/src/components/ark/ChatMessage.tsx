@@ -132,7 +132,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                                         code({ node, inline, className, children, ...props }: any) {
                                             const match = /language-(\w+)/.exec(className || '');
                                             const codeContent = String(children).replace(/\n$/, '');
-                                            if (!inline) {
+                                            const isBlock = Boolean(match) || codeContent.includes('\n');
+                                            if (isBlock) {
                                                 return <CodeBlock language={match?.[1] || 'text'} value={codeContent} />;
                                             }
                                             return (

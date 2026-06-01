@@ -1,7 +1,9 @@
 package com.example.urgs_api.ai.service.agent;
 
 import com.example.urgs_api.ai.entity.Agent;
+import com.example.urgs_api.ai.entity.AgentAppSkill;
 import com.example.urgs_api.ai.service.AiChatHistoryService;
+import com.example.urgs_api.ai.service.AgentAppSkillService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -33,11 +35,15 @@ public class AgentAppBuildModeHandler {
     @Autowired
     private AiChatHistoryService aiChatHistoryService;
 
+    @Autowired
+    private AgentAppSkillService agentAppSkillService;
+
     public boolean supports(Agent agent) {
         return agent != null && "AGENT_APP".equalsIgnoreCase(agent.getBuildMode());
     }
 
-    public void streamWithPersistence(String sessionId, Agent agent, String userPrompt, SseEmitter emitter) {
+    public void streamWithPersistence(String sessionId, Agent agent, String userPrompt, String skillAppCode,
+            String skillCode, SseEmitter emitter) {
         executor.submit(() -> {
             StringBuilder response = new StringBuilder();
             try {
@@ -46,7 +52,10 @@ public class AgentAppBuildModeHandler {
                         .data(objectMapper.writeValueAsString(Map.of("used", estimateTokens(userPrompt),
                                 "limit", MAX_CONTEXT_TOKENS))));
 
-                executeAgentApp(agent, userPrompt, chunk -> {
+                AgentAppSkill skill = resolveSkill(agent, skillAppCode, skillCode);
+                String effectivePrompt = buildSkillPrompt(skill, userPrompt);
+
+                executeAgentApp(agent, skill == null ? null : skill.getAppCode(), effectivePrompt, chunk -> {
                     response.append(chunk);
                     try {
                         emitter.send(SseEmitter.event().data(objectMapper.writeValueAsString(Map.of("content", chunk))));
@@ -74,8 +83,45 @@ public class AgentAppBuildModeHandler {
         });
     }
 
-    private void executeAgentApp(Agent agent, String userPrompt, Consumer<String> chunkConsumer) throws Exception {
-        AgentAppCommand commandConfig = selectAgentAppCommand(agent);
+    private AgentAppSkill resolveSkill(Agent agent, String skillAppCode, String skillCode) {
+        if (skillCode == null || skillCode.isBlank()) {
+            return null;
+        }
+        AgentAppSkill skill = agentAppSkillService.getEnabledSkill(skillAppCode, skillCode);
+        if (skill == null) {
+            throw new RuntimeException("Agent App 技能不存在或已禁用: " + skillCode);
+        }
+        List<String> configuredTools = parseAgentAppTools(agent.getAgentAppTools());
+        if (!configuredTools.contains(skill.getAppCode())) {
+            throw new RuntimeException("当前助手未允许调用 Agent App: " + skill.getAppCode());
+        }
+        return skill;
+    }
+
+    private String buildSkillPrompt(AgentAppSkill skill, String userPrompt) {
+        if (skill == null) {
+            return userPrompt;
+        }
+        return """
+                [Agent App Skill]
+                Agent App: %s
+                名称: %s
+                编码: %s
+                指令: %s
+
+                [用户请求]
+                %s
+                """.formatted(
+                nullToEmpty(skill.getAppCode()),
+                nullToEmpty(skill.getName()),
+                nullToEmpty(skill.getCode()),
+                nullToEmpty(skill.getInstruction()),
+                nullToEmpty(userPrompt));
+    }
+
+    private void executeAgentApp(Agent agent, String preferredTool, String userPrompt, Consumer<String> chunkConsumer)
+            throws Exception {
+        AgentAppCommand commandConfig = selectAgentAppCommand(agent, preferredTool);
         List<String> command = buildAgentAppCommand(commandConfig.tool(), commandConfig.executable(), userPrompt);
         log.info("Executing Agent App tool {} for agent {}", commandConfig.tool(), agent.getName());
 
@@ -112,8 +158,20 @@ public class AgentAppBuildModeHandler {
         }
     }
 
-    private AgentAppCommand selectAgentAppCommand(Agent agent) {
+    private AgentAppCommand selectAgentAppCommand(Agent agent, String preferredTool) {
         List<String> configuredTools = parseAgentAppTools(agent.getAgentAppTools());
+        if (preferredTool != null && !preferredTool.isBlank()) {
+            String normalizedPreferredTool = preferredTool.trim().toLowerCase();
+            if (configuredTools.contains(normalizedPreferredTool) && AGENT_APP_TOOL_ALLOWLIST.contains(normalizedPreferredTool)) {
+                String executable = resolveExecutable(normalizedPreferredTool);
+                if (executable != null) {
+                    return new AgentAppCommand(normalizedPreferredTool, executable);
+                }
+                throw new RuntimeException("Agent App 已配置 CLI 但当前后端环境未安装或不在 PATH 中: "
+                        + normalizedPreferredTool);
+            }
+        }
+
         List<String> allowedConfiguredTools = new java.util.ArrayList<>();
         for (String tool : configuredTools) {
             String normalized = tool == null ? "" : tool.trim().toLowerCase();
@@ -204,6 +262,10 @@ public class AgentAppBuildModeHandler {
 
     private String stripAnsi(String text) {
         return text == null ? "" : text.replaceAll("\\u001B\\[[;\\d]*[ -/]*[@-~]", "");
+    }
+
+    private String nullToEmpty(String text) {
+        return text == null ? "" : text;
     }
 
     private record AgentAppCommand(String tool, String executable) {

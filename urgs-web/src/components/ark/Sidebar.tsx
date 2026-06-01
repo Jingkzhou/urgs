@@ -126,9 +126,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
                                 }`
                             }
                         >
-                            <div className="flex-shrink-0 relative z-10">
-                                <MessageSquare size={16} strokeWidth={2} className={currentSessionId === session.id ? 'text-[#041e49]' : 'text-slate-500'} />
-                            </div>
+                            {isCollapsed && (
+                                <div className="flex-shrink-0 relative z-10">
+                                    <MessageSquare size={16} strokeWidth={2} className={currentSessionId === session.id ? 'text-[#041e49]' : 'text-slate-500'} />
+                                </div>
+                            )}
 
                             {!isCollapsed && (
                                 <div className="flex-1 min-w-0 relative z-10">
@@ -161,17 +163,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
                 </div>
             </div>
 
-            {/* Bottom Menu - Premium Utilities */}
-            <div className={`${isCollapsed ? 'p-2' : 'p-6'} border-t border-slate-200/30 space-y-2`}>
-                <button className={`w-full flex items-center justify-center gap-4 text-slate-400 hover:text-slate-800 hover:bg-slate-50 rounded-[1.25rem] transition-all group overflow-hidden ${isCollapsed ? 'h-10 px-0 py-0' : 'px-4 py-3'}`}>
-                    <History size={18} strokeWidth={2.5} className="group-hover:rotate-[-10deg] transition-transform" />
-                    {!isCollapsed && <span className="flex-1 text-left text-[11px] font-black uppercase tracking-widest">分析流</span>}
-                </button>
-                <button className={`w-full flex items-center justify-center gap-4 text-slate-400 hover:text-slate-800 hover:bg-slate-50 rounded-[1.25rem] transition-all group overflow-hidden ${isCollapsed ? 'h-10 px-0 py-0' : 'px-4 py-3'}`}>
-                    <Settings size={18} strokeWidth={2.5} className="group-hover:rotate-[20deg] transition-transform" />
-                    {!isCollapsed && <span className="flex-1 text-left text-[11px] font-black uppercase tracking-widest">操作核心</span>}
-                </button>
-            </div>
+           
         </motion.aside>
     );
 };

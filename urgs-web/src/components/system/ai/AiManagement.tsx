@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Tabs } from 'antd';
-import { ApiOutlined, RobotOutlined, DatabaseOutlined } from '@ant-design/icons';
+import { ApiOutlined, RobotOutlined, DatabaseOutlined, ToolOutlined } from '@ant-design/icons';
 import AiApiManager from './AiApiManager';
 import AiAgentManager from './AiAgentManager';
 import AiKnowledgeManager from './AiKnowledgeManager';
+import AiAgentAppSkillManager from './AiAgentAppSkillManager';
 import Auth from '../../Auth';
 
 const AiManagement: React.FC = () => {
@@ -33,6 +34,19 @@ const AiManagement: React.FC = () => {
             children: (
                 <Auth code="sys:ai:api:list">
                     <AiApiManager />
+                </Auth>
+            ),
+        },
+        {
+            key: 'agent-app-skills',
+            label: (
+                <span className="px-2">
+                    <ToolOutlined /> Agent App Skills
+                </span>
+            ),
+            children: (
+                <Auth code="sys:ai:agent-app-skills:list">
+                    <AiAgentAppSkillManager />
                 </Auth>
             ),
         },

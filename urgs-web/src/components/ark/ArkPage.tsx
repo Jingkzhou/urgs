@@ -7,7 +7,7 @@ import Sidebar from './Sidebar';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import {
-    Message, Session, getSessions, createSession, streamChatResponse, loadSessionMessages, generateSessionTitle, getAgents, getRoleAgents
+    Message, Session, type AgentAppSkill, getSessions, createSession, streamChatResponse, loadSessionMessages, generateSessionTitle, getAgents, getRoleAgents, getAgentAppSkills
 } from '../../api/chat';
 
 const STREAM_THROTTLE_MS = 80;
@@ -21,6 +21,21 @@ interface SessionState {
     isAtBottom: boolean;
 }
 
+const parseAgentAppTools = (value: any) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.map(String).map(item => item.trim().toLowerCase()).filter(Boolean);
+    if (typeof value !== 'string') return [];
+    try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) {
+            return parsed.map(String).map(item => item.trim().toLowerCase()).filter(Boolean);
+        }
+    } catch (e) {
+        // Fallback to comma separated values.
+    }
+    return value.split(',').map(item => item.trim().toLowerCase()).filter(Boolean);
+};
+
 const ArkPage: React.FC = () => {
     // ... state remains the same ...
     const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -30,6 +45,8 @@ const ArkPage: React.FC = () => {
     const [metrics, setMetrics] = useState<{ used: number, limit: number } | null>(null);
     const [agents, setAgents] = useState<any[]>([]);
     const [activeAgent, setActiveAgent] = useState<any | null>(null);
+    const [agentAppSkills, setAgentAppSkills] = useState<AgentAppSkill[]>([]);
+    const [selectedAgentAppSkill, setSelectedAgentAppSkill] = useState<AgentAppSkill | null>(null);
     const [sessions, setSessions] = useState<Session[]>([]);
     const [loading, setLoading] = useState(true);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
@@ -130,6 +147,24 @@ const ArkPage: React.FC = () => {
             }
         };
     }, []);
+
+    useEffect(() => {
+        const loadAgentAppSkills = async () => {
+            setSelectedAgentAppSkill(null);
+            if (activeAgent?.buildMode !== 'AGENT_APP') {
+                setAgentAppSkills([]);
+                return;
+            }
+            const appTools = parseAgentAppTools(activeAgent.agentAppTools);
+            if (appTools.length === 0) {
+                setAgentAppSkills([]);
+                return;
+            }
+            const skills = await getAgentAppSkills(appTools);
+            setAgentAppSkills(skills);
+        };
+        loadAgentAppSkills();
+    }, [activeAgent?.id, activeAgent?.buildMode]);
 
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const isAtBottom = useRef(true);
@@ -516,12 +551,15 @@ const ArkPage: React.FC = () => {
                         return next;
                     });
                 },
-                ragConfig // Pass config here
+                ragConfig, // Pass config here
+                selectedAgentAppSkill
             );
         } catch (e) {
             flushStreamingUpdate();
             resetStreamingState();
             setIsGenerating(false);
+        } finally {
+            setSelectedAgentAppSkill(null);
         }
     };
 
@@ -778,6 +816,10 @@ const ArkPage: React.FC = () => {
                             isGenerating={isGenerating}
                             onStop={handleStop}
                             isWide={isSidebarCollapsed}
+                            agentAppSkills={agentAppSkills}
+                            selectedAgentAppSkill={selectedAgentAppSkill}
+                            onAgentAppSkillSelect={setSelectedAgentAppSkill}
+                            onAgentAppSkillClear={() => setSelectedAgentAppSkill(null)}
                         />
                     
                     </div>

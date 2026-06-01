@@ -84,6 +84,12 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '3-7-2-2', name: '新增', code: 'sys:ai:agent:add', type: 'button', path: '-', level: 3, parentId: '3-7-2' },
     { id: '3-7-2-3', name: '编辑', code: 'sys:ai:agent:edit', type: 'button', path: '-', level: 3, parentId: '3-7-2' },
     { id: '3-7-2-4', name: '删除', code: 'sys:ai:agent:del', type: 'button', path: '-', level: 3, parentId: '3-7-2' },
+    // Agent App Skills 管理模块
+    { id: '3-7-4', name: 'Agent App Skills 管理', code: 'sys:ai:agent-app-skills', type: 'menu', path: '/admin/ai/agent-app-skills', level: 2, parentId: '3-7' },
+    { id: '3-7-4-1', name: '查询', code: 'sys:ai:agent-app-skills:list', type: 'button', path: '-', level: 3, parentId: '3-7-4' },
+    { id: '3-7-4-2', name: '新增', code: 'sys:ai:agent-app-skills:add', type: 'button', path: '-', level: 3, parentId: '3-7-4' },
+    { id: '3-7-4-3', name: '编辑', code: 'sys:ai:agent-app-skills:edit', type: 'button', path: '-', level: 3, parentId: '3-7-4' },
+    { id: '3-7-4-4', name: '删除', code: 'sys:ai:agent-app-skills:del', type: 'button', path: '-', level: 3, parentId: '3-7-4' },
     // 知识库管理模块
     { id: '3-7-3', name: '知识库管理', code: 'sys:ai:knowledge', type: 'menu', path: '/admin/ai/knowledge', level: 2, parentId: '3-7' },
     { id: '3-7-3-1', name: '查询', code: 'sys:ai:knowledge:list', type: 'button', path: '-', level: 3, parentId: '3-7-3' },

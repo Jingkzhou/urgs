@@ -20,6 +20,19 @@ export interface Session {
     userId: string;
 }
 
+export interface AgentAppSkill {
+    id: number;
+    appCode: string;
+    name: string;
+    code: string;
+    description?: string;
+    instruction?: string;
+    status: number;
+    sortOrder?: number;
+    createdAt?: string;
+    updatedAt?: string;
+}
+
 const API_BASE = '/api/ai';
 
 // 获取当前用户信息，若失败则降级处理
@@ -180,6 +193,18 @@ export const updateRoleAgents = async (roleId: number, agentIds: number[]): Prom
     }
 };
 
+export const getAgentAppSkills = async (appCodes?: string[]): Promise<AgentAppSkill[]> => {
+    try {
+        const data = await get<AgentAppSkill[]>('/api/ai/agent-app-skills/enabled', {
+            appCodes: appCodes && appCodes.length > 0 ? appCodes.join(',') : undefined
+        });
+        return data || [];
+    } catch (e) {
+        console.error('Failed to fetch agent app skills', e);
+        return [];
+    }
+};
+
 export const streamChatResponse = async (
     userMessage: string,
     onChunk: (chunk: string) => void,
@@ -190,7 +215,8 @@ export const streamChatResponse = async (
     onSources?: (sources: any[]) => void,
     onStatus?: (status: string) => void,
     onIntent?: (intent: string) => void,
-    ragConfig?: { fusionStrategy?: string; topK?: number }
+    ragConfig?: { fusionStrategy?: string; topK?: number },
+    agentAppSkill?: { appCode: string; code: string; name: string } | null
 ) => {
     try {
         const token = localStorage.getItem('auth_token');
@@ -207,7 +233,9 @@ export const streamChatResponse = async (
             body: JSON.stringify({
                 userPrompt: userMessage,
                 sessionId: sessionId,
-                ragConfig
+                ragConfig,
+                agentAppSkillAppCode: agentAppSkill?.appCode,
+                agentAppSkillCode: agentAppSkill?.code
             }),
             signal
         });

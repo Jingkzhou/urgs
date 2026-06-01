@@ -501,7 +501,7 @@ const ReleaseStats: React.FC = () => {
                                         能力雷达图
                                     </h3>
                                     <div className="h-64">
-                                        <ResponsiveContainer width="100%" height="100%">
+                                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                                             <RadarChart data={selectedDeveloper.radarData}>
                                                 <PolarGrid stroke="#e2e8f0" />
                                                 <PolarAngleAxis
@@ -533,7 +533,7 @@ const ReleaseStats: React.FC = () => {
                                         绩效趋势
                                     </h3>
                                     <div className="h-64">
-                                        <ResponsiveContainer width="100%" height="100%">
+                                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                                             <AreaChart data={selectedDeveloper.trendData}>
                                                 <defs>
                                                     <linearGradient id="scoreGradient" x1="0" y1="0" x2="0" y2="1">
