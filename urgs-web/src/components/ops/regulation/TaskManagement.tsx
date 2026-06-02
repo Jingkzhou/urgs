@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DatePicker, Form, Modal, message } from 'antd';
 import dayjs from 'dayjs';
 import zhCN from 'antd/es/date-picker/locale/zh_CN';
-import { RefreshCw, Search, Settings2, Plus, Clock3, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { RefreshCw, Search, Plus, Clock3, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { QuartzTask } from './mockData';
 import TaskEditorModal from './TaskEditorModal';
@@ -68,6 +68,12 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
     const [refreshing, setRefreshing] = useState(false);
+    const mountedRef = useRef(true);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => { mountedRef.current = false; };
+    }, []);
 
     const taskTypes = useMemo(() => [...supportedTaskTypes], []);
 
@@ -161,46 +167,65 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
     const loadTasks = useCallback(async (pageNum = currentPage, size = pageSize) => {
         try {
             const response = await queryQuartzTasks(buildTaskQueryParams(pageNum, size));
+            if (!mountedRef.current) return;
             if (!response?.success) throw new Error(response?.msg || '任务查询失败');
             const list = (response.data?.list || []).map(normalizeQuartzTask);
             setTaskList(list);
             setTaskTotal(Number(response.data?.total || 0));
         } catch (error: any) {
-            message.error(error?.message || '加载任务失败');
+            if (mountedRef.current) message.error(error?.message || '加载任务失败');
         }
     }, [buildTaskQueryParams, currentPage, pageSize]);
 
     const loadDependencyCandidateTasks = useCallback(async () => {
+        let lastError: Error | null = null;
         const candidatePageSize = 500;
-        const firstResponse = await queryQuartzTasks({ pageNum: 1, pageSize: candidatePageSize });
-        if (!firstResponse?.success) {
-            throw new Error(firstResponse?.msg || '依赖候选任务查询失败');
+
+        try {
+            const firstResponse = await queryQuartzTasks({ pageNum: 1, pageSize: candidatePageSize });
+            if (!mountedRef.current) return;
+            if (!firstResponse?.success) {
+                lastError = new Error(firstResponse?.msg || '依赖候选任务查询失败');
+                return;
+            }
+
+            const allTasks = [...(firstResponse.data?.list || []).map(normalizeQuartzTask)];
+            const totalPages = Number(firstResponse.data?.pages || 1);
+
+            if (totalPages > 1) {
+                const restResponses = await Promise.all(
+                    Array.from({ length: totalPages - 1 }, (_, index) =>
+                        queryQuartzTasks({ pageNum: index + 2, pageSize: candidatePageSize })
+                    )
+                );
+
+                restResponses.forEach(response => {
+                    if (response?.success) {
+                        allTasks.push(...(response.data?.list || []).map(normalizeQuartzTask));
+                    } else if (!lastError) {
+                        lastError = new Error(response?.msg || '依赖候选任务查询失败');
+                    }
+                });
+            }
+
+            if (!mountedRef.current) return;
+            setDependencyCandidateTaskList(allTasks);
+        } catch (err: any) {
+            lastError = err;
+        } finally {
+            if (mountedRef.current && lastError) {
+                message.warning('依赖候选任务加载不完整，部分功能可能受限');
+            }
         }
-
-        const allTasks = [...(firstResponse.data?.list || []).map(normalizeQuartzTask)];
-        const totalPages = Number(firstResponse.data?.pages || 1);
-
-        if (totalPages > 1) {
-            const restResponses = await Promise.all(
-                Array.from({ length: totalPages - 1 }, (_, index) =>
-                    queryQuartzTasks({ pageNum: index + 2, pageSize: candidatePageSize })
-                )
-            );
-
-            restResponses.forEach(response => {
-                if (response?.success) {
-                    allTasks.push(...(response.data?.list || []).map(normalizeQuartzTask));
-                }
-            });
-        }
-
-        setDependencyCandidateTaskList(allTasks);
     }, []);
 
     const loadTaskStatusSummary = useCallback(async () => {
         try {
             const summaryPageSize = 500;
-            const firstResponse = await queryQuartzTasks(buildTaskQueryParams(1, summaryPageSize));
+            // 统计面板应展示全局数据，不受当前筛选条件影响
+            const unfilteredParams = { pageNum: 1, pageSize: summaryPageSize };
+            const firstResponse = await queryQuartzTasks(unfilteredParams);
+            if (!mountedRef.current) return;
             if (!firstResponse?.success) throw new Error(firstResponse?.msg || '任务统计查询失败');
 
             const allTasks = [...(firstResponse.data?.list || []).map(normalizeQuartzTask)];
@@ -209,7 +234,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             if (totalPages > 1) {
                 const restResponses = await Promise.all(
                     Array.from({ length: totalPages - 1 }, (_, index) =>
-                        queryQuartzTasks(buildTaskQueryParams(index + 2, summaryPageSize))
+                        queryQuartzTasks({ pageNum: index + 2, pageSize: summaryPageSize })
                     )
                 );
 
@@ -220,24 +245,25 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 });
             }
 
+            if (!mountedRef.current) return;
             setTaskStatusSummary({
                 normal: allTasks.filter(task => task.task_status === 0).length,
                 paused: allTasks.filter(task => task.task_status === 1).length,
             });
         } catch (error: any) {
-            message.error(error?.message || '加载任务统计失败');
-            setTaskStatusSummary({ normal: 0, paused: 0 });
+            if (mountedRef.current) {
+                message.error(error?.message || '加载任务统计失败');
+                setTaskStatusSummary({ normal: 0, paused: 0 });
+            }
         }
-    }, [buildTaskQueryParams]);
+    }, []);
 
     useEffect(() => {
         loadTasks(currentPage, pageSize);
     }, [currentPage, loadTasks, pageSize]);
 
     useEffect(() => {
-        loadDependencyCandidateTasks().catch((error: any) => {
-            message.error(error?.message || '加载依赖候选任务失败');
-        });
+        loadDependencyCandidateTasks();
     }, [loadDependencyCandidateTasks]);
 
     useEffect(() => {
@@ -362,6 +388,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                 remark: emptyToNull(values.remark),
                 taskType: toTaskTypeCode(values.task_type),
                 exePath: normalizeScript(values.script),
+                // 注意：dependId 和 dataDependId 传相同值，由后端决定使用哪个字段
                 dependId: emptyToNull(values.data_depend_id || values.depend_id),
                 dataDependId: emptyToNull(values.data_depend_id || values.depend_id),
                 controlDependId: emptyToNull(values.control_depend_id),
@@ -488,7 +515,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                 </h1>
                             </div>
                             <p className="text-sm text-slate-400 mt-1.5 font-medium tracking-wide">
-                                集中化管理监管报送批量任务周期定义（`t_quartz_task`）、拓扑依赖与告警通知托底。
+                                集中化管理监管报送批量任务周期定义（<code className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">t_quartz_task</code>）、拓扑依赖与告警通知托底。
                             </p>
                         </div>
                         
@@ -500,8 +527,8 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                     <SlidersHorizontal size={13} />
                                 </div>
                                 <div>
-                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">总任务数</div>
-                                    <div className="text-sm font-bold text-slate-800 font-mono leading-none mt-0.5">{taskTotal}</div>
+                                    <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">总任务数</div>
+                                    <div className="text-base font-bold text-slate-800 font-mono leading-none mt-0.5">{taskTotal}</div>
                                 </div>
                             </div>
                             {/* Metric 2 */}
@@ -510,8 +537,8 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                                 </div>
                                 <div>
-                                    <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">运行正常</div>
-                                    <div className="text-sm font-bold text-emerald-700 font-mono leading-none mt-0.5">{taskStatusSummary.normal}</div>
+                                    <div className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">运行正常</div>
+                                    <div className="text-base font-bold text-emerald-700 font-mono leading-none mt-0.5">{taskStatusSummary.normal}</div>
                                 </div>
                             </div>
                             {/* Metric 3 */}
@@ -520,8 +547,8 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                     <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
                                 </div>
                                 <div>
-                                    <div className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">当前暂停</div>
-                                    <div className="text-sm font-bold text-amber-700 font-mono leading-none mt-0.5">{taskStatusSummary.paused}</div>
+                                    <div className="text-[11px] font-bold text-amber-600 uppercase tracking-wider">当前暂停</div>
+                                    <div className="text-base font-bold text-amber-700 font-mono leading-none mt-0.5">{taskStatusSummary.paused}</div>
                                 </div>
                             </div>
 
@@ -529,12 +556,13 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                             <span className="h-8 w-px bg-slate-200 hidden sm:block" />
 
                             <div className="flex items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0 justify-end">
-                                <motion.button
+                                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                                    <motion.button
                                     whileHover={{ scale: 1.02 }}
                                     whileTap={{ scale: 0.98 }}
                                     onClick={handleRefreshTasks}
                                     disabled={refreshing}
-                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-250 bg-white px-4 py-2 text-xs font-bold text-slate-600 shadow-sm transition-all duration-200 hover:bg-slate-50 hover:border-slate-350 disabled:cursor-not-allowed disabled:opacity-50"
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 shadow-sm transition-all duration-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     <RefreshCw size={13} className={`${refreshing ? 'animate-spin' : ''} text-slate-400`} />
                                     刷新列表
@@ -543,11 +571,12 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                     whileHover={{ scale: 1.02, y: -1 }}
                                     whileTap={{ scale: 0.98 }}
                                     onClick={() => openTaskModal(null)}
-                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-gradient-to-r from-red-600 to-red-700 px-4.5 py-2 text-xs font-bold text-white shadow-md shadow-red-600/10 transition-all duration-200 hover:from-red-500 hover:to-red-600 hover:shadow-lg hover:shadow-red-500/20"
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 shadow-sm transition-all duration-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     <Plus size={13} />
-                                    新建监管任务
+                                    新建任务
                                 </motion.button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -568,7 +597,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                 <select
                                     value={statusFilter}
                                     onChange={(event) => setStatusFilter(event.target.value)}
-                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
+                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white font-medium"
                                 >
                                     <option value="">全部任务状态</option>
                                     <option value="0">正常</option>
@@ -579,7 +608,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                 <select
                                     value={typeFilter}
                                     onChange={(event) => setTypeFilter(event.target.value)}
-                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
+                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white font-medium"
                                 >
                                     <option value="">全部任务类型</option>
                                     {taskTypes.map(type => (
@@ -591,7 +620,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                 <select
                                     value={systemFilter}
                                     onChange={(event) => setSystemFilter(event.target.value)}
-                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
+                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white font-medium"
                                 >
                                     <option value="">全部所属系统</option>
                                     {systems.map(system => (
@@ -603,7 +632,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                 <select
                                     value={themeFilter}
                                     onChange={(event) => setThemeFilter(event.target.value)}
-                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
+                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white font-medium"
                                 >
                                     <option value="">全部任务主题</option>
                                     {themes.map(theme => (
@@ -629,7 +658,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                     />
                 </div>
 
-                <div className="px-5 py-2">
+                <div className="px-5 py-4 flex justify-end">
                     <Pagination
                         current={currentPage}
                         total={taskTotal}
@@ -705,6 +734,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                 locale={zhCN}
                                 className="w-full h-10 rounded-xl bg-slate-50/50 border-slate-200 hover:border-slate-300 focus:border-slate-400 focus:bg-white text-sm"
                                 allowClear={false}
+                                disabledDate={(current) => current && current > dayjs().endOf('day')}
                             />
                         </div>
                     </div>

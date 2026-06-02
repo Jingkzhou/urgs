@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Form, Input, InputNumber, Modal, Select } from 'antd';
-import { Calendar, Clock3, Plus, Settings2, Trash2, SlidersHorizontal, Sparkles, Terminal, Database, User, BellRing, ArrowRight } from 'lucide-react';
+import { Calendar, Clock3, Plus, Settings2, Trash2, SlidersHorizontal, Sparkles, Terminal, Database, User, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QuartzTask } from './mockData';
 import LazyMonacoEditor from './LazyMonacoEditor';
@@ -303,7 +303,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                 <div>
                                     <div className="flex flex-wrap items-center gap-2">
                                         <h2 className="text-lg font-bold tracking-wide text-white">
-                                            {editingTask ? '编辑监管任务' : '新建监管任务'}
+                                            {editingTask ? '编辑任务' : '新建任务'}
                                         </h2>
                                         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold backdrop-blur-md border ${
                                             editingTask
@@ -603,7 +603,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                                         <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/80" />
                                                         <span className="ml-2 font-mono text-[10px] tracking-wider text-slate-500 flex items-center gap-1">
                                                             <Terminal className="h-3 w-3 text-slate-600" />
-                                                            task_script.sh
+                                                            {watchedTaskType === 'SQL' ? 'task_script.sql' : 'task_script.sh'}
                                                         </span>
                                                     </div>
                                                     <div className="font-mono text-[9px] font-bold text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded border border-violet-500/20 uppercase tracking-wider">
@@ -724,7 +724,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                                                         animate={{ opacity: 1, y: 0, scale: 1 }}
                                                                         exit={{ opacity: 0, y: -12, scale: 0.96, transition: { duration: 0.15 } }}
                                                                         transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                                                                        className="group relative flex flex-col gap-2 rounded-xl border border-slate-150 bg-slate-50/30 p-2.5 hover:border-slate-250 hover:bg-slate-50 transition-all duration-300 sm:flex-row sm:items-center"
+                                                                        className="group relative flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50/30 p-2.5 hover:border-slate-300 hover:bg-slate-50 transition-all duration-300 sm:flex-row sm:items-center"
                                                                     >
                                                                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200/50 text-slate-400 shadow-inner group-hover:bg-slate-200 group-hover:text-slate-600 transition-colors">
                                                                             <User size={13} />
@@ -738,7 +738,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                                                                 <Input
                                                                                     placeholder="通知姓名 (例如：胡滨)"
                                                                                     variant="borderless"
-                                                                                    className="h-8 px-2.5 rounded-lg bg-white border border-slate-200/80 focus:border-slate-350 focus:bg-white text-xs font-semibold text-slate-700"
+                                                                                    className="h-8 px-2.5 rounded-lg bg-white border border-slate-200/80 focus:border-slate-400 focus:bg-white text-xs font-semibold text-slate-700"
                                                                                 />
                                                                             </Form.Item>
                                                                             <Form.Item
@@ -749,7 +749,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                                                                 <Input
                                                                                     placeholder="客户号 (例如：1001642)"
                                                                                     variant="borderless"
-                                                                                    className="h-8 px-2.5 rounded-lg bg-white border border-slate-200/80 focus:border-slate-350 focus:bg-white text-xs font-mono text-slate-600"
+                                                                                    className="h-8 px-2.5 rounded-lg bg-white border border-slate-200/80 focus:border-slate-400 focus:bg-white text-xs font-mono text-slate-600"
                                                                                 />
                                                                             </Form.Item>
                                                                         </div>
@@ -770,7 +770,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                                             whileTap={{ scale: 0.99 }}
                                                             type="button"
                                                             onClick={() => add({ name: '', custid: '' })}
-                                                            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-250 bg-white hover:border-slate-400 py-2 text-xs font-semibold text-slate-600 transition-colors shadow-sm hover:bg-slate-50/50"
+                                                            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 bg-white hover:border-slate-400 py-2 text-xs font-semibold text-slate-600 transition-colors shadow-sm hover:bg-slate-50/50"
                                                         >
                                                             <Plus size={13} className="text-slate-400" />
                                                             新增通知对象
@@ -806,7 +806,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                                                         animate={{ opacity: 1, y: 0, scale: 1 }}
                                                                         exit={{ opacity: 0, y: -12, scale: 0.96, transition: { duration: 0.15 } }}
                                                                         transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                                                                        className="group relative flex flex-col gap-2 rounded-xl border border-slate-150 bg-slate-50/30 p-2.5 hover:border-slate-250 hover:bg-slate-50 transition-all duration-300 sm:flex-row sm:items-center"
+                                                                        className="group relative flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50/30 p-2.5 hover:border-slate-300 hover:bg-slate-50 transition-all duration-300 sm:flex-row sm:items-center"
                                                                     >
                                                                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200/50 text-slate-400 shadow-inner group-hover:bg-slate-200 group-hover:text-slate-600 transition-colors">
                                                                             <User size={13} />
@@ -820,7 +820,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                                                                 <Input
                                                                                     placeholder="通知姓名 (例如：胡滨)"
                                                                                     variant="borderless"
-                                                                                    className="h-8 px-2.5 rounded-lg bg-white border border-slate-200/80 focus:border-slate-350 focus:bg-white text-xs font-semibold text-slate-700"
+                                                                                    className="h-8 px-2.5 rounded-lg bg-white border border-slate-200/80 focus:border-slate-400 focus:bg-white text-xs font-semibold text-slate-700"
                                                                                 />
                                                                             </Form.Item>
                                                                             <Form.Item
@@ -831,7 +831,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                                                                 <Input
                                                                                     placeholder="客户号 (例如：1001642)"
                                                                                     variant="borderless"
-                                                                                    className="h-8 px-2.5 rounded-lg bg-white border border-slate-200/80 focus:border-slate-350 focus:bg-white text-xs font-mono text-slate-600"
+                                                                                    className="h-8 px-2.5 rounded-lg bg-white border border-slate-200/80 focus:border-slate-400 focus:bg-white text-xs font-mono text-slate-600"
                                                                                 />
                                                                             </Form.Item>
                                                                         </div>
@@ -852,7 +852,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                                             whileTap={{ scale: 0.99 }}
                                                             type="button"
                                                             onClick={() => add({ name: '', custid: '' })}
-                                                            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-250 bg-white hover:border-slate-400 py-2 text-xs font-semibold text-slate-600 transition-colors shadow-sm hover:bg-slate-50/50"
+                                                            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 bg-white hover:border-slate-400 py-2 text-xs font-semibold text-slate-600 transition-colors shadow-sm hover:bg-slate-50/50"
                                                         >
                                                             <Plus size={13} className="text-slate-400" />
                                                             新增通知对象

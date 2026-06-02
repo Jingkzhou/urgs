@@ -130,7 +130,7 @@ const TaskListTable: React.FC<TaskListTableProps> = ({
                                 >
                                     <tr
                                         onClick={() => onSelectTask(task)}
-                                        className="cursor-pointer hover:bg-red-50/30"
+                                        className="cursor-pointer hover:bg-slate-50/80 transition-colors"
                                         title="右键查看操作菜单"
                                     >
                                         <td className="px-4 py-4">

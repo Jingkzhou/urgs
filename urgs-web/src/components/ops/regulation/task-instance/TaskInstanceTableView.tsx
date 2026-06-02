@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tag } from 'antd';
+import { Tag, Tooltip } from 'antd';
 import { CheckCircle2, Eye, Play, RotateCcw, Search, Square } from 'lucide-react';
 import Pagination from '@/components/common/Pagination';
 import { QuartzTask, QuartzTaskStatus } from '../mockData';
@@ -94,9 +94,9 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     onOpenInstanceDetail,
     onPageChange,
 }) => {
-    const canBatchExecute = selectedInstances.length > 0 && selectedInstances.every(instance => instance.status === 3 || instance.status === 4);
-    const canBatchForceStop = selectedInstances.length > 0 && selectedInstances.every(instance => instance.status === 1 || instance.status === 2);
-    const canBatchForcePass = selectedInstances.length > 0 && selectedInstances.every(instance => instance.status === 4);
+    const canBatchExecute = selectedInstances.length > 0 && selectedInstances.some(instance => instance.status === 3 || instance.status === 4);
+    const canBatchForceStop = selectedInstances.length > 0 && selectedInstances.some(instance => instance.status === 1 || instance.status === 2);
+    const canBatchForcePass = selectedInstances.length > 0 && selectedInstances.some(instance => instance.status === 4);
 
     return (
         <div className="space-y-4">
@@ -126,21 +126,21 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                         <button
                             type="button"
                             onClick={() => onSummaryStatusClick('2')}
-                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-blue-700 transition-colors hover:bg-blue-100 ${statusFilter === '2' ? 'bg-blue-100 font-semibold' : 'bg-blue-50'}`}
+                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-blue-600 transition-colors hover:bg-blue-100 ${statusFilter === '2' ? 'bg-blue-100 font-semibold' : 'bg-blue-50'}`}
                         >
                             执行中 {summaryStats.runningInstances}
                         </button>
                         <button
                             type="button"
                             onClick={() => onSummaryStatusClick('3')}
-                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-emerald-700 transition-colors hover:bg-emerald-100 ${statusFilter === '3' ? 'bg-emerald-100 font-semibold' : 'bg-emerald-50'}`}
+                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-emerald-600 transition-colors hover:bg-emerald-100 ${statusFilter === '3' ? 'bg-emerald-100 font-semibold' : 'bg-emerald-50'}`}
                         >
                             成功 {summaryStats.successInstances}
                         </button>
                         <button
                             type="button"
                             onClick={() => onSummaryStatusClick('4')}
-                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-red-700 transition-colors hover:bg-red-100 ${statusFilter === '4' ? 'bg-red-100 font-semibold' : 'bg-red-50'}`}
+                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-red-600 transition-colors hover:bg-red-100 ${statusFilter === '4' ? 'bg-red-100 font-semibold' : 'bg-red-50'}`}
                         >
                             失败 {summaryStats.failedInstances}
                         </button>
@@ -418,19 +418,25 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                                             <div className="truncate">{instance.plan_id}</div>
                                         </td>
                                         <td className={tableCellClass}>
-                                            <div className="truncate font-semibold text-slate-800" title={taskName}>
-                                                {taskName}
-                                            </div>
+                                            <Tooltip placement="topLeft" title={taskName}>
+                                                <div className="truncate font-semibold text-slate-800">
+                                                    {taskName}
+                                                </div>
+                                            </Tooltip>
                                         </td>
                                         <td className={tableCellClass}>
-                                            <div className="truncate text-slate-700" title={task?.task_system || '-'}>
-                                                {task?.task_system || '-'}
-                                            </div>
+                                            <Tooltip placement="topLeft" title={task?.task_system || '-'}>
+                                                <div className="truncate text-slate-700">
+                                                    {task?.task_system || '-'}
+                                                </div>
+                                            </Tooltip>
                                         </td>
                                         <td className={tableCellClass}>
-                                            <div className="truncate text-slate-700" title={task?.theme || '-'}>
-                                                {task?.theme || '-'}
-                                            </div>
+                                            <Tooltip placement="topLeft" title={task?.theme || '-'}>
+                                                <div className="truncate text-slate-700">
+                                                    {task?.theme || '-'}
+                                                </div>
+                                            </Tooltip>
                                         </td>
                                         <td className={monoCellClass}>
                                             <div className="truncate">{instance.data_date}</div>
@@ -457,9 +463,11 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                                             <div className="truncate">{instance.create_time}</div>
                                         </td>
                                         <td className={`${tableCellClass} text-slate-600`}>
-                                            <div className="truncate" title={instance.msg || '-'}>
-                                                {instance.msg || '-'}
-                                            </div>
+                                            <Tooltip placement="topLeft" title={instance.msg || '-'}>
+                                                <div className="truncate">
+                                                    {instance.msg || '-'}
+                                                </div>
+                                            </Tooltip>
                                         </td>
                                     </tr>
                                 );
