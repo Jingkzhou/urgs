@@ -54,10 +54,14 @@ public class LineageReviewAiService {
               "severity": "HIGH|MEDIUM|LOW",
               "confidence": 0.0,
               "verdict": "CONFIRMED|REJECTED|NEEDS_REVIEW",
-              "reason": "必须使用固定结构：现状：...\\n期待效果：...\\n问题：...\\n证据：...\\n建议排查：...",
+              "reason": "必须使用固定结构：现状：...\\n期待效果：...\\n问题：...\\n证据：...\\n优化建议：处置方向=调整血缘分析程序|调整代码书写规范|补充物理模型|扩大证据范围|人工复核；建议=...；依据=...",
               "suggestedSources": ["schema.table.column"],
               "evidenceRefs": ["证据1", "证据2"]
             }
+            优化建议必须明确处置方向：如果 SQL 写法清晰而 programRelations 与 SQL 不一致，优先建议调整血缘分析程序；
+            如果 SQL 存在无别名字段、SELECT *、目标列顺序不清、动态 SQL、隐式字段映射等导致无法稳定解析的写法，建议调整代码书写规范；
+            如果 SQL 需要表结构才能判断字段归属，而当前证据缺字段或表结构信息，建议补充物理模型；
+            如果当前 SQL 片段或 programRelations 无法覆盖判断范围，建议扩大证据范围；只有无法归类时才建议人工复核。
             如果证据不足，请返回 NEEDS_REVIEW，不要臆断。
             """;
 
@@ -86,7 +90,7 @@ public class LineageReviewAiService {
                   "severity": "HIGH|MEDIUM|LOW",
                   "confidence": 0.0,
                   "verdict": "CONFIRMED|REJECTED|NEEDS_REVIEW",
-                  "reason": "必须使用固定结构：现状：...\\n期待效果：...\\n问题：...\\n证据：...\\n建议排查：...",
+                  "reason": "必须使用固定结构：现状：...\\n期待效果：...\\n问题：...\\n证据：...\\n优化建议：处置方向=调整血缘分析程序|调整代码书写规范|补充物理模型|扩大证据范围|人工复核；建议=...；依据=...",
                   "suggestedSources": ["schema.table.column"],
                   "evidenceRefs": ["必须引用具体字段级 SQL 表达式或程序关系，例如 target_col <= source_alias.source_col"]
                 }
@@ -102,8 +106,15 @@ public class LineageReviewAiService {
             期待效果：按 SQL 应该存在的源字段、目标字段和关系类型。
             问题：程序结果和期待效果的差异，不要写成笼统结论。
             证据：引用 SQL 原文表达式、SELECT 位置或已有程序关系。
-            建议排查：指出优先检查解析器、物理模型字段、SQL 写法还是证据范围。
-            你只负责给出复核候选结论，最终由人工判断是误报、解析程序 BUG，还是 SQL 书写规范问题；不要替人工填写最终处置类型。
+            优化建议：必须写成“处置方向=...；建议=...；依据=...”，其中处置方向只能从
+            调整血缘分析程序、调整代码书写规范、补充物理模型、扩大证据范围、人工复核 中选择一个。
+            处置方向判定规则：
+            - SQL 写法清晰、字段和目标列可以从片段直接定位，但 programRelations 漏连、错连或关系类型错误，选择“调整血缘分析程序”。
+            - SQL 使用无别名字段、SELECT *、目标列顺序不清、动态 SQL、隐式字段映射等导致解析不稳定，选择“调整代码书写规范”。
+            - 需要 DDL/字段清单/metadata-pack 才能判断字段归属，但证据缺失或模型不完整，选择“补充物理模型”。
+            - 当前片段、文件范围或 programRelations 不足以覆盖判断，选择“扩大证据范围”。
+            - 以上都无法可靠归类时，选择“人工复核”。
+            你负责输出复核候选结论和处置方向建议，最终人工仍可确认是误报、解析程序 BUG，还是 SQL 书写规范问题。
             如果无法给出具体证据，不要列为疑点；常量、字符串字面量、数字字面量、存储过程参数或变量不是缺失的表字段来源。
             如果目标字段由 CASE WHEN 的 THEN/ELSE 常量、字面量或分类值生成，WHEN 条件字段使用 CASE_WHEN 已是正确关系；不得以缺少 DERIVES_TO 为理由列为疑点。
             如果证据不足，请不要输出该疑点，或返回 NO_ISSUE 且 verdict 为 REJECTED。

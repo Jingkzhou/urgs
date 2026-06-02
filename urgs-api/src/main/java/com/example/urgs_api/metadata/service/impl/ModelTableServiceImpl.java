@@ -42,6 +42,8 @@ import java.util.Set;
  */
 public class ModelTableServiceImpl extends ServiceImpl<ModelTableMapper, ModelTable> implements ModelTableService {
 
+    private static final int MODEL_CN_NAME_MAX_LENGTH = 100;
+
     @Autowired
     private ModelDirectoryService modelDirectoryService;
 
@@ -384,7 +386,7 @@ public class ModelTableServiceImpl extends ServiceImpl<ModelTableMapper, ModelTa
             ModelTable table = new ModelTable();
             table.setId(IdWorker.getIdStr());
             table.setName(parsedTable.getName());
-            table.setCnName(parsedTable.getComment());
+            table.setCnName(truncate(parsedTable.getComment(), MODEL_CN_NAME_MAX_LENGTH));
             table.setOwner(owner);
             table.setDataSourceId(request.getDataSourceId());
             table.setCreateTime(now);
@@ -398,7 +400,7 @@ public class ModelTableServiceImpl extends ServiceImpl<ModelTableMapper, ModelTa
                 field.setId(java.util.UUID.randomUUID().toString().replace("-", ""));
                 field.setTableId(table.getId());
                 field.setName(parsedField.getName());
-                field.setCnName(parsedField.getComment());
+                field.setCnName(truncate(parsedField.getComment(), MODEL_CN_NAME_MAX_LENGTH));
                 field.setType(parsedField.getType());
                 field.setIsPk(parsedField.isPrimaryKey());
                 field.setNullable(parsedField.isNullable());
@@ -419,6 +421,13 @@ public class ModelTableServiceImpl extends ServiceImpl<ModelTableMapper, ModelTa
         result.setFieldCount(fieldCount);
         result.setLanguage(language);
         return result;
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 
     private String resolveDdlLanguage(String metaCode) {
