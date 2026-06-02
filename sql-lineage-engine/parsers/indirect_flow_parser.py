@@ -12,10 +12,11 @@ import sqlglot
 from sqlglot import exp
 from typing import List, Dict, Any, Set, Optional, Tuple
 import logging
+from .indirect_flow_helpers import IndirectFlowHelperMixin
 from utils.lineage_identity import parser_statement_uid, statement_hash
 
 
-class IndirectFlowParser:
+class IndirectFlowParser(IndirectFlowHelperMixin):
     """
     从 SQL 中提取间接数据流依赖：
     - WHERE/HAVING 条件
@@ -62,11 +63,11 @@ class IndirectFlowParser:
         
         # 检查输入是否通过像是单个 DML 语句
         # 如果是，跳过基于正则的提取，直接解析 (除非是 MTI)
-        is_single_dml = bool(re.match(r'(?i)^\s*(INSERT|SELECT|CREATE)', cleaned_sql))
+        is_single_dml = bool(re.match(r'(?i)^\s*(WITH|INSERT|SELECT|CREATE)', cleaned_sql))
         
         if is_single_dml:
             # Check for MTI even if it looks like single DML (starts with FROM)
-            if re.match(r'(?i)^\s*FROM\s+.*\bINSERT\s+INTO', cleaned_sql, re.DOTALL):
+            if self._is_hive_mti(cleaned_sql):
                  sql_statements = self._convert_mti_to_cte(cleaned_sql)
             else:
                  sql_statements = [cleaned_sql]
@@ -76,6 +77,7 @@ class IndirectFlowParser:
         statement_index = 0
         for stmt_sql in sql_statements:
             try:
+                stmt_sql = self._normalize_hive_insert_syntax(stmt_sql)
                 stmt_meta = {
                     "statementHash": statement_hash(stmt_sql),
                     "statement_hash": statement_hash(stmt_sql),
@@ -121,6 +123,18 @@ class IndirectFlowParser:
                     for dep in star_deps:
                         dep.update(stmt_meta)
                     dependencies.extend(star_deps)
+                    set_direct_deps = self._extract_set_operation_direct_dependencies(
+                        stmt, target_info, source_file, stmt_sql
+                    )
+                    for dep in set_direct_deps:
+                        dep.update(stmt_meta)
+                    dependencies.extend(set_direct_deps)
+                    star_select_deps = self._extract_select_star_dependencies(
+                        stmt, target_info, source_file, stmt_sql
+                    )
+                    for dep in star_select_deps:
+                        dep.update(stmt_meta)
+                    dependencies.extend(star_select_deps)
                         
             except Exception as e:
                 logging.debug(f"sqlglot parse error: {e}")
@@ -178,6 +192,8 @@ class IndirectFlowParser:
                  is_top_level = True
         if not scope.expression:
             return deps
+        if isinstance(scope.expression, exp.Lateral):
+            return deps
             
         target_table = target_info["table"]
         
@@ -187,6 +203,9 @@ class IndirectFlowParser:
             exp.Join: ("join", "JOINS", "JOIN"),
             exp.Group: ("fdr", "GROUPS", "GROUP_BY"),
             exp.Order: ("fdr", "ORDERS", "ORDER_BY"),
+            exp.Sort: ("fdr", "ORDERS", "SORT_BY"),
+            exp.Distribute: ("fdr", "DISTRIBUTES", "DISTRIBUTE_BY"),
+            exp.Cluster: ("fdr", "CLUSTERS", "CLUSTER_BY"),
             exp.Having: ("fdr", "FILTERS", "HAVING"),
             exp.Case: ("CASE_WHEN", "CASE_WHEN", "CASE_WHEN"), # 支持 CASE WHEN
             exp.If: ("CASE_WHEN", "CASE_WHEN", "CASE_WHEN"),   # 支持 IF() 函数
@@ -194,6 +213,9 @@ class IndirectFlowParser:
         }
             
         for col in scope.columns:
+            if self._is_inside_lateral(col, scope.expression):
+                continue
+
             # 1. 确定上下文
             context_found = None
             context_name = "unknown"
@@ -285,9 +307,10 @@ class IndirectFlowParser:
                         if idx is not None:
                             projection_index = idx
                             # 1. 尝试位置映射 (INSERT INTO t (c1, c2) ...)
-                            if target_info.get("columns") and idx in target_info["columns"]:
-                                specific_target_column = target_info["columns"][idx]
-                            elif not target_info.get("columns"):
+                            target_columns = target_info.get("columns") or {}
+                            if idx in target_columns:
+                                specific_target_column = target_columns[idx]
+                            else:
                                 inferred_column = self._target_column_by_metadata(target_table, idx)
                                 if inferred_column:
                                     specific_target_column = inferred_column
@@ -295,6 +318,10 @@ class IndirectFlowParser:
                                         f"Target column inferred by metadata position {idx + 1}"
                                     )
                                     target_metadata_matched = True
+                                elif context_name == "SELECT":
+                                    projection_name = self._projection_output_name(projection_item)
+                                    if projection_name and projection_name != "*":
+                                        specific_target_column = projection_name
                 except ValueError:
                     pass
 
@@ -310,7 +337,19 @@ class IndirectFlowParser:
                      specific_target_column = curr.alias
                 elif isinstance(curr, exp.Column):
                      specific_target_column = curr.name
-            
+
+            window_projection = self._window_projection_alias(col, scope.expression)
+            if window_projection is not None:
+                projection_item = window_projection
+                specific_target_column = window_projection.alias
+                if context_name == "SELECT" and self._is_window_partition_column(col, scope.expression):
+                    dep_type = "fdr"
+                    neo4j_type = "GROUPS"
+                    context_name = "WINDOW_PARTITION"
+            transform_target_column = self._query_transform_target_column(col, projection_item)
+            if transform_target_column:
+                specific_target_column = transform_target_column
+
             # 解析物理来源。对子查询派生列（如 ROW_NUMBER() AS RN）必须返回
             # 派生表达式内部引用的真实字段，不能把外层别名 RN 当成物理字段。
             physical_refs = self._resolve_column_to_physical_refs(col, scope, projection_item)
@@ -353,76 +392,6 @@ class IndirectFlowParser:
              
         return deps
 
-    def _extract_set_operation_star_dependencies(self, stmt, target_info, source_file, stmt_sql: str = None) -> List[Dict]:
-        deps = []
-        expression = stmt.expression if isinstance(stmt, exp.Insert) else stmt
-        if expression is None:
-            return deps
-
-        for set_operation in self._iter_set_operations(expression):
-            left_select = set_operation.this
-            right_select = set_operation.args.get("expression")
-            if not isinstance(left_select, exp.Select) or not isinstance(right_select, exp.Select):
-                continue
-            if not any(isinstance(item, exp.Star) for item in right_select.expressions):
-                continue
-
-            source_tables = self._single_table_from_select(right_select)
-            if len(source_tables) != 1:
-                continue
-
-            source_table = source_tables[0]
-            source_columns = self._projection_names(left_select)
-            target_columns = self._projection_names(left_select, target_info)
-            for index, target_column in enumerate(target_columns):
-                if not target_column:
-                    continue
-                source_column = source_columns[index] if index < len(source_columns) else target_column
-                if not source_column:
-                    source_column = target_column
-                deps.append({
-                    "source_table": source_table,
-                    "source_column": source_column,
-                    "target_table": target_info["table"],
-                    "target_column": target_column,
-                    "dependency_type": "fdr",
-                    "neo4j_type": "FILTERS",
-                    "context": "SET_OPERATION",
-                    "lineage_origin": "set_operation",
-                    "relation_level": "set_operation",
-                    "source_file": source_file,
-                    "snippet": stmt_sql,
-                    "projectionIndex": index,
-                    "projection_index": index,
-                    "sourceExpression": source_column,
-                    "source_expression": source_column,
-                    "targetExpression": target_column,
-                    "target_expression": target_column,
-                })
-        return deps
-
-    def _iter_set_operations(self, expression):
-        if isinstance(expression, (exp.Except, exp.Intersect, exp.Union)):
-            yield expression
-        for child in expression.args.values():
-            if isinstance(child, list):
-                for item in child:
-                    if isinstance(item, exp.Expression):
-                        yield from self._iter_set_operations(item)
-            elif isinstance(child, exp.Expression):
-                yield from self._iter_set_operations(child)
-
-    def _projection_names(self, select, target_info=None) -> List[str]:
-        names = []
-        target_columns = (target_info or {}).get("columns") or {}
-        for index, projection in enumerate(select.expressions):
-            if target_columns and index in target_columns:
-                names.append(target_columns[index])
-                continue
-            output_name = self._projection_output_name(projection)
-            names.append(output_name if output_name and output_name != "*" else None)
-        return names
-
     def _target_column_by_metadata(self, table_name: str, index: int) -> Optional[str]:
         if index is None or index < 0:
             return None
@@ -464,6 +433,10 @@ class IndirectFlowParser:
             source = self._resolve_scope_source(scope, table_alias)
             if source:
                 refs.update(self._resolve_column_from_source_refs(col.name, source))
+            elif self.dialect in ["hive", "spark"]:
+                physical_tables = self._physical_tables_excluding_laterals(scope)
+                if len(physical_tables) == 1:
+                    refs.update((table_name, table_alias) for table_name in physical_tables)
         else:
             # 无别名：如果 Scope 只有 1 个来源，则使用它
             if len(scope.sources) == 1:
@@ -471,6 +444,13 @@ class IndirectFlowParser:
                 refs.update(self._resolve_column_from_source_refs(col.name, source))
             # 否则如果有多个来源，调用 MetadataResolver 查询表字段进行推断
             elif len(scope.sources) > 1:
+                lateral_refs = self._resolve_unqualified_lateral_column_refs(
+                    col.name, scope
+                )
+                if lateral_refs:
+                    refs.update(lateral_refs)
+                    return refs
+
                 possible_tables = set()
                 # 获取所有来源物理表
                 for src in scope.sources.values():
@@ -508,9 +488,13 @@ class IndirectFlowParser:
                     }
                     refs.update((table_name, col.name) for table_name in matched_tables)
                 else:
-                    refs.update(self._resolve_unqualified_column_by_context_refs(
-                        col, scope, context_expression
-                    ))
+                    physical_tables = self._physical_tables_excluding_laterals(scope)
+                    if len(physical_tables) == 1:
+                        refs.update((table_name, col.name) for table_name in physical_tables)
+                    else:
+                        refs.update(self._resolve_unqualified_column_by_context_refs(
+                            col, scope, context_expression
+                        ))
                 # else: 无法确定来源，不产生血缘（避免假阳性）
 
         return refs
@@ -564,6 +548,8 @@ class IndirectFlowParser:
     def _resolve_column_from_source_refs(self, column_name: str, source) -> Set[Tuple[str, str]]:
         """Resolve a column through a physical table or a subquery projection."""
         if self._is_scope(source):
+            if isinstance(source.expression, exp.Lateral):
+                return self._resolve_lateral_column_refs(column_name, source)
             if isinstance(source.expression, exp.Select):
                 return self._resolve_projected_column_refs(column_name, source)
             if self._is_set_operation(source.expression):
@@ -580,8 +566,10 @@ class IndirectFlowParser:
         }
 
     def _resolve_projected_column_refs(self, column_name: str, source_scope) -> Set[Tuple[str, str]]:
-        for projection in source_scope.expression.expressions:
-            output_name = self._projection_output_name(projection)
+        for index, projection in enumerate(source_scope.expression.expressions):
+            output_name = self._source_scope_output_name(
+                projection, index, source_scope
+            )
             if output_name and output_name.upper() == column_name.upper():
                 return self._resolve_expression_to_physical_refs(projection, source_scope)
             star_refs = self._resolve_star_projection_column_refs(
@@ -605,6 +593,10 @@ class IndirectFlowParser:
         if not source:
             return set()
 
+        for output_name, refs in self._expand_star_source_ref_groups(source):
+            if output_name.upper() == column_name.upper():
+                return refs
+
         refs = set()
         for table_name in self._resolve_source_to_physical(source):
             try:
@@ -616,61 +608,6 @@ class IndirectFlowParser:
                 continue
             refs.add((table_name, column_name))
         return refs
-
-    def _resolve_set_operation_column_refs(self, column_name: str, source_scope) -> Set[Tuple[str, str]]:
-        """Resolve a derived UNION column to every branch projection at the same position."""
-        selects = self._iter_set_operation_selects(source_scope.expression)
-        if not selects:
-            return set()
-
-        first_select = selects[0]
-        matching_indexes = [
-            index
-            for index, projection in enumerate(first_select.expressions)
-            if (self._projection_output_name(projection) or "").upper() == column_name.upper()
-        ]
-        if not matching_indexes:
-            return set()
-
-        from sqlglot.optimizer.scope import build_scope
-
-        refs = set()
-        for index in matching_indexes:
-            for select in selects:
-                if index >= len(select.expressions):
-                    continue
-                branch_scope = build_scope(select)
-                if not branch_scope:
-                    continue
-                refs.update(
-                    self._resolve_expression_to_physical_refs(
-                        select.expressions[index],
-                        branch_scope,
-                    )
-                )
-        return refs
-
-    def _iter_set_operation_selects(self, expression) -> List[exp.Select]:
-        if isinstance(expression, exp.Select):
-            return [expression]
-        if isinstance(expression, exp.Union):
-            return (
-                self._iter_set_operation_selects(expression.this)
-                + self._iter_set_operation_selects(expression.expression)
-            )
-        if isinstance(expression, (exp.Except, exp.Intersect)):
-            return self._iter_set_operation_selects(expression.this)
-        return []
-
-    def _is_set_operation(self, expression) -> bool:
-        return isinstance(expression, (exp.Union, exp.Except, exp.Intersect))
-
-    def _is_star_projection(self, projection) -> bool:
-        if isinstance(projection, exp.Star):
-            return True
-        if isinstance(projection, exp.Column) and projection.name == "*":
-            return True
-        return False
 
     def _projection_output_name(self, projection) -> str:
         if isinstance(projection, exp.Alias):
@@ -796,7 +733,10 @@ class IndirectFlowParser:
         
         statements = []
         
-        if re.match(r'(?i)^\s*FROM\s+.*\bINSERT\s+INTO', sql, re.DOTALL):
+        if re.match(r'(?i)^\s*WITH\b', sql):
+            return [sql.strip()]
+
+        if self._is_hive_mti(sql):
              return self._convert_mti_to_cte(sql)
         
         # 1. 提取 CREATE TABLE AS SELECT
@@ -807,7 +747,7 @@ class IndirectFlowParser:
 
         # 2. 提取 INSERT INTO ... SELECT
         # 支持反引号 table 或 "table"
-        insert_pattern = r'(INSERT\s+INTO\s+(?:[\w.]+|`[^`]+`|"[^"]+").*?SELECT\s+.+?)(?:;|\Z)'
+        insert_pattern = r'(INSERT\s+(?:INTO|OVERWRITE)\s+(?:TABLE\s+)?(?:[\w.]+|`[^`]+`|"[^"]+").*?SELECT\s+.+?)(?:;|\Z)'
         insert_stmts = re.findall(insert_pattern, sql, re.IGNORECASE | re.DOTALL)
         statements.extend(insert_stmts)
         
@@ -817,96 +757,17 @@ class IndirectFlowParser:
         # 如果没有找到明确的 DML，返回原始 SQL 尝试解析
         if not statements:
             # 尝试检测 Hive Multi-Table Insert (FROM ... INSERT ...)
-            if re.search(r'(?i)^\s*FROM\s+.*\bINSERT\s+INTO', sql, re.DOTALL):
+            if self._is_hive_mti(sql):
                 return self._convert_mti_to_cte(sql)
             return [sql]
             
         return statements
 
-    def _convert_mti_to_cte(self, sql: str) -> List[str]:
-        """
-        Convert Hive Multi-Table Insert to multiple CTE-based statements
-        Format: FROM (src) q INSERT INTO t1... INSERT INTO t2...
-        To: WITH q AS (src) INSERT INTO t1...; WITH q AS (src) INSERT INTO t2...;
-        """
-        import re
-        
-        # Regex to find the start of the first INSERT
-        match = re.search(r'(?i)\s+INSERT\s+INTO\s+', sql)
-        if not match:
-            return [sql]
-            
-        split_index = match.start()
-        from_part = sql[:split_index].strip()
-        inserts_part = sql[split_index:].strip()
-        
-        # 1. Parse FROM part
-        if not from_part.upper().startswith("FROM"):
-            return [sql]
-            
-        from_body = from_part[4:].strip()
-        
-        # Detect alias
-        # Logic: FROM (...) alias OR FROM table alias
-        # We assume the standard format used by our generator: FROM (...) alias
-        cte_def = from_body
-        alias = "source_view"
-        
-        # Simple heuristic for alias: last word after matching parens? 
-        # But from_body might be complex.
-        # Let's try to find the last space.
-        last_space = from_body.rfind(' ')
-        if last_space != -1:
-             # Check if the part after space is a valid identifier and not a keyword
-             candidate_alias = from_body[last_space+1:]
-             # If it doesn't contain ')' and is alphanumeric
-             if re.match(r'^[a-zA-Z0-9_$]+$', candidate_alias):
-                 alias = candidate_alias
-                 cte_def = from_body[:last_space].strip()
-
-        # 2. Split INSERT part
-        # Split by "INSERT INTO" but keep delimiter
-        parts = re.split(r'(?i)(INSERT\s+INTO\s+)', inserts_part)
-        
-        statements = []
-        current_stmt = ""
-        # parts[0] is usually empty or whitespace if input started with INSERT INTO
-        start_idx = 1 if len(parts) > 1 else 0
-        
-        for i in range(start_idx, len(parts)):
-            p = parts[i]
-            if re.match(r'(?i)INSERT\s+INTO\s+', p):
-                if current_stmt:
-                    statements.append(current_stmt)
-                current_stmt = p
-            else:
-                current_stmt += p
-        if current_stmt:
-            statements.append(current_stmt)
-            
-        # 3. Construct final statements
-        final_sqls = []
-        for stmt in statements:
-            stmt = stmt.strip()
-            if stmt.endswith(";"):
-                stmt = stmt[:-1]
-                
-            # Append " FROM alias" if not present (Hive MTI implies it)
-            # Be careful not to append if it already has FROM (e.g. subquery usage)
-            # our generator produces `SELECT *` or `SELECT col...` without FROM
-            if not re.search(r'(?i)\bFROM\b', stmt):
-                stmt = f"{stmt} FROM {alias}"
-            
-            full_sql = f"WITH {alias} AS {cte_def} {stmt}"
-            final_sqls.append(full_sql)
-            
-        return final_sqls
-    
     def _get_target_table(self, stmt) -> Optional[Dict[str, str]]:
         """获取目标表信息 (INSERT INTO / CREATE TABLE AS)"""
         # INSERT INTO
         if isinstance(stmt, exp.Insert):
-            table = stmt.find(exp.Table)
+            table = self._get_insert_target_table(stmt)
             if table:
                 return {
                     "table": self._get_full_table_name(table),
@@ -931,15 +792,3 @@ class IndirectFlowParser:
             parts.append(table.db)
         parts.append(table.name)
         return ".".join(parts)
-    
-    def _get_insert_columns(self, insert_stmt: exp.Insert) -> Dict[int, str]:
-        """获取 INSERT 语句的目标列映射 (index -> column_name)"""
-        columns = {}
-        schema = insert_stmt.find(exp.Schema)
-        if schema:
-            for i, col in enumerate(schema.expressions):
-                if isinstance(col, exp.Column):
-                    columns[i] = col.name
-                elif hasattr(col, 'name'):
-                    columns[i] = col.name
-        return columns

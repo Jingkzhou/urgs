@@ -381,7 +381,7 @@ def test_subquery_projection_resolves_unqualified_columns_by_alias(mock_metadata
         "IE_TY_TYCKJC_YD",
         "ORGTPCODE",
         "TX_JRJG_YESTERDAY",
-        "*",
+        "ORGTPCODE",
         "fdd",
     ) in actual
     assert (
