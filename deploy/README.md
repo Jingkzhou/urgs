@@ -21,7 +21,7 @@
 打包前先确认以下文件已经是目标生产环境配置：
 
 ```text
-deploy/non-docker/templates/deploy.env
+deploy/templates/deploy.env
 ```
 
 必须确认的关键项：
@@ -55,14 +55,14 @@ deploy/non-docker/templates/deploy.env
 当前生产服务器为 Linux ARM64 / `aarch64`（Kunpeng 920）。如果生产机不再手工安装组件，先在构建机生成 ARM64 的 Nginx 和 Redis 组件包：
 
 ```bash
-deploy/non-docker/build-arm64-components.sh
+deploy/build-arm64-components.sh
 ```
 
 生成结果默认在：
 
 ```text
-deploy/non-docker/components-cache/nginx-linux-aarch64-<版本>.tar.gz
-deploy/non-docker/components-cache/redis-linux-aarch64-<版本>.tar.gz
+deploy/components-cache/nginx-linux-aarch64-<版本>.tar.gz
+deploy/components-cache/redis-linux-aarch64-<版本>.tar.gz
 ```
 
 `package-services.sh` 会自动使用 `components-cache/` 里的最新 ARM64 组件包。这样可以把问题前移到打包阶段，避免到生产机才发现缺运行组件。
@@ -73,7 +73,7 @@ deploy/non-docker/components-cache/redis-linux-aarch64-<版本>.tar.gz
 
 ```bash
 PACKAGE_NAME=urgs-prod \
-deploy/non-docker/package-services.sh full
+deploy/package-services.sh full
 ```
 
 默认输出：
@@ -99,45 +99,45 @@ dist-packages/urgs-nondocker-<时间戳>.tar.gz
 只打包应用，不打 Nginx / Redis：
 
 ```bash
-deploy/non-docker/package-services.sh api web executor rag
+deploy/package-services.sh api web executor rag
 ```
 
 应用和依赖组件一起打包：
 
 ```bash
-deploy/non-docker/package-services.sh api web executor rag nginx redis
+deploy/package-services.sh api web executor rag nginx redis
 ```
 
 如果本机没有完整 `urgs-web/node_modules`，但已有 `urgs-web/dist`，脚本默认复用现有前端产物，避免卡在 `npm ci`。需要强制重新安装依赖并重建前端时执行：
 
 ```bash
-WEB_REUSE_DIST_IF_NO_NODE_MODULES=0 deploy/non-docker/package-services.sh api web executor nginx redis
+WEB_REUSE_DIST_IF_NO_NODE_MODULES=0 deploy/package-services.sh api web executor nginx redis
 ```
 
 完整应用包：
 
 ```bash
-deploy/non-docker/package-services.sh full
+deploy/package-services.sh full
 ```
 
 只打包部分服务：
 
 ```bash
-deploy/non-docker/package-services.sh api web
-deploy/non-docker/package-services.sh api executor
-deploy/non-docker/package-services.sh rag lineage
+deploy/package-services.sh api web
+deploy/package-services.sh api executor
+deploy/package-services.sh rag lineage
 ```
 
 选择 `nginx` / `redis` 组件时，默认要求提供对应 tar 包，这样生产机解压后不需要再补安装运行组件。如果你明确要复用生产机已经安装的 Nginx / Redis，可以设置：
 
 ```bash
-ALLOW_HOST_COMPONENTS=1 deploy/non-docker/package-services.sh api web nginx redis
+ALLOW_HOST_COMPONENTS=1 deploy/package-services.sh api web nginx redis
 ```
 
 也可以指定输出目录和包名：
 
 ```bash
-OUT_DIR=/tmp/urgs-packages PACKAGE_NAME=urgs-prod-20260514 deploy/non-docker/package-services.sh api web executor rag
+OUT_DIR=/tmp/urgs-packages PACKAGE_NAME=urgs-prod-20260514 deploy/package-services.sh api web executor rag
 ```
 
 ## 生产机部署
@@ -356,5 +356,5 @@ bin/deploy.sh nginx-config
 - `web` 静态文件需要 Nginx 代理 `/api`、`/ws`、`/uploads`、`/profile`、`/api/rag`，不要只用普通静态文件服务器上线。
 - `lineage` 当前作为工具目录随包分发，不作为常驻服务启动。
 - MySQL、Neo4j 不放入部署包，只在 `config/deploy.env` 中配置连接地址。
-- 生产端零调整部署要求打包前写好 `deploy/non-docker/templates/deploy.env`，并提供目标服务器架构匹配的 `NGINX_TARBALL` / `REDIS_TARBALL`。
+- 生产端零调整部署要求打包前写好 `deploy/templates/deploy.env`，并提供目标服务器架构匹配的 `NGINX_TARBALL` / `REDIS_TARBALL`。
 - 旧包不会自动包含脚本和配置变更；部署前需要重新打包并上传新生成的 `tar.gz`。

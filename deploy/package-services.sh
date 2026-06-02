@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${OUT_DIR:-${ROOT_DIR}/dist-packages}"
-COMPONENT_CACHE_DIR="${COMPONENT_CACHE_DIR:-${ROOT_DIR}/deploy/non-docker/components-cache}"
+COMPONENT_CACHE_DIR="${COMPONENT_CACHE_DIR:-${ROOT_DIR}/deploy/components-cache}"
 STAMP="$(date +%Y%m%d%H%M%S)"
 PACKAGE_BASENAME="${PACKAGE_NAME:-urgs-nondocker-${STAMP}}"
 WORK_DIR="${OUT_DIR}/${PACKAGE_BASENAME}"
@@ -13,7 +13,7 @@ CLEAN_WORK_DIR_ON_EXIT=0
 usage() {
     cat <<'EOF'
 Usage:
-  deploy/non-docker/package-services.sh <service-or-component...>
+  deploy/package-services.sh <service-or-component...>
 
 Services:
   api          Build and package urgs-api Spring Boot service.
@@ -32,17 +32,17 @@ Groups:
   full         app-all deps-all
 
 Examples:
-  deploy/non-docker/package-services.sh api web
-  deploy/non-docker/package-services.sh api web executor rag
-  deploy/non-docker/package-services.sh full
-  REDIS_TARBALL=/tmp/redis.tar.gz deploy/non-docker/package-services.sh api web redis
-  NGINX_TARBALL=/tmp/nginx.tar.gz REDIS_TARBALL=/tmp/redis.tar.gz deploy/non-docker/package-services.sh full
-  deploy/non-docker/build-arm64-components.sh
-  deploy/non-docker/package-services.sh api web executor nginx redis
-  ALLOW_HOST_COMPONENTS=1 deploy/non-docker/package-services.sh api web nginx
-  REUSE_BUILD_ARTIFACTS=1 deploy/non-docker/package-services.sh api web executor nginx redis
-  WEB_REUSE_DIST_IF_NO_NODE_MODULES=0 deploy/non-docker/package-services.sh web
-  OUT_DIR=/tmp/urgs-packages deploy/non-docker/package-services.sh api executor
+  deploy/package-services.sh api web
+  deploy/package-services.sh api web executor rag
+  deploy/package-services.sh full
+  REDIS_TARBALL=/tmp/redis.tar.gz deploy/package-services.sh api web redis
+  NGINX_TARBALL=/tmp/nginx.tar.gz REDIS_TARBALL=/tmp/redis.tar.gz deploy/package-services.sh full
+  deploy/build-arm64-components.sh
+  deploy/package-services.sh api web executor nginx redis
+  ALLOW_HOST_COMPONENTS=1 deploy/package-services.sh api web nginx
+  REUSE_BUILD_ARTIFACTS=1 deploy/package-services.sh api web executor nginx redis
+  WEB_REUSE_DIST_IF_NO_NODE_MODULES=0 deploy/package-services.sh web
+  OUT_DIR=/tmp/urgs-packages deploy/package-services.sh api executor
 
 Output:
   dist-packages/<package>.tar.gz
@@ -305,7 +305,7 @@ validate_component_tarballs() {
         if [ -n "$tarball" ]; then
             [ -f "$tarball" ] || die "${tarball_var} does not exist: ${tarball}"
         elif [ "${ALLOW_HOST_COMPONENTS:-0}" != "1" ]; then
-            die "${component} was selected but no package was found. Run deploy/non-docker/build-arm64-components.sh first, provide ${tarball_var}, or set ALLOW_HOST_COMPONENTS=1 to rely on the target host installation."
+            die "${component} was selected but no package was found. Run deploy/build-arm64-components.sh first, provide ${tarball_var}, or set ALLOW_HOST_COMPONENTS=1 to rely on the target host installation."
         fi
     done
 }
@@ -324,10 +324,10 @@ write_manifest() {
 prepare_work_dir() {
     rm -rf "$WORK_DIR"
     mkdir -p "${WORK_DIR}/bin" "${WORK_DIR}/config" "${WORK_DIR}/logs" "${WORK_DIR}/pids" "$OUT_DIR"
-    cp "${ROOT_DIR}/deploy/non-docker/runtime/deploy.sh" "${WORK_DIR}/bin/deploy.sh"
-    cp "${ROOT_DIR}/deploy/non-docker/templates/deploy.env" "${WORK_DIR}/config/deploy.env"
-    cp "${ROOT_DIR}/deploy/non-docker/templates/nginx.conf.template" "${WORK_DIR}/config/nginx.conf.template"
-    cp "${ROOT_DIR}/deploy/non-docker/README.md" "${WORK_DIR}/README.md"
+    cp "${ROOT_DIR}/deploy/runtime/deploy.sh" "${WORK_DIR}/bin/deploy.sh"
+    cp "${ROOT_DIR}/deploy/templates/deploy.env" "${WORK_DIR}/config/deploy.env"
+    cp "${ROOT_DIR}/deploy/templates/nginx.conf.template" "${WORK_DIR}/config/nginx.conf.template"
+    cp "${ROOT_DIR}/deploy/README.md" "${WORK_DIR}/README.md"
     chmod +x "${WORK_DIR}/bin/deploy.sh"
     printf '%s\n' "${SERVICES[@]}" > "${WORK_DIR}/config/services.list"
 }

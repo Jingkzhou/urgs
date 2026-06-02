@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-OUT_DIR="${OUT_DIR:-${ROOT_DIR}/deploy/non-docker/components-cache}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+OUT_DIR="${OUT_DIR:-${ROOT_DIR}/deploy/components-cache}"
 NGINX_VERSION="${NGINX_VERSION:-1.30.1}"
 REDIS_VERSION="${REDIS_VERSION:-stable}"
 PLATFORM="${PLATFORM:-linux/arm64}"
