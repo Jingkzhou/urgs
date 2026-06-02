@@ -4,16 +4,25 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${OUT_DIR:-${ROOT_DIR}/dist-packages}"
 COMPONENT_CACHE_DIR="${COMPONENT_CACHE_DIR:-${ROOT_DIR}/deploy/components-cache}"
+DEPLOY_ENV="${DEPLOY_ENV:-${TARGET_ENV:-}}"
+DEPLOY_ENV_TEMPLATE="${DEPLOY_ENV_TEMPLATE:-}"
 STAMP="$(date +%Y%m%d%H%M%S)"
-PACKAGE_BASENAME="${PACKAGE_NAME:-urgs-nondocker-${STAMP}}"
-WORK_DIR="${OUT_DIR}/${PACKAGE_BASENAME}"
+PACKAGE_BASENAME="${PACKAGE_NAME:-}"
+WORK_DIR=""
 SERVICES=()
 CLEAN_WORK_DIR_ON_EXIT=0
 
 usage() {
     cat <<'EOF'
 Usage:
-  deploy/package-services.sh <service-or-component...>
+  deploy/package-services.sh [--env sit|pre|prod] <service-or-component...>
+
+Environment config:
+  --env sit     Package deploy/templates/deploy.sit.env as config/deploy.env.
+  --env pre     Package deploy/templates/deploy.pre.env as config/deploy.env.
+  --env prod    Package deploy/templates/deploy.prod.env as config/deploy.env.
+  DEPLOY_ENV can also be set to sit, pre, or prod.
+  DEPLOY_ENV_TEMPLATE can point to an explicit env file.
 
 Services:
   api          Build and package urgs-api Spring Boot service.
@@ -32,6 +41,9 @@ Groups:
   full         app-all deps-all
 
 Examples:
+  DEPLOY_ENV=prod deploy/package-services.sh full
+  deploy/package-services.sh --env pre full
+  deploy/package-services.sh --env sit api web nginx redis
   deploy/package-services.sh api web
   deploy/package-services.sh api web executor rag
   deploy/package-services.sh full
@@ -45,17 +57,17 @@ Examples:
   OUT_DIR=/tmp/urgs-packages deploy/package-services.sh api executor
 
 Output:
-  dist-packages/<package>.tar.gz
+  dist-packages/urgs-<env>-<timestamp>.tar.gz, unless PACKAGE_NAME is set.
   Set KEEP_WORK_DIR=1 to keep the expanded staging directory.
 EOF
 }
 
 log() {
-    printf '[nondocker-package] %s\n' "$*"
+    printf '[deploy-package] %s\n' "$*"
 }
 
 die() {
-    printf '[nondocker-package][error] %s\n' "$*" >&2
+    printf '[deploy-package][error] %s\n' "$*" >&2
     exit 1
 }
 
@@ -125,6 +137,55 @@ resolve_component_tarball() {
         tarball="$(latest_cached_component_tarball "$component")"
     fi
     printf '%s\n' "$tarball"
+}
+
+normalize_deploy_env() {
+    local env_name
+    env_name="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+    case "$env_name" in
+        sit | test) echo "sit" ;;
+        pre | preprod | pre-production | pre_production | uat) echo "pre" ;;
+        prod | production) echo "prod" ;;
+        *) return 1 ;;
+    esac
+}
+
+resolve_deploy_env_template() {
+    local env_name
+    if [ -n "$DEPLOY_ENV_TEMPLATE" ]; then
+        [ -f "$DEPLOY_ENV_TEMPLATE" ] || die "DEPLOY_ENV_TEMPLATE does not exist: ${DEPLOY_ENV_TEMPLATE}"
+        printf '%s\n' "$DEPLOY_ENV_TEMPLATE"
+        return 0
+    fi
+
+    if [ -z "$DEPLOY_ENV" ]; then
+        printf '%s\n' "${ROOT_DIR}/deploy/templates/deploy.env"
+        return 0
+    fi
+
+    env_name="$(normalize_deploy_env "$DEPLOY_ENV")" || die "Unknown DEPLOY_ENV: ${DEPLOY_ENV}. Expected sit, pre, or prod."
+    printf '%s\n' "${ROOT_DIR}/deploy/templates/deploy.${env_name}.env"
+}
+
+package_env_label() {
+    if [ -n "$DEPLOY_ENV" ]; then
+        normalize_deploy_env "$DEPLOY_ENV" || die "Unknown DEPLOY_ENV: ${DEPLOY_ENV}. Expected sit, pre, or prod."
+        return 0
+    fi
+
+    if [ -n "$DEPLOY_ENV_TEMPLATE" ]; then
+        printf 'custom\n'
+        return 0
+    fi
+
+    printf 'default\n'
+}
+
+configure_package_name() {
+    local env_label
+    env_label="$(package_env_label)"
+    PACKAGE_BASENAME="${PACKAGE_BASENAME:-urgs-${env_label}-${STAMP}}"
+    WORK_DIR="${OUT_DIR}/${PACKAGE_BASENAME}"
 }
 
 copy_with_rsync() {
@@ -315,6 +376,10 @@ write_manifest() {
         printf 'package_name=%s\n' "$PACKAGE_BASENAME"
         printf 'created_at=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
         printf 'services=%s\n' "${SERVICES[*]}"
+        if [ -n "$DEPLOY_ENV" ]; then
+            printf 'deploy_env=%s\n' "$(normalize_deploy_env "$DEPLOY_ENV")"
+        fi
+        printf 'deploy_env_template=%s\n' "$(resolve_deploy_env_template)"
         if command -v git >/dev/null 2>&1 && git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
             printf 'git_commit=%s\n' "$(git -C "$ROOT_DIR" rev-parse HEAD)"
         fi
@@ -322,10 +387,14 @@ write_manifest() {
 }
 
 prepare_work_dir() {
+    local deploy_env_file
+    deploy_env_file="$(resolve_deploy_env_template)"
+    [ -f "$deploy_env_file" ] || die "Deploy env template does not exist: ${deploy_env_file}"
+
     rm -rf "$WORK_DIR"
     mkdir -p "${WORK_DIR}/bin" "${WORK_DIR}/config" "${WORK_DIR}/logs" "${WORK_DIR}/pids" "$OUT_DIR"
     cp "${ROOT_DIR}/deploy/runtime/deploy.sh" "${WORK_DIR}/bin/deploy.sh"
-    cp "${ROOT_DIR}/deploy/templates/deploy.env" "${WORK_DIR}/config/deploy.env"
+    cp "$deploy_env_file" "${WORK_DIR}/config/deploy.env"
     cp "${ROOT_DIR}/deploy/templates/nginx.conf.template" "${WORK_DIR}/config/nginx.conf.template"
     cp "${ROOT_DIR}/deploy/README.md" "${WORK_DIR}/README.md"
     chmod +x "${WORK_DIR}/bin/deploy.sh"
@@ -346,12 +415,32 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     exit 0
 fi
 
-[ "$#" -gt 0 ] || {
+ARGS=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --env)
+            shift
+            [ -n "${1:-}" ] || die "--env requires sit, pre, or prod."
+            DEPLOY_ENV="$1"
+            ;;
+        --env=*)
+            DEPLOY_ENV="${1#--env=}"
+            ;;
+        *)
+            ARGS+=("$1")
+            ;;
+    esac
+    shift
+done
+
+[ "${#ARGS[@]}" -gt 0 ] || {
     usage
     exit 1
 }
 
-for raw_service in "$@"; do
+configure_package_name
+
+for raw_service in "${ARGS[@]}"; do
     case "$raw_service" in
         app-all)
             for service in api web executor rag lineage; do append_service "$service"; done

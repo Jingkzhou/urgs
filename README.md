@@ -144,169 +144,56 @@ docker-compose up -d urgs-dify-api urgs-dify-web urgs-dify-worker
 
 ## ⚙️ 环境配置
 
-所有环境相关的配置均通过根目录下的 `.env` 文件进行统一管理。Docker Compose 会自动读取该文件并将变量注入到各服务容器中。
+本地启动和非 Docker 部署统一使用 `deploy/templates/` 下的环境配置文件，不再依赖根目录 Docker `.env`。
 
-### 配置步骤
+### 本地启动
 
-1.  **复制模板文件**:
-    ```bash
-    cp .env.example .env
-    ```
-
-2.  **修改 `.env` 文件**:
-    根据您的部署环境（开发、测试、生产），修改 `.env` 文件中的数据库地址、端口、密码等配置项。
-
-3.  **启动服务**:
-    ```bash
-    docker-compose up -d --build
-    ```
-
-### 生产环境部署（离线安装包）
-
-如果生产服务器无法联网，可先在有网络的构建机生成离线安装包，再复制到内网服务器安装。项目根目录提供两个脚本：
-
-| 脚本 | 用途 |
-| ---- | ---- |
-| `package.sh` | 打单架构离线包，默认架构是 `linux/arm64` |
-| `package-dual-arch.sh` | 一次打 ARM64 和 X86_64 两套离线包 |
-
-#### 1. 开发机/构建机：生成离线包
-
-首次使用先赋予执行权限：
-
-```bash
-chmod +x package.sh package-dual-arch.sh
-```
-
-只打 X86_64 包：
-
-```bash
-BUILD_ARCH=linux/amd64 ./package.sh
-```
-
-输出文件示例：
+`start.sh` 默认读取：
 
 ```text
-urgs-offline-x86_64-20260516104515.tar.gz
+deploy/templates/deploy.local.env
 ```
 
-只打 ARM64 包：
+启动时执行：
 
 ```bash
-BUILD_ARCH=linux/arm64 ./package.sh
+./start.sh
 ```
 
-输出文件示例：
+也可以显式选择环境：
+
+```bash
+./start.sh local
+./start.sh sit
+./start.sh pre
+./start.sh prod
+```
+
+如果需要临时指定配置文件：
+
+```bash
+START_ENV_FILE=/path/to/deploy.local.env ./start.sh
+```
+
+### 生产环境部署
+
+生产、准生产、测试环境的非 Docker 打包入口在 `deploy/` 目录：
+
+```bash
+deploy/package-services.sh --env sit full
+deploy/package-services.sh --env pre full
+deploy/package-services.sh --env prod full
+```
+
+部署包会把对应模板复制为包内 `config/deploy.env`：
 
 ```text
-urgs-offline-aarch64-20260516104515.tar.gz
+deploy/templates/deploy.sit.env
+deploy/templates/deploy.pre.env
+deploy/templates/deploy.prod.env
 ```
 
-同时打 ARM64 和 X86_64 两套包：
-
-```bash
-./package-dual-arch.sh
-```
-
-输出文件示例：
-
-```text
-urgs-offline-aarch64-20260516104515.tar.gz
-urgs-offline-x86_64-20260516104515.tar.gz
-```
-
-#### 2. 选择性打包模块
-
-不传模块参数时，默认打包当前仓库存在的核心服务：
-
-```text
-mysql api web executor rag lineage neo4j
-```
-
-`presentation` 只有在 `urgs+-presentation-platform/` 目录存在时才会自动加入默认包。`urgs-dify/` 目录存在时，会自动加入 Dify 相关服务。
-
-也可以显式指定模块：
-
-```bash
-# 只打前端
-BUILD_ARCH=linux/amd64 ./package.sh web
-
-# 打指定核心服务
-BUILD_ARCH=linux/amd64 ./package.sh mysql api web executor rag lineage neo4j
-
-# 双架构打指定模块
-./package-dual-arch.sh mysql api web executor rag lineage neo4j
-```
-
-支持的模块名：
-
-```text
-mysql, api, web, executor, rag, lineage, neo4j, presentation,
-dify-api, dify-web, dify-worker, dify-db, dify-redis, dify-nginx, dify-weaviate
-```
-
-#### 3. 包内容
-
-脚本会生成 `urgs-dist*` 目录和对应 `.tar.gz` 压缩包，主要包含：
-
-- `images/urgs-images.tar`：项目服务和第三方依赖镜像
-- `docker/`：Docker Engine 与 Docker Compose 离线安装介质
-- `docker-compose.yml`：服务编排文件
-- `.env`：部署环境配置
-- `install.sh`：离线安装和启动脚本
-- `uninstall.sh`：停止服务脚本
-- `manifest.txt`：本次打包清单
-
-#### 4. 内网服务器：安装
-
-把对应架构的压缩包复制到目标服务器后执行：
-
-```bash
-tar -xzf urgs-offline-x86_64-*.tar.gz
-cd urgs-dist-x86_64
-```
-
-安装前按实际服务器地址修改 `.env`，重点检查数据库、端口、Neo4j 密码、LLM/RAG 地址等配置。
-
-如果服务器尚未安装 Docker/Compose，使用 root 权限执行：
-
-```bash
-sudo ./install.sh
-```
-
-如果服务器已经安装 Docker/Compose，且当前用户有 Docker 权限，可以直接执行：
-
-```bash
-./install.sh
-```
-
-查看服务状态：
-
-```bash
-docker compose --env-file .env -f docker-compose.yml ps
-docker compose --env-file .env -f docker-compose.yml logs -f urgs-api
-```
-
-停止服务：
-
-```bash
-./uninstall.sh
-```
-
-#### 5. 可选：清理本机 Docker 资源
-
-以下命令会删除本机所有容器、镜像和构建缓存，只建议在确认不再需要当前 Docker 资源时执行：
-
-```bash
-# 1. 停掉并删除所有容器
-docker rm -f $(docker ps -aq)
-
-# 2. 删除所有镜像
-docker rmi -f $(docker images -aq)
-
-# 3. 顺手清理缓存/网络/构建残留
-docker system prune -af
-```
+详细说明见 `deploy/README.md`。
 
 ---
 

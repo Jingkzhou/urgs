@@ -24,46 +24,53 @@ if [ -n "$DEPLOY_HOME" ] && [ "$PACKAGE_DIR" != "$ROOT_DIR" ]; then
     fi
 fi
 
-if [ -f "$ENV_FILE" ]; then
-    # shellcheck disable=SC1090
-    source "$ENV_FILE"
-fi
+load_env() {
+    if [ -f "$ENV_FILE" ]; then
+        # shellcheck disable=SC1090
+        source "$ENV_FILE"
+    fi
+}
 
-JAVA_BIN="${JAVA_BIN:-java}"
-PYTHON_BIN="${PYTHON_BIN:-python3}"
-PIP_INSTALL="${PIP_INSTALL:-1}"
-TZ="${TZ:-Asia/Shanghai}"
-API_PORT="${API_PORT:-8080}"
-EXECUTOR_PORT="${EXECUTOR_PORT:-8082}"
-RAG_PORT="${RAG_PORT:-8001}"
-WEB_LISTEN_PORT="${WEB_LISTEN_PORT:-18080}"
-WEB_SERVER_NAME="${WEB_SERVER_NAME:-_}"
-API_TARGET="${API_TARGET:-http://127.0.0.1:${API_PORT}}"
-API_UPSTREAM_SERVERS="${API_UPSTREAM_SERVERS:-}"
-API_UPSTREAM_STICKY="${API_UPSTREAM_STICKY:-ip_hash}"
-RAG_TARGET="${RAG_TARGET:-http://127.0.0.1:${RAG_PORT}}"
-IM_API_TARGET="${IM_API_TARGET:-${API_TARGET}}"
-NGINX_ENABLED="${NGINX_ENABLED:-1}"
-NGINX_USE_SYSTEM="${NGINX_USE_SYSTEM:-0}"
-NGINX_CONF_DIR="${NGINX_CONF_DIR:-/etc/nginx/conf.d}"
-NGINX_LOCAL_CONF="${NGINX_LOCAL_CONF:-${ROOT_DIR}/config/nginx.local.conf}"
-START_WEB_STATIC="${START_WEB_STATIC:-0}"
-WEB_STATIC_PORT="${WEB_STATIC_PORT:-3000}"
-REDIS_PORT="${REDIS_PORT:-6379}"
-REDIS_BIND="${REDIS_BIND:-127.0.0.1}"
-DATA_ROOT="${DATA_ROOT:-/data/urgs}"
-REDIS_DATA_DIR="${REDIS_DATA_DIR:-${DATA_ROOT}/redis}"
-NGINX_LOG_DIR="${NGINX_LOG_DIR:-${ROOT_DIR}/logs/nginx}"
-NGINX_ERROR_LOG="${NGINX_ERROR_LOG:-${NGINX_LOG_DIR}/error.log}"
-NGINX_ACCESS_LOG="${NGINX_ACCESS_LOG:-${NGINX_LOG_DIR}/access.log}"
-STOP_CONFLICTING_PORTS="${STOP_CONFLICTING_PORTS:-1}"
-BACKUP_BEFORE_DEPLOY="${BACKUP_BEFORE_DEPLOY:-1}"
-BACKUP_ROOT="${BACKUP_ROOT:-${ROOT_DIR}/backups}"
-BACKUP_NAME="${BACKUP_NAME:-$(date +%Y%m%d%H%M%S)}"
-MYSQL_JDBC_PARAMS="${MYSQL_JDBC_PARAMS:-useSSL=false&serverTimezone=%2B08:00&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true}"
-MYSQL_EXECUTOR_JDBC_PARAMS="${MYSQL_EXECUTOR_JDBC_PARAMS:-useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=%2B08:00&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true}"
+apply_runtime_defaults() {
+    JAVA_BIN="${JAVA_BIN:-java}"
+    PYTHON_BIN="${PYTHON_BIN:-python3}"
+    PIP_INSTALL="${PIP_INSTALL:-1}"
+    TZ="${TZ:-Asia/Shanghai}"
+    API_PORT="${API_PORT:-8080}"
+    EXECUTOR_PORT="${EXECUTOR_PORT:-8082}"
+    RAG_PORT="${RAG_PORT:-8001}"
+    WEB_LISTEN_PORT="${WEB_LISTEN_PORT:-18080}"
+    WEB_SERVER_NAME="${WEB_SERVER_NAME:-_}"
+    API_TARGET="${API_TARGET:-http://127.0.0.1:${API_PORT}}"
+    API_UPSTREAM_SERVERS="${API_UPSTREAM_SERVERS:-}"
+    API_UPSTREAM_STICKY="${API_UPSTREAM_STICKY:-ip_hash}"
+    RAG_TARGET="${RAG_TARGET:-http://127.0.0.1:${RAG_PORT}}"
+    IM_API_TARGET="${IM_API_TARGET:-${API_TARGET}}"
+    NGINX_ENABLED="${NGINX_ENABLED:-1}"
+    NGINX_USE_SYSTEM="${NGINX_USE_SYSTEM:-0}"
+    NGINX_CONF_DIR="${NGINX_CONF_DIR:-/etc/nginx/conf.d}"
+    NGINX_LOCAL_CONF="${NGINX_LOCAL_CONF:-${ROOT_DIR}/config/nginx.local.conf}"
+    START_WEB_STATIC="${START_WEB_STATIC:-0}"
+    WEB_STATIC_PORT="${WEB_STATIC_PORT:-3000}"
+    REDIS_PORT="${REDIS_PORT:-6379}"
+    REDIS_BIND="${REDIS_BIND:-127.0.0.1}"
+    DATA_ROOT="${DATA_ROOT:-/data/urgs}"
+    REDIS_DATA_DIR="${REDIS_DATA_DIR:-${DATA_ROOT}/redis}"
+    NGINX_LOG_DIR="${NGINX_LOG_DIR:-${ROOT_DIR}/logs/nginx}"
+    NGINX_ERROR_LOG="${NGINX_ERROR_LOG:-${NGINX_LOG_DIR}/error.log}"
+    NGINX_ACCESS_LOG="${NGINX_ACCESS_LOG:-${NGINX_LOG_DIR}/access.log}"
+    STOP_CONFLICTING_PORTS="${STOP_CONFLICTING_PORTS:-1}"
+    BACKUP_BEFORE_DEPLOY="${BACKUP_BEFORE_DEPLOY:-1}"
+    BACKUP_ROOT="${BACKUP_ROOT:-${ROOT_DIR}/backups}"
+    BACKUP_NAME="${BACKUP_NAME:-$(date +%Y%m%d%H%M%S)}"
+    MYSQL_JDBC_PARAMS="${MYSQL_JDBC_PARAMS:-useSSL=false&serverTimezone=%2B08:00&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true}"
+    MYSQL_EXECUTOR_JDBC_PARAMS="${MYSQL_EXECUTOR_JDBC_PARAMS:-useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=%2B08:00&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true}"
 
-export TZ
+    export TZ
+}
+
+load_env
+apply_runtime_defaults
 
 log() {
     printf '[urgs-deploy] %s\n' "$*"
@@ -79,7 +86,7 @@ usage() {
 Usage:
   bin/deploy.sh install          Prepare runtime directories, Python venvs, and nginx config.
   bin/deploy.sh start            Start selected services.
-  bin/deploy.sh up               Install and start selected services.
+  bin/deploy.sh up               Stop, install, and start selected services.
   bin/deploy.sh stop             Stop selected services.
   bin/deploy.sh restart          Restart selected services.
   bin/deploy.sh status           Show selected service status.
@@ -157,11 +164,11 @@ install_package_to_deploy_home() {
     cp "${PACKAGE_DIR}/bin/deploy.sh" "${ROOT_DIR}/bin/deploy.sh"
     chmod +x "${ROOT_DIR}/bin/deploy.sh"
 
-    if [ ! -f "${ROOT_DIR}/config/deploy.env" ] || [ "${URGS_DEPLOY_ENV_OVERWRITE:-0}" = "1" ]; then
+    if [ "${URGS_DEPLOY_ENV_KEEP:-0}" = "1" ] && [ -f "${ROOT_DIR}/config/deploy.env" ]; then
+        cp "${PACKAGE_DIR}/config/deploy.env" "${ROOT_DIR}/config/deploy.env.package"
+    else
         backup_existing_path "${ROOT_DIR}/config/deploy.env" "$backup_dir" "config/deploy.env"
         cp "${PACKAGE_DIR}/config/deploy.env" "${ROOT_DIR}/config/deploy.env"
-    elif [ -f "${PACKAGE_DIR}/config/deploy.env" ]; then
-        cp "${PACKAGE_DIR}/config/deploy.env" "${ROOT_DIR}/config/deploy.env.package"
     fi
 
     backup_existing_path "${ROOT_DIR}/config/nginx.conf.template" "$backup_dir" "config/nginx.conf.template"
@@ -680,6 +687,8 @@ if [ -n "$DEPLOY_HOME" ] && [ "$PACKAGE_DIR" != "$ROOT_DIR" ]; then
         *)
             install_package_to_deploy_home
             SERVICES_FILE="$PACKAGE_SERVICES_FILE"
+            load_env
+            apply_runtime_defaults
             ;;
     esac
 fi
@@ -687,7 +696,7 @@ fi
 case "${1:-}" in
     install) install_all ;;
     start) if [ -n "${2:-}" ]; then start_one "$2"; else start_all; fi ;;
-    up) install_all; start_all ;;
+    up) stop_all; install_all; start_all ;;
     stop) if [ -n "${2:-}" ]; then stop_one "$2"; else stop_all; fi ;;
     restart) if [ -n "${2:-}" ]; then stop_one "$2"; start_one "$2"; else stop_all; start_all; fi ;;
     status) if [ -n "${2:-}" ]; then status_one "$2"; else status_all; fi ;;

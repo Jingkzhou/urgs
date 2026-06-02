@@ -16,13 +16,25 @@
 
 ## 构建机打包
 
-### 1. 固化生产配置
+### 1. 固化投产环境配置
 
-打包前先确认以下文件已经是目标生产环境配置：
+打包前先确认目标投产环境对应的配置文件已经写好：
 
 ```text
-deploy/templates/deploy.env
+deploy/templates/deploy.sit.env
+deploy/templates/deploy.pre.env
+deploy/templates/deploy.prod.env
 ```
+
+打包时通过 `DEPLOY_ENV` 或 `--env` 选择配置。脚本会把对应模板复制进部署包的 `config/deploy.env`：
+
+```bash
+DEPLOY_ENV=prod deploy/package-services.sh full
+deploy/package-services.sh --env pre full
+deploy/package-services.sh --env sit api web nginx redis
+```
+
+如果不指定 `DEPLOY_ENV` / `--env`，脚本仍会沿用 `deploy/templates/deploy.env`，用于兼容旧的单配置打包方式。
 
 必须确认的关键项：
 
@@ -72,7 +84,7 @@ deploy/components-cache/redis-linux-aarch64-<版本>.tar.gz
 在项目根目录执行：
 
 ```bash
-PACKAGE_NAME=urgs-prod \
+DEPLOY_ENV=prod PACKAGE_NAME=urgs-prod \
 deploy/package-services.sh full
 ```
 
@@ -91,53 +103,67 @@ KEEP_WORK_DIR=1
 如果不指定 `PACKAGE_NAME`，默认输出：
 
 ```text
-dist-packages/urgs-nondocker-<时间戳>.tar.gz
+dist-packages/urgs-prod-<时间戳>.tar.gz
 ```
 
+默认包名格式为 `urgs-<环境>-<时间戳>.tar.gz`。例如 `--env pre` 会输出 `urgs-pre-<时间戳>.tar.gz`，`--env sit` 会输出 `urgs-sit-<时间戳>.tar.gz`。
+
 ### 4. 可选打包方式
+
+按准生产环境打包：
+
+```bash
+PACKAGE_NAME=urgs-pre deploy/package-services.sh --env pre full
+```
+
+按测试环境打包：
+
+```bash
+PACKAGE_NAME=urgs-sit deploy/package-services.sh --env sit full
+```
 
 只打包应用，不打 Nginx / Redis：
 
 ```bash
-deploy/package-services.sh api web executor rag
+DEPLOY_ENV=prod deploy/package-services.sh api web executor rag
 ```
 
 应用和依赖组件一起打包：
 
 ```bash
-deploy/package-services.sh api web executor rag nginx redis
+DEPLOY_ENV=prod deploy/package-services.sh api web executor rag nginx redis
 ```
 
 如果本机没有完整 `urgs-web/node_modules`，但已有 `urgs-web/dist`，脚本默认复用现有前端产物，避免卡在 `npm ci`。需要强制重新安装依赖并重建前端时执行：
 
 ```bash
-WEB_REUSE_DIST_IF_NO_NODE_MODULES=0 deploy/package-services.sh api web executor nginx redis
+DEPLOY_ENV=prod WEB_REUSE_DIST_IF_NO_NODE_MODULES=0 deploy/package-services.sh api web executor nginx redis
 ```
 
 完整应用包：
 
 ```bash
-deploy/package-services.sh full
+DEPLOY_ENV=prod deploy/package-services.sh full
 ```
 
 只打包部分服务：
 
 ```bash
-deploy/package-services.sh api web
-deploy/package-services.sh api executor
-deploy/package-services.sh rag lineage
+DEPLOY_ENV=prod deploy/package-services.sh api web
+DEPLOY_ENV=prod deploy/package-services.sh api executor
+DEPLOY_ENV=prod deploy/package-services.sh rag lineage
 ```
 
 选择 `nginx` / `redis` 组件时，默认要求提供对应 tar 包，这样生产机解压后不需要再补安装运行组件。如果你明确要复用生产机已经安装的 Nginx / Redis，可以设置：
 
 ```bash
-ALLOW_HOST_COMPONENTS=1 deploy/package-services.sh api web nginx redis
+DEPLOY_ENV=prod ALLOW_HOST_COMPONENTS=1 deploy/package-services.sh api web nginx redis
 ```
 
 也可以指定输出目录和包名：
 
 ```bash
-OUT_DIR=/tmp/urgs-packages PACKAGE_NAME=urgs-prod-20260514 deploy/package-services.sh api web executor rag
+DEPLOY_ENV=prod OUT_DIR=/tmp/urgs-packages PACKAGE_NAME=urgs-prod-20260514 deploy/package-services.sh api web executor rag
 ```
 
 ## 生产机部署
@@ -151,7 +177,7 @@ tar -xzf urgs-prod.tar.gz
 cd urgs-prod
 ```
 
-如果使用默认时间戳包名，则目录名是 `urgs-nondocker-<时间戳>`。
+如果使用默认时间戳包名，则目录名是 `urgs-<环境>-<时间戳>`。
 
 ### 2. 推荐：固定运行目录部署
 
@@ -224,11 +250,15 @@ cd /home/appuser/urgs-app
 bin/deploy.sh status
 ```
 
-如果生产机本地改过 `/home/appuser/urgs-app/config/deploy.env`，增量包部署默认不会覆盖它；包内配置会另存为 `config/deploy.env.package`。确实需要用包内配置覆盖固定运行目录配置时执行：
+固定运行目录部署默认会用包内 `config/deploy.env` 覆盖 `/home/appuser/urgs-app/config/deploy.env`，适合按 `deploy.sit.env` / `deploy.pre.env` / `deploy.prod.env` 固化配置后投产。覆盖前会先备份旧配置。
+
+如果生产机本地临时改过配置，并且本次部署明确要保留现场配置，可以执行：
 
 ```bash
-URGS_DEPLOY_HOME=/home/appuser/urgs-app URGS_DEPLOY_ENV_OVERWRITE=1 bin/deploy.sh up
+URGS_DEPLOY_HOME=/home/appuser/urgs-app URGS_DEPLOY_ENV_KEEP=1 bin/deploy.sh up
 ```
+
+此时包内配置会另存为 `config/deploy.env.package`，不会覆盖当前运行配置。
 
 ### 3. 兼容：在解压目录内运行
 
@@ -278,7 +308,7 @@ bin/deploy.sh start
 | --- | --- | --- |
 | `bin/deploy.sh install` | 只做安装准备，不启动服务。创建运行目录、解压随包 Nginx / Redis、创建 Python venv、渲染 Nginx 配置。 | 第一次部署前分步排查环境。 |
 | `bin/deploy.sh start` | 只启动 `services.list` 中启用的服务，不重新做安装准备。 | 已经执行过 `install`，只需要启动服务。 |
-| `bin/deploy.sh up` | 先执行 `install`，再执行 `start`。 | 第一次解压新包后推荐使用。 |
+| `bin/deploy.sh up` | 先停止本包 `services.list` 中启用的服务，再执行 `install` 和 `start`。 | 第一次部署和发布新包时推荐使用，确保新 JAR、配置和 Nginx 渲染结果生效。 |
 | `bin/deploy.sh stop` | 停止 `services.list` 中启用的服务。 | 停机维护。 |
 | `bin/deploy.sh restart` | 停止再启动全部启用服务，不重新执行 `install`。 | 修改 `config/deploy.env` 后重启生效。 |
 | `bin/deploy.sh status` | 查看全部启用服务状态。 | 检查 API / Nginx / Redis / executor 是否运行。 |
@@ -356,5 +386,5 @@ bin/deploy.sh nginx-config
 - `web` 静态文件需要 Nginx 代理 `/api`、`/ws`、`/uploads`、`/profile`、`/api/rag`，不要只用普通静态文件服务器上线。
 - `lineage` 当前作为工具目录随包分发，不作为常驻服务启动。
 - MySQL、Neo4j 不放入部署包，只在 `config/deploy.env` 中配置连接地址。
-- 生产端零调整部署要求打包前写好 `deploy/templates/deploy.env`，并提供目标服务器架构匹配的 `NGINX_TARBALL` / `REDIS_TARBALL`。
+- 生产端零调整部署要求打包前写好对应环境的 `deploy/templates/deploy.<sit|pre|prod>.env`，并提供目标服务器架构匹配的 `NGINX_TARBALL` / `REDIS_TARBALL`。
 - 旧包不会自动包含脚本和配置变更；部署前需要重新打包并上传新生成的 `tar.gz`。

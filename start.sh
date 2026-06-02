@@ -27,11 +27,11 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
   export OBJC_FORBID_REENTRANT_INFO_BY_DEFAULT=NO
 fi
 
-ENVIRONMENT="${1:-dev}"
+ENVIRONMENT="${1:-local}"
 case "$ENVIRONMENT" in
-  dev|sit|prod) ;;
+  local|dev|sit|pre|prod) ;;
   *)
-    echo "Usage: $0 [dev|sit|prod]"
+    echo "Usage: $0 [local|dev|sit|pre|prod]"
     exit 1
     ;;
 esac
@@ -42,6 +42,10 @@ EXECUTOR_DIR="$SCRIPT_DIR/urgs-executor"
 WEB_DIR="$SCRIPT_DIR/urgs-web"
 RAG_DIR="$SCRIPT_DIR/urgs-rag"
 PRESENTATION_DIR="$SCRIPT_DIR/urgs+-presentation-platform"
+LOCAL_ENV_FILE="${START_ENV_FILE:-$SCRIPT_DIR/deploy/templates/deploy.${ENVIRONMENT}.env}"
+if [ "$ENVIRONMENT" = "local" ]; then
+  LOCAL_ENV_FILE="${START_ENV_FILE:-$SCRIPT_DIR/deploy/templates/deploy.local.env}"
+fi
 
 pids=()
 
@@ -106,11 +110,14 @@ kill_port_if_exists() {
 }
 
 load_env_file() {
-  if [ -f "$SCRIPT_DIR/../.env" ]; then
-    export $(grep -v '^#' "$SCRIPT_DIR/../.env" | xargs)
-  elif [ -f "$SCRIPT_DIR/.env" ]; then
-    export $(grep -v '^#' "$SCRIPT_DIR/.env" | xargs)
+  if [ ! -f "$LOCAL_ENV_FILE" ]; then
+    echo "Environment file not found: $LOCAL_ENV_FILE"
+    exit 1
   fi
+  set -a
+  # shellcheck disable=SC1090
+  source "$LOCAL_ENV_FILE"
+  set +a
 }
 
 configure_storage_env() {
@@ -132,6 +139,16 @@ configure_storage_env() {
   export DEPLOY_TOOL_WORKDIR="${DEPLOY_TOOL_WORKDIR:-${DATA_ROOT}/db_deploy}"
   export LINEAGE_ENGINE_SHARED_DIR="${LINEAGE_ENGINE_SHARED_DIR:-${DATA_ROOT}/lineage/share}"
   export ISSUE_ATTACHMENT_PATH="${ISSUE_ATTACHMENT_PATH:-${DATA_ROOT}/attachments}"
+
+  for path_var in URGS_PROFILE IM_UPLOAD_PATH RAG_DOC_STORE_PATH CHROMA_PERSIST_DIRECTORY \
+    DOC_STORAGE_PATH PARENT_DOC_STORE_PATH CLEAN_SAMPLE_DIR DEPLOY_TOOL_WORKDIR \
+    LINEAGE_ENGINE_SHARED_DIR ISSUE_ATTACHMENT_PATH; do
+    local path_value="${!path_var}"
+    if [[ "$path_value" != /* ]]; then
+      printf -v "$path_var" '%s/%s' "$SCRIPT_DIR" "${path_value#./}"
+      export "$path_var"
+    fi
+  done
 
   mkdir -p "$URGS_PROFILE" "$IM_UPLOAD_PATH" "$RAG_DOC_STORE_PATH" \
     "$CHROMA_PERSIST_DIRECTORY" "$PARENT_DOC_STORE_PATH" "$CLEAN_SAMPLE_DIR" \
@@ -166,10 +183,11 @@ cleanup() {
 trap cleanup EXIT
 
 start_backend() {
-  echo "Starting backend (profile: $ENVIRONMENT)..."
   cd "$API_DIR"
   kill_port_if_exists 8080
   configure_database_env
+  local spring_profile="${SPRING_PROFILES_ACTIVE:-$ENVIRONMENT}"
+  echo "Starting backend (env: $ENVIRONMENT, profile: $spring_profile, config: $LOCAL_ENV_FILE)..."
 
   # Explicitly export RAG properties to avoid placeholder resolution issues
   export RAG_BASE_URL="${RAG_SERVICE_URL:-http://localhost:8001}/api/rag"
@@ -189,7 +207,7 @@ start_backend() {
     echo "Configured Neo4j URI: $SPRING_NEO4J_URI"
   fi
 
-  ./mvnw spring-boot:run -Dspring-boot.run.profiles="$ENVIRONMENT" &
+  ./mvnw spring-boot:run -Dspring-boot.run.profiles="$spring_profile" &
   pids+=($!)
 }
 
@@ -200,7 +218,7 @@ start_frontend() {
   kill_port_if_exists 3001
   ensure_npm_dependency "$WEB_DIR" vite
 
-  if [ "$ENVIRONMENT" = "dev" ]; then
+  if [ "$ENVIRONMENT" = "local" ] || [ "$ENVIRONMENT" = "dev" ]; then
     "$NPM_BIN" run dev -- --host &
   else
     "$NPM_BIN" run build
@@ -222,7 +240,7 @@ start_rag() {
 
   kill_port_if_exists 8001
   
-  if [ "$ENVIRONMENT" = "dev" ]; then
+  if [ "$ENVIRONMENT" = "local" ] || [ "$ENVIRONMENT" = "dev" ]; then
     .venv_312/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload --loop asyncio &
   else
     .venv_312/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001 --loop asyncio &
@@ -231,11 +249,12 @@ start_rag() {
 }
 
 start_executor() {
-  echo "Starting executor..."
   cd "$EXECUTOR_DIR"
   kill_port_if_exists 8082
   configure_database_env
-  ./mvnw spring-boot:run -Dspring-boot.run.profiles="$ENVIRONMENT" &
+  local spring_profile="${SPRING_PROFILES_ACTIVE:-$ENVIRONMENT}"
+  echo "Starting executor (env: $ENVIRONMENT, profile: $spring_profile, config: $LOCAL_ENV_FILE)..."
+  ./mvnw spring-boot:run -Dspring-boot.run.profiles="$spring_profile" &
   pids+=($!)
 }
 
