@@ -5,8 +5,10 @@ from typing import Dict, List, Set, Tuple
 
 from sqlglot import exp
 
+from .indirect_flow_condition_helpers import IndirectFlowConditionHelperMixin
 
-class IndirectFlowHelperMixin:
+
+class IndirectFlowHelperMixin(IndirectFlowConditionHelperMixin):
     def _window_projection_alias(self, col: exp.Column, scope_expression):
         curr = col.parent
         seen_window = False
@@ -115,14 +117,46 @@ class IndirectFlowHelperMixin:
         if not selects:
             return []
 
-        target_columns = self._projection_names(selects[0], target_info)
+        target_columns = self._set_operation_target_columns(selects[0], target_info)
         deps = []
         for select in selects:
             branch_scope = build_scope(select)
             if not branch_scope:
                 continue
+            expanded_index = 0
             for index, projection in enumerate(select.expressions):
-                if index >= len(target_columns) or not target_columns[index]:
+                if self._is_star_projection(projection):
+                    source = self._star_projection_source(projection, branch_scope)
+                    groups = self._expand_star_source_ref_groups(source) if source else []
+                    for _, refs in groups:
+                        if expanded_index >= len(target_columns) or not target_columns[expanded_index]:
+                            expanded_index += 1
+                            continue
+                        for source_table, source_column in sorted(refs):
+                            deps.append({
+                                "source_table": source_table,
+                                "source_column": source_column,
+                                "target_table": target_info["table"],
+                                "target_column": target_columns[expanded_index],
+                                "dependency_type": "fdd",
+                                "neo4j_type": "DERIVES_TO",
+                                "context": "SET_OPERATION_SELECT",
+                                "lineage_origin": "set_operation",
+                                "relation_level": "column",
+                                "source_file": source_file,
+                                "snippet": stmt_sql,
+                                "projectionIndex": expanded_index,
+                                "projection_index": expanded_index,
+                                "sourceExpression": self._safe_sql(projection),
+                                "source_expression": self._safe_sql(projection),
+                                "targetExpression": target_columns[expanded_index],
+                                "target_expression": target_columns[expanded_index],
+                            })
+                        expanded_index += 1
+                    continue
+
+                if expanded_index >= len(target_columns) or not target_columns[expanded_index]:
+                    expanded_index += 1
                     continue
                 refs = self._resolve_expression_to_physical_refs(projection, branch_scope)
                 for source_table, source_column in sorted(refs):
@@ -130,7 +164,7 @@ class IndirectFlowHelperMixin:
                         "source_table": source_table,
                         "source_column": source_column,
                         "target_table": target_info["table"],
-                        "target_column": target_columns[index],
+                        "target_column": target_columns[expanded_index],
                         "dependency_type": "fdd",
                         "neo4j_type": "DERIVES_TO",
                         "context": "SET_OPERATION_SELECT",
@@ -138,14 +172,25 @@ class IndirectFlowHelperMixin:
                         "relation_level": "column",
                         "source_file": source_file,
                         "snippet": stmt_sql,
-                        "projectionIndex": index,
-                        "projection_index": index,
+                        "projectionIndex": expanded_index,
+                        "projection_index": expanded_index,
                         "sourceExpression": self._safe_sql(projection),
                         "source_expression": self._safe_sql(projection),
-                        "targetExpression": target_columns[index],
-                        "target_expression": target_columns[index],
+                        "targetExpression": target_columns[expanded_index],
+                        "target_expression": target_columns[expanded_index],
                     })
+                expanded_index += 1
         return deps
+
+    def _set_operation_target_columns(self, first_select, target_info=None) -> List[str]:
+        target_columns = (target_info or {}).get("columns") or {}
+        if target_columns:
+            return [
+                target_columns[index]
+                for index in range(max(target_columns.keys()) + 1)
+                if index in target_columns
+            ]
+        return self._projection_names(first_select, target_info)
 
     def _extract_select_star_dependencies(
         self, stmt, target_info, source_file, stmt_sql: str = None
@@ -244,11 +289,35 @@ class IndirectFlowHelperMixin:
 
     def _resolve_lateral_column_refs(self, column_name: str, lateral_scope) -> Set[Tuple[str, str]]:
         lateral = lateral_scope.expression
-        if column_name.upper() not in {
-            output_name.upper() for output_name in self._lateral_output_names(lateral)
-        }:
+        output_names = self._lateral_output_names(lateral)
+        if column_name.upper() not in {output_name.upper() for output_name in output_names}:
             return set()
+        stack_refs = self._resolve_stack_lateral_refs(column_name, lateral, lateral_scope)
+        if stack_refs is not None:
+            return stack_refs
         return self._resolve_expression_to_physical_refs(lateral.this, lateral_scope)
+
+    def _resolve_stack_lateral_refs(self, column_name: str, lateral, lateral_scope):
+        function = lateral.this if lateral else None
+        if not isinstance(function, exp.Anonymous):
+            return None
+        if str(function.this).lower() != "stack":
+            return None
+
+        output_names = self._lateral_output_names(lateral)
+        try:
+            output_index = [name.upper() for name in output_names].index(column_name.upper())
+        except ValueError:
+            return set()
+        output_count = len(output_names)
+        if output_count == 0:
+            return set()
+
+        refs = set()
+        for index, expression in enumerate(function.expressions[1:]):
+            if index % output_count == output_index:
+                refs.update(self._resolve_expression_to_physical_refs(expression, lateral_scope))
+        return refs
 
     def _lateral_output_names(self, lateral) -> List[str]:
         alias = lateral.args.get("alias") if lateral else None
@@ -315,6 +384,52 @@ class IndirectFlowHelperMixin:
         if isinstance(projection, exp.Column) and projection.name == "*":
             return True
         return False
+
+    def _resolve_star_projection_column_refs(
+        self, column_name: str, projection, source_scope
+    ) -> Set[Tuple[str, str]]:
+        if not self._is_star_projection(projection):
+            return set()
+
+        source = self._star_projection_source(projection, source_scope)
+        if not source:
+            return set()
+
+        star_groups = self._expand_star_source_ref_groups(source)
+        alias_columns = self._source_alias_columns(source_scope)
+        if alias_columns and len(alias_columns) == len(star_groups):
+            star_groups = [
+                (alias_columns[index], refs)
+                for index, (_, refs) in enumerate(star_groups)
+            ]
+
+        for output_name, refs in star_groups:
+            if output_name.upper() == column_name.upper():
+                return refs
+
+        refs = set()
+        for table_name in self._resolve_source_to_physical(source):
+            try:
+                validation = self.resolver.validate_column(table_name, column_name)
+            except Exception:
+                validation = {}
+
+            if validation.get("exists") is False:
+                continue
+            refs.add((table_name, column_name))
+        return refs
+
+    def _expanded_projection_index(self, select, projection_index: int, scope) -> int:
+        expanded_index = 0
+        for projection in select.expressions[:projection_index]:
+            if not self._is_star_projection(projection):
+                expanded_index += 1
+                continue
+
+            source = self._star_projection_source(projection, scope)
+            groups = self._expand_star_source_ref_groups(source) if source else []
+            expanded_index += len(groups) if groups else 1
+        return expanded_index
 
     def _star_projection_source(self, projection, scope):
         table_alias = getattr(projection, "table", None)

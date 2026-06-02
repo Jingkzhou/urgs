@@ -135,6 +135,30 @@ class IndirectFlowParser(IndirectFlowHelperMixin):
                     for dep in star_select_deps:
                         dep.update(stmt_meta)
                     dependencies.extend(star_select_deps)
+                    filter_subquery_deps = self._extract_filter_subquery_dependencies(
+                        stmt, target_info, source_file, stmt_sql
+                    )
+                    for dep in filter_subquery_deps:
+                        dep.update(stmt_meta)
+                    dependencies.extend(filter_subquery_deps)
+                    having_deps = self._extract_having_dependencies(
+                        stmt, target_info, source_file, stmt_sql
+                    )
+                    for dep in having_deps:
+                        dep.update(stmt_meta)
+                    dependencies.extend(having_deps)
+                    clause_alias_deps = self._extract_clause_alias_dependencies(
+                        stmt, target_info, source_file, stmt_sql
+                    )
+                    for dep in clause_alias_deps:
+                        dep.update(stmt_meta)
+                    dependencies.extend(clause_alias_deps)
+                    join_using_deps = self._extract_join_using_dependencies(
+                        stmt, target_info, source_file, stmt_sql
+                    )
+                    for dep in join_using_deps:
+                        dep.update(stmt_meta)
+                    dependencies.extend(join_using_deps)
                         
             except Exception as e:
                 logging.debug(f"sqlglot parse error: {e}")
@@ -215,6 +239,9 @@ class IndirectFlowParser(IndirectFlowHelperMixin):
         for col in scope.columns:
             if self._is_inside_lateral(col, scope.expression):
                 continue
+            if self._is_inside_subquery(col, scope.expression):
+                if not col.table or not self._resolve_scope_source(scope, col.table):
+                    continue
 
             # 1. 确定上下文
             context_found = None
@@ -305,17 +332,21 @@ class IndirectFlowParser(IndirectFlowHelperMixin):
                             None,
                         )
                         if idx is not None:
-                            projection_index = idx
+                            projection_index = self._expanded_projection_index(
+                                scope.expression, idx, scope
+                            )
                             # 1. 尝试位置映射 (INSERT INTO t (c1, c2) ...)
                             target_columns = target_info.get("columns") or {}
-                            if idx in target_columns:
-                                specific_target_column = target_columns[idx]
+                            if projection_index in target_columns:
+                                specific_target_column = target_columns[projection_index]
                             else:
-                                inferred_column = self._target_column_by_metadata(target_table, idx)
+                                inferred_column = self._target_column_by_metadata(
+                                    target_table, projection_index
+                                )
                                 if inferred_column:
                                     specific_target_column = inferred_column
                                     target_resolution_note = (
-                                        f"Target column inferred by metadata position {idx + 1}"
+                                        f"Target column inferred by metadata position {projection_index + 1}"
                                     )
                                     target_metadata_matched = True
                                 elif context_name == "SELECT":
@@ -352,7 +383,18 @@ class IndirectFlowParser(IndirectFlowHelperMixin):
 
             # 解析物理来源。对子查询派生列（如 ROW_NUMBER() AS RN）必须返回
             # 派生表达式内部引用的真实字段，不能把外层别名 RN 当成物理字段。
-            physical_refs = self._resolve_column_to_physical_refs(col, scope, projection_item)
+            physical_refs = set()
+            if context_name in {
+                "GROUP_BY",
+                "HAVING",
+                "ORDER_BY",
+                "SORT_BY",
+                "DISTRIBUTE_BY",
+                "CLUSTER_BY",
+            } and not col.table:
+                physical_refs = self._projection_alias_refs(col.name, scope)
+            if not physical_refs:
+                physical_refs = self._resolve_column_to_physical_refs(col, scope, projection_item)
             resolution = getattr(self, "_last_resolution", {}) or {}
             
             for table_name, source_column in sorted(physical_refs):
@@ -567,47 +609,17 @@ class IndirectFlowParser(IndirectFlowHelperMixin):
 
     def _resolve_projected_column_refs(self, column_name: str, source_scope) -> Set[Tuple[str, str]]:
         for index, projection in enumerate(source_scope.expression.expressions):
-            output_name = self._source_scope_output_name(
-                projection, index, source_scope
-            )
-            if output_name and output_name.upper() == column_name.upper():
-                return self._resolve_expression_to_physical_refs(projection, source_scope)
             star_refs = self._resolve_star_projection_column_refs(
                 column_name, projection, source_scope
             )
             if star_refs:
                 return star_refs
+            output_name = self._source_scope_output_name(
+                projection, index, source_scope
+            )
+            if output_name and output_name.upper() == column_name.upper():
+                return self._resolve_expression_to_physical_refs(projection, source_scope)
         return set()
-
-    def _resolve_star_projection_column_refs(self, column_name: str, projection, source_scope) -> Set[Tuple[str, str]]:
-        if not self._is_star_projection(projection):
-            return set()
-
-        source = None
-        table_alias = getattr(projection, "table", None)
-        if table_alias:
-            source = self._resolve_scope_source(source_scope, table_alias)
-        elif len(source_scope.sources) == 1:
-            source = list(source_scope.sources.values())[0]
-
-        if not source:
-            return set()
-
-        for output_name, refs in self._expand_star_source_ref_groups(source):
-            if output_name.upper() == column_name.upper():
-                return refs
-
-        refs = set()
-        for table_name in self._resolve_source_to_physical(source):
-            try:
-                validation = self.resolver.validate_column(table_name, column_name)
-            except Exception:
-                validation = {}
-
-            if validation.get("exists") is False:
-                continue
-            refs.add((table_name, column_name))
-        return refs
 
     def _projection_output_name(self, projection) -> str:
         if isinstance(projection, exp.Alias):
