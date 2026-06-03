@@ -3,6 +3,7 @@ import { message } from 'antd';
 import { getLineageGraph, LineageGraphDirection, LineageGraphResponse } from '@/api/lineage';
 import { LinkData, NodeData } from '../types';
 import { processLayoutTrace } from '../utils/lineageLayout';
+import { sameTableLoose } from '../utils/lineageGraphDensity';
 
 const TRACE_GRAPH_DEPTH = -1;
 const TRACE_GRAPH_LIMIT = 5000;
@@ -48,7 +49,7 @@ export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
                 setListNodes([]);
                 setListLinks([]);
                 setGraphMeta(null);
-                setSelectedColumnName(null);
+                setSelectedField(null);
                 return;
             }
 
@@ -61,8 +62,11 @@ export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
                 setListNodes(layoutResult.layoutedNodes);
                 setListLinks(layoutResult.layoutedLinks);
                 setListDetailsLoaded(true);
-                const tableNode = layoutResult.layoutedNodes.find(node => node.title === tableName);
-                const column = tableNode?.columns.find(item => item.name === targetColName);
+                const tableNode = layoutResult.layoutedNodes.find(node =>
+                    sameTableLoose(node.title, qualifiedName || tableName)
+                    || sameTableLoose(node.title, tableName)
+                );
+                const column = tableNode?.columns.find(item => item.name.toLowerCase() === targetColName.toLowerCase());
                 setSelectedField(tableNode && column ? { nodeId: tableNode.id, colId: column.id } : null);
             } else {
                 setListNodes([]);

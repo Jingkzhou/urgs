@@ -96,7 +96,7 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
             setSelectedPhysicalSourceId(null);
             setSchemaOptions([]);
         }
-    }, [open, form]);
+    }, [open]);
 
     useEffect(() => {
         if (open) {
@@ -114,9 +114,13 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
         if (!open) {
             return;
         }
+        let active = true;
         setPhysicalSourcesLoading(true);
         getLineagePhysicalDataSources()
             .then(res => {
+                if (!active) {
+                    return;
+                }
                 const sources = res || [];
                 setPhysicalSources(sources);
                 const defaultSourceId = sources[0]?.id ?? null;
@@ -124,22 +128,40 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                 form.setFieldsValue({ physicalDataSourceId: defaultSourceId ?? undefined });
             })
             .catch(() => {
+                if (!active) {
+                    return;
+                }
                 setPhysicalSources([]);
                 setSelectedPhysicalSourceId(null);
                 message.error('获取物理仓库失败');
             })
-            .finally(() => setPhysicalSourcesLoading(false));
+            .finally(() => {
+                if (active) {
+                    setPhysicalSourcesLoading(false);
+                }
+            });
+        return () => {
+            active = false;
+        };
     }, [open, form]);
 
     useEffect(() => {
-        if (!open || !selectedPhysicalSourceId) {
+        if (!open) {
+            setSchemaOptions([]);
+            return;
+        }
+        if (!selectedPhysicalSourceId) {
             setSchemaOptions([]);
             form.setFieldsValue({ user: undefined });
             return;
         }
+        let active = true;
         setSchemaLoading(true);
         getLineagePhysicalSchemas(selectedPhysicalSourceId)
             .then(res => {
+                if (!active) {
+                    return;
+                }
                 const schemas = Array.isArray(res) ? res : [];
                 setSchemaOptions(schemas);
                 const currentUser = form.getFieldValue('user');
@@ -148,11 +170,21 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                 });
             })
             .catch(() => {
+                if (!active) {
+                    return;
+                }
                 setSchemaOptions([]);
                 form.setFieldsValue({ user: undefined });
                 message.error('获取 Schema 列表失败');
             })
-            .finally(() => setSchemaLoading(false));
+            .finally(() => {
+                if (active) {
+                    setSchemaLoading(false);
+                }
+            });
+        return () => {
+            active = false;
+        };
     }, [open, selectedPhysicalSourceId, form]);
 
     // Load Repositories
@@ -168,19 +200,35 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
 
     // Load Branches when Repo changes
     useEffect(() => {
-        if (sourceType === 'git' && selectedRepoId) {
-            setBranchesLoading(true);
-            getRepoBranches(selectedRepoId)
-                .then(res => {
-                    setBranches(res || []);
-                    const defaultBranch = res?.find(b => b.isDefault)?.name || res?.[0]?.name || '';
-                    setSelectedRef(defaultBranch);
-                    form.setFieldsValue({ ref: defaultBranch });
-                })
-                .catch(() => message.error('获取分支失败'))
-                .finally(() => setBranchesLoading(false));
+        if (!open || sourceType !== 'git' || !selectedRepoId) {
+            return;
         }
-    }, [selectedRepoId, form, sourceType]);
+        let active = true;
+        setBranchesLoading(true);
+        getRepoBranches(selectedRepoId)
+            .then(res => {
+                if (!active) {
+                    return;
+                }
+                setBranches(res || []);
+                const defaultBranch = res?.find(b => b.isDefault)?.name || res?.[0]?.name || '';
+                setSelectedRef(defaultBranch);
+                form.setFieldsValue({ ref: defaultBranch });
+            })
+            .catch(() => {
+                if (active) {
+                    message.error('获取分支失败');
+                }
+            })
+            .finally(() => {
+                if (active) {
+                    setBranchesLoading(false);
+                }
+            });
+        return () => {
+            active = false;
+        };
+    }, [open, selectedRepoId, form, sourceType]);
 
     // Load File Tree when Ref or Repo changes
     const loadFileTree = (path: string = '') => {
@@ -355,6 +403,7 @@ const LineageEngineStartModal: React.FC<LineageEngineStartModalProps> = ({ open,
                 ),
             ]}
             styles={modalStyles}
+            forceRender
             destroyOnHidden
         >
             <Form form={form} layout="vertical" preserve>

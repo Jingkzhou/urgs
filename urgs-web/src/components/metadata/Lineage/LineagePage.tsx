@@ -72,6 +72,12 @@ const LineagePage: React.FC<LineagePageProps> = () => {
         handleSelectTable,
         loadListDetails,
     } = useLineageGraphLoader(queryDirection);
+    const selectedDisplayName = useMemo(() => {
+        if (!selectedQualifiedName) {
+            return null;
+        }
+        return selectedColumnName ? `${selectedQualifiedName}.${selectedColumnName}` : selectedQualifiedName;
+    }, [selectedColumnName, selectedQualifiedName]);
 
     const toggleTableExpand = (qualifiedName: string) => {
         setExpandedTables(prev => {
@@ -267,7 +273,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                             <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>SQL Lineage</div>
                             <div style={{ fontSize: 12, color: '#8c8c8c' }}>血缘模块</div>
                         </div>
-                    {selectedQualifiedName && <Tag color="blue">{selectedQualifiedName}</Tag>}
+                    {selectedDisplayName && <Tag color="blue">{selectedDisplayName}</Tag>}
                 </div>
                 <div className="lineage-page-primary-actions">
                     <div className="lineage-page-secondary-actions">

@@ -48,23 +48,7 @@ urgs:
   web-base-url: "${URGS_WEB_BASE_URL:}"
   inbound-sso:
     rsa:
-      private-key: |-
-        -----BEGIN PRIVATE KEY-----
-        MIICdQIBADANBgkqhkiG9w0BAQEFAASCAl8wggJbAgEAAoGBAJZVuKWv4zq9lu4A
-        pYbcY4Z7hSn3XPEQgoP5q60pndgMwy4H99Fk4+ja9EryKK+J99ELgGYI03KR5DZx
-        EivAvD1Ga0iLEvGlLT+36DxekDfhSJaVJKmvEjI0VMKyox9qC3ipeu/c1xM2KEWv
-        GYV/W7FJxFy2GP5lseIZoAdu8Vb1AgMBAAECgYA+CmZHSkz2IuO0mOO2wiD4kOUl
-        qoXanjueh1zH+5K+ZJXv2y30ZjSAFkwW2dTcjI2O4bY9ZYsNjxOlPAiJseJ8quQK
-        8bl8FEoRhjJBpKuG3RgaCa2FM1z9h7z6VCt2VmOvy7PACF5IQzXSdBqHUIASy/sI
-        8aqn0fQQgooI3FE5yQJBAOhK9jydxl6oZ9FpxeonUqd7YJahY/O3MURKuJYPRDEq
-        WbeYvuTXJ7/zlZzFHV72gCe85NCvO/d/6ybSd595khMCQQClrXhvZKAeMfKSPEhP
-        0xUJ9F4q0JiVTY3tO4/FQI5wzOuI6sT3ydkCVINz3tCOurCOFlbRSydEwcbgrl6g
-        BtPXAkANy4XcC7KgJHgl45YxVax+7cDKsULyUkrGt3lG0BlIoi85zARqKqzdpWWZ
-        LcuUvCbYNUuRaRaymBIq+AzKl7mpAkARb4UaK/vR0a3Wh/OQOwWey5HRbaxxIf1K
-        txb1SkrzQg2TlilublahMSW4Xv2R18HW4jD2y7LxQHdek9sveih3AkAoKEZauxDu
-        ttBHetAwxoZtcaA+EHfzAorVDMTgak5ncCuQblirmSFXbF1qEw5RSuYFGB/VSrWN
-        ocwrntSXy1XS
-        -----END PRIVATE KEY-----
+      private-key: "${URGS_INBOUND_SSO_RSA_PRIVATE_KEY:}"
 
 im:
   upload:
