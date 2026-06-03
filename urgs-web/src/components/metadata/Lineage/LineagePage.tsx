@@ -904,12 +904,6 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                                 返回列表
                             </Button>
                             <Button
-                                icon={canvasMaximized ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
-                                onClick={handleCanvasMaximize}
-                            >
-                                {canvasMaximized ? '退出最大化' : '最大化'}
-                            </Button>
-                            <Button
                                 type="primary"
                                 icon={<SearchOutlined />}
                                 onClick={() => setSearchDrawerOpen(true)}

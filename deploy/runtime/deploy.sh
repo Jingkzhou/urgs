@@ -164,7 +164,12 @@ install_package_to_deploy_home() {
     cp "${PACKAGE_DIR}/bin/deploy.sh" "${ROOT_DIR}/bin/deploy.sh"
     chmod +x "${ROOT_DIR}/bin/deploy.sh"
 
-    if [ "${URGS_DEPLOY_ENV_KEEP:-0}" = "1" ] && [ -f "${ROOT_DIR}/config/deploy.env" ]; then
+    local deploy_env_keep="${URGS_DEPLOY_ENV_KEEP:-0}"
+    if [ "${URGS_DEPLOY_ENV_OVERWRITE:-}" = "1" ]; then
+        deploy_env_keep=0
+    fi
+
+    if [ "$deploy_env_keep" = "1" ] && [ -f "${ROOT_DIR}/config/deploy.env" ]; then
         cp "${PACKAGE_DIR}/config/deploy.env" "${ROOT_DIR}/config/deploy.env.package"
     else
         backup_existing_path "${ROOT_DIR}/config/deploy.env" "$backup_dir" "config/deploy.env"
