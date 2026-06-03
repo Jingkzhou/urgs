@@ -363,24 +363,6 @@ const LineageDiagram: React.FC<LineageDiagramProps> = ({ viewport, setViewport, 
         setDraggingNodeId(null);
     };
 
-    const handleWheel = (e: React.WheelEvent) => {
-        // Zoom if Ctrl/Cmd is pressed
-        if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            const zoomSensitivity = 0.001;
-            const newZoom = Math.max(0.1, Math.min(3, viewport.zoom - e.deltaY * zoomSensitivity));
-            setViewport(prev => ({ ...prev, zoom: newZoom }));
-        } else {
-            // Pan otherwise
-            // e.deltaX/Y represents scroll amount. Panning subtracts delta to move viewport.
-            setViewport(prev => ({
-                ...prev,
-                x: prev.x - e.deltaX,
-                y: prev.y - e.deltaY
-            }));
-        }
-    };
-
     const isLinkHighlighted = (link: LinkData) => {
         // If lineage trace is active (column selected/hovered), show only those links
         if (activeLinks.size > 0) {
@@ -472,7 +454,6 @@ const LineageDiagram: React.FC<LineageDiagramProps> = ({ viewport, setViewport, 
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            onWheel={handleWheel}
             onClick={closeTooltip} // Close tooltip on background click
         >
             <svg

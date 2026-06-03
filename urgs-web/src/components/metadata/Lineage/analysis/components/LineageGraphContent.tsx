@@ -17,6 +17,7 @@ interface LineageGraphContentProps {
     selectedField: { nodeId: string; colId: string } | null;
     onLoadFieldDetails?: () => Promise<void>;
     onTableDoubleClick?: (tableName: string, qualifiedName: string) => void;
+    onFieldDoubleClick?: (tableName: string, qualifiedName: string, columnName: string) => void;
 }
 
 const LineageGraphContent: React.FC<LineageGraphContentProps> = ({
@@ -32,6 +33,7 @@ const LineageGraphContent: React.FC<LineageGraphContentProps> = ({
     selectedField,
     onLoadFieldDetails,
     onTableDoubleClick,
+    onFieldDoubleClick,
 }) => {
     const canvasNodes = nodes;
     const canvasLinks = links;
@@ -54,6 +56,7 @@ const LineageGraphContent: React.FC<LineageGraphContentProps> = ({
                             selectedField={selectedField}
                             onLoadFieldDetails={onLoadFieldDetails}
                             onTableDoubleClick={onTableDoubleClick}
+                            onFieldDoubleClick={onFieldDoubleClick}
                         />
                     ) : (
                         <LineageListView

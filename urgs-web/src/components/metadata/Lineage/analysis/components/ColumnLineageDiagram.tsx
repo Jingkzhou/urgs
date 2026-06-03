@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import ELK from 'elkjs/lib/elk.bundled.js';
+import type { ElkNode } from 'elkjs/lib/elk-api';
 import { Button, Descriptions, Empty, Modal, Tag, Tooltip } from 'antd';
 import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { LinkData, NodeData, RELATION_STYLES } from '../types';
@@ -30,6 +32,7 @@ interface ColumnLineageDiagramProps {
     selectedField: { nodeId: string; colId: string } | null;
     onLoadFieldDetails?: () => Promise<void>;
     onTableDoubleClick?: (tableName: string, qualifiedName: string) => void;
+    onFieldDoubleClick?: (tableName: string, qualifiedName: string, columnName: string) => void;
 }
 
 interface LayoutNode {
@@ -57,6 +60,13 @@ interface SelectedRelation {
     sourceFile?: string;
 }
 
+interface NodeMetric {
+    node: NodeData;
+    columns: { id: string; name: string; synthetic?: boolean }[];
+    height: number;
+    rank: number;
+}
+
 const CARD_WIDTH = 290;
 const HEADER_HEIGHT = 36;
 const OWNER_HEIGHT = 28;
@@ -66,6 +76,7 @@ const NODE_GAP = 56;
 const PADDING = 72;
 const MIN_ZOOM = 0.35, MAX_ZOOM = 2.5, ZOOM_STEP = 0.15;
 const clampZoom = (value: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
+const elk = new ELK();
 
 const getRelationMarkerId = (type?: string) => (
     `column-lineage-arrow-${normalizeRelationType(type).replace(/[^a-zA-Z0-9_-]/g, '-')}`
@@ -231,20 +242,22 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     selectedField,
     onLoadFieldDetails,
     onTableDoubleClick,
+    onFieldDoubleClick,
 }) => {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
-    const panStartRef = useRef({ clientX: 0, clientY: 0, scrollLeft: 0, scrollTop: 0 });
+    const panStartRef = useRef({ clientX: 0, clientY: 0, x: 0, y: 0 });
     const zoomRef = useRef(1);
+    const panOffsetRef = useRef({ x: 0, y: 0 });
     const [activeLinkId, setActiveLinkId] = useState<string | null>(null);
     const [activeColumnKey, setActiveColumnKey] = useState<string | null>(null);
     const [pinnedColumnKey, setPinnedColumnKey] = useState<string | null>(null);
     const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
     const [focusedLinkId, setFocusedLinkId] = useState<string | null>(null);
     const [fieldTraceEnabled, setFieldTraceEnabled] = useState(false);
-    const [compactEnabled, setCompactEnabled] = useState(true);
-    const [perLayerLimit, setPerLayerLimit] = useState(12);
     const [zoom, setZoom] = useState(1);
+    const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
     const [isPanning, setIsPanning] = useState(false);
+    const [elkPositions, setElkPositions] = useState<Map<string, { y: number }> | null>(null);
     const relationOptions = useMemo(() => collectRelationOptions(links), [links]);
     const relationOptionsKey = relationOptions.join('|');
     const [selectedRelationTypes, setSelectedRelationTypes] = useState<string[]>([]);
@@ -260,6 +273,10 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     useEffect(() => {
         zoomRef.current = zoom;
     }, [zoom]);
+
+    useEffect(() => {
+        panOffsetRef.current = panOffset;
+    }, [panOffset]);
 
     const activeRelationTypes = selectedRelationTypes.length > 0 ? selectedRelationTypes : relationOptions;
     const graphInput = useMemo(() => (
@@ -283,11 +300,11 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
             selectedTable,
             selectedField,
             focusedNodeId,
-            compactEnabled: !fieldTraceEnabled && compactEnabled,
-            perLayerLimit,
+            compactEnabled: false,
+            perLayerLimit: Number.MAX_SAFE_INTEGER,
             relationTypes: activeRelationTypes,
         })
-    ), [activeRelationTypes, compactEnabled, fieldTraceEnabled, focusedNodeId, graphInput, perLayerLimit, selectedField, selectedTable]);
+    ), [activeRelationTypes, focusedNodeId, graphInput, selectedField, selectedTable]);
 
     const displayNodes = densityGraph.nodes;
     const displayLinks = densityGraph.links;
@@ -295,46 +312,131 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         buildImpactRows(nodes, links, selectedTable, selectedField)
     ), [links, nodes, selectedField, selectedTable]);
 
-    const layout = useMemo(() => {
+    const layoutInput = useMemo(() => {
         const columnUsage = buildColumnUsage(displayLinks);
         const ranks = buildNodeRanks(displayNodes, displayLinks, selectedTable, selectedField);
-        const grouped = new Map<number, NodeData[]>();
-        displayNodes.forEach(node => {
+        const sortedRanks = Array.from(new Set(displayNodes.map(node => ranks.get(node.id) || 0))).sort((a, b) => a - b);
+        const minRank = sortedRanks[0] || 0;
+
+        const nodeMetrics: NodeMetric[] = displayNodes.map(node => {
+            const columns = getVisibleColumns(node, columnUsage, selectedField);
+            const ownerHeight = splitQualifiedTitle(node.title).owner ? OWNER_HEIGHT : 0;
+            const height = HEADER_HEIGHT + ownerHeight + Math.max(1, columns.length) * ROW_HEIGHT;
             const rank = ranks.get(node.id) || 0;
-            grouped.set(rank, [...(grouped.get(rank) || []), node]);
+            return { node, columns, height, rank };
         });
 
-        const sortedRanks = Array.from(grouped.keys()).sort((a, b) => a - b);
-        const minRank = sortedRanks[0] || 0;
-        const layoutNodes: LayoutNode[] = [];
-        const rowAnchors = new Map<string, { left: { x: number; y: number }; right: { x: number; y: number } }>();
+        return { nodeMetrics, minRank };
+    }, [displayLinks, displayNodes, selectedField, selectedTable]);
 
-        sortedRanks.forEach(rank => {
-            const rankNodes = (grouped.get(rank) || []).slice().sort((a, b) => (a.y - b.y) || a.title.localeCompare(b.title));
-            let y = PADDING;
-            rankNodes.forEach(node => {
-                const columns = getVisibleColumns(node, columnUsage, selectedField);
-                const ownerHeight = splitQualifiedTitle(node.title).owner ? OWNER_HEIGHT : 0;
-                const height = HEADER_HEIGHT + ownerHeight + Math.max(1, columns.length) * ROW_HEIGHT;
-                const x = PADDING + (rank - minRank) * (CARD_WIDTH + RANK_GAP);
-                const layoutNode = { node, x, y, height, rank, columns };
-                layoutNodes.push(layoutNode);
+    useEffect(() => {
+        if (layoutInput.nodeMetrics.length === 0) {
+            setElkPositions(new Map());
+            return;
+        }
 
-                columns.forEach((col, index) => {
-                    const rowY = y + HEADER_HEIGHT + ownerHeight + index * ROW_HEIGHT + ROW_HEIGHT / 2;
-                    rowAnchors.set(getColumnKey(node.id, col.id), {
-                        left: { x, y: rowY },
-                        right: { x: x + CARD_WIDTH, y: rowY },
-                    });
+        let cancelled = false;
+        const nodeIds = new Set(layoutInput.nodeMetrics.map(item => item.node.id));
+        const graph: ElkNode = {
+            id: 'column-lineage-root',
+            layoutOptions: {
+                'elk.algorithm': 'layered',
+                'elk.direction': 'RIGHT',
+                'elk.edgeRouting': 'SPLINES',
+                'elk.spacing.nodeNode': String(NODE_GAP),
+                'elk.layered.spacing.nodeNodeBetweenLayers': String(RANK_GAP),
+                'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+                'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+                'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+                'elk.layered.cycleBreaking.strategy': 'GREEDY',
+                'elk.padding': `[top=${PADDING},left=${PADDING},bottom=${PADDING},right=${PADDING}]`,
+            },
+            children: layoutInput.nodeMetrics.map(item => ({
+                id: item.node.id,
+                width: CARD_WIDTH,
+                height: item.height,
+            })),
+            edges: displayLinks
+                .filter(link => nodeIds.has(link.sourceNodeId) && nodeIds.has(link.targetNodeId))
+                .map(link => ({
+                    id: link.id,
+                    sources: [link.sourceNodeId],
+                    targets: [link.targetNodeId],
+                })),
+        };
+
+        elk.layout(graph)
+            .then(result => {
+                if (cancelled) {
+                    return;
+                }
+                const nextPositions = new Map<string, { y: number }>();
+                result.children?.forEach(child => {
+                    nextPositions.set(child.id, { y: child.y || 0 });
                 });
-                y += height + NODE_GAP;
+                setElkPositions(nextPositions);
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setElkPositions(new Map());
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [displayLinks, layoutInput]);
+
+    const layout = useMemo(() => {
+        const rowAnchors = new Map<string, { left: { x: number; y: number }; right: { x: number; y: number } }>();
+        const rawLayoutNodes = layoutInput.nodeMetrics.map(({ node, columns, height, rank }, index) => {
+            const x = PADDING + (rank - layoutInput.minRank) * (CARD_WIDTH + RANK_GAP);
+            const y = elkPositions?.get(node.id)?.y ?? PADDING + index * (height + NODE_GAP);
+            const ownerHeight = splitQualifiedTitle(node.title).owner ? OWNER_HEIGHT : 0;
+            return { node, x, y, height, rank, columns, ownerHeight };
+        });
+        const nodesByRank = new Map<number, typeof rawLayoutNodes>();
+        rawLayoutNodes.forEach(item => {
+            nodesByRank.set(item.rank, [...(nodesByRank.get(item.rank) || []), item]);
+        });
+
+        const stackedLayoutNodes = Array.from(nodesByRank.entries()).flatMap(([, rankNodes]) => {
+            let nextY = PADDING;
+            return rankNodes
+                .slice()
+                .sort((a, b) => a.y - b.y || a.node.title.localeCompare(b.node.title))
+                .map(item => {
+                    const y = Math.max(item.y, nextY);
+                    nextY = y + item.height + NODE_GAP;
+                    return { ...item, y };
+                });
+        });
+
+        const minY = Math.min(PADDING, ...stackedLayoutNodes.map(item => item.y));
+        const yShift = PADDING - minY;
+        const layoutNodes: LayoutNode[] = stackedLayoutNodes
+            .map(({ ownerHeight, ...item }) => ({
+                ...item,
+                y: item.y + yShift,
+                ownerHeight,
+            }))
+            .sort((a, b) => a.rank - b.rank || a.y - b.y || a.node.title.localeCompare(b.node.title));
+
+        layoutNodes.forEach(item => {
+            const ownerHeight = splitQualifiedTitle(item.node.title).owner ? OWNER_HEIGHT : 0;
+            item.columns.forEach((col, index) => {
+                const rowY = item.y + HEADER_HEIGHT + ownerHeight + index * ROW_HEIGHT + ROW_HEIGHT / 2;
+                rowAnchors.set(getColumnKey(item.node.id, col.id), {
+                    left: { x: item.x, y: rowY },
+                    right: { x: item.x + CARD_WIDTH, y: rowY },
+                });
             });
         });
 
         const width = Math.max(1200, ...layoutNodes.map(item => item.x + CARD_WIDTH + PADDING));
         const height = Math.max(640, ...layoutNodes.map(item => item.y + item.height + PADDING));
         return { layoutNodes, rowAnchors, width, height };
-    }, [displayLinks, displayNodes, selectedField, selectedTable]);
+    }, [elkPositions, layoutInput]);
 
     const selectedFieldKey = selectedField ? `${selectedField.nodeId}::${selectedField.colId}` : '';
     const focusColumnKey = pinnedColumnKey || activeColumnKey;
@@ -358,10 +460,9 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
             return;
         }
         const currentZoom = zoomRef.current;
-        scrollContainerRef.current.scrollTo({
-            left: Math.max(0, item.x * currentZoom - 120),
-            top: Math.max(0, item.y * currentZoom - 120),
-            behavior: 'smooth',
+        setPanOffset({
+            x: 120 - item.x * currentZoom,
+            y: 120 - item.y * currentZoom,
         });
     }, [focusedNodeId, layout]);
 
@@ -371,14 +472,12 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         }
 
         const handleMouseMove = (event: MouseEvent) => {
-            const container = scrollContainerRef.current;
-            if (!container) {
-                return;
-            }
             const deltaX = event.clientX - panStartRef.current.clientX;
             const deltaY = event.clientY - panStartRef.current.clientY;
-            container.scrollLeft = panStartRef.current.scrollLeft - deltaX;
-            container.scrollTop = panStartRef.current.scrollTop - deltaY;
+            setPanOffset({
+                x: panStartRef.current.x + deltaX,
+                y: panStartRef.current.y + deltaY,
+            });
         };
 
         const handleMouseUp = () => setIsPanning(false);
@@ -450,27 +549,20 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                 return currentZoom;
             }
 
-            if (container && clientPoint) {
+            if (container) {
                 const rect = container.getBoundingClientRect();
-                const pointerX = clientPoint.x - rect.left;
-                const pointerY = clientPoint.y - rect.top;
-                const graphX = (container.scrollLeft + pointerX) / currentZoom;
-                const graphY = (container.scrollTop + pointerY) / currentZoom;
-                window.requestAnimationFrame(() => {
-                    container.scrollLeft = Math.max(0, graphX * resolvedZoom - pointerX);
-                    container.scrollTop = Math.max(0, graphY * resolvedZoom - pointerY);
+                const pointerX = clientPoint ? clientPoint.x - rect.left : Math.max(120, (rect.width - 420) / 2);
+                const pointerY = clientPoint ? clientPoint.y - rect.top : rect.height / 2;
+                const currentPan = panOffsetRef.current;
+                const graphX = (pointerX - currentPan.x) / currentZoom;
+                const graphY = (pointerY - currentPan.y) / currentZoom;
+                setPanOffset({
+                    x: pointerX - graphX * resolvedZoom,
+                    y: pointerY - graphY * resolvedZoom,
                 });
             }
 
             return resolvedZoom;
-        });
-    };
-
-    const handleCanvasWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-        event.preventDefault();
-        updateZoom(currentZoom => currentZoom - event.deltaY * 0.001, {
-            x: event.clientX,
-            y: event.clientY,
         });
     };
 
@@ -483,30 +575,27 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         panStartRef.current = {
             clientX: event.clientX,
             clientY: event.clientY,
-            scrollLeft: scrollContainerRef.current.scrollLeft,
-            scrollTop: scrollContainerRef.current.scrollTop,
+            x: panOffsetRef.current.x,
+            y: panOffsetRef.current.y,
         };
         setIsPanning(true);
     };
 
     const handleResetViewport = () => {
         setZoom(1);
-        window.requestAnimationFrame(() => {
-            scrollContainerRef.current?.scrollTo({ left: 0, top: 0, behavior: 'smooth' });
-        });
+        setPanOffset({ x: 0, y: 0 });
     };
 
     return (
         <div className="relative h-full w-full bg-[#f1f2f4]" style={{ minHeight: 640 }}>
             <div
                 ref={scrollContainerRef}
-                className="h-full w-full overflow-auto pr-[420px]"
+                className="h-full w-full overflow-hidden pr-[420px]"
                 style={{ minHeight: 640, cursor: isPanning ? 'grabbing' : undefined, userSelect: isPanning ? 'none' : undefined }}
-                onWheel={handleCanvasWheel}
             >
             <div
                 className="relative"
-                style={{ width: layout.width * zoom, height: layout.height * zoom }}
+                style={{ width: '100%', height: '100%', minHeight: 640 }}
                 onClick={() => setPinnedColumnKey(null)}
             >
                 <div
@@ -514,7 +603,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                     style={{
                         width: layout.width,
                         height: layout.height,
-                        transform: `scale(${zoom})`,
+                        transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
                         transformOrigin: '0 0',
                     }}
                 >
@@ -660,6 +749,12 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                                                 setPinnedColumnKey(rowKey);
                                                 setActiveColumnKey(null);
                                             }}
+                                            onDoubleClick={(event) => {
+                                                event.stopPropagation();
+                                                if (!item.node.isGroupNode && !col.synthetic) {
+                                                    onFieldDoubleClick?.(table, item.node.title, col.name);
+                                                }
+                                            }}
                                         >
                                             <span className="truncate" title={col.name}>{col.name}</span>
                                             {col.synthetic ? <Tag className="ml-auto" color="default">表级</Tag> : null}
@@ -695,8 +790,8 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                 </div>
             </div>
             </div>
-            <div className="absolute bottom-6 right-[436px] z-30 flex flex-col gap-2">
-                <Tooltip title="放大" placement="left">
+            <div className="absolute bottom-6 left-6 z-30 flex gap-2 rounded-xl border border-slate-200 bg-white/90 p-2 shadow-lg backdrop-blur">
+                <Tooltip title="放大" placement="top">
                     <Button
                         shape="circle"
                         icon={<ZoomIn size={16} />}
@@ -704,7 +799,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                         onClick={() => updateZoom(currentZoom => currentZoom + ZOOM_STEP)}
                     />
                 </Tooltip>
-                <Tooltip title="缩小" placement="left">
+                <Tooltip title="缩小" placement="top">
                     <Button
                         shape="circle"
                         icon={<ZoomOut size={16} />}
@@ -712,7 +807,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                         onClick={() => updateZoom(currentZoom => currentZoom - ZOOM_STEP)}
                     />
                 </Tooltip>
-                <Tooltip title="重置视图" placement="left">
+                <Tooltip title="重置视图" placement="top">
                     <Button
                         shape="circle"
                         icon={<Maximize2 size={16} />}
@@ -725,13 +820,9 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                 stats={densityGraph.stats}
                 relationOptions={relationOptions}
                 selectedRelationTypes={activeRelationTypes}
-                perLayerLimit={perLayerLimit}
-                compactEnabled={compactEnabled}
                 fieldTraceEnabled={fieldTraceEnabled}
                 fieldTraceLoading={fieldLoading}
                 onRelationTypesChange={setSelectedRelationTypes}
-                onPerLayerLimitChange={setPerLayerLimit}
-                onCompactEnabledChange={setCompactEnabled}
                 onToggleFieldTrace={handleToggleFieldTrace}
                 onFocusTable={handleFocusNode}
                 onOpenTable={onTableDoubleClick}

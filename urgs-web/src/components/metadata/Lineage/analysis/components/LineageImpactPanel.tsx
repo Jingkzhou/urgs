@@ -10,13 +10,9 @@ interface LineageImpactPanelProps {
     stats: LineageGraphStats;
     relationOptions: string[];
     selectedRelationTypes: string[];
-    perLayerLimit: number;
-    compactEnabled: boolean;
     fieldTraceEnabled: boolean;
     fieldTraceLoading: boolean;
     onRelationTypesChange: (types: string[]) => void;
-    onPerLayerLimitChange: (limit: number) => void;
-    onCompactEnabledChange: (enabled: boolean) => void;
     onToggleFieldTrace: () => void;
     onFocusTable: (nodeId: string) => void;
     onOpenTable?: (tableName: string, qualifiedName: string) => void;
@@ -39,13 +35,9 @@ const LineageImpactPanel: React.FC<LineageImpactPanelProps> = ({
     stats,
     relationOptions,
     selectedRelationTypes,
-    perLayerLimit,
-    compactEnabled,
     fieldTraceEnabled,
     fieldTraceLoading,
     onRelationTypesChange,
-    onPerLayerLimitChange,
-    onCompactEnabledChange,
     onToggleFieldTrace,
     onFocusTable,
     onOpenTable,
@@ -205,16 +197,6 @@ const LineageImpactPanel: React.FC<LineageImpactPanelProps> = ({
                             { value: 'same', label: '同层' },
                         ]}
                     />
-                    <Select
-                        size="small"
-                        value={perLayerLimit}
-                        style={{ width: 112 }}
-                        onChange={onPerLayerLimitChange}
-                        options={[8, 12, 20, 40].map(value => ({ value, label: `每层 ${value}` }))}
-                    />
-                    <Button size="small" onClick={() => onCompactEnabledChange(!compactEnabled)}>
-                        {compactEnabled ? '显示全部' : '恢复聚合'}
-                    </Button>
                 </div>
                 {relationOptions.length > 0 ? (
                     <div className="mt-2 rounded border border-slate-100 bg-slate-50 px-2 py-1">
