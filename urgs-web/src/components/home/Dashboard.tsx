@@ -1,107 +1,87 @@
-import React, { useState, useCallback } from 'react';
-import SystemLinks from './SystemLinks';
-import { BatchStatusChart, TrendAnalysisChart } from './StatsSection';
-import Notices from './Notices';
-import Auth from '../Auth';
+import React, { useEffect, useState } from 'react';
+import { Activity, BriefcaseBusiness, Code2, LayoutDashboard } from 'lucide-react';
 import { hasPermission } from '../../utils/permission';
-import BatchMonitoring from './BatchMonitoring';
-import DevWorkbench from './DevWorkbench';
-import { fetchBatchStatusStats, TaskStatsVO } from '../../api/stats';
-import { useSmartPolling } from '../../hooks/useSmartPolling';
+import { DashboardViewDefinition, DashboardViewKey, dashboardViewDefinitions } from './dashboardViews';
+
+const DASHBOARD_VIEW_STORAGE_KEY = 'urgs_dashboard_view';
+
+const dashboardViewIcons: Record<DashboardViewKey, React.ReactNode> = {
+  business: <BriefcaseBusiness size={14} strokeWidth={2.5} />,
+  dev: <Code2 size={14} strokeWidth={2.5} />,
+  ops: <Activity size={14} strokeWidth={2.5} />,
+};
+
+const getStoredDashboardView = (): DashboardViewKey | null => {
+  if (typeof window === 'undefined') return null;
+  const stored = window.localStorage.getItem(DASHBOARD_VIEW_STORAGE_KEY);
+  return dashboardViewDefinitions.some(view => view.key === stored) ? stored as DashboardViewKey : null;
+};
 
 const Dashboard: React.FC = () => {
-  const [batchData, setBatchData] = useState<TaskStatsVO[]>([]);
-  const [loadingBatch, setLoadingBatch] = useState(false);
-  const canViewStats = hasPermission('dash:stats');
+  const [selectedViewKey, setSelectedViewKey] = useState<DashboardViewKey | null>(getStoredDashboardView);
+  const allowedViews = dashboardViewDefinitions.filter(view => hasPermission(view.permission));
+  const activeView = allowedViews.find(view => view.key === selectedViewKey) || allowedViews[0];
 
-  const loadBatchData = useCallback(async () => {
-    setLoadingBatch(true);
-    try {
-      const data = await fetchBatchStatusStats();
-      setBatchData(data);
-    } catch (err) {
-      console.error('Failed to fetch stats in dashboard', err);
-    } finally {
-      setLoadingBatch(false);
+  useEffect(() => {
+    if (!activeView) return;
+    if (selectedViewKey !== activeView.key) {
+      setSelectedViewKey(activeView.key);
     }
-  }, []);
+  }, [activeView, selectedViewKey]);
 
-  useSmartPolling(loadBatchData, 30000, { enabled: canViewStats });
+  const handleSelectView = (view: DashboardViewDefinition) => {
+    setSelectedViewKey(view.key);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(DASHBOARD_VIEW_STORAGE_KEY, view.key);
+    }
+  };
+
+  if (!activeView) {
+    return (
+      <div className="flex min-h-[420px] items-center justify-center">
+        <div className="max-w-md rounded-[2rem] border border-slate-200/70 bg-white/80 p-8 text-center shadow-[0_24px_60px_-36px_rgba(15,23,42,0.4)]">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+            <LayoutDashboard size={24} strokeWidth={2.5} />
+          </div>
+          <h2 className="text-lg font-black tracking-tight text-slate-800">暂无首页视图权限</h2>
+          <p className="mt-2 text-sm font-medium leading-6 text-slate-500">
+            请在角色管理中授予业务首页、研发首页或运维首页权限。
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const ActiveDashboardView = activeView.component;
 
   return (
-    <div className="space-y-12 pb-12 pt-4">
-
-      {/* Main Bento Grid Hub */}
-      {(hasPermission('dash:notice:view') || hasPermission('dash:stats') || hasPermission('dash:systems')) && (
-        <section className="animate-fade-in-up">
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 relative z-10 items-start">
-
-            {/* Left Side: Information & Operations (Stacked) */}
-            {(hasPermission('dash:notice:view') || canViewStats) && (
-              <div className={`grid grid-cols-1 gap-8 ${hasPermission('dash:systems') ? 'xl:col-span-8' : 'xl:col-span-12'}`}>
-                <Auth code="dash:notice:view">
-                  <div className="relative transform transition-transform duration-500 hover:-translate-y-1">
-                    <Notices />
-                  </div>
-                </Auth>
-
-                <Auth code="dash:stats">
-                  <div className="relative transform transition-transform duration-500 hover:-translate-y-1" style={{ animationDelay: '100ms' }}>
-                    <BatchStatusChart data={batchData} loading={loadingBatch} onRefresh={loadBatchData} />
-                  </div>
-                </Auth>
-              </div>
-            )}
-
-            {/* Right Side: Navigation Launchpad (Tall) */}
-            {hasPermission('dash:systems') && (
-              <div className={`h-full ${(hasPermission('dash:notice:view') || hasPermission('dash:stats')) ? 'xl:col-span-4' : 'xl:col-span-12'}`}>
-                <div className="relative h-full transform transition-transform duration-500 hover:-translate-y-1" style={{ animationDelay: '200ms' }}>
-                  <SystemLinks fullWidth={!(hasPermission('dash:notice:view') || hasPermission('dash:stats'))} />
-                </div>
-              </div>
-            )}
+    <div className="space-y-6">
+      {allowedViews.length > 1 && (
+        <div className="flex justify-end">
+          <div className="inline-flex flex-wrap items-center gap-1 rounded-2xl border border-slate-200/70 bg-white/80 p-1 shadow-sm">
+            {allowedViews.map(view => {
+              const isActive = activeView.key === view.key;
+              return (
+                <button
+                  key={view.key}
+                  type="button"
+                  onClick={() => handleSelectView(view)}
+                  className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-black transition-all ${
+                    isActive
+                      ? 'bg-red-50 text-red-600 shadow-sm'
+                      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+                  }`}
+                >
+                  {dashboardViewIcons[view.key]}
+                  <span>{view.label}</span>
+                </button>
+              );
+            })}
           </div>
-        </section>
+        </div>
       )}
 
-      {/* Full Width Trends */}
-      <Auth code="dash:stats">
-        <section className="animate-fade-in-up" style={{ animationDelay: '300ms' }}>
-          <div className="relative z-10 w-full group">
-            <div className="absolute -inset-1 bg-gradient-to-r from-red-500/5 to-amber-500/5 rounded-[2.5rem] blur-2xl opacity-0 group-hover:opacity-100 transition duration-1000"></div>
-            <TrendAnalysisChart />
-          </div>
-        </section>
-      </Auth>
-
-      {/* Detailed Batch Monitoring */}
-      <Auth code="dash:Batch-monitoring">
-        <section className="animate-fade-in-up" style={{ animationDelay: '400ms' }}>
-          <div className="relative z-10">
-            <BatchMonitoring />
-          </div>
-        </section>
-      </Auth>
-
-      {/* Workbench Section */}
-      <Auth code="dash:dev">
-        <section className="animate-fade-in-up" style={{ animationDelay: '500ms' }}>
-          <div className="relative z-10">
-            <DevWorkbench />
-          </div>
-        </section>
-      </Auth>
-
-      {/* Minimal Footer */}
-      <footer className="text-center text-slate-400 text-[10px] py-16 relative mt-16">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
-        <div className="flex flex-col items-center gap-2 opacity-40">
-          <p className="font-black tracking-[0.2em] uppercase">Financial Portal V2.4.0</p>
-          <p className="font-medium tracking-tight">Copyright © 2026 Bank of Jilin. High Performance Cloud Infrastructure.</p>
-        </div>
-      </footer>
-
+      <ActiveDashboardView />
     </div>
   );
 };

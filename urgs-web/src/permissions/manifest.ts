@@ -16,6 +16,9 @@ export const manifestMeta: PermissionManifestMeta = {
 // Add new routes/buttons here (or generate this file via a build script) so they appear in“功能资源维护”与角色授权。
 export const permissionManifest: FunctionPoint[] = [
     { id: '1', name: '工作台', code: 'dashboard', type: 'menu', path: '/dashboard', level: 0, parentId: 'root' },
+    { id: '1-0-1', name: '业务首页', code: 'dash:view:business', type: 'menu', path: '/dashboard/business', level: 1, parentId: '1' },
+    { id: '1-0-2', name: '研发首页', code: 'dash:view:dev', type: 'menu', path: '/dashboard/dev', level: 1, parentId: '1' },
+    { id: '1-0-3', name: '运维首页', code: 'dash:view:ops', type: 'menu', path: '/dashboard/ops', level: 1, parentId: '1' },
     { id: '1-1', name: '系统跳转区', code: 'dash:systems', type: 'button', path: '-', level: 1, parentId: '1' },
     { id: '1-2', name: '统计分析区', code: 'dash:stats', type: 'button', path: '-', level: 1, parentId: '1' },
     { id: '1-3', name: '公告查看', code: 'dash:notice:view', type: 'button', path: '-', level: 1, parentId: '1' },

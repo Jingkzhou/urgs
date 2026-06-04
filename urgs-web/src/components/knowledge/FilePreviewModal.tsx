@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Spin } from 'antd';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -501,7 +502,7 @@ const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
         }
     };
 
-    return (
+    const previewModal = (
         <AnimatePresence>
             {open && doc && (
                 <motion.div
@@ -509,7 +510,7 @@ const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.2 }}
-                    className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col"
+                    className="fixed inset-0 z-[1000] bg-black/80 backdrop-blur-sm flex flex-col"
                     onClick={onClose}
                 >
                     {/* 顶部栏 */}
@@ -572,6 +573,8 @@ const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
             )}
         </AnimatePresence>
     );
+
+    return createPortal(previewModal, document.body);
 };
 
 export default FilePreviewModal;

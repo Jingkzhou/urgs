@@ -15,6 +15,9 @@ public class PermissionSeedProvider {
     public List<PermissionDTO> seeds() {
         List<PermissionDTO> list = new ArrayList<>();
         list.add(new PermissionDTO(null, "工作台", "dashboard", "menu", "/dashboard", 0, "root"));
+        list.add(new PermissionDTO(null, "业务首页", "dash:view:business", "menu", "/dashboard/business", 1, "1"));
+        list.add(new PermissionDTO(null, "研发首页", "dash:view:dev", "menu", "/dashboard/dev", 1, "1"));
+        list.add(new PermissionDTO(null, "运维首页", "dash:view:ops", "menu", "/dashboard/ops", 1, "1"));
         list.add(new PermissionDTO(null, "系统跳转区", "dash:systems", "button", "-", 1, "1"));
         list.add(new PermissionDTO(null, "统计分析区", "dash:stats", "button", "-", 1, "1"));
         list.add(new PermissionDTO(null, "公告查看", "dash:notice:view", "button", "-", 1, "1"));
