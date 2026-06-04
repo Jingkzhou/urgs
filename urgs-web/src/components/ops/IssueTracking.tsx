@@ -26,6 +26,11 @@ interface IssueTrackingProps {
     initialData?: any;
 }
 
+const formatDateTime = (value?: string) => {
+    if (!value) return '-';
+    return value.replace('T', ' ').slice(0, 19);
+};
+
 const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
     const [viewMode, setViewMode] = useState<'list' | 'chart'>('list');
     const [filterStatus, setFilterStatus] = useState('all');
@@ -822,9 +827,9 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                                     <div className="text-xs text-slate-400 font-mono">{issue.id}</div>
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{issue.system}</td>
-                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{issue.occurTime}</td>
+                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDateTime(issue.occurTime)}</td>
                                                 <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{issue.reporter}</td>
-                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{issue.resolveTime || '-'}</td>
+                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDateTime(issue.resolveTime)}</td>
                                                 <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{issue.handler || '-'}</td>
                                                 <td className="px-4 py-3 whitespace-nowrap">
                                                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${getIssueTypeStyle(issue.issueType)}`}>
@@ -1197,7 +1202,7 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="bg-slate-50 rounded-lg p-3">
                                         <label className="block text-xs font-medium text-slate-500 mb-1">发生时间</label>
-                                        <p className="text-slate-700">{selectedIssue.occurTime}</p>
+                                        <p className="text-slate-700">{formatDateTime(selectedIssue.occurTime)}</p>
                                     </div>
                                     <div className="bg-slate-50 rounded-lg p-3">
                                         <label className="block text-xs font-medium text-slate-500 mb-1">提出人</label>
@@ -1208,7 +1213,7 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="bg-slate-50 rounded-lg p-3">
                                         <label className="block text-xs font-medium text-slate-500 mb-1">解决时间</label>
-                                        <p className="text-slate-700">{selectedIssue.resolveTime || '-'}</p>
+                                        <p className="text-slate-700">{formatDateTime(selectedIssue.resolveTime)}</p>
                                     </div>
                                     <div className="bg-slate-50 rounded-lg p-3">
                                         <label className="block text-xs font-medium text-slate-500 mb-1">处理人</label>
