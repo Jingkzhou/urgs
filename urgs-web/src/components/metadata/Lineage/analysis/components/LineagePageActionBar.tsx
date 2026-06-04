@@ -1,28 +1,33 @@
 import React from 'react';
 import { Checkbox, Segmented } from 'antd';
-import { FileTextOutlined, TableOutlined } from '@ant-design/icons';
+import { BranchesOutlined, FileTextOutlined, TableOutlined } from '@ant-design/icons';
 import LineageEngineToolbar from './LineageEngineToolbar';
 import type { UseLineageEngineControllerResult } from '../hooks/useLineageEngineController';
+import type { LineageDisplayMode } from '../utils/endToEndLineage';
 
 export type LineageViewMode = 'canvas' | 'list';
 export type LineageDirectionOption = 'upstream' | 'downstream';
 
 interface LineagePageActionBarProps {
     viewMode: LineageViewMode;
+    displayMode: LineageDisplayMode;
     directionOptions: LineageDirectionOption[];
     controller: UseLineageEngineControllerResult;
     canOpenAuditBoard: boolean;
     onViewModeChange: (value: LineageViewMode) => void;
+    onDisplayModeChange: (value: LineageDisplayMode) => void;
     onDirectionChange: (values: LineageDirectionOption[]) => void;
     onOpenAuditBoard: () => void;
 }
 
 const LineagePageActionBar: React.FC<LineagePageActionBarProps> = ({
     viewMode,
+    displayMode,
     directionOptions,
     controller,
     canOpenAuditBoard,
     onViewModeChange,
+    onDisplayModeChange,
     onDirectionChange,
     onOpenAuditBoard,
 }) => (
@@ -35,6 +40,17 @@ const LineagePageActionBar: React.FC<LineagePageActionBarProps> = ({
             value={viewMode}
             onChange={(val: any) => onViewModeChange(val)}
         />
+        <div className="lineage-display-mode-filter">
+            <span style={{ fontSize: 13, color: '#4b5563' }}>显示模式</span>
+            <Segmented
+                options={[
+                    { label: '完整链路', value: 'full', icon: <BranchesOutlined /> },
+                    { label: '端到端视图', value: 'endToEnd', icon: <TableOutlined /> },
+                ]}
+                value={displayMode}
+                onChange={(val: any) => onDisplayModeChange(val)}
+            />
+        </div>
         <div className="lineage-direction-filter">
             <span style={{ fontSize: 13, color: '#4b5563' }}>查询方向</span>
             <Checkbox.Group value={directionOptions} onChange={(values) => onDirectionChange(values as LineageDirectionOption[])}>

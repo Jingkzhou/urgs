@@ -4,6 +4,7 @@ import { NodeData, LinkData, RELATION_STYLES } from '../types';
 import { FileTextOutlined } from '@ant-design/icons';
 import CodeModal from './CodeModal';
 import { buildNodeRanks, splitQualifiedTitle, sameTableLoose } from '../utils/lineageGraphDensity';
+import type { EndToEndRelation, LineageDisplayMode } from '../utils/endToEndLineage';
 
 const { Text } = Typography;
 
@@ -43,6 +44,8 @@ const formatLevelPath = (sourceRank: number, targetRank: number) => {
 interface LineageListViewProps {
     nodes: NodeData[];
     links: LinkData[];
+    displayMode: LineageDisplayMode;
+    endToEndRelations: EndToEndRelation[];
     selectedTable: string | null;
     selectedField: { nodeId: string, colId: string } | null;
 }
@@ -50,6 +53,8 @@ interface LineageListViewProps {
 const LineageListView: React.FC<LineageListViewProps> = ({
     nodes,
     links,
+    displayMode,
+    endToEndRelations,
     selectedTable,
     selectedField
 }) => {
@@ -60,6 +65,24 @@ const LineageListView: React.FC<LineageListViewProps> = ({
         linkType?: string;
         searchTerm?: string;
     } | null>(null);
+
+    const endToEndTableData = useMemo(() => endToEndRelations.map((relation) => ({
+        key: relation.key,
+        targetCategory: relation.targetCategory,
+        endpoint: `${relation.target.tableName}.${relation.target.columnName}`,
+        source: `${relation.source.tableName}.${relation.source.columnName}`,
+        current: relation.current ? `${relation.current.tableName}.${relation.current.columnName}` : '-',
+        pathCount: relation.pathCount,
+        minLevel: relation.minLevel,
+        maxLevel: relation.maxLevel,
+        schemaPath: relation.schemaPath,
+        tableCount: relation.tableCount,
+        fieldCount: relation.fieldCount,
+        taskCount: relation.taskCount,
+        relationTypeSummary: relation.relationTypeSummary,
+        completeness: relation.completeness,
+        paths: relation.paths,
+    })), [endToEndRelations]);
 
     const tableData = useMemo(() => {
         const colMap = new Map<string, { tableId: string, tableName: string, colName: string }>();
@@ -257,6 +280,121 @@ const LineageListView: React.FC<LineageListViewProps> = ({
             ),
         }
     ];
+
+    const endToEndColumns = [
+        {
+            title: '目标对象',
+            dataIndex: 'endpoint',
+            key: 'endpoint',
+            fixed: 'left' as const,
+            render: (text: string, record: any) => (
+                <div>
+                    <Text strong>{text}</Text>
+                    <div style={{ marginTop: 4 }}>
+                        <Tag color="blue" style={{ borderRadius: 4 }}>{record.targetCategory}</Tag>
+                        <Tag color={record.completeness === '完整路径' ? 'green' : 'orange'} style={{ borderRadius: 4 }}>
+                            {record.completeness}
+                        </Tag>
+                    </div>
+                </div>
+            ),
+            sorter: (a: any, b: any) => a.endpoint.localeCompare(b.endpoint),
+        },
+        {
+            title: '起点 / 当前字段',
+            key: 'sourceCurrent',
+            width: 260,
+            render: (_: any, record: any) => (
+                <div>
+                    <Tooltip title={record.source}>
+                        <Text>{record.source}</Text>
+                    </Tooltip>
+                    <div>
+                        <Text type="secondary" style={{ fontSize: 12 }}>当前: {record.current}</Text>
+                    </div>
+                </div>
+            ),
+        },
+        {
+            title: '路径数',
+            dataIndex: 'pathCount',
+            key: 'pathCount',
+            width: 90,
+            render: (value: number) => <Tag color="geekblue">{value}</Tag>,
+            sorter: (a: any, b: any) => a.pathCount - b.pathCount,
+        },
+        {
+            title: '层级',
+            key: 'level',
+            width: 120,
+            render: (_: any, record: any) => `${record.minLevel} - ${record.maxLevel}`,
+            sorter: (a: any, b: any) => a.minLevel - b.minLevel || a.maxLevel - b.maxLevel,
+        },
+        {
+            title: '摘要证据',
+            key: 'summaryEvidence',
+            width: 260,
+            render: (_: any, record: any) => (
+                <div style={{ lineHeight: 1.8 }}>
+                    <Text type="secondary">中间表 {Math.max(0, record.tableCount - 2)} / 中间字段 {Math.max(0, record.fieldCount - 2)}</Text>
+                    <br />
+                    <Text type="secondary">任务数 {record.taskCount}</Text>
+                    <br />
+                    <Tooltip title={record.relationTypeSummary}>
+                        <Text type="secondary">{record.relationTypeSummary}</Text>
+                    </Tooltip>
+                </div>
+            ),
+        },
+        {
+            title: 'Schema路径',
+            dataIndex: 'schemaPath',
+            key: 'schemaPath',
+            width: 220,
+            render: (text: string) => (
+                <Tooltip title={text}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>{text}</Text>
+                </Tooltip>
+            ),
+            sorter: (a: any, b: any) => a.schemaPath.localeCompare(b.schemaPath),
+        },
+    ];
+
+    const renderExpandedPath = (record: any) => (
+        <div style={{ padding: '8px 16px' }}>
+            {record.paths.slice(0, 5).map((path: any[], index: number) => (
+                <div key={`${record.key}-${index}`} style={{ marginBottom: 8 }}>
+                    <Tag color="default">路径 {index + 1}</Tag>
+                    <Text>{path.map(step => `${step.tableName}.${step.columnName}`).join(' -> ')}</Text>
+                </div>
+            ))}
+            {record.paths.length > 5 ? (
+                <Text type="secondary" style={{ fontSize: 12 }}>仅展示前 5 条，中间明细可切回完整链路查看。</Text>
+            ) : null}
+        </div>
+    );
+
+    if (displayMode !== 'full') {
+        if (endToEndTableData.length === 0) {
+            return <Empty description="暂无端到端关系" style={{ marginTop: 100 }} />;
+        }
+
+        return (
+            <div style={{ padding: '16px', height: '100%', overflow: 'auto' }}>
+                <Table
+                    dataSource={endToEndTableData}
+                    columns={endToEndColumns}
+                    size="middle"
+                    expandable={{ expandedRowRender: renderExpandedPath }}
+                    pagination={{
+                        pageSize: 20,
+                        showSizeChanger: true,
+                        showTotal: (total) => `共 ${total} 个目标对象`
+                    }}
+                />
+            </div>
+        );
+    }
 
 
     if (tableData.length === 0) {

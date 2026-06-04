@@ -3,6 +3,11 @@ import { Empty, Spin } from 'antd';
 import LineageListView from './LineageListView';
 import ColumnLineageDiagram from './ColumnLineageDiagram';
 import { LinkData, NodeData } from '../types';
+import {
+    LineageDisplayMode,
+    buildEndToEndGraph,
+    buildEndToEndRelations,
+} from '../utils/endToEndLineage';
 
 interface LineageGraphContentProps {
     graphLoading: boolean;
@@ -13,6 +18,7 @@ interface LineageGraphContentProps {
     listLinks: LinkData[];
     listDetailsLoaded: boolean;
     viewMode: 'canvas' | 'list';
+    displayMode: LineageDisplayMode;
     selectedTable: string | null;
     selectedField: { nodeId: string; colId: string } | null;
     onLoadFieldDetails?: () => Promise<void>;
@@ -29,14 +35,20 @@ const LineageGraphContent: React.FC<LineageGraphContentProps> = ({
     listLinks,
     listDetailsLoaded,
     viewMode,
+    displayMode,
     selectedTable,
     selectedField,
     onLoadFieldDetails,
     onTableDoubleClick,
     onFieldDoubleClick,
 }) => {
-    const canvasNodes = nodes;
-    const canvasLinks = links;
+    const sourceNodes = listDetailsLoaded ? listNodes : nodes;
+    const sourceLinks = listDetailsLoaded ? listLinks : links;
+    const endToEndRelations = buildEndToEndRelations(sourceNodes, sourceLinks, selectedTable, selectedField);
+    const endToEndGraph = buildEndToEndGraph(sourceNodes, endToEndRelations);
+    const isEndToEnd = displayMode !== 'full';
+    const canvasNodes = isEndToEnd ? endToEndGraph.nodes : nodes;
+    const canvasLinks = isEndToEnd ? endToEndGraph.links : links;
     const activeNodes = viewMode === 'canvas' ? canvasNodes : listNodes;
 
     return (
@@ -62,6 +74,8 @@ const LineageGraphContent: React.FC<LineageGraphContentProps> = ({
                         <LineageListView
                             nodes={listNodes}
                             links={listLinks}
+                            displayMode={displayMode}
+                            endToEndRelations={endToEndRelations}
                             selectedTable={selectedTable}
                             selectedField={selectedField}
                         />

@@ -22,6 +22,7 @@ import LineageGraphContent from './analysis/components/LineageGraphContent';
 import LineagePageActionBar, { LineageDirectionOption, LineageViewMode } from './analysis/components/LineagePageActionBar';
 import { useLineageEngineController } from './analysis/hooks/useLineageEngineController';
 import { useLineageGraphLoader } from './analysis/hooks/useLineageGraphLoader';
+import type { LineageDisplayMode } from './analysis/utils/endToEndLineage';
 import { hasPermission } from '@/utils/permission';
 import AICodeReport from '@/components/version/AICodeReport';
 
@@ -49,6 +50,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
     const [workspaceMode, setWorkspaceMode] = useState<'catalog' | 'canvas'>('catalog');
     const [canvasMaximized, setCanvasMaximized] = useState(false);
     const [viewMode, setViewMode] = useState<LineageViewMode>('canvas');
+    const [displayMode, setDisplayMode] = useState<LineageDisplayMode>('full');
     const [directionOptions, setDirectionOptions] = useState<LineageDirectionOption[]>(['downstream']);
     const queryDirection = useMemo<LineageGraphDirection>(() => (
         directionOptions.length === 2 ? 'both' : directionOptions[0] || 'both'
@@ -96,10 +98,10 @@ const LineagePage: React.FC<LineagePageProps> = () => {
     }, []);
 
     useEffect(() => {
-        if (viewMode === 'list' && selectedTable && !listDetailsLoaded && !listLoading) {
+        if ((viewMode === 'list' || displayMode !== 'full') && selectedTable && !listDetailsLoaded && !listLoading) {
             loadListDetails();
         }
-    }, [listDetailsLoaded, listLoading, loadListDetails, selectedTable, viewMode]);
+    }, [displayMode, listDetailsLoaded, listLoading, loadListDetails, selectedTable, viewMode]);
 
     useEffect(() => {
         if (lastDirectionRef.current === queryDirection) {
@@ -483,6 +485,17 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                     justify-content: flex-end;
                 }
                 .lineage-direction-filter {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 5px 12px;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 8px;
+                    background: #f8fafc;
+                    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.55);
+                    white-space: nowrap;
+                }
+                .lineage-display-mode-filter {
                     display: inline-flex;
                     align-items: center;
                     gap: 10px;
@@ -916,10 +929,12 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                 </div>
                 <LineagePageActionBar
                     viewMode={viewMode}
+                    displayMode={displayMode}
                     directionOptions={directionOptions}
                     controller={engineController}
                     canOpenAuditBoard={canOpenAuditBoard}
                     onViewModeChange={setViewMode}
+                    onDisplayModeChange={setDisplayMode}
                     onDirectionChange={handleDirectionChange}
                     onOpenAuditBoard={() => setShowAuditBoard(true)}
                 />
@@ -954,6 +969,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                             listLinks={listLinks}
                             listDetailsLoaded={listDetailsLoaded}
                             viewMode={viewMode}
+                            displayMode={displayMode}
                             selectedTable={selectedTable}
                             selectedField={selectedField}
                             onLoadFieldDetails={loadListDetails}
