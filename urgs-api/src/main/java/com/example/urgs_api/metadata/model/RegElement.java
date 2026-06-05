@@ -9,8 +9,10 @@ import lombok.Data;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import com.alibaba.excel.annotation.ExcelProperty;
 import com.alibaba.excel.annotation.ExcelIgnore;
+import com.example.urgs_api.metadata.dto.PhysicalFieldBindingDTO;
 
 @Data
 @TableName("reg_element")
@@ -170,4 +172,7 @@ public class RegElement {
 
     @TableField(exist = false)
     private String changeDescription;
+
+    @TableField(exist = false)
+    private List<PhysicalFieldBindingDTO> physicalFields;
 }

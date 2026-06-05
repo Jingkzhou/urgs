@@ -68,6 +68,11 @@ export const ReportCard: React.FC<ReportCardProps> = ({
                 <div className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-50 text-slate-600 text-[10px] font-bold border border-slate-100">
                     <Target size={10} className="text-slate-400" /> {table.indicatorCount || 0}
                 </div>
+                {table.physicalTables && table.physicalTables.length > 0 && (
+                    <div className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-indigo-50 text-indigo-600 text-[10px] font-bold border border-indigo-100 max-w-full" title={table.physicalTables.map(item => [item.owner, item.tableName].filter(Boolean).join('.')).join('; ')}>
+                        <Database size={10} /> <span className="truncate">{table.physicalTables.length} 张物理表</span>
+                    </div>
+                )}
             </div>
         </div>
 

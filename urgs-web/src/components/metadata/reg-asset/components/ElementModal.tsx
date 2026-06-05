@@ -5,15 +5,18 @@ import { RegElement } from '../types';
 import { FormField } from './RegAssetHelper';
 import ReqInfoFormGroup from '../../ReqInfoFormGroup';
 import { AiOptimizeButton } from '../../../common/AiOptimizeButton';
+import { PhysicalTableBinding } from '../types';
+import { PhysicalBindingSelector } from './PhysicalBindingSelector';
 
 interface ElementModalProps {
     element: RegElement;
     systemCode?: string;
+    preferredPhysicalTables?: PhysicalTableBinding[];
     onSave: (data: RegElement) => void;
     onClose: () => void;
 }
 
-export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode, onSave, onClose }) => {
+export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode, preferredPhysicalTables = [], onSave, onClose }) => {
     const [form, setForm] = useState<RegElement>(element);
     const isField = form.type === 'FIELD';
     const [codeTables, setCodeTables] = useState<any[]>([]);
@@ -202,6 +205,12 @@ export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode,
                     <FormField label="发文号" value={form.dispatchNo} onChange={v => setForm({ ...form, dispatchNo: v })} />
 
                     <FormField label="责任人" value={form.owner} onChange={v => setForm({ ...form, owner: v })} />
+                    <PhysicalBindingSelector
+                        mode="field"
+                        selectedFields={form.physicalFields || []}
+                        preferredTables={preferredPhysicalTables}
+                        onFieldsChange={(physicalFields) => setForm({ ...form, physicalFields })}
+                    />
                     <div className="col-span-2">
                         <div className="flex justify-between items-center mb-1">
                             <label className="block text-sm font-medium text-slate-700">业务口径</label>

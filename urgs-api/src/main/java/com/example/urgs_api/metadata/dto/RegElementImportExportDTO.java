@@ -34,6 +34,9 @@ public class RegElementImportExportDTO {
     @ExcelProperty(value = "脱敏字段类型", index = 27)
     private String desensitizeType;
 
+    @ExcelProperty(value = "绑定物理字段", index = 28)
+    private String physicalFields;
+
     @ExcelProperty(value = "是否主键", index = 6)
     private Integer isPk;
 

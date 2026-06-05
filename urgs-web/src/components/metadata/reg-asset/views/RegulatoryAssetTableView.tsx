@@ -366,6 +366,7 @@ const RegulatoryAssetTableView: React.FC<RegulatoryAssetTableViewProps> = ({
                                 <div className="w-24">报送频度</div>
                                 <div className="w-24">取数来源</div>
                                 <div className="w-28">状态</div>
+                                <div className="w-44">物理表</div>
                                 <div className="w-20 text-center">字段数</div>
                                 <div className="w-20 text-center">指标数</div>
                                 <div className="flex-1">业务口径</div>
@@ -408,6 +409,18 @@ const RegulatoryAssetTableView: React.FC<RegulatoryAssetTableViewProps> = ({
                                     <div className="w-24 text-xs font-semibold text-slate-600">{table.frequency || '-'}</div>
                                     <div className="w-24 text-xs font-medium text-slate-500">{table.sourceType || '-'}</div>
                                     <div className="w-28">{getAutoFetchStatusBadge(table.autoFetchStatus)}</div>
+                                    <div className="w-44 pr-3 text-xs text-slate-500">
+                                        {table.physicalTables && table.physicalTables.length > 0 ? (
+                                            <div title={table.physicalTables.map(item => [item.owner, item.tableName].filter(Boolean).join('.')).join('; ')}>
+                                                <div className="font-mono text-slate-700 truncate">
+                                                    {[table.physicalTables[0].owner, table.physicalTables[0].tableName].filter(Boolean).join('.')}
+                                                </div>
+                                                {table.physicalTables.length > 1 && (
+                                                    <div className="text-[10px] text-indigo-500">共 {table.physicalTables.length} 张</div>
+                                                )}
+                                            </div>
+                                        ) : '-'}
+                                    </div>
                                     <div className="w-20 text-center text-xs font-mono text-slate-500">
                                         {table.fieldCount !== undefined ? table.fieldCount : '-'}
                                     </div>

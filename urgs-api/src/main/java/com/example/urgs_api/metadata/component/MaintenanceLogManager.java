@@ -103,6 +103,7 @@ public class MaintenanceLogManager {
             if (manualDesc != null && !manualDesc.isBlank()) {
                 finalDesc = manualDesc + " (" + aiDesc + ")";
             }
+            finalDesc = sanitizeDescription(finalDesc);
 
             // 4. Save Record
             MaintenanceRecord record = new MaintenanceRecord();
@@ -138,6 +139,16 @@ public class MaintenanceLogManager {
         if (entity instanceof com.example.urgs_api.metadata.model.CodeTable c)
             return c.getChangeDescription();
         return null;
+    }
+
+    private String sanitizeDescription(String description) {
+        if (description == null) {
+            return null;
+        }
+        return description
+                .replaceAll("(?i)(?:null){3,}", "")
+                .replaceAll("(?i)^(?:null)+", "")
+                .trim();
     }
 
     private void fillReqInfo(MaintenanceRecord record, Object entity, MaintenanceContext context) {

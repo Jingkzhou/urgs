@@ -272,6 +272,7 @@ const RegulatoryAssetElementView: React.FC<RegulatoryAssetElementViewProps> = ({
                 <div className="w-48">名称</div>
                 <div className="w-24">数据类型</div>
                 <div className="w-48">值域/计算公式</div>
+                <div className="w-40">字段</div>
                 <div className="w-32">自动取数/状态</div>
                 <div className="flex-1">业务口径/说明</div>
                 <div className="w-32 text-right">操作</div>
@@ -343,6 +344,18 @@ const RegulatoryAssetElementView: React.FC<RegulatoryAssetElementViewProps> = ({
                                     </div>
                                 ) : '-'
                             )}
+                        </div>
+                        <div className="w-40 text-xs text-slate-500 px-1">
+                            {el.physicalFields && el.physicalFields.length > 0 ? (
+                                <div title={el.physicalFields.map(item => [item.owner, item.tableName, item.fieldName].filter(Boolean).join('.')).join('; ')}>
+                                    <div className="font-mono text-slate-700 truncate">
+                                        {el.physicalFields[0].fieldName}
+                                    </div>
+                                    {el.physicalFields.length > 1 && (
+                                        <div className="text-[10px] text-indigo-500">共 {el.physicalFields.length} 个</div>
+                                    )}
+                                </div>
+                            ) : '-'}
                         </div>
                         <div className="w-32 px-1 flex flex-col gap-0.5">
                             <div>{getAutoFetchStatusBadge(el.autoFetchStatus)}</div>

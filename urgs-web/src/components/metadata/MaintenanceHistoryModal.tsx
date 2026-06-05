@@ -26,6 +26,13 @@ interface MaintenanceHistoryModalProps {
     fieldCnName?: string;
 }
 
+const cleanDescription = (description?: string) => (
+    (description || '')
+        .replace(/(?:null){3,}/gi, '')
+        .replace(/^(?:null)+/gi, '')
+        .trim()
+);
+
 const MaintenanceHistoryModal: React.FC<MaintenanceHistoryModalProps> = ({
     isOpen,
     onClose,
@@ -157,7 +164,7 @@ const MaintenanceHistoryModal: React.FC<MaintenanceHistoryModalProps> = ({
                                         )}
 
                                         <p className="text-gray-800 text-base leading-relaxed">
-                                            {record.description}
+                                            {cleanDescription(record.description) || '暂无描述'}
                                         </p>
 
                                         {/* Context Info */}

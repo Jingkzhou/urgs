@@ -12,6 +12,7 @@ import com.example.urgs_api.metadata.dto.RegElementImportExportDTO;
 import com.example.urgs_api.metadata.dto.RegTableImportExportDTO;
 import com.example.urgs_api.metadata.model.RegElement;
 import com.example.urgs_api.metadata.model.RegTable;
+import com.example.urgs_api.metadata.service.RegPhysicalBindingService;
 import com.example.urgs_api.metadata.service.RegElementService;
 import com.example.urgs_api.metadata.service.RegTableService;
 import org.apache.commons.lang3.StringUtils;
@@ -46,6 +47,9 @@ public class RegTableController {
 
     @Autowired
     private RegElementService regElementService;
+
+    @Autowired
+    private RegPhysicalBindingService regPhysicalBindingService;
 
     @Autowired
     private com.example.urgs_api.user.service.UserService userService;
@@ -245,6 +249,7 @@ public class RegTableController {
                 table.setIndicatorCount(counts.getOrDefault("INDICATOR", 0L));
             }
         }
+        regPhysicalBindingService.enrichTables(records);
         return PageResult.of(pageResult);
     }
 
@@ -256,7 +261,9 @@ public class RegTableController {
      */
     @GetMapping("/{id}")
     public RegTable get(@PathVariable Long id) {
-        return regTableService.getById(id);
+        RegTable table = regTableService.getById(id);
+        regPhysicalBindingService.enrichTable(table);
+        return table;
     }
 
     /**
@@ -266,6 +273,7 @@ public class RegTableController {
      * @return 是否成功
      */
     @PostMapping
+    @Transactional(rollbackFor = Exception.class)
     public boolean save(@RequestBody RegTable regTable) {
         RegTable oldTable = null;
         if (regTable.getId() != null) {
@@ -282,6 +290,7 @@ public class RegTableController {
         boolean result = regTableService.saveOrUpdate(regTable);
 
         if (result) {
+            regPhysicalBindingService.replaceTableBindings(regTable.getId(), regTable.getPhysicalTables());
             maintenanceLogManager.logChange(com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.TABLE,
                     oldTable, regTable, getCurrentOperator());
         }
@@ -292,11 +301,18 @@ public class RegTableController {
      * Delete table with requirement reason
      */
     @PostMapping("/delete")
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteWithReason(@RequestBody com.example.urgs_api.metadata.dto.DeleteReqDTO req) {
         if (req.getId() == null)
             return false;
 
         RegTable oldTable = regTableService.getById(req.getId());
+        List<RegElement> oldElements = regElementService
+                .list(new LambdaQueryWrapper<RegElement>().eq(RegElement::getTableId, req.getId()));
+        List<Long> elementIds = oldElements.stream().map(RegElement::getId).toList();
+        regPhysicalBindingService.removeElementBindings(elementIds);
+        regElementService.remove(new LambdaQueryWrapper<RegElement>().eq(RegElement::getTableId, req.getId()));
+        regPhysicalBindingService.removeTableBindings(List.of(req.getId()));
         boolean result = regTableService.removeById(req.getId());
 
         if (result && oldTable != null) {
@@ -319,6 +335,7 @@ public class RegTableController {
      * Batch delete tables with requirement reason
      */
     @PostMapping("/delete/batch")
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteBatchWithReason(@RequestBody com.example.urgs_api.metadata.dto.DeleteReqDTO req) {
         if (req.getIds() == null || req.getIds().isEmpty())
             return false;
@@ -332,8 +349,11 @@ public class RegTableController {
         // The existing delete() method does: regElementService.remove(...)
         // So we should do the same for batch.
 
-        // Remove elements for all tables
+        List<RegElement> oldElements = regElementService
+                .list(new LambdaQueryWrapper<RegElement>().in(RegElement::getTableId, req.getIds()));
+        regPhysicalBindingService.removeElementBindings(oldElements.stream().map(RegElement::getId).toList());
         regElementService.remove(new LambdaQueryWrapper<RegElement>().in(RegElement::getTableId, req.getIds()));
+        regPhysicalBindingService.removeTableBindings(req.getIds());
 
         boolean result = regTableService.removeByIds(req.getIds());
 
@@ -362,14 +382,17 @@ public class RegTableController {
      * @return 是否成功
      */
     @DeleteMapping("/{id}")
+    @Transactional(rollbackFor = Exception.class)
     public boolean delete(@PathVariable Long id) {
         RegTable oldTable = regTableService.getById(id);
+        List<RegElement> oldElements = regElementService
+                .list(new LambdaQueryWrapper<RegElement>().eq(RegElement::getTableId, id));
+        regPhysicalBindingService.removeElementBindings(oldElements.stream().map(RegElement::getId).toList());
+        regElementService.remove(new LambdaQueryWrapper<RegElement>().eq(RegElement::getTableId, id));
+        regPhysicalBindingService.removeTableBindings(List.of(id));
         boolean result = regTableService.removeById(id);
 
         if (result && oldTable != null) {
-            // Cascade delete: remove all associated elements (fields/indicators)
-            regElementService.remove(new LambdaQueryWrapper<RegElement>().eq(RegElement::getTableId, id));
-
             maintenanceLogManager.logChange(com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.TABLE,
                     oldTable, null, getCurrentOperator());
         }
@@ -642,6 +665,7 @@ public class RegTableController {
         }
         query.orderByAsc("sort_order");
         List<RegTable> tables = regTableService.list(query);
+        regPhysicalBindingService.enrichTables(tables);
 
         // 2. 预获取所有相关的指标字段（优化 N+1 查询）
         Map<Long, List<RegElement>> elementMap = new HashMap<>();
@@ -650,6 +674,7 @@ public class RegTableController {
             List<RegElement> allElements = regElementService.list(new LambdaQueryWrapper<RegElement>()
                     .in(RegElement::getTableId, tIds)
                     .orderByAsc(RegElement::getSortOrder));
+            regPhysicalBindingService.enrichElements(allElements);
             elementMap = allElements.stream().collect(Collectors.groupingBy(RegElement::getTableId));
         }
 
@@ -678,6 +703,7 @@ public class RegTableController {
                 dto.setFillInstruction(safeTruncate(table.getFillInstruction()));
                 dto.setDevNotes(safeTruncate(table.getDevNotes()));
                 dto.setOwner(table.getOwner());
+                dto.setPhysicalTables(regPhysicalBindingService.formatTableBindings(table.getPhysicalTables()));
                 return dto;
             }).collect(Collectors.toList());
 
@@ -738,6 +764,7 @@ public class RegTableController {
                     dto.setCodeSnippet(safeTruncate(el.getCodeSnippet()));
                     dto.setIsDesensitized(el.getIsDesensitized());
                     dto.setDesensitizeType(el.getDesensitizeType());
+                    dto.setPhysicalFields(regPhysicalBindingService.formatFieldBindings(el.getPhysicalFields()));
                     return dto;
                 }).collect(Collectors.toList());
 
@@ -759,6 +786,7 @@ public class RegTableController {
         Map<String, Object> result = new HashMap<>();
         int tableCount = 0;
         int elementCount = 0;
+        List<String> skippedBindings = new ArrayList<>();
 
         DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
@@ -824,6 +852,9 @@ public class RegTableController {
                 table.setStatus(1);
 
                 regTableService.saveOrUpdate(table);
+                regPhysicalBindingService.replaceTableBindings(
+                        table.getId(),
+                        regPhysicalBindingService.resolveTableBindings(getCellValue(row.getCell(16)), skippedBindings));
                 nameToTable.put(table.getName(), table);
                 tableCount++;
             }
@@ -856,6 +887,7 @@ public class RegTableController {
 
                 // 导入新字段
                 List<RegElement> elementsToSave = new ArrayList<>();
+                List<String> elementBindingValues = new ArrayList<>();
                 for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                     Row row = sheet.getRow(i);
                     if (row == null)
@@ -914,10 +946,20 @@ public class RegTableController {
                     el.setUpdateTime(LocalDateTime.now());
 
                     elementsToSave.add(el);
+                    elementBindingValues.add(getCellValue(row.getCell(28)));
                 }
 
                 if (!elementsToSave.isEmpty()) {
                     regElementService.saveBatch(elementsToSave);
+                    for (int i = 0; i < elementsToSave.size(); i++) {
+                        RegElement savedElement = elementsToSave.get(i);
+                        if (savedElement.getId() != null) {
+                            regPhysicalBindingService.replaceElementBindings(
+                                    savedElement.getId(),
+                                    regPhysicalBindingService.resolveFieldBindings(elementBindingValues.get(i),
+                                            skippedBindings));
+                        }
+                    }
                     elementCount += elementsToSave.size();
                 }
             }
@@ -931,6 +973,9 @@ public class RegTableController {
         result.put("success", true);
         result.put("tableCount", tableCount);
         result.put("elementCount", elementCount);
+        if (!skippedBindings.isEmpty()) {
+            result.put("message", "部分物理绑定未匹配，已跳过：" + String.join("；", skippedBindings));
+        }
         return result;
     }
 

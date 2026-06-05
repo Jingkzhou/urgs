@@ -33,6 +33,7 @@ export interface RegTable {
     changeDescription?: string;
     fieldCount?: number;
     indicatorCount?: number;
+    physicalTables?: PhysicalTableBinding[];
 }
 
 export interface CodeTable {
@@ -77,4 +78,25 @@ export interface RegElement {
     reqId?: string;
     plannedDate?: string;
     changeDescription?: string;
+    physicalFields?: PhysicalFieldBinding[];
+}
+
+export interface PhysicalTableBinding {
+    modelTableId: string;
+    dataSourceId?: number;
+    owner?: string;
+    tableName: string;
+    tableCnName?: string;
+}
+
+export interface PhysicalFieldBinding {
+    modelFieldId: string;
+    modelTableId: string;
+    dataSourceId?: number;
+    owner?: string;
+    tableName: string;
+    tableCnName?: string;
+    fieldName: string;
+    fieldCnName?: string;
+    fieldType?: string;
 }

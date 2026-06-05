@@ -1,10 +1,13 @@
 package com.example.urgs_api.metadata.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.urgs_api.common.PageResult;
 import com.example.urgs_api.metadata.model.RegElement;
+import com.example.urgs_api.metadata.service.RegPhysicalBindingService;
 import com.example.urgs_api.metadata.service.RegElementService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import com.alibaba.excel.EasyExcel;
@@ -26,6 +29,9 @@ public class RegElementController {
 
     @Autowired
     private RegElementService regElementService;
+
+    @Autowired
+    private RegPhysicalBindingService regPhysicalBindingService;
 
     @Autowired
     private com.example.urgs_api.metadata.component.MaintenanceLogManager maintenanceLogManager;
@@ -98,7 +104,10 @@ public class RegElementController {
 
         com.baomidou.mybatisplus.extension.plugins.pagination.Page<RegElement> pageParam = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(
                 page, size);
-        return PageResult.of(regElementService.page(pageParam, query));
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<RegElement> pageResult = regElementService
+                .page(pageParam, query);
+        regPhysicalBindingService.enrichElements(pageResult.getRecords());
+        return PageResult.of(pageResult);
     }
 
     /**
@@ -109,7 +118,9 @@ public class RegElementController {
      */
     @GetMapping("/{id}")
     public RegElement get(@PathVariable Long id) {
-        return regElementService.getById(id);
+        RegElement element = regElementService.getById(id);
+        regPhysicalBindingService.enrichElement(element);
+        return element;
     }
 
     /**
@@ -119,6 +130,7 @@ public class RegElementController {
      * @return 是否成功
      */
     @PostMapping
+    @Transactional(rollbackFor = Exception.class)
     public boolean save(@RequestBody RegElement regElement) {
         // Fetch old data if update
         RegElement oldElement = null;
@@ -131,6 +143,7 @@ public class RegElementController {
         boolean result = regElementService.saveOrUpdate(regElement);
 
         if (result) {
+            regPhysicalBindingService.replaceElementBindings(regElement.getId(), regElement.getPhysicalFields());
             maintenanceLogManager.logChange(
                     com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.ELEMENT,
                     oldElement,
@@ -150,11 +163,13 @@ public class RegElementController {
      * Delete element with reason
      */
     @PostMapping("/delete")
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteWithReason(@RequestBody com.example.urgs_api.metadata.dto.DeleteReqDTO req) {
         if (req.getId() == null)
             return false;
 
         RegElement oldElement = regElementService.getById(req.getId());
+        regPhysicalBindingService.removeElementBindings(List.of(req.getId()));
         boolean result = regElementService.removeById(req.getId());
 
         if (result && oldElement != null) {
@@ -177,11 +192,13 @@ public class RegElementController {
      * Batch delete elements with reason
      */
     @PostMapping("/delete/batch")
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteBatchWithReason(@RequestBody com.example.urgs_api.metadata.dto.DeleteReqDTO req) {
         if (req.getIds() == null || req.getIds().isEmpty())
             return false;
 
         List<RegElement> oldElements = regElementService.listByIds(req.getIds());
+        regPhysicalBindingService.removeElementBindings(req.getIds());
         boolean result = regElementService.removeByIds(req.getIds());
 
         if (result && oldElements != null) {
@@ -209,8 +226,10 @@ public class RegElementController {
      * @return 是否成功
      */
     @DeleteMapping("/{id}")
+    @Transactional(rollbackFor = Exception.class)
     public boolean delete(@PathVariable Long id) {
         RegElement oldElement = regElementService.getById(id);
+        regPhysicalBindingService.removeElementBindings(List.of(id));
         boolean result = regElementService.removeById(id);
 
         if (result && oldElement != null) {
@@ -230,12 +249,14 @@ public class RegElementController {
      * @return 是否成功
      */
     @DeleteMapping("/batch")
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteBatch(@RequestBody List<Long> ids) {
         if (ids == null || ids.isEmpty()) {
             return false;
         }
 
         List<RegElement> oldElements = regElementService.listByIds(ids);
+        regPhysicalBindingService.removeElementBindings(ids);
         boolean result = regElementService.removeByIds(ids);
 
         if (result && oldElements != null) {

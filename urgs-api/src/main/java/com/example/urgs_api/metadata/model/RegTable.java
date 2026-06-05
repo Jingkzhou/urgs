@@ -9,6 +9,9 @@ import lombok.Data;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
+
+import com.example.urgs_api.metadata.dto.PhysicalTableBindingDTO;
 
 @Data
 @TableName("reg_table")
@@ -91,4 +94,7 @@ public class RegTable {
 
     @TableField(exist = false)
     private String changeDescription;
+
+    @TableField(exist = false)
+    private List<PhysicalTableBindingDTO> physicalTables;
 }

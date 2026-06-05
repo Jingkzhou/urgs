@@ -784,6 +784,7 @@ const RegulatoryAssetView: React.FC = () => {
                 <ElementModal
                     element={editingElement}
                     systemCode={currentTable?.systemCode}
+                    preferredPhysicalTables={currentTable?.physicalTables}
                     onSave={handleSaveElement}
                     onClose={() => setShowElementModal(false)}
                 />

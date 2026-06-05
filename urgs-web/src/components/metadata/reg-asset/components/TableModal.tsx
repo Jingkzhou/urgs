@@ -4,6 +4,7 @@ import { RegTable } from '../types';
 import { FormField } from './RegAssetHelper';
 import ReqInfoFormGroup from '../../ReqInfoFormGroup';
 import { AiOptimizeButton } from '../../../common/AiOptimizeButton';
+import { PhysicalBindingSelector } from './PhysicalBindingSelector';
 
 // Define the system interface locally if needed, or pass only what's necessary
 interface SsoConfig {
@@ -26,7 +27,7 @@ export const TableModal: React.FC<TableModalProps> = ({ table, systems, defaultS
         subjectCode: '', subjectName: '', theme: '', frequency: '',
         sourceType: '', autoFetchStatus: '', dispatchNo: '',
         businessCaliber: '', fillInstruction: '', devNotes: '', owner: '', status: 1,
-        reqId: '', plannedDate: ''
+        reqId: '', plannedDate: '', physicalTables: []
     });
 
     // Auto-fetch sort order on mount if defaultSystemCode is present
@@ -121,6 +122,11 @@ export const TableModal: React.FC<TableModalProps> = ({ table, systems, defaultS
                     <FormField label="发文号" value={form.dispatchNo} onChange={v => setForm({ ...form, dispatchNo: v })} />
 
                     <FormField label="责任人" value={form.owner} onChange={v => setForm({ ...form, owner: v })} />
+                    <PhysicalBindingSelector
+                        mode="table"
+                        selectedTables={form.physicalTables || []}
+                        onTablesChange={(physicalTables) => setForm({ ...form, physicalTables })}
+                    />
                     <div className="col-span-2">
                         <div className="flex justify-between items-center mb-1">
                             <label className="block text-sm font-medium text-slate-700">业务口径</label>

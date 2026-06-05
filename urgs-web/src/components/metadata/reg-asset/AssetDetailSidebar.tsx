@@ -186,10 +186,43 @@ export const AssetDetailSidebar: React.FC<AssetDetailSidebarProps> = ({ isOpen, 
                             <>
                                 <DetailRow label="所属系统" icon={<Server size={14} />} value={table.systemCode} />
                                 <DetailRow label="取数来源" value={table.sourceType} />
+                                <DetailRow
+                                    label="绑定物理表"
+                                    value={table.physicalTables && table.physicalTables.length > 0 ? (
+                                        <div className="space-y-1">
+                                            {table.physicalTables.map(item => (
+                                                <div key={item.modelTableId} className="font-mono text-xs bg-slate-100 px-2 py-1 rounded">
+                                                    {[item.owner, item.tableName].filter(Boolean).join('.')}
+                                                    {item.tableCnName ? <span className="ml-2 text-slate-500 font-sans">{item.tableCnName}</span> : null}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : null}
+                                    fullWidth
+                                />
                             </>
                         ) : (
                             <>
-                                <DetailRow label="类型" value={element.type === 'FIELD' ? '物理字段' : '衍生指标'} />
+                                <DetailRow label="类型" value={element.type === 'FIELD' ? '字段' : '衍生指标'} />
+                                <DetailRow
+                                    label="绑定字段"
+                                    value={element.physicalFields && element.physicalFields.length > 0 ? (
+                                        <div className="space-y-1">
+                                            {element.physicalFields.map(item => (
+                                                <div key={item.modelFieldId} className="font-mono text-xs bg-slate-100 px-2 py-1 rounded">
+                                                    {item.fieldName}
+                                                    <span className="ml-2 text-slate-500 font-sans">
+                                                        {[item.fieldCnName, item.fieldType].filter(Boolean).join(' / ')}
+                                                    </span>
+                                                    <div className="mt-0.5 text-[10px] text-slate-400">
+                                                        {[item.owner, item.tableName].filter(Boolean).join('.')}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : null}
+                                    fullWidth
+                                />
 
                                 {element.type === 'FIELD' && (
                                     <>

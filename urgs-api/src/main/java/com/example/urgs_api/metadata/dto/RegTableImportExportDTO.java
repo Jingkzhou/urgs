@@ -57,4 +57,7 @@ public class RegTableImportExportDTO {
 
     @ExcelProperty(value = "负责人", index = 15)
     private String owner;
+
+    @ExcelProperty(value = "绑定物理表", index = 16)
+    private String physicalTables;
 }
