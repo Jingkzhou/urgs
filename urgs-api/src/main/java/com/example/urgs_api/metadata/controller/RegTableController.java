@@ -400,6 +400,92 @@ public class RegTableController {
     }
 
     /**
+     * 上传 SQL 文件并同步指标代码片段。
+     * 按 INSERT INTO / INSERT OVERWRITE 的目标表名匹配当前系统下指标名称。
+     */
+    @PostMapping("/sync-code-snippets")
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> syncCodeSnippets(@RequestParam String systemCode,
+            @RequestParam("files") MultipartFile[] files) {
+        Map<String, Object> result = new HashMap<>();
+        if (StringUtils.isBlank(systemCode)) {
+            result.put("success", false);
+            result.put("message", "systemCode 不能为空");
+            return result;
+        }
+        if (files == null || files.length == 0) {
+            result.put("success", false);
+            result.put("message", "请上传 SQL 文件");
+            return result;
+        }
+
+        try {
+            List<RegTable> tables = regTableService
+                    .list(new LambdaQueryWrapper<RegTable>().eq(RegTable::getSystemCode, systemCode));
+            if (tables.isEmpty()) {
+                result.put("success", false);
+                result.put("message", "当前系统下没有报表资产");
+                return result;
+            }
+
+            List<Long> tableIds = tables.stream().map(RegTable::getId).toList();
+            List<RegElement> indicators = regElementService.list(new LambdaQueryWrapper<RegElement>()
+                    .in(RegElement::getTableId, tableIds)
+                    .eq(RegElement::getType, "INDICATOR"));
+            Map<String, RegElement> indicatorMap = indicators.stream()
+                    .filter(item -> StringUtils.isNotBlank(item.getName()))
+                    .collect(Collectors.toMap(item -> normalizeSqlObjectName(item.getName()), item -> item,
+                            (left, right) -> left));
+
+            int matchedCount = 0;
+            int updatedCount = 0;
+            List<String> unmatchedTargets = new ArrayList<>();
+
+            for (MultipartFile file : files) {
+                if (file == null || file.isEmpty()) {
+                    continue;
+                }
+                String content = new String(file.getBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                for (String statement : splitSqlStatements(content)) {
+                    String targetName = extractInsertTargetName(statement);
+                    if (StringUtils.isBlank(targetName)) {
+                        continue;
+                    }
+                    RegElement indicator = indicatorMap.get(normalizeSqlObjectName(targetName));
+                    if (indicator == null) {
+                        unmatchedTargets.add(targetName);
+                        continue;
+                    }
+                    matchedCount++;
+                    String snippet = statement.trim();
+                    if (!snippet.endsWith(";")) {
+                        snippet += ";";
+                    }
+                    if (!Objects.equals(indicator.getCodeSnippet(), snippet)) {
+                        indicator.setCodeSnippet(snippet);
+                        indicator.setUpdateTime(LocalDateTime.now());
+                        regElementService.updateById(indicator);
+                        updatedCount++;
+                    }
+                }
+            }
+
+            result.put("success", true);
+            result.put("matchedCount", matchedCount);
+            result.put("updatedCount", updatedCount);
+            if (!unmatchedTargets.isEmpty()) {
+                result.put("message", "以下 SQL 目标未匹配到指标：" + unmatchedTargets.stream().distinct()
+                        .limit(20)
+                        .collect(Collectors.joining("、")));
+            }
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "同步失败：" + e.getMessage());
+        }
+        return result;
+    }
+
+    /**
      * 生成 Hive SQL 文件
      * 优化点：
      * 1. 逻辑去重：对于相同的取数逻辑，使用 CTE (WITH) 语法只定义一次。
@@ -592,6 +678,68 @@ public class RegTableController {
                 LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
 
         java.nio.file.Files.writeString(sqlFile, header + content, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private List<String> splitSqlStatements(String sql) {
+        if (StringUtils.isBlank(sql)) {
+            return Collections.emptyList();
+        }
+        List<String> statements = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inSingleQuote = false;
+        boolean inDoubleQuote = false;
+        for (int i = 0; i < sql.length(); i++) {
+            char c = sql.charAt(i);
+            if (c == '\'' && !inDoubleQuote) {
+                inSingleQuote = !inSingleQuote;
+            } else if (c == '"' && !inSingleQuote) {
+                inDoubleQuote = !inDoubleQuote;
+            }
+            current.append(c);
+            if (c == ';' && !inSingleQuote && !inDoubleQuote) {
+                String statement = current.toString().trim();
+                if (StringUtils.isNotBlank(statement)) {
+                    statements.add(statement);
+                }
+                current.setLength(0);
+            }
+        }
+        String tail = current.toString().trim();
+        if (StringUtils.isNotBlank(tail)) {
+            statements.add(tail);
+        }
+        return statements;
+    }
+
+    private String extractInsertTargetName(String statement) {
+        if (StringUtils.isBlank(statement)) {
+            return null;
+        }
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                "\\binsert\\s+(?:into|overwrite)\\s+(?:table\\s+)?((?:`[^`]+`|[\\w]+)(?:\\.(?:`[^`]+`|[\\w]+))?)",
+                java.util.regex.Pattern.CASE_INSENSITIVE);
+        java.util.regex.Matcher matcher = pattern.matcher(statement);
+        if (!matcher.find()) {
+            return null;
+        }
+        String target = matcher.group(1);
+        String[] parts = target.split("\\.");
+        return stripSqlIdentifier(parts[parts.length - 1]);
+    }
+
+    private String normalizeSqlObjectName(String name) {
+        return stripSqlIdentifier(name).toUpperCase(Locale.ROOT);
+    }
+
+    private String stripSqlIdentifier(String name) {
+        if (name == null) {
+            return "";
+        }
+        String trimmed = name.trim();
+        if (trimmed.startsWith("`") && trimmed.endsWith("`") && trimmed.length() > 1) {
+            return trimmed.substring(1, trimmed.length() - 1);
+        }
+        return trimmed;
     }
 
     /**

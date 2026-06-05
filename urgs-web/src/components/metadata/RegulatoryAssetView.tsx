@@ -380,6 +380,7 @@ const RegulatoryAssetView: React.FC = () => {
 
     // Import / Export for Elements (单表字段导入导出)
     const fileInputRef = React.useRef<HTMLInputElement>(null);
+    const syncSqlInputRef = React.useRef<HTMLInputElement>(null);
 
     const handleExport = async () => {
         if (!currentTable) return;
@@ -481,22 +482,38 @@ const RegulatoryAssetView: React.FC = () => {
             return;
         }
 
-        if (!confirm(`确认要同步 ${selectedSystem} 系统的代码片段吗？\n将从 SQL 文件中匹配并更新指标的代码片段。`)) {
+        syncSqlInputRef.current?.click();
+    };
+
+    const handleSyncSqlFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!selectedSystem) {
+            alert('请先选择一个系统');
+            return;
+        }
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) {
+            return;
+        }
+        if (!confirm(`确认要用上传的 ${files.length} 个 SQL 文件同步 ${selectedSystem} 系统的代码片段吗？\n将按 INSERT 目标名匹配并更新指标的代码片段。`)) {
+            e.target.value = '';
             return;
         }
 
         setIsSyncing(true);
         try {
             const token = localStorage.getItem('auth_token');
+            const formData = new FormData();
+            files.forEach(file => formData.append('files', file));
             const res = await fetch(`/api/reg/table/sync-code-snippets?systemCode=${encodeURIComponent(selectedSystem)}`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`
-                }
+                },
+                body: formData
             });
             const result = await res.json();
             if (result.success) {
-                alert(`同步成功！\n匹配指标数: ${result.matchedCount}\n更新指标数: ${result.updatedCount}`);
+                alert(`同步成功！\n匹配指标数: ${result.matchedCount}\n更新指标数: ${result.updatedCount}${result.message ? `\n${result.message}` : ''}`);
                 // 刷新数据
                 fetchTables();
                 if (currentTable) {
@@ -510,6 +527,7 @@ const RegulatoryAssetView: React.FC = () => {
             alert('同步失败');
         } finally {
             setIsSyncing(false);
+            e.target.value = '';
         }
     };
 
@@ -639,6 +657,14 @@ const RegulatoryAssetView: React.FC = () => {
 
     return (
         <div className="flex h-full bg-white rounded-lg overflow-hidden relative">
+            <input
+                type="file"
+                ref={syncSqlInputRef}
+                className="hidden"
+                accept=".sql"
+                multiple
+                onChange={handleSyncSqlFileChange}
+            />
             {/* Delete Modal */}
             {deleteModal.show && (
                 <DeleteWithReasonModal
