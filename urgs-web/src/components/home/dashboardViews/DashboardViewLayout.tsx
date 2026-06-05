@@ -11,7 +11,7 @@ import { useSmartPolling } from '../../../hooks/useSmartPolling';
 
 export type DashboardSectionKey = 'overview' | 'trend' | 'batchMonitoring' | 'devWorkbench';
 export type DashboardOverviewSlotKey = 'notice' | 'batchStatus' | 'systems';
-export type DashboardOverviewLayout = 'default' | 'compact';
+export type DashboardOverviewLayout = 'default' | 'compact' | 'business';
 export type DashboardSectionGap = 'default' | 'compact';
 
 interface DashboardViewLayoutProps {
@@ -60,6 +60,44 @@ const DashboardViewLayout: React.FC<DashboardViewLayoutProps> = ({
     if (!canViewNotice && !canViewBatchStatus && !canViewSystems) return null;
 
     const isCompactOverview = overviewLayout === 'compact';
+    const isBusinessOverview = overviewLayout === 'business';
+
+    if (isBusinessOverview) {
+      return (
+        <section key="overview" className="animate-fade-in-up">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 xl:items-stretch">
+            {canViewSystems && (
+              <div className={`${(canViewNotice || canViewBatchStatus) ? 'xl:col-span-7' : 'xl:col-span-12'} min-w-0`}>
+                <div className="relative h-full transform transition-transform duration-500 hover:-translate-y-1">
+                  <SystemLinks fullWidth showStatusFooter />
+                </div>
+              </div>
+            )}
+
+            {(canViewNotice || canViewBatchStatus) && (
+              <div className={`${canViewSystems ? 'xl:col-span-5' : 'xl:col-span-12'} grid min-w-0 grid-cols-1 gap-6`}>
+                {overviewSlots.includes('notice') && (
+                  <Auth code="dash:notice:view">
+                    <div className="relative transform transition-transform duration-500 hover:-translate-y-1" style={{ animationDelay: '100ms' }}>
+                      <Notices />
+                    </div>
+                  </Auth>
+                )}
+
+                {overviewSlots.includes('batchStatus') && (
+                  <Auth code="dash:stats">
+                    <div className="relative transform transition-transform duration-500 hover:-translate-y-1" style={{ animationDelay: '200ms' }}>
+                      <BatchStatusChart data={batchData} loading={loadingBatch} onRefresh={loadBatchData} />
+                    </div>
+                  </Auth>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+      );
+    }
+
     const overviewGridClass = isCompactOverview
       ? 'grid grid-cols-1 xl:grid-cols-5 gap-6 relative z-10 items-stretch'
       : 'grid grid-cols-1 xl:grid-cols-12 gap-8 relative z-10 items-start';

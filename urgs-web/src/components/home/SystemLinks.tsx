@@ -172,7 +172,7 @@ const SystemLinks: React.FC<SystemLinksProps> = ({
     </motion.div>
   );
 
-  const containerHeightClass = compact ? 'h-[260px]' : (fullWidth ? 'h-auto' : 'h-[600px]');
+  const containerHeightClass = fullWidth ? 'h-auto' : (compact ? 'h-[260px]' : 'h-[600px]');
 
   return (
     <div className={`relative bg-white/70 backdrop-blur-md ${compact ? 'pt-5 pb-5 px-5 rounded-[1.75rem]' : 'pt-7 pb-8 px-6 rounded-[2rem]'} shadow-[0_25px_50px_-12px_rgba(0,0,0,0.08)] border border-slate-200/50 overflow-hidden flex flex-col group transition-all duration-700 hover:shadow-[0_45px_90px_-20px_rgba(0,0,0,0.15)] ${containerHeightClass}`}>
