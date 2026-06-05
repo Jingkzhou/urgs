@@ -26,6 +26,7 @@ const BusinessDashboardView: React.FC = () => {
 
   const [batchData, setBatchData] = useState<TaskStatsVO[]>([]);
   const [loadingBatch, setLoadingBatch] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
 
   const canViewNotice = hasPermission('dash:notice:view');
   const canViewBatchStatus = hasPermission('dash:stats');
@@ -42,6 +43,14 @@ const BusinessDashboardView: React.FC = () => {
     } catch (e) {
       console.error('Failed to parse auth_user', e);
     }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60000);
+
+    return () => window.clearInterval(timer);
   }, []);
 
   // Fetch batch status stats for the BatchStatusChart
@@ -79,92 +88,94 @@ const BusinessDashboardView: React.FC = () => {
     return <Moon className="w-8 h-8 text-indigo-400 animate-pulse" />;
   };
 
-  const getFormattedDate = () => {
-    const date = new Date();
+  const getFormattedDateTime = () => {
+    const date = currentTime;
     const days = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
-    return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${days[date.getDay()]}`;
+    const time = date.toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${days[date.getDay()]} ${time}`;
   };
 
   return (
     <div className="space-y-6 pb-12 pt-4">
-      {/* 1. Welcome Banner */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="relative overflow-hidden rounded-[2.5rem] border border-slate-200/60 bg-white/75 p-6 backdrop-blur-xl shadow-[0_20px_45px_-12px_rgba(0,0,0,0.06)] hover:shadow-[0_30px_60px_-15px_rgba(0,0,0,0.1)] transition-all duration-500"
-      >
-        {/* Background ambient glow */}
-        <div className="absolute -right-24 -top-24 w-80 h-80 bg-red-500/5 rounded-full blur-[80px] pointer-events-none" />
-        
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 relative z-10">
-          <div className="flex items-center gap-5">
-            {/* User Avatar */}
-            <div className="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-red-500 to-rose-600 p-0.5 shadow-lg shadow-red-500/10 flex items-center justify-center text-white">
-              {userInfo?.avatarUrl ? (
-                <img 
-                  src={userInfo.avatarUrl} 
-                  alt={userInfo.name || 'User'} 
-                  className="w-full h-full object-cover rounded-[1.35rem]" 
-                />
-              ) : (
-                <User className="w-7 h-7" />
-              )}
-            </div>
+      {/* 1. Welcome + System Links */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 xl:items-stretch">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className={`relative overflow-hidden rounded-[2.5rem] border border-slate-200/60 bg-white/75 p-6 backdrop-blur-xl shadow-[0_20px_45px_-12px_rgba(0,0,0,0.06)] transition-all duration-500 hover:shadow-[0_30px_60px_-15px_rgba(0,0,0,0.1)] ${canViewSystems ? 'xl:col-span-4' : 'xl:col-span-12'}`}
+        >
+          <div className="absolute -right-24 -top-24 w-80 h-80 bg-red-500/5 rounded-full blur-[80px] pointer-events-none" />
 
-            {/* Greeting Text */}
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xl font-black text-slate-800 tracking-tight">
-                  {getGreeting()}，{userInfo?.name || '尊敬的业务用户'}
-                </span>
-                {getGreetingIcon()}
+          <div className="relative z-10 flex h-full flex-col justify-between gap-6">
+            <div className="flex items-center gap-5">
+              <div className="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-red-500 to-rose-600 p-0.5 shadow-lg shadow-red-500/10 flex items-center justify-center text-white">
+                {userInfo?.avatarUrl ? (
+                  <img
+                    src={userInfo.avatarUrl}
+                    alt={userInfo.name || 'User'}
+                    className="w-full h-full object-cover rounded-[1.35rem]"
+                  />
+                ) : (
+                  <User className="w-7 h-7" />
+                )}
               </div>
-              
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-xs text-slate-400 font-bold">
-                {userInfo?.department && (
-                  <span className="flex items-center gap-1.5">
-                    <Building className="w-3.5 h-3.5" />
-                    {userInfo.department}
+
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-xl font-black text-slate-800 tracking-tight">
+                    {getGreeting()}，{userInfo?.name || '尊敬的业务用户'}
                   </span>
-                )}
-                {userInfo?.department && userInfo?.roleName && (
-                  <span className="w-1 h-1 rounded-full bg-slate-300" />
-                )}
-                {userInfo?.roleName && (
-                  <span className="flex items-center gap-1.5 text-red-500">
-                    <span className="px-1.5 py-0.5 bg-red-50 border border-red-100 rounded-md">
-                      {userInfo.roleName}
+                  {getGreetingIcon()}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-xs text-slate-400 font-bold">
+                  {userInfo?.department && (
+                    <span className="flex items-center gap-1.5">
+                      <Building className="w-3.5 h-3.5" />
+                      {userInfo.department}
                     </span>
-                  </span>
-                )}
+                  )}
+                  {userInfo?.department && userInfo?.roleName && (
+                    <span className="w-1 h-1 rounded-full bg-slate-300" />
+                  )}
+                  {userInfo?.roleName && (
+                    <span className="flex items-center gap-1.5 text-red-500">
+                      <span className="px-1.5 py-0.5 bg-red-50 border border-red-100 rounded-md">
+                        {userInfo.roleName}
+                      </span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-500 bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-2xl">
+                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                <span>{getFormattedDateTime()}</span>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-2xl">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
+                <span>平台业务服务运行良好</span>
               </div>
             </div>
           </div>
+        </motion.div>
 
-          {/* Quick Info / Date / System Status */}
-          <div className="flex flex-col md:items-end justify-center gap-2">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-500 bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-2xl">
-              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-              <span>{getFormattedDate()}</span>
+        {canViewSystems && (
+          <Auth code="dash:systems">
+            <div className="relative transform transition-transform duration-500 hover:-translate-y-1 xl:col-span-8">
+              <SystemLinks fullWidth compact showStatusFooter={false} />
             </div>
-            
-            <div className="flex items-center gap-2 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-2xl">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
-              <span>平台业务服务运行良好</span>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* 2. System Links (Full Width Navigation Belt) */}
-      {canViewSystems && (
-        <Auth code="dash:systems">
-          <div className="relative transform transition-transform duration-500 hover:-translate-y-1">
-            <SystemLinks fullWidth compact showStatusFooter={false} />
-          </div>
-        </Auth>
-      )}
+          </Auth>
+        )}
+      </div>
 
       {/* 3. Grid Dashboard Content (Left 8, Right 4) */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 items-stretch">
