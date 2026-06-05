@@ -14,9 +14,15 @@ import { getSystemList, jumpSystem } from '@/api/ops';
 
 interface SystemLinksProps {
   fullWidth?: boolean;
+  compact?: boolean;
+  showStatusFooter?: boolean;
 }
 
-const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
+const SystemLinks: React.FC<SystemLinksProps> = ({
+  fullWidth = false,
+  compact = false,
+  showStatusFooter = true,
+}) => {
   const [systems, setSystems] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
@@ -31,10 +37,11 @@ const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
   const updateColumns = useCallback(() => {
     if (!fullWidth || !gridRef.current) return;
     const containerWidth = gridRef.current.offsetWidth;
-    // 每个卡片最小宽度约 160px，gap 16px
-    const cols = Math.max(3, Math.min(8, Math.floor((containerWidth + 16) / (160 + 16))));
+    const cardWidth = compact ? 120 : 160;
+    const maxColumns = compact ? 6 : 8;
+    const cols = Math.max(3, Math.min(maxColumns, Math.floor((containerWidth + 16) / (cardWidth + 16))));
     setColumnsPerRow(cols);
-  }, [fullWidth]);
+  }, [compact, fullWidth]);
 
   useEffect(() => {
     if (!fullWidth) return;
@@ -145,10 +152,10 @@ const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
       className={`relative cursor-pointer ${fullWidth ? '' : 'aspect-square'}`}
       onClick={() => handleSystemClick(system)}
     >
-      <div className={`${fullWidth ? '' : 'absolute inset-0'} bg-white border border-slate-200/60 rounded-[1.75rem] shadow-[0_4px_12px_-4px_rgba(0,0,0,0.05)] overflow-hidden transition-all duration-500 group-hover:border-slate-300`}>
+      <div className={`${fullWidth ? '' : 'absolute inset-0'} bg-white border border-slate-200/60 ${compact ? 'rounded-2xl' : 'rounded-[1.75rem]'} shadow-[0_4px_12px_-4px_rgba(0,0,0,0.05)] overflow-hidden transition-all duration-500 group-hover:border-slate-300`}>
         <div className={`absolute -inset-px opacity-0 hover:opacity-10 transition-opacity bg-gradient-to-br ${getSystemColor(originalIndex)}`} />
-        <div className={`w-full flex flex-col items-center justify-center relative z-10 ${fullWidth ? 'py-6 px-3' : 'h-full p-3'}`}>
-          <div className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${getSystemColor(originalIndex)} flex items-center justify-center text-white shadow-lg shadow-inherit/20 mb-3 transform transition-transform duration-500 group-hover:rotate-12 group-hover:scale-110`}>
+        <div className={`w-full flex flex-col items-center justify-center relative z-10 ${fullWidth ? (compact ? 'py-4 px-2' : 'py-6 px-3') : 'h-full p-3'}`}>
+          <div className={`${compact ? 'w-9 h-9 rounded-xl mb-2' : 'w-11 h-11 rounded-2xl mb-3'} bg-gradient-to-br ${getSystemColor(originalIndex)} flex items-center justify-center text-white shadow-lg shadow-inherit/20 transform transition-transform duration-500 group-hover:rotate-12 group-hover:scale-110`}>
             {getSystemIcon(system.name)}
           </div>
           <span className="text-[11px] font-black text-slate-700 tracking-tight text-center leading-tight">
@@ -165,15 +172,17 @@ const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
     </motion.div>
   );
 
+  const containerHeightClass = compact ? 'h-[260px]' : (fullWidth ? 'h-auto' : 'h-[600px]');
+
   return (
-    <div className={`relative bg-white/70 backdrop-blur-md pt-7 pb-8 px-6 rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.08)] border border-slate-200/50 overflow-hidden flex flex-col group transition-all duration-700 hover:shadow-[0_45px_90px_-20px_rgba(0,0,0,0.15)] ${fullWidth ? 'h-auto' : 'h-[600px]'}`}>
+    <div className={`relative bg-white/70 backdrop-blur-md ${compact ? 'pt-5 pb-5 px-5 rounded-[1.75rem]' : 'pt-7 pb-8 px-6 rounded-[2rem]'} shadow-[0_25px_50px_-12px_rgba(0,0,0,0.08)] border border-slate-200/50 overflow-hidden flex flex-col group transition-all duration-700 hover:shadow-[0_45px_90px_-20px_rgba(0,0,0,0.15)] ${containerHeightClass}`}>
       {/* Abstract Background Decoration */}
       <div className="absolute -top-24 -right-24 w-64 h-64 bg-red-500/5 rounded-full blur-3xl pointer-events-none group-hover:bg-red-500/10 transition-colors duration-1000" />
 
       {/* Header Area */}
-      <div className="flex items-center justify-between mb-8 relative z-10">
+      <div className={`flex items-center justify-between ${compact ? 'mb-4' : 'mb-8'} relative z-10`}>
         <div>
-          <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+          <h2 className={`${compact ? 'text-lg' : 'text-xl'} font-black text-slate-800 tracking-tight flex items-center gap-2`}>
             系统入口
             <div className="flex items-center justify-center w-5 h-5 bg-red-50 rounded-md border border-red-100">
               <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
@@ -234,20 +243,21 @@ const SystemLinks: React.FC<SystemLinksProps> = ({ fullWidth = false }) => {
         )}
       </div>
 
-      {/* Control Status Footer */}
-      <div className="mt-4 pt-5 border-t border-slate-100/80 flex items-center justify-between text-slate-400 relative z-10">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-xl font-black text-slate-800 leading-none">{systems.length}</span>
-          <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Total Units</span>
-        </div>
-        <div className="flex flex-col items-end gap-0.5">
-          <div className="flex items-center gap-1.5 text-emerald-500">
-            <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-            <span className="text-[10px] font-black leading-none">Healthy</span>
+      {showStatusFooter && (
+        <div className={`${compact ? 'mt-3 pt-3' : 'mt-4 pt-5'} border-t border-slate-100/80 flex items-center justify-between text-slate-400 relative z-10`}>
+          <div className="flex flex-col gap-0.5">
+            <span className="text-xl font-black text-slate-800 leading-none">{systems.length}</span>
+            <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Total Units</span>
           </div>
-          <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Active Node</span>
+          <div className="flex flex-col items-end gap-0.5">
+            <div className="flex items-center gap-1.5 text-emerald-500">
+              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+              <span className="text-[10px] font-black leading-none">Healthy</span>
+            </div>
+            <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Active Node</span>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

@@ -24,10 +24,15 @@ const taskInstanceStatusMap: Record<string, string> = {
     FAIL: '4',
 };
 
-const BatchMonitoring: React.FC = () => {
+interface BatchMonitoringProps {
+    density?: 'default' | 'compact';
+}
+
+const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default' }) => {
     const [stats, setStats] = useState<TaskInstanceStatsVO | null>(null);
     const [hourlyData, setHourlyData] = useState<any[]>([]);
     const [workflowStats, setWorkflowStats] = useState<WorkflowStatsVO[]>([]);
+    const isCompact = density === 'compact';
 
     const loadData = useCallback(async () => {
         try {
@@ -100,13 +105,14 @@ const BatchMonitoring: React.FC = () => {
             {/* Header Removed to match Dashboard Section styling */}
 
             {/* KPI Grid (Bento Box Style) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5 mb-6">
+            <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 ${isCompact ? 'gap-3 mb-4' : 'gap-5 mb-6'}`}>
                 <KpiCard
                     title="总任务数"
                     value={stats?.total || 0}
                     icon={<Server className="w-6 h-6" />}
                     color="gray"
                     subValue="Total Tasks"
+                    compact={isCompact}
                 />
                 <KpiCard
                     title="正在运行"
@@ -116,6 +122,7 @@ const BatchMonitoring: React.FC = () => {
                     subValue="Running"
                     animate
                     onClick={() => navigateToTaskInstance('RUNNING')}
+                    compact={isCompact}
                 />
                 <KpiCard
                     title="等待中"
@@ -124,6 +131,7 @@ const BatchMonitoring: React.FC = () => {
                     color="purple"
                     subValue="Pending"
                     onClick={() => navigateToTaskInstance('WAITING_GROUP')}
+                    compact={isCompact}
                 />
                 <KpiCard
                     title="失败任务"
@@ -133,6 +141,7 @@ const BatchMonitoring: React.FC = () => {
                     subValue="Attention Needed"
                     isAlert={stats?.failed > 0}
                     onClick={() => navigateToTaskInstance('FAIL')}
+                    compact={isCompact}
                 />
                 <KpiCard
                     title="成功率"
@@ -140,26 +149,27 @@ const BatchMonitoring: React.FC = () => {
                     icon={<CheckCircle className="w-6 h-6" />}
                     color="green"
                     subValue="Success Rate"
+                    compact={isCompact}
                 />
             </div>
 
             {/* Main Content Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className={`grid grid-cols-1 lg:grid-cols-3 ${isCompact ? 'gap-4' : 'gap-8'}`}>
                 {/* Workflow Stats Chart */}
-                <div className="relative lg:col-span-2 bg-white/70 backdrop-blur-md rounded-[2.5rem] p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] transition-all duration-500 group overflow-hidden">
+                <div className={`relative lg:col-span-2 bg-white/70 backdrop-blur-md ${isCompact ? 'rounded-[1.75rem] p-5' : 'rounded-[2.5rem] p-8'} shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] transition-all duration-500 group overflow-hidden`}>
                     <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-red-600 via-red-400 to-transparent opacity-40" />
-                    <div className="flex justify-between items-center mb-10">
+                    <div className={`flex justify-between items-center ${isCompact ? 'mb-3' : 'mb-10'}`}>
                         <div className="flex flex-col">
-                            <h3 className="text-xl font-black text-slate-800 tracking-tight">
+                            <h3 className={`${isCompact ? 'text-lg' : 'text-xl'} font-black text-slate-800 tracking-tight`}>
                                 工作流执行概览
                             </h3>
                             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Workflow Execution View</span>
                         </div>
-                        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner group-hover:scale-110 transition-transform duration-500">
+                        <div className={`${isCompact ? 'p-2 rounded-xl' : 'p-3 rounded-2xl'} bg-slate-50 border border-slate-100 shadow-inner group-hover:scale-110 transition-transform duration-500`}>
                             <Activity className="w-5 h-5 text-red-600" />
                         </div>
                     </div>
-                    <div className="h-[340px] w-full min-w-0 overflow-hidden">
+                    <div className={`${isCompact ? 'h-[165px]' : 'h-[340px]'} w-full min-w-0 overflow-hidden`}>
                         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                             <BarChart data={workflowStats.map(stat => ({
                                 ...stat,
@@ -195,33 +205,33 @@ const BatchMonitoring: React.FC = () => {
                                     iconSize={8}
                                     wrapperStyle={{ paddingBottom: '30px', fontSize: '11px', fontWeight: 800, color: '#64748B' }}
                                 />
-                                <Bar dataKey="success" name="成功" stackId="a" fill="#10B981" radius={[0, 0, 0, 0]} animationDuration={1000} barSize={32} />
-                                <Bar dataKey="failed" name="失败" stackId="a" fill="#EF4444" radius={[0, 0, 0, 0]} animationDuration={1000} barSize={32} />
-                                <Bar dataKey="remaining" name="剩余" stackId="a" fill="#F1F5F9" radius={[8, 8, 0, 0]} animationDuration={1000} barSize={32} />
+                                <Bar dataKey="success" name="成功" stackId="a" fill="#10B981" radius={[0, 0, 0, 0]} animationDuration={1000} barSize={isCompact ? 22 : 32} />
+                                <Bar dataKey="failed" name="失败" stackId="a" fill="#EF4444" radius={[0, 0, 0, 0]} animationDuration={1000} barSize={isCompact ? 22 : 32} />
+                                <Bar dataKey="remaining" name="剩余" stackId="a" fill="#F1F5F9" radius={[8, 8, 0, 0]} animationDuration={1000} barSize={isCompact ? 22 : 32} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
 
                 {/* Status Distribution */}
-                <div className="relative bg-white/70 backdrop-blur-md rounded-[2.5rem] p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] transition-all duration-500 group overflow-hidden">
+                <div className={`relative bg-white/70 backdrop-blur-md ${isCompact ? 'rounded-[1.75rem] p-5' : 'rounded-[2.5rem] p-8'} shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] transition-all duration-500 group overflow-hidden`}>
                     <div className="absolute top-0 right-0 w-1.5 h-full bg-gradient-to-b from-blue-600 via-purple-400 to-transparent opacity-40" />
-                    <div className="flex flex-col mb-10">
-                        <h3 className="text-xl font-black text-slate-800 tracking-tight">
+                    <div className={`flex flex-col ${isCompact ? 'mb-3' : 'mb-10'}`}>
+                        <h3 className={`${isCompact ? 'text-lg' : 'text-xl'} font-black text-slate-800 tracking-tight`}>
                             状态分布
                         </h3>
                         <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Status Distribution</span>
                     </div>
 
-                    <div className="h-[260px] w-full min-w-0 overflow-hidden relative mt-2">
+                    <div className={`${isCompact ? 'h-[125px]' : 'h-[260px]'} w-full min-w-0 overflow-hidden relative mt-2`}>
                         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                             <PieChart>
                                 <Pie
                                     data={statusDataFixed}
                                     cx="50%"
                                     cy="50%"
-                                    innerRadius={80}
-                                    outerRadius={105}
+                                    innerRadius={isCompact ? 38 : 80}
+                                    outerRadius={isCompact ? 56 : 105}
                                     paddingAngle={6}
                                     dataKey="value"
                                     stroke="none"
@@ -238,12 +248,12 @@ const BatchMonitoring: React.FC = () => {
                         </ResponsiveContainer>
                         {/* Center Text */}
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                            <span className="text-4xl font-black text-slate-900 tracking-tighter">{stats?.total || 0}</span>
+                            <span className={`${isCompact ? 'text-2xl' : 'text-4xl'} font-black text-slate-900 tracking-tighter`}>{stats?.total || 0}</span>
                             <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-0.5">Total</span>
                         </div>
                     </div>
 
-                    <div className="mt-8 flex flex-col gap-4">
+                    <div className={`${isCompact ? 'mt-3 gap-1.5' : 'mt-8 gap-4'} flex flex-col`}>
                         {statusDataFixed.map(item => (
                             <button
                                 key={item.name}
@@ -254,7 +264,7 @@ const BatchMonitoring: React.FC = () => {
                                             item.name === '运行中' ? 'RUNNING' :
                                                 'WAITING_GROUP'
                                 )}
-                                className="flex flex-col gap-1.5 group/item text-left rounded-2xl p-2 -mx-2 hover:bg-slate-50/80 transition-colors"
+                                className={`flex flex-col group/item text-left rounded-2xl ${isCompact ? 'gap-1 p-1.5 -mx-1.5' : 'gap-1.5 p-2 -mx-2'} hover:bg-slate-50/80 transition-colors`}
                             >
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
@@ -283,7 +293,7 @@ const BatchMonitoring: React.FC = () => {
 };
 
 // Simplified Apple-style Card
-const KpiCard = ({ title, value, icon, color, subValue, animate, isAlert, onClick }: any) => {
+const KpiCard = ({ title, value, icon, color, subValue, animate, isAlert, onClick, compact }: any) => {
     const colorStyles: any = {
         gray: { text: 'text-slate-600', bgIcon: 'bg-slate-50 text-slate-600', ring: 'ring-slate-100', glow: 'from-slate-100/30' },
         blue: { text: 'text-blue-600', bgIcon: 'bg-blue-50 text-blue-600', ring: 'ring-blue-100', glow: 'from-blue-100/30' },
@@ -297,14 +307,14 @@ const KpiCard = ({ title, value, icon, color, subValue, animate, isAlert, onClic
     return (
         <div
             onClick={onClick}
-            className={`relative bg-white/70 backdrop-blur-md rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] hover:-translate-y-1.5 transition-all duration-500 overflow-hidden group ${isAlert ? 'ring-2 ring-red-400/30' : ''} ${onClick ? 'cursor-pointer' : ''}`}
+            className={`relative bg-white/70 backdrop-blur-md ${compact ? 'rounded-[1.5rem] p-4' : 'rounded-[2rem] p-6'} shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] hover:-translate-y-1.5 transition-all duration-500 overflow-hidden group ${isAlert ? 'ring-2 ring-red-400/30' : ''} ${onClick ? 'cursor-pointer' : ''}`}
         >
             {/* Background Glow */}
             <div className={`absolute -inset-1 bg-gradient-to-br ${style.glow} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700`} />
 
-            <div className="relative flex items-center justify-between mb-6">
-                <div className={`p-3 rounded-2xl ${style.bgIcon} border border-white shadow-sm ring-4 ${style.ring} group-hover:rotate-12 transition-all duration-500`}>
-                    {React.cloneElement(icon, { strokeWidth: 2.5, className: 'w-5 h-5' })}
+            <div className={`relative flex items-center justify-between ${compact ? 'mb-3' : 'mb-6'}`}>
+                <div className={`${compact ? 'p-2 rounded-xl' : 'p-3 rounded-2xl'} ${style.bgIcon} border border-white shadow-sm ring-4 ${style.ring} group-hover:rotate-12 transition-all duration-500`}>
+                    {React.cloneElement(icon, { strokeWidth: 2.5, className: compact ? 'w-4 h-4' : 'w-5 h-5' })}
                 </div>
                 {animate && (
                     <div className="flex items-center gap-1.5 bg-blue-50 px-2 py-1 rounded-full border border-blue-100">
@@ -319,10 +329,10 @@ const KpiCard = ({ title, value, icon, color, subValue, animate, isAlert, onClic
 
             <div className="relative flex flex-col">
                 <span className="text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">{title}</span>
-                <span className={`text-3xl font-black text-slate-900 tracking-tighter tabular-nums ${isAlert && value > 0 ? 'text-red-600 animate-pulse' : ''}`}>{value}</span>
+                <span className={`${compact ? 'text-2xl' : 'text-3xl'} font-black text-slate-900 tracking-tighter tabular-nums ${isAlert && value > 0 ? 'text-red-600 animate-pulse' : ''}`}>{value}</span>
             </div>
 
-            <div className="relative mt-4 pt-4 border-t border-slate-100/50 flex items-center justify-between">
+            <div className={`relative ${compact ? 'mt-2 pt-2' : 'mt-4 pt-4'} border-t border-slate-100/50 flex items-center justify-between`}>
                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{subValue}</span>
                 <div className="w-1.5 h-1.5 rounded-full bg-slate-200 group-hover:bg-red-500 transition-colors duration-500" />
             </div>
