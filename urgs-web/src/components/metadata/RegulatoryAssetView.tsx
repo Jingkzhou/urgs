@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Database, Server, Upload } from 'lucide-react';
 import { systemService, SsoConfig } from '../../services/systemService';
 import MaintenanceHistoryModal from './MaintenanceHistoryModal';
@@ -19,6 +19,7 @@ import DeleteWithReasonModal from './DeleteWithReasonModal';
 import { ReqInfo } from './ReqInfoFormGroup';
 
 const RegulatoryAssetView: React.FC = () => {
+    const restoredRegTableRef = useRef<string | null>(null);
     // Systems
     const [systems, setSystems] = useState<SsoConfig[]>([]);
     const [selectedSystem, setSelectedSystem] = useState<string | undefined>(undefined);
@@ -129,7 +130,10 @@ const RegulatoryAssetView: React.FC = () => {
                 const data = await systemService.list();
                 setSystems(data);
                 if (data.length > 0) {
-                    setSelectedSystem(data[0].clientId);
+                    const hashQuery = window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '';
+                    const params = new URLSearchParams(hashQuery);
+                    const returnSystem = params.get('regSystem');
+                    setSelectedSystem(returnSystem || data[0].clientId);
                 }
             } catch (e) {
                 console.error('Failed to fetch systems', e);
@@ -196,6 +200,43 @@ const RegulatoryAssetView: React.FC = () => {
             fetchTables(tablePage, tableSize);
         }
     }, [tablePage, tableSize]);
+
+    useEffect(() => {
+        if (!selectedSystem) return;
+
+        const hashQuery = window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '';
+        const params = new URLSearchParams(hashQuery);
+        const tableId = params.get('regTableId');
+        if (!tableId || restoredRegTableRef.current === tableId) {
+            return;
+        }
+
+        restoredRegTableRef.current = tableId;
+        const restoreElementList = async () => {
+            try {
+                const token = localStorage.getItem('auth_token');
+                const res = await fetch(`/api/reg/table/${encodeURIComponent(tableId)}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) {
+                    return;
+                }
+                const table = await res.json();
+                setCurrentTable(table);
+                setActiveView('ELEMENT_LIST');
+                setElementKeyword('');
+                setElementFilterStatus('');
+                setElementFilterAutoFetch('');
+                setElementPage(1);
+                setSelectedElementIds(new Set());
+                fetchElements(table.id, 1, elementSize, '');
+            } catch (e) {
+                console.error('Failed to restore regulatory asset table', e);
+            }
+        };
+
+        restoreElementList();
+    }, [selectedSystem]);
 
     // Fetch Elements for a table
     const fetchElements = async (tableId: number | string, page = elementPage, size = elementSize, explicitKeyword?: string) => {

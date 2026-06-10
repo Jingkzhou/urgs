@@ -3,6 +3,7 @@ package com.example.executor.quartz.service;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import java.io.Closeable;
 import java.util.List;
@@ -15,6 +16,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Component
 public class TaskExecutorPool {
 
+    @Value("${task.executor.pool-size:500}")
+    private int poolSize;
+
+    @Value("${task.executor.queue-capacity:10000}")
+    private int queueCapacity;
+
     private ThreadPoolExecutor executor;
 
     private final ConcurrentHashMap<String, Future<?>> runningTasks = new ConcurrentHashMap<>();
@@ -25,11 +32,11 @@ public class TaskExecutorPool {
     public void init() {
         AtomicInteger threadNum = new AtomicInteger(1);
         executor = new ThreadPoolExecutor(
-                200,
-                200,
+                poolSize,
+                poolSize,
                 60,
                 TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(2000),
+                new LinkedBlockingQueue<>(queueCapacity),
                 r -> {
                     Thread t = new Thread(r);
                     t.setName("executor-task-" + threadNum.getAndIncrement());
@@ -39,7 +46,8 @@ public class TaskExecutorPool {
                 new ThreadPoolExecutor.CallerRunsPolicy()
         );
         executor.allowCoreThreadTimeOut(true);
-        log.info("TaskExecutorPool initialized: core=200, max=200, queue=2000");
+        log.info("TaskExecutorPool initialized: core={}, max={}, queue={}",
+                poolSize, poolSize, queueCapacity);
     }
 
     public boolean submitTask(String taskKey, Runnable task) {

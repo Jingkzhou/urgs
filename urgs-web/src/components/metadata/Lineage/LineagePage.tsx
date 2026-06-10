@@ -36,6 +36,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLElement>(null);
     const lastDirectionRef = useRef<LineageGraphDirection>('downstream');
+    const initialLineageTargetLoadedRef = useRef(false);
     const [searchText, setSearchText] = useState('');
     const [searchResults, setSearchResults] = useState<LineageSearchOwnerGroup[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
@@ -52,6 +53,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
     const [viewMode, setViewMode] = useState<LineageViewMode>('canvas');
     const [displayMode, setDisplayMode] = useState<LineageDisplayMode>('full');
     const [directionOptions, setDirectionOptions] = useState<LineageDirectionOption[]>(['downstream']);
+    const [lineageReturnHash, setLineageReturnHash] = useState<string | null>(null);
     const queryDirection = useMemo<LineageGraphDirection>(() => (
         directionOptions.length === 2 ? 'both' : directionOptions[0] || 'both'
     ), [directionOptions]);
@@ -169,6 +171,57 @@ const LineagePage: React.FC<LineagePageProps> = () => {
         setSearchDrawerOpen(false);
         handleSelectTable(tableName, qualifiedName, columnName);
     }, [handleSelectTable]);
+
+    useEffect(() => {
+        if (initialLineageTargetLoadedRef.current) {
+            return;
+        }
+        const hashQuery = window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '';
+        const params = new URLSearchParams(hashQuery);
+        const tableName = params.get('lineageTable');
+        if (!tableName) {
+            initialLineageTargetLoadedRef.current = true;
+            return;
+        }
+
+        initialLineageTargetLoadedRef.current = true;
+        const qualifiedName = params.get('lineageQualifiedName') || tableName;
+        const columnName = params.get('lineageColumn') || undefined;
+        const returnHash = params.get('lineageReturn') === 'regAsset'
+            ? (params.get('lineageReturnHash') || '/metadata?subtab=asset')
+            : null;
+        const directionParam = params.get('lineageDirection');
+        const initialDirection: LineageGraphDirection | undefined = (
+            directionParam === 'upstream' || directionParam === 'downstream' || directionParam === 'both'
+                ? directionParam
+                : undefined
+        );
+
+        setWorkspaceMode('canvas');
+        setViewMode('canvas');
+        setSearchDrawerOpen(false);
+        setSearchText(columnName || tableName);
+        setLineageReturnHash(returnHash);
+        if (initialDirection === 'both') {
+            lastDirectionRef.current = 'both';
+            setDirectionOptions(['upstream', 'downstream']);
+        } else if (initialDirection === 'upstream') {
+            lastDirectionRef.current = 'upstream';
+            setDirectionOptions(['upstream']);
+        } else if (initialDirection === 'downstream') {
+            lastDirectionRef.current = 'downstream';
+            setDirectionOptions(['downstream']);
+        }
+        handleSelectTable(tableName, qualifiedName, columnName, initialDirection);
+    }, [handleSelectTable]);
+
+    const handleBackFromCanvas = () => {
+        if (lineageReturnHash) {
+            window.location.hash = lineageReturnHash;
+            return;
+        }
+        setWorkspaceMode('catalog');
+    };
 
     const sortedOwnerGroups = useMemo(() => (
         [...searchResults].sort((a, b) => a.ownerName.localeCompare(b.ownerName))
@@ -912,7 +965,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                         <div className="lineage-canvas-toolbar-actions">
                             <Button
                                 icon={<LeftOutlined />}
-                                onClick={() => setWorkspaceMode('catalog')}
+                                onClick={handleBackFromCanvas}
                             >
                                 返回列表
                             </Button>

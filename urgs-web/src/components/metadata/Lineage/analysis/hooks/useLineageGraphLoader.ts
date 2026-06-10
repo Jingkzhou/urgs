@@ -25,16 +25,17 @@ export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
         processLayoutTrace(response.nodes, response.edges, tableName, qualifiedName || undefined)
     ), []);
 
-    const handleSelectTable = useCallback(async (tableName: string, qualifiedName?: string, targetColName?: string) => {
+    const handleSelectTable = useCallback(async (tableName: string, qualifiedName?: string, targetColName?: string, directionOverride?: LineageGraphDirection) => {
         setGraphLoading(true);
         setSelectedTable(tableName);
         setSelectedQualifiedName(qualifiedName || tableName);
         setSelectedColumnName(targetColName || null);
         try {
+            const graphDirection = directionOverride || direction;
             const response = await getLineageGraph(tableName, targetColName, {
                 depth: TRACE_GRAPH_DEPTH,
                 qualifiedName,
-                direction,
+                direction: graphDirection,
                 limit: TRACE_GRAPH_LIMIT,
                 relationLevel: targetColName ? 'column' : 'table',
             });

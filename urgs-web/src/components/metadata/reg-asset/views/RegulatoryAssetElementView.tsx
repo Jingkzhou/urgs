@@ -6,6 +6,7 @@ import {
     Download,
     Edit,
     Filter,
+    GitBranch,
     Hash,
     Info,
     RefreshCw,
@@ -55,6 +56,21 @@ interface RegulatoryAssetElementViewProps {
     onShowHistory: (element: RegElement) => void;
 }
 
+const buildQualifiedName = (owner: string | undefined, tableName: string) => (
+    [owner, tableName].filter(Boolean).join('.')
+);
+
+const buildRegAssetReturnHash = (table: RegTable) => {
+    const params = new URLSearchParams({ subtab: 'asset' });
+    if (table.id) {
+        params.set('regTableId', String(table.id));
+    }
+    if (table.systemCode) {
+        params.set('regSystem', table.systemCode);
+    }
+    return `/metadata?${params.toString()}`;
+};
+
 const RegulatoryAssetElementView: React.FC<RegulatoryAssetElementViewProps> = ({
     currentTable,
     elementKeyword,
@@ -89,6 +105,24 @@ const RegulatoryAssetElementView: React.FC<RegulatoryAssetElementViewProps> = ({
     handleDeleteElement,
     onShowHistory,
 }) => {
+    const openLineageCanvas = (target: { owner?: string; tableName: string; columnName?: string }) => {
+        const qualifiedName = buildQualifiedName(target.owner, target.tableName);
+        const params = new URLSearchParams({
+            subtab: 'lineage',
+            lineageTable: target.tableName,
+            lineageQualifiedName: qualifiedName,
+            lineageDirection: 'both',
+            lineageReturn: 'regAsset',
+            lineageReturnHash: buildRegAssetReturnHash(currentTable),
+        });
+        if (target.columnName) {
+            params.set('lineageColumn', target.columnName);
+        }
+        window.location.hash = `/metadata?${params.toString()}`;
+    };
+
+    const primaryPhysicalTable = currentTable.physicalTables?.[0];
+
     return (
         <div className="flex flex-col h-full animate-in slide-in-from-right-10 duration-300">
             <div className="p-3 border-b border-slate-200 flex items-center justify-between bg-white shadow-sm z-10">
@@ -154,6 +188,14 @@ const RegulatoryAssetElementView: React.FC<RegulatoryAssetElementViewProps> = ({
                     </button>
                     <button onClick={() => handleShowDetail('TABLE', currentTable)} className="p-1.5 hover:bg-indigo-50 text-indigo-600 rounded-lg border border-transparent hover:border-indigo-100" title="查看表详情">
                         <Info size={16} />
+                    </button>
+                    <button
+                        onClick={() => primaryPhysicalTable && openLineageCanvas(primaryPhysicalTable)}
+                        disabled={!primaryPhysicalTable}
+                        className={`p-1.5 rounded-lg border border-transparent ${primaryPhysicalTable ? 'hover:bg-blue-50 hover:border-blue-100 text-blue-600' : 'text-slate-300 cursor-not-allowed'}`}
+                        title={primaryPhysicalTable ? `查看物理表血缘：${buildQualifiedName(primaryPhysicalTable.owner, primaryPhysicalTable.tableName)}` : '当前资产未关联物理表'}
+                    >
+                        <GitBranch size={16} />
                     </button>
                 </div>
             </div>
@@ -379,6 +421,19 @@ const RegulatoryAssetElementView: React.FC<RegulatoryAssetElementViewProps> = ({
                                 <Clock size={14} />
                             </button>
                             <button onClick={() => handleShowDetail('ELEMENT', el)} className="p-1.5 hover:bg-indigo-100 text-indigo-600 rounded" title="详情"><Info size={14} /></button>
+                            {el.physicalFields && el.physicalFields.length > 0 && (
+                                <button
+                                    onClick={() => openLineageCanvas({
+                                        owner: el.physicalFields![0].owner,
+                                        tableName: el.physicalFields![0].tableName,
+                                        columnName: el.physicalFields![0].fieldName,
+                                    })}
+                                    className="p-1.5 hover:bg-blue-100 text-blue-600 rounded"
+                                    title={`查看字段血缘：${buildQualifiedName(el.physicalFields[0].owner, el.physicalFields[0].tableName)}.${el.physicalFields[0].fieldName}`}
+                                >
+                                    <GitBranch size={14} />
+                                </button>
+                            )}
                             <Auth code="metadata:asset:element:edit">
                                 <button onClick={() => handleEditElement(el)} className="p-1.5 hover:bg-slate-200 text-slate-600 rounded" title="编辑"><Edit size={14} /></button>
                             </Auth>
