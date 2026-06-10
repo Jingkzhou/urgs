@@ -535,7 +535,7 @@ const RegulatoryAssetView: React.FC = () => {
         if (files.length === 0) {
             return;
         }
-        if (!confirm(`确认要用上传的 ${files.length} 个 SQL 文件同步 ${selectedSystem} 系统的代码片段吗？\n将按 INSERT 目标名匹配并更新指标的代码片段。`)) {
+        if (!confirm(`确认要用上传的 ${files.length} 个 SQL 文件录入 ${selectedSystem} 系统的指标逻辑吗？\n将按指标编号匹配 SQL 片段，多个片段会用 UNION ALL 合并。`)) {
             e.target.value = '';
             return;
         }
@@ -554,18 +554,18 @@ const RegulatoryAssetView: React.FC = () => {
             });
             const result = await res.json();
             if (result.success) {
-                alert(`同步成功！\n匹配指标数: ${result.matchedCount}\n更新指标数: ${result.updatedCount}${result.message ? `\n${result.message}` : ''}`);
+                alert(`录入成功！\n匹配指标数: ${result.matchedCount}\n更新指标数: ${result.updatedCount}${result.message ? `\n${result.message}` : ''}`);
                 // 刷新数据
                 fetchTables();
                 if (currentTable) {
                     fetchElements(currentTable.id!);
                 }
             } else {
-                alert('同步失败: ' + result.message);
+                alert('录入失败: ' + result.message);
             }
         } catch (e) {
             console.error('Sync failed', e);
-            alert('同步失败');
+            alert('录入失败');
         } finally {
             setIsSyncing(false);
             e.target.value = '';

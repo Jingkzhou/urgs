@@ -400,8 +400,8 @@ public class RegTableController {
     }
 
     /**
-     * 上传 SQL 文件并同步指标代码片段。
-     * 按 INSERT INTO / INSERT OVERWRITE 的目标表名匹配当前系统下指标名称。
+     * 上传 SQL 文件并录入指标代码片段。
+     * 按 INSERT SQL 片段是否包含当前系统下的指标编号匹配，多个片段用 UNION ALL 合并。
      */
     @PostMapping("/sync-code-snippets")
     @Transactional(rollbackFor = Exception.class)
@@ -432,14 +432,14 @@ public class RegTableController {
             List<RegElement> indicators = regElementService.list(new LambdaQueryWrapper<RegElement>()
                     .in(RegElement::getTableId, tableIds)
                     .eq(RegElement::getType, "INDICATOR"));
-            Map<String, RegElement> indicatorMap = indicators.stream()
+            List<RegElement> namedIndicators = indicators.stream()
                     .filter(item -> StringUtils.isNotBlank(item.getName()))
-                    .collect(Collectors.toMap(item -> normalizeSqlObjectName(item.getName()), item -> item,
-                            (left, right) -> left));
+                    .toList();
 
-            int matchedCount = 0;
+            Map<Long, LinkedHashSet<String>> snippetsByIndicatorId = new LinkedHashMap<>();
+
+            int snippetCount = 0;
             int updatedCount = 0;
-            List<String> unmatchedTargets = new ArrayList<>();
 
             for (MultipartFile file : files) {
                 if (file == null || file.isEmpty()) {
@@ -447,40 +447,49 @@ public class RegTableController {
                 }
                 String content = new String(file.getBytes(), java.nio.charset.StandardCharsets.UTF_8);
                 for (String statement : splitSqlStatements(content)) {
-                    String targetName = extractInsertTargetName(statement);
-                    if (StringUtils.isBlank(targetName)) {
-                        continue;
-                    }
-                    RegElement indicator = indicatorMap.get(normalizeSqlObjectName(targetName));
-                    if (indicator == null) {
-                        unmatchedTargets.add(targetName);
-                        continue;
-                    }
-                    matchedCount++;
                     String snippet = statement.trim();
-                    if (!snippet.endsWith(";")) {
-                        snippet += ";";
+                    if (StringUtils.isBlank(snippet)) {
+                        continue;
                     }
-                    if (!Objects.equals(indicator.getCodeSnippet(), snippet)) {
-                        indicator.setCodeSnippet(snippet);
-                        indicator.setUpdateTime(LocalDateTime.now());
-                        regElementService.updateById(indicator);
-                        updatedCount++;
+                    if (!isCodeSnippetCandidate(snippet)) {
+                        continue;
+                    }
+                    for (RegElement indicator : namedIndicators) {
+                        if (!containsIndicatorCode(snippet, indicator.getName())) {
+                            continue;
+                        }
+                        boolean added = snippetsByIndicatorId
+                                .computeIfAbsent(indicator.getId(), id -> new LinkedHashSet<>())
+                                .add(normalizeSnippetForStorage(snippet));
+                        if (added) {
+                            snippetCount++;
+                        }
                     }
                 }
             }
 
-            result.put("success", true);
-            result.put("matchedCount", matchedCount);
-            result.put("updatedCount", updatedCount);
-            if (!unmatchedTargets.isEmpty()) {
-                result.put("message", "以下 SQL 目标未匹配到指标：" + unmatchedTargets.stream().distinct()
-                        .limit(20)
-                        .collect(Collectors.joining("、")));
+            for (RegElement indicator : namedIndicators) {
+                LinkedHashSet<String> snippets = snippetsByIndicatorId.get(indicator.getId());
+                if (snippets == null || snippets.isEmpty()) {
+                    continue;
+                }
+                String snippet = joinSnippetsWithUnionAll(snippets);
+                if (!Objects.equals(indicator.getCodeSnippet(), snippet)) {
+                    indicator.setCodeSnippet(snippet);
+                    indicator.setUpdateTime(LocalDateTime.now());
+                    regElementService.updateById(indicator);
+                    updatedCount++;
+                }
             }
+
+            result.put("success", true);
+            result.put("matchedCount", snippetsByIndicatorId.size());
+            result.put("updatedCount", updatedCount);
+            result.put("snippetCount", snippetCount);
+            result.put("message", String.format("共摘取 %d 个代码片段", snippetCount));
         } catch (Exception e) {
             result.put("success", false);
-            result.put("message", "同步失败：" + e.getMessage());
+            result.put("message", "录入失败：" + e.getMessage());
         }
         return result;
     }
@@ -711,24 +720,37 @@ public class RegTableController {
         return statements;
     }
 
-    private String extractInsertTargetName(String statement) {
-        if (StringUtils.isBlank(statement)) {
-            return null;
+    private boolean isCodeSnippetCandidate(String snippet) {
+        if (StringUtils.isBlank(snippet)) {
+            return false;
         }
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
-                "\\binsert\\s+(?:into|overwrite)\\s+(?:table\\s+)?((?:`[^`]+`|[\\w]+)(?:\\.(?:`[^`]+`|[\\w]+))?)",
-                java.util.regex.Pattern.CASE_INSENSITIVE);
-        java.util.regex.Matcher matcher = pattern.matcher(statement);
-        if (!matcher.find()) {
-            return null;
-        }
-        String target = matcher.group(1);
-        String[] parts = target.split("\\.");
-        return stripSqlIdentifier(parts[parts.length - 1]);
+        return java.util.regex.Pattern
+                .compile("\\binsert\\s+(?:into|overwrite)\\b", java.util.regex.Pattern.CASE_INSENSITIVE)
+                .matcher(snippet)
+                .find();
     }
 
-    private String normalizeSqlObjectName(String name) {
-        return stripSqlIdentifier(name).toUpperCase(Locale.ROOT);
+    private boolean containsIndicatorCode(String snippet, String indicatorCode) {
+        if (StringUtils.isBlank(snippet) || StringUtils.isBlank(indicatorCode)) {
+            return false;
+        }
+        String normalizedSnippet = snippet.replace("`", "").toUpperCase(Locale.ROOT);
+        String normalizedIndicatorCode = indicatorCode.replace("`", "").toUpperCase(Locale.ROOT);
+        return normalizedSnippet.contains(normalizedIndicatorCode);
+    }
+
+    private String normalizeSnippetForStorage(String snippet) {
+        String normalized = snippet.trim();
+        while (normalized.endsWith(";")) {
+            normalized = normalized.substring(0, normalized.length() - 1).trim();
+        }
+        return normalized;
+    }
+
+    private String joinSnippetsWithUnionAll(Collection<String> snippets) {
+        return snippets.stream()
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.joining("\nUNION ALL\n")) + ";";
     }
 
     private String stripSqlIdentifier(String name) {

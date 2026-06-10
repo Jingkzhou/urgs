@@ -244,8 +244,8 @@ const RegulatoryAssetTableView: React.FC<RegulatoryAssetTableViewProps> = ({
                         {selectedSystem && (
                             <>
                                 <Auth code="metadata:asset:sync">
-                                    <button onClick={handleSyncCodeSnippets} disabled={isSyncing} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-orange-300 hover:text-orange-700 hover:bg-orange-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="同步逻辑">
-                                        <RefreshCw size={14} className={`text-orange-500 group-hover:scale-110 transition-transform ${isSyncing ? 'animate-spin' : ''}`} /> <span className="text-sm">同步</span>
+                                    <button onClick={handleSyncCodeSnippets} disabled={isSyncing} className="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-orange-300 hover:text-orange-700 hover:bg-orange-50/50 flex items-center gap-1 px-3 transition-all shadow-sm group" title="录入指标逻辑">
+                                        <RefreshCw size={14} className={`text-orange-500 group-hover:scale-110 transition-transform ${isSyncing ? 'animate-spin' : ''}`} /> <span className="text-sm">录入逻辑</span>
                                     </button>
                                 </Auth>
                                 <Auth code="metadata:asset:script">
