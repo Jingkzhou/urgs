@@ -181,11 +181,11 @@ const BusinessDashboardView: React.FC = () => {
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 items-stretch">
         
         {/* Left Column (8/12) */}
-        <div className="xl:col-span-8 flex flex-col gap-6">
+        <div className="xl:col-span-8 flex h-full flex-col gap-6">
           {/* Metric Trends */}
           {canViewTrend && (
             <Auth code="dash:stats">
-              <div className="relative transform transition-transform duration-500 hover:-translate-y-1">
+              <div className="relative h-full transform transition-transform duration-500 hover:-translate-y-1">
                 <TrendAnalysisChart />
               </div>
             </Auth>

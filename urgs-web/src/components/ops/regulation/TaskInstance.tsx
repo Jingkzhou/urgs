@@ -30,6 +30,8 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
     const todayDate = dayjs().format('YYYY-MM-DD');
     const initialKeyword = initialFilters?.keyword?.trim() || '';
     const initialTaskSystem = initialFilters?.taskSystem || '';
+    const initialTheme = initialFilters?.theme?.trim() || '';
+    const initialRemark = initialFilters?.remark?.trim() || '';
     const initialDataDate = initialFilters?.dataDate || '';
     const initialCreateDate = initialFilters?.createDate ?? todayDate;
     const initialStatus = initialFilters?.status || '';
@@ -45,11 +47,15 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
     const [logList, setLogList] = useState<QuartzTaskExecutionLog[]>([]);
     const [draftSearchKeyword, setDraftSearchKeyword] = useState(initialKeyword);
     const [draftTaskSystemFilter, setDraftTaskSystemFilter] = useState(initialTaskSystem);
+    const [draftThemeFilter, setDraftThemeFilter] = useState(initialTheme);
+    const [draftRemarkFilter, setDraftRemarkFilter] = useState(initialRemark);
     const [draftDataDateFilter, setDraftDataDateFilter] = useState(initialDataDate);
     const [draftCreateDateFilter, setDraftCreateDateFilter] = useState(initialCreateDate);
     const [draftStatusFilter, setDraftStatusFilter] = useState<string>(initialStatus);
     const [searchKeyword, setSearchKeyword] = useState(initialKeyword);
     const [taskSystemFilter, setTaskSystemFilter] = useState(initialTaskSystem);
+    const [themeFilter, setThemeFilter] = useState(initialTheme);
+    const [remarkFilter, setRemarkFilter] = useState(initialRemark);
     const [dataDateFilter, setDataDateFilter] = useState(initialDataDate);
     const [createDateFilter, setCreateDateFilter] = useState(initialCreateDate);
     const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
@@ -71,6 +77,8 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         dataDate?: string;
         status?: string;
         taskSystem?: string;
+        theme?: string;
+        remark?: string;
         keyword?: string;
     }) => {
         const nextFilters = filters || {};
@@ -81,9 +89,11 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
             dataDate: (nextFilters.dataDate ?? dataDateFilter)?.replaceAll('-', '') || undefined,
             status: (nextFilters.status ?? statusFilter) || undefined,
             taskSystem: (nextFilters.taskSystem ?? taskSystemFilter) || undefined,
+            theme: (nextFilters.theme ?? themeFilter.trim()) || undefined,
+            remark: (nextFilters.remark ?? remarkFilter.trim()) || undefined,
             taskName: (nextFilters.keyword ?? searchKeyword.trim()) || undefined,
         };
-    }, [createDateFilter, dataDateFilter, searchKeyword, statusFilter, taskSystemFilter]);
+    }, [createDateFilter, dataDateFilter, remarkFilter, searchKeyword, statusFilter, taskSystemFilter, themeFilter]);
 
     const loadTasks = useCallback(async () => {
         try {
@@ -119,6 +129,8 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         dataDate?: string;
         status?: string;
         taskSystem?: string;
+        theme?: string;
+        remark?: string;
         keyword?: string;
     }, options?: { silent?: boolean }) => {
         try {
@@ -166,6 +178,8 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         dataDate?: string;
         status?: string;
         taskSystem?: string;
+        theme?: string;
+        remark?: string;
         keyword?: string;
     }, options?: { silent?: boolean }) => {
         const mergedInstances = await queryAllInstances(filters, options);
@@ -180,6 +194,8 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
             dataDate: '',
             status: '',
             taskSystem: '',
+            theme: '',
+            remark: '',
             keyword: '',
         });
         if (todayInstances) {
@@ -294,6 +310,11 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         [taskList]
     );
 
+    const themeOptions = useMemo(
+        () => Array.from(new Set(taskList.map(task => task.theme).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
+        [taskList]
+    );
+
     const filteredInstances = useMemo(() => {
         return instanceList.filter(instance => {
             const task = taskMap.get(instance.plan_id);
@@ -302,19 +323,18 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
                 String(instance.id),
                 String(instance.plan_id),
                 task?.task_name || '',
-                task?.task_system || '',
-                task?.theme || '',
-                task?.remark || '',
                 instance.msg || '',
             ].some(item => item.toLowerCase().includes(keyword));
             const matchesTaskSystem = !taskSystemFilter || (task?.task_system || '') === taskSystemFilter;
+            const matchesTheme = !themeFilter || (task?.theme || '').toLowerCase().includes(themeFilter.toLowerCase());
+            const matchesRemark = !remarkFilter || (task?.remark || '').toLowerCase().includes(remarkFilter.toLowerCase());
             const matchesDataDate = !dataDateFilter || normalizeDateKey(instance.data_date) === normalizeDateKey(dataDateFilter);
             const matchesCreateDate = !createDateFilter || instance.create_date === createDateFilter.replaceAll('-', '');
             const matchesStatus = statusFilter === '' || String(instance.status ?? '') === statusFilter;
 
-            return matchesKeyword && matchesTaskSystem && matchesDataDate && matchesCreateDate && matchesStatus;
+            return matchesKeyword && matchesTaskSystem && matchesTheme && matchesRemark && matchesDataDate && matchesCreateDate && matchesStatus;
         });
-    }, [createDateFilter, dataDateFilter, instanceList, searchKeyword, statusFilter, taskMap, taskSystemFilter]);
+    }, [createDateFilter, dataDateFilter, instanceList, remarkFilter, searchKeyword, statusFilter, taskMap, taskSystemFilter, themeFilter]);
 
     const pagedInstances = useMemo(() => {
         const start = (currentPage - 1) * pageSize;
@@ -323,12 +343,16 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchKeyword, taskSystemFilter, statusFilter, dataDateFilter, createDateFilter]);
+    }, [searchKeyword, taskSystemFilter, themeFilter, remarkFilter, statusFilter, dataDateFilter, createDateFilter]);
 
     const handleSearch = useCallback(() => {
         const nextKeyword = draftSearchKeyword.trim();
+        const nextTheme = draftThemeFilter.trim();
+        const nextRemark = draftRemarkFilter.trim();
         setSearchKeyword(nextKeyword);
         setTaskSystemFilter(draftTaskSystemFilter);
+        setThemeFilter(nextTheme);
+        setRemarkFilter(nextRemark);
         setDataDateFilter(draftDataDateFilter);
         setCreateDateFilter(draftCreateDateFilter);
         setStatusFilter(draftStatusFilter);
@@ -336,6 +360,8 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         void loadInstances({
             keyword: nextKeyword,
             taskSystem: draftTaskSystemFilter,
+            theme: nextTheme,
+            remark: nextRemark,
             dataDate: draftDataDateFilter,
             createDate: draftCreateDateFilter,
             status: draftStatusFilter,
@@ -346,14 +372,20 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         draftSearchKeyword,
         draftStatusFilter,
         draftTaskSystemFilter,
+        draftThemeFilter,
+        draftRemarkFilter,
         loadInstances,
     ]);
 
     const handleSummaryStatusClick = useCallback((nextStatus: string) => {
         const nextKeyword = draftSearchKeyword.trim();
+        const nextTheme = draftThemeFilter.trim();
+        const nextRemark = draftRemarkFilter.trim();
         setDraftStatusFilter(nextStatus);
         setSearchKeyword(nextKeyword);
         setTaskSystemFilter(draftTaskSystemFilter);
+        setThemeFilter(nextTheme);
+        setRemarkFilter(nextRemark);
         setDataDateFilter(draftDataDateFilter);
         setCreateDateFilter(draftCreateDateFilter);
         setStatusFilter(nextStatus);
@@ -361,6 +393,8 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         void loadInstances({
             keyword: nextKeyword,
             taskSystem: draftTaskSystemFilter,
+            theme: nextTheme,
+            remark: nextRemark,
             dataDate: draftDataDateFilter,
             createDate: draftCreateDateFilter,
             status: nextStatus,
@@ -370,17 +404,23 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         draftDataDateFilter,
         draftSearchKeyword,
         draftTaskSystemFilter,
+        draftThemeFilter,
+        draftRemarkFilter,
         loadInstances,
     ]);
 
     const handleResetFilters = useCallback(() => {
         setDraftSearchKeyword('');
         setDraftTaskSystemFilter('');
+        setDraftThemeFilter('');
+        setDraftRemarkFilter('');
         setDraftDataDateFilter('');
         setDraftCreateDateFilter(todayDate);
         setDraftStatusFilter('');
         setSearchKeyword('');
         setTaskSystemFilter('');
+        setThemeFilter('');
+        setRemarkFilter('');
         setDataDateFilter('');
         setCreateDateFilter(todayDate);
         setStatusFilter('');
@@ -792,8 +832,11 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
                 taskMap={taskMap}
                 taskNameMap={taskNameMap}
                 taskSystemOptions={taskSystemOptions}
+                themeOptions={themeOptions}
                 searchKeyword={draftSearchKeyword}
                 taskSystemFilter={draftTaskSystemFilter}
+                themeFilter={draftThemeFilter}
+                remarkFilter={draftRemarkFilter}
                 dataDateFilter={draftDataDateFilter}
                 createDateFilter={draftCreateDateFilter}
                 statusFilter={draftStatusFilter}
@@ -806,6 +849,8 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
                 pageSize={pageSize}
                 onSearchKeywordChange={setDraftSearchKeyword}
                 onTaskSystemFilterChange={setDraftTaskSystemFilter}
+                onThemeFilterChange={setDraftThemeFilter}
+                onRemarkFilterChange={setDraftRemarkFilter}
                 onDataDateFilterChange={setDraftDataDateFilter}
                 onCreateDateFilterChange={setDraftCreateDateFilter}
                 onStatusFilterChange={setDraftStatusFilter}

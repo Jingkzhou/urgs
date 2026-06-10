@@ -42,6 +42,8 @@ public class QuartzQueryDTO extends PageParamDTO {
 
     String theme;
 
+    String remark;
+
     String status;
 
     String dependId;

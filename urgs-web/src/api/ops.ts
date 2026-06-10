@@ -343,6 +343,7 @@ export interface QuartzTaskQueryParams {
     taskType?: number;
     taskSystem?: string;
     theme?: string;
+    remark?: string;
 }
 
 export interface QuartzTaskSavePayload {
@@ -428,6 +429,7 @@ export interface QuartzTaskStatusQueryParams {
     taskName?: string;
     taskSystem?: string;
     theme?: string;
+    remark?: string;
     status?: string;
     beginDate?: string;
 }

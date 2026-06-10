@@ -62,10 +62,7 @@
             AND t.id = #{queryDTO.id}
         </if>
         <if test="queryDTO.taskName != null and queryDTO.taskName != ''">
-            AND (
-                INSTR(t.task_name, #{queryDTO.taskName})
-                OR INSTR(t.remark, #{queryDTO.taskName})
-            )
+            AND INSTR(t.task_name, #{queryDTO.taskName})
         </if>
         <if test="queryDTO.taskStatus != null">
             AND t.task_status = #{queryDTO.taskStatus}
@@ -78,6 +75,9 @@
         </if>
         <if test="queryDTO.theme != null and queryDTO.theme != ''">
             AND INSTR(t.theme, #{queryDTO.theme})
+        </if>
+        <if test="queryDTO.remark != null and queryDTO.remark != ''">
+            AND INSTR(t.remark, #{queryDTO.remark})
         </if>
         ORDER BY t.id DESC
     </select>

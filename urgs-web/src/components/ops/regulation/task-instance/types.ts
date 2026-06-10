@@ -59,6 +59,8 @@ export interface TaskInstanceStats {
 export interface TaskInstanceInitialFilters {
     keyword?: string;
     taskSystem?: string;
+    theme?: string;
+    remark?: string;
     dataDate?: string;
     createDate?: string;
     status?: string;

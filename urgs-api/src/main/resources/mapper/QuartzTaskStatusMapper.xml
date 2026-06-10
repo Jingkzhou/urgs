@@ -99,8 +99,6 @@
                 OR INSTR(CAST(s.plan_id AS CHAR), #{queryDTO.taskName})
                 OR INSTR(t.task_name, #{queryDTO.taskName})
                 OR INSTR(s.msg, #{queryDTO.taskName})
-                OR INSTR(t.theme, #{queryDTO.taskName})
-                OR INSTR(t.remark, #{queryDTO.taskName})
             )
         </if>
         <if test="queryDTO.taskSystem != null and queryDTO.taskSystem != ''">
@@ -108,6 +106,9 @@
         </if>
         <if test="queryDTO.theme != null and queryDTO.theme != ''">
             AND INSTR(t.theme, #{queryDTO.theme})
+        </if>
+        <if test="queryDTO.remark != null and queryDTO.remark != ''">
+            AND INSTR(t.remark, #{queryDTO.remark})
         </if>
         <if test="queryDTO.status != null and queryDTO.status != '99'">
             AND s.status = #{queryDTO.status}

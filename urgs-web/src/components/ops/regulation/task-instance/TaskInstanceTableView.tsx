@@ -21,8 +21,11 @@ interface TaskInstanceTableViewProps {
     taskMap: Map<number, QuartzTask>;
     taskNameMap: Map<number, string>;
     taskSystemOptions: string[];
+    themeOptions: string[];
     searchKeyword: string;
     taskSystemFilter: string;
+    themeFilter: string;
+    remarkFilter: string;
     dataDateFilter: string;
     createDateFilter: string;
     statusFilter: string;
@@ -35,6 +38,8 @@ interface TaskInstanceTableViewProps {
     pageSize: number;
     onSearchKeywordChange: (value: string) => void;
     onTaskSystemFilterChange: (value: string) => void;
+    onThemeFilterChange: (value: string) => void;
+    onRemarkFilterChange: (value: string) => void;
     onDataDateFilterChange: (value: string) => void;
     onCreateDateFilterChange: (value: string) => void;
     onStatusFilterChange: (value: string) => void;
@@ -62,8 +67,11 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     taskMap,
     taskNameMap,
     taskSystemOptions,
+    themeOptions,
     searchKeyword,
     taskSystemFilter,
+    themeFilter,
+    remarkFilter,
     dataDateFilter,
     createDateFilter,
     statusFilter,
@@ -76,6 +84,8 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     pageSize,
     onSearchKeywordChange,
     onTaskSystemFilterChange,
+    onThemeFilterChange,
+    onRemarkFilterChange,
     onDataDateFilterChange,
     onCreateDateFilterChange,
     onStatusFilterChange,
@@ -147,7 +157,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                     </div>
                 </div>
 
-                <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-7">
+                <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-8">
                     <label className="space-y-1">
                         <div className="text-xs font-medium text-slate-500">搜索条件</div>
                         <div className="relative">
@@ -160,7 +170,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                                         onSearch();
                                     }
                                 }}
-                                placeholder="实例ID / 计划ID / 消息 / 主题 / 备注"
+                                placeholder="实例ID / 计划ID / 任务名 / 消息"
                                 className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
                             />
                         </div>
@@ -179,6 +189,35 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                                 </option>
                             ))}
                         </select>
+                    </label>
+                    <label className="space-y-1">
+                        <div className="text-xs font-medium text-slate-500">主题</div>
+                        <select
+                            value={themeFilter}
+                            onChange={(event) => onThemeFilterChange(event.target.value)}
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
+                        >
+                            <option value="">全部主题</option>
+                            {themeOptions.map(item => (
+                                <option key={item} value={item}>
+                                    {item}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="space-y-1">
+                        <div className="text-xs font-medium text-slate-500">备注</div>
+                        <input
+                            value={remarkFilter}
+                            onChange={(event) => onRemarkFilterChange(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                    onSearch();
+                                }
+                            }}
+                            placeholder="搜索备注"
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
+                        />
                     </label>
                     <label className="space-y-1">
                         <div className="text-xs font-medium text-slate-500">状态</div>

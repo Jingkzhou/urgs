@@ -51,6 +51,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
     const [typeFilter, setTypeFilter] = useState<string>('');
     const [systemFilter, setSystemFilter] = useState<string>('');
     const [themeFilter, setThemeFilter] = useState<string>('');
+    const [remarkFilter, setRemarkFilter] = useState<string>('');
     const [selectedTask, setSelectedTask] = useState<QuartzTask | null>(null);
     const [selectedTaskDetailTab, setSelectedTaskDetailTab] = useState<'config' | 'dependency'>('config');
     const [selectedTaskDataDependencies, setSelectedTaskDataDependencies] = useState<QuartzTask[]>([]);
@@ -161,8 +162,9 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
             taskType: typeFilter ? toTaskTypeCode(typeFilter) : undefined,
             taskSystem: systemFilter || undefined,
             theme: themeFilter || undefined,
+            remark: emptyToNull(remarkFilter) || undefined,
         };
-    }, [keyword, statusFilter, systemFilter, themeFilter, typeFilter]);
+    }, [keyword, remarkFilter, statusFilter, systemFilter, themeFilter, typeFilter]);
 
     const loadTasks = useCallback(async (pageNum = currentPage, size = pageSize) => {
         try {
@@ -272,7 +274,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [keyword, statusFilter, systemFilter, themeFilter, typeFilter]);
+    }, [keyword, remarkFilter, statusFilter, systemFilter, themeFilter, typeFilter]);
 
     useEffect(() => {
         setSelectedTaskDetailTab('config');
@@ -583,13 +585,13 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
 
                     {/* SaaS Control Grid Filter Bar */}
                     <div className="mt-6 border-t border-slate-100 pt-5">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
                             <div className="relative">
                                 <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                                 <input
                                     value={keyword}
                                     onChange={(event) => setKeyword(event.target.value)}
-                                    placeholder="搜索任务ID / 名称 / 说明备注"
+                                    placeholder="搜索任务ID / 名称"
                                     className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 pl-9 pr-3.5 text-xs text-slate-700 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
                                 />
                             </div>
@@ -639,6 +641,15 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                         <option key={theme} value={theme}>{theme}</option>
                                     ))}
                                 </select>
+                            </div>
+                            <div className="relative">
+                                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    value={remarkFilter}
+                                    onChange={(event) => setRemarkFilter(event.target.value)}
+                                    placeholder="搜索备注"
+                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 pl-9 pr-3.5 text-xs text-slate-700 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
+                                />
                             </div>
                         </div>
                     </div>
