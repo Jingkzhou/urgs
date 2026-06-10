@@ -93,18 +93,6 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
         return Array.from(systemNames);
     }, [dependencyCandidateTaskList, editingTask?.task_system, regulationSystems, taskList]);
 
-    const themes = useMemo(() => {
-        const themeNames = new Set<string>();
-        dependencyCandidateTaskList.forEach(task => {
-            if (task.theme?.trim()) themeNames.add(task.theme.trim());
-        });
-        taskList.forEach(task => {
-            if (task.theme?.trim()) themeNames.add(task.theme.trim());
-        });
-        if (editingTask?.theme?.trim()) themeNames.add(editingTask.theme.trim());
-        return Array.from(themeNames);
-    }, [dependencyCandidateTaskList, editingTask?.theme, taskList]);
-
     useEffect(() => {
         let mounted = true;
 
@@ -630,17 +618,14 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
                                     ))}
                                 </select>
                             </div>
-                            <div>
-                                <select
+                            <div className="relative">
+                                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
                                     value={themeFilter}
                                     onChange={(event) => setThemeFilter(event.target.value)}
-                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white font-medium"
-                                >
-                                    <option value="">全部任务主题</option>
-                                    {themes.map(theme => (
-                                        <option key={theme} value={theme}>{theme}</option>
-                                    ))}
-                                </select>
+                                    placeholder="搜索主题"
+                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 pl-9 pr-3.5 text-xs text-slate-700 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
+                                />
                             </div>
                             <div className="relative">
                                 <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />

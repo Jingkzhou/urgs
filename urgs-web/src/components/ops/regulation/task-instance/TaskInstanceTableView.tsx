@@ -21,7 +21,6 @@ interface TaskInstanceTableViewProps {
     taskMap: Map<number, QuartzTask>;
     taskNameMap: Map<number, string>;
     taskSystemOptions: string[];
-    themeOptions: string[];
     searchKeyword: string;
     taskSystemFilter: string;
     themeFilter: string;
@@ -67,7 +66,6 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     taskMap,
     taskNameMap,
     taskSystemOptions,
-    themeOptions,
     searchKeyword,
     taskSystemFilter,
     themeFilter,
@@ -192,18 +190,17 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                     </label>
                     <label className="space-y-1">
                         <div className="text-xs font-medium text-slate-500">主题</div>
-                        <select
+                        <input
                             value={themeFilter}
                             onChange={(event) => onThemeFilterChange(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                    onSearch();
+                                }
+                            }}
+                            placeholder="搜索主题"
                             className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
-                        >
-                            <option value="">全部主题</option>
-                            {themeOptions.map(item => (
-                                <option key={item} value={item}>
-                                    {item}
-                                </option>
-                            ))}
-                        </select>
+                        />
                     </label>
                     <label className="space-y-1">
                         <div className="text-xs font-medium text-slate-500">备注</div>

@@ -310,11 +310,6 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         [taskList]
     );
 
-    const themeOptions = useMemo(
-        () => Array.from(new Set(taskList.map(task => task.theme).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
-        [taskList]
-    );
-
     const filteredInstances = useMemo(() => {
         return instanceList.filter(instance => {
             const task = taskMap.get(instance.plan_id);
@@ -832,7 +827,6 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
                 taskMap={taskMap}
                 taskNameMap={taskNameMap}
                 taskSystemOptions={taskSystemOptions}
-                themeOptions={themeOptions}
                 searchKeyword={draftSearchKeyword}
                 taskSystemFilter={draftTaskSystemFilter}
                 themeFilter={draftThemeFilter}
