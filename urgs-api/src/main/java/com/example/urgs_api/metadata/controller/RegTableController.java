@@ -29,6 +29,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @RestController
@@ -38,6 +40,14 @@ import java.util.stream.Collectors;
  * 处理报表（RegTable）和指标元素（RegElement）的CRUD及导入导出、代码片段同步等
  */
 public class RegTableController {
+
+    private static final Pattern INSERT_SNIPPET_PATTERN = Pattern
+            .compile("\\binsert\\s+(?:into|overwrite)\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern QUOTED_SQL_VALUE_PATTERN = Pattern
+            .compile("'([^']{4,200})'|\"([^\"]{4,200})\"|`([^`]{4,200})`");
+    private static final Pattern INDICATOR_CODE_TOKEN_PATTERN = Pattern
+            .compile("[A-Za-z0-9][A-Za-z0-9_.\\-^]{3,199}");
+    private static final int MIN_INDICATOR_CODE_MATCH_LENGTH = 4;
 
     @Autowired
     private RegTableService regTableService;
@@ -432,19 +442,20 @@ public class RegTableController {
             List<RegElement> indicators = regElementService.list(new LambdaQueryWrapper<RegElement>()
                     .in(RegElement::getTableId, tableIds)
                     .eq(RegElement::getType, "INDICATOR"));
-            List<RegElement> namedIndicators = indicators.stream()
-                    .filter(item -> StringUtils.isNotBlank(item.getName()))
-                    .toList();
+            Map<String, List<RegElement>> indicatorsByCode = buildIndicatorCodeIndex(indicators);
 
-            Map<Long, LinkedHashSet<String>> snippetsByIndicatorId = new LinkedHashMap<>();
+            List<String> candidateSnippets = new ArrayList<>();
+            Map<Long, LinkedHashSet<Integer>> snippetIndexesByIndicatorId = new LinkedHashMap<>();
 
+            int fileCount = 0;
+            int insertCandidateCount = 0;
             int snippetCount = 0;
-            int updatedCount = 0;
 
             for (MultipartFile file : files) {
                 if (file == null || file.isEmpty()) {
                     continue;
                 }
+                fileCount++;
                 String content = new String(file.getBytes(), java.nio.charset.StandardCharsets.UTF_8);
                 for (String statement : splitSqlStatements(content)) {
                     String snippet = statement.trim();
@@ -454,13 +465,18 @@ public class RegTableController {
                     if (!isCodeSnippetCandidate(snippet)) {
                         continue;
                     }
-                    for (RegElement indicator : namedIndicators) {
-                        if (!containsIndicatorCode(snippet, indicator.getName())) {
-                            continue;
-                        }
-                        boolean added = snippetsByIndicatorId
+                    insertCandidateCount++;
+                    String normalizedSnippet = normalizeSnippetForStorage(snippet);
+                    Set<RegElement> matchedIndicators = findMatchedIndicators(normalizedSnippet, indicatorsByCode);
+                    if (matchedIndicators.isEmpty()) {
+                        continue;
+                    }
+                    int snippetIndex = candidateSnippets.size();
+                    candidateSnippets.add(normalizedSnippet);
+                    for (RegElement indicator : matchedIndicators) {
+                        boolean added = snippetIndexesByIndicatorId
                                 .computeIfAbsent(indicator.getId(), id -> new LinkedHashSet<>())
-                                .add(normalizeSnippetForStorage(snippet));
+                                .add(snippetIndex);
                         if (added) {
                             snippetCount++;
                         }
@@ -468,25 +484,29 @@ public class RegTableController {
                 }
             }
 
-            for (RegElement indicator : namedIndicators) {
-                LinkedHashSet<String> snippets = snippetsByIndicatorId.get(indicator.getId());
-                if (snippets == null || snippets.isEmpty()) {
+            List<RegElement> updatedIndicators = new ArrayList<>();
+            for (RegElement indicator : indicators) {
+                LinkedHashSet<Integer> snippetIndexes = snippetIndexesByIndicatorId.get(indicator.getId());
+                if (snippetIndexes == null || snippetIndexes.isEmpty()) {
                     continue;
                 }
-                String snippet = joinSnippetsWithUnionAll(snippets);
+                String snippet = joinSnippetsWithUnionAll(candidateSnippets, snippetIndexes);
                 if (!Objects.equals(indicator.getCodeSnippet(), snippet)) {
                     indicator.setCodeSnippet(snippet);
                     indicator.setUpdateTime(LocalDateTime.now());
-                    regElementService.updateById(indicator);
-                    updatedCount++;
+                    updatedIndicators.add(indicator);
                 }
+            }
+            if (!updatedIndicators.isEmpty()) {
+                regElementService.updateBatchById(updatedIndicators, 100);
             }
 
             result.put("success", true);
-            result.put("matchedCount", snippetsByIndicatorId.size());
-            result.put("updatedCount", updatedCount);
+            result.put("matchedCount", snippetIndexesByIndicatorId.size());
+            result.put("updatedCount", updatedIndicators.size());
             result.put("snippetCount", snippetCount);
-            result.put("message", String.format("共摘取 %d 个代码片段", snippetCount));
+            result.put("message", String.format("已处理 %d 个文件、%d 条 INSERT 候选，命中并摘取 %d 个代码片段", fileCount,
+                    insertCandidateCount, snippetCount));
         } catch (Exception e) {
             result.put("success", false);
             result.put("message", "录入失败：" + e.getMessage());
@@ -724,19 +744,79 @@ public class RegTableController {
         if (StringUtils.isBlank(snippet)) {
             return false;
         }
-        return java.util.regex.Pattern
-                .compile("\\binsert\\s+(?:into|overwrite)\\b", java.util.regex.Pattern.CASE_INSENSITIVE)
-                .matcher(snippet)
-                .find();
+        return INSERT_SNIPPET_PATTERN.matcher(snippet).find();
     }
 
-    private boolean containsIndicatorCode(String snippet, String indicatorCode) {
-        if (StringUtils.isBlank(snippet) || StringUtils.isBlank(indicatorCode)) {
-            return false;
+    private Map<String, List<RegElement>> buildIndicatorCodeIndex(List<RegElement> indicators) {
+        Map<String, List<RegElement>> index = new LinkedHashMap<>();
+        for (RegElement indicator : indicators) {
+            String indicatorCode = normalizeIndicatorCodeForMatch(indicator.getName());
+            if (indicatorCode.length() < MIN_INDICATOR_CODE_MATCH_LENGTH) {
+                continue;
+            }
+            index.computeIfAbsent(normalizeIndicatorCodeKey(indicatorCode), key -> new ArrayList<>()).add(indicator);
         }
-        String normalizedSnippet = snippet.replace("`", "").toUpperCase(Locale.ROOT);
-        String normalizedIndicatorCode = indicatorCode.replace("`", "").toUpperCase(Locale.ROOT);
-        return normalizedSnippet.contains(normalizedIndicatorCode);
+        return index;
+    }
+
+    private Set<RegElement> findMatchedIndicators(String snippet, Map<String, List<RegElement>> indicatorsByCode) {
+        Set<RegElement> matched = new LinkedHashSet<>();
+        if (StringUtils.isBlank(snippet) || indicatorsByCode.isEmpty()) {
+            return matched;
+        }
+
+        Matcher quotedMatcher = QUOTED_SQL_VALUE_PATTERN.matcher(snippet);
+        while (quotedMatcher.find()) {
+            addMatchedIndicators(matched, indicatorsByCode, firstNonNullGroup(quotedMatcher, 1, 2, 3));
+        }
+
+        Matcher tokenMatcher = INDICATOR_CODE_TOKEN_PATTERN.matcher(snippet);
+        while (tokenMatcher.find()) {
+            String token = tokenMatcher.group();
+            List<RegElement> indicators = indicatorsByCode.get(normalizeIndicatorCodeKey(token));
+            if (indicators == null || indicators.isEmpty()) {
+                continue;
+            }
+            int before = tokenMatcher.start() - 1;
+            int after = tokenMatcher.end();
+            if (!isIndicatorCodeChar(snippet, before) && !isIndicatorCodeChar(snippet, after)) {
+                matched.addAll(indicators);
+            }
+        }
+        return matched;
+    }
+
+    private void addMatchedIndicators(Set<RegElement> matched, Map<String, List<RegElement>> indicatorsByCode,
+            String rawValue) {
+        String indicatorCode = normalizeIndicatorCodeForMatch(rawValue);
+        if (indicatorCode.length() < MIN_INDICATOR_CODE_MATCH_LENGTH) {
+            return;
+        }
+        List<RegElement> indicators = indicatorsByCode.get(normalizeIndicatorCodeKey(indicatorCode));
+        if (indicators != null) {
+            matched.addAll(indicators);
+        }
+    }
+
+    private String firstNonNullGroup(Matcher matcher, int... groups) {
+        for (int group : groups) {
+            String value = matcher.group(group);
+            if (value != null) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private String normalizeIndicatorCodeForMatch(String indicatorCode) {
+        if (StringUtils.isBlank(indicatorCode)) {
+            return "";
+        }
+        return stripSqlIdentifier(indicatorCode).replace("`", "").trim();
+    }
+
+    private String normalizeIndicatorCodeKey(String indicatorCode) {
+        return indicatorCode.toUpperCase(Locale.ROOT);
     }
 
     private String normalizeSnippetForStorage(String snippet) {
@@ -747,10 +827,35 @@ public class RegTableController {
         return normalized;
     }
 
-    private String joinSnippetsWithUnionAll(Collection<String> snippets) {
-        return snippets.stream()
-                .filter(StringUtils::isNotBlank)
-                .collect(Collectors.joining("\nUNION ALL\n")) + ";";
+    private boolean isIndicatorCodeChar(String value, int index) {
+        if (index < 0 || index >= value.length()) {
+            return false;
+        }
+        char ch = value.charAt(index);
+        return Character.isLetterOrDigit(ch) || ch == '_' || ch == '.' || ch == '-' || ch == '^';
+    }
+
+    private String joinSnippetsWithUnionAll(List<String> snippets, Collection<Integer> snippetIndexes) {
+        StringBuilder joined = new StringBuilder();
+        boolean first = true;
+        for (Integer index : snippetIndexes) {
+            if (index == null || index < 0 || index >= snippets.size()) {
+                continue;
+            }
+            String snippet = snippets.get(index);
+            if (StringUtils.isBlank(snippet)) {
+                continue;
+            }
+            if (!first) {
+                joined.append("\nUNION ALL\n");
+            }
+            joined.append(snippet);
+            first = false;
+        }
+        if (joined.length() > 0) {
+            joined.append(";");
+        }
+        return joined.toString();
     }
 
     private String stripSqlIdentifier(String name) {

@@ -174,6 +174,12 @@ configure_database_env() {
   fi
 }
 
+configure_java_opts() {
+  export API_JAVA_OPTS="${API_JAVA_OPTS:-"-Xms8g -Xmx20g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=${SCRIPT_DIR}/logs/api-heapdump.hprof -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"}"
+  export EXECUTOR_JAVA_OPTS="${EXECUTOR_JAVA_OPTS:-"-Xms2g -Xmx4g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=${SCRIPT_DIR}/logs/executor-heapdump.hprof -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"}"
+  mkdir -p "$SCRIPT_DIR/logs"
+}
+
 cleanup() {
   echo "Stopping services..."
   for pid in "${pids[@]:-}"; do
@@ -186,8 +192,10 @@ start_backend() {
   cd "$API_DIR"
   kill_port_if_exists 8080
   configure_database_env
+  configure_java_opts
   local spring_profile="${SPRING_PROFILES_ACTIVE:-$ENVIRONMENT}"
   echo "Starting backend (env: $ENVIRONMENT, profile: $spring_profile, config: $LOCAL_ENV_FILE)..."
+  echo "Backend JVM opts: $API_JAVA_OPTS"
 
   # Explicitly export RAG properties to avoid placeholder resolution issues
   export RAG_BASE_URL="${RAG_SERVICE_URL:-http://localhost:8001}/api/rag"
@@ -207,7 +215,7 @@ start_backend() {
     echo "Configured Neo4j URI: $SPRING_NEO4J_URI"
   fi
 
-  ./mvnw spring-boot:run -Dspring-boot.run.profiles="$spring_profile" &
+  ./mvnw spring-boot:run -Dspring-boot.run.profiles="$spring_profile" -Dspring-boot.run.jvmArguments="$API_JAVA_OPTS" &
   pids+=($!)
 }
 
@@ -252,9 +260,11 @@ start_executor() {
   cd "$EXECUTOR_DIR"
   kill_port_if_exists 8082
   configure_database_env
+  configure_java_opts
   local spring_profile="${SPRING_PROFILES_ACTIVE:-$ENVIRONMENT}"
   echo "Starting executor (env: $ENVIRONMENT, profile: $spring_profile, config: $LOCAL_ENV_FILE)..."
-  ./mvnw spring-boot:run -Dspring-boot.run.profiles="$spring_profile" &
+  echo "Executor JVM opts: $EXECUTOR_JAVA_OPTS"
+  ./mvnw spring-boot:run -Dspring-boot.run.profiles="$spring_profile" -Dspring-boot.run.jvmArguments="$EXECUTOR_JAVA_OPTS" &
   pids+=($!)
 }
 
