@@ -1,49 +1,57 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Card, Row, Col, Badge, AutoComplete, Upload, Drawer, Descriptions, Divider, Tooltip, Typography } from 'antd';
-import { Plus, Server, Cpu, HardDrive, Database, Search, RefreshCw, Edit, Trash2, Globe, Shield, Activity, Download, UploadCloud, Users, X, Terminal, Info, Monitor, ChevronRight, Eye } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Card, Col, message, Row, Statistic } from 'antd';
+import type { UploadProps } from 'antd';
+import { Activity, BookOpen, Database, Server } from 'lucide-react';
+import { getDeployEnvironments, type SsoConfig } from '@/api/version';
 import {
-    getDeployEnvironments, SsoConfig,
-} from '@/api/version';
-import {
-    getInfrastructureAssets, createInfrastructureAsset, updateInfrastructureAsset, deleteInfrastructureAsset,
-    InfrastructureAsset, exportInfrastructureAssets, importInfrastructureAssets, getSystemList as getSsoList
+    createInfrastructureAsset,
+    deleteInfrastructureAsset,
+    exportInfrastructureAssets,
+    getInfrastructureAssets,
+    getInfrastructureSystemManuals,
+    getSystemList as getSsoList,
+    importInfrastructureAssets,
+    type InfrastructureAsset,
+    type InfrastructureSystemManual,
+    updateInfrastructureAsset,
 } from '@/api/ops';
+import AssetDetailDrawer from './infrastructure/AssetDetailDrawer';
+import AssetFormModal from './infrastructure/AssetFormModal';
+import AssetTable from './infrastructure/AssetTable';
+import InfrastructureToolbar from './infrastructure/InfrastructureToolbar';
+import SystemManualPanel from './infrastructure/SystemManualPanel';
+import SystemSidebar from './infrastructure/SystemSidebar';
+import type { AssetFilters } from './infrastructure/types';
+import {
+    buildSystemOptions,
+    filterAssets,
+    filterManuals,
+    getSystemName,
+    getUniqueValues,
+} from './infrastructure/utils';
 
-const { Option } = Select;
-const { Text } = Typography;
+const defaultFilters: AssetFilters = {
+    keyword: '',
+};
 
 const InfrastructureManagement: React.FC = () => {
     const [assets, setAssets] = useState<InfrastructureAsset[]>([]);
-    const [ssoList, setSsoList] = useState<SsoConfig[]>([]);
+    const [manuals, setManuals] = useState<InfrastructureSystemManual[]>([]);
+    const [systems, setSystems] = useState<SsoConfig[]>([]);
     const [envs, setEnvs] = useState<any[]>([]);
-    const [modalEnvs, setModalEnvs] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
-    const [modalVisible, setModalVisible] = useState(false);
-    const [editingAsset, setEditingAsset] = useState<InfrastructureAsset | null>(null);
-    const [form] = Form.useForm();
-
-    // 搜索条件状态
-    const [filterSystemId, setFilterSystemId] = useState<number | undefined>();
-    const [filterEnvId, setFilterEnvId] = useState<number | undefined>();
-    const [filterEnvType, setFilterEnvType] = useState<string | undefined>();
-    const [filterHostname, setFilterHostname] = useState<string>('');
-    const [filterIp, setFilterIp] = useState<string>('');
-
-    // 详情抽屉状态
-    const [detailVisible, setDetailVisible] = useState(false);
-    const [selectedAsset, setSelectedAsset] = useState<InfrastructureAsset | null>(null);
-
-    // 批量选择状态
+    const [selectedSystemId, setSelectedSystemId] = useState<number | 'all'>('all');
+    const [filters, setFilters] = useState<AssetFilters>(defaultFilters);
     const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+    const [formOpen, setFormOpen] = useState(false);
+    const [editingAsset, setEditingAsset] = useState<InfrastructureAsset | null>(null);
+    const [detailOpen, setDetailOpen] = useState(false);
+    const [selectedAsset, setSelectedAsset] = useState<InfrastructureAsset | null>(null);
 
     const fetchAssets = async () => {
         setLoading(true);
         try {
-            const data = await getInfrastructureAssets({
-                appSystemId: filterSystemId,
-                envId: filterEnvId,
-                envType: filterEnvType
-            });
+            const data = await getInfrastructureAssets();
             setAssets(data || []);
         } catch (error) {
             message.error('获取资产列表失败');
@@ -52,239 +60,138 @@ const InfrastructureManagement: React.FC = () => {
         }
     };
 
-    const fetchSsoList = async () => {
+    const fetchManuals = async () => {
         try {
-            const data = await getSsoList({ showAll: true });
-            setSsoList(data || []);
+            const data = await getInfrastructureSystemManuals();
+            setManuals(data || []);
         } catch (error) {
-            console.error(error);
+            message.error('获取运维手册失败');
         }
     };
 
-    useEffect(() => {
-        fetchAssets();
-        fetchSsoList();
-    }, []);
-
-    // 前端过滤（主机名和 IP 搜索）
-    const filteredAssets = useMemo(() => {
-        return assets.filter(asset => {
-            const hostnameMatch = !filterHostname ||
-                asset.hostname?.toLowerCase().includes(filterHostname.toLowerCase());
-            const ipMatch = !filterIp ||
-                asset.internalIp?.toLowerCase().includes(filterIp.toLowerCase()) ||
-                asset.externalIp?.toLowerCase().includes(filterIp.toLowerCase());
-            return hostnameMatch && ipMatch;
-        });
-    }, [assets, filterHostname, filterIp]);
-
-    // 打开详情抽屉
-    const handleViewDetail = (record: InfrastructureAsset) => {
-        setSelectedAsset(record);
-        setDetailVisible(true);
+    const fetchSystems = async () => {
+        try {
+            const data = await getSsoList({ showAll: true });
+            setSystems(data || []);
+        } catch (error) {
+            message.error('获取系统列表失败');
+        }
     };
 
-    const handleSystemChange = async (systemId: number | undefined) => {
-        setFilterSystemId(systemId);
-        setFilterEnvId(undefined); // Reset env filter
-        if (systemId) {
-            fetchEnvs(systemId);
-        } else {
+    const fetchSelectedSystemEnvs = async (systemId: number | 'all') => {
+        if (systemId === 'all') {
+            setEnvs([]);
+            return;
+        }
+        try {
+            const data = await getDeployEnvironments(systemId);
+            setEnvs(data || []);
+        } catch (error) {
             setEnvs([]);
         }
     };
 
-    const fetchEnvs = async (systemId: number, isModal: boolean = false) => {
-        try {
-            const data = await getDeployEnvironments(systemId);
-            if (isModal) {
-                setModalEnvs(data || []);
-            } else {
-                setEnvs(data || []);
-            }
-        } catch (error) {
-            console.error(error);
-        }
+    const refreshAll = async () => {
+        await Promise.all([fetchAssets(), fetchManuals(), fetchSystems()]);
     };
+
+    useEffect(() => {
+        refreshAll();
+    }, []);
+
+    useEffect(() => {
+        fetchSelectedSystemEnvs(selectedSystemId);
+        setFilters(prev => ({ ...prev, envId: undefined }));
+        setSelectedRowKeys([]);
+    }, [selectedSystemId]);
+
+    const systemOptions = useMemo(
+        () => buildSystemOptions(systems, assets, manuals),
+        [assets, manuals, systems],
+    );
+
+    const filteredAssets = useMemo(
+        () => filterAssets(assets, systems, manuals, selectedSystemId, filters),
+        [assets, filters, manuals, selectedSystemId, systems],
+    );
+
+    const visibleManuals = useMemo(
+        () => filterManuals(manuals, selectedSystemId, filters.keyword),
+        [filters.keyword, manuals, selectedSystemId],
+    );
+
+    const scopedAssets = useMemo(
+        () => selectedSystemId === 'all' ? assets : assets.filter(asset => asset.appSystemId === selectedSystemId),
+        [assets, selectedSystemId],
+    );
+
+    const envTypeOptions = useMemo(
+        () => getUniqueValues(scopedAssets.map(asset => asset.envType)),
+        [scopedAssets],
+    );
+
+    const roleOptions = useMemo(
+        () => getUniqueValues(scopedAssets.map(asset => asset.role)),
+        [scopedAssets],
+    );
+
+    const activeCount = filteredAssets.filter(asset => asset.status === 'active').length;
+    const dbCount = filteredAssets.filter(asset => asset.role === 'db').length;
 
     const handleAdd = () => {
         setEditingAsset(null);
-        setModalEnvs([]);
-        form.resetFields();
-        form.setFieldsValue({ status: 'active', osType: 'Linux' });
-        setModalVisible(true);
+        setFormOpen(true);
     };
 
-    const handleEdit = (record: InfrastructureAsset) => {
-        setEditingAsset(record);
-        if (record.appSystemId) {
-            fetchEnvs(record.appSystemId, true);
+    const handleSelectSystem = (systemId: number | 'all') => {
+        setSelectedSystemId(systemId);
+        setFilters(prev => ({ ...prev, envId: undefined, envType: undefined }));
+    };
+
+    const handleSelectEnvType = (systemId: number, envType: string) => {
+        setSelectedSystemId(systemId);
+        setFilters(prev => ({ ...prev, envId: undefined, envType }));
+    };
+
+    const handleEdit = (asset: InfrastructureAsset) => {
+        setEditingAsset(asset);
+        setDetailOpen(false);
+        setFormOpen(true);
+    };
+
+    const handleView = (asset: InfrastructureAsset) => {
+        setSelectedAsset(asset);
+        setDetailOpen(true);
+    };
+
+    const handleSubmit = async (values: InfrastructureAsset) => {
+        if (editingAsset?.id) {
+            await updateInfrastructureAsset(editingAsset.id, values);
+            message.success('更新成功');
+        } else {
+            await createInfrastructureAsset(values);
+            message.success('创建成功');
         }
-        form.setFieldsValue(record);
-        setModalVisible(true);
+        setFormOpen(false);
+        setEditingAsset(null);
+        await fetchAssets();
     };
 
     const handleDelete = async (id: number) => {
         try {
             await deleteInfrastructureAsset(id);
             message.success('删除成功');
-            fetchAssets();
+            setSelectedRowKeys(prev => prev.filter(key => key !== id));
+            if (selectedAsset?.id === id) {
+                setDetailOpen(false);
+                setSelectedAsset(null);
+            }
+            await fetchAssets();
         } catch (error) {
             message.error('删除失败');
         }
     };
 
-    const handleSubmit = async () => {
-        try {
-            const values = await form.validateFields();
-            if (editingAsset?.id) {
-                await updateInfrastructureAsset(editingAsset.id, values);
-                message.success('更新成功');
-            } else {
-                await createInfrastructureAsset(values);
-                message.success('创建成功');
-            }
-            setModalVisible(false);
-            fetchAssets();
-        } catch (error: any) {
-            // 表单校验失败（validateFields 抛出包含 errorFields 的对象）
-            if (error?.errorFields) {
-                const labels = error.errorFields
-                    .map((f: any) => f.errors?.[0])
-                    .filter(Boolean)
-                    .join('、');
-                message.error(labels ? `请填写必填项：${labels}` : '请填写所有必填项');
-                return;
-            }
-            // 后端返回的错误信息
-            const msg = error?.response?.data?.message || error?.message || '保存失败';
-            message.error(msg);
-        }
-    };
-
-    const handleExport = async () => {
-        try {
-            const blob = await exportInfrastructureAssets();
-            if (blob) {
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'infrastructure_assets.xlsx';
-                a.click();
-                window.URL.revokeObjectURL(url);
-                message.success('导出成功');
-            }
-        } catch (error) {
-            message.error('导出失败');
-        }
-    };
-
-    const handleImport = async (options: any) => {
-        const { file, onSuccess, onError } = options;
-        try {
-            await importInfrastructureAssets(file);
-            message.success('导入成功');
-            onSuccess("ok");
-            fetchAssets();
-        } catch (error) {
-            message.error('导入失败');
-            onError(error);
-        }
-    };
-
-
-    const getStatusTag = (status: string) => {
-        switch (status) {
-            case 'active': return <Tag color="success">运行中</Tag>;
-            case 'maintenance': return <Tag color="warning">维护中</Tag>;
-            case 'offline': return <Tag color="default">已下线</Tag>;
-            default: return <Tag>{status}</Tag>;
-        }
-    };
-
-    const columns = [
-        {
-            title: '主机名/IP',
-            key: 'host',
-            render: (_: any, record: InfrastructureAsset) => (
-                <div className="flex flex-col">
-                    <span className="font-bold text-slate-800 flex items-center gap-1">
-                        <Server size={14} className="text-blue-500" />
-                        {record.hostname}
-                    </span>
-                    <span className="text-xs text-slate-500 font-mono">{record.internalIp}</span>
-                </div>
-            )
-        },
-        {
-            title: '关联系统/环境',
-            key: 'context',
-            width: 180,
-            render: (_: any, record: InfrastructureAsset) => {
-                const systemName = ssoList.find(s => s.id === record.appSystemId)?.name;
-                return (
-                    <div className="flex items-center gap-1.5 text-sm">
-                        <span className="text-slate-700 truncate max-w-[100px]" title={systemName}>
-                            {systemName || '-'}
-                        </span>
-                        {record.envType && (
-                            <>
-                                <span className="text-slate-300">/</span>
-                                <Tag color="cyan" className="m-0 text-[10px] leading-tight px-1.5">
-                                    {record.envType}
-                                </Tag>
-                            </>
-                        )}
-                    </div>
-                );
-            }
-        },
-        {
-            title: '硬件配置',
-            key: 'config',
-            render: (_: any, record: InfrastructureAsset) => (
-                <div className="flex flex-col gap-1 text-xs text-slate-600">
-                    <div className="flex items-center gap-3">
-                        <span className="flex items-center gap-1" title="CPU"><Cpu size={12} /> {record.cpu || '-'}</span>
-                        <span className="flex items-center gap-1" title="内存"><Activity size={12} /> {record.memory || '-'}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <span className="flex items-center gap-1" title="磁盘"><HardDrive size={12} /> {record.disk || '-'}</span>
-                        {record.hardwareModel && (
-                            <span className="flex items-center gap-1 text-slate-500" title="硬件型号">
-                                <Server size={12} /> {record.hardwareModel}
-                            </span>
-                        )}
-                    </div>
-                    {record.users && record.users.length > 0 && (
-                        <span className="flex items-center gap-1 text-blue-600 mt-0.5" title={`已配置 ${record.users.length} 个账号`}>
-                            <Users size={12} /> {record.users.length}
-                        </span>
-                    )}
-                </div>
-            )
-        },
-        {
-            title: '角色',
-            key: 'role',
-            render: (_: any, record: InfrastructureAsset) => (
-                <Space size={4}>
-                    <Tag className="uppercase font-mono text-[10px] m-0">{record.role || 'UNCATEGORIZED'}</Tag>
-                    {record.dbType && (
-                        <Tag color="blue" className="font-mono text-[10px] m-0">{record.dbType}</Tag>
-                    )}
-                </Space>
-            )
-        },
-        {
-            title: '状态',
-            dataIndex: 'status',
-            key: 'status',
-            render: (status: string) => getStatusTag(status)
-        }
-    ];
-
-    // 批量删除函数
     const handleBatchDelete = async () => {
         if (selectedRowKeys.length === 0) {
             message.warning('请先选择要删除的资产');
@@ -294,609 +201,149 @@ const InfrastructureManagement: React.FC = () => {
             await Promise.all(selectedRowKeys.map(id => deleteInfrastructureAsset(Number(id))));
             message.success(`成功删除 ${selectedRowKeys.length} 个资产`);
             setSelectedRowKeys([]);
-            fetchAssets();
+            await fetchAssets();
         } catch (error) {
             message.error('批量删除失败');
         }
     };
 
+    const handleExport = async () => {
+        try {
+            const blob = await exportInfrastructureAssets();
+            if (!blob) return;
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'infrastructure_assets.xlsx';
+            link.click();
+            window.URL.revokeObjectURL(url);
+            message.success('导出成功');
+        } catch (error) {
+            message.error('导出失败');
+        }
+    };
+
+    const handleImport: NonNullable<UploadProps['customRequest']> = async (options) => {
+        const { file, onSuccess, onError } = options;
+        try {
+            await importInfrastructureAssets(file as File);
+            message.success('导入成功');
+            onSuccess?.('ok');
+            await fetchAssets();
+        } catch (error: any) {
+            message.error('导入失败');
+            onError?.(error);
+        }
+    };
+
+    const defaultSystemId = selectedSystemId === 'all' ? undefined : selectedSystemId;
+
     return (
-        <div className="space-y-4">
-            {/* Stats Cards */}
-            <Row gutter={16}>
-                <Col span={6}>
-                    <Card size="small" className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-none shadow-md">
-                        <div className="flex justify-between items-center">
-                            <div>
-                                <p className="text-[10px] opacity-80 uppercase font-bold">总服务器数</p>
-                                <h3 className="text-2xl font-bold">{assets.length}</h3>
-                            </div>
-                            <Server size={32} className="opacity-20" />
-                        </div>
-                    </Card>
-                </Col>
-                <Col span={6}>
-                    <Card size="small" className="bg-white shadow-sm border-slate-100">
-                        <div className="flex justify-between items-center">
-                            <div>
-                                <p className="text-[10px] text-slate-400 uppercase font-bold">运行中</p>
-                                <h3 className="text-2xl font-bold text-green-600">
-                                    {assets.filter(a => a.status === 'active').length}
-                                </h3>
-                            </div>
-                            <Badge status="success" />
-                        </div>
-                    </Card>
-                </Col>
-            </Row>
-
-            {/* Filter Area */}
-            <Card size="small" className="shadow-sm border-slate-100">
-                <div className="flex flex-wrap gap-3 items-center">
-                    {/* 主机名搜索 */}
-                    <Input
-                        placeholder="搜索主机名"
-                        style={{ width: 160 }}
-                        allowClear
-                        prefix={<Server size={14} className="text-slate-400" />}
-                        value={filterHostname}
-                        onChange={e => setFilterHostname(e.target.value)}
-                    />
-                    {/* IP 搜索 */}
-                    <Input
-                        placeholder="搜索 IP 地址"
-                        style={{ width: 160 }}
-                        allowClear
-                        prefix={<Globe size={14} className="text-slate-400" />}
-                        value={filterIp}
-                        onChange={e => setFilterIp(e.target.value)}
-                    />
-                    <Divider orientation="vertical" className="h-6 mx-1" />
-                    {/* 下拉筛选 */}
-                    <Select
-                        placeholder="按系统筛选"
-                        style={{ width: 160 }}
-                        allowClear
-                        onChange={handleSystemChange}
-                        value={filterSystemId}
-                    >
-                        {ssoList.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
-                    </Select>
-                    <Select
-                        placeholder="按环境筛选"
-                        style={{ width: 130 }}
-                        allowClear
-                        disabled={!filterSystemId}
-                        onChange={setFilterEnvId}
-                        value={filterEnvId}
-                    >
-                        {envs.map(e => <Option key={e.id} value={e.id}>{e.name}</Option>)}
-                    </Select>
-                    <AutoComplete
-                        placeholder="环境类型"
-                        style={{ width: 110 }}
-                        allowClear
-                        onChange={setFilterEnvType}
-                        value={filterEnvType}
-                        options={[
-                            { value: '测试环境' },
-                            { value: '生产环境' },
-                            { value: '开发环境' },
-                        ]}
-                        filterOption={(inputValue, option) =>
-                            option!.value.toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
-                        }
-                    />
-                    <Button icon={<RefreshCw size={14} />} onClick={fetchAssets}>刷新</Button>
-                    {selectedRowKeys.length > 0 && (
-                        <Popconfirm
-                            title={`确定删除选中的 ${selectedRowKeys.length} 个资产？`}
-                            onConfirm={handleBatchDelete}
-                            okText="删除"
-                            okButtonProps={{ danger: true }}
-                        >
-                            <Button danger icon={<Trash2 size={14} />}>
-                                删除选中 ({selectedRowKeys.length})
-                            </Button>
-                        </Popconfirm>
-                    )}
-                    <div className="ml-auto flex gap-2">
-                        <Upload customRequest={handleImport} showUploadList={false} accept=".xlsx, .xls">
-                            <Button icon={<UploadCloud size={14} />}>导入</Button>
-                        </Upload>
-                        <Button icon={<Download size={14} />} onClick={handleExport}>导出</Button>
-                        <Button type="primary" icon={<Plus size={14} />} onClick={handleAdd}>
-                            新增服务器
-                        </Button>
-                    </div>
-                </div>
-            </Card>
-
-            <Table
-                columns={columns}
-                dataSource={filteredAssets}
-                rowKey="id"
-                loading={loading}
-                pagination={{ pageSize: 12, size: 'small', showTotal: (total) => `共 ${total} 条` }}
-                className="bg-white rounded-lg shadow-sm border border-slate-100"
-                rowSelection={{
-                    selectedRowKeys,
-                    onChange: (keys) => setSelectedRowKeys(keys),
-                    columnWidth: 48
-                }}
-                onRow={(record) => ({
-                    onClick: () => handleViewDetail(record),
-                    className: 'cursor-pointer hover:bg-blue-50/50 transition-colors'
-                })}
+        <div className="flex flex-col gap-4 lg:flex-row">
+            <SystemSidebar
+                systems={systemOptions}
+                selectedSystemId={selectedSystemId}
+                selectedEnvType={filters.envType}
+                totalAssets={assets.length}
+                totalManuals={manuals.length}
+                onSelect={handleSelectSystem}
+                onSelectEnvType={handleSelectEnvType}
             />
 
-            {/* Manage Asset Modal */}
-            <Modal
-                title={editingAsset ? '编辑服务器资产' : '新增服务器资产'}
-                open={modalVisible}
-                onOk={handleSubmit}
-                onCancel={() => setModalVisible(false)}
-                width={700}
-                centered
-            >
-                <Form form={form} layout="vertical" className="mt-4">
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item name="hostname" label="主机名" rules={[{ required: true, message: '请输入主机名' }]}>
-                                <Input placeholder="例如: web-prod-01" prefix={<Server size={14} className="text-slate-400" />} />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item name="internalIp" label="内网 IP" rules={[{ required: true, message: '请输入内网 IP' }]}>
-                                <Input placeholder="192.168.1.10" prefix={<Globe size={14} className="text-slate-400" />} />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item name="appSystemId" label="关联系统" rules={[{ required: true }]}>
-                                <Select placeholder="选择系统" onChange={(val) => {
-                                    form.setFieldValue('envId', undefined);
-                                    fetchEnvs(val, true);
-                                }}>
-                                    {ssoList.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
-                                </Select>
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item name="role" label="服务器角色">
-                                <Select placeholder="选择角色" allowClear>
-                                    <Option value="app">应用服务器</Option>
-                                    <Option value="db">数据库服务器</Option>
-                                    <Option value="redis">缓存服务器</Option>
-                                    <Option value="nginx">Web 代理/负载均衡</Option>
-                                    <Option value="jump">跳板机</Option>
-                                </Select>
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.role !== currentValues.role}>
-                        {({ getFieldValue }) =>
-                            getFieldValue('role') === 'db' ? (
-                                <>
-                                    <Row gutter={16}>
-                                        <Col span={12}>
-                                            <Form.Item
-                                                name="dbType"
-                                                label="数据库类型"
-                                                rules={[{ required: true, message: '请选择数据库类型' }]}
-                                            >
-                                                <Select placeholder="选择数据库类型">
-                                                    <Option value="Oracle">Oracle</Option>
-                                                    <Option value="MySQL">MySQL</Option>
-                                                    <Option value="gbase">gbase</Option>
-                                                    <Option value="达梦">达梦</Option>
-                                                    <Option value="hive">hive</Option>
-                                                    <Option value="云树">云树</Option>
-                                                </Select>
-                                            </Form.Item>
-                                        </Col>
-                                        <Col span={12}>
-                                            <Form.Item name="dbPort" label="数据库端口">
-                                                <Input type="number" placeholder="Oracle:1521 / MySQL:3306" />
-                                            </Form.Item>
-                                        </Col>
-                                    </Row>
-                                    <Row gutter={16}>
-                                        <Col span={12}>
-                                            <Form.Item name="dbName" label="数据库名/SID">
-                                                <Input placeholder="Oracle SID 或 MySQL database" />
-                                            </Form.Item>
-                                        </Col>
-                                        <Col span={12}>
-                                            <Form.Item name="dbServiceName" label="服务名 (Oracle)">
-                                                <Input placeholder="Oracle 服务名（与SID二选一）" />
-                                            </Form.Item>
-                                        </Col>
-                                    </Row>
-                                </>
-                            ) : null
-                        }
-                    </Form.Item>
-
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.appSystemId !== currentValues.appSystemId}>
-                                {({ getFieldValue }) => {
-                                    const appSystemId = getFieldValue('appSystemId');
-                                    return (
-                                        <Form.Item name="envId" label="具体部署环境" extra={modalEnvs.length === 0 && appSystemId ? "该系统暂未配置部署环境，请先在[版本管理]中添加" : null}>
-                                            <Select placeholder="选择环境" allowClear>
-                                                {modalEnvs.map(e => <Option key={e.id} value={e.id}>{e.name}</Option>)}
-                                            </Select>
-                                        </Form.Item>
-                                    );
-                                }}
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item name="envType" label="环境类型" rules={[{ required: true, message: '请输入或选择环境类型' }]}>
-                                <AutoComplete
-                                    placeholder="测试环境 / 生产环境 / 或自定义输入"
-                                    options={[
-                                        { value: '测试环境' },
-                                        { value: '生产环境' },
-                                        { value: '预发布环境' },
-                                        { value: '开发环境' },
-                                    ]}
-                                    filterOption={(inputValue, option) =>
-                                        option!.value.toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
-                                    }
-                                />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <p className="text-[11px] font-bold text-slate-400 uppercase mt-2 mb-4 tracking-wider">硬件与系统配置</p>
-
-                    <Row gutter={16}>
-                        <Col span={8}>
-                            <Form.Item name="cpu" label="CPU">
-                                <Input placeholder="8核" />
-                            </Form.Item>
-                        </Col>
-                        <Col span={8}>
-                            <Form.Item name="memory" label="内存">
-                                <Input placeholder="16GB" />
-                            </Form.Item>
-                        </Col>
-                        <Col span={8}>
-                            <Form.Item name="disk" label="磁盘">
-                                <Input placeholder="500GB SSD" />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Row gutter={16}>
-                        <Col span={24}>
-                            <Form.Item name="hardwareModel" label="服务器型号">
-                                <Input placeholder="例如: Dell PowerEdge R740 / 华为泰山200" prefix={<Server size={14} className="text-slate-400" />} />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Row gutter={16}>
-                        <Col span={8}>
-                            <Form.Item name="osType" label="操作系统">
-                                <Select>
-                                    <Option value="CentOS">CentOS</Option>
-                                    <Option value="Ubuntu">Ubuntu</Option>
-                                    <Option value="RedHat">RedHat</Option>
-                                    <Option value="Windows">Windows Server</Option>
-                                    <Select.OptGroup label="信创系统">
-                                        <Option value="UnionTech">统信 UOS</Option>
-                                        <Option value="Kylin">麒麟操作系统</Option>
-                                        <Option value="EulerOS">欧拉操作系统</Option>
-                                        <Option value="Anolis">龙蜥操作系统</Option>
-                                    </Select.OptGroup>
-                                </Select>
-                            </Form.Item>
-                        </Col>
-                        <Col span={16}>
-                            <Form.Item name="osVersion" label="核心版本">
-                                <Input placeholder="7.9.2009" />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <p className="text-[11px] font-bold text-slate-400 uppercase mt-4 mb-4 tracking-wider">鉴权账号管理</p>
-                    <Form.List name="users">
-                        {(fields, { add, remove }) => (
-                            <div className="bg-slate-50 p-3 rounded-md mb-4 border border-slate-100">
-                                {fields.map(({ key, name, ...restField }) => (
-                                    <div key={key} className="flex gap-2 items-start mb-2 last:mb-0">
-                                        <Form.Item
-                                            {...restField}
-                                            name={[name, 'userType']}
-                                            className="mb-0 w-[80px]"
-                                            initialValue="os"
-                                        >
-                                            <Select size="small" placeholder="类型">
-                                                <Option value="os">OS</Option>
-                                                <Option value="db">DB</Option>
-                                            </Select>
-                                        </Form.Item>
-                                        <Form.Item
-                                            {...restField}
-                                            name={[name, 'username']}
-                                            rules={[{ required: true, message: 'Required' }]}
-                                            className="mb-0 flex-1"
-                                        >
-                                            <Input placeholder="用户名" size="small" />
-                                        </Form.Item>
-                                        <Form.Item
-                                            {...restField}
-                                            name={[name, 'password']}
-                                            className="mb-0 flex-1"
-                                        >
-                                            <Input.Password placeholder="密码" size="small" />
-                                        </Form.Item>
-                                        <Form.Item
-                                            {...restField}
-                                            name={[name, 'description']}
-                                            className="mb-0 flex-1"
-                                        >
-                                            <Input placeholder="用途说明" size="small" />
-                                        </Form.Item>
-                                        <Button
-                                            type="text"
-                                            danger
-                                            size="small"
-                                            icon={<Trash2 size={14} />}
-                                            onClick={() => remove(name)}
-                                            className="mt-1"
-                                        />
-                                    </div>
-                                ))}
-                                <Button type="dashed" size="small" onClick={() => add()} block icon={<Plus size={14} />} className="mt-2 text-slate-500 border-slate-300">
-                                    添加账号信息
-                                </Button>
-                            </div>
-                        )}
-                    </Form.List>
-
-                    <Row gutter={16}>
-                        <Col span={8}>
-                            <Form.Item name="status" label="资产状态">
-                                <Select>
-                                    <Option value="active">运行中</Option>
-                                    <Option value="maintenance">维护中</Option>
-                                    <Option value="offline">已下线</Option>
-                                </Select>
-                            </Form.Item>
-                        </Col>
-                        <Col span={16}>
-                            <Form.Item name="description" label="备注说明">
-                                <Input.TextArea rows={2} placeholder="详细用途说明..." />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-                </Form >
-            </Modal >
-
-            {/* 详情抽屉 - 工业风格深色调设计 */}
-            <Drawer
-                title={null}
-                placement="right"
-                size="large"
-                open={detailVisible}
-                onClose={() => setDetailVisible(false)}
-                closable={false}
-                styles={{
-                    header: { display: 'none' },
-                    body: { padding: 0, background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)' }
-                }}
-            >
-                {selectedAsset && (
-                    <div className="min-h-full">
-                        {/* 头部区域 */}
-                        <div className="relative px-6 pt-6 pb-8 border-b border-slate-700/50">
-                            {/* 关闭按钮 */}
-                            <button
-                                onClick={() => setDetailVisible(false)}
-                                className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-slate-700/50 hover:bg-slate-600 transition-colors"
-                            >
-                                <X size={16} className="text-slate-400" />
-                            </button>
-
-                            {/* 标题区 */}
-                            <div className="flex items-start gap-4">
-                                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-                                    <Server size={28} className="text-white" />
-                                </div>
-                                <div className="flex-1 pt-1">
-                                    <h2 className="text-xl font-bold text-white tracking-tight mb-1">
-                                        {selectedAsset.hostname}
-                                    </h2>
-                                    <div className="flex items-center gap-2">
-                                        <span className="font-mono text-sm text-cyan-400">{selectedAsset.internalIp}</span>
-                                        {getStatusTag(selectedAsset.status)}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* 快速信息栏 */}
-                            <div className="grid grid-cols-3 gap-3 mt-6">
-                                <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
-                                    <div className="text-[10px] uppercase text-slate-400 mb-1 font-medium">CPU</div>
-                                    <div className="text-white font-semibold flex items-center gap-1.5">
-                                        <Cpu size={14} className="text-cyan-400" />
-                                        {selectedAsset.cpu || '-'}
-                                    </div>
-                                </div>
-                                <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
-                                    <div className="text-[10px] uppercase text-slate-400 mb-1 font-medium">内存</div>
-                                    <div className="text-white font-semibold flex items-center gap-1.5">
-                                        <Activity size={14} className="text-green-400" />
-                                        {selectedAsset.memory || '-'}
-                                    </div>
-                                </div>
-                                <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
-                                    <div className="text-[10px] uppercase text-slate-400 mb-1 font-medium">磁盘</div>
-                                    <div className="text-white font-semibold flex items-center gap-1.5">
-                                        <HardDrive size={14} className="text-amber-400" />
-                                        {selectedAsset.disk || '-'}
-                                    </div>
-                                </div>
-                            </div>
+            <div className="min-w-0 flex-1 space-y-4">
+                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h3 className="text-lg font-bold text-slate-800">
+                                {selectedSystemId === 'all' ? '全部系统' : getSystemName(systems, selectedSystemId)}
+                            </h3>
+                            <p className="text-xs text-slate-500">
+                                按系统聚合资产、环境和运维手册，支持全局搜索定位。
+                            </p>
                         </div>
-
-                        {/* 详情主体 */}
-                        <div className="px-6 py-5 space-y-6">
-                            {/* 基础信息 */}
-                            <div>
-                                <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 flex items-center gap-2">
-                                    <Monitor size={14} />
-                                    基础信息
-                                </h3>
-                                <div className="bg-slate-800/30 rounded-lg border border-slate-700/50 divide-y divide-slate-700/50">
-                                    <div className="flex px-4 py-3">
-                                        <span className="text-slate-400 text-sm w-24">主机名</span>
-                                        <span className="text-white font-medium">{selectedAsset.hostname}</span>
-                                    </div>
-                                    <div className="flex px-4 py-3">
-                                        <span className="text-slate-400 text-sm w-24">内网 IP</span>
-                                        <span className="text-cyan-400 font-mono">{selectedAsset.internalIp}</span>
-                                    </div>
-                                    {selectedAsset.externalIp && (
-                                        <div className="flex px-4 py-3">
-                                            <span className="text-slate-400 text-sm w-24">外网 IP</span>
-                                            <span className="text-cyan-400 font-mono">{selectedAsset.externalIp}</span>
-                                        </div>
-                                    )}
-                                    <div className="flex px-4 py-3">
-                                        <span className="text-slate-400 text-sm w-24">服务器角色</span>
-                                        <Space size={8}>
-                                            <Tag className="uppercase font-mono text-[10px] m-0">{selectedAsset.role || 'UNCATEGORIZED'}</Tag>
-                                            {selectedAsset.dbType && (
-                                                <Tag color="cyan" className="font-mono text-[10px] m-0">{selectedAsset.dbType}</Tag>
-                                            )}
-                                        </Space>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* 系统与环境 */}
-                            <div>
-                                <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 flex items-center gap-2">
-                                    <Globe size={14} />
-                                    系统与环境
-                                </h3>
-                                <div className="bg-slate-800/30 rounded-lg border border-slate-700/50 divide-y divide-slate-700/50">
-                                    <div className="flex px-4 py-3">
-                                        <span className="text-slate-400 text-sm w-24">关联系统</span>
-                                        <span className="text-white">{ssoList.find(s => s.id === selectedAsset.appSystemId)?.name || '未关联'}</span>
-                                    </div>
-                                    <div className="flex px-4 py-3">
-                                        <span className="text-slate-400 text-sm w-24">环境类型</span>
-                                        <Tag color="cyan" className="m-0">{selectedAsset.envType || '-'}</Tag>
-                                    </div>
-                                    <div className="flex px-4 py-3">
-                                        <span className="text-slate-400 text-sm w-24">操作系统</span>
-                                        <span className="text-white">{selectedAsset.osType || '-'}</span>
-                                    </div>
-                                    <div className="flex px-4 py-3">
-                                        <span className="text-slate-400 text-sm w-24">系统版本</span>
-                                        <span className="text-slate-300 font-mono text-sm">{selectedAsset.osVersion || '-'}</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* 硬件配置 */}
-                            {selectedAsset.hardwareModel && (
-                                <div>
-                                    <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 flex items-center gap-2">
-                                        <Server size={14} />
-                                        硬件信息
-                                    </h3>
-                                    <div className="bg-slate-800/30 rounded-lg border border-slate-700/50 px-4 py-3">
-                                        <span className="text-white">{selectedAsset.hardwareModel}</span>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* 鉴权账号 */}
-                            {selectedAsset.users && selectedAsset.users.length > 0 && (
-                                <div>
-                                    <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 flex items-center gap-2">
-                                        <Users size={14} />
-                                        鉴权账号 ({selectedAsset.users.length})
-                                    </h3>
-                                    <div className="space-y-2">
-                                        {selectedAsset.users.map((user, idx) => (
-                                            <div key={idx} className="bg-slate-800/30 rounded-lg border border-slate-700/50 px-4 py-3 flex items-center gap-4">
-                                                <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
-                                                    <Terminal size={14} className="text-blue-400" />
-                                                </div>
-                                                <div className="flex-1">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-white font-medium font-mono">{user.username}</span>
-                                                        {user.userType && (
-                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${user.userType === 'db' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>
-                                                                {user.userType === 'db' ? 'DB' : 'OS'}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    {user.description && (
-                                                        <div className="text-slate-400 text-xs mt-0.5">{user.description}</div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* 备注说明 */}
-                            {selectedAsset.description && (
-                                <div>
-                                    <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 flex items-center gap-2">
-                                        <Info size={14} />
-                                        备注说明
-                                    </h3>
-                                    <div className="bg-slate-800/30 rounded-lg border border-slate-700/50 px-4 py-3">
-                                        <Text className="text-slate-300 whitespace-pre-wrap">{selectedAsset.description}</Text>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* 底部操作栏 */}
-                        <div className="px-6 py-4 border-t border-slate-700/50 bg-slate-900/50">
-                            <div className="flex gap-3">
-                                <Button
-                                    type="primary"
-                                    icon={<Edit size={14} />}
-                                    onClick={() => {
-                                        setDetailVisible(false);
-                                        handleEdit(selectedAsset);
-                                    }}
-                                    className="flex-1"
-                                >
-                                    编辑资产
-                                </Button>
-                                <Popconfirm
-                                    title="确定删除该资产？"
-                                    onConfirm={() => {
-                                        handleDelete(selectedAsset.id!);
-                                        setDetailVisible(false);
-                                    }}
-                                >
-                                    <Button danger icon={<Trash2 size={14} />}>删除</Button>
-                                </Popconfirm>
-                            </div>
+                        <div className="text-xs text-slate-500">
+                            当前显示 {filteredAssets.length} 台服务器，{visibleManuals.length} 份手册
                         </div>
                     </div>
-                )}
-            </Drawer>
-        </div >
+                </div>
+
+                <Row gutter={12}>
+                    <Col xs={12} lg={6}>
+                        <Card size="small" className="border-slate-100 shadow-sm">
+                            <Statistic title="服务器数" value={filteredAssets.length} prefix={<Server size={16} />} />
+                        </Card>
+                    </Col>
+                    <Col xs={12} lg={6}>
+                        <Card size="small" className="border-slate-100 shadow-sm">
+                            <Statistic title="运行中" value={activeCount} valueStyle={{ color: '#16a34a' }} prefix={<Activity size={16} />} />
+                        </Card>
+                    </Col>
+                    <Col xs={12} lg={6}>
+                        <Card size="small" className="border-slate-100 shadow-sm">
+                            <Statistic title="数据库服务器" value={dbCount} prefix={<Database size={16} />} />
+                        </Card>
+                    </Col>
+                    <Col xs={12} lg={6}>
+                        <Card size="small" className="border-slate-100 shadow-sm">
+                            <Statistic title="运维手册" value={visibleManuals.length} prefix={<BookOpen size={16} />} />
+                        </Card>
+                    </Col>
+                </Row>
+
+                <InfrastructureToolbar
+                    filters={filters}
+                    envOptions={envs}
+                    envTypeOptions={envTypeOptions}
+                    roleOptions={roleOptions}
+                    selectedCount={selectedRowKeys.length}
+                    onFiltersChange={setFilters}
+                    onRefresh={refreshAll}
+                    onAdd={handleAdd}
+                    onExport={handleExport}
+                    onImport={handleImport}
+                    onBatchDelete={handleBatchDelete}
+                />
+
+                <AssetTable
+                    assets={filteredAssets}
+                    systems={systems}
+                    loading={loading}
+                    selectedRowKeys={selectedRowKeys}
+                    onSelectionChange={setSelectedRowKeys}
+                    onView={handleView}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                />
+
+                <SystemManualPanel
+                    manuals={visibleManuals}
+                    selectedSystemId={selectedSystemId}
+                    systems={systems}
+                    onChanged={fetchManuals}
+                />
+            </div>
+
+            <AssetFormModal
+                open={formOpen}
+                asset={editingAsset}
+                systems={systems}
+                defaultSystemId={defaultSystemId}
+                onCancel={() => {
+                    setFormOpen(false);
+                    setEditingAsset(null);
+                }}
+                onSubmit={handleSubmit}
+            />
+
+            <AssetDetailDrawer
+                open={detailOpen}
+                asset={selectedAsset}
+                systems={systems}
+                onClose={() => setDetailOpen(false)}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+            />
+        </div>
     );
 };
 

@@ -38,6 +38,23 @@ export interface InfrastructureAsset {
     updatedAt?: string;
 }
 
+export interface InfrastructureSystemManual {
+    id?: number;
+    appSystemId: number;
+    title: string;
+    fileName: string;
+    fileUrl: string;
+    fileSize?: number;
+    description?: string;
+    createdAt?: string;
+    updatedAt?: string;
+}
+
+export interface CommonUploadResult {
+    url: string;
+    name: string;
+}
+
 export const getInfrastructureAssets = (params?: { appSystemId?: number; envId?: number; envType?: string }) =>
     get<InfrastructureAsset[]>('/api/ops/infrastructure', params || {});
 
@@ -57,6 +74,21 @@ export const importInfrastructureAssets = (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
     return post<void>('/api/ops/infrastructure/import', formData);
+};
+
+export const getInfrastructureSystemManuals = (params?: { appSystemId?: number; keyword?: string }) =>
+    get<InfrastructureSystemManual[]>('/api/ops/infrastructure/manuals', params || {});
+
+export const createInfrastructureSystemManual = (data: InfrastructureSystemManual) =>
+    post<InfrastructureSystemManual>('/api/ops/infrastructure/manuals', data);
+
+export const deleteInfrastructureSystemManual = (id: number) =>
+    del(`/api/ops/infrastructure/manuals/${id}`);
+
+export const uploadCommonFile = (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return post<CommonUploadResult>('/api/common/upload', formData);
 };
 
 // ===== Issue Tracking API =====
