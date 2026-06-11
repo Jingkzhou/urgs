@@ -42,6 +42,14 @@ export const splitQualifiedTitle = (title: string) => {
     };
 };
 
+export const resolveNodeTableIdentity = (node: Pick<NodeData, 'title' | 'owner' | 'tableName'>) => {
+    const fallback = splitQualifiedTitle(node.title);
+    return {
+        owner: node.owner || fallback.owner,
+        table: node.tableName || fallback.table,
+    };
+};
+
 export const normalizeTableName = (value?: string | null) => String(value || '').trim().toLowerCase();
 
 export const sameTable = (left: string, right?: string | null) => (
@@ -191,7 +199,7 @@ export const buildImpactRows = (
             });
 
             const rank = ranks.get(node.id) || 0;
-            const { owner, table } = splitQualifiedTitle(node.title);
+            const { owner, table } = resolveNodeTableIdentity(node);
             return {
                 key: node.id,
                 nodeId: node.id,

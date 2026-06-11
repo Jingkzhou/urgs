@@ -580,14 +580,24 @@ const RegulatoryAssetView: React.FC = () => {
             return;
         }
 
-        if (!confirm(`确认要生成 ${selectedSystem} 系统的 Hive SQL 文件吗？\n将遍历所有有代码片段的指标，生成用于血缘分析的 SQL 文件。`)) {
+        const schema = prompt('请输入生成脚本使用的 Schema');
+        if (schema === null) {
+            return;
+        }
+        const trimmedSchema = schema.trim();
+        if (!trimmedSchema) {
+            alert('Schema 不能为空');
+            return;
+        }
+
+        if (!confirm(`确认要生成 ${selectedSystem} 系统的 Hive SQL 文件吗？\nSchema: ${trimmedSchema}\n将遍历所有有代码片段的指标，生成用于血缘分析的 SQL 文件。`)) {
             return;
         }
 
         setIsGeneratingHiveSql(true);
         try {
             const token = localStorage.getItem('auth_token');
-            const res = await fetch(`/api/reg/table/generateHiveSql?systemCode=${encodeURIComponent(selectedSystem)}`, {
+            const res = await fetch(`/api/reg/table/generateHiveSql?systemCode=${encodeURIComponent(selectedSystem)}&schema=${encodeURIComponent(trimmedSchema)}`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`

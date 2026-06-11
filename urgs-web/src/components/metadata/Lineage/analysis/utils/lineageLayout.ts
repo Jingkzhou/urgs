@@ -125,6 +125,8 @@ const buildTableGraph = (
             id: node.id,
             type: 'default',
             title: tableName,
+            owner: node.properties.owner || node.properties.schema,
+            tableName: node.properties.tableName,
             columns: [],
             x: 0,
             y: 0,

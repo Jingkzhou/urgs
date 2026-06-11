@@ -1,4 +1,5 @@
 from neo4j import GraphDatabase
+import json
 import sys
 import time
 from config.settings import settings
@@ -25,14 +26,52 @@ ALL_LINEAGE_RELATION_TYPES = ["DERIVES_TO", "FILTERS", "JOINS", "GROUPS", "ORDER
 
 
 class Neo4jClient:
-    def __init__(self, uri=None, username=None, password=None):
+    def __init__(self, uri=None, username=None, password=None, default_schema=None):
         self.uri = uri or settings.NEO4J_URI
         self.username = username or settings.NEO4J_USERNAME
         self.password = password or settings.NEO4J_PASSWORD
+        self.default_schema = (default_schema or "").strip().upper()
+        self.batch_size = max(1, settings.NEO4J_BATCH_SIZE)
+        self.max_batch_bytes = max(1024, settings.NEO4J_MAX_BATCH_BYTES)
         self.driver = GraphDatabase.driver(self.uri, auth=(self.username, self.password))
 
     def close(self):
         self.driver.close()
+
+    def _iter_write_batches(self, items):
+        chunk = []
+        chunk_bytes = 0
+        for item in items:
+            item_bytes = len(json.dumps(item, ensure_ascii=False, default=str).encode("utf-8"))
+            if chunk and (len(chunk) >= self.batch_size or chunk_bytes + item_bytes > self.max_batch_bytes):
+                yield chunk
+                chunk = []
+                chunk_bytes = 0
+            chunk.append(item)
+            chunk_bytes += item_bytes
+        if chunk:
+            yield chunk
+
+    def _table_identity(self, qualified_name: str) -> dict:
+        normalized = (qualified_name or "").strip().upper()
+        if not normalized:
+            return {"owner": "", "table_name": "", "qualified_name": ""}
+
+        default_schema = getattr(self, "default_schema", "")
+        default_prefix = f"{default_schema}." if default_schema else ""
+        if default_prefix and normalized.startswith(default_prefix):
+            owner = default_schema
+            table_name = normalized[len(default_prefix):]
+        elif "." in normalized:
+            owner, table_name = normalized.rsplit(".", 1)
+        else:
+            owner, table_name = default_schema, normalized
+
+        return {
+            "owner": owner,
+            "table_name": table_name,
+            "qualified_name": f"{owner}.{table_name}" if owner else table_name,
+        }
 
     @staticmethod
     def _normalize_sql_for_statement_hash(sql: str) -> str:
@@ -388,10 +427,18 @@ class Neo4jClient:
             }
             parser_relation_uid = rel.get("parserRelationUid") or rel.get("parser_relation_uid") or rel.get("relationUid") or rel.get("relation_uid")
             scoped_relation_uid = relation_uid(version, repo_id, normalized_for_uid)
+            source_identity = self._table_identity(source)
+            target_identity = self._table_identity(target)
 
             normalized.append({
                 "source": source,
                 "target": target,
+                "source_owner": source_identity["owner"],
+                "source_table_name": source_identity["table_name"],
+                "source_qualified_name": source_identity["qualified_name"],
+                "target_owner": target_identity["owner"],
+                "target_table_name": target_identity["table_name"],
+                "target_qualified_name": target_identity["qualified_name"],
                 "dependency_type": dependency_type,
                 "neo4j_rel_type": neo4j_rel_type,
                 "snippet": snippet,
@@ -438,27 +485,22 @@ class Neo4jClient:
             grouped.setdefault(rel["neo4j_rel_type"], []).append(rel)
 
         with self.driver.session() as session:
-            # 优化：增加批次大小到 2000
-            batch_size = 2000
             total_all = len(normalized)
             processed_all = 0
             for rel_type, group in grouped.items():
-                total = len(group)
-                for i in range(0, total, batch_size):
-                    chunk = group[i:i + batch_size]
+                for batch_index, chunk in enumerate(self._iter_write_batches(group)):
                     try:
                         session.execute_write(self._create_tables_batch, chunk, rel_type)
                     except Exception as e:
-                        print(f"\n    Error in table batch {i//batch_size} ({rel_type}): {e}")
+                        raise RuntimeError(f"table batch {batch_index} ({rel_type}) failed") from e
 
-                    # Progress Log - 每 5000 条或最后一批打印一次
                     processed_all += len(chunk)
                     if processed_all % 5000 == 0 or processed_all == total_all:
                         sys.stdout.write(f"\r    Processed {processed_all}/{total_all} table relationships...")
                         sys.stdout.flush()
             print("") # Newline after done
-            for i in range(0, len(normalized), batch_size):
-                session.execute_write(self._create_lineage_facts_batch, normalized[i:i + batch_size])
+            for chunk in self._iter_write_batches(normalized):
+                session.execute_write(self._create_lineage_facts_batch, chunk)
 
     @staticmethod
     def _create_tables_batch(tx, relationships, rel_type):
@@ -466,6 +508,14 @@ class Neo4jClient:
         UNWIND $batch AS item
         MERGE (s:Table {{name: item.source}})
         MERGE (t:Table {{name: item.target}})
+        SET s.owner = item.source_owner,
+            s.schema = item.source_owner,
+            s.tableName = item.source_table_name,
+            s.qualifiedName = item.source_qualified_name,
+            t.owner = item.target_owner,
+            t.schema = item.target_owner,
+            t.tableName = item.target_table_name,
+            t.qualifiedName = item.target_qualified_name
         MERGE (s)-[r:{rel_type}]->(t)
         SET r.version = CASE WHEN item.version IS NOT NULL THEN item.version ELSE r.version END,
             r.repoId = CASE WHEN item.repo_id IS NOT NULL THEN item.repo_id ELSE r.repoId END,
@@ -609,6 +659,14 @@ class Neo4jClient:
         MERGE (fact)-[:IN_STATEMENT]->(stmt)
         MERGE (st:Table {name: sourceTable})
         MERGE (tt:Table {name: targetTable})
+        SET st.owner = item.source_owner,
+            st.schema = item.source_owner,
+            st.tableName = item.source_table_name,
+            st.qualifiedName = item.source_qualified_name,
+            tt.owner = item.target_owner,
+            tt.schema = item.target_owner,
+            tt.tableName = item.target_table_name,
+            tt.qualifiedName = item.target_qualified_name
         FOREACH (_ IN CASE WHEN sourceColumn <> '' AND sourceColumn <> '*' THEN [1] ELSE [] END |
             MERGE (sc:Column {name: sourceColumn, table: sourceTable})
             MERGE (sc)-[:BELONGS_TO]->(st)
@@ -636,20 +694,17 @@ class Neo4jClient:
         if not dependencies:
             return
         
-        # 分批处理以避免事务超时
-        batch_size = 2000
         total = len(dependencies)
         
         with self.driver.session() as session:
-            for i in range(0, total, batch_size):
-                chunk = dependencies[i:i + batch_size]
+            processed = 0
+            for batch_index, chunk in enumerate(self._iter_write_batches(dependencies)):
                 try:
                     session.execute_write(self._create_and_link_columns_batch, chunk)
                 except Exception as e:
-                    print(f"\n    Error in column lineage batch {i//batch_size}: {e}")
+                    raise RuntimeError(f"column lineage batch {batch_index} failed") from e
                 
-                # 进度日志
-                processed = min(i + batch_size, total)
+                processed += len(chunk)
                 if processed % 5000 == 0 or processed == total:
                     sys.stdout.write(f"\r    Processed {processed}/{total} column dependencies...")
                     sys.stdout.flush()
@@ -755,6 +810,16 @@ class Neo4jClient:
                 "metadata_pack_hash": dep.get("metadataPackHash") or dep.get("metadata_pack_hash"),
                 "is_expanded": dep.get("is_expanded", False)
             }
+            source_identity = self._table_identity(source_table)
+            target_identity = self._table_identity(target_table)
+            item.update({
+                "source_owner": source_identity["owner"],
+                "source_table_name": source_identity["table_name"],
+                "source_qualified_name": source_identity["qualified_name"],
+                "target_owner": target_identity["owner"],
+                "target_table_name": target_identity["table_name"],
+                "target_qualified_name": target_identity["qualified_name"],
+            })
             
             # 查找 Neo4j 关系类型，优先保留解析器已经细分出的 GROUPS/ORDERS 等类型。
             neo4j_rel_type = dep.get("neo4j_type") or RELATION_TYPE_MAP.get(item["dependency_type"], "DERIVES_TO")
@@ -795,24 +860,20 @@ class Neo4jClient:
                     grouped[rtype] = []
                 grouped[rtype].append(item)
             
-            # 增加批次大小到 2000 以提升性能
-            batch_size = 2000
             for rtype, group_items in grouped.items():
                 total = len(group_items)
                 print(f"  - Processing items of type {rtype} (Total: {total})...")
                 
                 # 复用同一个 session 以减少连接开销
                 with self.driver.session() as session:
-                    for i in range(0, total, batch_size):
-                        chunk = group_items[i:i + batch_size]
-                        # Execute with specific method
+                    processed = 0
+                    for batch_index, chunk in enumerate(self._iter_write_batches(group_items)):
                         try:
                             session.execute_write(batch_func, chunk, rtype)
                         except Exception as e:
-                            print(f"\n    Error in batch {i//batch_size}: {e}")
+                            raise RuntimeError(f"column batch {batch_index} ({rtype}) failed") from e
                         
-                        # Progress Log - 每 5000 条或最后一批打印一次
-                        processed = min(i + batch_size, total)
+                        processed += len(chunk)
                         if processed % 5000 == 0 or processed == total:
                             sys.stdout.write(f"\r    Processed {processed}/{total}...")
                             sys.stdout.flush()
@@ -831,10 +892,9 @@ class Neo4jClient:
 
         fact_items = direct_items + indirect_items + fact_only_items
         if fact_items:
-            batch_size = 2000
             with self.driver.session() as session:
-                for i in range(0, len(fact_items), batch_size):
-                    session.execute_write(self._create_lineage_facts_batch, fact_items[i:i + batch_size])
+                for chunk in self._iter_write_batches(fact_items):
+                    session.execute_write(self._create_lineage_facts_batch, chunk)
 
     @staticmethod
     def _is_missing_source_column_dependency(dep: dict) -> bool:
@@ -853,6 +913,14 @@ class Neo4jClient:
         UNWIND $batch AS item
         MERGE (st:Table {{name: item.source_table}})
         MERGE (tt:Table {{name: item.target_table}})
+        SET st.owner = item.source_owner,
+            st.schema = item.source_owner,
+            st.tableName = item.source_table_name,
+            st.qualifiedName = item.source_qualified_name,
+            tt.owner = item.target_owner,
+            tt.schema = item.target_owner,
+            tt.tableName = item.target_table_name,
+            tt.qualifiedName = item.target_qualified_name
         MERGE (sc:Column {{name: item.source_column, table: item.source_table}})
         MERGE (sc)-[:BELONGS_TO]->(st)
         MERGE (tc:Column {{name: item.target_column, table: item.target_table}})
@@ -930,6 +998,14 @@ class Neo4jClient:
         UNWIND $batch AS item
         MERGE (st:Table {{name: item.source_table}})
         MERGE (tt:Table {{name: item.target_table}})
+        SET st.owner = item.source_owner,
+            st.schema = item.source_owner,
+            st.tableName = item.source_table_name,
+            st.qualifiedName = item.source_qualified_name,
+            tt.owner = item.target_owner,
+            tt.schema = item.target_owner,
+            tt.tableName = item.target_table_name,
+            tt.qualifiedName = item.target_qualified_name
         MERGE (sc:Column {{name: item.source_column, table: item.source_table}})
         MERGE (sc)-[:BELONGS_TO]->(st)
         MERGE (sc)-[r:{rel_type}]->(tt)

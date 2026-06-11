@@ -64,8 +64,8 @@ def get_parser():
     return LineageParser()
 
 # Helper function to get neo4j client
-def get_neo4j_client():
-    return Neo4jClient()
+def get_neo4j_client(default_schema=None):
+    return Neo4jClient(default_schema=default_schema)
 
 # Modified parallel parser to include duration in result
 def parse_single_file_with_timing(task_args):
@@ -154,7 +154,7 @@ def main():
         logger.info(f"Configuration: dialect={args.dialect}, output={args.output}, no-clear={args.no_clear}")
 
         # lineage_parser instantiation DEFERRED to avoid JVM start in main process
-        neo4j = get_neo4j_client()
+        neo4j = get_neo4j_client(args.default_user)
         
         # 确保 Neo4j 索引存在（优化查询性能）
         if neo4j:

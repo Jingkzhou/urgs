@@ -47,6 +47,8 @@ public class RegTableController {
             .compile("'([^']{4,200})'|\"([^\"]{4,200})\"|`([^`]{4,200})`");
     private static final Pattern INDICATOR_CODE_TOKEN_PATTERN = Pattern
             .compile("[A-Za-z0-9][A-Za-z0-9_.\\-^]{3,199}");
+    private static final Pattern UNION_ALL_BEFORE_INSERT_PATTERN = Pattern
+            .compile("\\bUNION\\s+ALL\\s*(?=INSERT\\s+(?:INTO|OVERWRITE)\\b)", Pattern.CASE_INSENSITIVE);
     private static final int MIN_INDICATOR_CODE_MATCH_LENGTH = 4;
 
     @Autowired
@@ -516,15 +518,20 @@ public class RegTableController {
 
     /**
      * 生成 Hive SQL 文件
-     * 优化点：
-     * 1. 逻辑去重：对于相同的取数逻辑，使用 CTE (WITH) 语法只定义一次。
-     * 2. 文件分片：支持按表名分片（table_1.sql, table_2.sql），避免单文件过大。
+     * 保留指标原始查询结构，将目标表替换为指定 Schema 下的指标编号。
+     * 每 100 个指标分片，避免单文件过大。
      */
     @PostMapping("/generateHiveSql")
-    public Map<String, Object> generateHiveSql(@RequestParam String systemCode) {
+    public Map<String, Object> generateHiveSql(@RequestParam String systemCode, @RequestParam String schema) {
         Map<String, Object> result = new HashMap<>();
         int totalIndicatorCount = 0;
         int totalFilesGenerated = 0;
+
+        if (StringUtils.isBlank(schema)) {
+            result.put("success", false);
+            result.put("message", "Schema 不能为空");
+            return result;
+        }
 
         try {
             // 1. 查询该系统下所有表
@@ -540,69 +547,25 @@ public class RegTableController {
                 if (elements.isEmpty())
                     continue;
 
-                // 2. 按逻辑对指标进行分组
-                // LogicKey -> List<IndicatorCode>
-                Map<String, List<String>> logicGroups = new LinkedHashMap<>();
-                for (RegElement element : elements) {
-                    String indicatorCode = "N/A"; // Code
-                                                  // removed
-                    String codeSnippet = element.getCodeSnippet();
-
-                    // 使用占位符替换表名，以此作为逻辑主键
-                    String logicKey = replaceInsertTableNameWithBackticks(codeSnippet, "__INDICATOR_PLACEHOLDER__");
-                    logicGroups.computeIfAbsent(logicKey, k -> new ArrayList<>()).add(indicatorCode);
-                    totalIndicatorCount++;
-                }
-
-                // 3. 将逻辑组分片生成文件 (例如每 100 个逻辑组一个文件)
-                int maxGroupsPerFile = 100;
-                List<String> allLogicKeys = new ArrayList<>(logicGroups.keySet());
-                for (int i = 0; i < allLogicKeys.size(); i += maxGroupsPerFile) {
-                    int end = Math.min(i + maxGroupsPerFile, allLogicKeys.size());
-                    List<String> subKeys = allLogicKeys.subList(i, end);
+                // 2. 每 100 个指标分片，保留原始 SELECT 结构，只替换目标表名。
+                int maxIndicatorsPerFile = 100;
+                for (int i = 0; i < elements.size(); i += maxIndicatorsPerFile) {
+                    int end = Math.min(i + maxIndicatorsPerFile, elements.size());
+                    List<RegElement> subElements = elements.subList(i, end);
 
                     StringBuilder fileContent = new StringBuilder();
-                    for (int groupIdx = 0; groupIdx < subKeys.size(); groupIdx++) {
-                        String logicKey = subKeys.get(groupIdx);
-                        List<String> indicatorCodes = logicGroups.get(logicKey);
-
-                        // 尝试提取 SELECT 部分作为 CTE 内容
-                        // 如果无法提取（比如是复杂的多语句），则退化为普通模式
-                        String selectPart = extractSelectPart(logicKey);
-
-                        if (selectPart != null && indicatorCodes.size() > 1) {
-                            fileContent.append("-- ========== 逻辑组 ").append(groupIdx).append(": 共 ")
-                                    .append(indicatorCodes.size()).append(" 个指标 ==========\n");
-                            fileContent.append("FROM (\n").append(selectPart).append("\n) q_").append(groupIdx)
-                                    .append("\n");
-                            for (int k = 0; k < indicatorCodes.size(); k++) {
-                                String code = indicatorCodes.get(k);
-                                // 尝试从本组的指标逻辑中找回原本的字段列表（如果有的话）
-                                // 注意：此处简化处理，假设同组逻辑的字段列表也是一致的
-                                String columnList = extractColumnList(logicKey);
-                                // Ensure newline after column list to prevent potential comment issues
-                                fileContent.append("INSERT INTO `").append(code).append("` ")
-                                        .append(columnList != null ? "(" + columnList + ")\n" : "").append("SELECT *");
-                                if (k == indicatorCodes.size() - 1) {
-                                    fileContent.append(";");
-                                }
-                                fileContent.append("\n");
-                            }
-                        } else {
-                            // 退化模式：逐个输出（或者只有一个指标时也无需逻辑聚合）
-                            for (String code : indicatorCodes) {
-                                String snippet = replaceInsertTableNameWithBackticks(logicKey, code);
-                                fileContent.append("-- 指标: ").append(code).append("\n").append(snippet);
-                                if (!snippet.trim().endsWith(";"))
-                                    fileContent.append(";");
-                                fileContent.append("\n\n");
-                            }
-                        }
-                        fileContent.append("\n");
+                    for (RegElement element : subElements) {
+                        String indicatorCode = element.getName();
+                        String targetTable = formatQualifiedTableName(schema, indicatorCode);
+                        String snippet = normalizeHiveInsertStatements(element.getCodeSnippet(), targetTable);
+                        fileContent.append("-- 指标: ").append(indicatorCode).append("\n")
+                                .append(snippet).append("\n\n");
+                        totalIndicatorCount++;
                     }
 
                     // 生成物理文件
-                    String fileNameSuffix = (allLogicKeys.size() > maxGroupsPerFile) ? "_" + (i / maxGroupsPerFile + 1)
+                    String fileNameSuffix = (elements.size() > maxIndicatorsPerFile)
+                            ? "_" + (i / maxIndicatorsPerFile + 1)
                             : "";
                     writeTableSqlFile(tableName + fileNameSuffix, fileContent.toString());
                     totalFilesGenerated++;
@@ -624,84 +587,26 @@ public class RegTableController {
         return result;
     }
 
-    /**
-     * 从带占位符的脚本中提取 SELECT 部分
-     * 支持 INSERT INTO / INSERT OVERWRITE [TABLE] `__INDICATOR_PLACEHOLDER__` SELECT
-     * ...
-     */
-    private String extractSelectPart(String logicKey) {
-        String placeholder = "__INDICATOR_PLACEHOLDER__";
-        String upperLogic = logicKey.toUpperCase();
-
-        // 正则查找占位符之后，SELECT 及其之后的所有内容
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
-                "INSERT\\s+(?:INTO|OVERWRITE)\\s+(?:TABLE\\s+)?(?:`?" + placeholder + "`?|`?[\\w.]+`?)",
-                java.util.regex.Pattern.CASE_INSENSITIVE);
-        java.util.regex.Matcher matcher = pattern.matcher(logicKey);
-
-        if (matcher.find()) {
-            int placeholderEnd = matcher.end();
-            int selectStart = upperLogic.indexOf("SELECT", placeholderEnd);
-            if (selectStart != -1) {
-                String selectPart = logicKey.substring(selectStart).trim();
-                if (selectPart.endsWith(";")) {
-                    selectPart = selectPart.substring(0, selectPart.length() - 1);
-                }
-                return selectPart;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 提取 INSERT 语句中的字段列表，如 (col1, col2)
-     */
-    /**
-     * 提取 INSERT 语句中的字段列表，如 (col1, col2)
-     * 先移除注释，再进行正则匹配，防止注释中包含 ')' 导致截断
-     */
-    private String extractColumnList(String logicKey) {
-        // 移除注释
-        String cleanLogic = removeComments(logicKey);
-
-        String placeholder = "__INDICATOR_PLACEHOLDER__";
-        // 匹配占位符到 SELECT 之间的内容，捕获括号内的部分
-        // 使用非贪婪匹配或更宽松的字符类，因为注释已移除，风险降低
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
-                "INSERT\\s+(?:INTO|OVERWRITE)\\s+(?:TABLE\\s+)?(?:`?" + placeholder + "`?)\\s*\\(([^)]+)\\)",
-                java.util.regex.Pattern.CASE_INSENSITIVE);
-        java.util.regex.Matcher matcher = pattern.matcher(cleanLogic);
-        if (matcher.find()) {
-            return matcher.group(1).trim();
-        }
-        return null;
-    }
-
-    /**
-     * 移除 SQL 中的单行注释 (--) 和多行注释 (&#47;* ... *&#47;)
-     * 注意：简单的正则可能误伤字符串中的注释符号，但在提取字段列表场景下通常可接受
-     */
-    private String removeComments(String sql) {
-        if (sql == null)
-            return null;
-        // 移除 /* ... */
-        String noBlockComments = sql.replaceAll("/\\*[\\s\\S]*?\\*/", " ");
-        // 移除 -- ... (直到行尾)
-        // 注意：需处理 Windows/Unix 换行
-        String noLineComments = noBlockComments.replaceAll("--.*", " ");
-        return noLineComments.trim();
+    String normalizeHiveInsertStatements(String codeSnippet, String targetTable) {
+        String replaced = replaceInsertTableName(codeSnippet, targetTable);
+        String separated = UNION_ALL_BEFORE_INSERT_PATTERN.matcher(replaced).replaceAll(";\n\n");
+        return splitSqlStatements(separated).stream()
+                .map(String::trim)
+                .filter(StringUtils::isNotBlank)
+                .map(statement -> statement.endsWith(";") ? statement : statement + ";")
+                .collect(Collectors.joining("\n\n"));
     }
 
     private void writeTableSqlFile(String fileName, String content) throws IOException {
         String basePath = System.getProperty("user.dir");
-        java.nio.file.Path targetDir = java.nio.file.Paths.get(basePath).getParent().resolve("urgs-agent")
-                .resolve("tests").resolve("sql").resolve("hive");
+        java.nio.file.Path targetDir = java.nio.file.Paths.get(basePath).getParent().resolve("data")
+                .resolve("sql").resolve("hive");
         java.nio.file.Files.createDirectories(targetDir);
 
         java.nio.file.Path sqlFile = targetDir.resolve(fileName + ".sql");
         String header = String.format(
                 "-- ============================================================\n" + "-- 文件名: %s.sql\n"
-                        + "-- 生成时间: %s\n" + "-- 说明: 采用 CTE (WITH) 聚合去重模式生成，大幅减小血缘解析压力\n"
+                        + "-- 生成时间: %s\n" + "-- 说明: Hive SQL，每个指标 INSERT 语句独立生成\n"
                         + "-- ============================================================\n\n",
                 fileName,
                 LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
@@ -869,24 +774,30 @@ public class RegTableController {
         return trimmed;
     }
 
+    private String escapeSqlIdentifier(String identifier) {
+        return StringUtils.defaultString(identifier).replace("`", "``");
+    }
+
+    String formatQualifiedTableName(String schema, String tableName) {
+        return "`" + escapeSqlIdentifier(schema.trim()) + "`.`" + escapeSqlIdentifier(tableName) + "`";
+    }
+
     /**
      * 替换 INSERT INTO 后面的表名为用反引号包裹的指标号
      * 支持带前缀（如 schema.table_name）和不带前缀的情况
      */
-    private String replaceInsertTableNameWithBackticks(String codeSnippet, String indicatorCode) {
-        if (codeSnippet == null || indicatorCode == null) {
+    private String replaceInsertTableName(String codeSnippet, String targetTable) {
+        if (codeSnippet == null || targetTable == null) {
             return codeSnippet;
         }
-        // 正则匹配 INSERT (INTO|OVERWRITE) [TABLE] [schema.]table_name 或已替换过的占位符
-        // 增加对反引号的处理
         java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
-                "(INSERT\\s+(?:INTO|OVERWRITE)\\s+(?:TABLE\\s+)?)(?:\\w+\\.)?(`?[\\w]+`?)",
+                "(INSERT\\s+(?:INTO|OVERWRITE)\\s+(?:TABLE\\s+)?)(?:`(?:``|[^`])+`|[A-Za-z0-9_$-]+)"
+                        + "(?:\\.(?:`(?:``|[^`])+`|[A-Za-z0-9_$-]+))*",
                 java.util.regex.Pattern.CASE_INSENSITIVE);
         java.util.regex.Matcher matcher = pattern.matcher(codeSnippet);
         StringBuffer result = new StringBuffer();
         while (matcher.find()) {
-            // 使用反引号包裹的指标号替换
-            String replacement = matcher.group(1) + "`" + indicatorCode + "`";
+            String replacement = matcher.group(1) + targetTable;
             matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(replacement));
         }
         matcher.appendTail(result);

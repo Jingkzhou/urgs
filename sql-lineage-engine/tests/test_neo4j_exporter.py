@@ -58,3 +58,34 @@ def test_star_columns_are_fact_only_and_not_column_relationships():
 def test_star_columns_are_removed_from_table_relationship_column_lists():
     assert Neo4jClient._as_clean_list(["A", "*", "", None, "B"]) == ["A", "B"]
     assert Neo4jClient._is_placeholder_column("*")
+
+
+def test_write_batches_limit_count_and_serialized_bytes():
+    client = Neo4jClient.__new__(Neo4jClient)
+    client.batch_size = 3
+    client.max_batch_bytes = 100
+
+    items = [
+        {"snippet": "a" * 30},
+        {"snippet": "b" * 30},
+        {"snippet": "c" * 80},
+        {"snippet": "d"},
+    ]
+
+    batches = list(client._iter_write_batches(items))
+
+    assert [len(batch) for batch in batches] == [2, 1, 1]
+    assert [item for batch in batches for item in batch] == items
+
+
+def test_default_schema_preserves_dots_inside_quoted_table_name():
+    client = Neo4jClient.__new__(Neo4jClient)
+    client.default_schema = "PM_RSDATA"
+
+    identity = client._table_identity("pm_rsdata.S75_1.1.A")
+
+    assert identity == {
+        "owner": "PM_RSDATA",
+        "table_name": "S75_1.1.A",
+        "qualified_name": "PM_RSDATA.S75_1.1.A",
+    }

@@ -6,6 +6,7 @@ import { FileTextOutlined } from '@ant-design/icons';
 import { Activity, ArrowDown, ArrowUp, Focus, GitBranch, Info, Layers3, Maximize2, Network, PanelRight, Route, Table2 } from 'lucide-react';
 import { getLineageGraph, LineageGraphResponse } from '@/api/lineage';
 import { LinkData, NodeData, RELATION_STYLES } from '../types';
+import { resolveNodeTableIdentity } from '../utils/lineageGraphDensity';
 import CodeModal from './CodeModal';
 import G6NodeSearch from './G6NodeSearch';
 
@@ -107,17 +108,6 @@ const getSourceFile = (link: LinkData) => {
 
 const getTableName = (node: any) => String(node?.properties?.name || node?.label || '').toUpperCase();
 
-const splitQualifiedTitle = (title: string) => {
-    const index = title.lastIndexOf('.');
-    if (index <= 0 || index === title.length - 1) {
-        return { owner: 'DEFAULT', table: title };
-    }
-    return {
-        owner: title.slice(0, index),
-        table: title.slice(index + 1),
-    };
-};
-
 const getRelationStyle = (type?: string) => RELATION_STYLES[type || 'DERIVES_TO'] || RELATION_STYLES.DERIVES_TO;
 
 const formatRelationLabel = (count: number) => `${count} 个字段关系`;
@@ -132,6 +122,8 @@ const parseTableGraph = (response: LineageGraphResponse) => {
             width: 240,
             type: 'default',
             title: getTableName(node),
+            owner: node.properties?.owner || node.properties?.schema,
+            tableName: node.properties?.tableName,
             isCollapsed: true,
             columns: [],
         }));
@@ -332,7 +324,7 @@ const G6LineageDiagram: React.FC<G6LineageDiagramProps> = ({
                 const isSelected = selectedNodeId === node.id || (!!selectedTableLower && node.title.toLowerCase() === selectedTableLower);
                 const isNeighbor = !isSelected && activeNodeIds.has(node.id);
                 const isInactive = hasActiveSelection && !activeNodeIds.has(node.id) && !isSelected;
-                const titleParts = splitQualifiedTitle(node.title);
+                const titleParts = resolveNodeTableIdentity(node);
                 return {
                     id: node.id,
                     data: {
@@ -391,7 +383,7 @@ const G6LineageDiagram: React.FC<G6LineageDiagramProps> = ({
     }, [activeTrace, displayLinks, displayNodes, nodeMap, selectedEdgeId, selectedNodeId, selectedTable]);
 
     const selectedNode = selectedNodeId ? nodeMap.get(selectedNodeId) : null;
-    const selectedNodeTitle = selectedNode ? splitQualifiedTitle(selectedNode.title) : null;
+    const selectedNodeTitle = selectedNode ? resolveNodeTableIdentity(selectedNode) : null;
     const selectedNodeSummary = useMemo(
         () => buildNodeSummary(selectedNodeId, displayLinks),
         [displayLinks, selectedNodeId]

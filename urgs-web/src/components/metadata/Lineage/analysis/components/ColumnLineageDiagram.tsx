@@ -17,7 +17,7 @@ import {
     getRelationStyle,
     normalizeArray,
     normalizeRelationType,
-    splitQualifiedTitle,
+    resolveNodeTableIdentity,
     sameTableLoose,
 } from '../utils/lineageGraphDensity';
 
@@ -320,7 +320,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
 
         const nodeMetrics: NodeMetric[] = displayNodes.map(node => {
             const columns = getVisibleColumns(node, columnUsage, selectedField);
-            const ownerHeight = splitQualifiedTitle(node.title).owner ? OWNER_HEIGHT : 0;
+            const ownerHeight = resolveNodeTableIdentity(node).owner ? OWNER_HEIGHT : 0;
             const height = HEADER_HEIGHT + ownerHeight + Math.max(1, columns.length) * ROW_HEIGHT;
             const rank = ranks.get(node.id) || 0;
             return { node, columns, height, rank };
@@ -392,7 +392,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         const rawLayoutNodes = layoutInput.nodeMetrics.map(({ node, columns, height, rank }, index) => {
             const x = PADDING + (rank - layoutInput.minRank) * (CARD_WIDTH + RANK_GAP);
             const y = elkPositions?.get(node.id)?.y ?? PADDING + index * (height + NODE_GAP);
-            const ownerHeight = splitQualifiedTitle(node.title).owner ? OWNER_HEIGHT : 0;
+            const ownerHeight = resolveNodeTableIdentity(node).owner ? OWNER_HEIGHT : 0;
             return { node, x, y, height, rank, columns, ownerHeight };
         });
         const nodesByRank = new Map<number, typeof rawLayoutNodes>();
@@ -423,7 +423,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
             .sort((a, b) => a.rank - b.rank || a.y - b.y || a.node.title.localeCompare(b.node.title));
 
         layoutNodes.forEach(item => {
-            const ownerHeight = splitQualifiedTitle(item.node.title).owner ? OWNER_HEIGHT : 0;
+            const ownerHeight = resolveNodeTableIdentity(item.node).owner ? OWNER_HEIGHT : 0;
             item.columns.forEach((col, index) => {
                 const rowY = item.y + HEADER_HEIGHT + ownerHeight + index * ROW_HEIGHT + ROW_HEIGHT / 2;
                 rowAnchors.set(getColumnKey(item.node.id, col.id), {
@@ -669,7 +669,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                 </svg>
 
                 {layout.layoutNodes.map(item => {
-                    const { owner, table } = splitQualifiedTitle(item.node.title);
+                    const { owner, table } = resolveNodeTableIdentity(item.node);
                     const isSelectedTable = sameTableLoose(item.node.title, selectedTable) || item.node.id === selectedField?.nodeId;
                     const hasOutgoing = displayLinks.some(link => link.sourceNodeId === item.node.id);
                     const hasIncoming = displayLinks.some(link => link.targetNodeId === item.node.id);

@@ -11,6 +11,8 @@ export interface NodeData {
     width: number;
     type: 'source' | 'transform' | 'aggregation' | 'result' | 'default';
     title: string;
+    owner?: string;
+    tableName?: string;
     isCollapsed?: boolean;
     isGroupNode?: boolean;
     groupDirection?: 'upstream' | 'downstream' | 'same';

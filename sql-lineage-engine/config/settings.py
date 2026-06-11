@@ -5,6 +5,8 @@ class Settings(BaseSettings):
     NEO4J_URI: str = "bolt://127.0.0.1:7687"
     NEO4J_USERNAME: str = "neo4j"
     NEO4J_PASSWORD: str = "12345678"
+    NEO4J_BATCH_SIZE: int = 200
+    NEO4J_MAX_BATCH_BYTES: int = 2 * 1024 * 1024
     
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_API_BASE: Optional[str] = None

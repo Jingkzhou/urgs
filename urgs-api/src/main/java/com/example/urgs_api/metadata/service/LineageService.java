@@ -697,11 +697,11 @@ public class LineageService {
     }
 
     private String resolveTableName(Map<String, Object> props, String rawName) {
-        String explicitTable = firstNonBlank(
-                toSafeUpperString(props.get("tableName")),
-                toSafeUpperString(props.get("name")));
-        String[] qualifiedParts = splitQualifiedName(explicitTable.isEmpty() ? rawName : explicitTable);
-        return qualifiedParts[1];
+        String explicitTable = toSafeUpperString(props.get("tableName"));
+        if (!explicitTable.isEmpty()) {
+            return explicitTable;
+        }
+        return splitQualifiedName(rawName)[1];
     }
 
     private String[] splitQualifiedName(String name) {
