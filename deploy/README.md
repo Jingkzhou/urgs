@@ -32,7 +32,8 @@ config/deploy.env
 - Neo4j：`NEO4J_HOST` / `NEO4J_PORT_BOLT` / `NEO4J_USER` / `NEO4J_PASSWORD`
 - SSO 私钥：`URGS_INBOUND_SSO_RSA_PRIVATE_KEY`
 - RAG/LLM：`LLM_API_BASE` / `LLM_MODEL` / `LLM_API_KEY`
-- 端口：`API_PORT` / `EXECUTOR_PORT` / `RAG_PORT` / `WEB_LISTEN_PORT`
+- 端口：`API_PORT` / `EXECUTOR_PORT` / `RAG_PORT` / `AGENT_PORT` / `WEB_LISTEN_PORT`
+- Agent Runtime：`AGENT_DATABASE_URL` / `AGENT_CHECKPOINT_DATABASE_URL` / `AGENT_REDIS_URL` / `AGENT_OPENAI_BASE_URL`
 - Nginx 代理：`API_TARGET` / `API_UPSTREAM_SERVERS` / `RAG_TARGET` / `IM_API_TARGET`
 - JVM：`API_JAVA_OPTS` / `EXECUTOR_JAVA_OPTS`
 
@@ -88,11 +89,11 @@ dist-packages/urgs-<环境>-<时间戳>.tar.gz
 常用服务组合：
 
 ```bash
-# 完整包：api web executor rag lineage nginx redis
+# 完整包：api web executor rag agent lineage nginx redis
 DEPLOY_ENV=prod deploy/package-services.sh full
 
 # 只打应用，不带 nginx / redis
-DEPLOY_ENV=prod deploy/package-services.sh api web executor rag lineage
+DEPLOY_ENV=prod deploy/package-services.sh api web executor rag agent lineage
 
 # 只升级 api 和 web
 DEPLOY_ENV=prod PACKAGE_NAME=urgs-api-web deploy/package-services.sh api web nginx
@@ -176,6 +177,7 @@ bin/deploy.sh restart api
 bin/deploy.sh restart nginx
 bin/deploy.sh restart executor
 bin/deploy.sh restart rag
+bin/deploy.sh restart agent
 bin/deploy.sh restart redis
 ```
 
@@ -216,13 +218,15 @@ bin/deploy.sh nginx-config
 logs/api.log
 logs/executor.log
 logs/rag.log
+logs/agent-api.log
+logs/agent-worker.log
 logs/nginx/error.log
 logs/nginx/access.log
 ```
 
 ## 8. 补充说明
 
-- `full` 包含：`api web executor rag lineage nginx redis`。
+- `full` 包含：`api web executor rag agent lineage nginx redis`。
 - `lineage` 是随包分发的命令行工具，不是常驻服务。
 - MySQL 和 Neo4j 不放入部署包，只通过 `config/deploy.env` 配置连接。
 - 默认 `WEB_LISTEN_PORT=18080`，普通用户可直接监听；如果要使用 80 端口，建议由系统 Nginx、负载均衡或端口转发处理。

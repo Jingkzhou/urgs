@@ -29,6 +29,7 @@ Services:
   web          Build and package urgs-web static frontend.
   executor     Build and package urgs-executor Spring Boot service.
   rag          Package urgs-rag Python service source and requirements.
+  agent        Package urgs-agent LangGraph runtime source and lock file.
   lineage      Package sql-lineage-engine source and requirements.
 
 Components:
@@ -36,7 +37,7 @@ Components:
   redis        Package redis config and REDIS_TARBALL, or latest cached ARM64 package.
 
 Groups:
-  app-all      api web executor rag lineage
+  app-all      api web executor rag agent lineage
   deps-all     nginx redis
   full         app-all deps-all
 
@@ -86,6 +87,7 @@ normalize_service() {
         web | urgs-web | frontend) echo "web" ;;
         executor | urgs-executor) echo "executor" ;;
         rag | urgs-rag) echo "rag" ;;
+        agent | urgs-agent) echo "agent" ;;
         lineage | sql-lineage-engine) echo "lineage" ;;
         nginx) echo "nginx" ;;
         redis) echo "redis" ;;
@@ -324,6 +326,14 @@ package_rag() {
     copy_with_rsync "${ROOT_DIR}/urgs-rag/" "${WORK_DIR}/services/rag/"
 }
 
+package_agent() {
+    log "Packaging urgs-agent source."
+    [ -f "${ROOT_DIR}/urgs-agent/pyproject.toml" ] || die "urgs-agent/pyproject.toml does not exist."
+    [ -f "${ROOT_DIR}/urgs-agent/uv.lock" ] || die "urgs-agent/uv.lock does not exist. Run uv sync first."
+    mkdir -p "${WORK_DIR}/services/agent"
+    copy_with_rsync "${ROOT_DIR}/urgs-agent/" "${WORK_DIR}/services/agent/"
+}
+
 package_lineage() {
     log "Packaging sql-lineage-engine source."
     [ -f "${ROOT_DIR}/sql-lineage-engine/requirements.txt" ] || die "sql-lineage-engine/requirements.txt does not exist."
@@ -443,13 +453,13 @@ configure_package_name
 for raw_service in "${ARGS[@]}"; do
     case "$raw_service" in
         app-all)
-            for service in api web executor rag lineage; do append_service "$service"; done
+            for service in api web executor rag agent lineage; do append_service "$service"; done
             ;;
         deps-all)
             for service in nginx redis; do append_service "$service"; done
             ;;
         full)
-            for service in api web executor rag lineage nginx redis; do append_service "$service"; done
+            for service in api web executor rag agent lineage nginx redis; do append_service "$service"; done
             ;;
         *)
             service="$(normalize_service "$raw_service")" || die "Unknown service: ${raw_service}"
@@ -472,6 +482,7 @@ for service in "${SERVICES[@]}"; do
         web) build_web ;;
         executor) build_executor ;;
         rag) package_rag ;;
+        agent) package_agent ;;
         lineage) package_lineage ;;
         nginx | redis) package_component "$service" ;;
         *) die "Unhandled service: ${service}" ;;

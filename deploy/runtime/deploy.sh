@@ -39,6 +39,7 @@ apply_runtime_defaults() {
     API_PORT="${API_PORT:-8080}"
     EXECUTOR_PORT="${EXECUTOR_PORT:-8082}"
     RAG_PORT="${RAG_PORT:-8001}"
+    AGENT_PORT="${AGENT_PORT:-8002}"
     WEB_LISTEN_PORT="${WEB_LISTEN_PORT:-18080}"
     WEB_SERVER_NAME="${WEB_SERVER_NAME:-_}"
     API_TARGET="${API_TARGET:-http://127.0.0.1:${API_PORT}}"
@@ -401,6 +402,10 @@ ensure_venv() {
     if [ "$PIP_INSTALL" = "1" ] && [ -f "${dir}/requirements.txt" ]; then
         log "Installing Python dependencies for ${service}."
         "${dir}/.venv/bin/python" -m pip install -r "${dir}/requirements.txt"
+    elif [ "$PIP_INSTALL" = "1" ] && [ -f "${dir}/pyproject.toml" ]; then
+        log "Installing locked Python project for ${service}."
+        "${dir}/.venv/bin/python" -m pip install uv==0.8.17
+        (cd "$dir" && VIRTUAL_ENV="${dir}/.venv" "${dir}/.venv/bin/uv" sync --frozen --no-dev --active)
     fi
 }
 
@@ -414,6 +419,22 @@ start_rag() {
     export LLM_API_KEY="${LLM_API_KEY:-}"
     export URGS_API_URL="${URGS_API_URL:-http://127.0.0.1:${API_PORT}}"
     (cd "${ROOT_DIR}/services/rag" && start_background rag .venv/bin/python -m uvicorn app.main:app --host "${RAG_HOST:-0.0.0.0}" --port "$RAG_PORT")
+}
+
+start_agent() {
+    service_enabled agent || return 0
+    ensure_venv agent
+    stop_conflicting_port agent-api "$AGENT_PORT"
+    export_common_env
+    export AGENT_PORT AGENT_DATABASE_URL AGENT_CHECKPOINT_DATABASE_URL AGENT_REDIS_URL
+    export AGENT_OPENAI_BASE_URL AGENT_OPENAI_API_KEY AGENT_OPENAI_MODEL
+    export AGENT_URGS_API_URL AGENT_RAG_URL AGENT_LINEAGE_URL AGENT_API_KEY
+    export AGENT_CALLBACK_HMAC_SECRET AGENT_ENVIRONMENT AGENT_LOG_LEVEL
+    (cd "${ROOT_DIR}/services/agent" && .venv/bin/python -m alembic upgrade head)
+    (cd "${ROOT_DIR}/services/agent" && \
+        start_background agent-api .venv/bin/python -m uvicorn urgs_agent.main:app --host "${AGENT_HOST:-0.0.0.0}" --port "$AGENT_PORT")
+    (cd "${ROOT_DIR}/services/agent" && \
+        start_background agent-worker .venv/bin/python -m urgs_agent.worker)
 }
 
 start_web_static() {
@@ -598,6 +619,7 @@ install_all() {
     service_enabled nginx && extract_component_tarballs nginx
     service_enabled redis && extract_component_tarballs redis
     service_enabled rag && ensure_venv rag
+    service_enabled agent && ensure_venv agent
     service_enabled lineage && ensure_venv lineage
     install_nginx_config
     log "Install step completed."
@@ -630,6 +652,7 @@ start_redis() {
 start_all() {
     start_redis
     start_rag
+    start_agent
     start_executor
     start_api
     render_runtime_config
@@ -644,6 +667,7 @@ start_one() {
         api) start_api ;;
         executor) start_executor ;;
         rag) start_rag ;;
+        agent) start_agent ;;
         redis) start_redis ;;
         nginx) install_nginx_config; start_nginx ;;
         web-static) start_web_static ;;
@@ -657,6 +681,8 @@ stop_all() {
     service_enabled api && stop_service api
     service_enabled executor && stop_service executor
     service_enabled rag && stop_service rag
+    service_enabled agent && stop_service agent-worker
+    service_enabled agent && stop_service agent-api
     service_enabled redis && stop_service redis
     true
 }
@@ -664,6 +690,7 @@ stop_all() {
 stop_one() {
     case "$1" in
         api | executor | rag | redis | web-static) stop_service "$1" ;;
+        agent) stop_service agent-worker; stop_service agent-api ;;
         nginx) stop_nginx ;;
         *) die "Unknown service: $1" ;;
     esac
@@ -673,6 +700,8 @@ status_all() {
     service_enabled api && status_service api
     service_enabled executor && status_service executor
     service_enabled rag && status_service rag
+    service_enabled agent && status_service agent-api
+    service_enabled agent && status_service agent-worker
     service_enabled redis && status_service redis
     service_enabled nginx && status_service nginx
     service_enabled web && status_service web-static
@@ -683,6 +712,7 @@ status_all() {
 status_one() {
     case "$1" in
         api | executor | rag | redis | nginx | web-static) status_service "$1" ;;
+        agent) status_service agent-api; status_service agent-worker ;;
         *) die "Unknown service: $1" ;;
     esac
 }

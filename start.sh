@@ -48,6 +48,7 @@ if [ "$ENVIRONMENT" = "local" ]; then
 fi
 
 pids=()
+AGENT_COMPOSE_DEPS_STARTED=false
 
 # Flags for services
 ENABLE_BACKEND=false
@@ -185,6 +186,9 @@ cleanup() {
   for pid in "${pids[@]:-}"; do
     kill "$pid" 2>/dev/null || true
   done
+  if [ "$AGENT_COMPOSE_DEPS_STARTED" = true ]; then
+    (cd "$AGENT_DIR" && docker compose stop postgres redis >/dev/null 2>&1) || true
+  fi
 }
 trap cleanup EXIT
 
@@ -287,13 +291,55 @@ ENABLE_AGENT=false
 # ... (existing functions)
 
 start_agent() {
-  echo "Starting agent..."
+  echo "Starting agent runtime..."
   cd "$AGENT_DIR"
-  kill_port_if_exists 8002
-  
-  # Ensure script is executable
-  chmod +x start.sh
-  ./start.sh &
+  load_env_file
+
+  local agent_port="${AGENT_PORT:-8002}"
+  kill_port_if_exists "$agent_port"
+
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "uv not found. Install uv before starting urgs-agent."
+    exit 1
+  fi
+
+  if ! nc -z 127.0.0.1 5432 >/dev/null 2>&1 || ! nc -z 127.0.0.1 6379 >/dev/null 2>&1; then
+    if ! command -v docker >/dev/null 2>&1; then
+      echo "PostgreSQL or Redis is unavailable, and Docker is not installed."
+      exit 1
+    fi
+    echo "Starting agent PostgreSQL and Redis dependencies..."
+    docker compose up -d postgres redis
+    AGENT_COMPOSE_DEPS_STARTED=true
+    for _ in $(seq 1 30); do
+      if nc -z 127.0.0.1 5432 >/dev/null 2>&1 && nc -z 127.0.0.1 6379 >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+    if ! nc -z 127.0.0.1 5432 >/dev/null 2>&1 || ! nc -z 127.0.0.1 6379 >/dev/null 2>&1; then
+      echo "Agent PostgreSQL or Redis failed to become ready."
+      exit 1
+    fi
+  fi
+
+  echo "Preparing agent Python 3.11 environment..."
+  if [ "$ENVIRONMENT" = "local" ] || [ "$ENVIRONMENT" = "dev" ]; then
+    uv sync --frozen --extra dev
+  else
+    uv sync --frozen --no-dev
+  fi
+  export PYTHONPATH="$AGENT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
+
+  echo "Applying agent database migrations..."
+  .venv/bin/alembic upgrade head
+
+  echo "Starting agent API on port $agent_port..."
+  .venv/bin/uvicorn urgs_agent.main:app --host "${AGENT_HOST:-0.0.0.0}" --port "$agent_port" &
+  pids+=($!)
+
+  echo "Starting agent worker..."
+  .venv/bin/python -m urgs_agent.worker &
   pids+=($!)
 }
 
