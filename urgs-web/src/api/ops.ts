@@ -426,6 +426,7 @@ export interface QuartzTaskStatusQueryParams {
     pageSize?: number;
     dataDate?: string;
     id?: number;
+    statusId?: number;
     taskName?: string;
     taskSystem?: string;
     theme?: string;
@@ -449,6 +450,34 @@ export interface QuartzTaskLogApiModel {
 
 export const queryQuartzTaskStatus = (params: QuartzTaskStatusQueryParams) =>
     post<ApiResponse<PageResult<QuartzTaskStatusApiModel>>>('/api/quartz/task/status/query', params);
+
+export interface QuartzMissedTaskQueryParams {
+    pageNum?: number;
+    pageSize?: number;
+    startDate: string;
+    endDate: string;
+    taskName?: string;
+    taskSystem?: string;
+    theme?: string;
+}
+
+export interface QuartzMissedTaskApiModel {
+    taskId: number;
+    taskName?: string | null;
+    taskSystem?: string | null;
+    theme?: string | null;
+    taskCron?: string | null;
+    dependId?: string | null;
+    taskType?: number | null;
+    expectedDate: string;
+    missedStatus?: string | null;
+    waitingMinutes?: number | null;
+    lastSuccessDate?: string | null;
+    lastSuccessTime?: string | null;
+}
+
+export const queryQuartzMissedTasks = (params: QuartzMissedTaskQueryParams) =>
+    post<ApiResponse<PageResult<QuartzMissedTaskApiModel>>>('/api/quartz/task/missed/query', params);
 
 export const batchExecuteQuartzTaskStatus = (statusIds: number[], withDataDownstream: boolean = true) =>
     post<ApiResponse<string>>('/api/quartz/task/status/batchExecute', { statusIds, withDataDownstream });

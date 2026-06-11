@@ -93,6 +93,9 @@
         <if test="queryDTO.id != null">
             AND t.id = #{queryDTO.id}
         </if>
+        <if test="queryDTO.statusId != null">
+            AND s.id = #{queryDTO.statusId}
+        </if>
         <if test="queryDTO.taskName != null and queryDTO.taskName != ''">
             AND (
                 INSTR(CAST(s.id AS CHAR), #{queryDTO.taskName})

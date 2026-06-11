@@ -152,10 +152,20 @@ public class QuartzTaskService {
         return ResponseDTO.succ();
     }
 
+    @Transactional(rollbackFor = Throwable.class)
     public ResponseDTO<String> deleteTask(Long taskId) {
         QuartzTaskEntity task = quartzTaskDao.selectById(taskId);
         if (task == null) {
             return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "task不存在");
+        }
+        List<QuartzTaskEntity> downstreamTasks = quartzTaskDao.getTaskListByDepId(taskId);
+        if (downstreamTasks != null && !downstreamTasks.isEmpty()) {
+            String downstreamNames = downstreamTasks.stream()
+                    .limit(5)
+                    .map(item -> item.getTaskName() == null ? String.valueOf(item.getId()) : item.getTaskName())
+                    .collect(Collectors.joining("、"));
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM,
+                    "当前任务仍被其他任务依赖，请先解除依赖后再删除: " + downstreamNames);
         }
         quartzTaskDao.deleteDependenciesByTaskId(taskId);
         quartzTaskDao.deleteById(taskId);

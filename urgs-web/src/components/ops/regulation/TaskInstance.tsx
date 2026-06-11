@@ -1,7 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { message } from 'antd';
+import { Modal, message } from 'antd';
 import dayjs from 'dayjs';
-import { batchExecuteQuartzTaskStatus, batchForcePassQuartzTaskStatus, batchForceStopQuartzTaskStatus, queryQuartzTaskLog, queryQuartzTasks, queryQuartzTaskStatus } from '@/api/ops';
+import {
+    QuartzMissedTaskApiModel,
+    batchExecuteQuartzTaskStatus,
+    batchForcePassQuartzTaskStatus,
+    batchForceStopQuartzTaskStatus,
+    queryQuartzMissedTasks,
+    queryQuartzTaskLog,
+    queryQuartzTasks,
+    queryQuartzTaskStatus,
+    triggerNowQuartzTask,
+} from '@/api/ops';
 import { QuartzTask, QuartzTaskExecutionLog, QuartzTaskStatus } from './mockData';
 import TaskInstanceDetailDrawer from './task-instance/TaskInstanceDetailDrawer';
 import TaskInstanceRerunExecutionDrawer from './task-instance/TaskInstanceRerunExecutionDrawer';
@@ -71,6 +81,14 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
     const [rowContextMenu, setRowContextMenu] = useState<RowContextMenuState | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
+    const [missedModalVisible, setMissedModalVisible] = useState(false);
+    const [missedStartDate, setMissedStartDate] = useState(todayDate);
+    const [missedEndDate, setMissedEndDate] = useState(todayDate);
+    const [missedTaskSystem, setMissedTaskSystem] = useState('');
+    const [missedTheme, setMissedTheme] = useState('');
+    const [missedTasks, setMissedTasks] = useState<QuartzMissedTaskApiModel[]>([]);
+    const [missedLoading, setMissedLoading] = useState(false);
+    const [triggeringMissedKey, setTriggeringMissedKey] = useState<string | null>(null);
 
     const buildInstanceQueryParams = useCallback((filters?: {
         createDate?: string;
@@ -250,7 +268,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
 
         const loadSelectedInstanceStatus = async () => {
             try {
-                const response = await queryQuartzTaskStatus({ id: instanceId, pageNum: 1, pageSize: 1 });
+                const response = await queryQuartzTaskStatus({ statusId: instanceId, pageNum: 1, pageSize: 1 });
                 if (!response?.success) {
                     throw new Error(response?.msg || '刷新实例状态失败');
                 }
@@ -761,6 +779,59 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         }
     };
 
+    const handleOpenMissedTasks = () => {
+        setMissedStartDate(dataDateFilter || todayDate);
+        setMissedEndDate(dataDateFilter || todayDate);
+        setMissedTaskSystem(taskSystemFilter);
+        setMissedTheme(themeFilter);
+        setMissedModalVisible(true);
+    };
+
+    const handleQueryMissedTasks = async () => {
+        if (!missedStartDate || !missedEndDate) {
+            message.error('请选择未下发检查日期范围');
+            return;
+        }
+        setMissedLoading(true);
+        try {
+            const response = await queryQuartzMissedTasks({
+                pageNum: 1,
+                pageSize: 500,
+                startDate: missedStartDate.replaceAll('-', ''),
+                endDate: missedEndDate.replaceAll('-', ''),
+                taskSystem: missedTaskSystem || undefined,
+                theme: missedTheme.trim() || undefined,
+            });
+            if (!response?.success) {
+                throw new Error(response?.msg || '查询未下发任务失败');
+            }
+            setMissedTasks(response.data?.list || []);
+        } catch (error: any) {
+            message.error(error?.message || '查询未下发任务失败');
+        } finally {
+            setMissedLoading(false);
+        }
+    };
+
+    const handleTriggerMissedTask = async (task: QuartzMissedTaskApiModel) => {
+        const key = `${task.taskId}_${task.expectedDate}`;
+        setTriggeringMissedKey(key);
+        try {
+            const response = await triggerNowQuartzTask(task.taskId, task.expectedDate);
+            if (!response?.success) {
+                throw new Error(response?.msg || '补发任务失败');
+            }
+            setMissedTasks(prev => prev.filter(item => `${item.taskId}_${item.expectedDate}` !== key));
+            await loadInstances();
+            await loadTodaySummaryStats();
+            message.success(`已补发任务 ${task.taskName || task.taskId} / ${task.expectedDate}`);
+        } catch (error: any) {
+            message.error(error?.message || '补发任务失败');
+        } finally {
+            setTriggeringMissedKey(null);
+        }
+    };
+
     const selectedTask = selectedInstance ? taskMap.get(selectedInstance.plan_id) || null : null;
 
     useEffect(() => {
@@ -856,6 +927,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
                 onBatchExecute={handleBatchExecute}
                 onBatchForceStop={handleBatchForceStop}
                 onBatchForcePass={handleBatchForcePass}
+                onOpenMissedTasks={handleOpenMissedTasks}
                 onClearSelectedInstances={() => setSelectedInstanceIds([])}
                 onCloseRowContextMenu={closeRowContextMenu}
                 onInvokeRowContextAction={invokeRowContextAction}
@@ -902,6 +974,132 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
                 onShowImpactedOnlyChange={setShowImpactedOnly}
                 onLocateInstanceFromDependency={locateInstanceFromDependency}
             />
+
+            <Modal
+                title="未下发任务检查"
+                open={missedModalVisible}
+                width={980}
+                footer={null}
+                onCancel={() => setMissedModalVisible(false)}
+                destroyOnHidden
+            >
+                <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+                        <label className="space-y-1">
+                            <div className="text-xs font-medium text-slate-500">开始日期</div>
+                            <input
+                                type="date"
+                                value={missedStartDate}
+                                onChange={(event) => setMissedStartDate(event.target.value)}
+                                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
+                            />
+                        </label>
+                        <label className="space-y-1">
+                            <div className="text-xs font-medium text-slate-500">结束日期</div>
+                            <input
+                                type="date"
+                                value={missedEndDate}
+                                onChange={(event) => setMissedEndDate(event.target.value)}
+                                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
+                            />
+                        </label>
+                        <label className="space-y-1">
+                            <div className="text-xs font-medium text-slate-500">系统主体</div>
+                            <select
+                                value={missedTaskSystem}
+                                onChange={(event) => setMissedTaskSystem(event.target.value)}
+                                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
+                            >
+                                <option value="">全部系统</option>
+                                {taskSystemOptions.map(item => (
+                                    <option key={item} value={item}>{item}</option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="space-y-1">
+                            <div className="text-xs font-medium text-slate-500">主题</div>
+                            <input
+                                value={missedTheme}
+                                onChange={(event) => setMissedTheme(event.target.value)}
+                                placeholder="搜索主题"
+                                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
+                            />
+                        </label>
+                        <div className="space-y-1">
+                            <div className="text-xs font-medium text-slate-500">操作</div>
+                            <button
+                                type="button"
+                                onClick={handleQueryMissedTasks}
+                                disabled={missedLoading}
+                                className="inline-flex h-[42px] w-full items-center justify-center rounded-xl bg-red-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {missedLoading ? '检查中...' : '开始检查'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="overflow-hidden rounded-xl border border-slate-200">
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[860px] table-fixed text-left text-sm">
+                                <colgroup>
+                                    <col style={{ width: 90 }} />
+                                    <col style={{ width: 180 }} />
+                                    <col style={{ width: 120 }} />
+                                    <col style={{ width: 120 }} />
+                                    <col style={{ width: 110 }} />
+                                    <col style={{ width: 150 }} />
+                                    <col style={{ width: 100 }} />
+                                </colgroup>
+                                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500">
+                                    <tr>
+                                        <th className="px-4 py-3">任务ID</th>
+                                        <th className="px-4 py-3">任务名称</th>
+                                        <th className="px-4 py-3">系统</th>
+                                        <th className="px-4 py-3">主题</th>
+                                        <th className="px-4 py-3">数据日期</th>
+                                        <th className="px-4 py-3">上次成功</th>
+                                        <th className="px-4 py-3">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {missedTasks.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                                                暂无未下发任务。
+                                            </td>
+                                        </tr>
+                                    ) : missedTasks.map(task => {
+                                        const key = `${task.taskId}_${task.expectedDate}`;
+                                        return (
+                                            <tr key={key} className="hover:bg-slate-50">
+                                                <td className="px-4 py-3 font-mono text-xs text-slate-600">{task.taskId}</td>
+                                                <td className="px-4 py-3 font-medium text-slate-800">{task.taskName || '-'}</td>
+                                                <td className="px-4 py-3 text-slate-600">{task.taskSystem || '-'}</td>
+                                                <td className="px-4 py-3 text-slate-600">{task.theme || '-'}</td>
+                                                <td className="px-4 py-3 font-mono text-xs text-slate-600">{task.expectedDate}</td>
+                                                <td className="px-4 py-3 text-xs text-slate-500">
+                                                    {task.lastSuccessDate || '-'}
+                                                    {task.lastSuccessTime ? ` / ${task.lastSuccessTime}` : ''}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleTriggerMissedTask(task)}
+                                                        disabled={triggeringMissedKey === key}
+                                                        className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    >
+                                                        {triggeringMissedKey === key ? '补发中' : '补发'}
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </Modal>
         </>
     );
 };

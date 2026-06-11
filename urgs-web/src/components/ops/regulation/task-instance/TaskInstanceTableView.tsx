@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tag, Tooltip } from 'antd';
-import { CheckCircle2, Eye, Play, RotateCcw, Search, Square } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Eye, Play, RotateCcw, Search, Square } from 'lucide-react';
 import Pagination from '@/components/common/Pagination';
 import { QuartzTask, QuartzTaskStatus } from '../mockData';
 import {
@@ -50,6 +50,7 @@ interface TaskInstanceTableViewProps {
     onBatchExecute: () => void;
     onBatchForceStop: () => void;
     onBatchForcePass: () => void;
+    onOpenMissedTasks: () => void;
     onClearSelectedInstances: () => void;
     onCloseRowContextMenu: () => void;
     onInvokeRowContextAction: (action: 'execute' | 'stop' | 'pass' | 'detail') => void;
@@ -95,6 +96,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     onBatchExecute,
     onBatchForceStop,
     onBatchForcePass,
+    onOpenMissedTasks,
     onClearSelectedInstances,
     onCloseRowContextMenu,
     onInvokeRowContextAction,
@@ -117,6 +119,14 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                         </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <button
+                            type="button"
+                            onClick={onOpenMissedTasks}
+                            className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 font-semibold text-amber-700 transition-colors hover:bg-amber-100"
+                        >
+                            <AlertTriangle size={13} />
+                            未下发检查
+                        </button>
                         <button
                             type="button"
                             onClick={() => onSummaryStatusClick('')}
