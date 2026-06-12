@@ -33,6 +33,11 @@ export interface AgentAppSkill {
     updatedAt?: string;
 }
 
+export interface ConversationContextMessage {
+    role: 'user' | 'assistant';
+    content: string;
+}
+
 const API_BASE = '/api/ai';
 
 // 获取当前用户信息，若失败则降级处理
@@ -216,7 +221,8 @@ export const streamChatResponse = async (
     onStatus?: (status: string) => void,
     onIntent?: (intent: string) => void,
     ragConfig?: { fusionStrategy?: string; topK?: number },
-    agentAppSkill?: { appCode: string; code: string; name: string } | null
+    agentAppSkill?: { appCode: string; code: string; name: string } | null,
+    conversationContext?: ConversationContextMessage[]
 ) => {
     try {
         const token = localStorage.getItem('auth_token');
@@ -235,7 +241,10 @@ export const streamChatResponse = async (
                 sessionId: sessionId,
                 ragConfig,
                 agentAppSkillAppCode: agentAppSkill?.appCode,
-                agentAppSkillCode: agentAppSkill?.code
+                agentAppSkillCode: agentAppSkill?.code,
+                conversationContext: conversationContext && conversationContext.length > 0
+                    ? conversationContext
+                    : undefined
             }),
             signal
         });

@@ -2,6 +2,8 @@ package com.example.urgs_api.ai.service;
 
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 /**
@@ -42,6 +44,7 @@ public interface AiChatService {
             Consumer<Exception> onError);
 
     void streamChatWithPersistence(String sessionId, String systemPrompt, String userPrompt,
-            String agentAppSkillAppCode, String agentAppSkillCode, SseEmitter emitter);
+            String agentAppSkillAppCode, String agentAppSkillCode, List<Map<String, String>> conversationContext,
+            SseEmitter emitter);
 
 }

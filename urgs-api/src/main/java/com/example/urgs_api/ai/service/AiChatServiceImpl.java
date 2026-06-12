@@ -105,7 +105,8 @@ public class AiChatServiceImpl implements AiChatService {
      * 核心流程：保存用户消息 -> 检查是否触发压缩 -> 获取历史并构建上下文 -> 发送 Metrics -> 流式响应 -> 保存 AI 消息
      */
     public void streamChatWithPersistence(String sessionId, String systemPrompt, String userPrompt,
-            String agentAppSkillAppCode, String agentAppSkillCode, SseEmitter emitter) {
+            String agentAppSkillAppCode, String agentAppSkillCode, List<Map<String, String>> conversationContext,
+            SseEmitter emitter) {
         log.info("Starting streamChatWithPersistence for session: {}", sessionId);
 
         // 1. 保存用户消息 (Save User Message)
@@ -114,7 +115,7 @@ public class AiChatServiceImpl implements AiChatService {
         com.example.urgs_api.ai.entity.Agent sessionAgent = resolveSessionAgent(sessionId);
         if (agentAppBuildModeHandler.supports(sessionAgent)) {
             agentAppBuildModeHandler.streamWithPersistence(sessionId, sessionAgent, userPrompt, agentAppSkillAppCode,
-                    agentAppSkillCode, emitter);
+                    agentAppSkillCode, conversationContext, emitter);
             return;
         }
 

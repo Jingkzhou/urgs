@@ -7,7 +7,7 @@ import Sidebar from './Sidebar';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import {
-    Message, Session, type AgentAppSkill, getSessions, createSession, streamChatResponse, loadSessionMessages, generateSessionTitle, getAgents, getRoleAgents, getAgentAppSkills
+    Message, Session, type AgentAppSkill, type ConversationContextMessage, getSessions, createSession, streamChatResponse, loadSessionMessages, generateSessionTitle, getAgents, getRoleAgents, getAgentAppSkills
 } from '../../api/chat';
 
 const STREAM_THROTTLE_MS = 80;
@@ -34,6 +34,15 @@ const parseAgentAppTools = (value: any) => {
         // Fallback to comma separated values.
     }
     return value.split(',').map(item => item.trim().toLowerCase()).filter(Boolean);
+};
+
+const buildConversationContext = (items: Message[]): ConversationContextMessage[] => {
+    return items
+        .filter(item => (item.role === 'user' || item.role === 'assistant') && item.content.trim())
+        .map(item => ({
+            role: item.role,
+            content: item.content
+        }));
 };
 
 const ArkPage: React.FC = () => {
@@ -486,6 +495,7 @@ const ArkPage: React.FC = () => {
     const handleSubmit = async () => {
         if (!inputValue.trim() || !currentSessionId) return;
         const userText = inputValue;
+        const conversationContext = buildConversationContext(messages);
         const isFirstMessage = messages.length === 0;
         setInputValue('');
         setIsGenerating(true);
@@ -552,7 +562,8 @@ const ArkPage: React.FC = () => {
                     });
                 },
                 ragConfig, // Pass config here
-                selectedAgentAppSkill
+                selectedAgentAppSkill,
+                conversationContext
             );
         } catch (e) {
             flushStreamingUpdate();

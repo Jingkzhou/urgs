@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -35,12 +36,13 @@ public class AiChatController {
         String sessionId = (String) request.get("sessionId");
         String agentAppSkillAppCode = (String) request.get("agentAppSkillAppCode");
         String agentAppSkillCode = (String) request.get("agentAppSkillCode");
+        List<Map<String, String>> conversationContext = extractConversationContext(request.get("conversationContext"));
 
         SseEmitter emitter = new SseEmitter(900000L); // 15分钟超时，覆盖 Agent App 长任务
 
         if (sessionId != null && !sessionId.isEmpty()) {
             aiChatService.streamChatWithPersistence(sessionId, systemPrompt, userPrompt, agentAppSkillAppCode,
-                    agentAppSkillCode, emitter);
+                    agentAppSkillCode, conversationContext, emitter);
         } else {
             aiChatService.streamChat(systemPrompt, userPrompt, emitter);
         }
@@ -49,6 +51,28 @@ public class AiChatController {
                 .header("X-Accel-Buffering", "no")
                 .header("Cache-Control", "no-cache")
                 .body(emitter);
+    }
+
+    private List<Map<String, String>> extractConversationContext(Object rawContext) {
+        if (!(rawContext instanceof List<?>)) {
+            return List.of();
+        }
+        List<Map<String, String>> context = new ArrayList<>();
+        for (Object item : (List<?>) rawContext) {
+            if (!(item instanceof Map<?, ?>)) {
+                continue;
+            }
+            Map<?, ?> rawMessage = (Map<?, ?>) item;
+            Object roleValue = rawMessage.get("role");
+            Object contentValue = rawMessage.get("content");
+            String role = roleValue == null ? "" : roleValue.toString().trim().toLowerCase();
+            String content = contentValue == null ? "" : contentValue.toString();
+            if (!("user".equals(role) || "assistant".equals(role)) || content.isBlank()) {
+                continue;
+            }
+            context.add(Map.of("role", role, "content", content));
+        }
+        return context;
     }
 
     /**
