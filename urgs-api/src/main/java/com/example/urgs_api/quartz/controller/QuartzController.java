@@ -2,6 +2,8 @@ package com.example.urgs_api.quartz.controller;
 
 import com.example.urgs_api.quartz.support.domain.PageResultDTO;
 import com.example.urgs_api.quartz.support.domain.ResponseDTO;
+import com.example.urgs_api.quartz.domain.dto.ExecutorPoolStatsVO;
+import com.example.urgs_api.quartz.service.ExecutorClientService;
 import com.example.urgs_api.quartz.service.QuartzTaskService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -29,6 +31,9 @@ public class QuartzController {
 
     @Autowired
     private QuartzTaskService quartzTaskService;
+
+    @Autowired
+    private ExecutorClientService executorClientService;
 
 
     @PostMapping("/quartz/task/query")
@@ -70,6 +75,12 @@ public class QuartzController {
     @ApiOperation(value = "查询任务执行状态")
     public ResponseDTO<PageResultDTO<QuartzTaskStatusVO>> queryStatus(@RequestBody @Valid QuartzQueryDTO queryDTO){
         return quartzTaskService.queryTaskStatus(queryDTO);
+    }
+
+    @GetMapping("/quartz/executor/pool/stats")
+    @ApiOperation(value = "查询执行器线程池实时统计")
+    public ResponseDTO<ExecutorPoolStatsVO> getExecutorPoolStats() {
+        return executorClientService.getPoolStats();
     }
 
     @PostMapping("/quartz/task/status/batchExecute")

@@ -1,12 +1,16 @@
 package com.example.urgs_api.quartz.service;
 
+import com.example.urgs_api.quartz.domain.dto.ExecutorPoolStatsVO;
 import com.example.urgs_api.quartz.support.constant.ResponseCodeConst;
 import com.example.urgs_api.quartz.support.domain.ResponseDTO;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -22,6 +26,29 @@ public class ExecutorClientService {
 
     @Value("${executor.base-url:http://127.0.0.1:8082}")
     private String executorBaseUrl;
+
+    public ResponseDTO<ExecutorPoolStatsVO> getPoolStats() {
+        try {
+            ResponseEntity<ResponseDTO<ExecutorPoolStatsVO>> responseEntity = restTemplate.exchange(
+                    executorBaseUrl + "/api/executor/task/pool/stats",
+                    HttpMethod.GET,
+                    null,
+                    new ParameterizedTypeReference<ResponseDTO<ExecutorPoolStatsVO>>() { }
+            );
+            ResponseDTO<ExecutorPoolStatsVO> response = responseEntity.getBody();
+            if (response == null) {
+                return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "执行器未返回结果");
+            }
+            if (!response.isSuccess()) {
+                return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM,
+                        response.getMsg() == null ? "获取执行器线程池统计失败" : response.getMsg());
+            }
+            return ResponseDTO.succData(response.getData());
+        } catch (Exception e) {
+            log.error("Call executor pool stats failed", e);
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "调用执行器线程池统计失败: " + e.getMessage());
+        }
+    }
 
     public ResponseDTO<ExecutorStopResultData> stopTask(Long planId, String dataDate) {
         try {
@@ -116,4 +143,5 @@ public class ExecutorClientService {
             return taskKey;
         }
     }
+
 }

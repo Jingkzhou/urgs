@@ -1,14 +1,15 @@
 package com.example.executor.quartz.service;
 
+import com.example.executor.quartz.domain.dto.ExecutorPoolStatsDTO;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import java.io.Closeable;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.Map;
-import java.util.HashMap;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -51,20 +52,18 @@ public class TaskExecutorPool {
     }
 
     public boolean submitTask(String taskKey, Runnable task) {
-        if (runningTasks.containsKey(taskKey)) {
+        TrackingFutureTask futureTask = new TrackingFutureTask(taskKey, task);
+        if (runningTasks.putIfAbsent(taskKey, futureTask) != null) {
             log.info("Task {} is already running, skip duplicate submit", taskKey);
             return false;
         }
-        Future<?> future = executor.submit(() -> {
-            try {
-                task.run();
-            } finally {
-                runningTasks.remove(taskKey);
-                taskResources.remove(taskKey);
-            }
-        });
-        runningTasks.put(taskKey, future);
-        return true;
+        try {
+            executor.execute(futureTask);
+            return true;
+        } catch (RejectedExecutionException e) {
+            runningTasks.remove(taskKey, futureTask);
+            throw e;
+        }
     }
 
     public void registerResource(String taskKey, Closeable resource) {
@@ -98,14 +97,34 @@ public class TaskExecutorPool {
         return runningTasks.containsKey(taskKey);
     }
 
-    public Map<String, Object> getPoolStats() {
-        Map<String, Object> stats = new HashMap<>();
-        stats.put("activeCount", executor.getActiveCount());
-        stats.put("poolSize", executor.getPoolSize());
-        stats.put("queueSize", executor.getQueue().size());
-        stats.put("completedTaskCount", executor.getCompletedTaskCount());
-        stats.put("runningTaskKeys", runningTasks.size());
-        return stats;
+    public ExecutorPoolStatsDTO getPoolStats() {
+        List<String> runningTaskKeys = new ArrayList<>(runningTasks.keySet());
+        Collections.sort(runningTaskKeys);
+        return new ExecutorPoolStatsDTO(
+                executor.getActiveCount(),
+                executor.getPoolSize(),
+                executor.getMaximumPoolSize(),
+                executor.getQueue().size(),
+                queueCapacity,
+                executor.getCompletedTaskCount(),
+                runningTaskKeys
+        );
+    }
+
+    private class TrackingFutureTask extends FutureTask<Void> {
+
+        private final String taskKey;
+
+        private TrackingFutureTask(String taskKey, Runnable task) {
+            super(task, null);
+            this.taskKey = taskKey;
+        }
+
+        @Override
+        protected void done() {
+            runningTasks.remove(taskKey, this);
+            taskResources.remove(taskKey);
+        }
     }
 
     @PreDestroy

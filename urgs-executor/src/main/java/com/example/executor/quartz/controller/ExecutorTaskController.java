@@ -3,10 +3,13 @@ package com.example.executor.quartz.controller;
 import com.example.executor.quartz.domain.dto.ExecutorStopTaskDTO;
 import com.example.executor.quartz.domain.dto.ExecutorStopTaskResultDTO;
 import com.example.executor.quartz.domain.dto.ExecutorTriggerNowDTO;
+import com.example.executor.quartz.domain.dto.ExecutorPoolStatsDTO;
 import com.example.executor.quartz.domain.entity.QuartzTaskEntity;
 import com.example.executor.quartz.service.ExecutorTaskService;
+import com.example.executor.quartz.service.TaskExecutorPool;
 import com.example.executor.support.domain.ResponseDTO;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,6 +21,14 @@ public class ExecutorTaskController {
 
     @Autowired
     private ExecutorTaskService executorTaskService;
+
+    @Autowired
+    private TaskExecutorPool taskExecutorPool;
+
+    @GetMapping("/pool/stats")
+    public ResponseDTO<ExecutorPoolStatsDTO> getPoolStats() {
+        return ResponseDTO.succData(taskExecutorPool.getPoolStats());
+    }
 
     @PostMapping("/stop")
     public ResponseDTO<ExecutorStopTaskResultDTO> stopTask(@RequestBody ExecutorStopTaskDTO stopTaskDTO) {

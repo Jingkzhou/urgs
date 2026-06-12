@@ -6,6 +6,8 @@ import {
     batchExecuteQuartzTaskStatus,
     batchForcePassQuartzTaskStatus,
     batchForceStopQuartzTaskStatus,
+    ExecutorPoolStats,
+    getExecutorPoolStats,
     queryQuartzMissedTasks,
     queryQuartzTaskLog,
     queryQuartzTasks,
@@ -54,6 +56,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         successInstances: 0,
         failedInstances: 0,
     });
+    const [executorPoolStats, setExecutorPoolStats] = useState<ExecutorPoolStats | null>(null);
     const [logList, setLogList] = useState<QuartzTaskExecutionLog[]>([]);
     const [draftSearchKeyword, setDraftSearchKeyword] = useState(initialKeyword);
     const [draftTaskSystemFilter, setDraftTaskSystemFilter] = useState(initialTaskSystem);
@@ -242,6 +245,30 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
             window.clearInterval(timer);
         };
     }, [batchRerunExecuting, loadInstances]);
+
+    useEffect(() => {
+        let canceled = false;
+
+        const loadExecutorPoolStats = async () => {
+            try {
+                const response = await getExecutorPoolStats();
+                if (!canceled && response?.success && response.data) {
+                    setExecutorPoolStats(response.data);
+                }
+            } catch (error: any) {
+                if (!canceled) {
+                    console.warn(error?.message || '刷新执行器线程池指标失败');
+                }
+            }
+        };
+
+        void loadExecutorPoolStats();
+        const timer = window.setInterval(loadExecutorPoolStats, 3000);
+        return () => {
+            canceled = true;
+            window.clearInterval(timer);
+        };
+    }, []);
 
     useEffect(() => {
         loadTodaySummaryStats();
@@ -895,6 +922,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
                 pagedInstances={pagedInstances}
                 selectedInstances={selectedInstances}
                 summaryStats={summaryStats}
+                executorPoolStats={executorPoolStats}
                 taskMap={taskMap}
                 taskNameMap={taskNameMap}
                 taskSystemOptions={taskSystemOptions}

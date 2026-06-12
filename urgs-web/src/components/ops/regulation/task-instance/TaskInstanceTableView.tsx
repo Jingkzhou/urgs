@@ -12,12 +12,15 @@ import {
     tableCellClass,
 } from './constants';
 import { RowContextMenuState, TaskInstanceStats } from './types';
+import type { ExecutorPoolStats } from '@/api/ops';
+import ExecutorPoolStatsPanel from './ExecutorPoolStatsPanel';
 
 interface TaskInstanceTableViewProps {
     filteredInstances: QuartzTaskStatus[];
     pagedInstances: QuartzTaskStatus[];
     selectedInstances: QuartzTaskStatus[];
     summaryStats: TaskInstanceStats;
+    executorPoolStats: ExecutorPoolStats | null;
     taskMap: Map<number, QuartzTask>;
     taskNameMap: Map<number, string>;
     taskSystemOptions: string[];
@@ -64,6 +67,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     pagedInstances,
     selectedInstances,
     summaryStats,
+    executorPoolStats,
     taskMap,
     taskNameMap,
     taskSystemOptions,
@@ -163,6 +167,10 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                             失败 {summaryStats.failedInstances}
                         </button>
                     </div>
+                </div>
+
+                <div className="mt-4">
+                    <ExecutorPoolStatsPanel stats={executorPoolStats} />
                 </div>
 
                 <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-8">
