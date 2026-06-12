@@ -44,6 +44,14 @@ services:
       AGENT_OPENAI_MODEL: ${AGENT_OPENAI_MODEL:-qwen3}
       AGENT_API_KEY: ${AGENT_API_KEY:-local-dev-key}
       AGENT_CALLBACK_HMAC_SECRET: ${AGENT_CALLBACK_HMAC_SECRET:-local-dev-secret}
+      AGENT_KNOWLEDGE_WIKI_ROOT: ${AGENT_KNOWLEDGE_WIKI_ROOT:-/tmp/urgs-agent-wiki}
+      AGENT_KNOWLEDGE_WIKI_WIKI_DIR: ${AGENT_KNOWLEDGE_WIKI_WIKI_DIR:-.}
+      AGENT_KNOWLEDGE_WIKI_RAW_DIR: ${AGENT_KNOWLEDGE_WIKI_RAW_DIR:-01-资料库}
+      AGENT_KNOWLEDGE_WIKI_INDEX_PATH: ${AGENT_KNOWLEDGE_WIKI_INDEX_PATH:-00-首页/index.md}
+      AGENT_KNOWLEDGE_WIKI_LOG_PATH: ${AGENT_KNOWLEDGE_WIKI_LOG_PATH:-05-日志/log.md}
+      AGENT_KNOWLEDGE_WIKI_AGENT_GUIDE_PATH: ${AGENT_KNOWLEDGE_WIKI_AGENT_GUIDE_PATH:-AGENTS.md}
+    volumes:
+      - ${AGENT_KNOWLEDGE_WIKI_ROOT:-/tmp/urgs-agent-wiki}:${AGENT_KNOWLEDGE_WIKI_ROOT:-/tmp/urgs-agent-wiki}
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,6 +69,8 @@ services:
     build: .
     command: ["python", "-m", "urgs_agent.worker"]
     environment: *agent-environment
+    volumes:
+      - ${AGENT_KNOWLEDGE_WIKI_ROOT:-/tmp/urgs-agent-wiki}:${AGENT_KNOWLEDGE_WIKI_ROOT:-/tmp/urgs-agent-wiki}
     depends_on:
       agent-api:
         condition: service_healthy

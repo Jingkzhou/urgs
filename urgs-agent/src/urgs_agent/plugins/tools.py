@@ -148,6 +148,19 @@ class ToolRegistry:
         self.validate_names(names)
         return [self._tools[name].openai_schema() for name in names]
 
+    async def system_context(self, names: list[str], context: ToolContext) -> str:
+        self.validate_names(names)
+        sections: list[str] = []
+        seen: set[str] = set()
+        for name in names:
+            if name in seen:
+                continue
+            seen.add(name)
+            section = await self._tools[name].system_context(context)
+            if section:
+                sections.append(section)
+        return "\n\n".join(sections)
+
     async def execute(
         self,
         name: str,

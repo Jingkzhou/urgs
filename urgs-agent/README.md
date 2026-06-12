@@ -48,6 +48,89 @@ curl -X POST http://127.0.0.1:8002/v1/agents/general-assistant/versions/1/publis
 
 API 接收 JSON；示例 YAML 用于展示声明式配置，调用前需要转换为 JSON 或通过业务 API 读取后提交。
 
+## LLM Wiki 知识库 Agent
+
+`examples/llm-wiki-explorer.yaml` 是按 Karpathy LLM Wiki 模式配置的自驱动知识库探索 Agent。
+默认读取你的 Obsidian vault：
+`/Users/zhoujingkun/Documents/GitHub/Obsidian/regulatory-knowledge-vault`。
+Runtime 会在每次模型调用前强制读取并注入 vault 根目录的 `AGENTS.md`，不依赖模型自行调用工具。
+当前约定目录结构：
+
+```text
+regulatory-knowledge-vault/
+  AGENTS.md
+  00-首页/index.md
+  01-资料库/
+    <原始资料，只读>
+  02-主题/
+  03-实体/
+  04-综合/
+  05-日志/log.md
+  06-项目/
+```
+
+配置真实知识库路径：
+
+```bash
+export AGENT_KNOWLEDGE_WIKI_ROOT=/Users/zhoujingkun/Documents/GitHub/Obsidian/regulatory-knowledge-vault
+export AGENT_KNOWLEDGE_WIKI_WIKI_DIR=.
+export AGENT_KNOWLEDGE_WIKI_RAW_DIR=01-资料库
+export AGENT_KNOWLEDGE_WIKI_INDEX_PATH=00-首页/index.md
+export AGENT_KNOWLEDGE_WIKI_LOG_PATH=05-日志/log.md
+export AGENT_KNOWLEDGE_WIKI_AGENT_GUIDE_PATH=AGENTS.md
+```
+
+发布 Agent：
+
+```bash
+cd urgs-agent
+uv run python - <<'PY'
+import json
+from pathlib import Path
+
+import yaml
+
+data = yaml.safe_load(Path("examples/llm-wiki-explorer.yaml").read_text())
+Path("/tmp/llm-wiki-agent.json").write_text(
+    json.dumps(
+        {key: data[key] for key in ("agent_id", "name", "description")},
+        ensure_ascii=False,
+    )
+)
+Path("/tmp/llm-wiki-version.json").write_text(
+    json.dumps({"definition": data["definition"]}, ensure_ascii=False)
+)
+PY
+
+curl -X POST http://127.0.0.1:8002/v1/agents \
+  -H 'Content-Type: application/json' \
+  --data-binary @/tmp/llm-wiki-agent.json
+
+curl -X POST http://127.0.0.1:8002/v1/agents/llm-wiki-explorer/versions \
+  -H 'Content-Type: application/json' \
+  --data-binary @/tmp/llm-wiki-version.json
+
+curl -X POST http://127.0.0.1:8002/v1/agents/llm-wiki-explorer/versions/1/publish
+```
+
+创建一次深度问答运行：
+
+```bash
+curl -X POST http://127.0.0.1:8002/v1/runs \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "conversation_id":"wiki-c-1",
+    "thread_id":"wiki-t-1",
+    "request_id":"wiki-r-1",
+    "trace_id":"wiki-trace-1",
+    "agent_id":"llm-wiki-explorer",
+    "input":"围绕这个知识库，梳理监管报送批处理和血缘审核之间的关系，给出证据链。",
+    "permissions":["knowledge:read","knowledge:write"]
+  }'
+```
+
+只允许问答、不允许回写 wiki 时，把 `knowledge:write` 从 `permissions` 中移除。
+
 ## 创建运行
 
 ```bash

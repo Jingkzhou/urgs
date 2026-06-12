@@ -52,7 +52,22 @@ class GraphCompiler:
         async def call_model(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
             runtime = _runtime(config)
             sink = cast(EventSink | None, runtime.get("event_sink"))
-            messages: list[BaseMessage] = [SystemMessage(content=system_prompt), *state["messages"]]
+            context = ToolContext(
+                run_id=str(runtime.get("run_id", "")),
+                request_id=str(runtime.get("request_id", "")),
+                trace_id=str(runtime.get("trace_id", "")),
+                permissions=frozenset(runtime.get("permissions", [])),
+                metadata=runtime.get("metadata", {}),
+                event_sink=sink,
+            )
+            system_context = await self.tools.system_context(tool_names, context)
+            system_content = system_prompt
+            if system_context:
+                system_content = f"{system_prompt}\n\n{system_context}"
+            messages: list[BaseMessage] = [
+                SystemMessage(content=system_content),
+                *state["messages"],
+            ]
             schemas = self.tools.schemas(tool_names)
             last_error: Exception | None = None
             for index, (target, model) in enumerate(

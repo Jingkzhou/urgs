@@ -13,6 +13,14 @@ from urgs_agent.plugins.tools import (
     ToolRegistry,
     UrgsApiTool,
 )
+from urgs_agent.plugins.wiki import (
+    KnowledgeWikiStore,
+    WikiAppendLogTool,
+    WikiOverviewTool,
+    WikiReadTool,
+    WikiSearchTool,
+    WikiWritePageTool,
+)
 from urgs_agent.runtime.compiler import GraphCompiler
 from urgs_agent.storage.database import create_engine, create_session_factory
 from urgs_agent.storage.redis import RedisBroker
@@ -44,6 +52,21 @@ class Container:
         tools = ToolRegistry()
         retriever = UrgsRagRetriever(settings.rag_url, settings.http_timeout_seconds)
         tools.register(RagSearchTool(retriever))
+        wiki_store = KnowledgeWikiStore(
+            settings.knowledge_wiki_root,
+            settings.knowledge_wiki_wiki_dir,
+            settings.knowledge_wiki_raw_dir,
+            settings.knowledge_wiki_index_path,
+            settings.knowledge_wiki_log_path,
+            settings.knowledge_wiki_agent_guide_path,
+            settings.knowledge_wiki_max_file_bytes,
+            settings.knowledge_wiki_max_search_files,
+        )
+        tools.register(WikiOverviewTool(wiki_store))
+        tools.register(WikiSearchTool(wiki_store))
+        tools.register(WikiReadTool(wiki_store))
+        tools.register(WikiWritePageTool(wiki_store))
+        tools.register(WikiAppendLogTool(wiki_store))
         tools.register(LineageAnalysisTool(settings.lineage_url, settings.http_timeout_seconds))
         tools.register(
             UrgsApiTool(

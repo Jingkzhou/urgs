@@ -28,6 +28,9 @@ class ToolPlugin(ABC):
     required_permissions: frozenset[str] = frozenset()
     idempotent: bool = True
 
+    async def system_context(self, context: ToolContext) -> str | None:
+        return None
+
     @abstractmethod
     async def execute(self, arguments: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         raise NotImplementedError

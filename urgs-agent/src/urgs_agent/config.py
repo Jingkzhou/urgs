@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     rag_url: str = "http://127.0.0.1:8001"
     lineage_url: str = "http://127.0.0.1:8080"
     http_timeout_seconds: float = 60.0
+    knowledge_wiki_root: str = (
+        "/Users/zhoujingkun/Documents/GitHub/Obsidian/regulatory-knowledge-vault"
+    )
+    knowledge_wiki_wiki_dir: str = "."
+    knowledge_wiki_raw_dir: str = "01-资料库"
+    knowledge_wiki_index_path: str = "00-首页/index.md"
+    knowledge_wiki_log_path: str = "05-日志/log.md"
+    knowledge_wiki_agent_guide_path: str = "AGENTS.md"
+    knowledge_wiki_max_file_bytes: int = 1_000_000
+    knowledge_wiki_max_search_files: int = 1000
 
     worker_poll_seconds: int = 5
     sse_heartbeat_seconds: int = 15
