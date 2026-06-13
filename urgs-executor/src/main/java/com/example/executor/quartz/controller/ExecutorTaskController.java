@@ -8,7 +8,6 @@ import com.example.executor.quartz.domain.entity.QuartzTaskEntity;
 import com.example.executor.quartz.service.ExecutorTaskService;
 import com.example.executor.quartz.service.TaskExecutorPool;
 import com.example.executor.support.domain.ResponseDTO;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,11 +18,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/executor/task")
 public class ExecutorTaskController {
 
-    @Autowired
-    private ExecutorTaskService executorTaskService;
+    private final ExecutorTaskService executorTaskService;
+    private final TaskExecutorPool taskExecutorPool;
 
-    @Autowired
-    private TaskExecutorPool taskExecutorPool;
+    public ExecutorTaskController(ExecutorTaskService executorTaskService, TaskExecutorPool taskExecutorPool) {
+        this.executorTaskService = executorTaskService;
+        this.taskExecutorPool = taskExecutorPool;
+    }
 
     @GetMapping("/pool/stats")
     public ResponseDTO<ExecutorPoolStatsDTO> getPoolStats() {

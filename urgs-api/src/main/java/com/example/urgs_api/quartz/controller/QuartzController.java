@@ -8,7 +8,6 @@ import com.example.urgs_api.quartz.service.QuartzTaskService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import com.example.urgs_api.quartz.domain.dto.*;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
@@ -29,11 +28,13 @@ import javax.validation.Valid;
 @Api(tags = {"Task Scheduler"})
 public class QuartzController {
 
-    @Autowired
-    private QuartzTaskService quartzTaskService;
+    private final QuartzTaskService quartzTaskService;
+    private final ExecutorClientService executorClientService;
 
-    @Autowired
-    private ExecutorClientService executorClientService;
+    public QuartzController(QuartzTaskService quartzTaskService, ExecutorClientService executorClientService) {
+        this.quartzTaskService = quartzTaskService;
+        this.executorClientService = executorClientService;
+    }
 
 
     @PostMapping("/quartz/task/query")

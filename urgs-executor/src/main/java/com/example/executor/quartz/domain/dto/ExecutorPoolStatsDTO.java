@@ -1,19 +1,19 @@
 package com.example.executor.quartz.domain.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-
 import java.util.List;
 
-@Data
-@AllArgsConstructor
-public class ExecutorPoolStatsDTO {
-
-    private int activeCount;
-    private int poolSize;
-    private int maximumPoolSize;
-    private int queueSize;
-    private int queueCapacity;
-    private long completedTaskCount;
-    private List<String> runningTaskKeys;
+public record ExecutorPoolStatsDTO(
+        int activeCount,
+        int poolSize,
+        int maximumPoolSize,
+        int queueSize,
+        int queueCapacity,
+        long completedTaskCount,
+        List<String> runningTaskKeys,
+        List<String> queuedTaskKeys
+) {
+    public ExecutorPoolStatsDTO {
+        runningTaskKeys = runningTaskKeys == null ? List.of() : List.copyOf(runningTaskKeys);
+        queuedTaskKeys = queuedTaskKeys == null ? List.of() : List.copyOf(queuedTaskKeys);
+    }
 }

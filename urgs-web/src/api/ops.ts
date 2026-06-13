@@ -491,10 +491,11 @@ export interface ExecutorPoolStats {
     queueCapacity: number;
     completedTaskCount: number;
     runningTaskKeys: string[];
+    queuedTaskKeys: string[];
 }
 
 export const getExecutorPoolStats = () =>
-    get<ApiResponse<ExecutorPoolStats>>('/api/quartz/executor/pool/stats');
+    get<ApiResponse<ExecutorPoolStats>>('/api/quartz/executor/pool/stats', undefined, { timeoutMs: 2500 });
 
 export interface QuartzMissedTaskQueryParams {
     pageNum?: number;
