@@ -1,11 +1,11 @@
 package com.example.urgs_api.datasource.controller;
 
-import com.example.urgs_api.datasource.dto.ResolvedDataSourceConfigDTO;
+import com.example.urgs_api.auth.annotation.RequirePermission;
+import com.example.urgs_api.datasource.dto.DataSourceOptionDTO;
 import com.example.urgs_api.datasource.entity.DataSourceConfig;
 import com.example.urgs_api.datasource.entity.DataSourceMeta;
 import com.example.urgs_api.datasource.service.DataSourceService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,19 +15,24 @@ import java.util.List;
 @RequestMapping("/api/datasource")
 public class DataSourceController {
 
-    @Autowired
-    private DataSourceService dataSourceService;
+    private final DataSourceService dataSourceService;
+    private final com.example.urgs_api.datasource.service.DynamicDataSourceService dynamicDataSourceService;
 
-    @Autowired
-    private com.example.urgs_api.datasource.service.DynamicDataSourceService dynamicDataSourceService;
+    public DataSourceController(DataSourceService dataSourceService,
+            com.example.urgs_api.datasource.service.DynamicDataSourceService dynamicDataSourceService) {
+        this.dataSourceService = dataSourceService;
+        this.dynamicDataSourceService = dynamicDataSourceService;
+    }
 
     @PostMapping("/test")
+    @RequirePermission("datasource:list")
     public org.springframework.http.ResponseEntity<String> testConnection(@RequestBody DataSourceConfig config) {
         try {
-            dynamicDataSourceService.testConnection(config);
+            dynamicDataSourceService.testConnection(dataSourceService.restoreMaskedSecrets(config));
             return org.springframework.http.ResponseEntity.ok("Connection successful!");
         } catch (Exception e) {
-            log.error("Test connection failed for config: {}", config, e);
+            log.error("Test connection failed for datasource id={}, metaId={}: {}",
+                    config.getId(), config.getMetaId(), e.getMessage(), e);
             return org.springframework.http.ResponseEntity.badRequest().body(e.getMessage());
         }
     }
@@ -38,27 +43,30 @@ public class DataSourceController {
     }
 
     @GetMapping("/config")
+    @RequirePermission("datasource:list")
     public List<DataSourceConfig> getConfigs() {
         return dataSourceService.getAllConfigs();
     }
 
-    @GetMapping("/config/{id}/resolved")
-    public ResolvedDataSourceConfigDTO getResolvedConfig(@PathVariable Long id) {
-        return dynamicDataSourceService.resolveConfig(id);
+    @GetMapping("/options")
+    public List<DataSourceOptionDTO> getOptions() {
+        return dataSourceService.getAllOptions();
     }
 
     @PostMapping("/config")
+    @RequirePermission("datasource:list")
     public boolean createConfig(@RequestBody DataSourceConfig config) {
         return dataSourceService.save(config);
     }
 
     @PutMapping("/config/{id}")
+    @RequirePermission("datasource:list")
     public boolean updateConfig(@PathVariable Long id, @RequestBody DataSourceConfig config) {
-        config.setId(id);
-        return dataSourceService.updateById(config);
+        return dataSourceService.updateConfig(id, config);
     }
 
     @DeleteMapping("/config/{id}")
+    @RequirePermission("datasource:list")
     public boolean deleteConfig(@PathVariable Long id) {
         return dataSourceService.removeById(id);
     }

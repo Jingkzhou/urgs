@@ -158,7 +158,7 @@ const DataSourceManager: React.FC = () => {
             setTestLoading(true);
 
             const { name, metaId, ...connectionParams } = values;
-            const payload = { metaId, connectionParams };
+            const payload = { id: editingId, metaId, connectionParams };
 
             const token = localStorage.getItem('auth_token');
             const res = await fetch('/api/datasource/test', {

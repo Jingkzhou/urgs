@@ -485,7 +485,7 @@ interface LineageDataSourceConfig {
 export const getLineagePhysicalDataSources = async () => {
     const [metaData, configData] = await Promise.all([
         get<LineageDataSourceMeta[]>('/api/datasource/meta'),
-        get<LineageDataSourceConfig[]>('/api/datasource/config'),
+        get<LineageDataSourceConfig[]>('/api/datasource/options'),
     ]);
 
     const metas = Array.isArray(metaData) ? metaData : [];
