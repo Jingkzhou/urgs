@@ -21,11 +21,11 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(authenticationInterceptor)
                 .addPathPatterns("/api/**")
                 .excludePathPatterns("/api/auth/login", "/api/auth/register", "/api/auth/sso/**", "/profile/**",
-                        "/api/ai/**", "/api/internal/**");
+                        "/api/ai/**", "/api/internal/**", "/api/webhook/**");
 
         registry.addInterceptor(authorizationInterceptor)
                 .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/im/**", "/api/internal/**");
+                .excludePathPatterns("/api/im/**", "/api/internal/**", "/api/webhook/**");
     }
 
     @org.springframework.beans.factory.annotation.Value("${urgs.profile:./uploads}")
