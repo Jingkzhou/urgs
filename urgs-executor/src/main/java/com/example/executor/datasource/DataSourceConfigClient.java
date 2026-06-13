@@ -1,5 +1,6 @@
 package com.example.executor.datasource;
 
+import com.example.executor.common.InternalApiAuthHeaderProvider;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,7 +10,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
@@ -18,21 +18,15 @@ import org.springframework.web.client.RestTemplate;
 public class DataSourceConfigClient {
 
     private final RestTemplate restTemplate;
+    private final InternalApiAuthHeaderProvider authHeaderProvider;
 
     @Value("${task.api-base-url:http://127.0.0.1:8080}")
     private String apiBaseUrl;
 
-    @Value("${task.api-auth-header:Authorization}")
-    private String apiAuthHeader;
-
-    @Value("${task.api-auth-prefix:Bearer }")
-    private String apiAuthPrefix;
-
-    @Value("${task.api-auth-token:}")
-    private String apiAuthToken;
-
-    public DataSourceConfigClient(RestTemplateBuilder restTemplateBuilder) {
+    public DataSourceConfigClient(RestTemplateBuilder restTemplateBuilder,
+            InternalApiAuthHeaderProvider authHeaderProvider) {
         this.restTemplate = restTemplateBuilder.build();
+        this.authHeaderProvider = authHeaderProvider;
     }
 
     public ResolvedDataSourceConfig getResolvedConfig(Long datasourceId) {
@@ -42,9 +36,7 @@ public class DataSourceConfigClient {
         String url = apiBaseUrl + "/api/internal/datasource/config/" + datasourceId + "/resolved";
         try {
             HttpHeaders headers = new HttpHeaders();
-            if (StringUtils.hasText(apiAuthToken) && StringUtils.hasText(apiAuthHeader)) {
-                headers.set(apiAuthHeader, apiAuthPrefix + apiAuthToken);
-            }
+            authHeaderProvider.apply(headers);
             ResponseEntity<ResolvedDataSourceConfig> response = restTemplate.exchange(
                     url,
                     HttpMethod.GET,
@@ -53,8 +45,7 @@ public class DataSourceConfigClient {
             );
             return response.getBody();
         } catch (HttpClientErrorException.Unauthorized e) {
-            log.error("Unauthorized when loading datasource config, datasourceId={}, url={}, authHeaderConfigured={}",
-                    datasourceId, url, StringUtils.hasText(apiAuthToken));
+            log.error("Unauthorized when loading datasource config, datasourceId={}, url={}", datasourceId, url);
             throw e;
         }
     }

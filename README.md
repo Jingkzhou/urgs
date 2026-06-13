@@ -94,6 +94,19 @@ docker-compose run --rm sql-lineage-engine parse-sql --help
 
 如果您需要独立开发某个模块，请参考以下指南。
 
+`urgs-api` 与 `urgs-executor` 的内部接口必须使用同一个 `URGS_INTERNAL_API_TOKEN`。推荐直接使用
+`./start.sh`，脚本会在 `data/internal-api.token` 中生成并复用令牌。若需在不同终端中单独启动服务，先在
+每个终端执行以下命令；缺少该变量时两个服务都会拒绝启动：
+
+```bash
+TOKEN_FILE="${TMPDIR:-/tmp}/urgs-internal-api.token"
+test -s "$TOKEN_FILE" || (umask 077 && openssl rand -hex 32 > "$TOKEN_FILE")
+export URGS_INTERNAL_API_TOKEN="$(tr -d '\r\n' < "$TOKEN_FILE")"
+```
+
+容器或 Kubernetes 部署同样必须把同一个 `URGS_INTERNAL_API_TOKEN` Secret 注入 API 与 Executor，
+不得把固定令牌写入镜像或提交到仓库。
+
 ### 数据准备
 确保本地已安装 **MySQL 8.0+** 和 **Neo4j 5.x**。
 初始化数据库脚本位于根目录 `migrated_urgs_data.sql`。
