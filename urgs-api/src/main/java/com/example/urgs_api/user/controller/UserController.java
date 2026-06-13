@@ -1,5 +1,6 @@
 package com.example.urgs_api.user.controller;
 
+import com.example.urgs_api.auth.annotation.RequirePermission;
 import com.example.urgs_api.user.dto.UserBatchImportResultDTO;
 import com.example.urgs_api.user.dto.UserDTO;
 import com.example.urgs_api.user.dto.UserRequest;
@@ -22,11 +23,13 @@ public class UserController {
     }
 
     @GetMapping
+    @RequirePermission("sys:user:query")
     public List<UserDTO> list(@RequestParam(required = false) String keyword) {
         return userService.searchUsers(keyword).stream().map(UserDTO::fromEntity).collect(Collectors.toList());
     }
 
     @PostMapping
+    @RequirePermission("sys:user:add")
     public UserDTO create(@RequestBody UserRequest req) {
         User user = toEntity(req, null);
         // Default password if not provided, though frontend sends "123456"
@@ -38,6 +41,7 @@ public class UserController {
     }
 
     @PostMapping("/{id}/reset-password")
+    @RequirePermission("sys:user:edit")
     public ResponseEntity<Void> resetPassword(@PathVariable("id") Long id) {
         if (userService.getById(id) == null) {
             return ResponseEntity.notFound().build();
@@ -47,6 +51,7 @@ public class UserController {
     }
 
     @PutMapping("/{id}")
+    @RequirePermission("sys:user:edit")
     public ResponseEntity<UserDTO> update(@PathVariable("id") Long id, @RequestBody UserRequest req) {
         if (userService.getById(id) == null) {
             return ResponseEntity.notFound().build();
@@ -57,12 +62,14 @@ public class UserController {
     }
 
     @DeleteMapping("/{id}")
+    @RequirePermission("sys:user:del")
     public ResponseEntity<Void> delete(@PathVariable("id") Long id) {
         boolean removed = userService.removeById(id);
         return removed ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
     }
 
     @PostMapping("/batch")
+    @RequirePermission("sys:user:add")
     public ResponseEntity<UserBatchImportResultDTO> batch(@RequestBody List<UserRequest> requests) {
         List<User> users = requests.stream()
                 .map(req -> toEntity(req, null))
@@ -72,6 +79,7 @@ public class UserController {
     }
 
     @GetMapping("/export")
+    @RequirePermission("sys:user:query")
     public List<UserDTO> export() {
         return userService.listAll().stream()
                 .map(UserDTO::fromEntity)

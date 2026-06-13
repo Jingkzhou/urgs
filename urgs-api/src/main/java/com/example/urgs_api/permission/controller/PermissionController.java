@@ -1,5 +1,6 @@
 package com.example.urgs_api.permission.controller;
 
+import com.example.urgs_api.auth.annotation.RequirePermission;
 import com.example.urgs_api.permission.dto.PermissionDiffResponse;
 import com.example.urgs_api.permission.dto.PermissionSyncRequest;
 import com.example.urgs_api.permission.service.PermissionService;
@@ -30,6 +31,7 @@ public class PermissionController {
     }
 
     @PostMapping("/diff")
+    @RequirePermission("sys:menu:sync")
     public PermissionDiffResponse diff(@RequestBody(required = false) PermissionSyncRequest request) {
         List<com.example.urgs_api.permission.dto.PermissionDTO> baseline = (request != null
                 && request.getItems() != null) ? request.getItems() : seedProvider.seeds();
@@ -37,6 +39,7 @@ public class PermissionController {
     }
 
     @PostMapping("/sync")
+    @RequirePermission("sys:menu:sync")
     public void sync(@RequestBody PermissionSyncRequest request) {
         if (request != null && request.getItems() != null) {
             permissionService.sync(request.getItems());

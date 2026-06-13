@@ -1,5 +1,6 @@
 package com.example.urgs_api.role.controller;
 
+import com.example.urgs_api.auth.annotation.RequirePermission;
 import com.example.urgs_api.role.dto.RoleDTO;
 import com.example.urgs_api.role.dto.RoleRequest;
 import com.example.urgs_api.role.dto.RolePermissionRequest;
@@ -24,11 +25,13 @@ public class RoleController {
     }
 
     @GetMapping
+    @RequirePermission("sys:role:query")
     public List<RoleDTO> list() {
         return roleService.list().stream().map(RoleDTO::fromEntity).collect(Collectors.toList());
     }
 
     @PostMapping
+    @RequirePermission("sys:role:add")
     public RoleDTO create(@RequestBody RoleRequest req) {
         Role role = toEntity(req, null);
         roleService.save(role);
@@ -36,6 +39,7 @@ public class RoleController {
     }
 
     @PutMapping("/{id}")
+    @RequirePermission("sys:role:edit")
     public ResponseEntity<RoleDTO> update(@PathVariable("id") Long id, @RequestBody RoleRequest req) {
         Role existing = roleService.getById(id);
         if (existing == null) {
@@ -47,12 +51,14 @@ public class RoleController {
     }
 
     @DeleteMapping("/{id}")
+    @RequirePermission("sys:role:del")
     public ResponseEntity<Void> delete(@PathVariable("id") Long id) {
         boolean removed = roleService.removeById(id);
         return removed ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
     }
 
     @GetMapping("/{id}/permissions")
+    @RequirePermission("sys:role:query")
     public ResponseEntity<Set<String>> listPermissions(@PathVariable("id") Long id) {
         if (roleService.getById(id) == null) {
             return ResponseEntity.notFound().build();
@@ -62,6 +68,7 @@ public class RoleController {
     }
 
     @PutMapping("/{id}/permissions")
+    @RequirePermission("sys:role:edit")
     public ResponseEntity<Void> savePermissions(@PathVariable("id") Long id,
             @RequestBody(required = false) RolePermissionRequest req) {
         if (roleService.getById(id) == null) {
