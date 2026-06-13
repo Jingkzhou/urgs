@@ -46,6 +46,10 @@ executor:
 urgs:
   profile: "${URGS_PROFILE:${user.dir}/data/api/uploads}"
   web-base-url: "${URGS_WEB_BASE_URL:}"
+  internal-api:
+    auth-header: "${URGS_INTERNAL_API_AUTH_HEADER:Authorization}"
+    auth-prefix: "${URGS_INTERNAL_API_AUTH_PREFIX:Bearer }"
+    auth-token: "${URGS_INTERNAL_API_TOKEN:}"
   inbound-sso:
     rsa:
       private-key: "${URGS_INBOUND_SSO_RSA_PRIVATE_KEY:}"

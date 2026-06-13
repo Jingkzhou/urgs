@@ -52,7 +52,7 @@ export const physicalAssetService = {
     listDataSources: async (): Promise<PhysicalDataSourceOption[]> => {
         const [metaData, configData] = await Promise.all([
             get<DataSourceMeta[]>('/api/datasource/meta'),
-            get<DataSourceConfig[]>('/api/datasource/config'),
+            get<DataSourceConfig[]>('/api/datasource/options'),
         ]);
         const metas = Array.isArray(metaData) ? metaData : [];
         const configs = Array.isArray(configData) ? configData : [];

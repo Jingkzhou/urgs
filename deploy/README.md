@@ -37,6 +37,10 @@ config/deploy.env
 - Nginx 代理：`API_TARGET` / `API_UPSTREAM_SERVERS` / `RAG_TARGET` / `IM_API_TARGET`
 - JVM：`API_JAVA_OPTS` / `EXECUTOR_JAVA_OPTS`
 
+API 与 Executor 之间的 `/api/internal/**` 接口使用共享令牌鉴权。默认情况下部署脚本会首次启动时生成
+`config/internal-api.token`（权限为 `600`）并在单服务重启时复用；如需由密钥管理系统托管，可显式设置
+`URGS_INTERNAL_API_TOKEN` 覆盖该文件。
+
 ## 2. 准备 Nginx / Redis 组件包
 
 如果部署包要自带 Nginx 和 Redis，先生成组件包：
@@ -205,6 +209,7 @@ bin/deploy.sh nginx-config
 
 ```text
 /home/urgs/urgs-app/config/deploy.env
+/home/urgs/urgs-app/config/internal-api.token
 /home/urgs/urgs-app/logs/
 /home/urgs/urgs-app/pids/
 /home/urgs/urgs-app/services/

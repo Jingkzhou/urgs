@@ -347,7 +347,33 @@ status_service() {
     fi
 }
 
+generate_internal_api_token() {
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -hex 32
+    else
+        od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
+    fi
+}
+
+ensure_internal_api_token() {
+    if [ -n "${URGS_INTERNAL_API_TOKEN:-}" ]; then
+        export URGS_INTERNAL_API_TOKEN
+        return
+    fi
+
+    local token_file="${ROOT_DIR}/config/internal-api.token"
+    mkdir -p "${ROOT_DIR}/config"
+    if [ ! -s "$token_file" ]; then
+        (umask 077 && generate_internal_api_token > "$token_file")
+    fi
+    chmod 600 "$token_file"
+    URGS_INTERNAL_API_TOKEN="$(tr -d '\r\n' < "$token_file")"
+    [ -n "$URGS_INTERNAL_API_TOKEN" ] || die "Internal API token file is empty: $token_file"
+    export URGS_INTERNAL_API_TOKEN
+}
+
 export_common_env() {
+    ensure_internal_api_token
     export DATA_ROOT="${DATA_ROOT:-/data/urgs}"
     export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-prod}"
     export SPRING_DATASOURCE_URL="${SPRING_DATASOURCE_URL:-jdbc:mysql://${DB_HOST:-127.0.0.1}:${DB_PORT:-3306}/${DB_NAME:-urgs}?${MYSQL_JDBC_PARAMS}}"
@@ -383,6 +409,7 @@ start_executor() {
     service_enabled executor || return 0
     [ -f "${ROOT_DIR}/services/executor/app.jar" ] || die "Missing services/executor/app.jar"
     stop_conflicting_port executor "$EXECUTOR_PORT"
+    export_common_env
     export URGS_EXECUTOR_PORT="$EXECUTOR_PORT"
     export URGS_EXECUTOR_DB_URL="${URGS_EXECUTOR_DB_URL:-jdbc:mysql://${DB_HOST:-127.0.0.1}:${DB_PORT:-3306}/${DB_NAME:-urgs}?${MYSQL_EXECUTOR_JDBC_PARAMS}}"
     export URGS_EXECUTOR_DB_USERNAME="${URGS_EXECUTOR_DB_USERNAME:-${DB_USER:-urgs}}"

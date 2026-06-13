@@ -57,7 +57,7 @@ const SqlConsole: React.FC = () => {
 
     const fetchDataSources = async () => {
         try {
-            const list = await get<any[]>('/api/datasource/config');
+            const list = await get<any[]>('/api/datasource/options');
             const dbSources = (list || []).filter((ds: any) =>
                 ['RDBMS', 'NoSQL', 'Big Data', 'OLAP', 'Others'].includes(ds.category) &&
                 !['ssh', 'http', 'stream'].includes(ds.typeCode)

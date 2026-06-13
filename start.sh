@@ -156,9 +156,37 @@ configure_storage_env() {
     "$DEPLOY_TOOL_WORKDIR" "$LINEAGE_ENGINE_SHARED_DIR" "$ISSUE_ATTACHMENT_PATH"
 }
 
+generate_internal_api_token() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+  else
+    od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
+  fi
+}
+
+configure_internal_api_auth() {
+  if [ -n "${URGS_INTERNAL_API_TOKEN:-}" ]; then
+    export URGS_INTERNAL_API_TOKEN
+    return
+  fi
+
+  local token_file="${DATA_ROOT}/internal-api.token"
+  if [ ! -s "$token_file" ]; then
+    (umask 077 && generate_internal_api_token > "$token_file")
+  fi
+  chmod 600 "$token_file"
+  URGS_INTERNAL_API_TOKEN="$(tr -d '\r\n' < "$token_file")"
+  if [ -z "$URGS_INTERNAL_API_TOKEN" ]; then
+    echo "Internal API token file is empty: $token_file"
+    exit 1
+  fi
+  export URGS_INTERNAL_API_TOKEN
+}
+
 configure_database_env() {
   load_env_file
   configure_storage_env
+  configure_internal_api_auth
 
   if [ -n "${DB_HOST:-}" ]; then
     local jdbc_url="jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true"

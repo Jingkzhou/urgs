@@ -121,7 +121,7 @@ export const describeCron = (cron?: string, offset?: number | null) => {
 };
 
 export const describeDataSourceConnection = (params?: Record<string, any>, typeCode?: string) => {
-    if (!params) return '连接信息待补充';
+    if (!params) return typeCode ? `${typeCode} 数据源` : '连接信息待补充';
 
     const host = params.host ? String(params.host) : '';
     const port = params.port !== undefined && params.port !== null && params.port !== '' ? String(params.port) : '';

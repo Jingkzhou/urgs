@@ -316,7 +316,7 @@ export const getDatasourceMeta = () =>
     get<any>('/api/datasource/meta');
 
 export const getDatasourceConfig = () =>
-    get<any>('/api/datasource/config');
+    get<any>('/api/datasource/options');
 
 // ===== Quartz Task API =====
 

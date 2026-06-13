@@ -1,5 +1,6 @@
 package com.example.executor.quartz.service;
 
+import com.example.executor.common.InternalApiAuthHeaderProvider;
 import com.example.executor.quartz.domain.entity.QuartzTaskEntity;
 import com.example.executor.quartz.domain.entity.QuartzTaskStatusEntity;
 import lombok.extern.slf4j.Slf4j;
@@ -19,12 +20,15 @@ import java.util.Map;
 public class ProblemTransferClient {
 
     private final RestTemplate restTemplate;
+    private final InternalApiAuthHeaderProvider authHeaderProvider;
 
     @Value("${task.api-base-url:http://127.0.0.1:8080}")
     private String apiBaseUrl;
 
-    public ProblemTransferClient(RestTemplateBuilder restTemplateBuilder) {
+    public ProblemTransferClient(RestTemplateBuilder restTemplateBuilder,
+            InternalApiAuthHeaderProvider authHeaderProvider) {
         this.restTemplate = restTemplateBuilder.build();
+        this.authHeaderProvider = authHeaderProvider;
     }
 
     public void transferFailedInstance(QuartzTaskEntity task, QuartzTaskStatusEntity status) {
@@ -38,6 +42,7 @@ public class ProblemTransferClient {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        authHeaderProvider.apply(headers);
 
         try {
             restTemplate.postForObject(
