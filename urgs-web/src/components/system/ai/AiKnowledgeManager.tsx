@@ -113,14 +113,11 @@ const AiKnowledgeManager: React.FC = () => {
         formData.append('kbName', currentKb.name);
 
         try {
-            await fetch(`/api/ai/knowledge/files/upload`, {
-                method: 'POST',
-                body: formData
-            });
+            await post('/api/ai/knowledge/files/upload', formData);
             message.success('上传成功');
             fetchFiles(currentKb.name);
-        } catch (e) {
-            message.error('上传失败');
+        } catch (e: any) {
+            message.error(e.message || '上传失败');
         }
         return false; // Prevent default upload behavior
     };
