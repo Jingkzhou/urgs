@@ -42,6 +42,8 @@ deploy:
 
 executor:
   base-url: "${EXECUTOR_BASE_URL:http://127.0.0.1:8082}"
+  stats-connect-timeout-ms: "${EXECUTOR_STATS_CONNECT_TIMEOUT_MS:2000}"
+  stats-read-timeout-ms: "${EXECUTOR_STATS_READ_TIMEOUT_MS:3000}"
 
 urgs:
   profile: "${URGS_PROFILE:${user.dir}/data/api/uploads}"

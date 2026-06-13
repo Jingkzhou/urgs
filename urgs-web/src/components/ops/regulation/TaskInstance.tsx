@@ -17,6 +17,7 @@ import TaskInstanceDetailDrawer from './task-instance/TaskInstanceDetailDrawer';
 import TaskInstanceRerunExecutionDrawer from './task-instance/TaskInstanceRerunExecutionDrawer';
 import TaskInstanceRerunOptionModal from './task-instance/TaskInstanceRerunOptionModal';
 import TaskInstanceTableView from './task-instance/TaskInstanceTableView';
+import { useExecutorPoolStats } from './task-instance/useExecutorPoolStats';
 import {
     InstanceDetailTabKey,
     RowContextMenuState,
@@ -54,6 +55,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         successInstances: 0,
         failedInstances: 0,
     });
+    const executorPoolStatsState = useExecutorPoolStats();
     const [logList, setLogList] = useState<QuartzTaskExecutionLog[]>([]);
     const [draftSearchKeyword, setDraftSearchKeyword] = useState(initialKeyword);
     const [draftTaskSystemFilter, setDraftTaskSystemFilter] = useState(initialTaskSystem);
@@ -895,6 +897,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
                 pagedInstances={pagedInstances}
                 selectedInstances={selectedInstances}
                 summaryStats={summaryStats}
+                executorPoolStatsState={executorPoolStatsState}
                 taskMap={taskMap}
                 taskNameMap={taskNameMap}
                 taskSystemOptions={taskSystemOptions}

@@ -483,6 +483,20 @@ export interface QuartzTaskLogApiModel {
 export const queryQuartzTaskStatus = (params: QuartzTaskStatusQueryParams) =>
     post<ApiResponse<PageResult<QuartzTaskStatusApiModel>>>('/api/quartz/task/status/query', params);
 
+export interface ExecutorPoolStats {
+    activeCount: number;
+    poolSize: number;
+    maximumPoolSize: number;
+    queueSize: number;
+    queueCapacity: number;
+    completedTaskCount: number;
+    runningTaskKeys: string[];
+    queuedTaskKeys: string[];
+}
+
+export const getExecutorPoolStats = () =>
+    get<ApiResponse<ExecutorPoolStats>>('/api/quartz/executor/pool/stats', undefined, { timeoutMs: 2500 });
+
 export interface QuartzMissedTaskQueryParams {
     pageNum?: number;
     pageSize?: number;
