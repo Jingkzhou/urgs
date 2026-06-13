@@ -35,10 +35,11 @@ Services:
 Components:
   nginx        Package nginx deployment config and NGINX_TARBALL, or latest cached ARM64 package.
   redis        Package redis config and REDIS_TARBALL, or latest cached ARM64 package.
+  onlyoffice   Package official ARM64 ONLYOFFICE Document Server DEB.
 
 Groups:
   app-all      api web executor rag agent lineage
-  deps-all     nginx redis
+  deps-all     nginx redis onlyoffice
   full         app-all deps-all
 
 Examples:
@@ -91,6 +92,7 @@ normalize_service() {
         lineage | sql-lineage-engine) echo "lineage" ;;
         nginx) echo "nginx" ;;
         redis) echo "redis" ;;
+        onlyoffice | onlyoffice-docs | documentserver) echo "onlyoffice" ;;
         *) return 1 ;;
     esac
 }
@@ -120,12 +122,17 @@ component_tarball_var() {
     case "$1" in
         nginx) echo "NGINX_TARBALL" ;;
         redis) echo "REDIS_TARBALL" ;;
+        onlyoffice) echo "ONLYOFFICE_PACKAGE" ;;
         *) die "Unknown component: $1" ;;
     esac
 }
 
 latest_cached_component_tarball() {
     local component="$1"
+    if [ "$component" = "onlyoffice" ]; then
+        find "$COMPONENT_CACHE_DIR" -maxdepth 1 -type f -name 'onlyoffice-documentserver_*_arm64.deb' 2>/dev/null | sort -V | tail -1
+        return
+    fi
     find "$COMPONENT_CACHE_DIR" -maxdepth 1 -type f -name "${component}-linux-aarch64-*.tar.gz" 2>/dev/null | sort -V | tail -1
 }
 
@@ -359,8 +366,8 @@ package_component() {
     cat > "${WORK_DIR}/components/${component}/README.txt" <<EOF
 ${component} component selected.
 
-If a tarball was supplied during packaging, it is stored in this directory.
-If no tarball is present, bin/deploy.sh will use the target host installation
+If a component package was supplied during packaging, it is stored in this directory.
+If no package is present, bin/deploy.sh will use the target host installation
 when possible and report a clear error for missing runtime commands.
 EOF
 }
@@ -369,7 +376,7 @@ validate_component_tarballs() {
     local component tarball_var tarball
     for component in "${SERVICES[@]}"; do
         case "$component" in
-            nginx | redis) tarball_var="$(component_tarball_var "$component")" ;;
+            nginx | redis | onlyoffice) tarball_var="$(component_tarball_var "$component")" ;;
             *) continue ;;
         esac
         tarball="$(resolve_component_tarball "$component")"
@@ -456,10 +463,10 @@ for raw_service in "${ARGS[@]}"; do
             for service in api web executor rag agent lineage; do append_service "$service"; done
             ;;
         deps-all)
-            for service in nginx redis; do append_service "$service"; done
+            for service in nginx redis onlyoffice; do append_service "$service"; done
             ;;
         full)
-            for service in api web executor rag agent lineage nginx redis; do append_service "$service"; done
+            for service in api web executor rag agent lineage nginx redis onlyoffice; do append_service "$service"; done
             ;;
         *)
             service="$(normalize_service "$raw_service")" || die "Unknown service: ${raw_service}"
@@ -484,7 +491,7 @@ for service in "${SERVICES[@]}"; do
         rag) package_rag ;;
         agent) package_agent ;;
         lineage) package_lineage ;;
-        nginx | redis) package_component "$service" ;;
+        nginx | redis | onlyoffice) package_component "$service" ;;
         *) die "Unhandled service: ${service}" ;;
     esac
 done

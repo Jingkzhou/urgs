@@ -55,6 +55,11 @@ apply_runtime_defaults() {
     WEB_STATIC_PORT="${WEB_STATIC_PORT:-3000}"
     REDIS_PORT="${REDIS_PORT:-6379}"
     REDIS_BIND="${REDIS_BIND:-127.0.0.1}"
+    ONLYOFFICE_PORT="${ONLYOFFICE_PORT:-8088}"
+    ONLYOFFICE_JWT_SECRET="${ONLYOFFICE_JWT_SECRET:-}"
+    ONLYOFFICE_DB_PASSWORD="${ONLYOFFICE_DB_PASSWORD:-onlyoffice}"
+    ONLYOFFICE_DB_NAME="${ONLYOFFICE_DB_NAME:-onlyoffice}"
+    ONLYOFFICE_DB_USER="${ONLYOFFICE_DB_USER:-onlyoffice}"
     DATA_ROOT="${DATA_ROOT:-/data/urgs}"
     REDIS_DATA_DIR="${REDIS_DATA_DIR:-${DATA_ROOT}/redis}"
     NGINX_LOG_DIR="${NGINX_LOG_DIR:-${ROOT_DIR}/logs/nginx}"
@@ -189,7 +194,7 @@ install_package_to_deploy_home() {
             api | web | executor | rag | lineage)
                 copy_dir_replace_with_backup "${PACKAGE_DIR}/services/${service}" "${ROOT_DIR}/services/${service}" "$backup_dir" "services/${service}"
                 ;;
-            nginx | redis)
+            nginx | redis | onlyoffice)
                 copy_dir_replace_with_backup "${PACKAGE_DIR}/components/${service}" "${ROOT_DIR}/components/${service}" "$backup_dir" "components/${service}"
                 rm -rf "${ROOT_DIR}/components/${service}/runtime"
                 ;;
@@ -237,6 +242,153 @@ find_component_binary() {
         return 0
     fi
     command -v "$binary" 2>/dev/null || true
+}
+
+run_as_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo "$@"
+    else
+        die "Root privileges are required: $*"
+    fi
+}
+
+onlyoffice_package_file() {
+    find "${ROOT_DIR}/components/onlyoffice" -maxdepth 1 -type f -name 'onlyoffice-documentserver_*_arm64.deb' 2>/dev/null | sort -V | tail -1
+}
+
+install_onlyoffice() {
+    service_enabled onlyoffice || return 0
+
+    [ "$(uname -s)" = "Linux" ] || die "ONLYOFFICE system package can only be installed on Linux."
+    case "$(uname -m)" in
+        aarch64 | arm64) ;;
+        *) die "The packaged ONLYOFFICE component targets Linux ARM64; current architecture: $(uname -m)." ;;
+    esac
+    command -v apt-get >/dev/null 2>&1 || die "ONLYOFFICE ARM64 DEB deployment requires Debian or Ubuntu with apt-get."
+
+    local package_file
+    package_file="$(onlyoffice_package_file)"
+    [ -n "$package_file" ] || {
+        if dpkg-query -W onlyoffice-documentserver >/dev/null 2>&1; then
+            log "Using ONLYOFFICE Document Server already installed on the target host."
+            return 0
+        fi
+        die "Missing components/onlyoffice/onlyoffice-documentserver_*_arm64.deb"
+    }
+
+    log "Preparing ONLYOFFICE PostgreSQL and RabbitMQ dependencies."
+    run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-client rabbitmq-server
+    if command -v systemctl >/dev/null 2>&1; then
+        run_as_root systemctl enable --now postgresql rabbitmq-server
+    else
+        run_as_root service postgresql start
+        run_as_root service rabbitmq-server start
+    fi
+    prepare_onlyoffice_database
+
+    log "Installing ONLYOFFICE Document Server from $(basename "$package_file")."
+    printf '%s\n' \
+        "onlyoffice-documentserver onlyoffice/ds-port select ${ONLYOFFICE_PORT}" \
+        "onlyoffice-documentserver onlyoffice/jwt-enabled boolean true" \
+        "onlyoffice-documentserver onlyoffice/jwt-secret string ${ONLYOFFICE_JWT_SECRET}" \
+        "onlyoffice-documentserver onlyoffice/jwt-header string Authorization" \
+        | run_as_root debconf-set-selections
+    run_as_root env \
+        DEBIAN_FRONTEND=noninteractive \
+        DB_TYPE=postgres \
+        DB_HOST=localhost \
+        DB_PORT=5432 \
+        DB_NAME="$ONLYOFFICE_DB_NAME" \
+        DB_USER="$ONLYOFFICE_DB_USER" \
+        DB_PWD="$ONLYOFFICE_DB_PASSWORD" \
+        RABBITMQ_PROTO=amqp \
+        RABBITMQ_HOST=localhost \
+        RABBITMQ_USER=guest \
+        RABBITMQ_PWD=guest \
+        REDIS_HOST=localhost \
+        apt-get install -y "$package_file"
+    configure_onlyoffice_jwt
+}
+
+prepare_onlyoffice_database() {
+    local escaped_password
+    [[ "$ONLYOFFICE_DB_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "Invalid ONLYOFFICE_DB_NAME: ${ONLYOFFICE_DB_NAME}"
+    [[ "$ONLYOFFICE_DB_USER" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "Invalid ONLYOFFICE_DB_USER: ${ONLYOFFICE_DB_USER}"
+    escaped_password="$(printf '%s' "$ONLYOFFICE_DB_PASSWORD" | sed "s/'/''/g")"
+    local role_sql="DO \\$\\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${ONLYOFFICE_DB_USER}') THEN CREATE ROLE ${ONLYOFFICE_DB_USER} LOGIN PASSWORD '${escaped_password}'; ELSE ALTER ROLE ${ONLYOFFICE_DB_USER} WITH LOGIN PASSWORD '${escaped_password}'; END IF; END \\$\\$;"
+
+    if [ "$(id -u)" -eq 0 ]; then
+        runuser -u postgres -- psql -v ON_ERROR_STOP=1 -c "$role_sql"
+        if ! runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname='${ONLYOFFICE_DB_NAME}'" | grep -q 1; then
+            runuser -u postgres -- createdb -O "$ONLYOFFICE_DB_USER" "$ONLYOFFICE_DB_NAME"
+        fi
+    else
+        sudo -u postgres psql -v ON_ERROR_STOP=1 -c "$role_sql"
+        if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${ONLYOFFICE_DB_NAME}'" | grep -q 1; then
+            sudo -u postgres createdb -O "$ONLYOFFICE_DB_USER" "$ONLYOFFICE_DB_NAME"
+        fi
+    fi
+}
+
+configure_onlyoffice_jwt() {
+    [ -n "$ONLYOFFICE_JWT_SECRET" ] || {
+        log "ONLYOFFICE_JWT_SECRET is empty; keeping the Document Server package JWT configuration."
+        return 0
+    }
+
+    local config_file="/etc/onlyoffice/documentserver/local.json"
+    [ -f "$config_file" ] || die "ONLYOFFICE configuration not found: ${config_file}"
+    command -v jq >/dev/null 2>&1 || run_as_root apt-get install -y jq
+
+    local temp_file
+    temp_file="$(mktemp)"
+    jq --arg secret "$ONLYOFFICE_JWT_SECRET" '
+        .services.CoAuthoring.secret.inbox.string = $secret |
+        .services.CoAuthoring.secret.outbox.string = $secret |
+        .services.CoAuthoring.secret.session.string = $secret |
+        .services.CoAuthoring.secret.browser.string = $secret |
+        .services.CoAuthoring.token.enable.browser = true |
+        .services.CoAuthoring.token.enable.request.inbox = true |
+        .services.CoAuthoring.token.enable.request.outbox = true
+    ' "$config_file" > "$temp_file"
+    run_as_root cp "$temp_file" "$config_file"
+    rm -f "$temp_file"
+}
+
+start_onlyoffice() {
+    service_enabled onlyoffice || return 0
+    install_onlyoffice
+    if command -v systemctl >/dev/null 2>&1; then
+        run_as_root systemctl enable --now ds-docservice ds-converter ds-metrics nginx
+        run_as_root systemctl restart ds-docservice ds-converter ds-metrics nginx
+    else
+        run_as_root service ds-docservice restart
+        run_as_root service ds-converter restart
+        run_as_root service ds-metrics restart
+        run_as_root service nginx restart
+    fi
+    log "ONLYOFFICE Document Server is available on port ${ONLYOFFICE_PORT}."
+}
+
+stop_onlyoffice() {
+    service_enabled onlyoffice || return 0
+    if command -v systemctl >/dev/null 2>&1; then
+        run_as_root systemctl stop ds-docservice ds-converter ds-metrics || true
+    else
+        run_as_root service ds-docservice stop || true
+        run_as_root service ds-converter stop || true
+        run_as_root service ds-metrics stop || true
+    fi
+}
+
+status_onlyoffice() {
+    if curl -fsS "http://127.0.0.1:${ONLYOFFICE_PORT}/healthcheck" 2>/dev/null | grep -qi true; then
+        printf '%-12s RUNNING port=%s\n' "onlyoffice" "$ONLYOFFICE_PORT"
+    else
+        printf '%-12s STOPPED\n' "onlyoffice"
+    fi
 }
 
 pid_file() {
@@ -645,6 +797,7 @@ install_all() {
         "$CLEAN_SAMPLE_DIR" "$DEPLOY_TOOL_WORKDIR" "$LINEAGE_ENGINE_SHARED_DIR"
     service_enabled nginx && extract_component_tarballs nginx
     service_enabled redis && extract_component_tarballs redis
+    service_enabled onlyoffice && install_onlyoffice
     service_enabled rag && ensure_venv rag
     service_enabled agent && ensure_venv agent
     service_enabled lineage && ensure_venv lineage
@@ -678,6 +831,7 @@ start_redis() {
 
 start_all() {
     start_redis
+    start_onlyoffice
     start_rag
     start_agent
     start_executor
@@ -696,6 +850,7 @@ start_one() {
         rag) start_rag ;;
         agent) start_agent ;;
         redis) start_redis ;;
+        onlyoffice) start_onlyoffice ;;
         nginx) install_nginx_config; start_nginx ;;
         web-static) start_web_static ;;
         *) die "Unknown service: $1" ;;
@@ -711,12 +866,14 @@ stop_all() {
     service_enabled agent && stop_service agent-worker
     service_enabled agent && stop_service agent-api
     service_enabled redis && stop_service redis
+    stop_onlyoffice
     true
 }
 
 stop_one() {
     case "$1" in
         api | executor | rag | redis | web-static) stop_service "$1" ;;
+        onlyoffice) stop_onlyoffice ;;
         agent) stop_service agent-worker; stop_service agent-api ;;
         nginx) stop_nginx ;;
         *) die "Unknown service: $1" ;;
@@ -730,6 +887,7 @@ status_all() {
     service_enabled agent && status_service agent-api
     service_enabled agent && status_service agent-worker
     service_enabled redis && status_service redis
+    service_enabled onlyoffice && status_onlyoffice
     service_enabled nginx && status_service nginx
     service_enabled web && status_service web-static
     service_enabled lineage && printf '%-12s PACKAGED cli-only\n' "lineage"
@@ -739,6 +897,7 @@ status_all() {
 status_one() {
     case "$1" in
         api | executor | rag | redis | nginx | web-static) status_service "$1" ;;
+        onlyoffice) status_onlyoffice ;;
         agent) status_service agent-api; status_service agent-worker ;;
         *) die "Unknown service: $1" ;;
     esac

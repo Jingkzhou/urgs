@@ -182,16 +182,7 @@ const OnlineDocsTool: React.FC = () => {
 
     return (
         <div className="flex h-full flex-col bg-slate-50">
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4">
-                <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                        <FileText size={20} />
-                    </div>
-                    <div className="min-w-0">
-                        <h3 className="truncate text-sm font-black text-slate-900">在线文档</h3>
-                        <p className="truncate text-xs text-slate-500">独立文档库，支持 ONLYOFFICE 预览、编辑与协同</p>
-                    </div>
-                </div>
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b border-slate-200 bg-white px-5 py-3">
                 <div className="flex items-center gap-2">
                     <Input.Search
                         allowClear

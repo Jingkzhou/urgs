@@ -41,7 +41,7 @@ API 与 Executor 之间的 `/api/internal/**` 接口使用共享令牌鉴权。�
 `config/internal-api.token`（权限为 `600`）并在单服务重启时复用；如需由密钥管理系统托管，可显式设置
 `URGS_INTERNAL_API_TOKEN` 覆盖该文件。
 
-## 2. 准备 Nginx / Redis 组件包
+## 2. 准备 Nginx / Redis / ONLYOFFICE 组件包
 
 如果部署包要自带 Nginx 和 Redis，先生成组件包：
 
@@ -57,6 +57,22 @@ deploy/components-cache/redis-linux-aarch64-<版本>.tar.gz
 ```
 
 `deploy/package-services.sh` 会自动选择 `deploy/components-cache/` 下最新的对应组件包。
+
+ONLYOFFICE 使用官方 Linux ARM64 DEB，缓存路径如下：
+
+```text
+deploy/components-cache/onlyoffice-documentserver_<版本>_arm64.deb
+```
+
+下载或更新官方包：
+
+```bash
+deploy/download-onlyoffice.sh
+# 或指定版本
+deploy/download-onlyoffice.sh 9.4.0
+```
+
+完整包会自动包含该文件。目标服务器必须是 Debian/Ubuntu ARM64，并需要 root 或 sudo 权限安装系统依赖。安装过程不使用 Docker。
 
 ## 3. 打包
 
@@ -93,7 +109,7 @@ dist-packages/urgs-<环境>-<时间戳>.tar.gz
 常用服务组合：
 
 ```bash
-# 完整包：api web executor rag agent lineage nginx redis
+# 完整包：api web executor rag agent lineage nginx redis onlyoffice
 DEPLOY_ENV=prod deploy/package-services.sh full
 
 # 只打应用，不带 nginx / redis
@@ -183,6 +199,7 @@ bin/deploy.sh restart executor
 bin/deploy.sh restart rag
 bin/deploy.sh restart agent
 bin/deploy.sh restart redis
+bin/deploy.sh restart onlyoffice
 ```
 
 停止服务：
@@ -231,8 +248,9 @@ logs/nginx/access.log
 
 ## 8. 补充说明
 
-- `full` 包含：`api web executor rag agent lineage nginx redis`。
+- `full` 包含：`api web executor rag agent lineage nginx redis onlyoffice`。
 - `lineage` 是随包分发的命令行工具，不是常驻服务。
+- `onlyoffice` 使用官方 ARM64 DEB 安装为 Linux 系统服务，首次执行 `bin/deploy.sh install/up` 需要 sudo 权限并安装 PostgreSQL、RabbitMQ、字体、Nginx 等系统依赖。
 - MySQL 和 Neo4j 不放入部署包，只通过 `config/deploy.env` 配置连接。
 - 默认 `WEB_LISTEN_PORT=18080`，普通用户可直接监听；如果要使用 80 端口，建议由系统 Nginx、负载均衡或端口转发处理。
 - 默认 `NGINX_USE_SYSTEM=0`，使用包内 Nginx 或 PATH 中的 Nginx，并读取本地渲染配置。
