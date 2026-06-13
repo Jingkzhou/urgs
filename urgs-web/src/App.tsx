@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { hasPermission } from './utils/permission';
-import { LayoutDashboard, Bell, Search, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Timer, Database, GitBranch, Activity, Lock, Palette, User, Sparkles, Award, BookOpen, ChevronDown } from 'lucide-react';
+import { LayoutDashboard, Bell, Search, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Timer, Database, GitBranch, Activity, Lock, Palette, User, Sparkles, Award, BookOpen, ChevronDown, Wrench } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Login from './components/Login';
 import Dashboard from './components/home/Dashboard';
@@ -16,6 +16,7 @@ import BasicInfo from './components/BasicInfo';
 import ArkPage from './components/ark/ArkPage';
 import KnowledgeCenter from './components/knowledge/KnowledgeCenter';
 import MarketplacePage from './components/marketplace/MarketplacePage';
+import ToolsPage from './components/tools/ToolsPage';
 import { LOGO_URL } from './constants';
 
 const NAV_ITEMS = [
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
     { id: 'announcement', label: '公告', icon: Megaphone, permission: 'announcement' },
     { id: 'version', label: '版本', icon: GitBranch, permission: 'version' },
     { id: 'marketplace', label: '工作市场', icon: Award, permission: 'marketplace' },
+    { id: 'tools', label: '工具', icon: Wrench, permission: 'tools' },
     { id: 'metadata', label: '数据', icon: Database, permission: 'metadata' },
     { id: 'ops', label: '运维', icon: Activity, permission: 'ops' },
     { id: 'knowledge', label: '知识中心', icon: BookOpen, permission: 'knowledge' },
@@ -148,8 +150,11 @@ const App: React.FC = () => {
             const hash = window.location.hash;
             const path = hash.split('?')[0].replace('#/', ''); 
             const navIds = NAV_ITEMS.map(n => n.id);
+            const topLevelPath = path.split('/')[0];
             if (navIds.includes(path)) {
                 setActiveTab(path);
+            } else if (navIds.includes(topLevelPath)) {
+                setActiveTab(topLevelPath);
             } else if (path === 'basic_info') {
                 setActiveTab('basic_info');
             } else if (path === '' || path === 'dashboard') {
@@ -508,6 +513,7 @@ const App: React.FC = () => {
                                 {activeTab === 'version' && <VersionManagement />}
                                 {activeTab === 'metadata' && <MetadataManagement />}
                                 {activeTab === 'ops' && <OpsManagement />}
+                                {activeTab === 'tools' && <ToolsPage />}
                                 {activeTab === 'knowledge' && <KnowledgeCenter />}
                                 {activeTab === 'marketplace' && <MarketplacePage />}
                                 {activeTab === 'basic_info' && <BasicInfo userInfo={userInfo} />}

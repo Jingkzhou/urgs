@@ -273,4 +273,23 @@ public class KnowledgeDocumentService {
                 .orderByDesc(KnowledgeDocument::getUpdateTime);
         return documentMapper.selectList(wrapper);
     }
+
+    public KnowledgeDocument getAccessibleDocument(Long id, Long userId) {
+        KnowledgeDocument doc = documentMapper.selectById(id);
+        if (doc == null) {
+            throw new RuntimeException("文档不存在");
+        }
+        if ("shared".equals(doc.getScope()) || userId.equals(doc.getUserId())) {
+            return doc;
+        }
+        throw new RuntimeException("无权访问该文档");
+    }
+
+    public KnowledgeDocument getDocument(Long id) {
+        KnowledgeDocument doc = documentMapper.selectById(id);
+        if (doc == null) {
+            throw new RuntimeException("文档不存在");
+        }
+        return doc;
+    }
 }

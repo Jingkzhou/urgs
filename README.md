@@ -89,6 +89,32 @@ docker-compose run --rm sql-lineage-engine parse-sql --help
 
 ---
 
+## 🧰 在线文档（ONLYOFFICE Docs）
+
+前端“工具”页签中的“在线文档”使用 ONLYOFFICE Docs 进行 Office/PDF 在线预览、编辑和协同。开发环境可单独启动 Document Server：
+
+```bash
+docker run -d --name urgs-onlyoffice \
+  -p 8088:80 \
+  -e JWT_ENABLED=true \
+  -e JWT_SECRET=<替换为随机密钥> \
+  --restart unless-stopped \
+  onlyoffice/documentserver:latest
+```
+
+本地 API 默认读取以下配置：
+
+```bash
+export ONLYOFFICE_DOCUMENT_SERVER_URL=http://localhost:8088
+export URGS_API_BASE_URL=http://host.docker.internal:8080
+export ONLYOFFICE_CALLBACK_SECRET=<替换为随机密钥>
+export ONLYOFFICE_JWT_SECRET=<与 JWT_SECRET 保持一致>
+```
+
+`URGS_API_BASE_URL` 必须是 ONLYOFFICE Document Server 可以访问的后端地址，用于读取 `/profile/**` 文件和回调保存编辑结果。生产环境请在 `deploy/templates/deploy.<env>.env` 中改成实际内网或网关地址。
+
+---
+
 
 ## 💻 本地开发指南
 

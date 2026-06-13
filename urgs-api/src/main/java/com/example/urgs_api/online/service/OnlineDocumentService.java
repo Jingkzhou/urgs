@@ -1,0 +1,412 @@
+package com.example.urgs_api.online.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.example.urgs_api.online.entity.OnlineDocument;
+import com.example.urgs_api.online.mapper.OnlineDocumentMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.HexFormat;
+import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
+/**
+ * 在线文档服务
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class OnlineDocumentService {
+
+    private final OnlineDocumentMapper documentMapper;
+
+    @Value("${urgs.profile:./uploads}")
+    private String profile;
+
+    @Value("${urgs.onlyoffice.callback-secret:urgs-onlyoffice-callback-secret}")
+    private String onlyOfficeCallbackSecret;
+
+    public IPage<OnlineDocument> listDocuments(Long userId, String keyword, int page, int size) {
+        LambdaQueryWrapper<OnlineDocument> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(OnlineDocument::getUserId, userId);
+        if (StringUtils.hasText(keyword)) {
+            wrapper.like(OnlineDocument::getTitle, keyword);
+        }
+        wrapper.orderByDesc(OnlineDocument::getUpdateTime);
+        return documentMapper.selectPage(new Page<>(page, size), wrapper);
+    }
+
+    @Transactional
+    public OnlineDocument createDocument(Long userId, OnlineDocument doc) {
+        doc.setUserId(userId);
+        doc.setCreateTime(LocalDateTime.now());
+        doc.setUpdateTime(LocalDateTime.now());
+        documentMapper.insert(doc);
+        log.info("用户 {} 创建在线文档: {}", userId, doc.getTitle());
+        return doc;
+    }
+
+    @Transactional
+    public OnlineDocument createBlankDocument(Long userId, String title, String documentType) {
+        String normalizedType = normalizeDocumentType(documentType);
+        String extension = switch (normalizedType) {
+            case "cell" -> "xlsx";
+            case "slide" -> "pptx";
+            default -> "docx";
+        };
+        String safeTitle = StringUtils.hasText(title) ? title.trim() : defaultTitle(normalizedType);
+        if (!safeTitle.toLowerCase().endsWith("." + extension)) {
+            safeTitle = safeTitle + "." + extension;
+        }
+
+        LocalDate today = LocalDate.now();
+        String datePath = today.getYear() + "/" + String.format("%02d", today.getMonthValue()) + "/"
+                + String.format("%02d", today.getDayOfMonth());
+        Path targetDir = Path.of(profile).toAbsolutePath().normalize().resolve("online-docs").resolve(datePath);
+        String storedFileName = UUID.randomUUID() + "." + extension;
+        Path targetPath = targetDir.resolve(storedFileName);
+
+        try {
+            Files.createDirectories(targetDir);
+            writeBlankOfficeFile(targetPath, normalizedType);
+        } catch (IOException e) {
+            throw new RuntimeException("创建空白在线文档失败", e);
+        }
+
+        OnlineDocument doc = new OnlineDocument();
+        doc.setTitle(safeTitle);
+        doc.setFileName(safeTitle);
+        doc.setFileUrl("/profile/online-docs/" + datePath + "/" + storedFileName);
+        doc.setFileSize(targetPath.toFile().length());
+        return createDocument(userId, doc);
+    }
+
+    @Transactional
+    public OnlineDocument updateDocument(Long id, Long userId, OnlineDocument updates) {
+        OnlineDocument doc = getAccessibleDocument(id, userId);
+        if (updates.getTitle() != null) {
+            doc.setTitle(updates.getTitle());
+        }
+        if (updates.getFileName() != null) {
+            doc.setFileName(updates.getFileName());
+        }
+        doc.setUpdateTime(LocalDateTime.now());
+        documentMapper.updateById(doc);
+        return doc;
+    }
+
+    @Transactional
+    public void deleteDocument(Long id, Long userId) {
+        OnlineDocument doc = getAccessibleDocument(id, userId);
+        documentMapper.deleteById(doc.getId());
+        log.info("删除在线文档: {}", id);
+    }
+
+    public OnlineDocument getAccessibleDocument(Long id, Long userId) {
+        OnlineDocument doc = documentMapper.selectById(id);
+        if (doc == null) {
+            throw new RuntimeException("在线文档不存在");
+        }
+        if (userId.equals(doc.getUserId())) {
+            return doc;
+        }
+        throw new RuntimeException("无权访问该在线文档");
+    }
+
+    public OnlineDocument getDocument(Long id) {
+        OnlineDocument doc = documentMapper.selectById(id);
+        if (doc == null) {
+            throw new RuntimeException("在线文档不存在");
+        }
+        return doc;
+    }
+
+    public String buildOnlyOfficeCallbackToken(Long documentId, String fileUrl) {
+        return hmacSha256(documentId + ":" + (fileUrl == null ? "" : fileUrl), onlyOfficeCallbackSecret);
+    }
+
+    public boolean verifyOnlyOfficeCallbackToken(Long documentId, String fileUrl, String token) {
+        if (!StringUtils.hasText(token)) {
+            return false;
+        }
+        return buildOnlyOfficeCallbackToken(documentId, fileUrl).equals(token);
+    }
+
+    @Transactional
+    public void saveOnlyOfficeDocument(Long documentId, String downloadUrl) {
+        OnlineDocument doc = getDocument(documentId);
+        if (!StringUtils.hasText(doc.getFileUrl())) {
+            throw new RuntimeException("在线文档文件地址为空");
+        }
+
+        Path targetPath = resolveUploadedFile(doc.getFileUrl());
+        try {
+            Files.createDirectories(targetPath.getParent());
+            Path tempFile = Files.createTempFile(targetPath.getParent(), "onlyoffice-", ".tmp");
+            try {
+                HttpRequest request = HttpRequest.newBuilder(URI.create(downloadUrl)).GET().build();
+                HttpResponse<Path> response = HttpClient.newHttpClient()
+                        .send(request, HttpResponse.BodyHandlers.ofFile(tempFile));
+                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    throw new RuntimeException("ONLYOFFICE 保存文件下载失败: " + response.statusCode());
+                }
+                Files.move(tempFile, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } finally {
+                Files.deleteIfExists(tempFile);
+            }
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            throw new RuntimeException("ONLYOFFICE 保存文件失败", e);
+        }
+
+        doc.setFileSize(targetPath.toFile().length());
+        doc.setUpdateTime(LocalDateTime.now());
+        documentMapper.updateById(doc);
+        log.info("ONLYOFFICE 保存在线文档成功: documentId={}, fileName={}", documentId, doc.getFileName());
+    }
+
+    private Path resolveUploadedFile(String fileUrl) {
+        String normalized = fileUrl;
+        try {
+            URI uri = URI.create(fileUrl);
+            if (StringUtils.hasText(uri.getPath())) {
+                normalized = uri.getPath();
+            }
+        } catch (IllegalArgumentException ignored) {
+            normalized = fileUrl;
+        }
+
+        if (!normalized.startsWith("/profile/")) {
+            throw new IllegalArgumentException("仅支持保存本地上传文件: " + fileUrl);
+        }
+
+        String relativePath = normalized.substring("/profile/".length());
+        Path basePath = Path.of(profile).toAbsolutePath().normalize();
+        Path resolvedPath = basePath.resolve(relativePath).normalize();
+        if (!resolvedPath.startsWith(basePath)) {
+            throw new IllegalArgumentException("非法文件路径: " + fileUrl);
+        }
+        return resolvedPath;
+    }
+
+    private String hmacSha256(String value, String secret) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException | InvalidKeyException e) {
+            throw new IllegalStateException("ONLYOFFICE 回调签名生成失败", e);
+        }
+    }
+
+    private String normalizeDocumentType(String documentType) {
+        if ("cell".equals(documentType) || "slide".equals(documentType) || "word".equals(documentType)) {
+            return documentType;
+        }
+        return "word";
+    }
+
+    private String defaultTitle(String documentType) {
+        return switch (documentType) {
+            case "cell" -> "新建表格.xlsx";
+            case "slide" -> "新建演示.pptx";
+            default -> "新建文档.docx";
+        };
+    }
+
+    private void writeBlankOfficeFile(Path targetPath, String documentType) throws IOException {
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(targetPath), StandardCharsets.UTF_8)) {
+            switch (documentType) {
+                case "cell" -> writeBlankWorkbook(zip);
+                case "slide" -> writeBlankPresentation(zip);
+                default -> writeBlankWordDocument(zip);
+            }
+        }
+    }
+
+    private void writeZipEntry(ZipOutputStream zip, String name, String content) throws IOException {
+        zip.putNextEntry(new ZipEntry(name));
+        zip.write(content.stripLeading().getBytes(StandardCharsets.UTF_8));
+        zip.closeEntry();
+    }
+
+    private void writeBlankWordDocument(ZipOutputStream zip) throws IOException {
+        writeZipEntry(zip, "[Content_Types].xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+                  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+                  <Default Extension="xml" ContentType="application/xml"/>
+                  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+                </Types>
+                """);
+        writeZipEntry(zip, "_rels/.rels", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+                </Relationships>
+                """);
+        writeZipEntry(zip, "word/document.xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                  <w:body>
+                    <w:p/>
+                    <w:sectPr>
+                      <w:pgSz w:w="11906" w:h="16838"/>
+                      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>
+                    </w:sectPr>
+                  </w:body>
+                </w:document>
+                """);
+    }
+
+    private void writeBlankWorkbook(ZipOutputStream zip) throws IOException {
+        writeZipEntry(zip, "[Content_Types].xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+                  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+                  <Default Extension="xml" ContentType="application/xml"/>
+                  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+                  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+                </Types>
+                """);
+        writeZipEntry(zip, "_rels/.rels", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+                </Relationships>
+                """);
+        writeZipEntry(zip, "xl/workbook.xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+                  <sheets>
+                    <sheet name="Sheet1" sheetId="1" r:id="rId1"/>
+                  </sheets>
+                </workbook>
+                """);
+        writeZipEntry(zip, "xl/_rels/workbook.xml.rels", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+                </Relationships>
+                """);
+        writeZipEntry(zip, "xl/worksheets/sheet1.xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                  <sheetData/>
+                </worksheet>
+                """);
+    }
+
+    private void writeBlankPresentation(ZipOutputStream zip) throws IOException {
+        writeZipEntry(zip, "[Content_Types].xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+                  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+                  <Default Extension="xml" ContentType="application/xml"/>
+                  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+                  <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+                  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
+                  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
+                  <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+                </Types>
+                """);
+        writeZipEntry(zip, "_rels/.rels", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+                </Relationships>
+                """);
+        writeZipEntry(zip, "ppt/presentation.xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+                  <p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>
+                  <p:sldIdLst><p:sldId id="256" r:id="rId2"/></p:sldIdLst>
+                  <p:sldSz cx="9144000" cy="5143500" type="screen16x9"/>
+                  <p:notesSz cx="6858000" cy="9144000"/>
+                </p:presentation>
+                """);
+        writeZipEntry(zip, "ppt/_rels/presentation.xml.rels", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
+                  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+                  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
+                </Relationships>
+                """);
+        writeZipEntry(zip, "ppt/slides/slide1.xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+                  <p:cSld>
+                    <p:spTree>
+                      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+                      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+                    </p:spTree>
+                  </p:cSld>
+                  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+                </p:sld>
+                """);
+        writeZipEntry(zip, "ppt/slides/_rels/slide1.xml.rels", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+                </Relationships>
+                """);
+        writeZipEntry(zip, "ppt/slideMasters/slideMaster1.xml", blankSlideTemplate("p:sldMaster"));
+        writeZipEntry(zip, "ppt/slideMasters/_rels/slideMaster1.xml.rels", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+                  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>
+                </Relationships>
+                """);
+        writeZipEntry(zip, "ppt/slideLayouts/slideLayout1.xml", blankSlideTemplate("p:sldLayout"));
+        writeZipEntry(zip, "ppt/theme/theme1.xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Blank">
+                  <a:themeElements>
+                    <a:clrScheme name="Blank"><a:dk1><a:srgbClr val="000000"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="1F497D"/></a:dk2><a:lt2><a:srgbClr val="EEECE1"/></a:lt2><a:accent1><a:srgbClr val="4F81BD"/></a:accent1><a:accent2><a:srgbClr val="C0504D"/></a:accent2><a:accent3><a:srgbClr val="9BBB59"/></a:accent3><a:accent4><a:srgbClr val="8064A2"/></a:accent4><a:accent5><a:srgbClr val="4BACC6"/></a:accent5><a:accent6><a:srgbClr val="F79646"/></a:accent6><a:hlink><a:srgbClr val="0000FF"/></a:hlink><a:folHlink><a:srgbClr val="800080"/></a:folHlink></a:clrScheme>
+                    <a:fontScheme name="Blank"><a:majorFont><a:latin typeface="Arial"/></a:majorFont><a:minorFont><a:latin typeface="Arial"/></a:minorFont></a:fontScheme>
+                    <a:fmtScheme name="Blank"><a:fillStyleLst/><a:lnStyleLst/><a:effectStyleLst/><a:bgFillStyleLst/></a:fmtScheme>
+                  </a:themeElements>
+                </a:theme>
+                """);
+    }
+
+    private String blankSlideTemplate(String rootName) {
+        return """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <%s xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+                  <p:cSld>
+                    <p:spTree>
+                      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+                      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+                    </p:spTree>
+                  </p:cSld>
+                  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+                </%s>
+                """.formatted(rootName, rootName);
+    }
+}

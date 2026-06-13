@@ -209,4 +209,5 @@ public class KnowledgeDocumentController {
         private List<Long> ids;
         private List<Long> tagIds;
     }
+
 }

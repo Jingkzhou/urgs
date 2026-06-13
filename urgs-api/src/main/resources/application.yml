@@ -47,7 +47,12 @@ executor:
 
 urgs:
   profile: "${URGS_PROFILE:${user.dir}/data/api/uploads}"
+  api-base-url: "${URGS_API_BASE_URL:}"
   web-base-url: "${URGS_WEB_BASE_URL:}"
+  onlyoffice:
+    document-server-url: "${ONLYOFFICE_DOCUMENT_SERVER_URL:http://localhost:8088}"
+    callback-secret: "${ONLYOFFICE_CALLBACK_SECRET:urgs-onlyoffice-callback-secret}"
+    jwt-secret: "${ONLYOFFICE_JWT_SECRET:}"
   internal-api:
     auth-header: "${URGS_INTERNAL_API_AUTH_HEADER:Authorization}"
     auth-prefix: "${URGS_INTERNAL_API_AUTH_PREFIX:Bearer }"
