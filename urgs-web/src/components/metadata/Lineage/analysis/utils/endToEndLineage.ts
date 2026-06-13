@@ -47,7 +47,6 @@ const MAX_PATHS = 1200;
 const MAX_DEPTH = 24;
 
 const columnKey = (nodeId: string, columnId?: string) => `${nodeId}::${columnId || TABLE_LEVEL_COLUMN}`;
-
 const parseColumnKey = (key: string): ColumnRef => {
     const [nodeId, columnId] = key.split('::');
     return { nodeId, columnId: columnId || TABLE_LEVEL_COLUMN };
