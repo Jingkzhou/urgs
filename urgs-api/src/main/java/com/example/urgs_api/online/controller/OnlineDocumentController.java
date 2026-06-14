@@ -47,10 +47,11 @@ public class OnlineDocumentController {
     public ResponseEntity<IPage<OnlineDocument>> listDocuments(
             HttpServletRequest request,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String fileType,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
         Long userId = getUserId(request);
-        return ResponseEntity.ok(documentService.listDocuments(userId, keyword, page, size));
+        return ResponseEntity.ok(documentService.listDocuments(userId, keyword, fileType, page, size));
     }
 
     @PostMapping

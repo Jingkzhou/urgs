@@ -31,6 +31,7 @@ export interface OnlyOfficeEditorConfig {
 
 export const listOnlineDocuments = (params: {
     keyword?: string;
+    fileType?: string;
     page?: number;
     size?: number;
 }) => get<OnlineDocumentPage<OnlineDocument>>('/api/online-documents', params);

@@ -27,6 +27,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -47,14 +48,39 @@ public class OnlineDocumentService {
     @Value("${urgs.onlyoffice.callback-secret:urgs-onlyoffice-callback-secret}")
     private String onlyOfficeCallbackSecret;
 
-    public IPage<OnlineDocument> listDocuments(Long userId, String keyword, int page, int size) {
+    public IPage<OnlineDocument> listDocuments(Long userId, String keyword, String fileType, int page, int size) {
         LambdaQueryWrapper<OnlineDocument> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(OnlineDocument::getUserId, userId);
         if (StringUtils.hasText(keyword)) {
             wrapper.like(OnlineDocument::getTitle, keyword);
         }
+        if (StringUtils.hasText(fileType)) {
+            List<String> extensions = resolveExtensions(fileType);
+            if (!extensions.isEmpty()) {
+                wrapper.and(w -> {
+                    for (int i = 0; i < extensions.size(); i++) {
+                        String ext = extensions.get(i);
+                        if (i == 0) {
+                            w.like(OnlineDocument::getFileName, "." + ext);
+                        } else {
+                            w.or().like(OnlineDocument::getFileName, "." + ext);
+                        }
+                    }
+                });
+            }
+        }
         wrapper.orderByDesc(OnlineDocument::getUpdateTime);
         return documentMapper.selectPage(new Page<>(page, size), wrapper);
+    }
+
+    private List<String> resolveExtensions(String fileType) {
+        return switch (fileType) {
+            case "word" -> List.of("doc", "docx");
+            case "excel" -> List.of("xls", "xlsx");
+            case "ppt" -> List.of("ppt", "pptx");
+            case "pdf" -> List.of("pdf");
+            default -> List.of();
+        };
     }
 
     @Transactional
