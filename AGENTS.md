@@ -75,6 +75,15 @@
 - 数据库迁移：`urgs-api/src/main/resources/db/migration/`
 - 工作流文档：`.agent/workflows/`
 
+### 9. CodeGraph 使用策略
+
+**当仓库根目录存在 `.codegraph/` 时，分析代码结构、调用链、影响面、符号位置前，必须优先使用 CodeGraph 做第一轮定位，以减少无效文件读取和 token 消耗。**
+
+- 优先使用 MCP 工具：`codegraph_explore`、`codegraph_node`、`codegraph_impact`、`codegraph_callers`、`codegraph_callees`、`codegraph_files`。
+- 如果 MCP 工具未在当前会话暴露，使用等价 CLI：`codegraph explore "<问题或符号>"`、`codegraph node "<符号或文件>"`、`codegraph impact "<符号>"`。
+- CodeGraph 用于缩小范围；涉及 Spring 拦截器、配置、Flyway、MyBatis XML、前端路由/API 字符串、运行时行为时，仍需用源码读取或 `rg` 补充验证。
+- 修改代码前如涉及公共接口、Controller、Service、Mapper、前端 API 封装，应先跑一次 `codegraph impact "<目标符号>"` 或等价查询确认影响面。
+
 ## 通用行为准则
 
 以下准则用于减少常见的 LLM 编码失误。与项目强制规则冲突时，以本文件中的项目强制规则为准；简单任务可按实际情况简化执行，但不得跳过必要的验证和自检。
