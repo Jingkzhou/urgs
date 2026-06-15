@@ -3,12 +3,15 @@ import { del, get, post, put } from '@/utils/request';
 export interface OnlineDocument {
     id: number;
     userId: number;
+    ownerName?: string;
     title: string;
     fileUrl: string;
     fileName: string;
     fileSize: number | null;
     createTime: string;
     updateTime: string;
+    shared?: boolean;
+    canManagePermissions?: boolean;
 }
 
 export interface OnlineDocumentPage<T> {
@@ -27,6 +30,19 @@ export interface UploadResult {
 export interface OnlyOfficeEditorConfig {
     documentServerUrl: string;
     config: Record<string, unknown>;
+}
+
+export interface OnlineDocumentPermission {
+    userId: number;
+    userName: string;
+    empId?: string;
+    createTime: string;
+}
+
+export interface OnlineDocumentPermissionUser {
+    id: string | number;
+    name: string;
+    empId?: string;
 }
 
 export const listOnlineDocuments = (params: {
@@ -64,3 +80,12 @@ export const uploadOnlineDocumentFile = (file: File) => {
 
 export const getOnlineDocumentOnlyOfficeConfig = (id: number) =>
     get<OnlyOfficeEditorConfig>(`/api/online-documents/${id}/onlyoffice/config`);
+
+export const listOnlineDocumentPermissions = (id: number) =>
+    get<OnlineDocumentPermission[]>(`/api/online-documents/${id}/permissions`);
+
+export const searchOnlineDocumentPermissionUsers = (keyword: string = '') =>
+    get<OnlineDocumentPermissionUser[]>('/api/online-documents/permission-users', { keyword });
+
+export const saveOnlineDocumentPermissions = (id: number, userIds: number[]) =>
+    put<OnlineDocumentPermission[]>(`/api/online-documents/${id}/permissions`, { userIds });

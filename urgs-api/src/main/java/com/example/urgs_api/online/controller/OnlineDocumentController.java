@@ -1,8 +1,10 @@
 package com.example.urgs_api.online.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.example.urgs_api.online.dto.OnlineDocumentPermissionDTO;
 import com.example.urgs_api.online.entity.OnlineDocument;
 import com.example.urgs_api.online.service.OnlineDocumentService;
+import com.example.urgs_api.user.dto.UserDTO;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -96,6 +98,31 @@ public class OnlineDocumentController {
         return ResponseEntity.ok().build();
     }
 
+    @GetMapping("/{id}/permissions")
+    public ResponseEntity<List<OnlineDocumentPermissionDTO>> listPermissions(
+            HttpServletRequest request,
+            @PathVariable Long id) {
+        Long userId = getUserId(request);
+        return ResponseEntity.ok(documentService.listPermissions(id, userId));
+    }
+
+    @GetMapping("/permission-users")
+    public ResponseEntity<List<UserDTO>> searchPermissionUsers(
+            HttpServletRequest request,
+            @RequestParam(required = false) String keyword) {
+        getUserId(request);
+        return ResponseEntity.ok(documentService.searchPermissionUsers(keyword));
+    }
+
+    @PutMapping("/{id}/permissions")
+    public ResponseEntity<List<OnlineDocumentPermissionDTO>> savePermissions(
+            HttpServletRequest request,
+            @PathVariable Long id,
+            @RequestBody UpdateDocumentPermissionsRequest req) {
+        Long userId = getUserId(request);
+        return ResponseEntity.ok(documentService.savePermissions(id, userId, req.getUserIds()));
+    }
+
     @GetMapping("/{id}/onlyoffice/config")
     public ResponseEntity<Map<String, Object>> getOnlyOfficeConfig(
             HttpServletRequest request,
@@ -112,7 +139,8 @@ public class OnlineDocumentController {
 
         Map<String, Object> document = new HashMap<>();
         document.put("fileType", extension);
-        document.put("key", "online-" + doc.getId() + "-" + doc.getUpdateTime().toString().replaceAll("[^0-9]", ""));
+        // Keep the key stable so all users editing the same online document join one co-editing session.
+        document.put("key", "online-" + doc.getId());
         document.put("title", fileName);
         document.put("url", fileUrl);
         document.put("permissions", Map.of(
@@ -126,11 +154,12 @@ public class OnlineDocumentController {
         editorConfig.put("callbackUrl", callbackUrl);
         editorConfig.put("user", Map.of(
                 "id", String.valueOf(userId),
-                "name", "用户" + userId));
+                "name", documentService.getUserDisplayName(userId)));
         editorConfig.put("customization", Map.of(
                 "autosave", true,
                 "forcesave", true,
-                "compactToolbar", false));
+                "compactToolbar", false,
+                "help", false));
 
         Map<String, Object> config = new HashMap<>();
         config.put("type", "desktop");
@@ -270,6 +299,11 @@ public class OnlineDocumentController {
     public static class UpdateDocumentRequest {
         private String title;
         private String fileName;
+    }
+
+    @Data
+    public static class UpdateDocumentPermissionsRequest {
+        private List<Long> userIds;
     }
 
     @Data

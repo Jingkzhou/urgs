@@ -117,6 +117,12 @@ DEPLOY_ENV=prod deploy/package-services.sh api web executor rag agent lineage
 
 # 只升级 api 和 web
 DEPLOY_ENV=prod PACKAGE_NAME=urgs-api-web deploy/package-services.sh api web nginx
+
+# 只补充在线文档组件
+DEPLOY_ENV=prod PACKAGE_NAME=urgs-onlyoffice deploy/package-services.sh onlyoffice
+
+# 升级 api、web，并随包带上在线文档组件
+DEPLOY_ENV=prod PACKAGE_NAME=urgs-api-web-onlyoffice deploy/package-services.sh api web nginx onlyoffice
 ```
 
 如果服务器已经安装好 Nginx / Redis，不想把组件打进包：

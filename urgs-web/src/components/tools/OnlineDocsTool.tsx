@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dropdown, Empty, Input, Modal, Pagination, Select, Spin, Table, Upload, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import type { UploadProps } from 'antd';
+import type { MenuProps, UploadProps } from 'antd';
 import {
     Copy,
     Download,
@@ -16,16 +16,20 @@ import {
     Presentation,
     RefreshCcw,
     Search,
+    Share2,
     SlidersHorizontal,
     Trash2,
     UploadCloud,
 } from 'lucide-react';
-import type { OnlineDocument } from '../../api/onlineDocs';
+import type { OnlineDocument, OnlineDocumentPermission, OnlineDocumentPermissionUser } from '../../api/onlineDocs';
 import {
     createBlankOnlineDocument,
     createOnlineDocument,
     deleteOnlineDocument,
+    listOnlineDocumentPermissions,
     listOnlineDocuments,
+    saveOnlineDocumentPermissions,
+    searchOnlineDocumentPermissionUsers,
     updateOnlineDocument,
     uploadOnlineDocumentFile,
 } from '../../api/onlineDocs';
@@ -34,6 +38,7 @@ import OnlyOfficeEditorModal, { isOnlyOfficeSupported } from './OnlyOfficeEditor
 const PAGE_SIZE = 12;
 type BlankDocumentType = 'word' | 'cell' | 'slide';
 type TabKey = 'recent' | 'space' | 'favorite';
+type UserOption = { value: number; label: string };
 
 const blankTypeOptions: { value: BlankDocumentType; label: string; defaultTitle: string }[] = [
     { value: 'word', label: '文字文档', defaultTitle: '新建文档' },
@@ -75,6 +80,12 @@ const fileTypeConfig: Record<FileTypeKey, { icon: React.FC<{ size?: number }>; c
     other: { icon: FileText, color: '#8C8C8C', bg: '#FAFAFA' },
 };
 
+const mergeUserOptions = (current: UserOption[], next: UserOption[]) => {
+    const optionMap = new Map<number, UserOption>();
+    [...current, ...next].forEach(option => optionMap.set(option.value, option));
+    return Array.from(optionMap.values());
+};
+
 // ---- component ----
 
 const OnlineDocsTool: React.FC = () => {
@@ -93,6 +104,13 @@ const OnlineDocsTool: React.FC = () => {
     const [createTitle, setCreateTitle] = useState('新建文档');
     const [createType, setCreateType] = useState<BlankDocumentType>('word');
     const [creating, setCreating] = useState(false);
+    const [permissionDoc, setPermissionDoc] = useState<OnlineDocument | null>(null);
+    const [permissionUserIds, setPermissionUserIds] = useState<number[]>([]);
+    const [permissionOptions, setPermissionOptions] = useState<UserOption[]>([]);
+    const [permissionSearchValue, setPermissionSearchValue] = useState('');
+    const [permissionLoading, setPermissionLoading] = useState(false);
+    const [permissionSaving, setPermissionSaving] = useState(false);
+    const permissionSearchSeq = useRef(0);
 
     // ui state
     const [activeTab, setActiveTab] = useState<TabKey>('recent');
@@ -176,6 +194,79 @@ const OnlineDocsTool: React.FC = () => {
         });
     };
 
+    const toUserOptions = (users: OnlineDocumentPermissionUser[], ownerUserId?: number) =>
+        users
+            .map(user => ({ ...user, userId: Number(user.id) }))
+            .filter(user => Number.isFinite(user.userId) && user.userId !== ownerUserId)
+            .map(user => ({
+                value: user.userId,
+                label: `${user.name || `用户${user.userId}`}${user.empId ? `（${user.empId}）` : ''}`,
+            }));
+
+    const searchPermissionUsers = async (
+        value: string,
+        ownerUserId = permissionDoc?.userId,
+        selectedUserIds = permissionUserIds,
+    ) => {
+        const searchSeq = permissionSearchSeq.current + 1;
+        permissionSearchSeq.current = searchSeq;
+        setPermissionLoading(true);
+        try {
+            const users = await searchOnlineDocumentPermissionUsers(value);
+            if (searchSeq !== permissionSearchSeq.current) return;
+            setPermissionOptions(options => {
+                const selectedOptions = options.filter(option => selectedUserIds.includes(option.value));
+                return mergeUserOptions(selectedOptions, toUserOptions(users, ownerUserId));
+            });
+        } catch {
+            message.error('用户搜索失败');
+        } finally {
+            if (searchSeq === permissionSearchSeq.current) {
+                setPermissionLoading(false);
+            }
+        }
+    };
+
+    const openPermissions = async (doc: OnlineDocument) => {
+        setPermissionDoc(doc);
+        setPermissionSearchValue('');
+        setPermissionLoading(true);
+        try {
+            const permissions = await listOnlineDocumentPermissions(doc.id);
+            const selectedUserIds = permissions.map(item => item.userId);
+            setPermissionUserIds(selectedUserIds);
+            setPermissionOptions(permissions.map(item => ({
+                value: item.userId,
+                label: `${item.userName || `用户${item.userId}`}${item.empId ? `（${item.empId}）` : ''}`,
+            })));
+            await searchPermissionUsers('', doc.userId, selectedUserIds);
+        } catch {
+            message.error('文档授权加载失败');
+        } finally {
+            setPermissionLoading(false);
+        }
+    };
+
+    const savePermissions = async () => {
+        if (!permissionDoc) return;
+        setPermissionSaving(true);
+        try {
+            const permissions: OnlineDocumentPermission[] = await saveOnlineDocumentPermissions(
+                permissionDoc.id,
+                permissionUserIds,
+            );
+            setPermissionUserIds(permissions.map(item => item.userId));
+            setPermissionSearchValue('');
+            setPermissionDoc(null);
+            message.success('文档授权已更新');
+            loadDocuments();
+        } catch {
+            message.error('文档授权保存失败');
+        } finally {
+            setPermissionSaving(false);
+        }
+    };
+
     const openRename = (doc: OnlineDocument) => {
         setRenamingDoc(doc);
         setRenameValue(doc.title);
@@ -241,6 +332,22 @@ const OnlineDocsTool: React.FC = () => {
         });
     };
 
+    const getActionItems = (doc: OnlineDocument): MenuProps['items'] => {
+        const items: MenuProps['items'] = [
+            { key: 'edit', icon: <Edit3 size={14} />, label: '在线打开', onClick: () => setEditorDoc(doc) },
+            { key: 'download', icon: <Download size={14} />, label: '下载', onClick: () => handleDownload(doc) },
+            { key: 'rename', icon: <FileText size={14} />, label: '重命名', onClick: () => openRename(doc) },
+        ];
+        if (doc.canManagePermissions) {
+            items.push(
+                { key: 'share', icon: <Share2 size={14} />, label: '授权', onClick: () => openPermissions(doc) },
+                { type: 'divider' },
+                { key: 'delete', icon: <Trash2 size={14} />, label: '删除', danger: true, onClick: () => handleDelete(doc) },
+            );
+        }
+        return items;
+    };
+
     // ---- derived ----
 
     const quickAccessDocs = useMemo(() => documents.slice(0, 4), [documents]);
@@ -284,7 +391,11 @@ const OnlineDocsTool: React.FC = () => {
             dataIndex: 'userId',
             key: 'owner',
             width: '12%',
-            render: () => <span className="text-sm text-gray-500">我</span>,
+            render: (_: unknown, record: OnlineDocument) => (
+                <span className="text-sm text-gray-500">
+                    {record.canManagePermissions ? '我' : record.ownerName || `用户${record.userId}`}
+                </span>
+            ),
         },
         {
             title: '位置',
@@ -333,13 +444,7 @@ const OnlineDocsTool: React.FC = () => {
                     </button>
                     <Dropdown
                         menu={{
-                            items: [
-                                { key: 'edit', icon: <Edit3 size={14} />, label: '在线打开', onClick: () => setEditorDoc(record) },
-                                { key: 'download', icon: <Download size={14} />, label: '下载', onClick: () => handleDownload(record) },
-                                { key: 'rename', icon: <FileText size={14} />, label: '重命名', onClick: () => openRename(record) },
-                                { type: 'divider' },
-                                { key: 'delete', icon: <Trash2 size={14} />, label: '删除', danger: true, onClick: () => handleDelete(record) },
-                            ],
+                            items: getActionItems(record),
                         }}
                         trigger={['click']}
                     >
@@ -395,13 +500,7 @@ const OnlineDocsTool: React.FC = () => {
                     </button>
                     <Dropdown
                         menu={{
-                            items: [
-                                { key: 'edit', icon: <Edit3 size={14} />, label: '在线打开', onClick: () => setEditorDoc(doc) },
-                                { key: 'download', icon: <Download size={14} />, label: '下载', onClick: () => handleDownload(doc) },
-                                { key: 'rename', icon: <FileText size={14} />, label: '重命名', onClick: () => openRename(doc) },
-                                { type: 'divider' },
-                                { key: 'delete', icon: <Trash2 size={14} />, label: '删除', danger: true, onClick: () => handleDelete(doc) },
-                            ],
+                            items: getActionItems(doc),
                         }}
                         trigger={['click']}
                     >
@@ -688,6 +787,48 @@ const OnlineDocsTool: React.FC = () => {
                             onPressEnter={saveCreate}
                         />
                     </div>
+                </div>
+            </Modal>
+
+            {/* Permission Modal */}
+            <Modal
+                open={!!permissionDoc}
+                title="文档授权"
+                okText="保存"
+                cancelText="取消"
+                confirmLoading={permissionSaving}
+                onOk={savePermissions}
+                onCancel={() => {
+                    setPermissionDoc(null);
+                    setPermissionSearchValue('');
+                }}
+                destroyOnHidden
+            >
+                <div className="space-y-3">
+                    <div className="text-sm font-medium text-gray-900 truncate">
+                        {permissionDoc?.title}
+                    </div>
+                    <Select
+                        mode="multiple"
+                        allowClear
+                        showSearch
+                        className="w-full"
+                        placeholder="搜索用户并授权"
+                        value={permissionUserIds}
+                        searchValue={permissionSearchValue}
+                        options={permissionOptions}
+                        loading={permissionLoading}
+                        filterOption={false}
+                        onSearch={(value) => {
+                            setPermissionSearchValue(value);
+                            searchPermissionUsers(value);
+                        }}
+                        onChange={(value) => {
+                            setPermissionUserIds(value);
+                            setPermissionSearchValue('');
+                            searchPermissionUsers('', permissionDoc?.userId, value);
+                        }}
+                    />
                 </div>
             </Modal>
 

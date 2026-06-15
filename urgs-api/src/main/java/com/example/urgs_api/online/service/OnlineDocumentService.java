@@ -3,8 +3,14 @@ package com.example.urgs_api.online.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.example.urgs_api.online.dto.OnlineDocumentPermissionDTO;
 import com.example.urgs_api.online.entity.OnlineDocument;
+import com.example.urgs_api.online.entity.OnlineDocumentPermission;
 import com.example.urgs_api.online.mapper.OnlineDocumentMapper;
+import com.example.urgs_api.online.mapper.OnlineDocumentPermissionMapper;
+import com.example.urgs_api.user.dto.UserDTO;
+import com.example.urgs_api.user.mapper.UserMapper;
+import com.example.urgs_api.user.model.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,8 +33,13 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -41,6 +52,8 @@ import java.util.zip.ZipOutputStream;
 public class OnlineDocumentService {
 
     private final OnlineDocumentMapper documentMapper;
+    private final OnlineDocumentPermissionMapper permissionMapper;
+    private final UserMapper userMapper;
 
     @Value("${urgs.profile:./uploads}")
     private String profile;
@@ -49,8 +62,20 @@ public class OnlineDocumentService {
     private String onlyOfficeCallbackSecret;
 
     public IPage<OnlineDocument> listDocuments(Long userId, String keyword, String fileType, int page, int size) {
+        List<Long> sharedDocumentIds = permissionMapper.selectList(
+                        new LambdaQueryWrapper<OnlineDocumentPermission>()
+                                .eq(OnlineDocumentPermission::getUserId, userId))
+                .stream()
+                .map(OnlineDocumentPermission::getDocumentId)
+                .toList();
+
         LambdaQueryWrapper<OnlineDocument> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(OnlineDocument::getUserId, userId);
+        wrapper.and(w -> {
+            w.eq(OnlineDocument::getUserId, userId);
+            if (!sharedDocumentIds.isEmpty()) {
+                w.or().in(OnlineDocument::getId, sharedDocumentIds);
+            }
+        });
         if (StringUtils.hasText(keyword)) {
             wrapper.like(OnlineDocument::getTitle, keyword);
         }
@@ -70,7 +95,9 @@ public class OnlineDocumentService {
             }
         }
         wrapper.orderByDesc(OnlineDocument::getUpdateTime);
-        return documentMapper.selectPage(new Page<>(page, size), wrapper);
+        IPage<OnlineDocument> result = documentMapper.selectPage(new Page<>(page, size), wrapper);
+        fillPresentationFields(result.getRecords(), userId);
+        return result;
     }
 
     private List<String> resolveExtensions(String fileType) {
@@ -144,7 +171,9 @@ public class OnlineDocumentService {
 
     @Transactional
     public void deleteDocument(Long id, Long userId) {
-        OnlineDocument doc = getAccessibleDocument(id, userId);
+        OnlineDocument doc = getOwnedDocument(id, userId);
+        permissionMapper.delete(new LambdaQueryWrapper<OnlineDocumentPermission>()
+                .eq(OnlineDocumentPermission::getDocumentId, doc.getId()));
         documentMapper.deleteById(doc.getId());
         log.info("删除在线文档: {}", id);
     }
@@ -154,10 +183,101 @@ public class OnlineDocumentService {
         if (doc == null) {
             throw new RuntimeException("在线文档不存在");
         }
-        if (userId.equals(doc.getUserId())) {
-            return doc;
+        if (!userId.equals(doc.getUserId()) && !hasPermission(id, userId)) {
+            throw new RuntimeException("无权访问该在线文档");
         }
-        throw new RuntimeException("无权访问该在线文档");
+        fillPresentationFields(List.of(doc), userId);
+        return doc;
+    }
+
+    public OnlineDocument getOwnedDocument(Long id, Long userId) {
+        OnlineDocument doc = documentMapper.selectById(id);
+        if (doc == null) {
+            throw new RuntimeException("在线文档不存在");
+        }
+        if (!userId.equals(doc.getUserId())) {
+            throw new RuntimeException("仅文档所有者可执行该操作");
+        }
+        fillPresentationFields(List.of(doc), userId);
+        return doc;
+    }
+
+    public List<OnlineDocumentPermissionDTO> listPermissions(Long documentId, Long ownerId) {
+        getOwnedDocument(documentId, ownerId);
+        List<OnlineDocumentPermission> permissions = permissionMapper.selectList(
+                new LambdaQueryWrapper<OnlineDocumentPermission>()
+                        .eq(OnlineDocumentPermission::getDocumentId, documentId)
+                        .orderByDesc(OnlineDocumentPermission::getCreateTime));
+        if (permissions.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, User> users = userMapper.selectBatchIds(
+                        permissions.stream().map(OnlineDocumentPermission::getUserId).toList())
+                .stream()
+                .collect(Collectors.toMap(User::getId, Function.identity(), (left, right) -> left));
+
+        return permissions.stream().map(permission -> {
+            User user = users.get(permission.getUserId());
+            OnlineDocumentPermissionDTO dto = new OnlineDocumentPermissionDTO();
+            dto.setUserId(permission.getUserId());
+            dto.setUserName(user == null ? "用户" + permission.getUserId() : user.getName());
+            dto.setEmpId(user == null ? null : user.getEmpId());
+            dto.setCreateTime(permission.getCreateTime());
+            return dto;
+        }).toList();
+    }
+
+    public List<UserDTO> searchPermissionUsers(String keyword) {
+        return userMapper.searchUsers(keyword).stream()
+                .limit(50)
+                .map(UserDTO::fromEntity)
+                .toList();
+    }
+
+    public String getUserDisplayName(Long userId) {
+        User user = userId == null ? null : userMapper.selectById(userId);
+        if (user == null) {
+            return "用户" + userId;
+        }
+        if (StringUtils.hasText(user.getName())) {
+            return user.getName();
+        }
+        if (StringUtils.hasText(user.getEmpId())) {
+            return user.getEmpId();
+        }
+        return "用户" + userId;
+    }
+
+    @Transactional
+    public List<OnlineDocumentPermissionDTO> savePermissions(Long documentId, Long ownerId, List<Long> userIds) {
+        OnlineDocument doc = getOwnedDocument(documentId, ownerId);
+        Set<Long> nextUserIds = userIds == null ? Set.of() : userIds.stream()
+                .filter(id -> id != null && !id.equals(ownerId))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        List<Long> validUserIds = nextUserIds.isEmpty()
+                ? List.of()
+                : userMapper.selectBatchIds(nextUserIds).stream()
+                        .map(User::getId)
+                        .toList();
+
+        permissionMapper.delete(new LambdaQueryWrapper<OnlineDocumentPermission>()
+                .eq(OnlineDocumentPermission::getDocumentId, documentId));
+
+        LocalDateTime now = LocalDateTime.now();
+        for (Long sharedUserId : validUserIds) {
+            OnlineDocumentPermission permission = new OnlineDocumentPermission();
+            permission.setDocumentId(documentId);
+            permission.setUserId(sharedUserId);
+            permission.setCreateBy(ownerId);
+            permission.setCreateTime(now);
+            permissionMapper.insert(permission);
+        }
+
+        log.info("用户 {} 更新在线文档授权: documentId={}, sharedUsers={}",
+                ownerId, doc.getId(), validUserIds);
+        return listPermissions(documentId, ownerId);
     }
 
     public OnlineDocument getDocument(Long id) {
@@ -166,6 +286,32 @@ public class OnlineDocumentService {
             throw new RuntimeException("在线文档不存在");
         }
         return doc;
+    }
+
+    private boolean hasPermission(Long documentId, Long userId) {
+        return permissionMapper.selectCount(new LambdaQueryWrapper<OnlineDocumentPermission>()
+                .eq(OnlineDocumentPermission::getDocumentId, documentId)
+                .eq(OnlineDocumentPermission::getUserId, userId)) > 0;
+    }
+
+    private void fillPresentationFields(List<OnlineDocument> documents, Long currentUserId) {
+        if (documents == null || documents.isEmpty()) {
+            return;
+        }
+        Set<Long> ownerIds = documents.stream()
+                .map(OnlineDocument::getUserId)
+                .collect(Collectors.toSet());
+        Map<Long, User> users = ownerIds.isEmpty() ? Map.of() : userMapper.selectBatchIds(ownerIds)
+                .stream()
+                .collect(Collectors.toMap(User::getId, Function.identity(), (left, right) -> left));
+
+        for (OnlineDocument doc : documents) {
+            User owner = users.get(doc.getUserId());
+            boolean isOwner = currentUserId != null && currentUserId.equals(doc.getUserId());
+            doc.setOwnerName(owner == null ? "用户" + doc.getUserId() : owner.getName());
+            doc.setShared(!isOwner);
+            doc.setCanManagePermissions(isOwner);
+        }
     }
 
     public String buildOnlyOfficeCallbackToken(Long documentId, String fileUrl) {

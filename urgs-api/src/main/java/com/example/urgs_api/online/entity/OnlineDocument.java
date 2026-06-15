@@ -1,6 +1,7 @@
 package com.example.urgs_api.online.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -37,4 +38,16 @@ public class OnlineDocument {
 
     /** 更新时间 */
     private LocalDateTime updateTime;
+
+    /** 所有者名称 */
+    @TableField(exist = false)
+    private String ownerName;
+
+    /** 是否由他人授权给当前用户 */
+    @TableField(exist = false)
+    private Boolean shared;
+
+    /** 当前用户是否可管理授权 */
+    @TableField(exist = false)
+    private Boolean canManagePermissions;
 }
