@@ -27,6 +27,7 @@ import {
     createBlankOnlineDocument,
     createOnlineDocument,
     deleteOnlineDocument,
+    deleteOnlineDocumentPermissionGroup,
     updateOnlineDocument,
     uploadOnlineDocumentFile,
 } from '../../api/onlineDocs';
@@ -718,8 +719,7 @@ const OnlineDocsTool: React.FC = () => {
                 okButtonProps={{ danger: true }}
                 onOk={async () => {
                     if (groupDeleteConfirm) {
-                        const { deleteOnlineDocumentPermissionGroup: delGroup } = await import('../../api/onlineDocs');
-                        await delGroup(groupDeleteConfirm);
+                        await deleteOnlineDocumentPermissionGroup(groupDeleteConfirm);
                         message.success('授权组已删除');
                         setGroupDeleteConfirm(null);
                         openGroupManager();
