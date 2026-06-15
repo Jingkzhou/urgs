@@ -1,6 +1,6 @@
 package com.example.urgs_api.online.controller;
 
-import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.example.urgs_api.common.PageResult;
 import com.example.urgs_api.common.exception.UnauthorizedException;
 import com.example.urgs_api.online.dto.*;
 import com.example.urgs_api.online.entity.OnlineDocument;
@@ -24,7 +24,6 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * 在线文档控制器
@@ -47,29 +46,29 @@ public class OnlineDocumentController {
     private String onlyOfficeJwtSecret;
 
     @GetMapping
-    public ResponseEntity<IPage<OnlineDocument>> listDocuments(
+    public ResponseEntity<PageResult<OnlineDocument>> listDocuments(
             HttpServletRequest request,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String fileType,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
         Long userId = getUserId(request);
-        return ResponseEntity.ok(documentService.listDocuments(userId, keyword, fileType, page, size));
+        return ResponseEntity.ok(PageResult.of(documentService.listDocuments(userId, keyword, fileType, page, size)));
     }
 
     @GetMapping("/favorite")
-    public ResponseEntity<IPage<OnlineDocument>> listFavoriteDocuments(
+    public ResponseEntity<PageResult<OnlineDocument>> listFavoriteDocuments(
             HttpServletRequest request,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String fileType,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
         Long userId = getUserId(request);
-        return ResponseEntity.ok(documentService.listFavoriteDocuments(userId, keyword, fileType, page, size));
+        return ResponseEntity.ok(PageResult.of(documentService.listFavoriteDocuments(userId, keyword, fileType, page, size)));
     }
 
     @GetMapping("/space")
-    public ResponseEntity<IPage<OnlineDocument>> listSpaceDocuments(
+    public ResponseEntity<PageResult<OnlineDocument>> listSpaceDocuments(
             HttpServletRequest request,
             @RequestParam(required = false) String spaceType,
             @RequestParam(required = false) String keyword,
@@ -77,7 +76,7 @@ public class OnlineDocumentController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
         Long userId = getUserId(request);
-        return ResponseEntity.ok(documentService.listSpaceDocuments(userId, spaceType, keyword, fileType, page, size));
+        return ResponseEntity.ok(PageResult.of(documentService.listSpaceDocuments(userId, spaceType, keyword, fileType, page, size)));
     }
 
     @PostMapping("/{id}/favorite")
