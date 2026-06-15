@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { FileText, Hammer, Search, Sparkles, Wrench } from 'lucide-react';
 import OnlineDocsTool from './OnlineDocsTool';
 
@@ -10,6 +10,7 @@ interface ToolDefinition {
     description: string;
     icon: React.ComponentType<{ size?: number; className?: string }>;
     status: string;
+    component: React.ComponentType;
 }
 
 const tools: ToolDefinition[] = [
@@ -19,19 +20,40 @@ const tools: ToolDefinition[] = [
         description: 'Office 文件在线预览、编辑与多人协同',
         icon: FileText,
         status: 'ONLYOFFICE Docs',
+        component: OnlineDocsTool,
     },
 ];
 
+const HASH_PREFIX = 'tools/';
+
 const ToolsPage: React.FC = () => {
     const [activeTool, setActiveTool] = useState<ToolKey>('online-docs');
+    const [searchText, setSearchText] = useState('');
+
     const activeToolConfig = tools.find(tool => tool.key === activeTool) || tools[0];
     const ActiveIcon = activeToolConfig.icon;
 
+    // Filter tools by search text
+    const filteredTools = useMemo(() => {
+        if (!searchText.trim()) return tools;
+        const lower = searchText.toLowerCase();
+        return tools.filter(
+            tool =>
+                tool.title.toLowerCase().includes(lower) ||
+                tool.description.toLowerCase().includes(lower),
+        );
+    }, [searchText]);
+
+    // Sync active tool from URL hash
     useEffect(() => {
         const syncToolFromHash = () => {
             const path = window.location.hash.split('?')[0].replace('#/', '');
-            if (path === 'tools/online-docs') {
-                setActiveTool('online-docs');
+            if (path.startsWith(HASH_PREFIX)) {
+                const requestedKey = path.slice(HASH_PREFIX.length);
+                const match = tools.find(tool => tool.key === requestedKey);
+                if (match) {
+                    setActiveTool(match.key);
+                }
             }
         };
         syncToolFromHash();
@@ -41,8 +63,10 @@ const ToolsPage: React.FC = () => {
 
     const handleToolChange = (key: ToolKey) => {
         setActiveTool(key);
-        window.location.hash = key === 'online-docs' ? '#/tools/online-docs' : '#/tools';
+        window.location.hash = `#/${HASH_PREFIX}${key}`;
     };
+
+    const ActiveToolComponent = activeToolConfig.component;
 
     return (
         <div className="flex h-full min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -57,14 +81,28 @@ const ToolsPage: React.FC = () => {
                             <p className="text-xs font-medium text-slate-500">常用效率工具集中入口</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-400">
+                    <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 transition-colors ${
+                        searchText ? 'border-[#1677FF]/30 bg-white text-slate-600' : 'border-slate-200 bg-white text-slate-400'
+                    }`}>
                         <Search size={15} />
-                        <span className="text-xs">搜索工具</span>
+                        <input
+                            type="text"
+                            className="flex-1 bg-transparent text-xs outline-none placeholder:text-slate-400"
+                            placeholder="搜索工具"
+                            value={searchText}
+                            onChange={e => setSearchText(e.target.value)}
+                        />
+                        {searchText && (
+                            <button onClick={() => setSearchText('')}
+                                className="text-slate-400 hover:text-slate-600">
+                                ✕
+                            </button>
+                        )}
                     </div>
                 </div>
 
                 <div className="flex-1 space-y-2 overflow-y-auto p-3">
-                    {tools.map(tool => {
+                    {filteredTools.map(tool => {
                         const Icon = tool.icon;
                         const active = tool.key === activeTool;
                         return (
@@ -95,6 +133,9 @@ const ToolsPage: React.FC = () => {
                             </button>
                         );
                     })}
+                    {filteredTools.length === 0 && (
+                        <div className="py-10 text-center text-xs text-slate-400">未找到匹配的工具</div>
+                    )}
                 </div>
             </aside>
 
@@ -116,7 +157,7 @@ const ToolsPage: React.FC = () => {
                 </div>
 
                 <div className="min-h-0 flex-1">
-                    {activeTool === 'online-docs' && <OnlineDocsTool />}
+                    <ActiveToolComponent />
                 </div>
             </section>
         </div>

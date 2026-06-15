@@ -22,7 +22,7 @@ import {
     UploadCloud,
     Users,
 } from 'lucide-react';
-import type { OnlineDocument, OnlineDocumentPage } from '../../api/onlineDocs';
+import type { OnlineDocument } from '../../api/onlineDocs';
 import {
     createBlankOnlineDocument,
     createOnlineDocument,
@@ -30,7 +30,7 @@ import {
     updateOnlineDocument,
     uploadOnlineDocumentFile,
 } from '../../api/onlineDocs';
-import OnlyOfficeEditorModal, { isOnlyOfficeSupported } from './OnlyOfficeEditorModal';
+import OnlyOfficeEditorModal from './OnlyOfficeEditorModal';
 import { useDocumentList } from './hooks/useDocumentList';
 import type { TabKey } from './hooks/useDocumentList';
 import { usePermissionGroups } from './hooks/usePermissionGroups';
