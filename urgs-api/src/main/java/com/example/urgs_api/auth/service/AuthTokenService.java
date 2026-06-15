@@ -12,7 +12,7 @@ public class AuthTokenService {
 
     private static class Session {
         final Long userId;
-        final Instant expiresAt;
+        Instant expiresAt;
 
         Session(Long userId, Instant expiresAt) {
             this.userId = userId;
@@ -36,6 +36,7 @@ public class AuthTokenService {
             sessions.remove(token);
             return null;
         }
+        s.expiresAt = Instant.now().plusSeconds(TTL_SECONDS);
         return s.userId;
     }
 }

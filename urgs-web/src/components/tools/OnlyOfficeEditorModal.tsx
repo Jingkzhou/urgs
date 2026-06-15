@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { Download, RotateCcw, X } from 'lucide-react';
 import type { OnlineDocument } from '../../api/onlineDocs';
 import { getOnlineDocumentOnlyOfficeConfig } from '../../api/onlineDocs';
+import { userService } from '../../services/userService';
 
 declare global {
     interface Window {
@@ -122,6 +123,17 @@ const OnlyOfficeEditorModal: React.FC<OnlyOfficeEditorModalProps> = ({
         openEditor();
         return destroyEditor;
         // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, doc?.id]);
+
+    useEffect(() => {
+        if (!open || !doc) return;
+        const keepAlive = () => {
+            userService.getProfile().catch((err) => {
+                console.warn('ONLYOFFICE keepalive failed', err);
+            });
+        };
+        const timer = window.setInterval(keepAlive, 5 * 60 * 1000);
+        return () => window.clearInterval(timer);
     }, [open, doc?.id]);
 
     useEffect(() => {

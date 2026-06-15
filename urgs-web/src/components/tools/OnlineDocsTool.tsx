@@ -20,19 +20,25 @@ import {
     SlidersHorizontal,
     Trash2,
     UploadCloud,
+    Users,
 } from 'lucide-react';
 import type { OnlineDocument, OnlineDocumentPermission, OnlineDocumentPermissionUser } from '../../api/onlineDocs';
 import {
+    createOnlineDocumentPermissionGroup,
     createBlankOnlineDocument,
     createOnlineDocument,
     deleteOnlineDocument,
+    deleteOnlineDocumentPermissionGroup,
+    listOnlineDocumentPermissionGroups,
     listOnlineDocumentPermissions,
     listOnlineDocuments,
     saveOnlineDocumentPermissions,
     searchOnlineDocumentPermissionUsers,
     updateOnlineDocument,
+    updateOnlineDocumentPermissionGroup,
     uploadOnlineDocumentFile,
 } from '../../api/onlineDocs';
+import type { OnlineDocumentPermissionGroup } from '../../api/onlineDocs';
 import OnlyOfficeEditorModal, { isOnlyOfficeSupported } from './OnlyOfficeEditorModal';
 
 const PAGE_SIZE = 12;
@@ -108,9 +114,20 @@ const OnlineDocsTool: React.FC = () => {
     const [permissionUserIds, setPermissionUserIds] = useState<number[]>([]);
     const [permissionOptions, setPermissionOptions] = useState<UserOption[]>([]);
     const [permissionSearchValue, setPermissionSearchValue] = useState('');
+    const [permissionGroups, setPermissionGroups] = useState<OnlineDocumentPermissionGroup[]>([]);
     const [permissionLoading, setPermissionLoading] = useState(false);
     const [permissionSaving, setPermissionSaving] = useState(false);
     const permissionSearchSeq = useRef(0);
+    const [groupManagerOpen, setGroupManagerOpen] = useState(false);
+    const [editingGroupId, setEditingGroupId] = useState<number | null>(null);
+    const [groupName, setGroupName] = useState('');
+    const [groupDescription, setGroupDescription] = useState('');
+    const [groupUserIds, setGroupUserIds] = useState<number[]>([]);
+    const [groupOptions, setGroupOptions] = useState<UserOption[]>([]);
+    const [groupSearchValue, setGroupSearchValue] = useState('');
+    const [groupLoading, setGroupLoading] = useState(false);
+    const [groupSaving, setGroupSaving] = useState(false);
+    const groupSearchSeq = useRef(0);
 
     // ui state
     const [activeTab, setActiveTab] = useState<TabKey>('recent');
@@ -227,14 +244,125 @@ const OnlineDocsTool: React.FC = () => {
         }
     };
 
+    const applyPermissionGroup = (groupId: number) => {
+        const group = permissionGroups.find(item => item.id === groupId);
+        if (!group) return;
+
+        const groupOptions = toUserOptions(group.members, permissionDoc?.userId);
+        const groupUserIds = groupOptions.map(option => option.value);
+        setPermissionOptions(options => mergeUserOptions(options, groupOptions));
+        setPermissionUserIds(userIds => Array.from(new Set([...userIds, ...groupUserIds])));
+    };
+
+    const searchGroupUsers = async (value: string, selectedUserIds = groupUserIds) => {
+        const searchSeq = groupSearchSeq.current + 1;
+        groupSearchSeq.current = searchSeq;
+        setGroupLoading(true);
+        try {
+            const users = await searchOnlineDocumentPermissionUsers(value);
+            if (searchSeq !== groupSearchSeq.current) return;
+            setGroupOptions(options => {
+                const selectedOptions = options.filter(option => selectedUserIds.includes(option.value));
+                return mergeUserOptions(selectedOptions, toUserOptions(users));
+            });
+        } catch {
+            message.error('用户搜索失败');
+        } finally {
+            if (searchSeq === groupSearchSeq.current) {
+                setGroupLoading(false);
+            }
+        }
+    };
+
+    const resetGroupEditor = () => {
+        setEditingGroupId(null);
+        setGroupName('');
+        setGroupDescription('');
+        setGroupUserIds([]);
+        setGroupOptions([]);
+        setGroupSearchValue('');
+    };
+
+    const openGroupManager = async () => {
+        setGroupManagerOpen(true);
+        resetGroupEditor();
+        setGroupLoading(true);
+        try {
+            const groups = await listOnlineDocumentPermissionGroups();
+            setPermissionGroups(groups);
+        } catch {
+            message.error('授权组加载失败');
+        } finally {
+            setGroupLoading(false);
+        }
+    };
+
+    const editPermissionGroup = (group: OnlineDocumentPermissionGroup) => {
+        setEditingGroupId(group.id);
+        setGroupName(group.name);
+        setGroupDescription(group.description || '');
+        const options = toUserOptions(group.members);
+        setGroupOptions(options);
+        setGroupUserIds(options.map(option => option.value));
+        setGroupSearchValue('');
+    };
+
+    const savePermissionGroup = async () => {
+        const name = groupName.trim();
+        if (!name) {
+            message.warning('请输入授权组名称');
+            return;
+        }
+        setGroupSaving(true);
+        try {
+            const payload = {
+                name,
+                description: groupDescription.trim() || undefined,
+                userIds: groupUserIds,
+            };
+            const group = editingGroupId
+                ? await updateOnlineDocumentPermissionGroup(editingGroupId, payload)
+                : await createOnlineDocumentPermissionGroup(payload);
+            setPermissionGroups(groups => [group, ...groups.filter(item => item.id !== group.id)]);
+            resetGroupEditor();
+            message.success('授权组已保存');
+        } catch {
+            message.error('授权组保存失败');
+        } finally {
+            setGroupSaving(false);
+        }
+    };
+
+    const removePermissionGroup = (group: OnlineDocumentPermissionGroup) => {
+        Modal.confirm({
+            title: '删除授权组',
+            content: `确认删除「${group.name}」吗？`,
+            okText: '删除',
+            okButtonProps: { danger: true },
+            cancelText: '取消',
+            onOk: async () => {
+                await deleteOnlineDocumentPermissionGroup(group.id);
+                setPermissionGroups(groups => groups.filter(item => item.id !== group.id));
+                if (editingGroupId === group.id) {
+                    resetGroupEditor();
+                }
+                message.success('授权组已删除');
+            },
+        });
+    };
+
     const openPermissions = async (doc: OnlineDocument) => {
         setPermissionDoc(doc);
         setPermissionSearchValue('');
         setPermissionLoading(true);
         try {
-            const permissions = await listOnlineDocumentPermissions(doc.id);
+            const [permissions, groups] = await Promise.all([
+                listOnlineDocumentPermissions(doc.id),
+                listOnlineDocumentPermissionGroups(),
+            ]);
             const selectedUserIds = permissions.map(item => item.userId);
             setPermissionUserIds(selectedUserIds);
+            setPermissionGroups(groups);
             setPermissionOptions(permissions.map(item => ({
                 value: item.userId,
                 label: `${item.userName || `用户${item.userId}`}${item.empId ? `（${item.empId}）` : ''}`,
@@ -648,6 +776,13 @@ const OnlineDocsTool: React.FC = () => {
                         <RefreshCcw size={14} />
                     </button>
                     <button
+                        onClick={openGroupManager}
+                        className="flex h-7 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
+                    >
+                        <Users size={14} />
+                        授权组
+                    </button>
+                    <button
                         onClick={openCreate}
                         className="flex h-7 items-center gap-1.5 rounded-md border border-[#1677FF]/20 bg-[#E6F4FF] px-2.5 text-xs font-medium text-[#1677FF] transition-colors hover:border-[#1677FF]/40 hover:bg-[#BAE0FF]"
                     >
@@ -790,6 +925,120 @@ const OnlineDocsTool: React.FC = () => {
                 </div>
             </Modal>
 
+            {/* Permission Group Manager */}
+            <Modal
+                open={groupManagerOpen}
+                title="我的授权组"
+                okText="保存组"
+                cancelText="关闭"
+                confirmLoading={groupSaving}
+                onOk={savePermissionGroup}
+                onCancel={() => {
+                    setGroupManagerOpen(false);
+                    resetGroupEditor();
+                }}
+                width={860}
+                destroyOnHidden
+            >
+                <div className="grid min-h-[420px] grid-cols-[260px_1fr] gap-4">
+                    <div className="border-r border-slate-100 pr-4">
+                        <div className="mb-3 flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-500">授权组</span>
+                            <button
+                                type="button"
+                                onClick={resetGroupEditor}
+                                className="rounded-md px-2 py-1 text-xs font-medium text-[#1677FF] hover:bg-[#E6F4FF]"
+                            >
+                                新建
+                            </button>
+                        </div>
+                        <div className="space-y-1">
+                            {permissionGroups.map(group => (
+                                <button
+                                    key={group.id}
+                                    type="button"
+                                    onClick={() => editPermissionGroup(group)}
+                                    className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                                        editingGroupId === group.id
+                                            ? 'bg-[#E6F4FF] text-[#1677FF]'
+                                            : 'text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    <span className="min-w-0 truncate">{group.name}</span>
+                                    <span className="ml-2 shrink-0 text-xs text-slate-400">{group.memberCount}人</span>
+                                </button>
+                            ))}
+                            {permissionGroups.length === 0 && (
+                                <div className="py-10 text-center text-sm text-slate-400">
+                                    暂无授权组
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="mb-1 block text-xs font-bold text-slate-500">组名称</label>
+                            <Input
+                                value={groupName}
+                                maxLength={100}
+                                placeholder="例如：EAST核对组"
+                                onChange={(event) => setGroupName(event.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-xs font-bold text-slate-500">描述</label>
+                            <Input
+                                value={groupDescription}
+                                maxLength={500}
+                                placeholder="可选"
+                                onChange={(event) => setGroupDescription(event.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-xs font-bold text-slate-500">成员</label>
+                            <Select
+                                mode="multiple"
+                                allowClear
+                                showSearch
+                                className="w-full"
+                                placeholder="搜索用户加入授权组"
+                                value={groupUserIds}
+                                searchValue={groupSearchValue}
+                                options={groupOptions}
+                                loading={groupLoading}
+                                filterOption={false}
+                                onSearch={(value) => {
+                                    setGroupSearchValue(value);
+                                    searchGroupUsers(value);
+                                }}
+                                onChange={(value) => {
+                                    setGroupUserIds(value);
+                                    setGroupSearchValue('');
+                                    searchGroupUsers('', value);
+                                }}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+                            <span className="text-xs text-slate-400">
+                                保存后可在文档授权弹窗中选择该组，组成员会展开为具体授权人员。
+                            </span>
+                            {editingGroupId && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const group = permissionGroups.find(item => item.id === editingGroupId);
+                                        if (group) removePermissionGroup(group);
+                                    }}
+                                    className="rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                                >
+                                    删除组
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </Modal>
+
             {/* Permission Modal */}
             <Modal
                 open={!!permissionDoc}
@@ -807,6 +1056,24 @@ const OnlineDocsTool: React.FC = () => {
                 <div className="space-y-3">
                     <div className="text-sm font-medium text-gray-900 truncate">
                         {permissionDoc?.title}
+                    </div>
+                    <div>
+                        <label className="mb-1 block text-xs font-bold text-slate-500">授权组</label>
+                        <Select
+                            allowClear
+                            showSearch
+                            className="w-full"
+                            placeholder="选择授权组快速添加成员"
+                            value={undefined}
+                            options={permissionGroups.map(group => ({
+                                value: group.id,
+                                label: `${group.name}（${group.memberCount}人）`,
+                            }))}
+                            filterOption={(input, option) =>
+                                String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                            }
+                            onSelect={applyPermissionGroup}
+                        />
                     </div>
                     <Select
                         mode="multiple"

@@ -1,6 +1,8 @@
 package com.example.urgs_api.online.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.example.urgs_api.online.dto.OnlineDocumentPermissionGroupDTO;
+import com.example.urgs_api.online.dto.OnlineDocumentPermissionGroupRequest;
 import com.example.urgs_api.online.dto.OnlineDocumentPermissionDTO;
 import com.example.urgs_api.online.entity.OnlineDocument;
 import com.example.urgs_api.online.service.OnlineDocumentService;
@@ -112,6 +114,38 @@ public class OnlineDocumentController {
             @RequestParam(required = false) String keyword) {
         getUserId(request);
         return ResponseEntity.ok(documentService.searchPermissionUsers(keyword));
+    }
+
+    @GetMapping("/permission-groups")
+    public ResponseEntity<List<OnlineDocumentPermissionGroupDTO>> listPermissionGroups(HttpServletRequest request) {
+        Long userId = getUserId(request);
+        return ResponseEntity.ok(documentService.listPermissionGroups(userId));
+    }
+
+    @PostMapping("/permission-groups")
+    public ResponseEntity<OnlineDocumentPermissionGroupDTO> createPermissionGroup(
+            HttpServletRequest request,
+            @RequestBody OnlineDocumentPermissionGroupRequest req) {
+        Long userId = getUserId(request);
+        return ResponseEntity.ok(documentService.createPermissionGroup(userId, req));
+    }
+
+    @PutMapping("/permission-groups/{groupId}")
+    public ResponseEntity<OnlineDocumentPermissionGroupDTO> updatePermissionGroup(
+            HttpServletRequest request,
+            @PathVariable Long groupId,
+            @RequestBody OnlineDocumentPermissionGroupRequest req) {
+        Long userId = getUserId(request);
+        return ResponseEntity.ok(documentService.updatePermissionGroup(userId, groupId, req));
+    }
+
+    @DeleteMapping("/permission-groups/{groupId}")
+    public ResponseEntity<Void> deletePermissionGroup(
+            HttpServletRequest request,
+            @PathVariable Long groupId) {
+        Long userId = getUserId(request);
+        documentService.deletePermissionGroup(userId, groupId);
+        return ResponseEntity.ok().build();
     }
 
     @PutMapping("/{id}/permissions")

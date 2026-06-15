@@ -45,6 +45,14 @@ export interface OnlineDocumentPermissionUser {
     empId?: string;
 }
 
+export interface OnlineDocumentPermissionGroup {
+    id: number;
+    name: string;
+    description?: string;
+    memberCount: number;
+    members: OnlineDocumentPermissionUser[];
+}
+
 export const listOnlineDocuments = (params: {
     keyword?: string;
     fileType?: string;
@@ -86,6 +94,24 @@ export const listOnlineDocumentPermissions = (id: number) =>
 
 export const searchOnlineDocumentPermissionUsers = (keyword: string = '') =>
     get<OnlineDocumentPermissionUser[]>('/api/online-documents/permission-users', { keyword });
+
+export const listOnlineDocumentPermissionGroups = () =>
+    get<OnlineDocumentPermissionGroup[]>('/api/online-documents/permission-groups');
+
+export const createOnlineDocumentPermissionGroup = (data: {
+    name: string;
+    description?: string;
+    userIds: number[];
+}) => post<OnlineDocumentPermissionGroup>('/api/online-documents/permission-groups', data);
+
+export const updateOnlineDocumentPermissionGroup = (id: number, data: {
+    name: string;
+    description?: string;
+    userIds: number[];
+}) => put<OnlineDocumentPermissionGroup>(`/api/online-documents/permission-groups/${id}`, data);
+
+export const deleteOnlineDocumentPermissionGroup = (id: number) =>
+    del(`/api/online-documents/permission-groups/${id}`);
 
 export const saveOnlineDocumentPermissions = (id: number, userIds: number[]) =>
     put<OnlineDocumentPermission[]>(`/api/online-documents/${id}/permissions`, { userIds });

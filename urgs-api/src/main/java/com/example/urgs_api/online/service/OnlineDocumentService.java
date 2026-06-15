@@ -3,16 +3,23 @@ package com.example.urgs_api.online.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.example.urgs_api.online.dto.OnlineDocumentPermissionGroupDTO;
+import com.example.urgs_api.online.dto.OnlineDocumentPermissionGroupRequest;
 import com.example.urgs_api.online.dto.OnlineDocumentPermissionDTO;
 import com.example.urgs_api.online.entity.OnlineDocument;
+import com.example.urgs_api.online.entity.OnlineDocumentPermissionGroup;
+import com.example.urgs_api.online.entity.OnlineDocumentPermissionGroupMember;
 import com.example.urgs_api.online.entity.OnlineDocumentPermission;
 import com.example.urgs_api.online.mapper.OnlineDocumentMapper;
+import com.example.urgs_api.online.mapper.OnlineDocumentPermissionGroupMapper;
+import com.example.urgs_api.online.mapper.OnlineDocumentPermissionGroupMemberMapper;
 import com.example.urgs_api.online.mapper.OnlineDocumentPermissionMapper;
 import com.example.urgs_api.user.dto.UserDTO;
 import com.example.urgs_api.user.mapper.UserMapper;
 import com.example.urgs_api.user.model.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.xslf.usermodel.XMLSlideShow;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +28,7 @@ import org.springframework.util.StringUtils;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -53,6 +61,8 @@ public class OnlineDocumentService {
 
     private final OnlineDocumentMapper documentMapper;
     private final OnlineDocumentPermissionMapper permissionMapper;
+    private final OnlineDocumentPermissionGroupMapper permissionGroupMapper;
+    private final OnlineDocumentPermissionGroupMemberMapper permissionGroupMemberMapper;
     private final UserMapper userMapper;
 
     @Value("${urgs.profile:./uploads}")
@@ -249,6 +259,71 @@ public class OnlineDocumentService {
         return "用户" + userId;
     }
 
+    public List<OnlineDocumentPermissionGroupDTO> listPermissionGroups(Long ownerUserId) {
+        List<OnlineDocumentPermissionGroup> groups = permissionGroupMapper.selectList(
+                new LambdaQueryWrapper<OnlineDocumentPermissionGroup>()
+                        .eq(OnlineDocumentPermissionGroup::getOwnerUserId, ownerUserId)
+                        .orderByDesc(OnlineDocumentPermissionGroup::getUpdateTime));
+        if (groups.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> groupIds = groups.stream().map(OnlineDocumentPermissionGroup::getId).toList();
+        List<OnlineDocumentPermissionGroupMember> members = permissionGroupMemberMapper.selectList(
+                new LambdaQueryWrapper<OnlineDocumentPermissionGroupMember>()
+                        .in(OnlineDocumentPermissionGroupMember::getGroupId, groupIds)
+                        .orderByAsc(OnlineDocumentPermissionGroupMember::getId));
+
+        Set<Long> userIds = members.stream()
+                .map(OnlineDocumentPermissionGroupMember::getUserId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<Long, User> users = userIds.isEmpty() ? Map.of() : userMapper.selectBatchIds(userIds)
+                .stream()
+                .collect(Collectors.toMap(User::getId, Function.identity(), (left, right) -> left));
+        Map<Long, List<OnlineDocumentPermissionGroupMember>> membersByGroup = members.stream()
+                .collect(Collectors.groupingBy(OnlineDocumentPermissionGroupMember::getGroupId));
+
+        return groups.stream()
+                .map(group -> toPermissionGroupDTO(group, membersByGroup.getOrDefault(group.getId(), List.of()), users))
+                .toList();
+    }
+
+    @Transactional
+    public OnlineDocumentPermissionGroupDTO createPermissionGroup(
+            Long ownerUserId, OnlineDocumentPermissionGroupRequest request) {
+        String name = normalizePermissionGroupName(request.getName());
+        OnlineDocumentPermissionGroup group = new OnlineDocumentPermissionGroup();
+        group.setOwnerUserId(ownerUserId);
+        group.setName(name);
+        group.setDescription(StringUtils.hasText(request.getDescription()) ? request.getDescription().trim() : null);
+        LocalDateTime now = LocalDateTime.now();
+        group.setCreateTime(now);
+        group.setUpdateTime(now);
+        permissionGroupMapper.insert(group);
+        replacePermissionGroupMembers(group.getId(), ownerUserId, request.getUserIds());
+        return getPermissionGroup(ownerUserId, group.getId());
+    }
+
+    @Transactional
+    public OnlineDocumentPermissionGroupDTO updatePermissionGroup(
+            Long ownerUserId, Long groupId, OnlineDocumentPermissionGroupRequest request) {
+        OnlineDocumentPermissionGroup group = getOwnedPermissionGroup(ownerUserId, groupId);
+        group.setName(normalizePermissionGroupName(request.getName()));
+        group.setDescription(StringUtils.hasText(request.getDescription()) ? request.getDescription().trim() : null);
+        group.setUpdateTime(LocalDateTime.now());
+        permissionGroupMapper.updateById(group);
+        replacePermissionGroupMembers(group.getId(), ownerUserId, request.getUserIds());
+        return getPermissionGroup(ownerUserId, group.getId());
+    }
+
+    @Transactional
+    public void deletePermissionGroup(Long ownerUserId, Long groupId) {
+        getOwnedPermissionGroup(ownerUserId, groupId);
+        permissionGroupMemberMapper.delete(new LambdaQueryWrapper<OnlineDocumentPermissionGroupMember>()
+                .eq(OnlineDocumentPermissionGroupMember::getGroupId, groupId));
+        permissionGroupMapper.deleteById(groupId);
+    }
+
     @Transactional
     public List<OnlineDocumentPermissionDTO> savePermissions(Long documentId, Long ownerId, List<Long> userIds) {
         OnlineDocument doc = getOwnedDocument(documentId, ownerId);
@@ -278,6 +353,84 @@ public class OnlineDocumentService {
         log.info("用户 {} 更新在线文档授权: documentId={}, sharedUsers={}",
                 ownerId, doc.getId(), validUserIds);
         return listPermissions(documentId, ownerId);
+    }
+
+    private OnlineDocumentPermissionGroupDTO getPermissionGroup(Long ownerUserId, Long groupId) {
+        OnlineDocumentPermissionGroup group = getOwnedPermissionGroup(ownerUserId, groupId);
+        List<OnlineDocumentPermissionGroupMember> members = permissionGroupMemberMapper.selectList(
+                new LambdaQueryWrapper<OnlineDocumentPermissionGroupMember>()
+                        .eq(OnlineDocumentPermissionGroupMember::getGroupId, groupId)
+                        .orderByAsc(OnlineDocumentPermissionGroupMember::getId));
+        Set<Long> userIds = members.stream()
+                .map(OnlineDocumentPermissionGroupMember::getUserId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<Long, User> users = userIds.isEmpty() ? Map.of() : userMapper.selectBatchIds(userIds)
+                .stream()
+                .collect(Collectors.toMap(User::getId, Function.identity(), (left, right) -> left));
+        return toPermissionGroupDTO(group, members, users);
+    }
+
+    private OnlineDocumentPermissionGroup getOwnedPermissionGroup(Long ownerUserId, Long groupId) {
+        OnlineDocumentPermissionGroup group = permissionGroupMapper.selectById(groupId);
+        if (group == null) {
+            throw new RuntimeException("授权组不存在");
+        }
+        if (!ownerUserId.equals(group.getOwnerUserId())) {
+            throw new RuntimeException("无权管理该授权组");
+        }
+        return group;
+    }
+
+    private void replacePermissionGroupMembers(Long groupId, Long ownerUserId, List<Long> userIds) {
+        Set<Long> nextUserIds = userIds == null ? Set.of() : userIds.stream()
+                .filter(id -> id != null && !id.equals(ownerUserId))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        List<Long> validUserIds = nextUserIds.isEmpty()
+                ? List.of()
+                : userMapper.selectBatchIds(nextUserIds).stream()
+                        .map(User::getId)
+                        .toList();
+
+        permissionGroupMemberMapper.delete(new LambdaQueryWrapper<OnlineDocumentPermissionGroupMember>()
+                .eq(OnlineDocumentPermissionGroupMember::getGroupId, groupId));
+
+        LocalDateTime now = LocalDateTime.now();
+        for (Long memberUserId : validUserIds) {
+            OnlineDocumentPermissionGroupMember member = new OnlineDocumentPermissionGroupMember();
+            member.setGroupId(groupId);
+            member.setUserId(memberUserId);
+            member.setCreateTime(now);
+            permissionGroupMemberMapper.insert(member);
+        }
+    }
+
+    private String normalizePermissionGroupName(String name) {
+        if (!StringUtils.hasText(name)) {
+            throw new IllegalArgumentException("授权组名称不能为空");
+        }
+        String normalized = name.trim();
+        if (normalized.length() > 100) {
+            throw new IllegalArgumentException("授权组名称不能超过100个字符");
+        }
+        return normalized;
+    }
+
+    private OnlineDocumentPermissionGroupDTO toPermissionGroupDTO(
+            OnlineDocumentPermissionGroup group,
+            List<OnlineDocumentPermissionGroupMember> members,
+            Map<Long, User> users) {
+        OnlineDocumentPermissionGroupDTO dto = new OnlineDocumentPermissionGroupDTO();
+        dto.setId(group.getId());
+        dto.setName(group.getName());
+        dto.setDescription(group.getDescription());
+        dto.setCreateTime(group.getCreateTime());
+        dto.setUpdateTime(group.getUpdateTime());
+        dto.setMemberCount(members.size());
+        dto.setMembers(members.stream()
+                .map(member -> UserDTO.fromEntity(users.get(member.getUserId())))
+                .filter(user -> user != null)
+                .toList());
+        return dto;
     }
 
     public OnlineDocument getDocument(Long id) {
@@ -410,10 +563,13 @@ public class OnlineDocumentService {
     }
 
     private void writeBlankOfficeFile(Path targetPath, String documentType) throws IOException {
+        if ("slide".equals(documentType)) {
+            writeBlankPresentation(targetPath);
+            return;
+        }
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(targetPath), StandardCharsets.UTF_8)) {
             switch (documentType) {
                 case "cell" -> writeBlankWorkbook(zip);
-                case "slide" -> writeBlankPresentation(zip);
                 default -> writeBlankWordDocument(zip);
             }
         }
@@ -492,93 +648,11 @@ public class OnlineDocumentService {
                 """);
     }
 
-    private void writeBlankPresentation(ZipOutputStream zip) throws IOException {
-        writeZipEntry(zip, "[Content_Types].xml", """
-                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-                  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-                  <Default Extension="xml" ContentType="application/xml"/>
-                  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
-                  <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
-                  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
-                  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
-                  <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
-                </Types>
-                """);
-        writeZipEntry(zip, "_rels/.rels", """
-                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
-                </Relationships>
-                """);
-        writeZipEntry(zip, "ppt/presentation.xml", """
-                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-                  <p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>
-                  <p:sldIdLst><p:sldId id="256" r:id="rId2"/></p:sldIdLst>
-                  <p:sldSz cx="9144000" cy="5143500" type="screen16x9"/>
-                  <p:notesSz cx="6858000" cy="9144000"/>
-                </p:presentation>
-                """);
-        writeZipEntry(zip, "ppt/_rels/presentation.xml.rels", """
-                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
-                  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
-                  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
-                </Relationships>
-                """);
-        writeZipEntry(zip, "ppt/slides/slide1.xml", """
-                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-                  <p:cSld>
-                    <p:spTree>
-                      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
-                      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
-                    </p:spTree>
-                  </p:cSld>
-                  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
-                </p:sld>
-                """);
-        writeZipEntry(zip, "ppt/slides/_rels/slide1.xml.rels", """
-                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
-                </Relationships>
-                """);
-        writeZipEntry(zip, "ppt/slideMasters/slideMaster1.xml", blankSlideTemplate("p:sldMaster"));
-        writeZipEntry(zip, "ppt/slideMasters/_rels/slideMaster1.xml.rels", """
-                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
-                  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>
-                </Relationships>
-                """);
-        writeZipEntry(zip, "ppt/slideLayouts/slideLayout1.xml", blankSlideTemplate("p:sldLayout"));
-        writeZipEntry(zip, "ppt/theme/theme1.xml", """
-                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Blank">
-                  <a:themeElements>
-                    <a:clrScheme name="Blank"><a:dk1><a:srgbClr val="000000"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="1F497D"/></a:dk2><a:lt2><a:srgbClr val="EEECE1"/></a:lt2><a:accent1><a:srgbClr val="4F81BD"/></a:accent1><a:accent2><a:srgbClr val="C0504D"/></a:accent2><a:accent3><a:srgbClr val="9BBB59"/></a:accent3><a:accent4><a:srgbClr val="8064A2"/></a:accent4><a:accent5><a:srgbClr val="4BACC6"/></a:accent5><a:accent6><a:srgbClr val="F79646"/></a:accent6><a:hlink><a:srgbClr val="0000FF"/></a:hlink><a:folHlink><a:srgbClr val="800080"/></a:folHlink></a:clrScheme>
-                    <a:fontScheme name="Blank"><a:majorFont><a:latin typeface="Arial"/></a:majorFont><a:minorFont><a:latin typeface="Arial"/></a:minorFont></a:fontScheme>
-                    <a:fmtScheme name="Blank"><a:fillStyleLst/><a:lnStyleLst/><a:effectStyleLst/><a:bgFillStyleLst/></a:fmtScheme>
-                  </a:themeElements>
-                </a:theme>
-                """);
-    }
-
-    private String blankSlideTemplate(String rootName) {
-        return """
-                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <%s xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
-                  <p:cSld>
-                    <p:spTree>
-                      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
-                      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
-                    </p:spTree>
-                  </p:cSld>
-                  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
-                </%s>
-                """.formatted(rootName, rootName);
+    private void writeBlankPresentation(Path targetPath) throws IOException {
+        try (XMLSlideShow presentation = new XMLSlideShow();
+             OutputStream output = Files.newOutputStream(targetPath)) {
+            presentation.createSlide();
+            presentation.write(output);
+        }
     }
 }
