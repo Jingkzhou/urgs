@@ -69,7 +69,7 @@ export const createOnlineDocument = (data: {
 
 export const createBlankOnlineDocument = (data: {
     title?: string;
-    documentType: 'word' | 'cell' | 'slide';
+    documentType: 'word' | 'cell';
 }) => post<OnlineDocument>('/api/online-documents/blank', data);
 
 export const updateOnlineDocument = (id: number, data: {

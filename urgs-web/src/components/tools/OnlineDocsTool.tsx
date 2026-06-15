@@ -13,7 +13,6 @@ import {
     Grid3X3,
     LayoutList,
     MoreHorizontal,
-    Presentation,
     RefreshCcw,
     Search,
     Share2,
@@ -42,14 +41,13 @@ import type { OnlineDocumentPermissionGroup } from '../../api/onlineDocs';
 import OnlyOfficeEditorModal, { isOnlyOfficeSupported } from './OnlyOfficeEditorModal';
 
 const PAGE_SIZE = 12;
-type BlankDocumentType = 'word' | 'cell' | 'slide';
+type BlankDocumentType = 'word' | 'cell';
 type TabKey = 'recent' | 'space' | 'favorite';
 type UserOption = { value: number; label: string };
 
 const blankTypeOptions: { value: BlankDocumentType; label: string; defaultTitle: string }[] = [
     { value: 'word', label: '文字文档', defaultTitle: '新建文档' },
     { value: 'cell', label: '电子表格', defaultTitle: '新建表格' },
-    { value: 'slide', label: '演示文稿', defaultTitle: '新建演示' },
 ];
 
 // ---- helpers ----
@@ -66,14 +64,13 @@ const formatTime = (value?: string) => {
     return value.replace('T', ' ').slice(0, 16);
 };
 
-type FileTypeKey = 'word' | 'excel' | 'ppt' | 'pdf' | 'other';
+type FileTypeKey = 'word' | 'excel' | 'pdf' | 'other';
 
 const getFileTypeKey = (fileName?: string): FileTypeKey => {
     if (!fileName) return 'other';
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
     if (['doc', 'docx'].includes(ext)) return 'word';
     if (['xls', 'xlsx'].includes(ext)) return 'excel';
-    if (['ppt', 'pptx'].includes(ext)) return 'ppt';
     if (ext === 'pdf') return 'pdf';
     return 'other';
 };
@@ -81,7 +78,6 @@ const getFileTypeKey = (fileName?: string): FileTypeKey => {
 const fileTypeConfig: Record<FileTypeKey, { icon: React.FC<{ size?: number }>; color: string; bg: string }> = {
     word: { icon: FileText, color: '#1677FF', bg: '#E6F4FF' },
     excel: { icon: FileSpreadsheet, color: '#52C41A', bg: '#F6FFED' },
-    ppt: { icon: Presentation, color: '#FA8C16', bg: '#FFF7E6' },
     pdf: { icon: FileType, color: '#FF4D4F', bg: '#FFF1F0' },
     other: { icon: FileText, color: '#8C8C8C', bg: '#FAFAFA' },
 };
@@ -163,8 +159,9 @@ const OnlineDocsTool: React.FC = () => {
 
     const handleUpload: UploadProps['customRequest'] = async (options) => {
         const file = options.file as File;
-        if (!isOnlyOfficeSupported(file.name)) {
-            message.warning('仅支持 doc、docx、xls、xlsx、ppt、pptx、pdf 文件');
+        const extension = file.name.split('.').pop()?.toLowerCase() || '';
+        if (!['doc', 'docx', 'xls', 'xlsx', 'pdf'].includes(extension)) {
+            message.warning('仅支持 doc、docx、xls、xlsx、pdf 文件');
             options.onError?.(new Error('不支持的文件类型'));
             return;
         }
@@ -792,7 +789,7 @@ const OnlineDocsTool: React.FC = () => {
                     <Upload
                         customRequest={handleUpload}
                         showUploadList={false}
-                        accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf"
+                        accept=".doc,.docx,.xls,.xlsx,.pdf"
                     >
                         <button className="flex h-7 items-center gap-1.5 rounded-md bg-[#1677FF] px-2.5 text-xs font-medium text-white transition-colors hover:bg-[#4096FF]">
                             <UploadCloud size={14} />
@@ -824,7 +821,6 @@ const OnlineDocsTool: React.FC = () => {
                                 { key: 'all', label: '全部文档' },
                                 { key: 'word', label: '文字文档' },
                                 { key: 'excel', label: '电子表格' },
-                                { key: 'ppt', label: '演示文稿' },
                                 { key: 'pdf', label: 'PDF 文档' },
                             ],
                         }}

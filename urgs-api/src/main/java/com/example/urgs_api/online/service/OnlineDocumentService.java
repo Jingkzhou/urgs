@@ -19,7 +19,6 @@ import com.example.urgs_api.user.mapper.UserMapper;
 import com.example.urgs_api.user.model.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.poi.xslf.usermodel.XMLSlideShow;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,7 +27,6 @@ import org.springframework.util.StringUtils;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -114,7 +112,6 @@ public class OnlineDocumentService {
         return switch (fileType) {
             case "word" -> List.of("doc", "docx");
             case "excel" -> List.of("xls", "xlsx");
-            case "ppt" -> List.of("ppt", "pptx");
             case "pdf" -> List.of("pdf");
             default -> List.of();
         };
@@ -135,7 +132,6 @@ public class OnlineDocumentService {
         String normalizedType = normalizeDocumentType(documentType);
         String extension = switch (normalizedType) {
             case "cell" -> "xlsx";
-            case "slide" -> "pptx";
             default -> "docx";
         };
         String safeTitle = StringUtils.hasText(title) ? title.trim() : defaultTitle(normalizedType);
@@ -548,25 +544,20 @@ public class OnlineDocumentService {
     }
 
     private String normalizeDocumentType(String documentType) {
-        if ("cell".equals(documentType) || "slide".equals(documentType) || "word".equals(documentType)) {
+        if ("cell".equals(documentType) || "word".equals(documentType)) {
             return documentType;
         }
-        return "word";
+        throw new IllegalArgumentException("仅支持新建文字文档和电子表格");
     }
 
     private String defaultTitle(String documentType) {
         return switch (documentType) {
             case "cell" -> "新建表格.xlsx";
-            case "slide" -> "新建演示.pptx";
             default -> "新建文档.docx";
         };
     }
 
     private void writeBlankOfficeFile(Path targetPath, String documentType) throws IOException {
-        if ("slide".equals(documentType)) {
-            writeBlankPresentation(targetPath);
-            return;
-        }
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(targetPath), StandardCharsets.UTF_8)) {
             switch (documentType) {
                 case "cell" -> writeBlankWorkbook(zip);
@@ -648,11 +639,4 @@ public class OnlineDocumentService {
                 """);
     }
 
-    private void writeBlankPresentation(Path targetPath) throws IOException {
-        try (XMLSlideShow presentation = new XMLSlideShow();
-             OutputStream output = Files.newOutputStream(targetPath)) {
-            presentation.createSlide();
-            presentation.write(output);
-        }
-    }
 }
