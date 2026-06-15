@@ -33,6 +33,12 @@ public class OnlineDocument {
     /** 文件大小（字节） */
     private Long fileSize;
 
+    /** 是否收藏（0=否，1=是） */
+    private Boolean favorite;
+
+    /** 空间类型（personal=个人空间，shared=共享空间） */
+    private String spaceType;
+
     /** 创建时间 */
     private LocalDateTime createTime;
 

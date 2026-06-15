@@ -70,20 +70,110 @@ public class OnlineDocumentService {
     private String onlyOfficeCallbackSecret;
 
     public IPage<OnlineDocument> listDocuments(Long userId, String keyword, String fileType, int page, int size) {
-        List<Long> sharedDocumentIds = permissionMapper.selectList(
+        return listDocuments(userId, ListQueryScope.ALL, keyword, fileType, page, size);
+    }
+
+    /**
+     * 列出用户收藏的文档
+     */
+    public IPage<OnlineDocument> listFavoriteDocuments(Long userId, String keyword, String fileType, int page, int size) {
+        return listDocuments(userId, ListQueryScope.FAVORITE, keyword, fileType, page, size);
+    }
+
+    /**
+     * 列出用户在指定空间中的文档
+     */
+    public IPage<OnlineDocument> listSpaceDocuments(Long userId, String spaceType, String keyword, String fileType, int page, int size) {
+        ListQueryScope scope = parseSpaceScope(spaceType);
+        return listDocuments(userId, scope, keyword, fileType, page, size);
+    }
+
+    /**
+     * 查询范围枚举：消除 magic string，便于阅读和重构
+     */
+    private enum ListQueryScope {
+        /** 全部（个人+共享） */
+        ALL,
+        /** 仅个人创建 */
+        PERSONAL,
+        /** 仅共享给我 */
+        SHARED,
+        /** 收藏（个人+共享中标记为收藏的） */
+        FAVORITE
+    }
+
+    /**
+     * 统一文档查询方法：消除三个 list 方法的重复逻辑
+     */
+    private IPage<OnlineDocument> listDocuments(Long userId, ListQueryScope scope, String keyword, String fileType, int page, int size) {
+        List<Long> sharedDocumentIds = findSharedDocumentIds(userId);
+
+        LambdaQueryWrapper<OnlineDocument> wrapper = new LambdaQueryWrapper<>();
+        applyScopeCondition(wrapper, scope, userId, sharedDocumentIds);
+        applyKeywordAndFileTypeFilter(wrapper, keyword, fileType);
+        wrapper.orderByDesc(OnlineDocument::getUpdateTime);
+
+        IPage<OnlineDocument> result = documentMapper.selectPage(new Page<>(page, size), wrapper);
+        fillPresentationFields(result.getRecords(), userId);
+        return result;
+    }
+
+    /**
+     * 查询用户被授权的文档 ID 列表
+     */
+    private List<Long> findSharedDocumentIds(Long userId) {
+        return permissionMapper.selectList(
                         new LambdaQueryWrapper<OnlineDocumentPermission>()
-                                .eq(OnlineDocumentPermission::getUserId, userId))
+                                .eq(OnlineDocumentPermission::getUserId, userId)
+                                .select(OnlineDocumentPermission::getDocumentId))
                 .stream()
                 .map(OnlineDocumentPermission::getDocumentId)
                 .toList();
+    }
 
-        LambdaQueryWrapper<OnlineDocument> wrapper = new LambdaQueryWrapper<>();
+    /**
+     * 根据查询范围应用文档可见性条件
+     */
+    private void applyScopeCondition(LambdaQueryWrapper<OnlineDocument> wrapper,
+                                     ListQueryScope scope,
+                                     Long userId,
+                                     List<Long> sharedDocumentIds) {
+        switch (scope) {
+            case ALL -> applyOwnerOrSharedCondition(wrapper, userId, sharedDocumentIds);
+            case PERSONAL -> wrapper.eq(OnlineDocument::getUserId, userId);
+            case SHARED -> {
+                if (sharedDocumentIds.isEmpty()) {
+                    // 使用一个不可能匹配的值，确保返回空结果
+                    wrapper.eq(OnlineDocument::getId, -1L);
+                } else {
+                    wrapper.in(OnlineDocument::getId, sharedDocumentIds);
+                }
+            }
+            case FAVORITE -> {
+                wrapper.eq(OnlineDocument::getFavorite, Boolean.TRUE);
+                applyOwnerOrSharedCondition(wrapper, userId, sharedDocumentIds);
+            }
+        }
+    }
+
+    /**
+     * 应用"个人创建 OR 他人共享"的可见性条件
+     */
+    private void applyOwnerOrSharedCondition(LambdaQueryWrapper<OnlineDocument> wrapper,
+                                             Long userId,
+                                             List<Long> sharedDocumentIds) {
         wrapper.and(w -> {
             w.eq(OnlineDocument::getUserId, userId);
             if (!sharedDocumentIds.isEmpty()) {
                 w.or().in(OnlineDocument::getId, sharedDocumentIds);
             }
         });
+    }
+
+    /**
+     * 统一应用关键词和文件类型过滤
+     */
+    private void applyKeywordAndFileTypeFilter(LambdaQueryWrapper<OnlineDocument> wrapper, String keyword, String fileType) {
         if (StringUtils.hasText(keyword)) {
             wrapper.like(OnlineDocument::getTitle, keyword);
         }
@@ -102,10 +192,51 @@ public class OnlineDocumentService {
                 });
             }
         }
-        wrapper.orderByDesc(OnlineDocument::getUpdateTime);
-        IPage<OnlineDocument> result = documentMapper.selectPage(new Page<>(page, size), wrapper);
-        fillPresentationFields(result.getRecords(), userId);
-        return result;
+    }
+
+    /**
+     * 将前端传入的空间类型字符串转换为查询范围
+     */
+    private ListQueryScope parseSpaceScope(String spaceType) {
+        if (spaceType == null || spaceType.isBlank()) {
+            return ListQueryScope.ALL;
+        }
+        return switch (spaceType.toLowerCase()) {
+            case "personal" -> ListQueryScope.PERSONAL;
+            case "shared" -> ListQueryScope.SHARED;
+            case "all" -> ListQueryScope.ALL;
+            default -> throw new IllegalArgumentException("无效的空间类型: " + spaceType);
+        };
+    }
+
+    /**
+     * 切换文档收藏状态
+     */
+    @Transactional
+    public OnlineDocument toggleFavorite(Long documentId, Long userId) {
+        OnlineDocument doc = getAccessibleDocument(documentId, userId);
+        boolean nextFavorite = !Boolean.TRUE.equals(doc.getFavorite());
+        doc.setFavorite(nextFavorite);
+        doc.setUpdateTime(LocalDateTime.now());
+        documentMapper.updateById(doc);
+        log.info("用户 {} 切换文档收藏状态: documentId={}, favorite={}", userId, documentId, nextFavorite);
+        return doc;
+    }
+
+    /**
+     * 设置文档空间类型
+     */
+    @Transactional
+    public OnlineDocument setSpaceType(Long documentId, Long userId, String spaceType) {
+        OnlineDocument doc = getOwnedDocument(documentId, userId);
+        String normalizedSpaceType = parseSpaceScope(spaceType) == ListQueryScope.PERSONAL
+                ? "personal"
+                : "shared";
+        doc.setSpaceType(normalizedSpaceType);
+        doc.setUpdateTime(LocalDateTime.now());
+        documentMapper.updateById(doc);
+        log.info("用户 {} 设置文档空间类型: documentId={}, spaceType={}", userId, documentId, normalizedSpaceType);
+        return doc;
     }
 
     private List<String> resolveExtensions(String fileType) {

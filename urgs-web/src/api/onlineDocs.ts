@@ -8,6 +8,8 @@ export interface OnlineDocument {
     fileUrl: string;
     fileName: string;
     fileSize: number | null;
+    favorite?: boolean;
+    spaceType?: 'personal' | 'shared';
     createTime: string;
     updateTime: string;
     shared?: boolean;
@@ -59,6 +61,26 @@ export const listOnlineDocuments = (params: {
     page?: number;
     size?: number;
 }) => get<OnlineDocumentPage<OnlineDocument>>('/api/online-documents', params);
+
+export const listFavoriteDocuments = (params: {
+    keyword?: string;
+    fileType?: string;
+    page?: number;
+    size?: number;
+}) => get<OnlineDocumentPage<OnlineDocument>>('/api/online-documents/favorite', params);
+
+export const listSpaceDocuments = (params: {
+    spaceType?: 'personal' | 'shared' | 'all';
+    keyword?: string;
+    fileType?: string;
+    page?: number;
+    size?: number;
+}) => get<OnlineDocumentPage<OnlineDocument>>('/api/online-documents/space', params);
+
+export const toggleFavorite = (id: number) => post<OnlineDocument>(`/api/online-documents/${id}/favorite`, {});
+
+export const setSpaceType = (id: number, spaceType: 'personal' | 'shared') =>
+    put<OnlineDocument>(`/api/online-documents/${id}/space`, { spaceType });
 
 export const createOnlineDocument = (data: {
     title: string;

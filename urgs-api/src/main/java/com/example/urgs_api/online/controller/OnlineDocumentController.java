@@ -26,6 +26,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 在线文档控制器
@@ -56,6 +57,46 @@ public class OnlineDocumentController {
             @RequestParam(defaultValue = "20") int size) {
         Long userId = getUserId(request);
         return ResponseEntity.ok(documentService.listDocuments(userId, keyword, fileType, page, size));
+    }
+
+    @GetMapping("/favorite")
+    public ResponseEntity<IPage<OnlineDocument>> listFavoriteDocuments(
+            HttpServletRequest request,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String fileType,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Long userId = getUserId(request);
+        return ResponseEntity.ok(documentService.listFavoriteDocuments(userId, keyword, fileType, page, size));
+    }
+
+    @GetMapping("/space")
+    public ResponseEntity<IPage<OnlineDocument>> listSpaceDocuments(
+            HttpServletRequest request,
+            @RequestParam(required = false) String spaceType,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String fileType,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Long userId = getUserId(request);
+        return ResponseEntity.ok(documentService.listSpaceDocuments(userId, spaceType, keyword, fileType, page, size));
+    }
+
+    @PostMapping("/{id}/favorite")
+    public ResponseEntity<OnlineDocument> toggleFavorite(
+            HttpServletRequest request,
+            @PathVariable Long id) {
+        Long userId = getUserId(request);
+        return ResponseEntity.ok(documentService.toggleFavorite(id, userId));
+    }
+
+    @PutMapping("/{id}/space")
+    public ResponseEntity<OnlineDocument> setSpaceType(
+            HttpServletRequest request,
+            @PathVariable Long id,
+            @RequestBody SetSpaceTypeRequest req) {
+        Long userId = getUserId(request);
+        return ResponseEntity.ok(documentService.setSpaceType(id, userId, req.getSpaceType()));
     }
 
     @PostMapping
@@ -347,5 +388,10 @@ public class OnlineDocumentController {
         private String url;
         private String key;
         private Object users;
+    }
+
+    @Data
+    public static class SetSpaceTypeRequest {
+        private String spaceType;
     }
 }

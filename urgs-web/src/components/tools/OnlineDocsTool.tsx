@@ -17,11 +17,12 @@ import {
     Search,
     Share2,
     SlidersHorizontal,
+    Star,
     Trash2,
     UploadCloud,
     Users,
 } from 'lucide-react';
-import type { OnlineDocument, OnlineDocumentPermission, OnlineDocumentPermissionUser } from '../../api/onlineDocs';
+import type { OnlineDocument, OnlineDocumentPage, OnlineDocumentPermission, OnlineDocumentPermissionUser } from '../../api/onlineDocs';
 import {
     createOnlineDocumentPermissionGroup,
     createBlankOnlineDocument,
@@ -31,6 +32,9 @@ import {
     listOnlineDocumentPermissionGroups,
     listOnlineDocumentPermissions,
     listOnlineDocuments,
+    listFavoriteDocuments,
+    listSpaceDocuments,
+    toggleFavorite,
     saveOnlineDocumentPermissions,
     searchOnlineDocumentPermissionUsers,
     updateOnlineDocument,
@@ -98,6 +102,9 @@ const OnlineDocsTool: React.FC = () => {
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(false);
 
+    // space & favorite state
+    const [activeSpaceType, setActiveSpaceType] = useState<'personal' | 'shared' | 'all'>('all');
+
     // editor & modals
     const [editorDoc, setEditorDoc] = useState<OnlineDocument | null>(null);
     const [renamingDoc, setRenamingDoc] = useState<OnlineDocument | null>(null);
@@ -133,15 +140,25 @@ const OnlineDocsTool: React.FC = () => {
     // ---- data loading ----
 
     const loadDocuments = useCallback(async () => {
-        if (activeTab !== 'recent') return;
         setLoading(true);
         try {
-            const result = await listOnlineDocuments({
+            // 抽取通用查询参数，避免三个分支重复
+            const baseParams = {
                 keyword: keyword || undefined,
                 fileType: filterType === 'all' ? undefined : filterType,
                 page,
                 size: PAGE_SIZE,
-            });
+            };
+            const result: OnlineDocumentPage<OnlineDocument> = await (() => {
+                switch (activeTab) {
+                    case 'recent':
+                        return listOnlineDocuments(baseParams);
+                    case 'favorite':
+                        return listFavoriteDocuments(baseParams);
+                    case 'space':
+                        return listSpaceDocuments({ ...baseParams, spaceType: activeSpaceType });
+                }
+            })();
             setDocuments(result.records || []);
             setTotal(result.total || 0);
         } catch {
@@ -149,7 +166,7 @@ const OnlineDocsTool: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [keyword, page, activeTab, filterType]);
+    }, [keyword, page, activeTab, filterType, activeSpaceType]);
 
     useEffect(() => {
         loadDocuments();
@@ -457,25 +474,87 @@ const OnlineDocsTool: React.FC = () => {
         });
     };
 
+    const handleToggleFavorite = async (doc: OnlineDocument) => {
+        // 计算目标状态用于 UI 反馈（API 完成后状态会翻转）
+        const willFavorite = !doc.favorite;
+        try {
+            await toggleFavorite(doc.id);
+            setDocuments(docs => docs.map(d => d.id === doc.id ? { ...d, favorite: willFavorite } : d));
+            message.success(willFavorite ? '已收藏' : '已取消收藏');
+            // 在收藏 Tab 取消收藏时，从当前列表中移除该文档
+            if (activeTab === 'favorite' && !willFavorite && total > 1) {
+                setDocuments(docs => docs.filter(d => d.id !== doc.id));
+                setTotal(prev => prev - 1);
+            }
+        } catch {
+            message.error('操作失败');
+        }
+    };
+
     const getActionItems = (doc: OnlineDocument): MenuProps['items'] => {
+        const isOwner = doc.canManagePermissions === true;
         const items: MenuProps['items'] = [
             { key: 'edit', icon: <Edit3 size={14} />, label: '在线打开', onClick: () => setEditorDoc(doc) },
             { key: 'download', icon: <Download size={14} />, label: '下载', onClick: () => handleDownload(doc) },
-            { key: 'rename', icon: <FileText size={14} />, label: '重命名', onClick: () => openRename(doc) },
         ];
-        if (doc.canManagePermissions) {
+
+        // 只有所有者才能重命名、授权、删除
+        if (isOwner) {
             items.push(
+                { key: 'rename', icon: <FileText size={14} />, label: '重命名', onClick: () => openRename(doc) },
+                { type: 'divider' },
                 { key: 'share', icon: <Share2 size={14} />, label: '授权', onClick: () => openPermissions(doc) },
+            );
+        }
+
+        // 所有人都有收藏功能
+        items.push(
+            { type: 'divider' },
+            {
+                key: 'favorite',
+                icon: <Star size={14} fill={doc.favorite ? '#FAAD14' : 'none'} stroke={doc.favorite ? '#FAAD14' : undefined} />,
+                label: doc.favorite ? '取消收藏' : '收藏',
+                onClick: () => handleToggleFavorite(doc),
+            },
+        );
+
+        // 只有所有者才能删除
+        if (isOwner) {
+            items.push(
                 { type: 'divider' },
                 { key: 'delete', icon: <Trash2 size={14} />, label: '删除', danger: true, onClick: () => handleDelete(doc) },
             );
         }
+
         return items;
     };
 
-    // ---- derived ----
+    // ---- quick access (始终展示近期文档，与当前 tab 无关) ----
 
-    const quickAccessDocs = useMemo(() => documents.slice(0, 4), [documents]);
+    const [recentDocs, setRecentDocs] = useState<OnlineDocument[]>([]);
+
+    const loadRecentDocs = useCallback(async () => {
+        try {
+            const result = await listOnlineDocuments({ page: 1, size: 4 });
+            setRecentDocs(result.records || []);
+        } catch {
+            // 快速访问加载失败不阻塞用户操作
+        }
+    }, []);
+
+    // 首次加载 + 每次文档列表刷新后重新加载
+    useEffect(() => {
+        loadRecentDocs();
+    }, [loadRecentDocs]);
+
+    // 文档增删改操作后同步刷新快速访问
+    useEffect(() => {
+        if (!loading) {
+            loadRecentDocs();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [documents]);
+
     const supportedCount = useMemo(
         () => documents.filter(doc => isOnlyOfficeSupported(doc.fileName || doc.title)).length,
         [documents],
@@ -507,6 +586,9 @@ const OnlineDocsTool: React.FC = () => {
                         <span className="text-sm font-medium text-gray-900 truncate group-hover/name:text-[#1677FF] transition-colors">
                             {record.title}
                         </span>
+                        {record.favorite && (
+                            <Star size={12} fill="#FAAD14" stroke="#FAAD14" className="shrink-0" />
+                        )}
                     </div>
                 );
             },
@@ -607,8 +689,11 @@ const OnlineDocsTool: React.FC = () => {
                     </span>
                 </div>
                 {/* file name */}
-                <div className="text-sm font-medium text-gray-900 truncate" title={doc.title}>
-                    {doc.title}
+                <div className="flex items-center gap-1 text-sm font-medium text-gray-900 truncate" title={doc.title}>
+                    <span className="truncate">{doc.title}</span>
+                    {doc.favorite && (
+                        <Star size={12} fill="#FAAD14" stroke="#FAAD14" className="shrink-0" />
+                    )}
                 </div>
                 {/* meta */}
                 <div className="text-xs text-gray-400 mt-1">
@@ -645,17 +730,6 @@ const OnlineDocsTool: React.FC = () => {
     // ---- tab content ----
 
     const renderTabContent = () => {
-        if (activeTab !== 'recent') {
-            return (
-                <div className="flex items-center justify-center h-[420px]">
-                    <Empty
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        description={activeTab === 'space' ? '空间功能开发中' : '收藏功能开发中'}
-                    />
-                </div>
-            );
-        }
-
         if (documents.length === 0 && !loading) {
             return (
                 <div className="flex items-center justify-center h-[420px]">
@@ -705,11 +779,11 @@ const OnlineDocsTool: React.FC = () => {
     return (
         <div className="flex h-full flex-col bg-white">
             {/* ===== Quick Access Bar ===== */}
-            {quickAccessDocs.length > 0 && (
+            {recentDocs.length > 0 && (
                 <div className="shrink-0 border-b border-gray-100 bg-white px-6 py-4">
                     <div className="text-xs font-medium text-gray-400 mb-3 uppercase tracking-wide">快速访问</div>
                     <div className="flex flex-wrap gap-3">
-                        {quickAccessDocs.map(doc => {
+                        {recentDocs.map(doc => {
                             const ft = fileTypeConfig[getFileTypeKey(doc.fileName)];
                             const Icon = ft.icon;
                             return (
@@ -725,7 +799,12 @@ const OnlineDocsTool: React.FC = () => {
                                     >
                                         <Icon size={14} />
                                     </span>
-                                    <span className="text-gray-700 max-w-[160px] truncate text-left">{doc.title}</span>
+                                    <span className="flex items-center gap-1 text-gray-700 max-w-[160px] truncate text-left">
+                                        <span className="truncate">{doc.title}</span>
+                                        {doc.favorite && (
+                                            <Star size={10} fill="#FAAD14" stroke="#FAAD14" className="shrink-0" />
+                                        )}
+                                    </span>
                                 </button>
                             );
                         })}
@@ -736,11 +815,19 @@ const OnlineDocsTool: React.FC = () => {
             {/* ===== Tab Navigation + Toolbar ===== */}
             <div className="flex shrink-0 items-center justify-between border-b border-gray-100 bg-white px-6">
                 {/* Tabs */}
-                <div className="flex items-center gap-0">
-                    {tabs.map(tab => (
+                <div className="flex items-center gap-0 relative">
+                       {tabs.map(tab => (
                         <button
                             key={tab.key}
-                            onClick={() => { setActiveTab(tab.key); setPage(1); setFilterType('all'); }}
+                            onClick={() => {
+                                setActiveTab(tab.key);
+                                setPage(1);
+                                setFilterType('all');
+                                // 离开空间 Tab 时重置空间类型，避免下次进入时仍保留上次选择
+                                if (tab.key === 'space') {
+                                    setActiveSpaceType('all');
+                                }
+                            }}
                             className={`relative px-5 py-3 text-sm font-medium transition-colors ${
                                 activeTab === tab.key
                                     ? 'text-[#1677FF]'
@@ -753,6 +840,29 @@ const OnlineDocsTool: React.FC = () => {
                             )}
                         </button>
                     ))}
+
+                    {/* Space Type Sub-tabs */}
+                    {activeTab === 'space' && (
+                        <div className="ml-4 flex items-center gap-1 pl-4 border-l border-gray-200">
+                            {[
+                                { key: 'all', label: '全部' },
+                                { key: 'personal', label: '个人' },
+                                { key: 'shared', label: '共享' },
+                            ].map((space) => (
+                                <button
+                                    key={space.key}
+                                    onClick={() => setActiveSpaceType(space.key as typeof activeSpaceType)}
+                                    className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                                        activeSpaceType === space.key
+                                            ? 'bg-[#E6F4FF] text-[#1677FF]'
+                                            : 'text-gray-500 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {space.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Toolbar */}
@@ -835,22 +945,20 @@ const OnlineDocsTool: React.FC = () => {
             </div>
 
             {/* ===== Info Bar ===== */}
-            {activeTab === 'recent' && (
-                <div className="flex shrink-0 items-center justify-between bg-[#FAFAFA] px-6 py-1.5 text-xs text-gray-400 border-b border-gray-100">
-                    <span>共 {total} 个文档</span>
-                    <span>{supportedCount} 个支持在线编辑</span>
-                </div>
-            )}
+            <div className="flex shrink-0 items-center justify-between bg-[#FAFAFA] px-6 py-1.5 text-xs text-gray-400 border-b border-gray-100">
+                <span>共 {total} 个文档</span>
+                <span>{supportedCount} 个支持在线编辑</span>
+            </div>
 
             {/* ===== Main Content ===== */}
-            <Spin spinning={loading && activeTab === 'recent'}>
+            <Spin spinning={loading}>
                 <div className="flex-1 min-h-0 overflow-auto px-6 py-3">
                     {renderTabContent()}
                 </div>
             </Spin>
 
             {/* ===== Pagination ===== */}
-            {activeTab === 'recent' && total > PAGE_SIZE && (
+            {total > PAGE_SIZE && (
                 <div className="flex shrink-0 justify-end border-t border-gray-100 bg-white px-6 py-3">
                     <Pagination
                         current={page}
