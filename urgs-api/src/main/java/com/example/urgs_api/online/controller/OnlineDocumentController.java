@@ -1,18 +1,15 @@
 package com.example.urgs_api.online.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.example.urgs_api.online.dto.OnlineDocumentPermissionGroupDTO;
-import com.example.urgs_api.online.dto.OnlineDocumentPermissionGroupRequest;
-import com.example.urgs_api.online.dto.OnlineDocumentPermissionDTO;
+import com.example.urgs_api.common.exception.UnauthorizedException;
+import com.example.urgs_api.online.dto.*;
 import com.example.urgs_api.online.entity.OnlineDocument;
 import com.example.urgs_api.online.service.OnlineDocumentService;
 import com.example.urgs_api.user.dto.UserDTO;
-import com.example.urgs_api.common.exception.UnauthorizedException;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.Data;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -95,7 +92,7 @@ public class OnlineDocumentController {
     public ResponseEntity<OnlineDocument> setSpaceType(
             HttpServletRequest request,
             @PathVariable Long id,
-            @RequestBody SetSpaceTypeRequest req) {
+            @Valid @RequestBody SetOnlineDocumentSpaceTypeRequest req) {
         Long userId = getUserId(request);
         return ResponseEntity.ok(documentService.setSpaceType(id, userId, req.getSpaceType()));
     }
@@ -103,7 +100,7 @@ public class OnlineDocumentController {
     @PostMapping
     public ResponseEntity<OnlineDocument> createDocument(
             HttpServletRequest request,
-            @RequestBody CreateDocumentRequest req) {
+            @Valid @RequestBody CreateOnlineDocumentRequest req) {
         Long userId = getUserId(request);
         OnlineDocument doc = new OnlineDocument();
         doc.setTitle(req.getTitle());
@@ -116,7 +113,7 @@ public class OnlineDocumentController {
     @PostMapping("/blank")
     public ResponseEntity<OnlineDocument> createBlankDocument(
             HttpServletRequest request,
-            @RequestBody CreateBlankDocumentRequest req) {
+            @Valid @RequestBody CreateBlankOnlineDocumentRequest req) {
         Long userId = getUserId(request);
         return ResponseEntity.ok(documentService.createBlankDocument(userId, req.getTitle(), req.getDocumentType()));
     }
@@ -125,7 +122,7 @@ public class OnlineDocumentController {
     public ResponseEntity<OnlineDocument> updateDocument(
             HttpServletRequest request,
             @PathVariable Long id,
-            @RequestBody UpdateDocumentRequest req) {
+            @Valid @RequestBody UpdateOnlineDocumentRequest req) {
         Long userId = getUserId(request);
         OnlineDocument updates = new OnlineDocument();
         updates.setTitle(req.getTitle());
@@ -194,7 +191,7 @@ public class OnlineDocumentController {
     public ResponseEntity<List<OnlineDocumentPermissionDTO>> savePermissions(
             HttpServletRequest request,
             @PathVariable Long id,
-            @RequestBody UpdateDocumentPermissionsRequest req) {
+            @RequestBody UpdateOnlineDocumentPermissionsRequest req) {
         Long userId = getUserId(request);
         return ResponseEntity.ok(documentService.savePermissions(id, userId, req.getUserIds()));
     }
@@ -355,44 +352,5 @@ public class OnlineDocumentController {
 
     private String base64Url(byte[] bytes) {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
-    @Data
-    public static class CreateDocumentRequest {
-        private String title;
-        private String fileUrl;
-        private String fileName;
-        private Long fileSize;
-    }
-
-    @Data
-    public static class CreateBlankDocumentRequest {
-        private String title;
-        private String documentType;
-    }
-
-    @Data
-    public static class UpdateDocumentRequest {
-        private String title;
-        private String fileName;
-    }
-
-    @Data
-    public static class UpdateDocumentPermissionsRequest {
-        private List<Long> userIds;
-    }
-
-    @Data
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class OnlyOfficeCallbackRequest {
-        private Integer status;
-        private String url;
-        private String key;
-        private Object users;
-    }
-
-    @Data
-    public static class SetSpaceTypeRequest {
-        private String spaceType;
     }
 }
