@@ -6,8 +6,6 @@ import com.example.urgs_api.online.dto.*;
 import com.example.urgs_api.online.entity.OnlineDocument;
 import com.example.urgs_api.online.service.OnlineDocumentService;
 import com.example.urgs_api.user.dto.UserDTO;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -16,12 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -34,16 +27,9 @@ import java.util.Map;
 public class OnlineDocumentController {
 
     private final OnlineDocumentService documentService;
-    private final ObjectMapper objectMapper;
-
-    @Value("${urgs.onlyoffice.document-server-url:http://localhost:8088}")
-    private String onlyOfficeDocumentServerUrl;
 
     @Value("${urgs.api-base-url:}")
     private String apiBaseUrl;
-
-    @Value("${urgs.onlyoffice.jwt-secret:}")
-    private String onlyOfficeJwtSecret;
 
     @GetMapping
     public ResponseEntity<PageResult<OnlineDocument>> listDocuments(
@@ -201,52 +187,11 @@ public class OnlineDocumentController {
             @PathVariable Long id) {
         Long userId = getUserId(request);
         OnlineDocument doc = documentService.getAccessibleDocument(id, userId);
-        String fileName = doc.getFileName() != null ? doc.getFileName() : doc.getTitle();
-        String extension = getFileExtension(fileName);
         String fileUrl = toAbsoluteUrl(request, doc.getFileUrl());
         String callbackToken = documentService.buildOnlyOfficeCallbackToken(doc.getId(), doc.getFileUrl());
-        String callbackUrl = toAbsoluteUrl(
-                request,
+        String callbackUrl = toAbsoluteUrl(request,
                 "/api/online-documents/" + doc.getId() + "/onlyoffice/callback?callbackToken=" + callbackToken);
-
-        Map<String, Object> document = new HashMap<>();
-        document.put("fileType", extension);
-        // Keep the key stable so all users editing the same online document join one co-editing session.
-        document.put("key", "online-" + doc.getId());
-        document.put("title", fileName);
-        document.put("url", fileUrl);
-        document.put("permissions", Map.of(
-                "download", true,
-                "edit", isEditableByOnlyOffice(extension),
-                "print", true));
-
-        Map<String, Object> editorConfig = new HashMap<>();
-        editorConfig.put("mode", isEditableByOnlyOffice(extension) ? "edit" : "view");
-        editorConfig.put("lang", "zh-CN");
-        editorConfig.put("callbackUrl", callbackUrl);
-        editorConfig.put("user", Map.of(
-                "id", String.valueOf(userId),
-                "name", documentService.getUserDisplayName(userId)));
-        editorConfig.put("customization", Map.of(
-                "autosave", true,
-                "forcesave", true,
-                "compactToolbar", false,
-                "help", false));
-
-        Map<String, Object> config = new HashMap<>();
-        config.put("type", "desktop");
-        config.put("documentType", resolveOnlyOfficeDocumentType(extension));
-        config.put("document", document);
-        config.put("editorConfig", editorConfig);
-        config.put("width", "100%");
-        config.put("height", "100%");
-        if (StringUtils.hasText(onlyOfficeJwtSecret)) {
-            config.put("token", buildOnlyOfficeJwt(config));
-        }
-
-        return ResponseEntity.ok(Map.of(
-                "documentServerUrl", normalizeDocumentServerUrl(),
-                "config", config));
+        return ResponseEntity.ok(documentService.buildOnlyOfficeEditorConfig(id, userId, fileUrl, callbackUrl));
     }
 
     @PostMapping("/{id}/onlyoffice/callback")
@@ -275,10 +220,6 @@ public class OnlineDocumentController {
         return Long.valueOf(userId.toString());
     }
 
-    private String normalizeDocumentServerUrl() {
-        return onlyOfficeDocumentServerUrl.replaceAll("/+$", "");
-    }
-
     private String toAbsoluteUrl(HttpServletRequest request, String url) {
         if (!StringUtils.hasText(url)) {
             return "";
@@ -302,54 +243,5 @@ public class OnlineDocumentController {
     private boolean isDefaultPort(HttpServletRequest request) {
         return ("http".equals(request.getScheme()) && request.getServerPort() == 80)
                 || ("https".equals(request.getScheme()) && request.getServerPort() == 443);
-    }
-
-    private String getFileExtension(String fileName) {
-        if (!StringUtils.hasText(fileName) || !fileName.contains(".")) {
-            return "";
-        }
-        return fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
-    }
-
-    private String resolveOnlyOfficeDocumentType(String extension) {
-        if (List.of("doc", "docx", "odt", "rtf", "txt").contains(extension)) {
-            return "word";
-        }
-        if (List.of("xls", "xlsx", "ods", "csv").contains(extension)) {
-            return "cell";
-        }
-        if (List.of("ppt", "pptx", "odp").contains(extension)) {
-            return "slide";
-        }
-        if ("pdf".equals(extension)) {
-            return "pdf";
-        }
-        return "word";
-    }
-
-    private boolean isEditableByOnlyOffice(String extension) {
-        return List.of("docx", "xlsx", "pptx").contains(extension);
-    }
-
-    private String buildOnlyOfficeJwt(Map<String, Object> payload) {
-        try {
-            String headerJson = objectMapper.writeValueAsString(Map.of("alg", "HS256", "typ", "JWT"));
-            String payloadJson = objectMapper.writeValueAsString(payload);
-            String encodedHeader = base64Url(headerJson.getBytes(StandardCharsets.UTF_8));
-            String encodedPayload = base64Url(payloadJson.getBytes(StandardCharsets.UTF_8));
-            String signingInput = encodedHeader + "." + encodedPayload;
-
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(onlyOfficeJwtSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            return signingInput + "." + base64Url(mac.doFinal(signingInput.getBytes(StandardCharsets.UTF_8)));
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("ONLYOFFICE JWT 序列化失败", e);
-        } catch (Exception e) {
-            throw new IllegalStateException("ONLYOFFICE JWT 签名失败", e);
-        }
-    }
-
-    private String base64Url(byte[] bytes) {
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }

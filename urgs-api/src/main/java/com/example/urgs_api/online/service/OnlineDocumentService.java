@@ -20,6 +20,8 @@ import com.example.urgs_api.online.mapper.OnlineDocumentPermissionMapper;
 import com.example.urgs_api.user.dto.UserDTO;
 import com.example.urgs_api.user.mapper.UserMapper;
 import com.example.urgs_api.user.model.User;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,6 +43,8 @@ import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -65,12 +69,19 @@ public class OnlineDocumentService {
     private final OnlineDocumentPermissionGroupMapper permissionGroupMapper;
     private final OnlineDocumentPermissionGroupMemberMapper permissionGroupMemberMapper;
     private final UserMapper userMapper;
+    private final ObjectMapper objectMapper;
 
     @Value("${urgs.profile:./uploads}")
     private String profile;
 
     @Value("${urgs.onlyoffice.callback-secret:urgs-onlyoffice-callback-secret}")
     private String onlyOfficeCallbackSecret;
+
+    @Value("${urgs.onlyoffice.jwt-secret:}")
+    private String onlyOfficeJwtSecret;
+
+    @Value("${urgs.onlyoffice.document-server-url:http://localhost:8088}")
+    private String onlyOfficeDocumentServerUrl;
 
     public IPage<OnlineDocument> listDocuments(Long userId, String keyword, String fileType, int page, int size) {
         return listDocuments(userId, ListQueryScope.ALL, keyword, fileType, page, size);
@@ -595,6 +606,110 @@ public class OnlineDocumentService {
             doc.setShared(!isOwner);
             doc.setCanManagePermissions(isOwner);
         }
+    }
+
+    /**
+     * 构建 ONLYOFFICE 编辑器前端配置
+     */
+    public Map<String, Object> buildOnlyOfficeEditorConfig(Long documentId, Long userId,
+                                                            String fileUrl, String callbackUrl) {
+        OnlineDocument doc = getAccessibleDocument(documentId, userId);
+        String fileName = doc.getFileName() != null ? doc.getFileName() : doc.getTitle();
+        String extension = getFileExtension(fileName);
+
+        Map<String, Object> document = new HashMap<>();
+        document.put("fileType", extension);
+        // Keep the key stable so all users editing the same document join one co-editing session.
+        document.put("key", "online-" + doc.getId());
+        document.put("title", fileName);
+        document.put("url", fileUrl);
+        document.put("permissions", Map.of(
+                "download", true,
+                "edit", isEditableByOnlyOffice(extension),
+                "print", true));
+
+        Map<String, Object> editorConfig = new HashMap<>();
+        editorConfig.put("mode", isEditableByOnlyOffice(extension) ? "edit" : "view");
+        editorConfig.put("lang", "zh-CN");
+        editorConfig.put("callbackUrl", callbackUrl);
+        editorConfig.put("user", Map.of(
+                "id", String.valueOf(userId),
+                "name", getUserDisplayName(userId)));
+        editorConfig.put("customization", Map.of(
+                "autosave", true,
+                "forcesave", true,
+                "compactToolbar", false,
+                "help", false));
+
+        Map<String, Object> config = new HashMap<>();
+        config.put("type", "desktop");
+        config.put("documentType", resolveOnlyOfficeDocumentType(extension));
+        config.put("document", document);
+        config.put("editorConfig", editorConfig);
+        config.put("width", "100%");
+        config.put("height", "100%");
+        if (StringUtils.hasText(onlyOfficeJwtSecret)) {
+            config.put("token", buildOnlyOfficeJwt(config));
+        }
+
+        return Map.of(
+                "documentServerUrl", normalizeDocumentServerUrl(),
+                "config", config);
+    }
+
+    // ---- ONLYOFFICE helpers ----
+
+    private String getFileExtension(String fileName) {
+        if (!StringUtils.hasText(fileName) || !fileName.contains(".")) {
+            return "";
+        }
+        return fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
+    }
+
+    private String resolveOnlyOfficeDocumentType(String extension) {
+        if (List.of("doc", "docx", "odt", "rtf", "txt").contains(extension)) {
+            return "word";
+        }
+        if (List.of("xls", "xlsx", "ods", "csv").contains(extension)) {
+            return "cell";
+        }
+        if (List.of("ppt", "pptx", "odp").contains(extension)) {
+            return "slide";
+        }
+        if ("pdf".equals(extension)) {
+            return "pdf";
+        }
+        return "word";
+    }
+
+    private boolean isEditableByOnlyOffice(String extension) {
+        return List.of("docx", "xlsx", "pptx").contains(extension);
+    }
+
+    private String normalizeDocumentServerUrl() {
+        return onlyOfficeDocumentServerUrl.replaceAll("/+$", "");
+    }
+
+    private String buildOnlyOfficeJwt(Map<String, Object> payload) {
+        try {
+            String headerJson = objectMapper.writeValueAsString(Map.of("alg", "HS256", "typ", "JWT"));
+            String payloadJson = objectMapper.writeValueAsString(payload);
+            String encodedHeader = base64Url(headerJson.getBytes(StandardCharsets.UTF_8));
+            String encodedPayload = base64Url(payloadJson.getBytes(StandardCharsets.UTF_8));
+            String signingInput = encodedHeader + "." + encodedPayload;
+
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(onlyOfficeJwtSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return signingInput + "." + base64Url(mac.doFinal(signingInput.getBytes(StandardCharsets.UTF_8)));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("ONLYOFFICE JWT 序列化失败", e);
+        } catch (Exception e) {
+            throw new IllegalStateException("ONLYOFFICE JWT 签名失败", e);
+        }
+    }
+
+    private String base64Url(byte[] bytes) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
     public String buildOnlyOfficeCallbackToken(Long documentId, String fileUrl) {
