@@ -3,6 +3,9 @@ package com.example.urgs_api.online.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.example.urgs_api.common.exception.BadRequestException;
+import com.example.urgs_api.common.exception.ForbiddenException;
+import com.example.urgs_api.common.exception.ResourceNotFoundException;
 import com.example.urgs_api.online.dto.OnlineDocumentPermissionGroupDTO;
 import com.example.urgs_api.online.dto.OnlineDocumentPermissionGroupRequest;
 import com.example.urgs_api.online.dto.OnlineDocumentPermissionDTO;
@@ -205,7 +208,7 @@ public class OnlineDocumentService {
             case "personal" -> ListQueryScope.PERSONAL;
             case "shared" -> ListQueryScope.SHARED;
             case "all" -> ListQueryScope.ALL;
-            default -> throw new IllegalArgumentException("无效的空间类型: " + spaceType);
+            default -> throw new BadRequestException("无效的空间类型: " + spaceType);
         };
     }
 
@@ -318,10 +321,10 @@ public class OnlineDocumentService {
     public OnlineDocument getAccessibleDocument(Long id, Long userId) {
         OnlineDocument doc = documentMapper.selectById(id);
         if (doc == null) {
-            throw new RuntimeException("在线文档不存在");
+            throw new ResourceNotFoundException("在线文档不存在");
         }
         if (!userId.equals(doc.getUserId()) && !hasPermission(id, userId)) {
-            throw new RuntimeException("无权访问该在线文档");
+            throw new ForbiddenException("无权访问该在线文档");
         }
         fillPresentationFields(List.of(doc), userId);
         return doc;
@@ -330,10 +333,10 @@ public class OnlineDocumentService {
     public OnlineDocument getOwnedDocument(Long id, Long userId) {
         OnlineDocument doc = documentMapper.selectById(id);
         if (doc == null) {
-            throw new RuntimeException("在线文档不存在");
+            throw new ResourceNotFoundException("在线文档不存在");
         }
         if (!userId.equals(doc.getUserId())) {
-            throw new RuntimeException("仅文档所有者可执行该操作");
+            throw new ForbiddenException("仅文档所有者可执行该操作");
         }
         fillPresentationFields(List.of(doc), userId);
         return doc;
@@ -500,10 +503,10 @@ public class OnlineDocumentService {
     private OnlineDocumentPermissionGroup getOwnedPermissionGroup(Long ownerUserId, Long groupId) {
         OnlineDocumentPermissionGroup group = permissionGroupMapper.selectById(groupId);
         if (group == null) {
-            throw new RuntimeException("授权组不存在");
+            throw new ResourceNotFoundException("授权组不存在");
         }
         if (!ownerUserId.equals(group.getOwnerUserId())) {
-            throw new RuntimeException("无权管理该授权组");
+            throw new ForbiddenException("无权管理该授权组");
         }
         return group;
     }
@@ -533,11 +536,11 @@ public class OnlineDocumentService {
 
     private String normalizePermissionGroupName(String name) {
         if (!StringUtils.hasText(name)) {
-            throw new IllegalArgumentException("授权组名称不能为空");
+            throw new BadRequestException("授权组名称不能为空");
         }
         String normalized = name.trim();
         if (normalized.length() > 100) {
-            throw new IllegalArgumentException("授权组名称不能超过100个字符");
+            throw new BadRequestException("授权组名称不能超过100个字符");
         }
         return normalized;
     }
@@ -563,7 +566,7 @@ public class OnlineDocumentService {
     public OnlineDocument getDocument(Long id) {
         OnlineDocument doc = documentMapper.selectById(id);
         if (doc == null) {
-            throw new RuntimeException("在线文档不存在");
+            throw new ResourceNotFoundException("在线文档不存在");
         }
         return doc;
     }
@@ -609,7 +612,7 @@ public class OnlineDocumentService {
     public void saveOnlyOfficeDocument(Long documentId, String downloadUrl) {
         OnlineDocument doc = getDocument(documentId);
         if (!StringUtils.hasText(doc.getFileUrl())) {
-            throw new RuntimeException("在线文档文件地址为空");
+            throw new BadRequestException("在线文档文件地址为空");
         }
 
         Path targetPath = resolveUploadedFile(doc.getFileUrl());
@@ -652,14 +655,14 @@ public class OnlineDocumentService {
         }
 
         if (!normalized.startsWith("/profile/")) {
-            throw new IllegalArgumentException("仅支持保存本地上传文件: " + fileUrl);
+            throw new BadRequestException("仅支持保存本地上传文件: " + fileUrl);
         }
 
         String relativePath = normalized.substring("/profile/".length());
         Path basePath = Path.of(profile).toAbsolutePath().normalize();
         Path resolvedPath = basePath.resolve(relativePath).normalize();
         if (!resolvedPath.startsWith(basePath)) {
-            throw new IllegalArgumentException("非法文件路径: " + fileUrl);
+            throw new BadRequestException("非法文件路径: " + fileUrl);
         }
         return resolvedPath;
     }
@@ -678,7 +681,7 @@ public class OnlineDocumentService {
         if ("cell".equals(documentType) || "word".equals(documentType)) {
             return documentType;
         }
-        throw new IllegalArgumentException("仅支持新建文字文档和电子表格");
+        throw new BadRequestException("仅支持新建文字文档和电子表格");
     }
 
     private String defaultTitle(String documentType) {

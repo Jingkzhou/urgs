@@ -7,6 +7,7 @@ import com.example.urgs_api.online.dto.OnlineDocumentPermissionDTO;
 import com.example.urgs_api.online.entity.OnlineDocument;
 import com.example.urgs_api.online.service.OnlineDocumentService;
 import com.example.urgs_api.user.dto.UserDTO;
+import com.example.urgs_api.common.exception.UnauthorizedException;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -273,7 +274,7 @@ public class OnlineDocumentController {
     private Long getUserId(HttpServletRequest request) {
         Object userId = request.getAttribute("userId");
         if (userId == null) {
-            throw new RuntimeException("用户未登录");
+            throw new UnauthorizedException("用户未登录");
         }
         return Long.valueOf(userId.toString());
     }
