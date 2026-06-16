@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { UserCircle, Edit, Trash2, Save, X, Filter, ChevronLeft, ChevronRight, Lock, Shield, Ban, CheckSquare, Square, Search, Upload, Download } from 'lucide-react';
+import { UserCircle, Edit, Trash2, Save, X, Filter, ChevronLeft, ChevronRight, Lock, Shield, Ban, CheckSquare, Square, Search, Upload, Download, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { User } from './types';
-import { ActionToolbar } from './Shared';
 import Auth from '../Auth';
 
 // --- Custom UI Components ---
@@ -851,31 +850,34 @@ const UserManagement: React.FC = () => {
         }
     };
 
+    const activeFilterCount = [filterOrg, filterRole, filterStatus].filter(v => v !== 'all').length;
+
     return (
         <div className="space-y-4 animate-fade-in relative">
-            <ActionToolbar
-                title="用户列表"
-                placeholder="输入工号/姓名搜索..."
-                codePrefix="sys:user"
-                onAdd={handleAdd}
-                className="mb-0"
-            >
-                <div className="flex items-center gap-2 mr-2 border-r border-slate-200 pr-4">
+            {/* === 顶部标题栏 === */}
+            <div className="bg-white rounded-lg border border-slate-200 px-5 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-bold text-slate-800">用户列表</h2>
+                    <span className="text-xs text-slate-400 bg-slate-50 px-2 py-1 rounded border border-slate-100 font-mono hidden lg:inline">
+                        sys:user:*
+                    </span>
+                </div>
+                <div className="flex items-center gap-2">
                     <button
                         onClick={handleExport}
-                        className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold"
+                        className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors font-medium"
                         title="导出全量数据"
                     >
                         <Download className="w-4 h-4" />
-                        导出
+                        <span className="hidden sm:inline">导出</span>
                     </button>
                     <button
                         onClick={handleImportClick}
-                        className="p-2 text-slate-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold"
-                        title="批量导入 (支持 CSV/JSON)"
+                        className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors font-medium"
+                        title="批量导入"
                     >
                         <Upload className="w-4 h-4" />
-                        导入
+                        <span className="hidden sm:inline">导入</span>
                     </button>
                     <input
                         type="file"
@@ -884,26 +886,59 @@ const UserManagement: React.FC = () => {
                         accept=".xlsx,.xls,.json"
                         className="hidden"
                     />
+                    <Auth code="sys:user:add">
+                        <button
+                            onClick={handleAdd}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors shadow-sm shadow-red-200"
+                        >
+                            <Plus className="w-4 h-4" />
+                            <span className="hidden sm:inline">新增用户</span>
+                        </button>
+                    </Auth>
                 </div>
-                {/* Custom Filters */}
-                <div className="flex items-center gap-2">
-                    <div className="relative">
-                        <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+            </div>
+
+            {/* === 搜索 & 筛选栏 === */}
+            <div className="bg-white rounded-lg border border-slate-200 px-5 py-3 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                <div className="relative flex-1 w-full sm:max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                        type="text"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="输入工号/姓名搜索..."
+                        className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none bg-slate-50 hover:bg-white transition-colors"
+                    />
+                    {searchTerm && (
+                        <button
+                            onClick={() => setSearchTerm('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                </div>
+
+                <div className="hidden sm:block w-px h-6 bg-slate-200 self-center" />
+
+                <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 rounded-lg border border-slate-200 text-sm">
+                        <Filter className="w-3.5 h-3.5 text-slate-400" />
                         <select
                             value={filterOrg}
                             onChange={e => setFilterOrg(e.target.value)}
-                            className="pl-8 pr-3 py-2 border border-slate-200 rounded-md text-sm focus:ring-2 focus:ring-red-500 outline-none bg-slate-50 hover:bg-white transition-colors min-w-[120px]"
+                            className="bg-transparent text-slate-600 outline-none text-sm min-w-[100px] cursor-pointer"
                         >
                             <option value="all">所有机构</option>
                             {orgOptions.map(o => <option key={o} value={o}>{o}</option>)}
                         </select>
                     </div>
-                    <div className="relative">
-                        <Shield className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 rounded-lg border border-slate-200 text-sm">
+                        <Shield className="w-3.5 h-3.5 text-slate-400" />
                         <select
                             value={filterRole}
                             onChange={e => setFilterRole(e.target.value)}
-                            className="pl-8 pr-3 py-2 border border-slate-200 rounded-md text-sm focus:ring-2 focus:ring-red-500 outline-none bg-slate-50 hover:bg-white transition-colors min-w-[120px]"
+                            className="bg-transparent text-slate-600 outline-none text-sm min-w-[100px] cursor-pointer"
                         >
                             <option value="all">所有角色</option>
                             {roleOptions.map(r => <option key={r.id.toString()} value={r.name}>{r.name}</option>)}
@@ -912,41 +947,54 @@ const UserManagement: React.FC = () => {
                     <select
                         value={filterStatus}
                         onChange={e => setFilterStatus(e.target.value)}
-                        className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:ring-2 focus:ring-red-500 outline-none bg-slate-50 hover:bg-white transition-colors"
+                        className="px-3 py-1.5 bg-slate-50 rounded-lg border border-slate-200 text-sm text-slate-600 outline-none cursor-pointer"
                     >
                         <option value="all">所有状态</option>
                         <option value="active">正常</option>
                         <option value="inactive">停用</option>
                     </select>
+                    {activeFilterCount > 0 && (
+                        <button
+                            onClick={() => { setFilterOrg('all'); setFilterRole('all'); setFilterStatus('all'); setSearchTerm(''); }}
+                            className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1"
+                        >
+                            清除筛选 ({activeFilterCount})
+                        </button>
+                    )}
                 </div>
-            </ActionToolbar>
+            </div>
 
-            {/* Batch Action Bar */}
+            {/* === 批量操作栏 === */}
             {selectedIds.size > 0 && (
-                <div className="bg-red-50 border border-red-100 px-4 py-2 rounded-lg flex items-center justify-between animate-fade-in">
+                <div className="bg-red-50 border border-red-100 px-4 py-3 rounded-lg flex items-center justify-between animate-fade-in">
                     <span className="text-sm text-red-800 font-medium">已选择 {selectedIds.size} 项</span>
                     <div className="flex gap-2">
                         <Auth code="sys:user:edit">
-                            <button onClick={() => handleBatchStatus('active')} className="px-3 py-1.5 text-xs bg-white text-green-700 border border-green-200 rounded hover:bg-green-50">批量启用</button>
-                            <button onClick={() => handleBatchStatus('inactive')} className="px-3 py-1.5 text-xs bg-white text-slate-700 border border-slate-200 rounded hover:bg-slate-50">批量停用</button>
+                            <button onClick={() => handleBatchStatus('active')} className="px-3 py-1.5 text-xs font-medium bg-white text-green-700 border border-green-200 rounded-lg hover:bg-green-50 transition-colors">批量启用</button>
+                            <button onClick={() => handleBatchStatus('inactive')} className="px-3 py-1.5 text-xs font-medium bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">批量停用</button>
                         </Auth>
                         <Auth code="sys:user:del">
-                            <button onClick={handleBatchDelete} className="px-3 py-1.5 text-xs bg-white text-red-700 border border-red-200 rounded hover:bg-red-50">批量删除</button>
+                            <button onClick={handleBatchDelete} className="px-3 py-1.5 text-xs font-medium bg-white text-red-700 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">批量删除</button>
                         </Auth>
                     </div>
                 </div>
             )}
 
+            {/* === 错误提示 === */}
             {error && (
-                <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{error}</div>
+                <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-lg">
+                    <Ban className="w-4 h-4 flex-shrink-0" />
+                    {error}
+                </div>
             )}
 
+            {/* === 数据表格 === */}
             <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
-                <div className="overflow-x-auto min-h-[400px]">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
-                            <tr>
-                                <th className="px-4 py-4 w-10">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="bg-slate-50/80 border-b border-slate-200">
+                                <th className="pl-5 pr-2 py-3.5 w-10">
                                     <div className="flex items-center justify-center cursor-pointer" onClick={toggleSelectAll}>
                                         {selectedIds.size === paginatedUsers.length && paginatedUsers.length > 0 ?
                                             <CheckSquare className="w-4 h-4 text-red-600" /> :
@@ -954,47 +1002,56 @@ const UserManagement: React.FC = () => {
                                         }
                                     </div>
                                 </th>
-                                <th className="px-4 py-4 whitespace-nowrap">工号</th>
-                                <th className="px-4 py-4 whitespace-nowrap">姓名</th>
-                                <th className="px-4 py-4 whitespace-nowrap">所属机构</th>
-                                <th className="px-4 py-4 whitespace-nowrap">关联角色</th>
-                                <th className="px-4 py-4 whitespace-nowrap">手机号</th>
-                                <th className="px-4 py-4 whitespace-nowrap">关联系统</th>
-                                <th className="px-4 py-4 whitespace-nowrap">最后登录</th>
-                                <th className="px-4 py-4 whitespace-nowrap">状态</th>
-                                <th className="px-4 py-4 whitespace-nowrap text-right">操作</th>
+                                <th className="px-3 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">工号</th>
+                                <th className="px-3 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">姓名</th>
+                                <th className="px-3 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">所属机构</th>
+                                <th className="px-3 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">关联角色</th>
+                                <th className="px-3 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">手机号</th>
+                                <th className="px-3 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">关联系统</th>
+                                <th className="px-3 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">最后登录</th>
+                                <th className="px-3 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">状态</th>
+                                <th className="px-3 pr-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">操作</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody className="divide-y divide-slate-50">
                             {loading ? (
-                                // Skeleton Loading
                                 Array.from({ length: 5 }).map((_, i) => (
-                                    <tr key={i}>
-                                        <td className="px-4 py-4"><div className="h-4 w-4 bg-slate-100 rounded animate-pulse"></div></td>
-                                        <td className="px-4 py-4"><div className="h-4 w-16 bg-slate-100 rounded animate-pulse"></div></td>
-                                        <td className="px-4 py-4"><div className="h-4 w-20 bg-slate-100 rounded animate-pulse"></div></td>
-                                        <td className="px-4 py-4"><div className="h-4 w-24 bg-slate-100 rounded animate-pulse"></div></td>
-                                        <td className="px-4 py-4"><div className="h-4 w-20 bg-slate-100 rounded animate-pulse"></div></td>
-                                        <td className="px-4 py-4"><div className="h-4 w-24 bg-slate-100 rounded animate-pulse"></div></td>
-                                        <td className="px-4 py-4"><div className="h-4 w-16 bg-slate-100 rounded animate-pulse"></div></td>
-                                        <td className="px-4 py-4"><div className="h-4 w-32 bg-slate-100 rounded animate-pulse"></div></td>
-                                        <td className="px-4 py-4"><div className="h-6 w-12 bg-slate-100 rounded-full animate-pulse"></div></td>
-                                        <td className="px-4 py-4"><div className="h-6 w-20 bg-slate-100 rounded ml-auto animate-pulse"></div></td>
+                                    <tr key={i} className="animate-pulse">
+                                        <td className="pl-5 pr-2 py-4"><div className="h-4 w-4 bg-slate-100 rounded" /></td>
+                                        <td className="px-3 py-4"><div className="h-4 w-14 bg-slate-100 rounded" /></td>
+                                        <td className="px-3 py-4"><div className="flex items-center gap-2"><div className="h-8 w-8 rounded-full bg-slate-100" /><div className="h-4 w-16 bg-slate-100 rounded" /></div></td>
+                                        <td className="px-3 py-4"><div className="h-4 w-20 bg-slate-100 rounded" /></td>
+                                        <td className="px-3 py-4"><div className="h-5 w-16 bg-slate-100 rounded" /></td>
+                                        <td className="px-3 py-4"><div className="h-4 w-24 bg-slate-100 rounded" /></td>
+                                        <td className="px-3 py-4"><div className="h-4 w-16 bg-slate-100 rounded" /></td>
+                                        <td className="px-3 py-4"><div className="h-4 w-28 bg-slate-100 rounded" /></td>
+                                        <td className="px-3 py-4"><div className="h-5 w-10 bg-slate-100 rounded-full" /></td>
+                                        <td className="px-3 pr-5 py-4"><div className="h-6 w-20 bg-slate-100 rounded ml-auto" /></td>
                                     </tr>
                                 ))
                             ) : paginatedUsers.length === 0 ? (
                                 <tr>
-                                    <td colSpan={10} className="py-20 text-center text-slate-400 flex flex-col items-center justify-center">
-                                        <div className="bg-slate-50 p-4 rounded-full mb-3">
-                                            <Search className="w-8 h-8 text-slate-300" />
+                                    <td colSpan={10} className="py-24 text-center">
+                                        <div className="flex flex-col items-center gap-3">
+                                            <div className="bg-slate-50 p-4 rounded-full">
+                                                <Search className="w-8 h-8 text-slate-300" />
+                                            </div>
+                                            <p className="text-slate-400 text-sm">没有找到匹配的用户数据</p>
+                                            {activeFilterCount > 0 && (
+                                                <button
+                                                    onClick={() => { setFilterOrg('all'); setFilterRole('all'); setFilterStatus('all'); setSearchTerm(''); }}
+                                                    className="text-xs text-red-500 hover:text-red-700 font-medium"
+                                                >
+                                                    清除所有筛选条件
+                                                </button>
+                                            )}
                                         </div>
-                                        <p>没有找到匹配的用户数据</p>
                                     </td>
                                 </tr>
                             ) : (
                                 paginatedUsers.map((user) => (
-                                    <tr key={user.id} className={`hover:bg-slate-50 transition-colors ${selectedIds.has(user.id) ? 'bg-red-50/30' : ''}`}>
-                                        <td className="px-4 py-4">
+                                    <tr key={user.id} className={`hover:bg-slate-50/80 transition-colors ${selectedIds.has(user.id) ? 'bg-red-50/30' : ''}`}>
+                                        <td className="pl-5 pr-2 py-3.5">
                                             <div className="flex items-center justify-center cursor-pointer" onClick={() => toggleSelect(user.id)}>
                                                 {selectedIds.has(user.id) ?
                                                     <CheckSquare className="w-4 h-4 text-red-600" /> :
@@ -1002,85 +1059,86 @@ const UserManagement: React.FC = () => {
                                                 }
                                             </div>
                                         </td>
-                                        <td className="px-4 py-4 text-slate-500 font-mono">{user.empId}</td>
-                                        <td className="px-4 py-4 text-slate-900 font-bold flex items-center gap-2">
-                                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-                                                <UserCircle size={20} />
-                                            </div>
-                                            {user.name}
+                                        <td className="px-3 py-3.5">
+                                            <span className="text-slate-500 font-mono text-xs">{user.empId}</span>
                                         </td>
-                                        <td className="px-4 py-4 text-slate-600">{user.orgName}</td>
-                                        <td className="px-4 py-4 text-slate-600">
-                                            <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs border border-slate-200">
+                                        <td className="px-3 py-3.5">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-500 flex-shrink-0">
+                                                    <UserCircle size={18} />
+                                                </div>
+                                                <span className="font-medium text-slate-800">{user.name}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-3 py-3.5 text-slate-600">{user.orgName}</td>
+                                        <td className="px-3 py-3.5">
+                                            <span className="inline-flex px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
                                                 {user.roleName}
                                             </span>
                                         </td>
-                                        <td className="px-4 py-4 text-slate-500 font-mono text-xs">{user.phone}</td>
-                                        <td className="px-4 py-4 text-slate-500 text-xs">
+                                        <td className="px-3 py-3.5 text-slate-500 text-xs font-mono">{user.phone || '-'}</td>
+                                        <td className="px-3 py-3.5">
                                             {user.system ? (() => {
                                                 const systems = user.system.split(',').filter(Boolean);
-                                                if (systems.length === 0) return <span className="text-slate-400">未关联</span>;
-
+                                                if (systems.length === 0) return <span className="text-slate-400 text-xs">-</span>;
                                                 const displayLimit = 2;
                                                 const visibleSystems = systems.slice(0, displayLimit);
                                                 const remainingCount = systems.length - displayLimit;
-
                                                 return (
                                                     <div className="flex flex-wrap items-center gap-1">
                                                         {visibleSystems.map((sso, idx) => (
-                                                            <span key={sso + idx} className="inline-flex items-center px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-100">
+                                                            <span key={sso + idx} className="inline-flex px-2 py-0.5 rounded text-xs bg-blue-50 text-blue-700 border border-blue-100">
                                                                 {sso}
                                                             </span>
                                                         ))}
                                                         {remainingCount > 0 && (
-                                                            <span
-                                                                className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-600 border border-slate-200 cursor-help font-medium hover:bg-slate-200 transition-colors"
-                                                                title={systems.join('\n')}
-                                                            >
+                                                            <span className="inline-flex px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600 border border-slate-200 cursor-help font-medium hover:bg-slate-200 transition-colors" title={systems.join('\n')}>
                                                                 +{remainingCount}
                                                             </span>
                                                         )}
                                                     </div>
                                                 );
-                                            })() : <span className="text-slate-400">未关联</span>}
+                                            })() : <span className="text-slate-400 text-xs">-</span>}
                                         </td>
-                                        <td className="px-4 py-4 text-slate-400 text-xs font-mono">{user.lastLogin}</td>
-                                        <td className="px-4 py-4">
+                                        <td className="px-3 py-3.5 text-slate-400 text-xs font-mono">{user.lastLogin || '-'}</td>
+                                        <td className="px-3 py-3.5">
                                             {user.status === 'active' ? (
-                                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">
+                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                                                     正常
                                                 </span>
                                             ) : (
-                                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
                                                     停用
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="px-4 py-4 text-right">
-                                            <div className="flex items-center justify-end gap-2">
+                                        <td className="px-3 pr-5 py-3.5">
+                                            <div className="flex items-center justify-end gap-1">
                                                 <Auth code="sys:user:edit">
                                                     <button
                                                         onClick={() => handleResetPassword(user.id)}
-                                                        className="p-1.5 text-slate-400 hover:text-amber-600 bg-slate-100 hover:bg-amber-50 rounded transition-colors"
+                                                        className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
                                                         title="重置密码"
                                                     >
-                                                        <Lock size={14} />
+                                                        <Lock size={15} />
                                                     </button>
                                                     <button
                                                         onClick={() => handleEdit(user)}
-                                                        className="p-1.5 text-slate-400 hover:text-blue-600 bg-slate-100 hover:bg-blue-50 rounded transition-colors"
+                                                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                                                         title="编辑用户"
                                                     >
-                                                        <Edit size={14} />
+                                                        <Edit size={15} />
                                                     </button>
                                                 </Auth>
                                                 <Auth code="sys:user:del">
                                                     <button
                                                         onClick={() => handleDelete(user.id)}
-                                                        className="p-1.5 text-slate-400 hover:text-red-600 bg-slate-100 hover:bg-red-50 rounded transition-colors"
+                                                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                                         title="删除用户"
                                                     >
-                                                        <Trash2 size={14} />
+                                                        <Trash2 size={15} />
                                                     </button>
                                                 </Auth>
                                             </div>
@@ -1092,36 +1150,66 @@ const UserManagement: React.FC = () => {
                     </table>
                 </div>
 
-                {/* Pagination Footer */}
-                <div className="px-6 py-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4">
-                    <div className="flex items-center gap-4">
-                        <span>共 {filteredUsers.length} 条数据</span>
-                        <select
-                            value={pageSize}
-                            onChange={(e) => setPageSize(Number(e.target.value))}
-                            className="border border-slate-200 rounded px-2 py-1 bg-slate-50 outline-none focus:border-red-500"
-                        >
-                            <option value={10}>10 条/页</option>
-                            <option value={20}>20 条/页</option>
-                            <option value={50}>50 条/页</option>
-                        </select>
+                {/* === 分页栏 === */}
+                <div className="px-5 py-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="flex items-center gap-4 text-xs text-slate-500">
+                        <span>共 <span className="font-semibold text-slate-700">{filteredUsers.length}</span> 条记录</span>
+                        <div className="flex items-center gap-1.5">
+                            <span>每页</span>
+                            <select
+                                value={pageSize}
+                                onChange={(e) => setPageSize(Number(e.target.value))}
+                                className="border border-slate-200 rounded-md px-2 py-1 bg-slate-50 text-slate-600 outline-none focus:border-red-400 text-xs cursor-pointer"
+                            >
+                                <option value={10}>10</option>
+                                <option value={20}>20</option>
+                                <option value={50}>50</option>
+                            </select>
+                            <span>条</span>
+                        </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                         <button
                             onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                             disabled={currentPage === 1}
-                            className="p-1.5 border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="p-1.5 rounded-md border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-slate-600"
                         >
                             <ChevronLeft size={14} />
                         </button>
-                        <span className="mx-2">
-                            第 <span className="font-bold text-slate-700">{currentPage}</span> / {totalPages || 1} 页
-                        </span>
+
+                        {(() => {
+                            const pages: (number | '...')[] = [];
+                            if (totalPages <= 7) {
+                                for (let i = 1; i <= totalPages; i++) pages.push(i);
+                            } else {
+                                pages.push(1);
+                                if (currentPage > 3) pages.push('...');
+                                const start = Math.max(2, currentPage - 1);
+                                const end = Math.min(totalPages - 1, currentPage + 1);
+                                for (let i = start; i <= end; i++) pages.push(i);
+                                if (currentPage < totalPages - 2) pages.push('...');
+                                pages.push(totalPages);
+                            }
+                            return pages.map((p, i) =>
+                                p === '...' ? (
+                                    <span key={`dots-${i}`} className="px-1.5 text-slate-400 text-xs">...</span>
+                                ) : (
+                                    <button
+                                        key={p}
+                                        onClick={() => setCurrentPage(p)}
+                                        className={`min-w-[32px] h-8 rounded-md text-xs font-medium transition-colors ${currentPage === p ? 'bg-red-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}
+                                    >
+                                        {p}
+                                    </button>
+                                )
+                            );
+                        })()}
+
                         <button
                             onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                             disabled={currentPage === totalPages || totalPages === 0}
-                            className="p-1.5 border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="p-1.5 rounded-md border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-slate-600"
                         >
                             <ChevronRight size={14} />
                         </button>
@@ -1129,6 +1217,7 @@ const UserManagement: React.FC = () => {
                 </div>
             </div>
 
+            {/* === 新增/编辑弹窗 === */}
             {showForm && (
                 <UserForm
                     initialData={editingUser}
