@@ -90,37 +90,26 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
     const [isSourcesExpanded, setIsSourcesExpanded] = useState(false);
 
     return (
-        <div className={`w-full group ${isUser ? 'flex justify-end' : 'flex justify-start'}`}>
-            <div className={`flex w-full gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
-                {/* Avatar / Icon */}
-                <div className="flex-shrink-0 mt-1">
-                    {!isUser && (
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700">
-                            <Sparkles size={16} />
-                        </div>
-                    )}
-                </div>
-
-                {/* Content */}
-                <div className={`flex-1 min-w-0 ${isUser ? 'flex justify-end' : ''}`}>
+        <div className={`group w-full ${isUser ? 'flex justify-end' : 'block'}`}>
+            <div className={`w-full min-w-0 ${isUser ? 'flex justify-end' : ''}`}>
                     <div className={`
-                        ${isUser ? 'max-w-[78%]' : 'max-w-none w-full'}
+                        ${isUser ? 'max-w-[78%]' : 'w-full'}
                         ${isUser
-                            ? 'inline-block rounded-[1.45rem] bg-[#f4f4f4] px-5 py-3 text-[15px] leading-7 text-[#0d0d0d]'
-                            : 'text-[#0d0d0d] text-[16px] leading-7 font-normal transition-opacity duration-300'
+                            ? 'inline-block rounded-[1.35rem] bg-[#f4f4f4] px-5 py-3 text-[15px] leading-7 text-[#0d0d0d]'
+                            : 'text-[16px] font-normal leading-7 text-[#0d0d0d] transition-opacity duration-300'
                         }
                     `}>
                         {!isUser && !message.content ? (
-                            <div className="flex items-center gap-3 py-4 h-9">
+                            <div className="flex h-9 items-center gap-3 py-4">
                                 <motion.div
                                     animate={{
                                         scale: [1, 1.2, 1],
                                         opacity: [0.3, 1, 0.3]
                                     }}
                                     transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-                                    className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                                    className="h-2.5 w-2.5 rounded-full bg-slate-900"
                                 />
-                                <span className="text-slate-400 text-sm font-medium animate-pulse">
+                                <span className="animate-pulse text-sm font-medium text-slate-500">
                                     {message.status === 'searching' ? '正在检索知识库...' :
                                         message.status === 'compressing' ? '正在压缩对话历史...' :
                                             message.status === 'agent_app_running' ? '正在调用 Agent App...' :
@@ -131,7 +120,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                             <div className={`markdown-body ${isUser ? 'text-[#0d0d0d]' : ''}`}>
                                 {/* Intent Badge */}
                                 {!isUser && message.intent && message.intent !== 'GENERAL' && (
-                                    <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mb-4 border border-white/50 shadow-sm ${getIntentConfig(message.intent).color}`}>
+                                    <div className={`mb-4 inline-flex items-center gap-1.5 rounded-lg px-3 py-1 text-[11px] font-semibold ${getIntentConfig(message.intent).color}`}>
                                         {getIntentConfig(message.intent).icon}
                                         {getIntentConfig(message.intent).label}
                                     </div>
@@ -203,19 +192,19 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                             <motion.div
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                className="mt-8 pt-4 border-t border-slate-200/40"
+                                className="mt-7 border-t border-slate-200 pt-4"
                             >
                                 <button
                                     onClick={() => setIsSourcesExpanded(!isSourcesExpanded)}
-                                    className="flex items-center gap-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4 hover:text-blue-600 transition-colors group/btn"
+                                    className="group/btn mb-3 flex items-center gap-2 text-xs font-semibold text-slate-500 transition-colors hover:text-slate-900"
                                 >
-                                    <Sparkles size={14} className="text-blue-600" />
+                                    <Sparkles size={14} />
                                     <span>发现的参考资料 ({message.sources.length})</span>
                                     <motion.div
                                         animate={{ rotate: isSourcesExpanded ? 180 : 0 }}
                                         transition={{ duration: 0.2 }}
                                     >
-                                        <ChevronDown size={14} className="group-hover/btn:text-blue-600" />
+                                        <ChevronDown size={14} />
                                     </motion.div>
                                 </button>
 
@@ -228,25 +217,26 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                                             transition={{ duration: 0.3, ease: "easeInOut" }}
                                             className="overflow-hidden"
                                         >
-                                            <div className="flex flex-wrap gap-3 pb-2">
+                                            <div className="grid gap-2 pb-2 sm:grid-cols-2">
                                                 {message.sources.map((source, idx) => (
                                                     <motion.div
                                                         key={idx}
-                                                        whileHover={{ y: -3, scale: 1.02, backgroundColor: "#ffffff", borderColor: "#3b82f6" }}
-                                                        className="bg-slate-50 border border-slate-200/50 rounded-2xl p-4 min-w-[200px] max-w-[280px] shadow-sm transition-all cursor-default"
+                                                        whileHover={{ backgroundColor: "#ffffff" }}
+                                                        className="cursor-default rounded-lg border border-slate-200 bg-[#f7f7f7] p-3 transition-colors"
                                                     >
-                                                        <div className="font-bold text-slate-800 mb-2 flex justify-between items-center text-xs">
-                                                            <span className="flex items-center gap-1.5 truncate">
-                                                                📄 {source.fileName}
+                                                        <div className="mb-2 flex items-center justify-between gap-2 text-xs font-semibold text-slate-800">
+                                                            <span className="flex min-w-0 items-center gap-1.5 truncate">
+                                                                <BookOpen size={13} />
+                                                                <span className="truncate">{source.fileName}</span>
                                                             </span>
-                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${source.score >= 0.8 ? 'bg-emerald-100 text-emerald-700' :
+                                                            <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-semibold ${source.score >= 0.8 ? 'bg-emerald-100 text-emerald-700' :
                                                                 source.score >= 0.6 ? 'bg-blue-100 text-blue-700' :
                                                                     'bg-slate-200 text-slate-600'
                                                                 }`}>
                                                                 {source.score > 0 ? (source.score < 0.1 ? `RRF ${(source.score).toFixed(4)}` : `${(source.score * 100).toFixed(0)}%`) : '召回'}
                                                             </span>
                                                         </div>
-                                                        <div className="text-slate-500 line-clamp-2 text-[11px] leading-relaxed relative">
+                                                        <div className="relative line-clamp-2 text-xs leading-5 text-slate-500">
                                                             {source.content}
                                                             <ScoreTooltip details={(source as any).score_details} />
                                                         </div>
@@ -261,15 +251,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
 
                         {/* No content fallback */}
                         {message.sources && message.sources.length === 0 && (
-                            <div className="mt-6 pt-4 border-t border-slate-100/50">
-                                <div className="text-[11px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-2">
+                            <div className="mt-6 border-t border-slate-100 pt-4">
+                                <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
                                     <SearchX size={14} />
                                     未在知识库中找到精准匹配
                                 </div>
                             </div>
                         )}
                     </div>
-                </div>
             </div>
         </div>
     );
@@ -287,7 +276,7 @@ const CodeBlock = ({ language, value }: { language: string, value: string }) => 
     const label = language === 'text' ? 'Plain text' : language;
 
     return (
-        <div className="my-5 overflow-hidden rounded-[1.25rem] bg-[#f4f4f4]">
+        <div className="my-5 overflow-hidden rounded-lg bg-[#f4f4f4]">
             <div className="flex items-center justify-between px-4 py-3">
                 <span className="text-sm font-semibold text-[#0d0d0d]">{label}</span>
                 <button

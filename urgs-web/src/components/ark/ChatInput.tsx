@@ -74,14 +74,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
     };
 
     return (
-        <div className={`w-full relative group mx-auto ${isWide ? 'max-w-7xl' : 'max-w-6xl'}`}>
+        <div className={`relative mx-auto w-full group ${isWide ? 'max-w-4xl' : 'max-w-3xl'}`}>
             <AnimatePresence>
                 {showSkillMenu && (
                     <motion.div
                         initial={{ opacity: 0, y: 8, scale: 0.98 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 8, scale: 0.98 }}
-                        className="absolute left-0 right-0 bottom-full mb-3 z-30 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
+                        className="absolute bottom-full left-0 right-0 z-30 mb-3 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
                     >
                         <div className="max-h-72 overflow-y-auto py-2">
                             {matchedSkills.map(skill => (
@@ -89,14 +89,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
                                     key={skill.id}
                                     type="button"
                                     onClick={() => handleSkillSelect(skill)}
-                                    className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors flex items-start gap-3"
+                                    className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-[#f7f7f7]"
                                 >
-                                    <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
+                                    <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg bg-[#f4f4f4] text-slate-700">
                                         <Wrench size={16} />
                                     </span>
                                     <span className="min-w-0 flex-1">
                                         <span className="flex items-center gap-2">
-                                            <span className="font-bold text-sm text-slate-800 truncate">{skill.name}</span>
+                                            <span className="truncate text-sm font-semibold text-slate-800">{skill.name}</span>
                                             <span className="text-xs text-slate-400">/{skill.code}</span>
                                         </span>
                                         <span className="mt-1 block text-xs text-slate-500 line-clamp-1">
@@ -111,17 +111,17 @@ const ChatInput: React.FC<ChatInputProps> = ({
             </AnimatePresence>
             <motion.div
                 animate={{ backgroundColor: "#f4f4f4" }}
-                className="relative flex flex-col overflow-hidden rounded-[28px] border border-slate-200 transition-colors duration-200 focus-within:border-slate-300"
+                className="relative flex flex-col overflow-hidden rounded-[26px] border border-slate-200 shadow-sm transition-colors duration-200 focus-within:border-slate-300"
             >
                 {selectedAgentAppSkill && (
                     <div className="flex items-center gap-2 px-5 pt-3">
-                        <span className="inline-flex items-center gap-2 rounded-full bg-purple-50 px-3 py-1 text-xs font-bold text-purple-700 border border-purple-100">
+                        <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
                             <Wrench size={13} />
                             {selectedAgentAppSkill.name}
                             <button
                                 type="button"
                                 onClick={onAgentAppSkillClear}
-                                className="ml-1 rounded-full p-0.5 hover:bg-purple-100 transition-colors"
+                                className="ml-1 rounded-full p-0.5 transition-colors hover:bg-[#f4f4f4]"
                                 title="清除技能"
                             >
                                 <X size={12} />
@@ -130,12 +130,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
                     </div>
                 )}
                 <div className="flex items-end px-4 py-3">
-                    {/* Attachment Button */}
-                    {/* <button className="p-2 mb-0.5 text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 rounded-full transition-colors mr-2 flex-shrink-0">
-                        <Plus size={22} strokeWidth={2.5} />
-                    </button> */}
-
-                    {/* Auto-growing Textarea */}
                     <textarea
                         ref={textareaRef}
                         value={value}
@@ -143,24 +137,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
                         onKeyDown={handleKeyDown}
                         placeholder="输入消息"
                         rows={1}
-                        className="flex-1 bg-transparent border-none outline-none text-[#0d0d0d] placeholder:text-slate-500 text-[16px] px-2 font-normal resize-none py-3 max-h-[200px] overflow-y-auto custom-scrollbar leading-[1.6]"
+                        className="custom-scrollbar max-h-[200px] flex-1 resize-none overflow-y-auto border-none bg-transparent px-2 py-3 text-[16px] font-normal leading-[1.6] text-[#0d0d0d] outline-none placeholder:text-slate-500"
                         style={{ minHeight: '52px' }}
                     />
 
                     <div className="flex items-end gap-2 mb-1 flex-shrink-0 ml-2">
-                        {/* Voice Input (Mock) */}
-                        {/* {!value.trim() && (
-                            <button className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 rounded-full transition-colors" title="语音输入">
-                                <Mic size={22} />
-                            </button>
-                        )}
-                        {!value.trim() && (
-                            <button className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 rounded-full transition-colors" title="上传图片">
-                                <Image size={22} />
-                            </button>
-                        )} */}
-
-                        {/* Submit / Stop Button */}
                         <AnimatePresence mode="wait">
                             {isGenerating ? (
                                 <motion.button
@@ -169,7 +150,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                                     animate={{ scale: 1, opacity: 1 }}
                                     exit={{ scale: 0, opacity: 0 }}
                                     onClick={onStop}
-                                    className="p-2 rounded-full bg-slate-900 text-white hover:bg-slate-700 transition-all duration-200 group-active:scale-95 flex items-center justify-center w-10 h-10"
+                                    className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 p-2 text-white transition-all duration-200 hover:bg-slate-700 group-active:scale-95"
                                     title="停止生成"
                                 >
                                     <div className="w-3 h-3 bg-white rounded-sm"></div>
@@ -184,7 +165,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                                         backgroundColor: value.trim() ? "#0d0d0d" : "rgba(0, 0, 0, 0)"
                                     }}
                                     onClick={onSubmit}
-                                    className={`w-10 h-10 flex items-center justify-center rounded-full transition-all duration-200 ${value.trim()
+                                    className={`flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200 ${value.trim()
                                         ? 'text-white hover:bg-black'
                                         : 'text-slate-400 cursor-not-allowed'
                                         }`}

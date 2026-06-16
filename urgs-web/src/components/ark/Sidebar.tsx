@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-    MessageSquare, Trash2, Pencil, Check, Settings, History
+    MessageSquare, Trash2, Pencil, Check, SquarePen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Session, getSessions, deleteSession, updateSession } from '../../api/chat';
@@ -73,22 +73,22 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
             animate={{ width: isCollapsed ? 64 : 300, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.22, ease: "easeInOut" }}
-            className="flex-shrink-0 bg-white flex flex-col h-full font-sans relative border-r border-slate-100 z-[40] overflow-hidden"
+            className="absolute inset-y-0 left-0 z-[40] flex h-full flex-shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-[#f9f9f9] font-sans shadow-xl md:relative md:inset-auto md:shadow-none"
         >
             <div className={`${isCollapsed ? 'px-2 pt-3' : 'px-4 pt-3'}`}>
                 <button
                     onClick={() => onNewChat()}
-                    className={`group relative overflow-hidden flex items-center justify-start gap-3 bg-[#f4f4f4] text-slate-700 rounded-xl transition-all duration-200 hover:bg-[#ececec] active:scale-95 ${isCollapsed ? 'w-10 h-10 mx-auto justify-center' : 'w-full px-4 py-3'}`}
+                    className={`group relative flex items-center justify-start gap-3 overflow-hidden rounded-lg bg-white text-slate-700 transition-all duration-200 hover:bg-[#f0f0f0] active:scale-95 ${isCollapsed ? 'mx-auto h-10 w-10 justify-center' : 'w-full px-3 py-2.5'}`}
                     title="新建对话"
                 >
-                    <span className="text-xl leading-none text-slate-700">+</span>
+                    <SquarePen size={17} />
                     <AnimatePresence>
                         {!isCollapsed && (
                             <motion.span
                                 initial={{ opacity: 0, width: 0 }}
                                 animate={{ opacity: 1, width: 'auto' }}
                                 exit={{ opacity: 0, width: 0 }}
-                                className="font-medium text-[14px] whitespace-nowrap"
+                                className="whitespace-nowrap text-sm font-medium"
                             >
                                 新建对话
                             </motion.span>
@@ -98,61 +98,61 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
             </div>
 
             {/* Chat History Section */}
-            <div className={`${isCollapsed ? 'px-2 pt-8' : 'px-4 pt-10'} flex-1 overflow-y-auto custom-scrollbar scroll-smooth`}>
+            <div className={`${isCollapsed ? 'px-2 pt-6' : 'px-3 pt-7'} custom-scrollbar flex-1 overflow-y-auto scroll-smooth`}>
                 <AnimatePresence mode="wait">
                     {!isCollapsed && (
                         <motion.h3
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
-                            className="text-[9px] font-black text-slate-400/70 uppercase tracking-[0.3em] mb-6 px-4"
+                            className="mb-3 px-2 text-xs font-medium text-slate-500"
                         >
-                            最近操作
+                            最近对话
                         </motion.h3>
                     )}
                 </AnimatePresence>
 
-                <div className="space-y-2">
+                <div className="space-y-1">
                     {sessions.map(session => (
                         <motion.div
                             key={session.id}
                             layout
                             onClick={() => onSessionSelect(session.id, session.agentId)}
                             title={isCollapsed ? session.title : undefined}
-                            className={`group flex items-center gap-3 rounded-full transition-all cursor-pointer relative overflow-hidden
-                                ${isCollapsed ? 'h-10 w-10 justify-center px-0 py-0 mx-auto' : 'px-5 py-2.5'}
+                            className={`group relative flex cursor-pointer items-center gap-3 overflow-hidden rounded-lg transition-colors
+                                ${isCollapsed ? 'mx-auto h-10 w-10 justify-center px-0 py-0' : 'px-3 py-2.5'}
                                 ${currentSessionId === session.id
-                                    ? 'bg-[#d3e3fd] text-[#041e49]'
-                                    : 'hover:bg-[#f0f4f9] text-[#1f1f1f]'
+                                    ? 'bg-[#ececec] text-[#0d0d0d]'
+                                    : 'text-[#1f1f1f] hover:bg-[#f0f0f0]'
                                 }`
                             }
                         >
                             {isCollapsed && (
-                                <div className="flex-shrink-0 relative z-10">
-                                    <MessageSquare size={16} strokeWidth={2} className={currentSessionId === session.id ? 'text-[#041e49]' : 'text-slate-500'} />
+                                <div className="relative z-10 flex-shrink-0">
+                                    <MessageSquare size={16} strokeWidth={2} className={currentSessionId === session.id ? 'text-[#0d0d0d]' : 'text-slate-500'} />
                                 </div>
                             )}
 
                             {!isCollapsed && (
-                                <div className="flex-1 min-w-0 relative z-10">
+                                <div className="relative z-10 min-w-0 flex-1">
                                     {editingId === session.id ? (
                                         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                                             <input
                                                 type="text"
                                                 value={editTitle}
                                                 onChange={(e) => setEditTitle(e.target.value)}
-                                                className="w-full bg-slate-50 border-2 border-red-500/30 rounded-lg px-2 py-1 text-xs outline-none focus:border-red-500/50"
+                                                className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs outline-none focus:border-slate-500"
                                                 autoFocus
                                             />
-                                            <button onClick={saveEdit} className="text-red-600 p-1 hover:bg-red-50 rounded-lg transition-colors"><Check size={14} strokeWidth={3} /></button>
+                                            <button onClick={saveEdit} className="rounded-lg p-1 text-slate-700 transition-colors hover:bg-white"><Check size={14} strokeWidth={3} /></button>
                                         </div>
                                     ) : (
                                         <div className="flex items-center justify-between">
-                                            <span className={`truncate text-[14px] ${currentSessionId === session.id ? 'font-medium' : 'font-normal'}`}>
+                                            <span className={`truncate text-sm ${currentSessionId === session.id ? 'font-medium' : 'font-normal'}`}>
                                                 {session.title}
                                             </span>
                                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                                                <button onClick={(e) => startEdit(e, session)} className="p-1.5 hover:bg-black/5 rounded-full transition-colors text-slate-500"><Pencil size={12} /></button>
-                                                <button onClick={(e) => handleDelete(e, session.id)} className="p-1.5 hover:bg-black/5 rounded-full transition-colors text-slate-500"><Trash2 size={12} /></button>
+                                                <button onClick={(e) => startEdit(e, session)} className="rounded-md p-1.5 text-slate-500 transition-colors hover:bg-black/5"><Pencil size={12} /></button>
+                                                <button onClick={(e) => handleDelete(e, session.id)} className="rounded-md p-1.5 text-slate-500 transition-colors hover:bg-black/5"><Trash2 size={12} /></button>
                                             </div>
                                         </div>
                                     )}
@@ -163,14 +163,13 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
                 </div>
             </div>
 
-           
         </motion.aside>
     );
 };
 
 // Helper Item with refined typography
 export const NavItem = ({ icon, label, active }: { icon: React.ReactNode, label: string, active?: boolean }) => (
-    <button className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all group
+    <button className={`group flex w-full items-center gap-4 rounded-lg px-4 py-3 transition-all
         ${active ? 'bg-white shadow-lg shadow-black/[0.03] text-slate-900' : 'text-slate-400 hover:text-slate-700 hover:bg-white/60'}
     `}>
         <div className={`transition-colors ${active ? 'text-red-600' : 'group-hover:text-red-500'}`}>

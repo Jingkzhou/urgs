@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { RobotOutlined } from '@ant-design/icons';
-import { Sparkles, Database, ChevronRight, User, Cpu, Layers, PenTool, Settings, Sliders, ArrowDown, PanelLeftClose, PanelLeftOpen, SquarePen } from 'lucide-react';
+import { Sparkles, Database, Cpu, Layers, PenTool, Settings, Sliders, ArrowDown, PanelLeftClose, PanelLeftOpen, SquarePen } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from './Sidebar';
 import ChatMessage from './ChatMessage';
@@ -583,36 +583,99 @@ const ArkPage: React.FC = () => {
     }
 
     return (
-        <div className="flex h-full flex-col bg-white font-sans text-slate-800 overflow-hidden">
-            <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-slate-100 bg-white px-3">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white font-sans text-[#0d0d0d] shadow-sm">
+            <header className="flex h-14 flex-shrink-0 items-center justify-between border-b border-slate-200 bg-white px-3">
                 <div className="flex items-center gap-1.5">
                     <button
                         onClick={() => setIsSidebarCollapsed(prev => !prev)}
-                        className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                        className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-[#f4f4f4] hover:text-slate-900"
                         title={isSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
                     >
                         {isSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
                     </button>
                     <button
                         onClick={() => handleNewChat()}
-                        className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                        className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-[#f4f4f4] hover:text-slate-900"
                         title="新建对话"
                     >
                         <SquarePen size={18} />
                     </button>
-                    <div className="ml-2 flex items-center gap-2">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-600 text-white">
-                            <Sparkles size={15} strokeWidth={2.5} />
-                        </div>
-                        <span className="text-sm font-semibold tracking-tight text-slate-900">ARK / 方舟</span>
-                    </div>
                 </div>
-                <div className="min-w-0 flex-1 px-6 text-center">
-                    <span className="inline-block max-w-full truncate text-sm font-medium text-slate-700">
-                        {activeAgent ? activeAgent.name : 'AI 助手'}
-                    </span>
+
+                <div className="min-w-0 flex-1 px-3">
+                    <button
+                        type="button"
+                        className="mx-auto flex max-w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 transition-colors hover:bg-[#f4f4f4]"
+                        title={activeAgent?.description || '当前助手'}
+                    >
+                        <span className="truncate">{activeAgent ? activeAgent.name : 'ARK'}</span>
+                        {activeAgent?.buildMode === 'AGENT_APP' && (
+                            <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
+                                Agent App
+                            </span>
+                        )}
+                    </button>
                 </div>
-                <div className="w-[96px]" />
+
+                <div className="relative flex items-center justify-end gap-1.5">
+                    <button
+                        type="button"
+                        onClick={() => setShowRagConfig(prev => !prev)}
+                        className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${showRagConfig ? 'bg-[#f4f4f4] text-slate-900' : 'text-slate-500 hover:bg-[#f4f4f4] hover:text-slate-900'}`}
+                        title="检索设置"
+                    >
+                        <Settings size={18} />
+                    </button>
+                    <AnimatePresence>
+                        {showRagConfig && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                                className="absolute right-0 top-11 z-50 w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl"
+                            >
+                                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                                    <Sliders size={16} />
+                                    检索设置
+                                </div>
+                                <div className="space-y-3">
+                                    <div>
+                                        <div className="mb-1.5 text-xs font-medium text-slate-500">融合策略</div>
+                                        <div className="grid grid-cols-2 gap-1 rounded-lg bg-[#f4f4f4] p-1">
+                                            {[
+                                                { label: 'RRF', value: 'rrf' },
+                                                { label: '加权', value: 'weighted' }
+                                            ].map(item => (
+                                                <button
+                                                    key={item.value}
+                                                    type="button"
+                                                    onClick={() => setRagConfig(prev => ({ ...prev, fusionStrategy: item.value }))}
+                                                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${ragConfig.fusionStrategy === item.value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                                                >
+                                                    {item.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-slate-500">
+                                            <span>Top K</span>
+                                            <span>{ragConfig.topK}</span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min={1}
+                                            max={10}
+                                            value={ragConfig.topK}
+                                            onChange={(e) => setRagConfig(prev => ({ ...prev, topK: Number(e.target.value) }))}
+                                            className="w-full accent-slate-900"
+                                        />
+                                    </div>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
             </header>
 
             <div className="flex min-h-0 flex-1">
@@ -628,69 +691,19 @@ const ArkPage: React.FC = () => {
                     )}
                 </AnimatePresence>
 
-                <main className="flex-1 flex flex-col relative min-w-0">
-                <AnimatePresence mode="wait">
-                    {!currentSessionId ? (
-                        // ... Welcome Hub Code (No changes here, omitted for brevity if possible, keeping context keys) ...
+                <main className="relative flex min-w-0 flex-1 flex-col bg-white">
+                    <AnimatePresence mode="wait">
+                        {!currentSessionId ? (
                         <motion.div
                             key="hub"
-                            // ...
-                            className="flex-1 flex flex-col items-center justify-center p-8 w-full max-w-6xl mx-auto overflow-y-auto"
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -8 }}
+                            className="flex-1 overflow-y-auto px-4 pb-48 pt-16 md:px-8"
                         >
-                            {/* ... Content of Hub ... */}
-                            <div className="text-center mb-16 relative z-10">
-                                <motion.h1
-                                    initial={{ y: 20 }}
-                                    animate={{ y: 0 }}
-                                    className="text-6xl ark-heading ark-heading-gradient mb-6"
-                                >
-                                    你好，今天我想如何协助你？
-                                </motion.h1>
-                                <p className="text-slate-500 text-xl font-medium max-w-2xl mx-auto">
-                                    选择一个专业的 AI 智能体开启对话，或使用通用助手处理日常任务。
-                                </p>
-                            </div>
-
-                            <motion.div
-                                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full"
-                                initial="hidden"
-                                animate="visible"
-                                variants={{
-                                    visible: { transition: { staggerChildren: 0.1 } }
-                                }}
-                            >
-                                {agents.map(agent => (
-                                    <motion.button
-                                        key={agent.id}
-                                        variants={{
-                                            hidden: { opacity: 0, y: 20 },
-                                            visible: { opacity: 1, y: 0 }
-                                        }}
-                                        onClick={() => handleNewChat(agent.id)}
-                                        className="group relative flex flex-col items-start p-8 ark-agent-card rounded-[28px] text-left"
-                                    >
-                                        <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white transition-all duration-300">
-                                            <RobotOutlined className="text-2xl" />
-                                        </div>
-                                        <h3 className="text-xl font-bold text-slate-800 mb-3 group-hover:text-blue-700 transition-colors">{agent.name}</h3>
-                                        <p className="text-slate-500 text-sm leading-relaxed line-clamp-2 mb-4 group-hover:text-slate-600 transition-colors">
-                                            {agent.description || "专业处理特定领域任务"}
-                                        </p>
-
-                                        {agent.knowledgeBase && (
-                                            <div className="mt-auto px-3 py-1 bg-slate-50 text-slate-500 text-[10px] font-bold rounded-full flex items-center gap-1.5 border border-slate-100">
-                                                <Database size={12} className="text-blue-400" />
-                                                <span className="truncate uppercase tracking-wider">{agent.knowledgeBase}</span>
-                                            </div>
-                                        )}
-                                    </motion.button>
-                                ))}
-
-                                <motion.button
-                                    variants={{
-                                        hidden: { opacity: 0, y: 20 },
-                                        visible: { opacity: 1, y: 0 }
-                                    }}
+                            <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col items-center justify-center">
+                                <button
+                                    type="button"
                                     onClick={async () => {
                                         const newSession = await createSession();
                                         setCurrentSessionId(newSession.id);
@@ -698,20 +711,64 @@ const ArkPage: React.FC = () => {
                                         setInputValue('');
                                         setActiveAgent(null);
                                     }}
-                                    className="group relative flex flex-col items-start p-8 ark-primary-card text-white rounded-[28px] transition-all duration-500 text-left"
+                                    className="mb-6 flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-sm transition-colors hover:bg-[#f4f4f4]"
+                                    title="打开通用助手"
                                 >
-                                    <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-md text-white flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
-                                        <Sparkles size={28} />
-                                    </div>
-                                    <h3 className="text-xl font-bold mb-3">通用助手</h3>
-                                    <p className="text-white/80 text-sm leading-relaxed mb-4">
-                                        全能协作、逻辑推理与创意输出。
-                                    </p>
-                                    <div className="mt-auto flex items-center gap-1 text-xs font-bold uppercase tracking-widest opacity-80">
-                                        直接提问 <ChevronRight size={14} />
-                                    </div>
-                                </motion.button>
-                            </motion.div>
+                                    <Sparkles size={22} />
+                                </button>
+                                <h1 className="mb-8 text-center text-3xl font-semibold leading-tight text-[#0d0d0d] md:text-4xl">
+                                    今天想做什么？
+                                </h1>
+
+                                <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
+                                    {agents.map(agent => (
+                                        <button
+                                            key={agent.id}
+                                            type="button"
+                                            onClick={() => handleNewChat(agent.id)}
+                                            className="group flex min-h-[92px] items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:bg-[#f7f7f7]"
+                                        >
+                                            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f4f4f4] text-slate-700">
+                                                <RobotOutlined className="text-base" />
+                                            </span>
+                                            <span className="min-w-0">
+                                                <span className="block truncate text-sm font-semibold text-slate-900">{agent.name}</span>
+                                                <span className="mt-1 line-clamp-2 block text-sm leading-5 text-slate-500">
+                                                    {agent.description || '专业处理特定领域任务'}
+                                                </span>
+                                                {agent.knowledgeBase && (
+                                                    <span className="mt-2 inline-flex max-w-full items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
+                                                        <Database size={11} />
+                                                        <span className="truncate">{agent.knowledgeBase}</span>
+                                                    </span>
+                                                )}
+                                            </span>
+                                        </button>
+                                    ))}
+
+                                    <button
+                                        type="button"
+                                        onClick={async () => {
+                                            const newSession = await createSession();
+                                            setCurrentSessionId(newSession.id);
+                                            setMessages([]);
+                                            setInputValue('');
+                                            setActiveAgent(null);
+                                        }}
+                                        className="group flex min-h-[92px] items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:bg-[#f7f7f7]"
+                                    >
+                                        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f4f4f4] text-slate-700">
+                                            <Sparkles size={16} />
+                                        </span>
+                                        <span>
+                                            <span className="block text-sm font-semibold text-slate-900">通用助手</span>
+                                            <span className="mt-1 block text-sm leading-5 text-slate-500">
+                                                写作、分析、规划、代码和日常协作。
+                                            </span>
+                                        </span>
+                                    </button>
+                                </div>
+                            </div>
                         </motion.div>
                     ) : (
                         <motion.div
@@ -720,49 +777,49 @@ const ArkPage: React.FC = () => {
                             animate={{ opacity: 1 }}
                             ref={scrollContainerRef}
                             onScroll={handleScroll}
-                            className="flex-1 overflow-y-auto custom-scrollbar flex flex-col items-center bg-white"
+                            className="custom-scrollbar flex flex-1 flex-col items-center overflow-y-auto bg-white"
                         >
                             {messages.length === 0 ? (
                                 <motion.div
                                     initial={{ opacity: 0, y: 20 }}
                                     animate={{ opacity: 1, y: 0 }}
-                                    className="flex-1 flex flex-col items-center justify-center p-4 w-full max-w-3xl -mt-20 relative z-10"
+                                    className="relative z-10 flex min-h-full w-full max-w-3xl flex-col items-center justify-center px-4 pb-48 pt-10"
                                 >
-                                    <div className="mb-10 text-center">
-                                        <h1 className="text-5xl ark-heading ark-heading-gradient mb-4">
+                                    <div className="mb-8 text-center">
+                                        <h1 className="mb-3 text-3xl font-semibold leading-tight text-[#0d0d0d] md:text-4xl">
                                             {activeAgent ? `你好，我是 ${activeAgent.name}` : '你好，今天有什么想聊的？'}
                                         </h1>
-                                        <p className="text-slate-400 text-lg">
+                                        <p className="mx-auto max-w-xl text-sm leading-6 text-slate-500">
                                             {activeAgent?.description || "我可以在写作、规划或解决问题方面为你提供帮助。"}
                                         </p>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-4 w-full">
+                                    <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
                                         {(activeAgent?.prompts && activeAgent.prompts.length > 0 ? activeAgent.prompts : [
                                             { title: '提供建议', content: '如何更高效地管理时间？', icon: <Cpu size={16} /> },
                                             { title: '撰写内容', content: '写一篇关于可持续发展的演讲稿。', icon: <PenTool size={16} /> },
                                             { title: '数据分析', content: '解释什么是大模型微调及其原理。', icon: <Layers size={16} /> },
                                             { title: '辅助编码', content: '使用 React 实现一个深色模式切换功能。', icon: <Database size={16} /> },
-                                        ]).map((item: any, i: number) => (
+                                        ]).slice(0, 4).map((item: any, i: number) => (
                                             <motion.button
                                                 key={i}
-                                                whileHover={{ scale: 1.02, backgroundColor: "#ffffff", boxShadow: "0 10px 25px -10px rgba(0,0,0,0.05)" }}
+                                                whileHover={{ backgroundColor: "#f7f7f7" }}
                                                 onClick={() => setInputValue(`${item.content}`)}
-                                                className="text-left p-5 bg-white border border-slate-100 rounded-2xl transition-all flex flex-col gap-3 group"
+                                                className="group flex min-h-[78px] items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors"
                                             >
-                                                <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-500 group-hover:text-blue-600 transition-colors">
+                                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f4f4f4] text-slate-500 transition-colors group-hover:text-slate-900">
                                                     {item.icon || <Sparkles size={16} />}
                                                 </div>
-                                                <div>
-                                                    <span className="font-bold text-slate-800 text-sm block mb-1">{item.title}</span>
-                                                    <span className="text-slate-500 text-xs line-clamp-1">{item.content}</span>
+                                                <div className="min-w-0">
+                                                    <span className="mb-1 block text-sm font-semibold text-slate-800">{item.title}</span>
+                                                    <span className="line-clamp-1 text-sm text-slate-500">{item.content}</span>
                                                 </div>
                                             </motion.button>
                                         ))}
                                     </div>
                                 </motion.div>
                             ) : (
-                                <div className="flex flex-col pb-48 w-full items-center pt-8">
+                                <div className="flex w-full flex-col items-center pb-48 pt-6">
                                     <div className="w-full relative" style={{ height: totalHeight }}>
                                         {visibleMessages.map((msg, index) => {
                                             const messageIndex = rangeStart + index;
@@ -775,7 +832,7 @@ const ArkPage: React.FC = () => {
                                                     index={messageIndex}
                                                     isStreaming={isGenerating && msg.id === streamingMessageIdRef.current}
                                                     onHeightChange={handleItemResize}
-                                                    isWide={isSidebarCollapsed}
+                                                    isWide={false}
                                                 />
                                             );
                                         })}
@@ -808,9 +865,9 @@ const ArkPage: React.FC = () => {
                 {/* Metrics Badge */}
                 {metrics && currentSessionId && (
                     <div className="absolute top-6 right-8 z-20">
-                        <div className={`px-4 py-2 rounded-2xl text-[10px] font-bold tracking-widest uppercase backdrop-blur-xl shadow-sm border transition-all ${metrics.used > metrics.limit * 0.9
+                        <div className={`rounded-lg border px-3 py-2 text-[11px] font-semibold backdrop-blur-xl transition-all ${metrics.used > metrics.limit * 0.9
                             ? 'bg-red-50/80 text-red-600 border-red-200 animate-pulse'
-                            : 'bg-white/70 text-slate-400 border-slate-200'
+                            : 'bg-white/80 text-slate-500 border-slate-200'
                             }`}>
                             Tokens: {metrics.used.toLocaleString()} / {metrics.limit.toLocaleString()}
                         </div>
@@ -818,21 +875,20 @@ const ArkPage: React.FC = () => {
                 )}
 
                 {/* Bottom Input Area */}
-                <div className="absolute bottom-0 left-0 w-full px-6 pb-8 pt-16 bg-gradient-to-t from-white via-white to-transparent pointer-events-none flex justify-center z-10">
-                    <div className={`w-full pointer-events-auto ${isSidebarCollapsed ? 'max-w-7xl' : 'max-w-6xl'}`}>
+                <div className="pointer-events-none absolute bottom-0 left-0 z-10 flex w-full justify-center bg-gradient-to-t from-white via-white to-transparent px-4 pb-5 pt-16">
+                    <div className="pointer-events-auto w-full max-w-3xl">
                         <ChatInput
                             value={inputValue}
                             onChange={setInputValue}
                             onSubmit={handleSubmit}
                             isGenerating={isGenerating}
                             onStop={handleStop}
-                            isWide={isSidebarCollapsed}
+                            isWide={false}
                             agentAppSkills={agentAppSkills}
                             selectedAgentAppSkill={selectedAgentAppSkill}
                             onAgentAppSkillSelect={setSelectedAgentAppSkill}
                             onAgentAppSkillClear={() => setSelectedAgentAppSkill(null)}
                         />
-                    
                     </div>
                 </div>
                 </main>
@@ -877,7 +933,7 @@ const VirtualizedMessageRow: React.FC<VirtualizedMessageRowProps> = React.memo((
 
     return (
         <div ref={rowRef} className="absolute left-0 right-0 pb-8" style={{ top }}>
-            <div className={`w-full mx-auto px-6 ${isWide ? 'max-w-7xl' : 'max-w-6xl'}`}>
+            <div className={`mx-auto w-full px-4 ${isWide ? 'max-w-4xl' : 'max-w-3xl'}`}>
                 <motion.div
                     initial={{ opacity: 0, y: 15 }}
                     animate={{ opacity: 1, y: 0 }}
