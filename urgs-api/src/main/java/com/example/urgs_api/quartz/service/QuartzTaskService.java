@@ -179,7 +179,6 @@ public class QuartzTaskService {
         return ResponseDTO.succData(SmartPageUtil.convert2PageResult(pageParam));
     }
 
-    @Transactional(rollbackFor = Throwable.class)
     public ResponseDTO<String> batchExecuteTaskStatus(QuartzBatchExecuteDTO batchExecuteDTO) {
         List<Long> statusIds = batchExecuteDTO.getStatusIds() == null
                 ? Collections.emptyList()
@@ -345,23 +344,11 @@ public class QuartzTaskService {
         }
 
         quartzTaskStatusDao.batchForceStop(statusIds, "实例已被强制停止。");
-        statusList.forEach(statusEntity -> transferFailedStatusSilently(statusEntity.getPlanId(), statusEntity.getDataDate()));
         String resultMsg = String.format(
                 "批量强制停止完成：共 %d 条，执行器已取消 %d 条运行中任务，%d 条未检测到运行实例。",
                 statusIds.size(), cancelledCount, notRunningCount
         );
         return ResponseDTO.succData(resultMsg);
-    }
-
-    private void transferFailedStatusSilently(Long planId, String dataDate) {
-        try {
-            QuartzProblemTransferDTO dto = new QuartzProblemTransferDTO();
-            dto.setPlanId(planId);
-            dto.setDataDate(dataDate);
-            transferProblemInstance(dto);
-        } catch (Exception e) {
-            log.warn("自动转存生产问题失败, planId={}, dataDate={}, error={}", planId, dataDate, e.getMessage());
-        }
     }
 
     private boolean isProblematicStatus(Integer status) {

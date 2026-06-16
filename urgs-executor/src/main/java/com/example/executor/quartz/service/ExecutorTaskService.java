@@ -206,7 +206,7 @@ public class ExecutorTaskService {
         // 根据结果更新最终状态
         applyFinalStatus(status, result);
         updateStatus(status);
-        if (TaskExeStatusEnum.FAILED.getCode().equals(status.getStatus())) {
+        if (shouldTransferFailedInstance(status)) {
             problemTransferClient.transferFailedInstance(task, status);
         }
         taskExecutionLogService.finish(logContext, isSuccess(result), status.getMsg());
@@ -301,6 +301,9 @@ public class ExecutorTaskService {
             insertStatus(entity);
             return;
         }
+        if (TaskExeStatusEnum.WAITING.getCode().equals(currentStatus)) {
+            return;
+        }
         Date now = new Date();
         entity.setUpdateTime(now);
         quartzTaskStatusDao.resetStatusForDispatch(entity);
@@ -358,6 +361,17 @@ public class ExecutorTaskService {
 
     private boolean isSuccess(Map<String, String> result) {
         return result != null && "0".equals(result.get("code"));
+    }
+
+    private boolean shouldTransferFailedInstance(QuartzTaskStatusEntity status) {
+        if (!TaskExeStatusEnum.FAILED.getCode().equals(status.getStatus())) {
+            return false;
+        }
+        String msg = status.getMsg();
+        return msg == null
+                || (!msg.contains("任务已被停止")
+                && !msg.contains("任务已被中断")
+                && !msg.contains("强制停止"));
     }
 
     private Map<String, String> failureResult(String msg) {
