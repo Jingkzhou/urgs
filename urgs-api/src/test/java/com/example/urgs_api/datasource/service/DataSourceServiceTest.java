@@ -85,4 +85,28 @@ class DataSourceServiceTest {
         assertEquals("db-new.internal", restored.getConnectionParams().get("host"));
         assertEquals("real-secret", restored.getConnectionParams().get("password"));
     }
+
+    @Test
+    void oracleServiceNameUsesServiceJdbcSyntax() {
+        DynamicDataSourceService service = new DynamicDataSourceService();
+
+        String url = ReflectionTestUtils.invokeMethod(service, "buildJdbcUrl", "oracle", Map.of(
+                "host", "214.6.13.217",
+                "port", 1521,
+                "serviceName", "rsbp"));
+
+        assertEquals("jdbc:oracle:thin:@//214.6.13.217:1521/rsbp", url);
+    }
+
+    @Test
+    void oracleSidKeepsSidJdbcSyntaxWhenNoServiceName() {
+        DynamicDataSourceService service = new DynamicDataSourceService();
+
+        String url = ReflectionTestUtils.invokeMethod(service, "buildJdbcUrl", "oracle", Map.of(
+                "host", "214.6.13.217",
+                "port", 1521,
+                "sid", "ORCL"));
+
+        assertEquals("jdbc:oracle:thin:@214.6.13.217:1521:ORCL", url);
+    }
 }

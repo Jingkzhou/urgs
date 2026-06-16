@@ -62,12 +62,20 @@ public class DataSourceController {
     @PutMapping("/config/{id}")
     @RequirePermission("datasource:list")
     public boolean updateConfig(@PathVariable Long id, @RequestBody DataSourceConfig config) {
-        return dataSourceService.updateConfig(id, config);
+        boolean updated = dataSourceService.updateConfig(id, config);
+        if (updated) {
+            dynamicDataSourceService.evict(id);
+        }
+        return updated;
     }
 
     @DeleteMapping("/config/{id}")
     @RequirePermission("datasource:list")
     public boolean deleteConfig(@PathVariable Long id) {
-        return dataSourceService.removeById(id);
+        boolean removed = dataSourceService.removeById(id);
+        if (removed) {
+            dynamicDataSourceService.evict(id);
+        }
+        return removed;
     }
 }

@@ -342,8 +342,19 @@ public class DynamicDataSourceService implements DisposableBean {
             return String.format("jdbc:postgresql://%s:%d/%s", host, port, database);
         } else if ("oracle".equalsIgnoreCase(type)) {
             int port = getInt(params, "port", 1521);
+            String jdbcUrl = getString(params, "jdbcUrl");
+            if (hasText(jdbcUrl)) {
+                return jdbcUrl;
+            }
             String serviceName = getString(params, "serviceName");
-            return String.format("jdbc:oracle:thin:@%s:%d:%s", host, port, serviceName);
+            if (hasText(serviceName)) {
+                return String.format("jdbc:oracle:thin:@//%s:%d/%s", host, port, serviceName);
+            }
+            String sid = getString(params, "sid");
+            if (!hasText(sid)) {
+                sid = database;
+            }
+            return hasText(sid) ? String.format("jdbc:oracle:thin:@%s:%d:%s", host, port, sid) : "";
         } else if ("sqlserver".equalsIgnoreCase(type)) {
             int port = getInt(params, "port", 1433);
             return String.format("jdbc:sqlserver://%s:%d;databaseName=%s", host, port, database);

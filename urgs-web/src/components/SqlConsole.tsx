@@ -22,6 +22,12 @@ if (typeof window !== 'undefined') {
 loader.config({ monaco });
 
 const PAGE_SIZE_OPTIONS = [50, 100, 200, 500];
+const SCHEMA_LOAD_ERROR_PREFIX = 'Schema 加载失败：';
+
+const formatSchemaLoadError = (reason: unknown) => {
+    const text = reason instanceof Error ? reason.message : String(reason || '未知错误');
+    return text.startsWith(SCHEMA_LOAD_ERROR_PREFIX) ? text : `${SCHEMA_LOAD_ERROR_PREFIX}${text}`;
+};
 
 const SqlConsole: React.FC = () => {
     const [sql, setSql] = useState('SELECT * FROM sys_sso_config LIMIT 10');
@@ -73,14 +79,13 @@ const SqlConsole: React.FC = () => {
             const dsId = selectedSourceId ? Number(selectedSourceId) : undefined;
             const data = await fetchSchemaMetadata(dsId);
             if (data?.success === false && data?.error) {
-                message.error(`Schema 加载失败：${data.error}`);
+                message.error(formatSchemaLoadError(data.error));
                 schemaRef.current = [];
             } else {
                 schemaRef.current = data?.tables || [];
             }
         } catch (err: any) {
-            const reason = err?.message || String(err);
-            message.error(`Schema 加载失败：${reason}`);
+            message.error(formatSchemaLoadError(err));
             schemaRef.current = [];
         }
     };

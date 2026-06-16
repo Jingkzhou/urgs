@@ -37,7 +37,7 @@ public class SqlConsoleController {
             log.error("Schema load failed for dataSourceId={}: {}", dataSourceId, e.getMessage(), e);
             SchemaMetadataResponse err = new SchemaMetadataResponse();
             err.setSuccess(false);
-            err.setError("Schema 加载失败：" + e.getMessage());
+            err.setError(e.getMessage());
             err.setTables(java.util.Collections.emptyList());
             return err;
         }
