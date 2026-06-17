@@ -461,58 +461,103 @@ const OnlineDocsTool: React.FC = () => {
     // ---- render ----
 
     return (
-        <div className="flex h-full flex-col bg-white">
-            {/* Quick Access Bar */}
-            {recentDocs.length > 0 && (
-                <div className="shrink-0 border-b border-gray-100 bg-white px-6 py-4">
-                    <div className="text-xs font-medium text-gray-400 mb-3 uppercase tracking-wide">快速访问</div>
-                    <div className="flex flex-wrap gap-3">
-                        {recentDocs.map(doc => {
-                            const ft = fileTypeConfig[getFileTypeKey(doc.fileName)];
-                            const Icon = ft.icon;
-                            return (
-                                <button key={doc.id} onClick={() => setEditorDoc(doc)}
-                                    className="flex items-center gap-2.5 rounded-lg border border-gray-200 bg-white px-3.5 py-2.5 text-sm transition-all hover:border-[#1677FF]/30 hover:shadow-sm hover:-translate-y-0.5"
-                                    title={doc.title}>
-                                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded"
-                                        style={{ backgroundColor: ft.bg, color: ft.color }}>
-                                        <Icon size={14} />
-                                    </span>
-                                    <span className="flex items-center gap-1 text-gray-700 max-w-[160px] truncate text-left">
-                                        <span className="truncate">{doc.title}</span>
-                                        {doc.favorite && <Star size={10} fill="#FAAD14" stroke="#FAAD14" className="shrink-0" />}
-                                    </span>
-                                </button>
-                            );
-                        })}
+        <div className="flex h-full min-h-0 flex-col bg-white">
+            <div className="shrink-0 border-b border-slate-100 bg-white px-5 py-3">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <div className="flex min-w-0 flex-1 flex-col gap-2 lg:flex-row lg:items-center">
+                        <div className="flex min-w-[180px] items-center gap-2 text-sm font-bold text-slate-900">
+                            <FileText size={15} className="text-[#1677FF]" />
+                            <span>在线文档</span>
+                            <span className="hidden max-w-[240px] truncate text-xs font-medium text-slate-500 2xl:inline">
+                                Office 文件在线预览、编辑与多人协同
+                            </span>
+                            <span className="hidden rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-500 xl:inline">
+                                ONLYOFFICE Docs
+                            </span>
+                            <span className="text-xs font-medium text-slate-400">共 {total} 个</span>
+                        </div>
+                        <Input.Search
+                            allowClear
+                            className="w-full lg:max-w-md"
+                            placeholder="搜索在线文档"
+                            prefix={<Search size={14} className="text-gray-400" />}
+                            defaultValue={keyword}
+                            onSearch={handleSearch}
+                        />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button onClick={openCreate}
+                            className="flex h-8 items-center gap-1.5 rounded-lg border border-[#1677FF]/20 bg-[#E6F4FF] px-3 text-xs font-medium text-[#1677FF] transition-colors hover:border-[#1677FF]/40 hover:bg-[#BAE0FF]">
+                            <FilePlus2 size={14} /> 新建
+                        </button>
+                        <Upload customRequest={handleUpload} showUploadList={false} accept=".doc,.docx,.xls,.xlsx,.pdf">
+                            <button className="flex h-8 items-center gap-1.5 rounded-lg bg-[#1677FF] px-3 text-xs font-medium text-white transition-colors hover:bg-[#4096FF]">
+                                <UploadCloud size={14} /> 上传
+                            </button>
+                        </Upload>
+                        <button onClick={openGroupManager}
+                            className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50">
+                            <Users size={14} /> 授权组
+                        </button>
+                        <button onClick={loadDocuments}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
+                            title="刷新">
+                            <RefreshCcw size={14} />
+                        </button>
                     </div>
                 </div>
-            )}
 
-            {/* Tab Navigation + Toolbar */}
-            <div className="flex shrink-0 items-center justify-between border-b border-gray-100 bg-white px-6">
-                <div className="flex items-center gap-0 relative">
+                {recentDocs.length > 0 && (
+                    <div className="mt-3 flex min-w-0 items-center gap-2">
+                        <span className="shrink-0 text-xs font-bold text-slate-500">最近访问</span>
+                        <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1">
+                            {recentDocs.slice(0, 4).map(doc => {
+                                const ft = fileTypeConfig[getFileTypeKey(doc.fileName)];
+                                const Icon = ft.icon;
+                                return (
+                                    <button key={doc.id} onClick={() => setEditorDoc(doc)}
+                                        className="group/recent flex h-10 min-w-[220px] max-w-[280px] items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 text-left transition-all hover:border-[#1677FF]/30 hover:bg-white hover:shadow-sm"
+                                        title={doc.title}>
+                                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
+                                            style={{ backgroundColor: ft.bg, color: ft.color }}>
+                                            <Icon size={15} />
+                                        </span>
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block truncate text-xs font-bold text-slate-900 group-hover/recent:text-[#1677FF]">{doc.title}</span>
+                                            <span className="block truncate text-[11px] text-slate-400">{formatTime(doc.updateTime)}</span>
+                                        </span>
+                                        {doc.favorite && <Star size={12} fill="#FAAD14" stroke="#FAAD14" className="shrink-0" />}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            <div className="flex shrink-0 flex-col gap-2 border-b border-slate-100 bg-slate-50/60 px-5 py-2 xl:flex-row xl:items-center xl:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
                     {tabs.map(tab => (
                         <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                            className={`relative px-5 py-3 text-sm font-medium transition-colors ${
-                                activeTab === tab.key ? 'text-[#1677FF]' : 'text-gray-500 hover:text-gray-700'}`}>
+                            className={`rounded-lg border px-3 py-1.5 text-left text-sm font-bold transition-all ${
+                                activeTab === tab.key
+                                    ? 'border-[#1677FF]/30 bg-white text-[#1677FF] shadow-sm'
+                                    : 'border-transparent text-slate-500 hover:bg-white hover:text-slate-700'
+                            }`}>
                             {tab.label}
-                            {activeTab === tab.key && (
-                                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-[#1677FF] rounded-full" />
-                            )}
                         </button>
                     ))}
-                    {/* Space Type Sub-tabs */}
                     {activeTab === 'space' && (
-                        <div className="ml-4 flex items-center gap-1 pl-4 border-l border-gray-200">
+                        <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
                             {[
                                 { key: 'all', label: '全部' },
                                 { key: 'personal', label: '个人' },
                                 { key: 'shared', label: '共享' },
                             ].map((space) => (
                                 <button key={space.key} onClick={() => setActiveSpaceType(space.key as typeof activeSpaceType)}
-                                    className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                                        activeSpaceType === space.key ? 'bg-[#E6F4FF] text-[#1677FF]' : 'text-gray-500 hover:bg-gray-50'}`}>
+                                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                                        activeSpaceType === space.key ? 'bg-[#E6F4FF] text-[#1677FF]' : 'text-slate-500 hover:bg-slate-50'
+                                    }`}>
                                     {space.label}
                                 </button>
                             ))}
@@ -520,33 +565,15 @@ const OnlineDocsTool: React.FC = () => {
                     )}
                 </div>
 
-                {/* Toolbar */}
-                <div className="flex items-center gap-2">
-                    <Input.Search allowClear className="w-56" placeholder="搜索在线文档"
-                        prefix={<Search size={14} className="text-gray-400" />}
-                        onSearch={handleSearch} size="small" />
-                    <button onClick={loadDocuments} className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-                        title="刷新">
-                        <RefreshCcw size={14} />
-                    </button>
-                    <button onClick={openGroupManager}
-                        className="flex h-7 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50">
-                        <Users size={14} /> 授权组
-                    </button>
-                    <button onClick={openCreate}
-                        className="flex h-7 items-center gap-1.5 rounded-md border border-[#1677FF]/20 bg-[#E6F4FF] px-2.5 text-xs font-medium text-[#1677FF] transition-colors hover:border-[#1677FF]/40 hover:bg-[#BAE0FF]">
-                        <FilePlus2 size={14} /> 新建
-                    </button>
-                    <Upload customRequest={handleUpload} showUploadList={false} accept=".doc,.docx,.xls,.xlsx,.pdf">
-                        <button className="flex h-7 items-center gap-1.5 rounded-md bg-[#1677FF] px-2.5 text-xs font-medium text-white transition-colors hover:bg-[#4096FF]">
-                            <UploadCloud size={14} /> 上传
-                        </button>
-                    </Upload>
-                    <span className="w-px h-5 bg-gray-200 mx-1" />
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
+                        <span className="font-bold text-slate-800">{supportedCount}</span> 个支持在线编辑
+                    </div>
                     <button onClick={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}
-                        className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                        className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700"
                         title={viewMode === 'list' ? '切换为网格视图' : '切换为列表视图'}>
                         {viewMode === 'list' ? <LayoutList size={15} /> : <Grid3X3 size={15} />}
+                        {viewMode === 'list' ? '列表' : '网格'}
                     </button>
                     <Dropdown menu={{
                         selectedKeys: [filterType],
@@ -558,29 +585,21 @@ const OnlineDocsTool: React.FC = () => {
                             { key: 'pdf', label: 'PDF 文档' },
                         ],
                     }} trigger={['click']}>
-                        <button className="flex h-7 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 text-xs text-gray-500 transition-colors hover:border-gray-300 hover:text-gray-700">
-                            <SlidersHorizontal size={13} /> 筛选
+                        <button className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700">
+                            <SlidersHorizontal size={14} /> 筛选
                         </button>
                     </Dropdown>
                 </div>
             </div>
 
-            {/* Info Bar */}
-            <div className="flex shrink-0 items-center justify-between bg-[#FAFAFA] px-6 py-1.5 text-xs text-gray-400 border-b border-gray-100">
-                <span>共 {total} 个文档</span>
-                <span>{supportedCount} 个支持在线编辑</span>
-            </div>
-
-            {/* Main Content */}
-            <Spin spinning={loading}>
-                <div className="flex-1 min-h-0 overflow-auto px-6 py-3">
+            <Spin spinning={loading} wrapperClassName="min-h-0 flex-1">
+                <div className="min-h-0 flex-1 overflow-auto bg-white px-5 py-3">
                     {renderTabContent()}
                 </div>
             </Spin>
 
-            {/* Pagination */}
             {total > PAGE_SIZE && (
-                <div className="flex shrink-0 justify-end border-t border-gray-100 bg-white px-6 py-3">
+                <div className="flex shrink-0 justify-end border-t border-slate-100 bg-white px-5 py-3">
                     <Pagination current={page} pageSize={PAGE_SIZE} total={total}
                         showSizeChanger={false} showQuickJumper={false}
                         onChange={setPage} size="small" />

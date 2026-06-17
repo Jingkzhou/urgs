@@ -547,22 +547,21 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
 
 
     return (
-        <div className="space-y-6 animate-fade-in p-6 bg-[#f8fafc] min-h-screen">
-            <div className="flex flex-col gap-6">
-                {/* Header Section */}
-                <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                    <div>
-                        <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                            生产问题追踪
-                        </h1>
-                        <p className="text-sm text-slate-500 mt-1">
-                            全流程追踪与统计分析平台 · 当前共 {total} 个问题
-                        </p>
-                    </div>
+        <div className="min-h-screen bg-[#f8fafc] animate-fade-in">
+            <div className="flex w-full flex-col">
+                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                    {/* Header Section */}
+                    <div className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                                生产问题追踪
+                            </h1>
+                            <p className="text-sm text-slate-500 mt-1">
+                                全流程追踪与统计分析平台 · 当前共 {total} 个问题
+                            </p>
+                        </div>
 
-                    <div className="flex items-center gap-4">
-                        {/* View Toggle */}
-                        <div className="bg-slate-100 p-1 rounded-lg inline-flex border border-slate-200">
+                        <div className="inline-flex w-fit rounded-lg border border-slate-200 bg-slate-100 p-1">
                             <button
                                 onClick={() => setViewMode('list')}
                                 className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'list'
@@ -585,36 +584,32 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                             </button>
                         </div>
                     </div>
-                </div>
 
+                    {/* Chart View */}
+                    {viewMode === 'chart' && (
+                        <div className="border-t border-slate-100 bg-slate-50/70 p-4 animate-scale-in">
+                            <IssueStats />
+                        </div>
+                    )}
 
-                {/* Chart View */}
-                {viewMode === 'chart' && (
-                    <div className="animate-scale-in">
-                        <IssueStats />
-                    </div>
-                )}
-
-                {/* List View */}
-                {viewMode === 'list' && (
-                    <>
-                        {/* Header & Actions */}
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
-                            <div className="flex flex-col gap-4">
-                                {/* Top Bar: Search & Actions */}
-                                <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
-                                    {/* Keyword Search */}
-                                    <div className="relative flex-1 w-full sm:max-w-md group">
+                    {/* List View */}
+                    {viewMode === 'list' && (
+                        <>
+                            {/* Header & Actions */}
+                            <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-3">
+                                <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(280px,1fr)_auto] xl:items-center">
+                                    <div className="group relative w-full xl:max-w-xl">
                                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
                                         <input
                                             type="text"
                                             placeholder="搜索问题标题/ID..."
-                                            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none"
+                                            className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 transition-all outline-none"
                                             value={keyword}
                                             onChange={(e) => setKeyword(e.target.value)}
                                         />
                                     </div>
-                                    <div className="flex items-center gap-2">
+
+                                    <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
                                         {selectedRowKeys.length > 0 && (
                                             <Auth code="ops:issue:batchDelete">
                                                 <button
@@ -628,7 +623,7 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                         )}
                                         <Auth code="ops:issue:create">
                                             <button
-                                                className="flex items-center gap-1 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5"
+                                                className="flex items-center gap-1 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-all shadow-sm"
                                                 onClick={() => {
                                                     setFormData({
                                                         issueType: '批量任务处理',
@@ -642,10 +637,7 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                                 <span>登记问题</span>
                                             </button>
                                         </Auth>
-                                    </div>
-
-                                    {/* Actions */}
-                                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                                        <div className="hidden h-4 w-[1px] bg-slate-200 xl:block"></div>
                                         <button
                                             className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-all border ${showAdvanced ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
                                             onClick={() => setShowAdvanced(!showAdvanced)}
@@ -653,7 +645,6 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                             <Filter size={16} />
                                             <span>{showAdvanced ? '收起筛选' : '高级筛选'}</span>
                                         </button>
-                                        <div className="h-4 w-[1px] bg-slate-200 mx-1"></div>
                                         <button
                                             className="flex items-center gap-1 border border-slate-200 text-slate-600 px-3 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors bg-white hover:text-slate-900"
                                             onClick={handleImport}
@@ -673,11 +664,10 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
 
                                 {/* Advanced Filters */}
                                 {showAdvanced && (
-                                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-100 animate-slide-in-down">
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                                            {/* System Filter */}
+                                    <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 animate-slide-in-down">
+                                        <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
                                             <select
-                                                className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none text-slate-600 bg-white"
+                                                className="min-w-0 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 outline-none focus:ring-2 focus:ring-red-500"
                                                 value={filterSystem}
                                                 onChange={(e) => setFilterSystem(e.target.value)}
                                             >
@@ -687,9 +677,8 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                                 ))}
                                             </select>
 
-                                            {/* Issue Type Filter */}
                                             <select
-                                                className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none text-slate-600 bg-white"
+                                                className="min-w-0 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 outline-none focus:ring-2 focus:ring-red-500"
                                                 value={filterType}
                                                 onChange={(e) => setFilterType(e.target.value)}
                                             >
@@ -699,9 +688,8 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                                 <option value="数据查询">数据查询</option>
                                             </select>
 
-                                            {/* Status Filter */}
                                             <select
-                                                className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none text-slate-600 bg-white"
+                                                className="min-w-0 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 outline-none focus:ring-2 focus:ring-red-500"
                                                 value={filterStatus}
                                                 onChange={(e) => setFilterStatus(e.target.value)}
                                             >
@@ -712,38 +700,36 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                                 <option value="遗留">遗留</option>
                                             </select>
 
-                                            {/* Reporter Filter */}
                                             <input
                                                 type="text"
                                                 placeholder="提出人姓名..."
-                                                className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none bg-white"
+                                                className="min-w-0 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-red-500"
                                                 value={filterReporter}
                                                 onChange={(e) => setFilterReporter(e.target.value)}
                                             />
 
-                                            {/* Handler Filter */}
                                             <input
                                                 type="text"
                                                 placeholder="处理人姓名..."
-                                                className="border border-slate-200 rounded-md text-sm py-1.5 px-3 focus:ring-2 focus:ring-red-500 outline-none bg-white"
+                                                className="min-w-0 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-red-500"
                                                 value={filterHandler}
                                                 onChange={(e) => setFilterHandler(e.target.value)}
                                             />
                                         </div>
 
-                                        <div className="flex items-center gap-2 text-sm text-slate-600 whitespace-nowrap pt-2 border-t border-slate-200">
+                                        <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-sm text-slate-600">
                                             <Clock size={16} className="text-slate-400" />
                                             <span>发生时间:</span>
                                             <input
                                                 type="date"
-                                                className="border border-slate-200 rounded-md py-1.5 px-2 text-sm focus:ring-2 focus:ring-red-500 outline-none bg-white"
+                                                className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-red-500"
                                                 value={filterStartTime}
                                                 onChange={(e) => setFilterStartTime(e.target.value)}
                                             />
                                             <span>至</span>
                                             <input
                                                 type="date"
-                                                className="border border-slate-200 rounded-md py-1.5 px-2 text-sm focus:ring-2 focus:ring-red-500 outline-none bg-white"
+                                                className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-red-500"
                                                 value={filterEndTime}
                                                 onChange={(e) => setFilterEndTime(e.target.value)}
                                             />
@@ -765,15 +751,13 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                     </div>
                                 )}
                             </div>
-                        </div>
 
-                        {/* Issue List */}
-                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm text-left">
+                            {/* Issue List */}
+                            <div className="border-t border-slate-100 overflow-x-auto">
+                                <table className="min-w-[1320px] w-full table-fixed text-left text-sm">
                                     <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                                         <tr>
-                                            <th className="px-4 py-3 whitespace-nowrap w-4">
+                                            <th className="w-12 px-3 py-3 whitespace-nowrap">
                                                 <input
                                                     type="checkbox"
                                                     checked={issues.length > 0 && selectedRowKeys.length === issues.length}
@@ -781,29 +765,29 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                                     className="rounded border-slate-300 text-red-600 focus:ring-red-500"
                                                 />
                                             </th>
-                                            <th className="px-4 py-3 whitespace-nowrap">问题标题</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">涉及系统</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">发生时间</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">提出人</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">解决时间</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">处理人</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">问题类型</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">状态</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">工时(h)</th>
-                                            <th className="px-4 py-3 text-right whitespace-nowrap">操作</th>
+                                            <th className="w-[280px] px-3 py-3 whitespace-nowrap">问题标题</th>
+                                            <th className="w-[180px] px-3 py-3 whitespace-nowrap">涉及系统</th>
+                                            <th className="w-[160px] px-3 py-3 whitespace-nowrap">发生时间</th>
+                                            <th className="w-[100px] px-3 py-3 whitespace-nowrap">提出人</th>
+                                            <th className="w-[160px] px-3 py-3 whitespace-nowrap">解决时间</th>
+                                            <th className="w-[100px] px-3 py-3 whitespace-nowrap">处理人</th>
+                                            <th className="w-[130px] px-3 py-3 whitespace-nowrap">问题类型</th>
+                                            <th className="w-[100px] px-3 py-3 whitespace-nowrap">状态</th>
+                                            <th className="w-20 px-3 py-3 text-center whitespace-nowrap">工时(h)</th>
+                                            <th className="w-[120px] px-3 py-3 text-right whitespace-nowrap">操作</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {loading ? (
                                             <tr>
-                                                <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
+                                                <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
                                                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" />
                                                     加载中...
                                                 </td>
                                             </tr>
                                         ) : issues.length === 0 ? (
                                             <tr>
-                                                <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
+                                                <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
                                                     暂无问题记录
                                                 </td>
                                             </tr>
@@ -813,7 +797,7 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                                 className="hover:bg-slate-50 transition-colors group cursor-pointer"
                                                 onClick={() => handleViewDetail(issue)}
                                             >
-                                                <td className="px-4 py-3">
+                                                <td className="px-3 py-3">
                                                     <input
                                                         type="checkbox"
                                                         checked={selectedRowKeys.includes(issue.id)}
@@ -822,29 +806,29 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                                         className="rounded border-slate-300 text-red-600 focus:ring-red-500"
                                                     />
                                                 </td>
-                                                <td className="px-4 py-3">
-                                                    <div className="font-medium text-slate-800 max-w-[200px] truncate" title={issue.title}>{issue.title}</div>
-                                                    <div className="text-xs text-slate-400 font-mono">{issue.id}</div>
+                                                <td className="px-3 py-3">
+                                                    <div className="truncate font-medium text-slate-800" title={issue.title}>{issue.title}</div>
+                                                    <div className="truncate font-mono text-xs text-slate-400">{issue.id}</div>
                                                 </td>
-                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{issue.system}</td>
-                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDateTime(issue.occurTime)}</td>
-                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{issue.reporter}</td>
-                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDateTime(issue.resolveTime)}</td>
-                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{issue.handler || '-'}</td>
-                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                <td className="truncate px-3 py-3 text-slate-600" title={issue.system}>{issue.system}</td>
+                                                <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{formatDateTime(issue.occurTime)}</td>
+                                                <td className="truncate px-3 py-3 text-slate-600" title={issue.reporter}>{issue.reporter}</td>
+                                                <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{formatDateTime(issue.resolveTime)}</td>
+                                                <td className="truncate px-3 py-3 text-slate-600" title={issue.handler || '-'}>{issue.handler || '-'}</td>
+                                                <td className="px-3 py-3 whitespace-nowrap">
                                                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${getIssueTypeStyle(issue.issueType)}`}>
                                                         <FileText size={12} />
                                                         {issue.issueType}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                <td className="px-3 py-3 whitespace-nowrap">
                                                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${getStatusStyle(issue.status)}`}>
                                                         {getStatusIcon(issue.status)}
                                                         {issue.status}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3 text-slate-600 text-center whitespace-nowrap">{issue.workHours > 0 ? issue.workHours : '-'}</td>
-                                                <td className="px-4 py-3 text-right whitespace-nowrap">
+                                                <td className="px-3 py-3 text-center text-slate-600 whitespace-nowrap">{issue.workHours > 0 ? issue.workHours : '-'}</td>
+                                                <td className="px-3 py-3 text-right whitespace-nowrap">
                                                     <div className="flex items-center justify-end gap-2">
                                                         <Auth code="ops:issue:create">
                                                             <button
@@ -877,17 +861,19 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
                                     </tbody>
                                 </table>
                             </div>
-                        </div>
-                        {/* Pagination */}
-                        <Pagination
-                            current={currentPage}
-                            total={total}
-                            pageSize={10}
-                            onChange={(page) => setCurrentPage(page)}
-                            className="mt-4"
-                        />
+
+                            {/* Pagination */}
+                            <div className="border-t border-slate-100 bg-white px-4 py-3">
+                                <Pagination
+                                    current={currentPage}
+                                    total={total}
+                                    pageSize={10}
+                                    onChange={(page) => setCurrentPage(page)}
+                                />
+                            </div>
                     </>
                 )}
+                </div>
 
                 {/* Issue Edit Modal */}
                 {showModal && (

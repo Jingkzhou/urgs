@@ -125,17 +125,17 @@ const RegulationBatchManagement: React.FC = () => {
     };
 
     return (
-        <div className="h-[calc(100vh-140px)] w-full bg-slate-50 rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col relative animate-fade-in">
-            <div className="border-b border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.94)_100%)] backdrop-blur px-5 py-3">
+        <div className="h-[calc(100vh-112px)] w-full bg-slate-50 rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col relative animate-fade-in">
+            <div className="border-b border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.94)_100%)] backdrop-blur px-3 py-2">
                 <div>
-                    <div className="inline-flex rounded-2xl border border-slate-200/90 bg-white/90 p-1 shadow-[0_12px_32px_-28px_rgba(15,23,42,0.55)]">
+                    <div className="inline-flex rounded-lg border border-slate-200/90 bg-white/90 p-0.5 shadow-[0_12px_32px_-28px_rgba(15,23,42,0.55)]">
                         {navItems.map(item => {
                             const isActive = activeView === item.id;
                             return (
                                 <button
                                     key={item.id}
                                     onClick={() => handleSwitchView(item.id)}
-                                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm transition-all ${isActive
+                                    className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-all ${isActive
                                         ? 'bg-red-50 text-red-700 shadow-[0_8px_20px_-18px_rgba(220,38,38,0.9)] font-semibold'
                                         : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
                                         }`}
@@ -149,7 +149,7 @@ const RegulationBatchManagement: React.FC = () => {
                 </div>
             </div>
 
-            <div className="flex-1 overflow-auto p-4">
+            <div className="flex-1 overflow-auto p-3">
                 {renderContent()}
             </div>
 

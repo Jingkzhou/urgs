@@ -1,15 +1,12 @@
 import React from 'react';
 import { Tag, Tooltip } from 'antd';
-import { AlertTriangle, CheckCircle2, Eye, Play, RotateCcw, Search, Square } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Eye, MoreHorizontal, Play, RotateCcw, Search, Square } from 'lucide-react';
 import Pagination from '@/components/common/Pagination';
 import { QuartzTask, QuartzTaskStatus } from '../mockData';
 import {
     batchActionClass,
     contextMenuItemClass,
-    headerCellClass,
     instanceStatusMap,
-    monoCellClass,
-    tableCellClass,
 } from './constants';
 import { RowContextMenuState, TaskInstanceStats } from './types';
 import ExecutorPoolStatsPanel from './ExecutorPoolStatsPanel';
@@ -57,7 +54,7 @@ interface TaskInstanceTableViewProps {
     onClearSelectedInstances: () => void;
     onCloseRowContextMenu: () => void;
     onInvokeRowContextAction: (action: 'execute' | 'stop' | 'pass' | 'detail') => void;
-    onOpenRowContextMenu: (instance: QuartzTaskStatus, event: React.MouseEvent<HTMLTableRowElement>) => void;
+    onOpenRowContextMenu: (instance: QuartzTaskStatus, event: React.MouseEvent<HTMLElement>) => void;
     onOpenInstanceDetail: (instance: QuartzTaskStatus) => void;
     onPageChange: (page: number, size: number) => void;
 }
@@ -111,197 +108,218 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     const canBatchExecute = selectedInstances.length > 0 && selectedInstances.some(instance => instance.status === 3 || instance.status === 4);
     const canBatchForceStop = selectedInstances.length > 0 && selectedInstances.some(instance => instance.status === 1 || instance.status === 2);
     const canBatchForcePass = selectedInstances.length > 0 && selectedInstances.some(instance => instance.status === 4);
+    const fieldClass = 'h-8 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:ring-2 focus:ring-red-100';
+    const labelClass = 'space-y-1';
+    const labelTextClass = 'text-[11px] font-medium text-slate-500';
+    const compactHeaderCellClass = 'px-3 py-2.5 font-semibold whitespace-nowrap';
+    const compactTableCellClass = 'px-3 py-2.5 align-middle';
+    const compactMonoCellClass = `${compactTableCellClass} font-mono text-xs text-slate-600`;
+    const statusPills = [
+        {
+            status: '',
+            label: '全部',
+            count: summaryStats.totalInstances,
+            className: statusFilter === '' ? 'border-slate-300 bg-slate-100 text-slate-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+        },
+        {
+            status: '1',
+            label: '等待',
+            count: summaryStats.waitingInstances,
+            className: statusFilter === '1' ? 'border-slate-300 bg-slate-100 text-slate-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+        },
+        {
+            status: '2',
+            label: '执行中',
+            count: summaryStats.runningInstances,
+            className: statusFilter === '2' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-blue-100 bg-white text-blue-600 hover:bg-blue-50',
+        },
+        {
+            status: '3',
+            label: '成功',
+            count: summaryStats.successInstances,
+            className: statusFilter === '3' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-emerald-100 bg-white text-emerald-600 hover:bg-emerald-50',
+        },
+        {
+            status: '4',
+            label: '失败',
+            count: summaryStats.failedInstances,
+            className: statusFilter === '4' ? 'border-red-200 bg-red-50 text-red-700' : 'border-red-100 bg-white text-red-600 hover:bg-red-50',
+        },
+    ];
 
     return (
-        <div className="space-y-4">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                    <div>
-                        <div className="text-lg font-bold text-slate-800">任务实例</div>
-                        <div className="text-sm text-slate-500 mt-1">
-                            围绕 `t_quartz_task_status` 跟踪批量实例状态、时间线和失败信息；单条重跑可进入依赖列表选择节点，批量重跑仅处理当前选中节点。
-                        </div>
+        <div className="flex h-full min-h-0 flex-col gap-3">
+            <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+                <div className="flex flex-col gap-2 border-b border-slate-100 px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <div className="text-base font-bold text-slate-800">任务实例</div>
+                        <div className="text-xs text-slate-500">点击行查看详情，右键或更多按钮打开实例操作。</div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            {statusPills.map(item => (
+                                <button
+                                    key={item.status || 'all'}
+                                    type="button"
+                                    onClick={() => onSummaryStatusClick(item.status)}
+                                    className={`inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${item.className}`}
+                                >
+                                    <span>{item.label}</span>
+                                    <span className="font-mono">{item.count}</span>
+                                </button>
+                            ))}
+                        </div>
                         <button
                             type="button"
                             onClick={onOpenMissedTasks}
-                            className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 font-semibold text-amber-700 transition-colors hover:bg-amber-100"
+                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100"
                         >
                             <AlertTriangle size={13} />
                             未下发检查
                         </button>
-                        <button
-                            type="button"
-                            onClick={() => onSummaryStatusClick('')}
-                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 transition-colors hover:bg-slate-200 ${statusFilter === '' ? 'bg-slate-200 font-semibold text-slate-700' : 'bg-slate-100'}`}
-                        >
-                            全部 {summaryStats.totalInstances}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => onSummaryStatusClick('1')}
-                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 transition-colors hover:bg-slate-200 ${statusFilter === '1' ? 'bg-slate-200 font-semibold text-slate-700' : 'bg-slate-100'}`}
-                        >
-                            等待 {summaryStats.waitingInstances}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => onSummaryStatusClick('2')}
-                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-blue-600 transition-colors hover:bg-blue-100 ${statusFilter === '2' ? 'bg-blue-100 font-semibold' : 'bg-blue-50'}`}
-                        >
-                            执行中 {summaryStats.runningInstances}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => onSummaryStatusClick('3')}
-                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-emerald-600 transition-colors hover:bg-emerald-100 ${statusFilter === '3' ? 'bg-emerald-100 font-semibold' : 'bg-emerald-50'}`}
-                        >
-                            成功 {summaryStats.successInstances}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => onSummaryStatusClick('4')}
-                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-red-600 transition-colors hover:bg-red-100 ${statusFilter === '4' ? 'bg-red-100 font-semibold' : 'bg-red-50'}`}
-                        >
-                            失败 {summaryStats.failedInstances}
-                        </button>
                     </div>
                 </div>
 
-                <div className="mt-4">
-                    <ExecutorPoolStatsPanel
-                        state={executorPoolStatsState}
-                        waitingInstances={summaryStats.waitingInstances}
-                    />
-                </div>
-
-                <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-8">
-                    <label className="space-y-1">
-                        <div className="text-xs font-medium text-slate-500">搜索条件</div>
-                        <div className="relative">
-                            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <div className="overflow-x-auto px-4 py-2.5">
+                    <div className="flex min-w-[1280px] items-end gap-2">
+                        <label className={`${labelClass} w-[300px] shrink-0`}>
+                            <div className={labelTextClass}>搜索条件</div>
+                            <div className="relative">
+                                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    value={searchKeyword}
+                                    onChange={(event) => onSearchKeywordChange(event.target.value)}
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Enter') {
+                                            onSearch();
+                                        }
+                                    }}
+                                    placeholder="实例 / 计划 / 任务 / 消息"
+                                    className={`${fieldClass} pl-9`}
+                                />
+                            </div>
+                        </label>
+                        <label className={`${labelClass} w-[180px] shrink-0`}>
+                            <div className={labelTextClass}>系统主体</div>
+                            <select
+                                value={taskSystemFilter}
+                                onChange={(event) => onTaskSystemFilterChange(event.target.value)}
+                                className={fieldClass}
+                            >
+                                <option value="">全部系统</option>
+                                {taskSystemOptions.map(item => (
+                                    <option key={item} value={item}>
+                                        {item}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className={`${labelClass} w-[160px] shrink-0`}>
+                            <div className={labelTextClass}>主题</div>
                             <input
-                                value={searchKeyword}
-                                onChange={(event) => onSearchKeywordChange(event.target.value)}
+                                value={themeFilter}
+                                onChange={(event) => onThemeFilterChange(event.target.value)}
                                 onKeyDown={(event) => {
                                     if (event.key === 'Enter') {
                                         onSearch();
                                     }
                                 }}
-                                placeholder="实例ID / 计划ID / 任务名 / 消息"
-                                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
+                                placeholder="搜索主题"
+                                className={fieldClass}
                             />
-                        </div>
-                    </label>
-                    <label className="space-y-1">
-                        <div className="text-xs font-medium text-slate-500">系统主体</div>
-                        <select
-                            value={taskSystemFilter}
-                            onChange={(event) => onTaskSystemFilterChange(event.target.value)}
-                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
-                        >
-                            <option value="">全部系统</option>
-                            {taskSystemOptions.map(item => (
-                                <option key={item} value={item}>
-                                    {item}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <label className="space-y-1">
-                        <div className="text-xs font-medium text-slate-500">主题</div>
-                        <input
-                            value={themeFilter}
-                            onChange={(event) => onThemeFilterChange(event.target.value)}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter') {
-                                    onSearch();
-                                }
-                            }}
-                            placeholder="搜索主题"
-                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
-                        />
-                    </label>
-                    <label className="space-y-1">
-                        <div className="text-xs font-medium text-slate-500">备注</div>
-                        <input
-                            value={remarkFilter}
-                            onChange={(event) => onRemarkFilterChange(event.target.value)}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter') {
-                                    onSearch();
-                                }
-                            }}
-                            placeholder="搜索备注"
-                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
-                        />
-                    </label>
-                    <label className="space-y-1">
-                        <div className="text-xs font-medium text-slate-500">状态</div>
-                        <select
-                            value={statusFilter}
-                            onChange={(event) => onStatusFilterChange(event.target.value)}
-                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
-                        >
-                            <option value="">全部状态</option>
-                            <option value="1">等待中</option>
-                            <option value="2">执行中</option>
-                            <option value="3">成功</option>
-                            <option value="4">失败</option>
-                        </select>
-                    </label>
-                    <label className="space-y-1">
-                        <div className="text-xs font-medium text-slate-500">数据日期</div>
-                        <input
-                            type="date"
-                            value={dataDateFilter}
-                            onChange={(event) => onDataDateFilterChange(event.target.value)}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter') {
-                                    onSearch();
-                                }
-                            }}
-                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
-                        />
-                    </label>
-                    <label className="space-y-1">
-                        <div className="text-xs font-medium text-slate-500">创建日期</div>
-                        <input
-                            type="date"
-                            value={createDateFilter}
-                            onChange={(event) => onCreateDateFilterChange(event.target.value)}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter') {
-                                    onSearch();
-                                }
-                            }}
-                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:bg-white"
-                        />
-                    </label>
-                    <div className="space-y-1">
-                        <div className="text-xs font-medium text-slate-500">操作</div>
-                        <div className="flex gap-2">
-                            <button
-                                onClick={onSearch}
-                                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-red-600 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-700"
+                        </label>
+                        <label className={`${labelClass} w-[160px] shrink-0`}>
+                            <div className={labelTextClass}>备注</div>
+                            <input
+                                value={remarkFilter}
+                                onChange={(event) => onRemarkFilterChange(event.target.value)}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        onSearch();
+                                    }
+                                }}
+                                placeholder="搜索备注"
+                                className={fieldClass}
+                            />
+                        </label>
+                        <label className={`${labelClass} w-[150px] shrink-0`}>
+                            <div className={labelTextClass}>状态</div>
+                            <select
+                                value={statusFilter}
+                                onChange={(event) => onStatusFilterChange(event.target.value)}
+                                className={fieldClass}
                             >
-                                <Search size={14} />
-                                查询
-                            </button>
-                            <button
-                                onClick={onResetFilters}
-                                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
-                            >
-                                <RotateCcw size={14} />
-                                重置
-                            </button>
+                                <option value="">全部状态</option>
+                                <option value="1">等待中</option>
+                                <option value="2">执行中</option>
+                                <option value="3">成功</option>
+                                <option value="4">失败</option>
+                            </select>
+                        </label>
+                        <label className={`${labelClass} w-[150px] shrink-0`}>
+                            <div className={labelTextClass}>数据日期</div>
+                            <input
+                                type="date"
+                                value={dataDateFilter}
+                                onChange={(event) => onDataDateFilterChange(event.target.value)}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        onSearch();
+                                    }
+                                }}
+                                className={fieldClass}
+                            />
+                        </label>
+                        <label className={`${labelClass} w-[150px] shrink-0`}>
+                            <div className={labelTextClass}>创建日期</div>
+                            <input
+                                type="date"
+                                value={createDateFilter}
+                                onChange={(event) => onCreateDateFilterChange(event.target.value)}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        onSearch();
+                                    }
+                                }}
+                                className={fieldClass}
+                            />
+                        </label>
+                        <div className={`${labelClass} w-[140px] shrink-0`}>
+                            <div className={labelTextClass}>操作</div>
+                            <div className="flex gap-1.5">
+                                <button
+                                    onClick={onSearch}
+                                    className="inline-flex h-8 flex-1 items-center justify-center gap-1 rounded-lg bg-red-600 px-2 text-sm font-semibold text-white transition-colors hover:bg-red-700"
+                                >
+                                    <Search size={14} />
+                                    查询
+                                </button>
+                                <button
+                                    onClick={onResetFilters}
+                                    className="inline-flex h-8 flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+                                >
+                                    <RotateCcw size={14} />
+                                    重置
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
 
+                <details className="border-t border-slate-100 px-4 py-2">
+                    <summary className="cursor-pointer select-none text-xs font-semibold text-slate-600 marker:text-slate-400">
+                        执行器线程池指标
+                    </summary>
+                    <div className="mt-3">
+                        <ExecutorPoolStatsPanel
+                            state={executorPoolStatsState}
+                            waitingInstances={summaryStats.waitingInstances}
+                        />
+                    </div>
+                </details>
+
                 {selectedInstanceIds.length > 0 && (
-                    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-red-100 bg-gradient-to-r from-red-50/80 via-white to-red-50/60 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex flex-col gap-3 border-t border-red-100 bg-red-50/60 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
                         <div className="text-sm font-medium text-slate-700">
                             已选择 <span className="font-bold text-red-600">{selectedInstanceIds.length}</span> 条实例
                         </div>
@@ -399,44 +417,54 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                 </>
             )}
 
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1692px] table-fixed text-sm text-left">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                <div className="flex flex-col gap-1.5 border-b border-slate-100 px-4 py-2.5 md:flex-row md:items-center md:justify-between">
+                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                        <div className="text-sm font-bold text-slate-800">实例列表</div>
+                        <div className="text-xs text-slate-500">当前筛选 {filteredInstances.length} 条，展示第 {currentPage} 页。</div>
+                    </div>
+                    <div className="text-xs text-slate-500">
+                        {selectedInstanceIds.length > 0 ? `已选择 ${selectedInstanceIds.length} 条` : '可多选后批量重跑、停止或强制通过'}
+                    </div>
+                </div>
+                <div className="min-h-0 flex-1 overflow-auto">
+                    <table className="w-full min-w-[1516px] table-fixed text-left text-sm">
                         <colgroup>
-                            <col style={{ width: 56 }} />
-                            <col style={{ width: 96 }} />
-                            <col style={{ width: 180 }} />
-                            <col style={{ width: 110 }} />
-                            <col style={{ width: 110 }} />
-                            <col style={{ width: 112 }} />
-                            <col style={{ width: 96 }} />
-                            <col style={{ width: 168 }} />
-                            <col style={{ width: 168 }} />
-                            <col style={{ width: 168 }} />
-                            <col style={{ width: 168 }} />
-                            <col style={{ width: 260 }} />
+                            <col style={{ width: 76 }} />
+                            <col style={{ width: 84 }} />
+                            <col style={{ width: 196 }} />
+                            <col style={{ width: 128 }} />
+                            <col style={{ width: 128 }} />
+                            <col style={{ width: 104 }} />
+                            <col style={{ width: 88 }} />
+                            <col style={{ width: 140 }} />
+                            <col style={{ width: 140 }} />
+                            <col style={{ width: 140 }} />
+                            <col style={{ width: 140 }} />
+                            <col style={{ width: 252 }} />
                         </colgroup>
-                        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
+                        <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs text-slate-500 shadow-[0_1px_0_rgba(226,232,240,0.9)]">
                             <tr>
-                                <th className={headerCellClass}>
+                                <th className={compactHeaderCellClass}>
                                     <input
                                         type="checkbox"
+                                        aria-label="选择当前页可见任务实例"
                                         checked={allVisibleSelected}
                                         onChange={(event) => onToggleSelectAllVisible(event.target.checked)}
                                         className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
                                     />
                                 </th>
-                                <th className={headerCellClass}>计划ID</th>
-                                <th className={headerCellClass}>任务名称</th>
-                                <th className={headerCellClass}>系统</th>
-                                <th className={headerCellClass}>主题</th>
-                                <th className={headerCellClass}>数据日期</th>
-                                <th className={headerCellClass}>状态</th>
-                                <th className={headerCellClass}>开始时间</th>
-                                <th className={headerCellClass}>更新时间</th>
-                                <th className={headerCellClass}>结束时间</th>
-                                <th className={headerCellClass}>创建时间</th>
-                                <th className={headerCellClass}>消息摘要</th>
+                                <th className={compactHeaderCellClass}>计划ID</th>
+                                <th className={compactHeaderCellClass}>任务名称</th>
+                                <th className={compactHeaderCellClass}>系统</th>
+                                <th className={compactHeaderCellClass}>主题</th>
+                                <th className={compactHeaderCellClass}>数据日期</th>
+                                <th className={compactHeaderCellClass}>状态</th>
+                                <th className={compactHeaderCellClass}>开始时间</th>
+                                <th className={compactHeaderCellClass}>更新时间</th>
+                                <th className={compactHeaderCellClass}>结束时间</th>
+                                <th className={compactHeaderCellClass}>创建时间</th>
+                                <th className={compactHeaderCellClass}>消息摘要</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -456,49 +484,63 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                                         key={instance.id}
                                         onClick={() => onOpenInstanceDetail(instance)}
                                         onContextMenu={(event) => onOpenRowContextMenu(instance, event)}
-                                        className="h-14 cursor-pointer hover:bg-slate-50/80 transition-colors"
+                                        className="h-12 cursor-pointer transition-colors hover:bg-red-50/30"
                                         title="点击整行查看详情"
                                     >
-                                        <td className={tableCellClass}>
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedInstanceIds.includes(instance.id)}
-                                                onClick={(event) => event.stopPropagation()}
-                                                onChange={(event) => {
-                                                    event.stopPropagation();
-                                                    onToggleSelectInstance(instance.id, event.target.checked);
-                                                }}
-                                                className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
-                                            />
+                                        <td className={compactTableCellClass}>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    aria-label={`选择实例 #${instance.id}`}
+                                                    checked={selectedInstanceIds.includes(instance.id)}
+                                                    onClick={(event) => event.stopPropagation()}
+                                                    onChange={(event) => {
+                                                        event.stopPropagation();
+                                                        onToggleSelectInstance(instance.id, event.target.checked);
+                                                    }}
+                                                    className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    aria-label={`打开实例 #${instance.id} 操作菜单`}
+                                                    onClick={(event) => {
+                                                        event.stopPropagation();
+                                                        onOpenRowContextMenu(instance, event);
+                                                    }}
+                                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-red-200"
+                                                >
+                                                    <MoreHorizontal size={15} />
+                                                </button>
+                                            </div>
                                         </td>
-                                        <td className={monoCellClass}>
+                                        <td className={compactMonoCellClass}>
                                             <div className="truncate">{instance.plan_id}</div>
                                         </td>
-                                        <td className={tableCellClass}>
+                                        <td className={compactTableCellClass}>
                                             <Tooltip placement="topLeft" title={taskName}>
                                                 <div className="truncate font-semibold text-slate-800">
                                                     {taskName}
                                                 </div>
                                             </Tooltip>
                                         </td>
-                                        <td className={tableCellClass}>
+                                        <td className={compactTableCellClass}>
                                             <Tooltip placement="topLeft" title={task?.task_system || '-'}>
                                                 <div className="truncate text-slate-700">
                                                     {task?.task_system || '-'}
                                                 </div>
                                             </Tooltip>
                                         </td>
-                                        <td className={tableCellClass}>
+                                        <td className={compactTableCellClass}>
                                             <Tooltip placement="topLeft" title={task?.theme || '-'}>
                                                 <div className="truncate text-slate-700">
                                                     {task?.theme || '-'}
                                                 </div>
                                             </Tooltip>
                                         </td>
-                                        <td className={monoCellClass}>
+                                        <td className={compactMonoCellClass}>
                                             <div className="truncate">{instance.data_date}</div>
                                         </td>
-                                        <td className={tableCellClass}>
+                                        <td className={compactTableCellClass}>
                                             {mappedStatus ? (
                                                 <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold leading-none ${mappedStatus.className}`}>
                                                     {mappedStatus.label}
@@ -507,19 +549,19 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                                                 <Tag className="m-0">{instance.status ?? '-'}</Tag>
                                             )}
                                         </td>
-                                        <td className={`${monoCellClass} text-slate-500`}>
+                                        <td className={`${compactMonoCellClass} text-slate-500`}>
                                             <div className="truncate">{instance.begin_time || '-'}</div>
                                         </td>
-                                        <td className={`${monoCellClass} text-slate-500`}>
+                                        <td className={`${compactMonoCellClass} text-slate-500`}>
                                             <div className="truncate">{instance.update_time || '-'}</div>
                                         </td>
-                                        <td className={`${monoCellClass} text-slate-500`}>
+                                        <td className={`${compactMonoCellClass} text-slate-500`}>
                                             <div className="truncate">{instance.end_time || '-'}</div>
                                         </td>
-                                        <td className={`${monoCellClass} text-slate-500`}>
+                                        <td className={`${compactMonoCellClass} text-slate-500`}>
                                             <div className="truncate">{instance.create_time}</div>
                                         </td>
-                                        <td className={`${tableCellClass} text-slate-600`}>
+                                        <td className={`${compactTableCellClass} text-slate-600`}>
                                             <Tooltip placement="topLeft" title={instance.msg || '-'}>
                                                 <div className="truncate">
                                                     {instance.msg || '-'}
@@ -532,16 +574,15 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                         </tbody>
                     </table>
                 </div>
-            </div>
-
-            <div className="px-5">
-                <Pagination
-                    current={currentPage}
-                    total={filteredInstances.length}
-                    pageSize={pageSize}
-                    showSizeChanger
-                    onChange={onPageChange}
-                />
+                <div className="border-t border-slate-100 px-4 py-3">
+                    <Pagination
+                        current={currentPage}
+                        total={filteredInstances.length}
+                        pageSize={pageSize}
+                        showSizeChanger
+                        onChange={onPageChange}
+                    />
+                </div>
             </div>
         </div>
     );

@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Col, message, Row, Statistic } from 'antd';
+import { message, Tabs } from 'antd';
 import type { UploadProps } from 'antd';
-import { Activity, BookOpen, Database, Server } from 'lucide-react';
 import { getDeployEnvironments, type SsoConfig } from '@/api/version';
 import {
     createInfrastructureAsset,
@@ -135,9 +134,6 @@ const InfrastructureManagement: React.FC = () => {
         [scopedAssets],
     );
 
-    const activeCount = filteredAssets.filter(asset => asset.status === 'active').length;
-    const dbCount = filteredAssets.filter(asset => asset.role === 'db').length;
-
     const handleAdd = () => {
         setEditingAsset(null);
         setFormOpen(true);
@@ -251,75 +247,72 @@ const InfrastructureManagement: React.FC = () => {
             />
 
             <div className="min-w-0 flex-1 space-y-4">
-                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                            <h3 className="text-lg font-bold text-slate-800">
+                <Tabs
+                    defaultActiveKey="environment"
+                    className="rounded-lg border border-slate-200 bg-white px-4 pt-3 shadow-sm"
+                    tabBarExtraContent={{
+                        left: (
+                            <div className="mr-5 flex h-full items-center text-base font-semibold text-slate-800">
                                 {selectedSystemId === 'all' ? '全部系统' : getSystemName(systems, selectedSystemId)}
-                            </h3>
-                            <p className="text-xs text-slate-500">
-                                按系统聚合资产、环境和运维手册，支持全局搜索定位。
-                            </p>
-                        </div>
-                        <div className="text-xs text-slate-500">
-                            当前显示 {filteredAssets.length} 台服务器，{visibleManuals.length} 份手册
-                        </div>
-                    </div>
-                </div>
+                            </div>
+                        ),
+                        right: (
+                            <div className="hidden text-xs text-slate-500 sm:block">
+                                当前显示 {filteredAssets.length} 台服务器，{visibleManuals.length} 份手册
+                            </div>
+                        ),
+                    }}
+                    items={[
+                        {
+                            key: 'environment',
+                            label: '系统环境',
+                            children: (
+                                <div className="space-y-4 pb-4">
+                                    <div className="text-xs text-slate-500 sm:hidden">
+                                        当前显示 {filteredAssets.length} 台服务器，{visibleManuals.length} 份手册
+                                    </div>
+                                    <InfrastructureToolbar
+                                        filters={filters}
+                                        envOptions={envs}
+                                        envTypeOptions={envTypeOptions}
+                                        roleOptions={roleOptions}
+                                        selectedCount={selectedRowKeys.length}
+                                        onFiltersChange={setFilters}
+                                        onRefresh={refreshAll}
+                                        onAdd={handleAdd}
+                                        onExport={handleExport}
+                                        onImport={handleImport}
+                                        onBatchDelete={handleBatchDelete}
+                                    />
 
-                <Row gutter={12}>
-                    <Col xs={12} lg={6}>
-                        <Card size="small" className="border-slate-100 shadow-sm">
-                            <Statistic title="服务器数" value={filteredAssets.length} prefix={<Server size={16} />} />
-                        </Card>
-                    </Col>
-                    <Col xs={12} lg={6}>
-                        <Card size="small" className="border-slate-100 shadow-sm">
-                            <Statistic title="运行中" value={activeCount} valueStyle={{ color: '#16a34a' }} prefix={<Activity size={16} />} />
-                        </Card>
-                    </Col>
-                    <Col xs={12} lg={6}>
-                        <Card size="small" className="border-slate-100 shadow-sm">
-                            <Statistic title="数据库服务器" value={dbCount} prefix={<Database size={16} />} />
-                        </Card>
-                    </Col>
-                    <Col xs={12} lg={6}>
-                        <Card size="small" className="border-slate-100 shadow-sm">
-                            <Statistic title="运维手册" value={visibleManuals.length} prefix={<BookOpen size={16} />} />
-                        </Card>
-                    </Col>
-                </Row>
-
-                <InfrastructureToolbar
-                    filters={filters}
-                    envOptions={envs}
-                    envTypeOptions={envTypeOptions}
-                    roleOptions={roleOptions}
-                    selectedCount={selectedRowKeys.length}
-                    onFiltersChange={setFilters}
-                    onRefresh={refreshAll}
-                    onAdd={handleAdd}
-                    onExport={handleExport}
-                    onImport={handleImport}
-                    onBatchDelete={handleBatchDelete}
-                />
-
-                <AssetTable
-                    assets={filteredAssets}
-                    systems={systems}
-                    loading={loading}
-                    selectedRowKeys={selectedRowKeys}
-                    onSelectionChange={setSelectedRowKeys}
-                    onView={handleView}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                />
-
-                <SystemManualPanel
-                    manuals={visibleManuals}
-                    selectedSystemId={selectedSystemId}
-                    systems={systems}
-                    onChanged={fetchManuals}
+                                    <AssetTable
+                                        assets={filteredAssets}
+                                        systems={systems}
+                                        loading={loading}
+                                        selectedRowKeys={selectedRowKeys}
+                                        onSelectionChange={setSelectedRowKeys}
+                                        onView={handleView}
+                                        onEdit={handleEdit}
+                                        onDelete={handleDelete}
+                                    />
+                                </div>
+                            ),
+                        },
+                        {
+                            key: 'manuals',
+                            label: '运维手册',
+                            children: (
+                                <div className="pb-4">
+                                    <SystemManualPanel
+                                        manuals={visibleManuals}
+                                        selectedSystemId={selectedSystemId}
+                                        systems={systems}
+                                        onChanged={fetchManuals}
+                                    />
+                                </div>
+                            ),
+                        },
+                    ]}
                 />
             </div>
 

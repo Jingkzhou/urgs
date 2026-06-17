@@ -607,7 +607,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         setRowContextMenu(null);
     };
 
-    const openRowContextMenu = (instance: QuartzTaskStatus, event: React.MouseEvent<HTMLTableRowElement>) => {
+    const openRowContextMenu = (instance: QuartzTaskStatus, event: React.MouseEvent<HTMLElement>) => {
         event.preventDefault();
         setRowContextMenu({
             x: event.clientX,

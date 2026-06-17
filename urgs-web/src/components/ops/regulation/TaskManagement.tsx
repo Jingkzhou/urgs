@@ -493,155 +493,151 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
 
     return (
         <>
-            <div className="space-y-6">
+            <div className="flex h-full min-h-0 flex-col gap-3">
                 {/* Dashboard Main Panel Header card */}
-                <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-[0_8px_30px_rgba(0,0,0,0.03)] transition-all duration-300">
-                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2">
-                                    <Sparkles className="h-5 w-5 text-red-500" />
-                                    任务管理控制台
-                                </h1>
-                            </div>
-                            <p className="text-sm text-slate-400 mt-1.5 font-medium tracking-wide">
-                                集中化管理监管报送批量任务周期定义（<code className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">t_quartz_task</code>）、拓扑依赖与告警通知托底。
-                            </p>
+                <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all duration-300">
+                    <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <h1 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-800">
+                                <Sparkles className="h-4 w-4 text-red-500" />
+                                任务管理控制台
+                            </h1>
+                            <span className="text-xs font-medium text-slate-500">
+                                周期定义、拓扑依赖与告警通知
+                            </span>
                         </div>
-                        
+
                         {/* High-fidelity Statistics Metric Chips and Action Button Container */}
-                        <div className="flex flex-wrap items-center gap-3 text-xs">
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
                             {/* Metric 1 */}
-                            <div className="flex items-center gap-2.5 rounded-xl border border-slate-200/80 bg-slate-50/50 px-3.5 py-2 transition-all duration-300 hover:bg-slate-50">
-                                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-200/60 text-slate-500">
-                                    <SlidersHorizontal size={13} />
-                                </div>
-                                <div>
-                                    <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">总任务数</div>
-                                    <div className="text-base font-bold text-slate-800 font-mono leading-none mt-0.5">{taskTotal}</div>
-                                </div>
+                            <div className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 font-semibold text-slate-700">
+                                <SlidersHorizontal size={13} className="text-slate-400" />
+                                <span>总任务</span>
+                                <span className="font-mono">{taskTotal}</span>
                             </div>
                             {/* Metric 2 */}
-                            <div className="flex items-center gap-2.5 rounded-xl border border-emerald-100 bg-emerald-50/20 px-3.5 py-2 transition-all duration-300 hover:bg-emerald-50/40">
-                                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100/60 text-emerald-600">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                </div>
-                                <div>
-                                    <div className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">运行正常</div>
-                                    <div className="text-base font-bold text-emerald-700 font-mono leading-none mt-0.5">{taskStatusSummary.normal}</div>
-                                </div>
+                            <div className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 font-semibold text-emerald-700">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                <span>正常</span>
+                                <span className="font-mono">{taskStatusSummary.normal}</span>
                             </div>
                             {/* Metric 3 */}
-                            <div className="flex items-center gap-2.5 rounded-xl border border-amber-100 bg-amber-50/20 px-3.5 py-2 transition-all duration-300 hover:bg-amber-50/40">
-                                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-100/60 text-amber-600">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-                                </div>
-                                <div>
-                                    <div className="text-[11px] font-bold text-amber-600 uppercase tracking-wider">当前暂停</div>
-                                    <div className="text-base font-bold text-amber-700 font-mono leading-none mt-0.5">{taskStatusSummary.paused}</div>
-                                </div>
+                            <div className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-100 bg-amber-50 px-2.5 font-semibold text-amber-700">
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                <span>暂停</span>
+                                <span className="font-mono">{taskStatusSummary.paused}</span>
                             </div>
 
-                            {/* Separator */}
-                            <span className="h-8 w-px bg-slate-200 hidden sm:block" />
-
-                            <div className="flex items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0 justify-end">
-                                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                                    <motion.button
-                                    whileHover={{ scale: 1.02 }}
-                                    whileTap={{ scale: 0.98 }}
-                                    onClick={handleRefreshTasks}
-                                    disabled={refreshing}
-                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 shadow-sm transition-all duration-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                    <RefreshCw size={13} className={`${refreshing ? 'animate-spin' : ''} text-slate-400`} />
-                                    刷新列表
-                                </motion.button>
-                                <motion.button
-                                    whileHover={{ scale: 1.02, y: -1 }}
-                                    whileTap={{ scale: 0.98 }}
-                                    onClick={() => openTaskModal(null)}
-                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 shadow-sm transition-all duration-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                    <Plus size={13} />
-                                    新建任务
-                                </motion.button>
-                                </div>
-                            </div>
                         </div>
                     </div>
 
                     {/* SaaS Control Grid Filter Bar */}
-                    <div className="mt-6 border-t border-slate-100 pt-5">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
-                            <div className="relative">
-                                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <div className="overflow-x-auto px-4 py-2.5">
+                        <div className="flex min-w-[1320px] items-end gap-2">
+                            <label className="w-[240px] shrink-0 space-y-1">
+                                <div className="text-[11px] font-medium text-slate-500">搜索条件</div>
+                                <div className="relative">
+                                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                                 <input
                                     value={keyword}
                                     onChange={(event) => setKeyword(event.target.value)}
                                     placeholder="搜索任务ID / 名称"
-                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 pl-9 pr-3.5 text-xs text-slate-700 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
+                                        className="h-8 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:ring-2 focus:ring-red-100"
                                 />
-                            </div>
-                            <div>
+                                </div>
+                            </label>
+                            <label className="w-[150px] shrink-0 space-y-1">
+                                <div className="text-[11px] font-medium text-slate-500">任务状态</div>
                                 <select
                                     value={statusFilter}
                                     onChange={(event) => setStatusFilter(event.target.value)}
-                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white font-medium"
+                                    className="h-8 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:ring-2 focus:ring-red-100"
                                 >
                                     <option value="">全部任务状态</option>
                                     <option value="0">正常</option>
                                     <option value="1">暂停</option>
                                 </select>
-                            </div>
-                            <div>
+                            </label>
+                            <label className="w-[160px] shrink-0 space-y-1">
+                                <div className="text-[11px] font-medium text-slate-500">任务类型</div>
                                 <select
                                     value={typeFilter}
                                     onChange={(event) => setTypeFilter(event.target.value)}
-                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white font-medium"
+                                    className="h-8 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:ring-2 focus:ring-red-100"
                                 >
                                     <option value="">全部任务类型</option>
                                     {taskTypes.map(type => (
                                         <option key={type} value={type}>{type}</option>
                                     ))}
                                 </select>
-                            </div>
-                            <div>
+                            </label>
+                            <label className="w-[180px] shrink-0 space-y-1">
+                                <div className="text-[11px] font-medium text-slate-500">所属系统</div>
                                 <select
                                     value={systemFilter}
                                     onChange={(event) => setSystemFilter(event.target.value)}
-                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 px-3.5 text-xs text-slate-600 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white font-medium"
+                                    className="h-8 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:ring-2 focus:ring-red-100"
                                 >
                                     <option value="">全部所属系统</option>
                                     {systems.map(system => (
                                         <option key={system} value={system}>{system}</option>
                                     ))}
                                 </select>
-                            </div>
-                            <div className="relative">
-                                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                            </label>
+                            <label className="w-[170px] shrink-0 space-y-1">
+                                <div className="text-[11px] font-medium text-slate-500">主题</div>
+                                <div className="relative">
+                                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                                 <input
                                     value={themeFilter}
                                     onChange={(event) => setThemeFilter(event.target.value)}
                                     placeholder="搜索主题"
-                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 pl-9 pr-3.5 text-xs text-slate-700 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
+                                        className="h-8 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:ring-2 focus:ring-red-100"
                                 />
-                            </div>
-                            <div className="relative">
-                                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                </div>
+                            </label>
+                            <label className="w-[170px] shrink-0 space-y-1">
+                                <div className="text-[11px] font-medium text-slate-500">备注</div>
+                                <div className="relative">
+                                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                                 <input
                                     value={remarkFilter}
                                     onChange={(event) => setRemarkFilter(event.target.value)}
                                     placeholder="搜索备注"
-                                    className="w-full rounded-xl border border-slate-200/85 bg-slate-50/50 h-10 pl-9 pr-3.5 text-xs text-slate-700 outline-none transition-all duration-200 hover:bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-slate-100 font-medium"
+                                        className="h-8 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-sm text-slate-700 outline-none transition focus:border-red-300 focus:ring-2 focus:ring-red-100"
                                 />
+                                </div>
+                            </label>
+                            <div className="w-[190px] shrink-0 space-y-1">
+                                <div className="text-[11px] font-medium text-slate-500">操作</div>
+                                <div className="flex gap-1.5">
+                                    <motion.button
+                                        whileHover={{ scale: 1.02 }}
+                                        whileTap={{ scale: 0.98 }}
+                                        onClick={handleRefreshTasks}
+                                        disabled={refreshing}
+                                        className="inline-flex h-8 flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-600 shadow-sm transition-all duration-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        <RefreshCw size={13} className={`${refreshing ? 'animate-spin' : ''} text-slate-400`} />
+                                        刷新
+                                    </motion.button>
+                                    <motion.button
+                                        whileHover={{ scale: 1.02, y: -1 }}
+                                        whileTap={{ scale: 0.98 }}
+                                        onClick={() => openTaskModal(null)}
+                                        className="inline-flex h-8 flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-600 shadow-sm transition-all duration-200 hover:bg-slate-50"
+                                    >
+                                        <Plus size={13} />
+                                        新建
+                                    </motion.button>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 {/* 任务列表表格 - Beautiful container backdrop wrapper */}
-                <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                     <TaskListTable
                         taskList={taskList}
                         onSelectTask={setSelectedTask}
