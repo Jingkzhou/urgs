@@ -271,7 +271,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                             />
                         </label>
                         <label className={`${labelClass} w-[150px] shrink-0`}>
-                            <div className={labelTextClass}>创建日期</div>
+                            <div className={labelTextClass}>更新日期</div>
                             <input
                                 type="date"
                                 value={createDateFilter}

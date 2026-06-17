@@ -26,7 +26,12 @@ import {
 import { normalizeLog, normalizeStatus, normalizeTask } from './task-instance/utils';
 import { useDependencyInsightData } from './task-instance/useDependencyInsightData';
 
-const normalizeDateKey = (value?: string | null) => value?.replaceAll('-', '') || '';
+const normalizeDateKey = (value?: string | null) => {
+    if (!value) return '';
+    const normalized = value.trim().replaceAll('-', '');
+    return normalized.length >= 8 ? normalized.slice(0, 8) : normalized;
+};
+const getDateTimeValue = (value?: string | null) => value ? dayjs(value).valueOf() : 0;
 const BATCH_RERUN_CHUNK_SIZE = 20;
 
 const chunkArray = <T,>(items: T[], chunkSize: number) => {
@@ -344,10 +349,16 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
             const matchesTheme = !themeFilter || (task?.theme || '').toLowerCase().includes(themeFilter.toLowerCase());
             const matchesRemark = !remarkFilter || (task?.remark || '').toLowerCase().includes(remarkFilter.toLowerCase());
             const matchesDataDate = !dataDateFilter || normalizeDateKey(instance.data_date) === normalizeDateKey(dataDateFilter);
-            const matchesCreateDate = !createDateFilter || instance.create_date === createDateFilter.replaceAll('-', '');
+            const matchesUpdateDate = !createDateFilter || normalizeDateKey(instance.update_time) === normalizeDateKey(createDateFilter);
             const matchesStatus = statusFilter === '' || String(instance.status ?? '') === statusFilter;
 
-            return matchesKeyword && matchesTaskSystem && matchesTheme && matchesRemark && matchesDataDate && matchesCreateDate && matchesStatus;
+            return matchesKeyword && matchesTaskSystem && matchesTheme && matchesRemark && matchesDataDate && matchesUpdateDate && matchesStatus;
+        }).sort((left, right) => {
+            const updateTimeDiff = getDateTimeValue(right.update_time) - getDateTimeValue(left.update_time);
+            if (updateTimeDiff !== 0) {
+                return updateTimeDiff;
+            }
+            return right.id - left.id;
         });
     }, [createDateFilter, dataDateFilter, instanceList, remarkFilter, searchKeyword, statusFilter, taskMap, taskSystemFilter, themeFilter]);
 

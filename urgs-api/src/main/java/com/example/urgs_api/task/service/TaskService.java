@@ -19,6 +19,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.ArrayList;
 import java.util.Map;
@@ -533,10 +534,8 @@ public class TaskService {
     }
 
     public com.example.urgs_api.task.vo.TaskInstanceStatsVO getDailyStats(String date) {
-        String compactDate = normalizeCompactDate(date);
-
         QueryWrapper<QuartzTaskStatusEntity> query = new QueryWrapper<>();
-        query.eq("create_date", compactDate);
+        applyUpdateDateFilter(query, date);
 
         List<QuartzTaskStatusEntity> tasks = quartzTaskStatusDao.selectList(query);
 
@@ -602,10 +601,8 @@ public class TaskService {
     }
 
     public List<WorkflowStatsVO> getWorkflowStats(String date) {
-        String compactDate = normalizeCompactDate(date);
-
         QueryWrapper<QuartzTaskStatusEntity> query = new QueryWrapper<>();
-        query.eq("create_date", compactDate);
+        applyUpdateDateFilter(query, date);
         List<QuartzTaskStatusEntity> instances = quartzTaskStatusDao.selectList(query);
 
         if (instances.isEmpty()) {
@@ -649,6 +646,23 @@ public class TaskService {
     private String normalizeCompactDate(String date) {
         String resolvedDate = StringUtils.hasText(date) ? date : LocalDate.now().toString();
         return resolvedDate.replace("-", "");
+    }
+
+    private void applyUpdateDateFilter(QueryWrapper<QuartzTaskStatusEntity> query, String date) {
+        LocalDate targetDate = resolveStatsDate(date);
+        query.ge("update_time", targetDate.atStartOfDay());
+        query.lt("update_time", targetDate.plusDays(1).atStartOfDay());
+    }
+
+    private LocalDate resolveStatsDate(String date) {
+        if (!StringUtils.hasText(date)) {
+            return LocalDate.now();
+        }
+        String trimmed = date.trim();
+        if (trimmed.contains("-")) {
+            return LocalDate.parse(trimmed);
+        }
+        return LocalDate.parse(trimmed, DateTimeFormatter.BASIC_ISO_DATE);
     }
 
     @Transactional(rollbackFor = Exception.class)

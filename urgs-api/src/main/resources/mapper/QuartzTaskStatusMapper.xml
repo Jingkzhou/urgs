@@ -85,7 +85,8 @@
                  LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
         WHERE 1 = 1
         <if test="queryDTO.beginDate != null and queryDTO.beginDate != ''">
-            AND s.create_date = #{queryDTO.beginDate}
+            AND s.update_time &gt;= STR_TO_DATE(#{queryDTO.beginDate}, '%Y%m%d')
+            AND s.update_time &lt; DATE_ADD(STR_TO_DATE(#{queryDTO.beginDate}, '%Y%m%d'), INTERVAL 1 DAY)
         </if>
         <if test="queryDTO.dataDate != null and queryDTO.dataDate != ''">
             AND s.data_date = #{queryDTO.dataDate}
