@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Drawer, Tabs, Tag, message } from 'antd';
 import {
     Activity,
@@ -10,9 +10,11 @@ import {
     Download,
     GitBranch,
     Play,
+    Sparkles,
     Square,
 } from 'lucide-react';
 import dayjs from 'dayjs';
+import { streamSolutionGeneration } from '@/api/ops';
 import { QuartzTask, QuartzTaskExecutionLog, QuartzTaskStatus } from '../mockData';
 import {
     detailItemClass,
@@ -62,6 +64,8 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
     onForceStopInstance,
     onForcePassInstance,
 }) => {
+    const [explainingLogId, setExplainingLogId] = useState<number | null>(null);
+    const [logAiExplanations, setLogAiExplanations] = useState<Record<number, string>>({});
     const logScrollRefs = useRef(new Map<number, HTMLDivElement | null>());
     const shouldFollowLogTailRef = useRef(true);
 
@@ -160,6 +164,69 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
         return `task_instance_${instanceId}_${taskName}_${dataDate}${logId}.log`;
     };
 
+    const buildLogExplanationPrompt = (log: QuartzTaskExecutionLog) => {
+        const logText = buildLogText(log);
+        const scriptText = selectedTask?.script?.trim();
+        const taskContext = [
+            `任务名称: ${getTaskName()}`,
+            `任务类型: ${selectedTask?.task_type || '-'}`,
+            `任务 Bean: ${selectedTask?.task_bean || '-'}`,
+            `任务参数: ${selectedTask?.task_params || '-'}`,
+            `数据源: ${selectedTask?.datasource_name || selectedTask?.datasource_id || '-'}`,
+            `实例消息: ${selectedInstance?.msg || '-'}`,
+            scriptText ? `执行脚本:\n${scriptText.slice(0, 4000)}` : '执行脚本: -',
+        ].join('\n');
+
+        return [
+            '请解释这次批量任务执行报错的原因。',
+            '要求:',
+            '1. 先给出最可能的根因。',
+            '2. 用日志证据说明判断依据。',
+            '3. 给出下一步排查或修复动作。',
+            '4. 如果日志不足以判断，明确说明还缺什么信息。',
+            '',
+            '任务上下文:',
+            taskContext,
+            '',
+            '执行日志:',
+            logText.slice(-12000),
+        ].join('\n');
+    };
+
+    const handleExplainLogError = async (log: QuartzTaskExecutionLog) => {
+        const prompt = buildLogExplanationPrompt(log).trim();
+        if (!prompt) {
+            message.warning('暂无可解释的日志内容');
+            return;
+        }
+
+        setExplainingLogId(log.id);
+        setLogAiExplanations(prev => ({ ...prev, [log.id]: '' }));
+
+        try {
+            await streamSolutionGeneration(
+                {
+                    systemPrompt: '你是资深批量运维和数据任务排障工程师。请基于任务上下文和执行日志解释当前报错原因，回答使用简洁中文，避免泛泛而谈。',
+                    userPrompt: prompt,
+                },
+                (content) => {
+                    setLogAiExplanations(prev => ({
+                        ...prev,
+                        [log.id]: `${prev[log.id] || ''}${content}`,
+                    }));
+                },
+                () => {
+                    message.success(`日志 #${log.id} 解释已生成`);
+                },
+                (error) => {
+                    message.error(`AI 解释失败：${error}`);
+                }
+            );
+        } finally {
+            setExplainingLogId(null);
+        }
+    };
+
     useEffect(() => {
         if (!selectedInstance || instanceDetailTabKey !== 'runtimeLog' || !shouldFollowLogTailRef.current) {
             return;
@@ -178,6 +245,11 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
             selectedInstanceLogs.forEach(log => scrollLogToTail(logScrollRefs.current.get(log.id) || null));
         });
     }, [instanceDetailTabKey, selectedInstance?.id]);
+
+    useEffect(() => {
+        setExplainingLogId(null);
+        setLogAiExplanations({});
+    }, [selectedInstance?.id]);
 
     const allLogsText = buildAllLogsText();
     const hasLogExportText = allLogsText.trim().length > 0;
@@ -641,6 +713,15 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
                                                                                 <Download size={13} />
                                                                                 下载
                                                                             </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleExplainLogError(log)}
+                                                                                disabled={explainingLogId !== null}
+                                                                                className="inline-flex h-7 items-center gap-1 rounded border border-purple-200 bg-purple-50 px-2 font-semibold text-purple-700 transition hover:bg-purple-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-purple-50"
+                                                                            >
+                                                                                <Sparkles size={13} />
+                                                                                {explainingLogId === log.id ? '解释中...' : 'AI 解释'}
+                                                                            </button>
                                                                             <span className={`inline-flex rounded-full border px-2 py-1 font-semibold ${mappedStatus.className}`}>
                                                                                 {mappedStatus.label}
                                                                             </span>
@@ -687,6 +768,17 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
                                                                                 </div>
                                                                             </div>
                                                                         </div>
+                                                                        {(logAiExplanations[log.id] || explainingLogId === log.id) && (
+                                                                            <div className="rounded-xl border border-purple-100 bg-purple-50/70 p-3">
+                                                                                <div className="flex items-center gap-2 text-xs font-semibold text-purple-700">
+                                                                                    <Sparkles size={14} />
+                                                                                    AI 报错解释
+                                                                                </div>
+                                                                                <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                                                                                    {logAiExplanations[log.id] || '正在分析日志...'}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             );
