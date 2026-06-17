@@ -4,6 +4,9 @@
     <springProperty scope="context" name="ACTIVE_PROFILE" source="spring.profiles.active" defaultValue="dev"/>
     <property name="LOG_HOME" value="${LOG_HOME:-${LOG_PATH:-logs}}"/>
     <property name="LOG_FILE" value="${LOG_HOME}/${APP_NAME}-${ACTIVE_PROFILE}.log"/>
+    <property name="ROOT_LOG_LEVEL" value="${LOG_LEVEL_ROOT:-INFO}"/>
+    <property name="SPRING_WEB_LOG_LEVEL" value="${LOG_LEVEL_SPRING_WEB:-INFO}"/>
+    <property name="APP_LOG_LEVEL" value="${LOG_LEVEL_APP:-DEBUG}"/>
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
@@ -24,10 +27,10 @@
         </rollingPolicy>
     </appender>
 
-    <logger name="org.springframework.web" level="INFO"/>
-    <logger name="com.example" level="DEBUG"/>
+    <logger name="org.springframework.web" level="${SPRING_WEB_LOG_LEVEL}"/>
+    <logger name="com.example" level="${APP_LOG_LEVEL}"/>
 
-    <root level="INFO">
+    <root level="${ROOT_LOG_LEVEL}">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>
     </root>
