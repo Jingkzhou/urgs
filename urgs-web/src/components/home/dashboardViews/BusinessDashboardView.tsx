@@ -100,19 +100,19 @@ const BusinessDashboardView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 pb-12 pt-4">
+    <div className="-mt-3 space-y-4 pb-10">
       {/* 1. Welcome + System Links */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 xl:items-stretch">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12 xl:items-stretch">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className={`relative overflow-hidden rounded-[2.5rem] border border-slate-200/60 bg-white/75 p-6 backdrop-blur-xl shadow-[0_20px_45px_-12px_rgba(0,0,0,0.06)] transition-all duration-500 hover:shadow-[0_30px_60px_-15px_rgba(0,0,0,0.1)] ${canViewSystems ? 'xl:col-span-4' : 'xl:col-span-12'}`}
+          className={`relative overflow-hidden rounded-[2.5rem] border border-slate-200/60 bg-white/75 p-4 backdrop-blur-xl shadow-[0_20px_45px_-12px_rgba(0,0,0,0.06)] transition-all duration-500 hover:shadow-[0_30px_60px_-15px_rgba(0,0,0,0.1)] ${canViewSystems ? 'xl:col-span-4' : 'xl:col-span-12'}`}
         >
           <div className="absolute -right-24 -top-24 w-80 h-80 bg-red-500/5 rounded-full blur-[80px] pointer-events-none" />
 
-          <div className="relative z-10 flex h-full flex-col justify-between gap-6">
-            <div className="flex items-center gap-5">
+          <div className="relative z-10 flex h-full flex-col justify-center gap-4">
+            <div className="flex items-center gap-4">
               <div className="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-red-500 to-rose-600 p-0.5 shadow-lg shadow-red-500/10 flex items-center justify-center text-white">
                 {userInfo?.avatarUrl ? (
                   <img
