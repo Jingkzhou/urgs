@@ -4,10 +4,13 @@ import {
     Activity,
     AlertCircle,
     CalendarRange,
+    CheckCircle2,
     Clock3,
     Copy,
     Download,
     GitBranch,
+    Play,
+    Square,
 } from 'lucide-react';
 import dayjs from 'dayjs';
 import { QuartzTask, QuartzTaskExecutionLog, QuartzTaskStatus } from '../mockData';
@@ -38,6 +41,9 @@ interface TaskInstanceDetailDrawerProps {
     onTabChange: (key: InstanceDetailTabKey) => void;
     onShowImpactedOnlyChange: (nextValue: boolean) => void;
     onLocateInstanceFromDependency: (instance: QuartzTaskStatus) => void;
+    onExecuteInstance: (instance: QuartzTaskStatus) => void;
+    onForceStopInstance: (instance: QuartzTaskStatus) => void;
+    onForcePassInstance: (instance: QuartzTaskStatus) => void;
 }
 
 const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
@@ -52,6 +58,9 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
     onTabChange,
     onShowImpactedOnlyChange,
     onLocateInstanceFromDependency,
+    onExecuteInstance,
+    onForceStopInstance,
+    onForcePassInstance,
 }) => {
     const logScrollRefs = useRef(new Map<number, HTMLDivElement | null>());
     const shouldFollowLogTailRef = useRef(true);
@@ -172,6 +181,10 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
 
     const allLogsText = buildAllLogsText();
     const hasLogExportText = allLogsText.trim().length > 0;
+    const canExecuteInstance = selectedInstance?.status === 3 || selectedInstance?.status === 4;
+    const canForceStopInstance = selectedInstance?.status === 1 || selectedInstance?.status === 2;
+    const canForcePassInstance = selectedInstance?.status === 4;
+    const actionButtonClass = 'inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50';
 
     return (
         <Drawer
@@ -193,16 +206,47 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
                                     实例 #{selectedInstance.id} · 计划 #{selectedInstance.plan_id} · 数据日期 {selectedInstance.data_date}
                                 </div>
                             </div>
-                            <div className="flex flex-wrap items-center gap-2 text-xs">
-                                <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-600">
-                                    实例状态 {instanceStatusMap[selectedInstance.status ?? -1]?.label || selectedInstance.status || '-'}
-                                </span>
-                                <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-blue-700">
-                                    {selectedTask?.task_system || '-'}
-                                </span>
-                                <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">
-                                    {selectedTask?.theme || '-'}
-                                </span>
+                            <div className="flex flex-col items-start gap-2 lg:items-end">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => onExecuteInstance(selectedInstance)}
+                                        disabled={!canExecuteInstance}
+                                        className={`${actionButtonClass} border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:hover:bg-blue-50`}
+                                    >
+                                        <Play size={14} />
+                                        重新跑批
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => onForceStopInstance(selectedInstance)}
+                                        disabled={!canForceStopInstance}
+                                        className={`${actionButtonClass} border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:hover:bg-amber-50`}
+                                    >
+                                        <Square size={14} />
+                                        强制停止
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => onForcePassInstance(selectedInstance)}
+                                        disabled={!canForcePassInstance}
+                                        className={`${actionButtonClass} border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:hover:bg-emerald-50`}
+                                    >
+                                        <CheckCircle2 size={14} />
+                                        强制通过
+                                    </button>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2 text-xs">
+                                    <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-600">
+                                        实例状态 {instanceStatusMap[selectedInstance.status ?? -1]?.label || selectedInstance.status || '-'}
+                                    </span>
+                                    <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-blue-700">
+                                        {selectedTask?.task_system || '-'}
+                                    </span>
+                                    <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">
+                                        {selectedTask?.theme || '-'}
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     </div>

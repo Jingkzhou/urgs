@@ -987,6 +987,9 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
                 onTabChange={setInstanceDetailTabKey}
                 onShowImpactedOnlyChange={setShowImpactedOnly}
                 onLocateInstanceFromDependency={locateInstanceFromDependency}
+                onExecuteInstance={handleExecuteInstance}
+                onForceStopInstance={handleForceStopInstance}
+                onForcePassInstance={handleForcePassInstance}
             />
 
             <Modal
