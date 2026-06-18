@@ -2,23 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from deepagents import create_deep_agent
-from langchain_core.language_models import BaseChatModel
-
 from urgs_deepagents_service.orchestrator.state import WorkerOutput
 from urgs_deepagents_service.orchestrator.utils import (
+    StreamContext,
     assistant_text_from_output,
-    build_agent_kwargs,
     chunk_text,
     graph_config,
     sse,
-    tool_call_payload,
     tool_result_text,
 )
+from urgs_deepagents_service.runtime import create_runtime_agent
 
 
 @dataclass
@@ -29,14 +26,22 @@ class WorkerRun:
     task: str
     stream_content: bool
     output: WorkerOutput = field(init=False)
+    _events_factory: Callable[[], AsyncIterator[str]] | None = field(
+        default=None, init=False, repr=False
+    )
 
     def __post_init__(self) -> None:
         self.output = WorkerOutput(agent_code=self.agent_code, task=self.task, answer="")
 
+    def events(self) -> AsyncIterator[str]:
+        if self._events_factory is None:
+            raise RuntimeError("WorkerRun events were not initialized")
+        return self._events_factory()
+
 
 async def run_worker(
     *,
-    model: BaseChatModel | str,
+    model: Any,
     settings: Any,
     agent_code: str,
     agent_config: Any,
@@ -44,17 +49,10 @@ async def run_worker(
     context: str,
     stream_content: bool,
     debug: bool,
+    stream_context: StreamContext | None = None,
 ) -> WorkerRun:
     """构建并返回 WorkerRun。调用方迭代 run.events() 取事件，结束后读 run.output。"""
-    runtime_kwargs = build_agent_kwargs(
-        settings=settings,
-        memory_files=getattr(agent_config, "memory_files", None),
-        skill_dirs=getattr(agent_config, "skill_dirs", None),
-        tool_allowlist=getattr(agent_config, "tool_allowlist", None),
-        allow_write=getattr(agent_config, "allow_write", False),
-        workspace_root=getattr(agent_config, "workspace_root", None),
-        debug=debug,
-    )
+    event_context = (stream_context or StreamContext()).for_agent(agent_code)
     system_prompt = getattr(agent_config, "system_prompt", None) or "You are a helpful assistant."
     if getattr(agent_config, "workspace_root", None):
         # FilesystemBackend 已绑定工作空间根，但 LLM 不知道路径约定，会凭 prompt 字样猜前缀。
@@ -66,11 +64,16 @@ async def run_worker(
             f"所有路径均相对于该工作空间根，使用前导 `/`，不要在路径前加工作空间名、"
             f"系统名或任意前缀。例如 `00-首页/index.md` 对应工具路径 `/00-首页/index.md`。"
         )
-    agent = create_deep_agent(
+    agent = create_runtime_agent(
         model=model,
-        tools=[],
+        settings=settings,
         system_prompt=system_prompt,
-        **runtime_kwargs,
+        memory_files=getattr(agent_config, "memory_files", None),
+        skill_dirs=getattr(agent_config, "skill_dirs", None),
+        tool_allowlist=getattr(agent_config, "tool_allowlist", None),
+        allow_write=getattr(agent_config, "allow_write", False),
+        workspace_root=getattr(agent_config, "workspace_root", None),
+        debug=debug,
     )
 
     messages: list[dict[str, str]] = []
@@ -85,10 +88,25 @@ async def run_worker(
     async def events() -> AsyncIterator[str]:
         nonlocal emitted_text
         tool_inputs: dict[str, Any] = {}
-        yield sse("worker", {"type": "worker", "status": "started", "agent_code": agent_code, "task": task})
+        yield sse(
+            "worker",
+            {"type": "worker", "status": "started", "agent_code": agent_code, "task": task},
+            event_context,
+            step_id=f"worker.{agent_code}.start",
+            status="started",
+            message=f"{agent_code} 开始执行",
+        )
         yield sse(
             "agent",
-            {"type": "thinking", "title": f"{agent_code} 正在思考", "content": "正在分析并执行子任务"},
+            {
+                "type": "thinking",
+                "title": f"{agent_code} 正在思考",
+                "content": "正在分析并执行子任务",
+            },
+            event_context,
+            step_id=f"worker.{agent_code}.thinking",
+            status="started",
+            message=f"{agent_code} 正在分析并执行子任务",
         )
         async for event in agent.astream_events(
             {"messages": messages}, config=graph_config(settings), version="v2"
@@ -102,7 +120,14 @@ async def run_worker(
                 text = chunk_text(data.get("chunk"))
                 if text:
                     if stream_content:
-                        yield sse("content", {"content": text})
+                        yield sse(
+                            "content",
+                            {"content": text},
+                            event_context,
+                            step_id=f"worker.{agent_code}.content",
+                            status="streaming",
+                            message="Worker 内容增量",
+                        )
                     else:
                         collected.append(text)
                     emitted_text = True
@@ -119,6 +144,10 @@ async def run_worker(
                         "toolName": name,
                         "args": data.get("input"),
                     },
+                    event_context,
+                    step_id=f"tool.{name}.start",
+                    status="started",
+                    message=f"{agent_code} 调用工具 {name}",
                 )
                 continue
 
@@ -138,6 +167,10 @@ async def run_worker(
                 yield sse(
                     "agent",
                     payload,
+                    event_context,
+                    step_id=f"tool.{name}.end",
+                    status="completed",
+                    message=f"{agent_code} 工具 {name} 返回结果",
                 )
                 continue
 
@@ -147,7 +180,14 @@ async def run_worker(
                     text = chunk_text(output)
                     if text:
                         if stream_content:
-                            yield sse("content", {"content": text})
+                            yield sse(
+                                "content",
+                                {"content": text},
+                                event_context,
+                                step_id=f"worker.{agent_code}.content",
+                                status="streaming",
+                                message="Worker 内容增量",
+                            )
                         else:
                             collected.append(text)
                         emitted_text = True
@@ -158,7 +198,14 @@ async def run_worker(
                 text = assistant_text_from_output(data.get("output"))
                 if text:
                     if stream_content:
-                        yield sse("content", {"content": text})
+                        yield sse(
+                            "content",
+                            {"content": text},
+                            event_context,
+                            step_id=f"worker.{agent_code}.content",
+                            status="streaming",
+                            message="Worker 内容增量",
+                        )
                     else:
                         collected.append(text)
                     emitted_text = True
@@ -173,7 +220,11 @@ async def run_worker(
                 "task": task,
                 "answer_preview": (run.output.answer[:200] if not stream_content else None),
             },
+            event_context,
+            step_id=f"worker.{agent_code}.completed",
+            status="completed",
+            message=f"{agent_code} 执行完成",
         )
 
-    run.events = events  # type: ignore[method-assign]
+    run._events_factory = events
     return run

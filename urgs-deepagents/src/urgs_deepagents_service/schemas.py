@@ -10,8 +10,12 @@ class InvokeRequest(BaseModel):
     system_prompt: str | None = Field(default=None, description="Optional system prompt.")
     model: str | None = Field(default=None, description="Optional provider:model override.")
     agent_code: str | None = Field(default=None, description="Optional platform agent code.")
-    memory_files: str | list[str] | None = Field(default=None, description="Agent memory file paths.")
-    skill_dirs: str | list[str] | None = Field(default=None, description="Agent skill directory paths.")
+    memory_files: str | list[str] | None = Field(
+        default=None, description="Agent memory file paths."
+    )
+    skill_dirs: str | list[str] | None = Field(
+        default=None, description="Agent skill directory paths."
+    )
     tool_allowlist: str | list[str] | None = Field(default=None, description="Allowed tool names.")
     debug: bool = False
 
@@ -51,8 +55,12 @@ class AgentRuntimeConfig(BaseModel):
     """编排请求中单个 Agent 的运行时配置，与 API 侧 Agent 字段对应。"""
 
     system_prompt: str | None = Field(default=None, description="Agent 系统提示词")
-    memory_files: str | list[str] | None = Field(default=None, description="DeepAgents memory 文件列表")
-    skill_dirs: str | list[str] | None = Field(default=None, description="DeepAgents skills 目录列表")
+    memory_files: str | list[str] | None = Field(
+        default=None, description="DeepAgents memory 文件列表"
+    )
+    skill_dirs: str | list[str] | None = Field(
+        default=None, description="DeepAgents skills 目录列表"
+    )
     tool_allowlist: str | list[str] | None = Field(default=None, description="允许调用的工具白名单")
     allow_write: bool = Field(default=False, description="是否允许写工作区（默认只读）")
     workspace_root: str | None = Field(
@@ -66,9 +74,12 @@ class OrchestratorRequest(BaseModel):
     messages: str | list[dict[str, Any]] = Field(
         description="User input string or LangChain-compatible message dictionaries."
     )
-    agents: list[RouterAgentDescriptor] = Field(description="可选 Agent 目录，供 Router/Planner 选择")
+    agents: list[RouterAgentDescriptor] = Field(
+        description="可选 Agent 目录，供 Router/Planner 选择"
+    )
     agent_configs: dict[str, AgentRuntimeConfig] | None = Field(
-        default=None, description="agent_code -> 运行时配置映射；未提供的 agent 视为非 DEEPAGENTS，触发 handoff"
+        default=None,
+        description="agent_code -> 运行时配置映射；未提供的 agent 视为非 DEEPAGENTS，触发 handoff",
     )
     selected_agent_code: str | None = Field(
         default=None, description="手动预选 Agent；提供时跳过 Router，仍执行 Input Guard 与后续编排"

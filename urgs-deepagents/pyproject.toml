@@ -38,14 +38,17 @@ where = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+exclude = ["src/deepagents"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
 packages = ["urgs_deepagents_service"]
+exclude = "^src/deepagents/"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

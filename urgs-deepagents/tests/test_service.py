@@ -115,8 +115,10 @@ def test_router_route_does_not_use_response_format_tool_choice(monkeypatch) -> N
         captured_kwargs.update(kwargs)
         return FakeRouter()
 
-    monkeypatch.setattr("urgs_deepagents_service.main.build_chat_model", lambda settings, model: object())
-    monkeypatch.setattr("urgs_deepagents_service.main.create_deep_agent", fake_create_deep_agent)
+    monkeypatch.setattr(
+        "urgs_deepagents_service.main.build_chat_model", lambda settings, model: object()
+    )
+    monkeypatch.setattr("urgs_deepagents_service.runtime.create_deep_agent", fake_create_deep_agent)
 
     client = TestClient(app)
     response = client.post(

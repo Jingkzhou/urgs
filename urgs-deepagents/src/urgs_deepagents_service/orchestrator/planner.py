@@ -5,15 +5,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from deepagents import create_deep_agent
-from langchain_core.language_models import BaseChatModel
-
 from urgs_deepagents_service.orchestrator.state import PlanStep
 from urgs_deepagents_service.orchestrator.utils import (
-    READ_ONLY_FILESYSTEM_PERMISSIONS,
-    ToolVisibilityMiddleware,
     assistant_text_from_output,
 )
+from urgs_deepagents_service.runtime import create_control_agent
 
 PLANNER_SYSTEM_PROMPT = """你是 URGS 的 Planner，负责把复杂任务拆解为可串行执行的子任务步骤。
 
@@ -61,17 +57,14 @@ def _parse_plan(text: str, allowed_agents: set[str]) -> list[PlanStep]:
 
 
 async def run_planner(
-    model: BaseChatModel,
+    model: Any,
     user_message: str,
     candidate_agents: list[str],
 ) -> list[PlanStep]:
     """拆解复杂任务为子任务步骤列表。"""
-    planner = create_deep_agent(
+    planner = create_control_agent(
         model=model,
-        tools=[],
         system_prompt=PLANNER_SYSTEM_PROMPT,
-        permissions=READ_ONLY_FILESYSTEM_PERMISSIONS,
-        middleware=[ToolVisibilityMiddleware(allowed=frozenset())],
     )
     user_prompt = (
         f"用户任务：\n{user_message}\n\n"

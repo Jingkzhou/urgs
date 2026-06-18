@@ -5,24 +5,22 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from deepagents import create_deep_agent
-from langchain_core.language_models import BaseChatModel
-
 from urgs_deepagents_service.orchestrator.state import RoutingResult
 from urgs_deepagents_service.orchestrator.utils import (
-    READ_ONLY_FILESYSTEM_PERMISSIONS,
-    ToolVisibilityMiddleware,
     assistant_text_from_output,
 )
+from urgs_deepagents_service.runtime import create_control_agent
 from urgs_deepagents_service.schemas import RouterAgentDescriptor
 
-ROUTER_SYSTEM_PROMPT = """你是 URGS 的 Router Agent，负责把用户任务分发给最合适的业务 Agent，并判断任务复杂度。
+ROUTER_SYSTEM_PROMPT = """你是 URGS 的 Router Agent，负责把用户任务分发给最合适的业务 Agent，
+并判断任务复杂度。
 
 规则：
 1. 只能从请求提供的 agents 列表中选择一个 agent_code。
 2. 优先选择最匹配的专业 Agent；没有专业 Agent 适合时选择 agent_type=GENERAL 的通用 Agent。
 3. 不允许创造新的 agent_code，不允许使用列表外的 Agent。
-4. 复杂度判断：任务需要多个步骤、跨多个领域、需要先调研再分析再汇总时，is_complex=true；单一领域、可直接回答的任务 is_complex=false。
+4. 复杂度判断：任务需要多个步骤、跨多个领域、需要先调研再分析再汇总时，
+   is_complex=true；单一领域、可直接回答的任务 is_complex=false。
 5. 只返回 JSON 对象，不要输出 Markdown，不要输出解释性正文。
 
 JSON 字段：
@@ -71,17 +69,14 @@ def _parse_routing_result(text: str, allowed_codes: set[str]) -> RoutingResult:
 
 
 async def run_router(
-    model: BaseChatModel, user_message: str, agents: list[RouterAgentDescriptor]
+    model: Any, user_message: str, agents: list[RouterAgentDescriptor]
 ) -> RoutingResult:
     """执行路由分发与复杂度判断。"""
     if not agents:
         raise ValueError("agents 不能为空")
-    router = create_deep_agent(
+    router = create_control_agent(
         model=model,
-        tools=[],
         system_prompt=ROUTER_SYSTEM_PROMPT,
-        permissions=READ_ONLY_FILESYSTEM_PERMISSIONS,
-        middleware=[ToolVisibilityMiddleware(allowed=frozenset())],
     )
     user_prompt = (
         f"用户任务：\n{user_message}\n\n"

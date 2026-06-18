@@ -8,14 +8,24 @@ from typing import Any
 
 import pytest
 
-from urgs_deepagents_service.orchestrator import stream_orchestration
+from urgs_deepagents_service.orchestrator import (
+    finalizer as finalizer_mod,
+)
 from urgs_deepagents_service.orchestrator import (
     input_guard as guard_mod,
+)
+from urgs_deepagents_service.orchestrator import (
     planner as planner_mod,
+)
+from urgs_deepagents_service.orchestrator import (
     reviewer as reviewer_mod,
+)
+from urgs_deepagents_service.orchestrator import (
     router as router_mod,
+)
+from urgs_deepagents_service.orchestrator import stream_orchestration
+from urgs_deepagents_service.orchestrator import (
     worker as worker_mod,
-    finalizer as finalizer_mod,
 )
 from urgs_deepagents_service.orchestrator.state import (
     GuardResult,
@@ -94,7 +104,9 @@ def _patch_guard(monkeypatch, passed: bool, reason: str = "") -> None:
         return GuardResult(passed=passed, reason=reason, category="" if passed else "injection")
 
     monkeypatch.setattr(guard_mod, "run_input_guard", fake_guard)
-    monkeypatch.setattr("urgs_deepagents_service.orchestrator.orchestrator.run_input_guard", fake_guard)
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.run_input_guard", fake_guard
+    )
 
 
 def _patch_router(monkeypatch, agent_code: str, is_complex: bool) -> None:
@@ -112,21 +124,29 @@ def _patch_router(monkeypatch, agent_code: str, is_complex: bool) -> None:
 
 
 def _patch_planner(monkeypatch, steps: list[tuple[str, str]]) -> None:
-    async def fake_planner(model: Any, user_message: str, candidate_agents: list[str]) -> list[PlanStep]:
+    async def fake_planner(
+        model: Any, user_message: str, candidate_agents: list[str]
+    ) -> list[PlanStep]:
         return [
             PlanStep(step=i + 1, agent=agent, task=task, depends_on=[] if i == 0 else [i])
             for i, (agent, task) in enumerate(steps)
         ]
 
     monkeypatch.setattr(planner_mod, "run_planner", fake_planner)
-    monkeypatch.setattr("urgs_deepagents_service.orchestrator.orchestrator.run_planner", fake_planner)
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.run_planner", fake_planner
+    )
 
 
 def _patch_review(monkeypatch, passed: bool, reason: str = "ok") -> None:
-    async def fake_review(model: Any, user_message: str, outputs: list[WorkerOutput]) -> ReviewResult:
+    async def fake_review(
+        model: Any, user_message: str, outputs: list[WorkerOutput]
+    ) -> ReviewResult:
         return ReviewResult(passed=passed, score=0.9 if passed else 0.3, reason=reason, issues=[])
 
-    async def fake_review_fb(model: Any, user_message: str, outputs: list[WorkerOutput], feedback: str) -> ReviewResult:
+    async def fake_review_fb(
+        model: Any, user_message: str, outputs: list[WorkerOutput], feedback: str
+    ) -> ReviewResult:
         return ReviewResult(passed=passed, score=0.9 if passed else 0.3, reason=reason, issues=[])
 
     monkeypatch.setattr(reviewer_mod, "run_review", fake_review)
@@ -140,14 +160,21 @@ def _patch_review(monkeypatch, passed: bool, reason: str = "ok") -> None:
 def _patch_worker(monkeypatch, answer: str = "worker-answer") -> None:
     async def fake_run_worker(**kwargs: Any):
         run = worker_mod.WorkerRun(
-            agent_code=kwargs["agent_code"], task=kwargs["task"], stream_content=kwargs["stream_content"]
+            agent_code=kwargs["agent_code"],
+            task=kwargs["task"],
+            stream_content=kwargs["stream_content"],
         )
-        run.output = WorkerOutput(agent_code=kwargs["agent_code"], task=kwargs["task"], answer=answer)
+        run.output = WorkerOutput(
+            agent_code=kwargs["agent_code"], task=kwargs["task"], answer=answer
+        )
 
         async def events() -> AsyncIterator[str]:
             from urgs_deepagents_service.orchestrator.utils import sse
 
-            yield sse("worker", {"type": "worker", "status": "started", "agent_code": kwargs["agent_code"]})
+            yield sse(
+                "worker",
+                {"type": "worker", "status": "started", "agent_code": kwargs["agent_code"]},
+            )
             if kwargs["stream_content"]:
                 yield sse("content", {"content": answer})
             yield sse(
@@ -155,11 +182,13 @@ def _patch_worker(monkeypatch, answer: str = "worker-answer") -> None:
                 {"type": "worker", "status": "completed", "agent_code": kwargs["agent_code"]},
             )
 
-        run.events = events  # type: ignore[method-assign]
+        run._events_factory = events
         return run
 
     monkeypatch.setattr(worker_mod, "run_worker", fake_run_worker)
-    monkeypatch.setattr("urgs_deepagents_service.orchestrator.orchestrator.run_worker", fake_run_worker)
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.run_worker", fake_run_worker
+    )
 
 
 def _patch_finalizer(monkeypatch, answer: str = "final-answer") -> None:
@@ -170,7 +199,9 @@ def _patch_finalizer(monkeypatch, answer: str = "final-answer") -> None:
         yield sse("content", {"content": answer})
 
     monkeypatch.setattr(finalizer_mod, "stream_finalizer", fake_finalize)
-    monkeypatch.setattr("urgs_deepagents_service.orchestrator.orchestrator.stream_finalizer", fake_finalize)
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.stream_finalizer", fake_finalize
+    )
 
 
 @pytest.mark.asyncio
@@ -183,7 +214,7 @@ async def test_input_guard_rejected_emits_quality_risk(monkeypatch) -> None:
     assert "input_guard" in names
     assert any(name == "quality_risk" for name in names)
     assert names[-1] == "done"
-    guard_event = [data for name, data in events if name == "input_guard"][0]
+    guard_event = next(data for name, data in events if name == "input_guard")
     assert guard_event["status"] == "rejected"
 
 
@@ -193,13 +224,16 @@ async def test_simple_path_passes_through_worker_answer(monkeypatch) -> None:
     _patch_router(monkeypatch, "general-agent", is_complex=False)
     _patch_worker(monkeypatch, answer="hello")
     _patch_review(monkeypatch, passed=True)
+
     # Finalizer 不应被调用：若调用则抛错
     async def fail_finalize(**kwargs: Any) -> AsyncIterator[str]:
         raise AssertionError("finalizer should be skipped for simple single-worker pass")
         yield  # unreachable, make it an async generator
 
     monkeypatch.setattr(finalizer_mod, "stream_finalizer", fail_finalize)
-    monkeypatch.setattr("urgs_deepagents_service.orchestrator.orchestrator.stream_finalizer", fail_finalize)
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.stream_finalizer", fail_finalize
+    )
     request = OrchestratorRequest(messages="你好", agents=_agents(), agent_configs=_configs())
     events = await _make_stream(monkeypatch, request)
 
@@ -217,7 +251,10 @@ async def test_simple_path_passes_through_worker_answer(monkeypatch) -> None:
 async def test_complex_path_uses_planner_and_finalizer(monkeypatch) -> None:
     _patch_guard(monkeypatch, passed=True)
     _patch_router(monkeypatch, "lineage-agent", is_complex=True)
-    _patch_planner(monkeypatch, [("metadata-agent" if False else "general-agent", "调研"), ("lineage-agent", "分析")])
+    _patch_planner(
+        monkeypatch,
+        [("metadata-agent" if False else "general-agent", "调研"), ("lineage-agent", "分析")],
+    )
     _patch_worker(monkeypatch, answer="step-output")
     _patch_review(monkeypatch, passed=True)
     _patch_finalizer(monkeypatch, answer="final")
@@ -227,7 +264,9 @@ async def test_complex_path_uses_planner_and_finalizer(monkeypatch) -> None:
     names = [name for name, _ in events]
     assert "planning" in names
     # 复杂路径 worker 不直接产出 content，由 finalizer 产出
-    planning = [data for name, data in events if name == "planning" and data.get("status") == "completed"][0]
+    planning = next(
+        data for name, data in events if name == "planning" and data.get("status") == "completed"
+    )
     assert len(planning["steps"]) == 2
     content = "".join(data["content"] for name, data in events if name == "content")
     assert content == "final"
@@ -242,11 +281,15 @@ async def test_rework_pass_finalizes_without_quality_risk(monkeypatch) -> None:
     # 首次验收失败，返工后通过
     call_count = {"review": 0}
 
-    async def fake_review(model: Any, user_message: str, outputs: list[WorkerOutput]) -> ReviewResult:
+    async def fake_review(
+        model: Any, user_message: str, outputs: list[WorkerOutput]
+    ) -> ReviewResult:
         call_count["review"] += 1
         return ReviewResult(passed=False, score=0.3, reason="不完整", issues=["缺结论"])
 
-    async def fake_review_fb(model: Any, user_message: str, outputs: list[WorkerOutput], feedback: str) -> ReviewResult:
+    async def fake_review_fb(
+        model: Any, user_message: str, outputs: list[WorkerOutput], feedback: str
+    ) -> ReviewResult:
         return ReviewResult(passed=True, score=0.9, reason="返工通过")
 
     monkeypatch.setattr(reviewer_mod, "run_review", fake_review)
@@ -296,7 +339,7 @@ async def test_handoff_for_non_deepagents(monkeypatch) -> None:
     names = [name for name, _ in events]
     assert "routing" in names
     assert "handoff" in names
-    handoff = [data for name, data in events if name == "handoff"][0]
+    handoff = next(data for name, data in events if name == "handoff")
     assert handoff["agent_code"] == "rag-agent"
     assert names[-1] == "done"
 
@@ -306,6 +349,7 @@ async def test_selected_agent_code_skips_router(monkeypatch) -> None:
     _patch_guard(monkeypatch, passed=True)
     _patch_worker(monkeypatch, answer="direct")
     _patch_review(monkeypatch, passed=True)
+
     # 若 router 被调用会抛错，确保未调用
     async def fail_router(*args: Any, **kwargs: Any) -> RoutingResult:
         raise AssertionError("router should be skipped when selected_agent_code set")
@@ -320,7 +364,7 @@ async def test_selected_agent_code_skips_router(monkeypatch) -> None:
     )
     events = await _make_stream(monkeypatch, request)
 
-    routing = [data for name, data in events if name == "routing"][0]
+    routing = next(data for name, data in events if name == "routing")
     assert routing["agent_code"] == "general-agent"
     assert routing["task_type"] == "manual"
 

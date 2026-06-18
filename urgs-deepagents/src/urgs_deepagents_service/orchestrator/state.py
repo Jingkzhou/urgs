@@ -10,7 +10,9 @@ class GuardResult(BaseModel):
 
     passed: bool = Field(description="是否放行")
     reason: str = Field(default="", description="放行或拒绝原因")
-    category: str = Field(default="", description="拒绝类别：injection/sensitive/empty/disallowed/other")
+    category: str = Field(
+        default="", description="拒绝类别：injection/sensitive/empty/disallowed/other"
+    )
 
 
 class RoutingResult(BaseModel):

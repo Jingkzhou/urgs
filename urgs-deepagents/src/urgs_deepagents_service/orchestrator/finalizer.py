@@ -5,16 +5,14 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any
 
-from deepagents import create_deep_agent
-from langchain_core.language_models import BaseChatModel
-
 from urgs_deepagents_service.orchestrator.state import ReviewResult, WorkerOutput
 from urgs_deepagents_service.orchestrator.utils import (
-    build_agent_kwargs,
+    StreamContext,
     chunk_text,
     graph_config,
     sse,
 )
+from urgs_deepagents_service.runtime import create_runtime_agent
 
 
 def _outputs_text(outputs: list[WorkerOutput]) -> str:
@@ -48,7 +46,7 @@ def _build_system_prompt(quality_risk: bool, review: ReviewResult | None) -> str
 
 async def stream_finalizer(
     *,
-    model: BaseChatModel | str,
+    model: Any,
     settings: Any,
     agent_config: Any | None,
     user_message: str,
@@ -56,10 +54,15 @@ async def stream_finalizer(
     review: ReviewResult | None,
     quality_risk: bool,
     debug: bool,
+    stream_context: StreamContext | None = None,
 ) -> AsyncIterator[str]:
     """流式产出最终答案。以 content 事件下发文本。"""
-    runtime_kwargs = build_agent_kwargs(
+    event_context = stream_context or StreamContext()
+    system_prompt = _build_system_prompt(quality_risk, review)
+    finalizer = create_runtime_agent(
+        model=model,
         settings=settings,
+        system_prompt=system_prompt,
         memory_files=getattr(agent_config, "memory_files", None) if agent_config else None,
         skill_dirs=getattr(agent_config, "skill_dirs", None) if agent_config else None,
         tool_allowlist=getattr(agent_config, "tool_allowlist", None) if agent_config else None,
@@ -67,22 +70,24 @@ async def stream_finalizer(
         workspace_root=getattr(agent_config, "workspace_root", None) if agent_config else None,
         debug=debug,
     )
-    system_prompt = _build_system_prompt(quality_risk, review)
-    finalizer = create_deep_agent(
-        model=model,
-        tools=[],
-        system_prompt=system_prompt,
-        **runtime_kwargs,
-    )
     user_prompt = (
         f"用户原始问题：\n{user_message}\n\n"
         f"Worker 产出：\n{_outputs_text(outputs)}\n\n"
         "请给出最终答案。"
     )
-    yield sse("agent", {"type": "thinking", "title": "Finalizer 汇总", "content": "正在整合最终答案"})
+    yield sse(
+        "agent",
+        {"type": "thinking", "title": "Finalizer 汇总", "content": "正在整合最终答案"},
+        event_context,
+        step_id="finalizer.thinking",
+        status="started",
+        message="正在整合最终答案",
+    )
     emitted = False
     async for event in finalizer.astream_events(
-        {"messages": [{"role": "user", "content": user_prompt}]}, config=graph_config(settings), version="v2"
+        {"messages": [{"role": "user", "content": user_prompt}]},
+        config=graph_config(settings),
+        version="v2",
     ):
         event_name = event.get("event")
         data = event.get("data") or {}
@@ -90,7 +95,14 @@ async def stream_finalizer(
             text = chunk_text(data.get("chunk"))
             if text:
                 emitted = True
-                yield sse("content", {"content": text})
+                yield sse(
+                    "content",
+                    {"content": text},
+                    event_context,
+                    step_id="finalizer.content",
+                    status="streaming",
+                    message="最终答案增量",
+                )
             continue
         if event_name == "on_chain_end" and event.get("name") == "LangGraph" and not emitted:
             output = data.get("output")
@@ -100,4 +112,11 @@ async def stream_finalizer(
 
                 text = assistant_text_from_output(output)
             if text:
-                yield sse("content", {"content": text})
+                yield sse(
+                    "content",
+                    {"content": text},
+                    event_context,
+                    step_id="finalizer.content",
+                    status="streaming",
+                    message="最终答案增量",
+                )

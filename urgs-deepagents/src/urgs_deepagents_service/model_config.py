@@ -34,7 +34,9 @@ def _parse_default_config(payload: dict[str, Any] | None) -> AiApiConfig:
     endpoint = str(payload.get("endpoint") or "").strip()
     api_key = str(payload.get("apiKey") or "").strip()
     if not model or not endpoint or not api_key:
-        raise HTTPException(status_code=502, detail="默认 AI API 配置缺少 model、endpoint 或 apiKey")
+        raise HTTPException(
+            status_code=502, detail="默认 AI API 配置缺少 model、endpoint 或 apiKey"
+        )
 
     return AiApiConfig(
         provider=str(payload.get("provider") or "custom").strip().lower(),

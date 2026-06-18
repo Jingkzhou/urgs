@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
-
-from deepagents import create_deep_agent
-from langchain_core.language_models import BaseChatModel
 
 from urgs_deepagents_service.orchestrator.state import GuardResult
 from urgs_deepagents_service.orchestrator.utils import (
-    READ_ONLY_FILESYSTEM_PERMISSIONS,
-    ToolVisibilityMiddleware,
     assistant_text_from_output,
 )
+from urgs_deepagents_service.runtime import create_control_agent
 
 GUARD_SYSTEM_PROMPT = """你是 URGS 的 Input Guard，负责在任务进入编排前对用户输入做安全与合规校验。
 
@@ -36,6 +33,44 @@ JSON 字段：
 }
 """
 
+INJECTION_RE = re.compile(
+    r"(?i)(ignore\s+(all\s+)?(previous|above)\s+instructions|"
+    r"disregard\s+(previous|above)\s+instructions|"
+    r"system\s+prompt|developer\s+message|"
+    r"忽略(以上|之前|前面).{0,8}(指令|规则)|"
+    r"泄露.{0,8}(系统提示词|system prompt))"
+)
+SENSITIVE_RE = re.compile(
+    r"(?i)(sk-[a-z0-9_\-]{8,}|"
+    r"(api[_-]?key|token|secret|password|passwd|pwd)\s*[=:]\s*\S+|"
+    r"\b\d{16,19}\b|"
+    r"\b\d{17}[\dXx]\b)"
+)
+DANGEROUS_RE = re.compile(
+    r"(?i)(rm\s+-rf|drop\s+database|truncate\s+table|"
+    r"删除.{0,8}(生产|prod|数据库|库表)|"
+    r"(执行|运行).{0,12}(生产|prod).{0,12}(命令|脚本|sql))"
+)
+
+
+def local_input_guard(user_message: str) -> GuardResult | None:
+    """Fast deterministic checks before the model-based guard."""
+
+    text = user_message.strip()
+    if not text:
+        return GuardResult(passed=False, reason="输入为空", category="empty")
+    if SENSITIVE_RE.search(text):
+        return GuardResult(
+            passed=False, reason="输入包含疑似密钥、密码、身份证或银行卡信息", category="sensitive"
+        )
+    if DANGEROUS_RE.search(text):
+        return GuardResult(passed=False, reason="输入要求执行高危生产动作", category="disallowed")
+    if INJECTION_RE.search(text):
+        return GuardResult(
+            passed=False, reason="输入包含提示词注入或系统提示词泄露意图", category="injection"
+        )
+    return None
+
 
 def _parse_guard_result(text: str) -> GuardResult:
     start = text.find("{")
@@ -44,17 +79,20 @@ def _parse_guard_result(text: str) -> GuardResult:
         data = json.loads(text[start : end + 1])
         return GuardResult.model_validate(data)
     # 无法解析结构化结果时默认放行，避免误拦正常流量。
-    return GuardResult(passed=True, reason="Input Guard 未返回结构化结果，默认放行", category="other")
+    return GuardResult(
+        passed=True, reason="Input Guard 未返回结构化结果，默认放行", category="other"
+    )
 
 
-async def run_input_guard(model: BaseChatModel, user_message: str) -> GuardResult:
+async def run_input_guard(model: Any, user_message: str) -> GuardResult:
     """同步执行 Input Guard。返回 GuardResult。"""
-    router = create_deep_agent(
+    local = local_input_guard(user_message)
+    if local is not None:
+        return local
+
+    router = create_control_agent(
         model=model,
-        tools=[],
         system_prompt=GUARD_SYSTEM_PROMPT,
-        permissions=READ_ONLY_FILESYSTEM_PERMISSIONS,
-        middleware=[ToolVisibilityMiddleware(allowed=frozenset())],
     )
     result: Any = await router.ainvoke(
         {"messages": [{"role": "user", "content": f"待校验输入：\n{user_message}"}]}
@@ -63,4 +101,6 @@ async def run_input_guard(model: BaseChatModel, user_message: str) -> GuardResul
     try:
         return _parse_guard_result(text)
     except Exception:
-        return GuardResult(passed=True, reason="Input Guard 结果解析失败，默认放行", category="other")
+        return GuardResult(
+            passed=True, reason="Input Guard 结果解析失败，默认放行", category="other"
+        )

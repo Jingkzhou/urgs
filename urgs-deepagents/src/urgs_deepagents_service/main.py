@@ -1,17 +1,36 @@
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-import json
 from typing import Any
 
-from deepagents import __version__, FilesystemPermission, create_deep_agent
-from deepagents.backends import FilesystemBackend
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
-from langchain.agents.middleware.types import AgentMiddleware
 
+from deepagents import __version__
 from urgs_deepagents_service.config import get_settings
 from urgs_deepagents_service.model_config import build_chat_model
 from urgs_deepagents_service.orchestrator import stream_orchestration
+from urgs_deepagents_service.orchestrator.utils import (
+    assistant_text_from_output,
+    chunk_text,
+    tool_call_payload,
+    tool_result_text,
+)
+from urgs_deepagents_service.runtime import (
+    DEFAULT_EXCLUDED_TOOLS as DEFAULT_EXCLUDED_TOOLS,
+)
+from urgs_deepagents_service.runtime import (
+    READ_ONLY_FILESYSTEM_PERMISSIONS as READ_ONLY_FILESYSTEM_PERMISSIONS,
+)
+from urgs_deepagents_service.runtime import (
+    ToolVisibilityMiddleware as ToolVisibilityMiddleware,
+)
+from urgs_deepagents_service.runtime import (
+    build_agent_kwargs,
+    create_control_agent,
+    create_runtime_agent,
+    graph_config,
+)
 from urgs_deepagents_service.schemas import (
     InvokeRequest,
     InvokeResponse,
@@ -20,20 +39,17 @@ from urgs_deepagents_service.schemas import (
     RouterRouteResponse,
     UpstreamInfo,
 )
+from urgs_deepagents_service.sse import StreamContext, sanitize_text, serialize, sse
 
 UPSTREAM_REPOSITORY = "https://github.com/langchain-ai/deepagents"
 UPSTREAM_COMMIT = "4ffea88690418207b5e4fa800ee8c1abfa454bec"
-READ_ONLY_FILESYSTEM_PERMISSIONS = [
-    FilesystemPermission(operations=["write"], paths=["/**"], mode="deny")
-]
-DEFAULT_EXCLUDED_TOOLS = frozenset({"execute"})
-DEFAULT_RECURSION_LIMIT = 100
 ROUTER_SYSTEM_PROMPT = """你是 URGS 的 Router Agent，负责把用户任务分发给最合适的业务 Agent。
 
 规则：
 1. 只能从请求提供的 agents 列表中选择一个 agent_code。
 2. 优先选择最匹配的专业 Agent。
-3. 如果没有专业 Agent 适合，选择 agent_type=GENERAL 的通用 Agent；如果列表中存在 general-agent，优先选择 general-agent。
+3. 如果没有专业 Agent 适合，选择 agent_type=GENERAL 的通用 Agent；
+   如果列表中存在 general-agent，优先选择 general-agent。
 4. 不允许创造新的 agent_code，不允许使用列表外的 Agent。
 5. 如果任务需要多个 Agent 协作，仍然先选择主责 Agent，并设置 requires_collaboration=true。
 6. 只返回 JSON 对象，不要输出 Markdown，不要输出解释性正文。
@@ -50,188 +66,31 @@ JSON 字段：
 """
 
 
-def _tool_name(tool: Any) -> str | None:
-    if isinstance(tool, dict):
-        name = tool.get("name")
-        return name if isinstance(name, str) else None
-    name = getattr(tool, "name", None)
-    return name if isinstance(name, str) else None
-
-
-class ToolVisibilityMiddleware(AgentMiddleware[Any, Any, Any]):
-    def __init__(
-        self,
-        *,
-        allowed: frozenset[str] | None = None,
-        excluded: frozenset[str] = frozenset(),
-    ) -> None:
-        self.allowed = allowed
-        self.excluded = excluded
-
-    def _filter_tools(self, tools: list[Any]) -> list[Any]:
-        if self.allowed is not None:
-            return [tool for tool in tools if _tool_name(tool) in self.allowed]
-        if self.excluded:
-            return [tool for tool in tools if _tool_name(tool) not in self.excluded]
-        return tools
-
-    def wrap_model_call(self, request: Any, handler: Any) -> Any:
-        return handler(request.override(tools=self._filter_tools(request.tools)))
-
-    async def awrap_model_call(self, request: Any, handler: Any) -> Any:
-        return await handler(request.override(tools=self._filter_tools(request.tools)))
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = get_settings()
     yield
 
 
-def _serialize(value: Any) -> Any:
-    if hasattr(value, "model_dump"):
-        return value.model_dump(mode="json")
-    if isinstance(value, dict):
-        return {key: _serialize(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_serialize(item) for item in value]
-    return value
-
-
-def _graph_config(settings: Any) -> dict[str, Any]:
-    recursion_limit = getattr(settings, "recursion_limit", DEFAULT_RECURSION_LIMIT)
-    try:
-        recursion_limit = int(recursion_limit)
-    except (TypeError, ValueError):
-        recursion_limit = DEFAULT_RECURSION_LIMIT
-    return {"recursion_limit": max(25, recursion_limit)}
-
-
-def _sse(event: str, payload: Any) -> str:
-    return f"event: {event}\ndata: {json.dumps(_serialize(payload), ensure_ascii=False)}\n\n"
-
-
-def _chunk_text(chunk: Any) -> str:
-    content = getattr(chunk, "content", None)
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict):
-                if item.get("type") == "text" and item.get("text"):
-                    parts.append(str(item["text"]))
-                elif item.get("type") == "text_delta" and item.get("text"):
-                    parts.append(str(item["text"]))
-        return "".join(parts)
-    return ""
-
-
-def _assistant_text_from_output(output: Any) -> str:
-    value = _serialize(output)
-    messages = value.get("messages") if isinstance(value, dict) else None
-    if not isinstance(messages, list):
-        return _chunk_text(output)
-    for message in reversed(messages):
-        if not isinstance(message, dict):
-            continue
-        if message.get("type") not in {"ai", "assistant"} and message.get("role") != "assistant":
-            continue
-        content = message.get("content")
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            parts: list[str] = []
-            for item in content:
-                if isinstance(item, str):
-                    parts.append(item)
-                elif isinstance(item, dict) and item.get("text"):
-                    parts.append(str(item["text"]))
-            return "".join(parts)
-    return ""
-
-
-def _tool_call_payload(raw: Any) -> dict[str, Any]:
-    value = _serialize(raw)
-    if isinstance(value, dict):
-        return {
-            "id": value.get("id") or value.get("tool_call_id"),
-            "name": value.get("name") or value.get("tool"),
-            "args": value.get("args") or value.get("input"),
-        }
-    return {"name": str(value)}
-
-
-def _tool_result_text(raw: Any) -> str:
-    value = _serialize(raw)
-    if isinstance(value, dict):
-        content = value.get("content") or value.get("output")
-        if isinstance(content, str):
-            return content
-    if isinstance(value, str):
-        return value
-    return json.dumps(value, ensure_ascii=False)
-
-
-def _normalize_path_list(value: str | list[str] | None) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    items: list[str] = []
-    for item in str(value).replace("，", ",").replace("；", ";").splitlines():
-        for part in item.replace(";", ",").split(","):
-            text = part.strip()
-            if text:
-                items.append(text)
-    return items
-
-
-def _merge_unique(*values: list[str]) -> list[str]:
-    merged: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        for item in value:
-            if item not in seen:
-                seen.add(item)
-                merged.append(item)
-    return merged
+_serialize = serialize
+_sse = sse
+_chunk_text = chunk_text
+_assistant_text_from_output = assistant_text_from_output
+_tool_call_payload = tool_call_payload
+_tool_result_text = tool_result_text
+_graph_config = graph_config
 
 
 def _agent_runtime_kwargs(request: InvokeRequest, settings: Any) -> dict[str, Any]:
-    memory_files = _merge_unique(
-        _normalize_path_list(settings.memory_files),
-        _normalize_path_list(request.memory_files),
+    return build_agent_kwargs(
+        settings=settings,
+        memory_files=request.memory_files,
+        skill_dirs=request.skill_dirs,
+        tool_allowlist=request.tool_allowlist,
+        allow_write=False,
+        workspace_root=None,
+        debug=request.debug,
     )
-    skill_dirs = _merge_unique(
-        _normalize_path_list(settings.skill_dirs),
-        _normalize_path_list(request.skill_dirs),
-    )
-    tool_allowlist = frozenset(_normalize_path_list(request.tool_allowlist))
-    kwargs: dict[str, Any] = {
-        "permissions": READ_ONLY_FILESYSTEM_PERMISSIONS,
-        "middleware": [
-            ToolVisibilityMiddleware(
-                allowed=tool_allowlist if tool_allowlist else None,
-                excluded=DEFAULT_EXCLUDED_TOOLS if not tool_allowlist else frozenset(),
-            )
-        ],
-        "debug": request.debug,
-    }
-    if settings.workspace_root:
-        kwargs["backend"] = FilesystemBackend(root_dir=settings.workspace_root, virtual_mode=True)
-    elif memory_files or skill_dirs:
-        raise HTTPException(
-            status_code=400,
-            detail="配置 memory_files 或 skill_dirs 需要设置 DEEPAGENTS_WORKSPACE_ROOT",
-        )
-    if memory_files:
-        kwargs["memory"] = memory_files
-    if skill_dirs:
-        kwargs["skills"] = skill_dirs
-    return kwargs
 
 
 def _agent_catalog_text(request: RouterRouteRequest) -> str:
@@ -280,18 +139,30 @@ def _route_response_from_result(result: Any) -> RouterRouteResponse:
 
 
 async def _stream_deep_agent(request: InvokeRequest, settings: Any) -> AsyncIterator[str]:
+    context = StreamContext(agent_code=request.agent_code)
     try:
         model = build_chat_model(settings, request.model or settings.model)
-        runtime_kwargs = _agent_runtime_kwargs(request, settings)
-        agent = create_deep_agent(
+        agent = create_runtime_agent(
             model=model,
-            tools=[],
+            settings=settings,
             system_prompt=request.system_prompt,
-            **runtime_kwargs,
+            memory_files=request.memory_files,
+            skill_dirs=request.skill_dirs,
+            tool_allowlist=request.tool_allowlist,
+            allow_write=False,
+            workspace_root=None,
+            debug=request.debug,
         )
         emitted_text = False
         tool_inputs: dict[str, Any] = {}
-        yield _sse("agent", {"type": "thinking", "title": "正在思考", "content": "正在分析问题并规划下一步"})
+        yield _sse(
+            "agent",
+            {"type": "thinking", "title": "正在思考", "content": "正在分析问题并规划下一步"},
+            context,
+            step_id="agent.thinking",
+            status="started",
+            message="正在分析问题并规划下一步",
+        )
         async for event in agent.astream_events(
             {"messages": request.messages}, config=_graph_config(settings), version="v2"
         ):
@@ -301,14 +172,32 @@ async def _stream_deep_agent(request: InvokeRequest, settings: Any) -> AsyncIter
             run_id = event.get("run_id")
 
             if event_name == "on_chain_start" and name == "model":
-                yield _sse("agent", {"type": "thinking", "title": "正在组织回答", "content": "正在调用模型生成响应"})
+                yield _sse(
+                    "agent",
+                    {
+                        "type": "thinking",
+                        "title": "正在组织回答",
+                        "content": "正在调用模型生成响应",
+                    },
+                    context,
+                    step_id="agent.model",
+                    status="started",
+                    message="正在调用模型生成响应",
+                )
                 continue
 
             if event_name == "on_chat_model_stream":
                 text = _chunk_text(data.get("chunk"))
                 if text:
                     emitted_text = True
-                    yield _sse("content", {"content": text})
+                    yield _sse(
+                        "content",
+                        {"content": text},
+                        context,
+                        step_id="agent.content",
+                        status="streaming",
+                        message="内容增量",
+                    )
                 continue
 
             if event_name == "on_tool_start":
@@ -322,6 +211,10 @@ async def _stream_deep_agent(request: InvokeRequest, settings: Any) -> AsyncIter
                         "toolName": name,
                         "args": data.get("input"),
                     },
+                    context,
+                    step_id=f"tool.{name}.start",
+                    status="started",
+                    message=f"调用工具 {name}",
                 )
                 continue
 
@@ -341,6 +234,10 @@ async def _stream_deep_agent(request: InvokeRequest, settings: Any) -> AsyncIter
                 yield _sse(
                     "agent",
                     payload,
+                    context,
+                    step_id=f"tool.{name}.end",
+                    status="completed",
+                    message=f"工具 {name} 返回结果",
                 )
                 continue
 
@@ -350,7 +247,14 @@ async def _stream_deep_agent(request: InvokeRequest, settings: Any) -> AsyncIter
                     text = _chunk_text(output)
                     if text:
                         emitted_text = True
-                        yield _sse("content", {"content": text})
+                        yield _sse(
+                            "content",
+                            {"content": text},
+                            context,
+                            step_id="agent.content",
+                            status="streaming",
+                            message="内容增量",
+                        )
                 for tool_call in getattr(output, "tool_calls", []) or []:
                     payload = _tool_call_payload(tool_call)
                     yield _sse(
@@ -362,6 +266,10 @@ async def _stream_deep_agent(request: InvokeRequest, settings: Any) -> AsyncIter
                             "toolCallId": payload.get("id"),
                             "args": payload.get("args"),
                         },
+                        context,
+                        step_id=f"tool.{payload.get('name') or 'unknown'}.prepared",
+                        status="started",
+                        message=f"准备调用工具 {payload.get('name') or 'unknown'}",
                     )
                 continue
 
@@ -369,11 +277,36 @@ async def _stream_deep_agent(request: InvokeRequest, settings: Any) -> AsyncIter
                 text = _assistant_text_from_output(data.get("output"))
                 if text:
                     emitted_text = True
-                    yield _sse("content", {"content": text})
+                    yield _sse(
+                        "content",
+                        {"content": text},
+                        context,
+                        step_id="agent.content",
+                        status="streaming",
+                        message="内容增量",
+                    )
 
-        yield _sse("done", {"done": True})
+        yield _sse(
+            "done",
+            {"done": True},
+            context,
+            step_id="agent.done",
+            status="completed",
+            message="DeepAgent 调用完成",
+        )
     except Exception as exc:
-        yield _sse("error", {"error": f"DeepAgents 调用失败: {exc}"})
+        yield _sse(
+            "error",
+            {
+                "error": "DeepAgents 调用失败",
+                "error_type": exc.__class__.__name__,
+                "detail": sanitize_text(exc),
+            },
+            context,
+            step_id="agent.error",
+            status="failed",
+            message="DeepAgents 调用失败",
+        )
 
 
 def create_app() -> FastAPI:
@@ -400,12 +333,9 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail="agents 不能为空")
         try:
             model = build_chat_model(settings, request.model or settings.model)
-            router = create_deep_agent(
+            router = create_control_agent(
                 model=model,
-                tools=[],
                 system_prompt=ROUTER_SYSTEM_PROMPT,
-                permissions=READ_ONLY_FILESYSTEM_PERMISSIONS,
-                middleware=[ToolVisibilityMiddleware(allowed=frozenset())],
                 debug=request.debug,
             )
             result = router.invoke(
@@ -422,25 +352,35 @@ def create_app() -> FastAPI:
         except HTTPException:
             raise
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Router Agent 分发失败: {exc}") from exc
+            raise HTTPException(
+                status_code=502,
+                detail=f"Router Agent 分发失败: {sanitize_text(exc)}",
+            ) from exc
 
     @app.post("/v1/agents/invoke", response_model=InvokeResponse, tags=["deepagents"])
     def invoke(request: InvokeRequest) -> InvokeResponse:
         try:
             model = build_chat_model(settings, request.model or settings.model)
-            runtime_kwargs = _agent_runtime_kwargs(request, settings)
-            agent = create_deep_agent(
+            agent = create_runtime_agent(
                 model=model,
-                tools=[],
+                settings=settings,
                 system_prompt=request.system_prompt,
-                **runtime_kwargs,
+                memory_files=request.memory_files,
+                skill_dirs=request.skill_dirs,
+                tool_allowlist=request.tool_allowlist,
+                allow_write=False,
+                workspace_root=None,
+                debug=request.debug,
             )
             result = agent.invoke({"messages": request.messages}, config=_graph_config(settings))
             return InvokeResponse(output=_serialize(result))
         except HTTPException:
             raise
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"DeepAgents 调用失败: {exc}") from exc
+            raise HTTPException(
+                status_code=502,
+                detail=f"DeepAgents 调用失败: {sanitize_text(exc)}",
+            ) from exc
 
     @app.post("/v1/agents/stream", tags=["deepagents"])
     def stream(request: InvokeRequest) -> StreamingResponse:
