@@ -27,7 +27,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from urgs_deepagents_service.model_config import build_chat_model
-from urgs_deepagents_service.orchestrator.finalizer import stream_finalizer
+from urgs_deepagents_service.orchestrator.finalizer import stream_final_answer
 from urgs_deepagents_service.orchestrator.input_guard import local_input_guard, run_input_guard
 from urgs_deepagents_service.orchestrator.planner import run_planner
 from urgs_deepagents_service.orchestrator.reviewer import run_review, run_review_with_feedback
@@ -492,40 +492,20 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                     message="开始生成最终答案",
                 )
                 cfg = get_config(routing.agent_code)
-                # 返工通过：单 Worker 直接透传，多 Worker 走 Finalizer 汇总
-                if not routing.is_complex and len(outputs) == 1 and outputs[0].answer:
-                    yield emit(
-                        "agent",
-                        {
-                            "type": "thinking",
-                            "title": "Finalizer 汇总",
-                            "content": "返工验收通过，直接返回结果",
-                        },
-                        step_id="finalizer.direct",
-                        status="completed",
-                        message="返工验收通过，直接返回结果",
-                    )
-                    yield emit(
-                        "content",
-                        {"content": outputs[0].answer},
-                        step_id="finalizer.content",
-                        agent_code=routing.agent_code,
-                        status="completed",
-                        message="最终答案",
-                    )
-                else:
-                    async for evt in stream_finalizer(
-                        model=model,
-                        settings=settings,
-                        agent_config=cfg,
-                        user_message=user_message,
-                        outputs=outputs,
-                        review=review2,
-                        quality_risk=False,
-                        debug=request.debug,
-                        stream_context=context,
-                    ):
-                        yield evt
+                async for evt in stream_final_answer(
+                    model=model,
+                    settings=settings,
+                    agent_config=cfg,
+                    user_message=user_message,
+                    outputs=outputs,
+                    review=review2,
+                    quality_risk=False,
+                    debug=request.debug,
+                    stream_context=context,
+                    prefer_direct_answer=not routing.is_complex,
+                    direct_message="返工验收通过，直接返回结果",
+                ):
+                    yield evt
                 yield emit(
                     "done",
                     done_payload(),
@@ -556,7 +536,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                     message="开始生成带质量风险的最终答案",
                 )
                 cfg = get_config(routing.agent_code)
-                async for evt in stream_finalizer(
+                async for evt in stream_final_answer(
                     model=model,
                     settings=settings,
                     agent_config=cfg,
@@ -587,42 +567,19 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
             message="开始生成最终答案",
         )
         cfg = get_config(routing.agent_code)
-        # 简单路径（单 Worker）：Worker 产出已是完整答案，直接透传，跳过 Finalizer LLM 调用，
-        # 节省 token 与延迟，避免事实查询被二次改写引入偏差。
-        # 复杂路径（多 Worker）：仍需 Finalizer 汇总。
-        if not routing.is_complex and len(outputs) == 1 and outputs[0].answer:
-            yield emit(
-                "agent",
-                {
-                    "type": "thinking",
-                    "title": "Finalizer 汇总",
-                    "content": "验收通过，直接返回结果",
-                },
-                step_id="finalizer.direct",
-                status="completed",
-                message="验收通过，直接返回结果",
-            )
-            yield emit(
-                "content",
-                {"content": outputs[0].answer},
-                step_id="finalizer.content",
-                agent_code=routing.agent_code,
-                status="completed",
-                message="最终答案",
-            )
-        else:
-            async for evt in stream_finalizer(
-                model=model,
-                settings=settings,
-                agent_config=cfg,
-                user_message=user_message,
-                outputs=outputs,
-                review=review,
-                quality_risk=False,
-                debug=request.debug,
-                stream_context=context,
-            ):
-                yield evt
+        async for evt in stream_final_answer(
+            model=model,
+            settings=settings,
+            agent_config=cfg,
+            user_message=user_message,
+            outputs=outputs,
+            review=review,
+            quality_risk=False,
+            debug=request.debug,
+            stream_context=context,
+            prefer_direct_answer=not routing.is_complex,
+        ):
+            yield evt
 
         yield emit(
             "done",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -228,9 +229,6 @@ def _patch_finalizer(monkeypatch, answer: str = "final-answer") -> None:
         yield sse("content", {"content": answer}, stream_context)
 
     monkeypatch.setattr(finalizer_mod, "stream_finalizer", fake_finalize)
-    monkeypatch.setattr(
-        "urgs_deepagents_service.orchestrator.orchestrator.stream_finalizer", fake_finalize
-    )
 
 
 @pytest.mark.asyncio
@@ -254,15 +252,12 @@ async def test_simple_path_passes_through_worker_answer(monkeypatch) -> None:
     _patch_worker(monkeypatch, answer="hello")
     _patch_review(monkeypatch, passed=True)
 
-    # Finalizer 不应被调用：若调用则抛错
+    # 简单单 Worker 已验收通过时，Finalizer 阶段直接发布完整答案，不再调用 LLM 汇总。
     async def fail_finalize(**kwargs: Any) -> AsyncIterator[str]:
-        raise AssertionError("finalizer should be skipped for simple single-worker pass")
+        raise AssertionError("finalizer LLM should be skipped for simple single-worker pass")
         yield  # unreachable, make it an async generator
 
     monkeypatch.setattr(finalizer_mod, "stream_finalizer", fail_finalize)
-    monkeypatch.setattr(
-        "urgs_deepagents_service.orchestrator.orchestrator.stream_finalizer", fail_finalize
-    )
     request = OrchestratorRequest(messages="你好", agents=_agents(), agent_configs=_configs())
     events = await _make_stream(monkeypatch, request)
 
@@ -271,9 +266,11 @@ async def test_simple_path_passes_through_worker_answer(monkeypatch) -> None:
     assert "content" in names
     assert names[-1] == "done"
     assert "quality_risk" not in names
-    # 简单路径验收通过：直接透传 Worker 答案，不调 Finalizer
+    # 简单路径验收通过：Finalizer 阶段直接发布 Worker 的完整答案。
     content = "".join(data["content"] for name, data in events if name == "content")
     assert content == "hello"
+    content_event = next(data for name, data in events if name == "content")
+    assert content_event["step_id"] == "finalizer.content"
 
 
 @pytest.mark.asyncio
@@ -381,6 +378,57 @@ async def test_complex_path_uses_planner_and_finalizer(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_finalizer_uses_control_agent_without_runtime_tools(monkeypatch) -> None:
+    captured_kwargs: dict[str, Any] = {}
+
+    class FakeFinalizer:
+        async def astream_events(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+            version: str = "v2",
+        ) -> AsyncIterator[dict[str, object]]:
+            assert "Worker 产出" in str(payload["messages"])
+            assert config is not None
+            assert version == "v2"
+            yield {
+                "event": "on_chat_model_stream",
+                "name": "model",
+                "data": {"chunk": SimpleNamespace(content="final")},
+            }
+
+    def fake_create_control_agent(**kwargs: Any) -> FakeFinalizer:
+        captured_kwargs.update(kwargs)
+        return FakeFinalizer()
+
+    monkeypatch.setattr(finalizer_mod, "create_control_agent", fake_create_control_agent)
+
+    events = await _collect(
+        finalizer_mod.stream_finalizer(
+            model=object(),
+            settings=_FakeSettings(),
+            agent_config=AgentRuntimeConfig(
+                system_prompt="worker prompt",
+                tool_allowlist=["read_file", "write_file"],
+                allow_write=True,
+            ),
+            user_message="原始问题",
+            outputs=[WorkerOutput(agent_code="general-agent", task="任务", answer="worker")],
+            review=ReviewResult(passed=True, score=1.0),
+            quality_risk=False,
+            debug=False,
+        )
+    )
+
+    assert captured_kwargs["debug"] is False
+    assert captured_kwargs["model"] is not None
+    assert "tool_allowlist" not in captured_kwargs
+    assert "allow_write" not in captured_kwargs
+    assert [name for name, _ in events] == ["agent", "content"]
+    assert events[-1][1]["content"] == "final"
+
+
+@pytest.mark.asyncio
 async def test_complex_planner_only_receives_deepagents_candidates(monkeypatch) -> None:
     _patch_guard(monkeypatch, passed=True)
     _patch_router(monkeypatch, "lineage-agent", is_complex=True)
@@ -463,7 +511,7 @@ async def test_rework_pass_finalizes_without_quality_risk(monkeypatch) -> None:
     assert "rework" in names
     assert "quality_risk" not in names
     assert "finalizing" in names
-    # 返工通过后单 Worker：直接透传 reworked 答案，不调 Finalizer
+    # 返工通过后单 Worker：Finalizer 阶段直接发布 reworked 完整答案。
     content = "".join(data["content"] for name, data in events if name == "content")
     assert content == "reworked"
     assert call_count["review"] == 1

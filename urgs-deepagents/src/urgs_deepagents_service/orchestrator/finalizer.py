@@ -12,7 +12,7 @@ from urgs_deepagents_service.orchestrator.utils import (
     graph_config,
     sse,
 )
-from urgs_deepagents_service.runtime import create_runtime_agent
+from urgs_deepagents_service.runtime import create_control_agent
 
 
 def _outputs_text(outputs: list[WorkerOutput]) -> str:
@@ -59,15 +59,9 @@ async def stream_finalizer(
     """流式产出最终答案。以 content 事件下发文本。"""
     event_context = stream_context or StreamContext()
     system_prompt = _build_system_prompt(quality_risk, review)
-    finalizer = create_runtime_agent(
+    finalizer = create_control_agent(
         model=model,
-        settings=settings,
         system_prompt=system_prompt,
-        memory_files=getattr(agent_config, "memory_files", None) if agent_config else None,
-        skill_dirs=getattr(agent_config, "skill_dirs", None) if agent_config else None,
-        tool_allowlist=getattr(agent_config, "tool_allowlist", None) if agent_config else None,
-        allow_write=getattr(agent_config, "allow_write", False) if agent_config else False,
-        workspace_root=getattr(agent_config, "workspace_root", None) if agent_config else None,
         debug=debug,
     )
     user_prompt = (
@@ -120,3 +114,58 @@ async def stream_finalizer(
                     status="streaming",
                     message="最终答案增量",
                 )
+
+
+async def stream_final_answer(
+    *,
+    model: Any,
+    settings: Any,
+    agent_config: Any | None,
+    user_message: str,
+    outputs: list[WorkerOutput],
+    review: ReviewResult | None,
+    quality_risk: bool,
+    debug: bool,
+    stream_context: StreamContext | None = None,
+    prefer_direct_answer: bool = False,
+    direct_message: str = "验收通过，直接返回结果",
+) -> AsyncIterator[str]:
+    """统一从 Finalizer 阶段输出最终答案。
+
+    简单单 Worker 已验收通过时，可以由 Finalizer 阶段直接发布 Worker 的完整答案；
+    复杂、多 Worker 或 quality_risk 场景仍使用无工具 control agent 汇总。
+    """
+    event_context = stream_context or StreamContext()
+    if prefer_direct_answer and not quality_risk and len(outputs) == 1 and outputs[0].answer:
+        output = outputs[0]
+        yield sse(
+            "agent",
+            {"type": "thinking", "title": "Finalizer 汇总", "content": direct_message},
+            event_context,
+            step_id="finalizer.direct",
+            status="completed",
+            message=direct_message,
+        )
+        yield sse(
+            "content",
+            {"content": output.answer},
+            event_context,
+            step_id="finalizer.content",
+            agent_code=output.agent_code,
+            status="completed",
+            message="最终答案",
+        )
+        return
+
+    async for event in stream_finalizer(
+        model=model,
+        settings=settings,
+        agent_config=agent_config,
+        user_message=user_message,
+        outputs=outputs,
+        review=review,
+        quality_risk=quality_risk,
+        debug=debug,
+        stream_context=event_context,
+    ):
+        yield event
