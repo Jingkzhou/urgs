@@ -79,6 +79,12 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
 
     @Override
     public AiChatMessage saveMessage(String sessionId, String role, String content) {
+        if (sessionId == null || sessionId.isBlank()
+                || role == null || role.isBlank()
+                || content == null || content.isBlank()) {
+            return null;
+        }
+
         AiChatMessage message = new AiChatMessage();
         message.setId(UUID.randomUUID().toString());
         message.setSessionId(sessionId);

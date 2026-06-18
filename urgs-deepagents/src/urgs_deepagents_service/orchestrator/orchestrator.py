@@ -248,17 +248,22 @@ async def stream_orchestration(
                 outputs = rework_outputs
                 yield sse("finalizing", {"type": "finalizing"})
                 cfg = get_config(routing.agent_code)
-                async for evt in stream_finalizer(
-                    model=model,
-                    settings=settings,
-                    agent_config=cfg,
-                    user_message=user_message,
-                    outputs=outputs,
-                    review=review2,
-                    quality_risk=False,
-                    debug=request.debug,
-                ):
-                    yield evt
+                # 返工通过：单 Worker 直接透传，多 Worker 走 Finalizer 汇总
+                if not routing.is_complex and len(outputs) == 1 and outputs[0].answer:
+                    yield sse("agent", {"type": "thinking", "title": "Finalizer 汇总", "content": "返工验收通过，直接返回结果"})
+                    yield sse("content", {"content": outputs[0].answer})
+                else:
+                    async for evt in stream_finalizer(
+                        model=model,
+                        settings=settings,
+                        agent_config=cfg,
+                        user_message=user_message,
+                        outputs=outputs,
+                        review=review2,
+                        quality_risk=False,
+                        debug=request.debug,
+                    ):
+                        yield evt
                 yield sse("done", {"done": True})
                 return
             else:
@@ -283,20 +288,27 @@ async def stream_orchestration(
                 yield sse("done", {"done": True})
                 return
 
-        # 验收合格：Finalizer 统一输出最终答案（简单/复杂路径一致）
+        # 验收合格：输出最终答案
         yield sse("finalizing", {"type": "finalizing"})
         cfg = get_config(routing.agent_code)
-        async for evt in stream_finalizer(
-            model=model,
-            settings=settings,
-            agent_config=cfg,
-            user_message=user_message,
-            outputs=outputs,
-            review=review,
-            quality_risk=False,
-            debug=request.debug,
-        ):
-            yield evt
+        # 简单路径（单 Worker）：Worker 产出已是完整答案，直接透传，跳过 Finalizer LLM 调用，
+        # 节省 token 与延迟，避免事实查询被二次改写引入偏差。
+        # 复杂路径（多 Worker）：仍需 Finalizer 汇总。
+        if not routing.is_complex and len(outputs) == 1 and outputs[0].answer:
+            yield sse("agent", {"type": "thinking", "title": "Finalizer 汇总", "content": "验收通过，直接返回结果"})
+            yield sse("content", {"content": outputs[0].answer})
+        else:
+            async for evt in stream_finalizer(
+                model=model,
+                settings=settings,
+                agent_config=cfg,
+                user_message=user_message,
+                outputs=outputs,
+                review=review,
+                quality_risk=False,
+                debug=request.debug,
+            ):
+                yield evt
 
         yield sse("done", {"done": True})
     except Exception as exc:

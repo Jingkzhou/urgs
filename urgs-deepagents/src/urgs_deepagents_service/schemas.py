@@ -54,6 +54,10 @@ class AgentRuntimeConfig(BaseModel):
     memory_files: str | list[str] | None = Field(default=None, description="DeepAgents memory 文件列表")
     skill_dirs: str | list[str] | None = Field(default=None, description="DeepAgents skills 目录列表")
     tool_allowlist: str | list[str] | None = Field(default=None, description="允许调用的工具白名单")
+    allow_write: bool = Field(default=False, description="是否允许写工作区（默认只读）")
+    workspace_root: str | None = Field(
+        default=None, description="Agent 级工作空间根目录，覆盖全局 DEEPAGENTS_WORKSPACE_ROOT"
+    )
 
 
 class OrchestratorRequest(BaseModel):

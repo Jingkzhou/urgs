@@ -162,9 +162,18 @@ def build_agent_kwargs(
     memory_files: str | list[str] | None,
     skill_dirs: str | list[str] | None,
     tool_allowlist: str | list[str] | None,
+    allow_write: bool = False,
+    workspace_root: str | None = None,
     debug: bool,
 ) -> dict[str, Any]:
-    """构建 `create_deep_agent` 的运行时 kwargs，逻辑与 main._agent_runtime_kwargs 一致。"""
+    """构建 `create_deep_agent` 的运行时 kwargs。
+
+    与 main._agent_runtime_kwargs 一致，额外支持 agent 级写权限与工作空间根目录：
+    - allow_write=False（默认）：写权限全局拒绝（只读工作区）。
+    - allow_write=True：不附加 write deny 规则，允许在 workspace 内写文件
+      （仍受 tool_allowlist 控制，需显式包含 write_file/edit_file）。
+    - workspace_root 优先于全局 settings.workspace_root，支持 per-agent 工作空间隔离。
+    """
     merged_memory = merge_unique(
         normalize_path_list(getattr(settings, "memory_files", "") or ""),
         normalize_path_list(memory_files),
@@ -174,8 +183,16 @@ def build_agent_kwargs(
         normalize_path_list(skill_dirs),
     )
     allow_set = frozenset(normalize_path_list(tool_allowlist))
+    # 写权限需要 write_file/edit_file 工具，未在白名单中时强制只读以避免无效放开
+    effective_allow_write = allow_write and (
+        "write_file" in allow_set or "edit_file" in allow_set
+    )
+    if effective_allow_write:
+        permissions: list[FilesystemPermission] = []
+    else:
+        permissions = READ_ONLY_FILESYSTEM_PERMISSIONS
     kwargs: dict[str, Any] = {
-        "permissions": READ_ONLY_FILESYSTEM_PERMISSIONS,
+        "permissions": permissions,
         "middleware": [
             ToolVisibilityMiddleware(
                 allowed=allow_set if allow_set else None,
@@ -184,13 +201,13 @@ def build_agent_kwargs(
         ],
         "debug": debug,
     }
-    workspace_root = getattr(settings, "workspace_root", None)
-    if workspace_root:
-        kwargs["backend"] = FilesystemBackend(root_dir=workspace_root, virtual_mode=True)
+    root = workspace_root or getattr(settings, "workspace_root", None)
+    if root:
+        kwargs["backend"] = FilesystemBackend(root_dir=root, virtual_mode=True)
     elif merged_memory or merged_skills:
         raise HTTPException(
             status_code=400,
-            detail="配置 memory_files 或 skill_dirs 需要设置 DEEPAGENTS_WORKSPACE_ROOT",
+            detail="配置 memory_files 或 skill_dirs 需要设置 DEEPAGENTS_WORKSPACE_ROOT 或 agent 级 workspace_root",
         )
     if merged_memory:
         kwargs["memory"] = merged_memory

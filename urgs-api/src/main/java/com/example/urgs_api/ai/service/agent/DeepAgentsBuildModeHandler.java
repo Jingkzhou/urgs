@@ -315,6 +315,15 @@ public class DeepAgentsBuildModeHandler {
                 if (!toolAllowlist.isEmpty()) {
                     cfg.put("tool_allowlist", toolAllowlist);
                 }
+                // 解析 policy_config：{"write":"allow","workspace_root":"/path"} 控制写权限与 per-agent 工作空间
+                Map<String, Object> policy = parsePolicyConfig(agent.getPolicyConfig());
+                if (Boolean.TRUE.equals(policy.get("allow_write"))) {
+                    cfg.put("allow_write", true);
+                }
+                Object wsRoot = policy.get("workspace_root");
+                if (wsRoot instanceof String ws && !ws.isBlank()) {
+                    cfg.put("workspace_root", ws);
+                }
                 configs.put(agent.getAgentCode(), cfg);
             }
         }
@@ -492,6 +501,31 @@ public class DeepAgentsBuildModeHandler {
             }
         }
         return items;
+    }
+
+    /**
+     * 解析 policy_config JSON：{"write":"allow|deny","workspace_root":"/path","execute":"deny"}。
+     * 返回 allow_write(boolean) 与 workspace_root(string) 供编排使用。
+     */
+    private Map<String, Object> parsePolicyConfig(String value) {
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        if (value == null || value.isBlank()) {
+            return result;
+        }
+        try {
+            JsonNode node = objectMapper.readTree(value);
+            String write = node.path("write").asText("").trim().toLowerCase();
+            if ("allow".equals(write)) {
+                result.put("allow_write", true);
+            }
+            String wsRoot = node.path("workspace_root").asText("").trim();
+            if (!wsRoot.isEmpty()) {
+                result.put("workspace_root", wsRoot);
+            }
+        } catch (Exception ignored) {
+            // 非 JSON 或格式不符时忽略，保持默认只读。
+        }
+        return result;
     }
 
     private void recordDeepAgentsEvent(String runId, String sessionId, Agent agent, JsonNode event) {

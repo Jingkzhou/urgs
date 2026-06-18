@@ -62,6 +62,8 @@ async def stream_finalizer(
         memory_files=getattr(agent_config, "memory_files", None) if agent_config else None,
         skill_dirs=getattr(agent_config, "skill_dirs", None) if agent_config else None,
         tool_allowlist=getattr(agent_config, "tool_allowlist", None) if agent_config else None,
+        allow_write=getattr(agent_config, "allow_write", False) if agent_config else False,
+        workspace_root=getattr(agent_config, "workspace_root", None) if agent_config else None,
         debug=debug,
     )
     system_prompt = _build_system_prompt(quality_risk, review)

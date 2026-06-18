@@ -101,6 +101,11 @@ public class AiChatServiceImpl implements AiChatService {
             SseEmitter emitter) {
         log.info("Starting streamChatWithPersistence for session: {}", sessionId);
 
+        if (userPrompt == null || userPrompt.isBlank()) {
+            emitter.complete();
+            return;
+        }
+
         // 1. 保存用户消息 (Save User Message)
         aiChatHistoryService.saveMessage(sessionId, "user", userPrompt);
 

@@ -188,12 +188,18 @@ async def test_input_guard_rejected_emits_quality_risk(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_simple_path_finalizer_emits_content(monkeypatch) -> None:
+async def test_simple_path_passes_through_worker_answer(monkeypatch) -> None:
     _patch_guard(monkeypatch, passed=True)
     _patch_router(monkeypatch, "general-agent", is_complex=False)
     _patch_worker(monkeypatch, answer="hello")
     _patch_review(monkeypatch, passed=True)
-    _patch_finalizer(monkeypatch, answer="final")
+    # Finalizer 不应被调用：若调用则抛错
+    async def fail_finalize(**kwargs: Any) -> AsyncIterator[str]:
+        raise AssertionError("finalizer should be skipped for simple single-worker pass")
+        yield  # unreachable, make it an async generator
+
+    monkeypatch.setattr(finalizer_mod, "stream_finalizer", fail_finalize)
+    monkeypatch.setattr("urgs_deepagents_service.orchestrator.orchestrator.stream_finalizer", fail_finalize)
     request = OrchestratorRequest(messages="你好", agents=_agents(), agent_configs=_configs())
     events = await _make_stream(monkeypatch, request)
 
@@ -202,9 +208,9 @@ async def test_simple_path_finalizer_emits_content(monkeypatch) -> None:
     assert "content" in names
     assert names[-1] == "done"
     assert "quality_risk" not in names
-    # 简单路径 Worker 不直接产出 content，最终答案由 Finalizer 统一输出
+    # 简单路径验收通过：直接透传 Worker 答案，不调 Finalizer
     content = "".join(data["content"] for name, data in events if name == "content")
-    assert content == "final"
+    assert content == "hello"
 
 
 @pytest.mark.asyncio
@@ -257,6 +263,9 @@ async def test_rework_pass_finalizes_without_quality_risk(monkeypatch) -> None:
     assert "rework" in names
     assert "quality_risk" not in names
     assert "finalizing" in names
+    # 返工通过后单 Worker：直接透传 reworked 答案，不调 Finalizer
+    content = "".join(data["content"] for name, data in events if name == "content")
+    assert content == "reworked"
     assert call_count["review"] == 1
 
 
@@ -314,3 +323,63 @@ async def test_selected_agent_code_skips_router(monkeypatch) -> None:
     routing = [data for name, data in events if name == "routing"][0]
     assert routing["agent_code"] == "general-agent"
     assert routing["task_type"] == "manual"
+
+
+def test_build_agent_kwargs_writable_requires_write_tools(tmp_path) -> None:
+    from urgs_deepagents_service.orchestrator.utils import (
+        READ_ONLY_FILESYSTEM_PERMISSIONS,
+        build_agent_kwargs,
+    )
+
+    class S:
+        memory_files = ""
+        skill_dirs = ""
+        workspace_root = None
+
+    # allow_write=True 但白名单不含 write_file/edit_file：仍只读（避免无效放开）
+    kwargs = build_agent_kwargs(
+        settings=S(),
+        memory_files=None,
+        skill_dirs=None,
+        tool_allowlist=["ls", "read_file"],
+        allow_write=True,
+        workspace_root=str(tmp_path),
+        debug=False,
+    )
+    assert kwargs["permissions"] == READ_ONLY_FILESYSTEM_PERMISSIONS
+
+    # 白名单含 write_file 且 allow_write=True：放开写权限，且 backend 使用 agent 级根
+    kwargs = build_agent_kwargs(
+        settings=S(),
+        memory_files=None,
+        skill_dirs=None,
+        tool_allowlist=["ls", "read_file", "write_file", "edit_file"],
+        allow_write=True,
+        workspace_root=str(tmp_path),
+        debug=False,
+    )
+    assert kwargs["permissions"] == []
+    assert "backend" in kwargs
+
+
+def test_build_agent_kwargs_workspace_root_overrides_settings(tmp_path) -> None:
+    from urgs_deepagents_service.orchestrator.utils import build_agent_kwargs
+
+    class S:
+        memory_files = ""
+        skill_dirs = ""
+        workspace_root = "/global/workspace"
+
+    agent_root = str(tmp_path)
+    kwargs = build_agent_kwargs(
+        settings=S(),
+        memory_files=["/AGENTS.md"],
+        skill_dirs=None,
+        tool_allowlist=None,
+        allow_write=False,
+        workspace_root=agent_root,
+        debug=False,
+    )
+    # agent 级 workspace_root 覆盖全局：backend 已创建且 memory 已加载
+    assert "backend" in kwargs
+    assert kwargs["memory"] == ["/AGENTS.md"]

@@ -50,9 +50,21 @@ async def run_worker(
         memory_files=getattr(agent_config, "memory_files", None),
         skill_dirs=getattr(agent_config, "skill_dirs", None),
         tool_allowlist=getattr(agent_config, "tool_allowlist", None),
+        allow_write=getattr(agent_config, "allow_write", False),
+        workspace_root=getattr(agent_config, "workspace_root", None),
         debug=debug,
     )
     system_prompt = getattr(agent_config, "system_prompt", None) or "You are a helpful assistant."
+    if getattr(agent_config, "workspace_root", None):
+        # FilesystemBackend 已绑定工作空间根，但 LLM 不知道路径约定，会凭 prompt 字样猜前缀。
+        # 这里只说明路径约定（相对根、前导 /、不加前缀），不暴露宿主机物理路径。
+        system_prompt = (
+            f"{system_prompt}\n\n"
+            f"## 文件工具路径约定\n"
+            f"你的文件工具（ls/read_file/write_file/grep 等）工作在一个已绑定的工作空间内。"
+            f"所有路径均相对于该工作空间根，使用前导 `/`，不要在路径前加工作空间名、"
+            f"系统名或任意前缀。例如 `00-首页/index.md` 对应工具路径 `/00-首页/index.md`。"
+        )
     agent = create_deep_agent(
         model=model,
         tools=[],
@@ -125,18 +137,7 @@ async def run_worker(
                         else:
                             collected.append(text)
                         emitted_text = True
-                for tool_call in getattr(output, "tool_calls", []) or []:
-                    payload = tool_call_payload(tool_call)
-                    yield sse(
-                        "agent",
-                        {
-                            "type": "tool_call",
-                            "title": f"准备调用工具 {payload.get('name') or 'unknown'}",
-                            "toolName": payload.get("name"),
-                            "toolCallId": payload.get("id"),
-                            "args": payload.get("args"),
-                        },
-                    )
+                # 不在此转发 tool_call：on_tool_start 已会发送，避免「准备调用」与「调用」重复
                 continue
 
             if event_name == "on_chain_end" and name == "LangGraph" and not emitted_text:

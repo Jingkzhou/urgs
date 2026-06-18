@@ -129,14 +129,7 @@ const ArkPage: React.FC = () => {
                     setActiveAgent(null);
                 }
             } else {
-                if (filteredAgents.length === 0) {
-                    const newSession = await createSession();
-                    setCurrentSessionId(newSession.id);
-                    setMessages([]);
-                    setActiveAgent(null);
-                } else {
-                    handleNewChat();
-                }
+                handleNewChat();
             }
             setLoading(false);
         };
@@ -417,27 +410,17 @@ const ArkPage: React.FC = () => {
         saveSessionState();
         const searchId = (typeof agentId === 'number' || typeof agentId === 'string') ? agentId : undefined;
         if (searchId !== undefined && searchId !== null) {
-            const newSession = await createSession(searchId);
-            setCurrentSessionId(newSession.id);
+            setCurrentSessionId(null);
             setMessages([]);
             setInputValue('');
             setMetrics(null);
             setActiveAgent(agents.find(a => String(a.id) === String(searchId)) || null);
         } else {
-            if (agents.length === 0) {
-                const newSession = await createSession();
-                setCurrentSessionId(newSession.id);
-                setMessages([]);
-                setInputValue('');
-                setMetrics(null);
-                setActiveAgent(null);
-            } else {
-                setCurrentSessionId(null);
-                setMessages([]);
-                setInputValue('');
-                setMetrics(null);
-                setActiveAgent(null);
-            }
+            setCurrentSessionId(null);
+            setMessages([]);
+            setInputValue('');
+            setMetrics(null);
+            setActiveAgent(null);
         }
         if (isGenerating) handleStop();
     };
@@ -493,8 +476,15 @@ const ArkPage: React.FC = () => {
     const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0);
 
     const handleSubmit = async () => {
-        if (!inputValue.trim() || !currentSessionId) return;
-        const userText = inputValue;
+        const userText = inputValue.trim();
+        if (!userText) return;
+        let sessionIdForRequest = currentSessionId;
+        if (!sessionIdForRequest) {
+            const newSession = await createSession(activeAgent?.id);
+            sessionIdForRequest = newSession.id;
+            setCurrentSessionId(newSession.id);
+            setSessions(prev => [newSession, ...prev]);
+        }
         const conversationContext = buildConversationContext(messages);
         const isFirstMessage = messages.length === 0;
         setInputValue('');
@@ -524,7 +514,7 @@ const ArkPage: React.FC = () => {
                     setIsGenerating(false);
                     if (isFirstMessage || messages.length < 4) {
                         try {
-                            await generateSessionTitle(currentSessionId);
+                            await generateSessionTitle(sessionIdForRequest);
                             setSidebarRefreshTrigger(prev => prev + 1);
                         } catch (e) {
                             console.error("Title generation failed", e);
@@ -532,7 +522,7 @@ const ArkPage: React.FC = () => {
                     }
                 },
                 abortControllerRef.current.signal,
-                currentSessionId,
+                sessionIdForRequest,
                 (m) => setMetrics(m),
                 (sources) => {
                     setMessages(prev => {
@@ -719,11 +709,11 @@ const ArkPage: React.FC = () => {
                             <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col items-center justify-center">
                                 <button
                                     type="button"
-                                    onClick={async () => {
-                                        const newSession = await createSession();
-                                        setCurrentSessionId(newSession.id);
+                                    onClick={() => {
+                                        setCurrentSessionId(null);
                                         setMessages([]);
                                         setInputValue('');
+                                        setMetrics(null);
                                         setActiveAgent(null);
                                     }}
                                     className="mb-6 flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-sm transition-colors hover:bg-[#f4f4f4]"
@@ -763,11 +753,11 @@ const ArkPage: React.FC = () => {
 
                                     <button
                                         type="button"
-                                        onClick={async () => {
-                                            const newSession = await createSession();
-                                            setCurrentSessionId(newSession.id);
+                                        onClick={() => {
+                                            setCurrentSessionId(null);
                                             setMessages([]);
                                             setInputValue('');
+                                            setMetrics(null);
                                             setActiveAgent(null);
                                         }}
                                         className="group flex min-h-[92px] items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:bg-[#f7f7f7]"
