@@ -16,7 +16,7 @@ interface AgentConfig {
     systemPrompt?: string;
     status: number;
     prompts?: any; // String from backend, parsed to RecommendedPrompt[] in frontend
-    buildMode?: 'DIFY' | 'RAG' | 'AGENT_APP';
+    buildMode?: 'DIFY' | 'RAG' | 'AGENT_APP' | 'DEEPAGENTS';
     knowledgeBase?: string;
     ragInstruction?: string;
     difyApiKey?: string;
@@ -99,7 +99,8 @@ const AiAgentManager: React.FC = () => {
                 const modeMeta = {
                     DIFY: { label: 'Dify 引擎', color: 'blue' },
                     RAG: { label: 'RAG', color: 'cyan' },
-                    AGENT_APP: { label: 'Agent App', color: 'purple' }
+                    AGENT_APP: { label: 'Agent App', color: 'purple' },
+                    DEEPAGENTS: { label: 'DeepAgents', color: 'geekblue' }
                 }[mode];
                 return <Tag color={modeMeta.color}>{modeMeta.label}</Tag>;
             }
@@ -218,6 +219,12 @@ const AiAgentManager: React.FC = () => {
                 payload.ragInstruction = undefined;
                 payload.difyApiKey = undefined;
                 payload.difyApiBase = undefined;
+            } else if (payload.buildMode === 'DEEPAGENTS') {
+                payload.knowledgeBase = undefined;
+                payload.ragInstruction = undefined;
+                payload.difyApiKey = undefined;
+                payload.difyApiBase = undefined;
+                payload.agentAppTools = JSON.stringify([]);
             }
 
             if (editingId) {
@@ -293,10 +300,22 @@ const AiAgentManager: React.FC = () => {
                             options={[
                                 { label: 'Dify 引擎', value: 'DIFY' },
                                 { label: 'RAG', value: 'RAG' },
-                                { label: 'Agent App', value: 'AGENT_APP' }
+                                { label: 'Agent App', value: 'AGENT_APP' },
+                                { label: 'DeepAgents', value: 'DEEPAGENTS' }
                             ]}
                         />
                     </Form.Item>
+
+                    {buildMode === 'DEEPAGENTS' && (
+                        <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 mb-4">
+                            <h4 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                                <RobotOutlined className="text-indigo-500" /> DeepAgents 引擎
+                            </h4>
+                            <p className="text-xs text-slate-500">
+                                该助手的 ARK 对话将转发到 urgs-deepagents 微服务执行，并使用 AI API 配置管理中的默认模型。
+                            </p>
+                        </div>
+                    )}
 
                     {buildMode === 'DIFY' && (
                         <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 mb-4">

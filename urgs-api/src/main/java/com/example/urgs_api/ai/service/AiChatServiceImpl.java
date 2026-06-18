@@ -1,30 +1,20 @@
 package com.example.urgs_api.ai.service;
 
-import com.example.urgs_api.ai.entity.AiApiConfig;
 import com.example.urgs_api.ai.service.agent.AgentAppBuildModeHandler;
+import com.example.urgs_api.ai.service.agent.DeepAgentsBuildModeHandler;
 import com.example.urgs_api.ai.service.agent.DifyBuildModeHandler;
 import com.example.urgs_api.ai.service.agent.RagBuildModeHandler;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 /**
@@ -39,12 +29,6 @@ public class AiChatServiceImpl implements AiChatService {
     private static final ExecutorService executor = Executors.newCachedThreadPool();
 
     @Autowired
-    private AiApiConfigService aiApiConfigService;
-
-    @Autowired
-    private AiUsageLogService aiUsageLogService;
-
-    @Autowired
     private AiChatHistoryService aiChatHistoryService; // Inject history service
 
     @Autowired
@@ -52,6 +36,9 @@ public class AiChatServiceImpl implements AiChatService {
 
     @Autowired
     private AgentAppBuildModeHandler agentAppBuildModeHandler;
+
+    @Autowired
+    private DeepAgentsBuildModeHandler deepAgentsBuildModeHandler;
 
     @Autowired
     private RagBuildModeHandler ragBuildModeHandler;
@@ -116,6 +103,11 @@ public class AiChatServiceImpl implements AiChatService {
         if (agentAppBuildModeHandler.supports(sessionAgent)) {
             agentAppBuildModeHandler.streamWithPersistence(sessionId, sessionAgent, userPrompt, agentAppSkillAppCode,
                     agentAppSkillCode, conversationContext, emitter);
+            return;
+        }
+        if (deepAgentsBuildModeHandler.supports(sessionAgent)) {
+            deepAgentsBuildModeHandler.streamWithPersistence(sessionId, sessionAgent, systemPrompt, userPrompt,
+                    conversationContext, emitter);
             return;
         }
 
@@ -464,12 +456,6 @@ public class AiChatServiceImpl implements AiChatService {
             Runnable onComplete,
             Consumer<Exception> onError) {
 
-        AiApiConfig config = null;
-        AtomicInteger promptTokens = new AtomicInteger(0);
-        AtomicInteger completionTokens = new AtomicInteger(0);
-        boolean success = false;
-        String errorMessage = null;
-
         try {
             com.example.urgs_api.ai.entity.AiChatSession sessionInfo = resolveSession(sessionId);
             com.example.urgs_api.ai.entity.Agent agent = sessionInfo != null && sessionInfo.getAgentId() != null
@@ -477,140 +463,27 @@ public class AiChatServiceImpl implements AiChatService {
                     : null;
             if (difyBuildModeHandler.supports(agent)) {
                 difyBuildModeHandler.stream(sessionId, sessionInfo, agent, messages, chunkConsumer);
-                success = true;
                 onComplete.run();
                 return;
             }
 
-            // --- Fallback to standard OpenAI compatible API ---
-            config = aiApiConfigService.getDefaultConfig();
-            if (config == null) {
-                throw new RuntimeException("未配置默认 AI API，请在系统管理中配置");
-            }
-
-            String endpoint = config.getEndpoint();
-            if (!endpoint.endsWith("/")) {
-                endpoint += "/";
-            }
-            endpoint += "chat/completions";
-
-            // Build request body
-            Map<String, Object> requestBody = Map.of(
-                    "model", config.getModel(),
-                    "messages", messages,
-                    "stream", true,
-                    "stream_options", Map.of("include_usage", true),
-                    "max_tokens", config.getMaxTokens() != null ? config.getMaxTokens() : 4096,
-                    "temperature", config.getTemperature() != null ? config.getTemperature() : 0.7);
-
-            String jsonBody = objectMapper.writeValueAsString(requestBody);
-
-            // log.info("Sending Chat Request with {} messages", messages.size());
-
-            // Create connection
-            HttpURLConnection conn = (HttpURLConnection) URI.create(endpoint).toURL().openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
-            conn.setRequestProperty(HttpHeaders.AUTHORIZATION, "Bearer " + config.getApiKey());
-            conn.setRequestProperty(HttpHeaders.ACCEPT, "text/event-stream");
-            conn.setDoOutput(true);
-            conn.setConnectTimeout(30000);
-            conn.setReadTimeout(120000);
-
-            // Send request
-            try (OutputStream os = conn.getOutputStream()) {
-                os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
-            }
-
-            int responseCode = conn.getResponseCode();
-            if (responseCode != 200) {
-                // Error handling
-                String errorBody = new String(conn.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-                throw new RuntimeException("AI API 调用失败: " + responseCode + " - " + errorBody);
-            }
-
-            // Read streaming response
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (line.startsWith("data: ")) {
-                        String data = line.substring(6).trim();
-                        if ("[DONE]".equals(data)) {
-                            log.info("Stream received [DONE]");
-                            break;
-                        }
-                        try {
-                            JsonNode node = objectMapper.readTree(data);
-
-                            // Usage parsing
-                            JsonNode usageNode = node.get("usage");
-                            if (usageNode != null) {
-                                if (usageNode.has("prompt_tokens"))
-                                    promptTokens.set(usageNode.get("prompt_tokens").asInt());
-                                if (usageNode.has("completion_tokens"))
-                                    completionTokens.set(usageNode.get("completion_tokens").asInt());
-                            }
-
-                            // Content parsing
-                            JsonNode choices = node.get("choices");
-                            if (choices != null && choices.isArray() && !choices.isEmpty()) {
-                                JsonNode delta = choices.get(0).get("delta");
-                                if (delta != null) {
-                                    if (delta.has("content") && !delta.get("content").isNull()) {
-                                        String content = delta.get("content").asText();
-                                        if (content != null && !content.isEmpty()) {
-                                            chunkConsumer.accept(content);
-                                        }
-                                    } else if (delta.has("reasoning_content") && !delta.get("reasoning_content").isNull()) {
-                                        // Handle reasoning content (Doubao/DeepSeek)
-                                        String reasoning = delta.get("reasoning_content").asText();
-                                        if (reasoning != null && !reasoning.isEmpty()) {
-                                            log.debug("Got reasoning chunk");
-                                            log.info("Received reasoning content (hidden from user): {}",
-                                                    reasoning.length());
-                                        }
-                                    }
-                                }
-                            }
-                        } catch (Exception e) {
-                            log.warn("Failed to parse SSE data: {}", data, e);
-                        }
-                    }
-                }
-            }
-
-            success = true;
-            onComplete.run();
-
+            String systemPrompt = extractSystemPrompt(messages);
+            deepAgentsBuildModeHandler.streamDefault(systemPrompt, messages, chunkConsumer, onComplete, onError);
         } catch (Exception e) {
             log.error("AI stream chat error", e);
-            errorMessage = e.getMessage();
             onError.accept(e);
-        } finally {
-            // Record Usage
-            if (config != null) {
-                try {
-                    // Approximate prompt tokens if not returned
-                    int estimatedPromptTokens = promptTokens.get();
-                    if (estimatedPromptTokens <= 0) {
-                        // Very rough estimate based on messages list string
-                        estimatedPromptTokens = messages.toString().length() / 4;
-                    }
-
-                    aiUsageLogService.recordUsage(
-                            config.getId(),
-                            config.getModel(),
-                            estimatedPromptTokens,
-                            completionTokens.get(),
-                            requestType,
-                            success,
-                            errorMessage);
-                } catch (Exception e) {
-                    log.error("Failed to record AI usage", e);
-                }
-            }
         }
+    }
+
+    private String extractSystemPrompt(List<Map<String, String>> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return "You are a helpful assistant.";
+        }
+        Map<String, String> first = messages.get(0);
+        if ("system".equals(first.get("role"))) {
+            return first.getOrDefault("content", "You are a helpful assistant.");
+        }
+        return "You are a helpful assistant.";
     }
 
 }

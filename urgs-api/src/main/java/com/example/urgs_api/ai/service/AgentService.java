@@ -75,7 +75,8 @@ public class AgentService {
             }
         }
 
-        if (!"DIFY".equals(buildMode) && !"RAG".equals(buildMode) && !"AGENT_APP".equals(buildMode)) {
+        if (!"DIFY".equals(buildMode) && !"RAG".equals(buildMode) && !"AGENT_APP".equals(buildMode)
+                && !"DEEPAGENTS".equals(buildMode)) {
             buildMode = "RAG";
         }
         agent.setBuildMode(buildMode);
@@ -93,6 +94,9 @@ public class AgentService {
             agent.setRagInstruction(null);
             agent.setDifyApiKey(null);
             agent.setDifyApiBase(null);
+            if ("DEEPAGENTS".equals(buildMode)) {
+                agent.setAgentAppTools(null);
+            }
         }
     }
 
