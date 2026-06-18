@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     model: str | None = None
     request_timeout_seconds: float = 600.0
     config_request_timeout_seconds: float = 10.0
+    recursion_limit: int = 100
     workspace_root: str | None = None
     memory_files: str = ""
     skill_dirs: str = ""

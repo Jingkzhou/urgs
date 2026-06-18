@@ -19,6 +19,16 @@ READ_ONLY_FILESYSTEM_PERMISSIONS = [
     FilesystemPermission(operations=["write"], paths=["/**"], mode="deny")
 ]
 DEFAULT_EXCLUDED_TOOLS = frozenset({"execute"})
+DEFAULT_RECURSION_LIMIT = 100
+
+
+def graph_config(settings: Any) -> dict[str, Any]:
+    recursion_limit = getattr(settings, "recursion_limit", DEFAULT_RECURSION_LIMIT)
+    try:
+        recursion_limit = int(recursion_limit)
+    except (TypeError, ValueError):
+        recursion_limit = DEFAULT_RECURSION_LIMIT
+    return {"recursion_limit": max(25, recursion_limit)}
 
 
 def _tool_name(tool: Any) -> str | None:

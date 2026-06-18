@@ -27,6 +27,7 @@ READ_ONLY_FILESYSTEM_PERMISSIONS = [
     FilesystemPermission(operations=["write"], paths=["/**"], mode="deny")
 ]
 DEFAULT_EXCLUDED_TOOLS = frozenset({"execute"})
+DEFAULT_RECURSION_LIMIT = 100
 ROUTER_SYSTEM_PROMPT = """你是 URGS 的 Router Agent，负责把用户任务分发给最合适的业务 Agent。
 
 规则：
@@ -95,6 +96,15 @@ def _serialize(value: Any) -> Any:
     if isinstance(value, list):
         return [_serialize(item) for item in value]
     return value
+
+
+def _graph_config(settings: Any) -> dict[str, Any]:
+    recursion_limit = getattr(settings, "recursion_limit", DEFAULT_RECURSION_LIMIT)
+    try:
+        recursion_limit = int(recursion_limit)
+    except (TypeError, ValueError):
+        recursion_limit = DEFAULT_RECURSION_LIMIT
+    return {"recursion_limit": max(25, recursion_limit)}
 
 
 def _sse(event: str, payload: Any) -> str:
@@ -282,7 +292,9 @@ async def _stream_deep_agent(request: InvokeRequest, settings: Any) -> AsyncIter
         emitted_text = False
         tool_inputs: dict[str, Any] = {}
         yield _sse("agent", {"type": "thinking", "title": "正在思考", "content": "正在分析问题并规划下一步"})
-        async for event in agent.astream_events({"messages": request.messages}, version="v2"):
+        async for event in agent.astream_events(
+            {"messages": request.messages}, config=_graph_config(settings), version="v2"
+        ):
             event_name = event.get("event")
             name = event.get("name") or ""
             data = event.get("data") or {}
@@ -423,7 +435,7 @@ def create_app() -> FastAPI:
                 system_prompt=request.system_prompt,
                 **runtime_kwargs,
             )
-            result = agent.invoke({"messages": request.messages})
+            result = agent.invoke({"messages": request.messages}, config=_graph_config(settings))
             return InvokeResponse(output=_serialize(result))
         except HTTPException:
             raise

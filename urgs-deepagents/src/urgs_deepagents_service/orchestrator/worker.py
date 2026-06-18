@@ -14,6 +14,7 @@ from urgs_deepagents_service.orchestrator.utils import (
     assistant_text_from_output,
     build_agent_kwargs,
     chunk_text,
+    graph_config,
     sse,
     tool_call_payload,
     tool_result_text,
@@ -89,7 +90,9 @@ async def run_worker(
             "agent",
             {"type": "thinking", "title": f"{agent_code} 正在思考", "content": "正在分析并执行子任务"},
         )
-        async for event in agent.astream_events({"messages": messages}, version="v2"):
+        async for event in agent.astream_events(
+            {"messages": messages}, config=graph_config(settings), version="v2"
+        ):
             event_name = event.get("event")
             name = event.get("name") or ""
             data = event.get("data") or {}

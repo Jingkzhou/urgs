@@ -12,6 +12,7 @@ from urgs_deepagents_service.orchestrator.state import ReviewResult, WorkerOutpu
 from urgs_deepagents_service.orchestrator.utils import (
     build_agent_kwargs,
     chunk_text,
+    graph_config,
     sse,
 )
 
@@ -81,7 +82,7 @@ async def stream_finalizer(
     yield sse("agent", {"type": "thinking", "title": "Finalizer 汇总", "content": "正在整合最终答案"})
     emitted = False
     async for event in finalizer.astream_events(
-        {"messages": [{"role": "user", "content": user_prompt}]}, version="v2"
+        {"messages": [{"role": "user", "content": user_prompt}]}, config=graph_config(settings), version="v2"
     ):
         event_name = event.get("event")
         data = event.get("data") or {}
