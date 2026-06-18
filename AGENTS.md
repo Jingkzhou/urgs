@@ -27,6 +27,7 @@
 - 新增功能时，优先把代码放在最贴近业务语义的位置，避免把状态、展示、数据请求、格式化、校验、工具函数混在同一个模块里。
 - 前端遵循“容器负责数据与状态、视图组件负责展示、Hook 封装可复用交互逻辑、类型/API/工具函数独立维护”的组件模式；只有确有复用或职责独立时才抽出新文件。
 - 后端遵循 Controller / Service / Repository / Entity / DTO 的职责边界；新增逻辑应落在对应层级，不为单次使用场景提前抽象。
+- DeepAgents 多 Agent 编排职责边界：`urgs-api` 只负责创建/更新 Run、读取平台配置、调用 DeepAgents 服务、转发 SSE、持久化消息和事件；Input Guard、Router/Supervisor、Planner、Worker、Reviewer、Finalizer、返工、quality_risk 等编排逻辑必须优先放在 `urgs-deepagents`。除非用户明确要求 API 侧编排，否则不要把多 Agent 编排流程写入 `DeepAgentsBuildModeHandler`、`AiChatServiceImpl` 或其他 Java handler；Java handler 只能作为适配器调用 DeepAgents 编排接口。
 - 修改已有大文件时，如果本次需求只是局部修复或小范围调整，应直接做外科手术式修改，并在回复中说明可选的后续整理点；不要因为文件很大就打断任务或强制拆分。
 - 如果本次需求会新增明显独立的职责、复杂状态或可复用能力，应优先创建相邻的小组件、Hook、Service、DTO 或工具模块，让新代码从一开始保持清晰边界。
 - 如果完成需求必须进行较大范围拆分或重构，应先说明拟按什么职责边界拆、预计影响哪些文件、验证方式是什么，等待用户确认后再实施。
