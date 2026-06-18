@@ -6,11 +6,12 @@ import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Copy, Check, Sparkles, SearchX, ChevronDown, HelpCircle, BookOpen, Scale, Wrench, MessageCircle, Brain, Hammer, CheckCircle2 } from 'lucide-react';
+import { Copy, Check, Sparkles, SearchX, ChevronDown, HelpCircle, BookOpen, Scale, Wrench, MessageCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Message } from '../../api/chat';
+import { AgentStreamEvent, Message } from '../../api/chat';
 import 'katex/dist/katex.min.css';
 import { copyToClipboard } from '../../utils/clipboard';
+import ThinkingPanel, { ThinkingStep } from './ThinkingPanel';
 
 interface ChatMessageProps {
     message: Message;
@@ -56,6 +57,48 @@ const isIndentedProseCode = (value: string) => {
     return value.length > 24 && /[\u4e00-\u9fff]/.test(value) && /[，。！？：；「」《》、]/.test(value);
 };
 
+const formatAgentEventDetail = (event: AgentStreamEvent) => {
+    const argsText = event.args === undefined || event.args === null
+        ? ''
+        : typeof event.args === 'string'
+            ? event.args
+            : JSON.stringify(event.args, null, 2);
+    const details = [
+        event.toolName ? `工具：${event.toolName}` : '',
+        event.content || argsText
+    ].filter(Boolean);
+    return details.join('\n');
+};
+
+const getAgentEventStatus = (
+    event: AgentStreamEvent,
+    index: number,
+    events: AgentStreamEvent[],
+    isStreaming: boolean
+): ThinkingStep['status'] => {
+    const text = `${event.title || ''} ${event.content || ''}`.toLowerCase();
+    if (text.includes('error') || text.includes('失败') || text.includes('异常')) {
+        return 'error';
+    }
+    if (event.type === 'tool_result') {
+        return 'done';
+    }
+    if (isStreaming && index === events.length - 1) {
+        return 'running';
+    }
+    return 'done';
+};
+
+const toThinkingSteps = (events: AgentStreamEvent[], isStreaming: boolean): ThinkingStep[] => {
+    return events.map((event, index) => ({
+        id: event.id,
+        title: event.title,
+        description: formatAgentEventDetail(event),
+        status: getAgentEventStatus(event, index, events, isStreaming),
+        timestamp: event.timestamp ? new Date(event.timestamp).toLocaleTimeString() : undefined
+    }));
+};
+
 const ScoreTooltip: React.FC<ScoreDetailProps> = ({ details }) => {
     if (!details || Object.keys(details).length === 0) return null;
 
@@ -88,9 +131,9 @@ const ScoreTooltip: React.FC<ScoreDetailProps> = ({ details }) => {
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false }) => {
     const isUser = message.role === 'user';
     const [isSourcesExpanded, setIsSourcesExpanded] = useState(false);
-    const [isAgentTraceExpanded, setIsAgentTraceExpanded] = useState(false);
     const agentEvents = !isUser ? (message.agentEvents || []) : [];
     const lastAgentEvent = agentEvents[agentEvents.length - 1];
+    const thinkingSteps = !isUser ? toThinkingSteps(agentEvents, isStreaming) : [];
 
     return (
         <div className={`group w-full ${isUser ? 'flex justify-end' : 'block'}`}>
@@ -103,31 +146,20 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                         }
                     `}>
                         {!isUser && !message.content ? (
-                            <div className="flex h-9 items-center gap-3 py-4">
-                                <motion.div
-                                    animate={{
-                                        scale: [1, 1.2, 1],
-                                        opacity: [0.3, 1, 0.3]
-                                    }}
-                                    transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-                                    className="h-2.5 w-2.5 rounded-full bg-slate-900"
-                                />
-                                <span className="animate-pulse text-sm font-medium text-slate-500">
-                                    {message.status === 'searching' ? '正在检索知识库...' :
-                                        message.status === 'compressing' ? '正在压缩对话历史...' :
-                                            message.status === 'agent_app_running' ? '正在调用 Agent App...' :
-                                                message.status === 'deepagents_running' ? 'DeepAgents 正在思考...' :
-                                                    lastAgentEvent?.title || '思考中...'}
-                                </span>
-                            </div>
+                            <ThinkingPanel
+                                steps={thinkingSteps}
+                                currentStatus={message.status === 'searching' ? '正在检索知识库' :
+                                    message.status === 'compressing' ? '正在压缩对话历史' :
+                                        message.status === 'agent_app_running' ? '正在调用 Agent App' :
+                                            message.status === 'deepagents_running' ? '正在思考' :
+                                                lastAgentEvent?.title || '思考中'}
+                            />
                         ) : (
                             <div className={`markdown-body ${isUser ? 'text-[#0d0d0d]' : ''}`}>
                                 {!isUser && agentEvents.length > 0 && (
-                                    <AgentTrace
-                                        events={agentEvents}
-                                        expanded={isAgentTraceExpanded}
-                                        onToggle={() => setIsAgentTraceExpanded(prev => !prev)}
-                                        isStreaming={isStreaming}
+                                    <ThinkingPanel
+                                        steps={thinkingSteps}
+                                        currentStatus={lastAgentEvent?.title || '执行过程'}
                                     />
                                 )}
 
@@ -272,93 +304,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                             </div>
                         )}
                     </div>
-            </div>
-        </div>
-    );
-};
-
-const AgentTrace = ({
-    events,
-    expanded,
-    onToggle,
-    isStreaming
-}: {
-    events: NonNullable<Message['agentEvents']>;
-    expanded: boolean;
-    onToggle: () => void;
-    isStreaming: boolean;
-}) => {
-    const visibleEvents = expanded ? events : events.slice(-1);
-    const latest = events[events.length - 1];
-
-    return (
-        <div className="mb-4 rounded-lg border border-slate-200 bg-[#f7f7f7]">
-            <button
-                type="button"
-                onClick={onToggle}
-                className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
-            >
-                <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-slate-700">
-                    <Brain size={15} className={isStreaming ? 'animate-pulse text-slate-700' : 'text-slate-500'} />
-                    <span className="truncate">{latest?.title || '执行过程'}</span>
-                </span>
-                <span className="flex shrink-0 items-center gap-2 text-[11px] font-medium text-slate-500">
-                    {events.length} 步
-                    <ChevronDown size={14} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                </span>
-            </button>
-            <AnimatePresence initial={false}>
-                {(expanded || visibleEvents.length > 0) && (
-                    <motion.div
-                        initial={false}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden border-t border-slate-200"
-                    >
-                        <div className="space-y-2 px-3 py-3">
-                            {visibleEvents.map(event => (
-                                <AgentTraceItem key={event.id} event={event} />
-                            ))}
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
-    );
-};
-
-const AgentTraceItem = ({ event }: { event: NonNullable<Message['agentEvents']>[number] }) => {
-    const icon = event.type === 'tool_call'
-        ? <Hammer size={14} />
-        : event.type === 'tool_result'
-            ? <CheckCircle2 size={14} />
-            : <Brain size={14} />;
-    const argsText = event.args === undefined || event.args === null
-        ? ''
-        : typeof event.args === 'string'
-            ? event.args
-            : JSON.stringify(event.args, null, 2);
-    const detail = event.content || argsText;
-
-    return (
-        <div className="flex gap-2 text-xs leading-5 text-slate-600">
-            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 ring-1 ring-slate-200">
-                {icon}
-            </span>
-            <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 items-center gap-2">
-                    <span className="truncate font-semibold text-slate-700">{event.title}</span>
-                    {event.toolName && (
-                        <span className="shrink-0 rounded-md bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-500 ring-1 ring-slate-200">
-                            {event.toolName}
-                        </span>
-                    )}
-                </div>
-                {detail && (
-                    <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-words rounded-md bg-white p-2 font-mono text-[11px] leading-5 text-slate-500 ring-1 ring-slate-200">
-                        {detail.length > 1200 ? `${detail.slice(0, 1200)}...` : detail}
-                    </pre>
-                )}
             </div>
         </div>
     );
