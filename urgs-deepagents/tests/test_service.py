@@ -1,8 +1,17 @@
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from langchain_openai import ChatOpenAI
 
-from urgs_deepagents_service.main import READ_ONLY_FILESYSTEM_PERMISSIONS, app
+from urgs_deepagents_service.main import (
+    DEFAULT_EXCLUDED_TOOLS,
+    READ_ONLY_FILESYSTEM_PERMISSIONS,
+    ToolVisibilityMiddleware,
+    _agent_runtime_kwargs,
+    app,
+)
 from urgs_deepagents_service.model_config import _parse_default_config, build_chat_model
+from urgs_deepagents_service.schemas import InvokeRequest
 
 
 def test_health_live() -> None:
@@ -31,6 +40,57 @@ def test_deepagents_filesystem_write_is_denied() -> None:
     assert permission.operations == ["write"]
     assert permission.paths == ["/**"]
     assert permission.mode == "deny"
+
+
+def test_deepagents_default_tool_visibility_hides_execute() -> None:
+    middleware = ToolVisibilityMiddleware(excluded=DEFAULT_EXCLUDED_TOOLS)
+
+    tools = [{"name": "execute"}, {"name": "read_file"}, {"name": "grep"}]
+
+    assert middleware._filter_tools(tools) == [{"name": "read_file"}, {"name": "grep"}]
+
+
+def test_deepagents_tool_allowlist_filters_all_other_tools() -> None:
+    middleware = ToolVisibilityMiddleware(allowed=frozenset({"read_file", "grep"}))
+
+    tools = [{"name": "execute"}, {"name": "read_file"}, {"name": "grep"}, {"name": "write_file"}]
+
+    assert middleware._filter_tools(tools) == [{"name": "read_file"}, {"name": "grep"}]
+
+
+def test_agent_runtime_requires_workspace_for_memory_files() -> None:
+    class FakeSettings:
+        workspace_root = None
+        memory_files = ""
+        skill_dirs = ""
+
+    request = InvokeRequest(messages="hello", memory_files=["/AGENTS.md"])
+
+    with pytest.raises(HTTPException) as exc_info:
+        _agent_runtime_kwargs(request, FakeSettings())
+
+    assert exc_info.value.status_code == 400
+
+
+def test_agent_runtime_merges_workspace_memory_skills_and_tool_allowlist(tmp_path) -> None:
+    class FakeSettings:
+        workspace_root = str(tmp_path)
+        memory_files = "/AGENTS.md"
+        skill_dirs = "/skills/platform"
+
+    request = InvokeRequest(
+        messages="hello",
+        memory_files=["/agents/frontend/AGENTS.md"],
+        skill_dirs="/skills/frontend",
+        tool_allowlist=["read_file", "grep"],
+    )
+
+    kwargs = _agent_runtime_kwargs(request, FakeSettings())
+    middleware = kwargs["middleware"][0]
+
+    assert kwargs["memory"] == ["/AGENTS.md", "/agents/frontend/AGENTS.md"]
+    assert kwargs["skills"] == ["/skills/platform", "/skills/frontend"]
+    assert middleware.allowed == frozenset({"read_file", "grep"})
 
 
 def test_parse_default_config_strips_chat_completions_suffix() -> None:

@@ -2,7 +2,9 @@ package com.example.urgs_api.ai.service.agent;
 
 import com.example.urgs_api.ai.entity.AiChatMessage;
 import com.example.urgs_api.ai.entity.Agent;
+import com.example.urgs_api.ai.service.AiAgentRunService;
 import com.example.urgs_api.ai.service.AiChatHistoryService;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -34,12 +36,15 @@ public class DeepAgentsBuildModeHandler {
     private static final int KEEP_RECENT_ROUNDS = 3;
 
     private final AiChatHistoryService aiChatHistoryService;
+    private final AiAgentRunService aiAgentRunService;
     private final String deepAgentsBaseUrl;
 
     public DeepAgentsBuildModeHandler(
             AiChatHistoryService aiChatHistoryService,
+            AiAgentRunService aiAgentRunService,
             @Value("${urgs.deepagents.base-url:http://127.0.0.1:8003}") String deepAgentsBaseUrl) {
         this.aiChatHistoryService = aiChatHistoryService;
+        this.aiAgentRunService = aiAgentRunService;
         this.deepAgentsBaseUrl = deepAgentsBaseUrl;
     }
 
@@ -49,8 +54,14 @@ public class DeepAgentsBuildModeHandler {
 
     public void streamWithPersistence(String sessionId, Agent agent, String systemPrompt, String userPrompt,
             List<Map<String, String>> conversationContext, SseEmitter emitter) {
+        streamWithPersistence(sessionId, agent, systemPrompt, userPrompt, conversationContext, emitter, null);
+    }
+
+    public void streamWithPersistence(String sessionId, Agent agent, String systemPrompt, String userPrompt,
+            List<Map<String, String>> conversationContext, SseEmitter emitter, String runId) {
         executor.submit(() -> {
             String response = "";
+            boolean[] streamStarted = { false };
             try {
                 emitter.send(SseEmitter.event().name("status").data("deepagents_running"));
 
@@ -62,9 +73,14 @@ public class DeepAgentsBuildModeHandler {
                         .data(objectMapper.writeValueAsString(Map.of("used", used, "limit", MAX_CONTEXT_TOKENS))));
 
                 StringBuilder responseBuilder = new StringBuilder();
-                streamDeepAgents(resolveSystemPrompt(agent, systemPrompt), messages,
+                streamDeepAgents(resolveSystemPrompt(agent, systemPrompt), messages, agent,
                         chunk -> {
                             responseBuilder.append(chunk);
+                            if (!streamStarted[0]) {
+                                streamStarted[0] = true;
+                                aiAgentRunService.recordEvent(runId, sessionId, agent, "model_stream", "生成中",
+                                        "DeepAgents 开始流式输出", Map.of("buildMode", "DEEPAGENTS"), "RUNNING");
+                            }
                             try {
                                 emitter.send(SseEmitter.event()
                                         .data(objectMapper.writeValueAsString(Map.of("content", chunk))));
@@ -73,6 +89,7 @@ public class DeepAgentsBuildModeHandler {
                             }
                         },
                         event -> {
+                            recordDeepAgentsEvent(runId, sessionId, agent, event);
                             try {
                                 emitter.send(SseEmitter.event().name("agent")
                                         .data(objectMapper.writeValueAsString(event)));
@@ -82,16 +99,23 @@ public class DeepAgentsBuildModeHandler {
                         });
                 response = responseBuilder.toString();
                 aiChatHistoryService.saveMessage(sessionId, "assistant", response);
+                aiAgentRunService.recordEvent(runId, sessionId, agent, "run_completed", "完成",
+                        "DeepAgents 响应已完成", Map.of("responseLength", response.length()), "COMPLETED");
+                aiAgentRunService.completeRun(runId);
                 emitter.send(SseEmitter.event().data("[DONE]"));
                 emitter.complete();
             } catch (Exception e) {
                 log.error("DeepAgents execution failed for session {}", sessionId, e);
                 try {
+                    String errorMessage = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
                     if (!response.isBlank()) {
                         aiChatHistoryService.saveMessage(sessionId, "assistant", response);
                     }
+                    aiAgentRunService.recordEvent(runId, sessionId, agent, "run_failed", "执行失败",
+                            errorMessage, Map.of("responseLength", response.length()), "FAILED");
+                    aiAgentRunService.failRun(runId, errorMessage);
                     emitter.send(SseEmitter.event()
-                            .data(objectMapper.writeValueAsString(Map.of("error", e.getMessage()))));
+                            .data(objectMapper.writeValueAsString(Map.of("error", errorMessage))));
                     emitter.complete();
                 } catch (Exception ex) {
                     log.warn("Failed to send DeepAgents error event", ex);
@@ -102,7 +126,7 @@ public class DeepAgentsBuildModeHandler {
 
     public String invokeDefault(String systemPrompt, List<Map<String, String>> messages) throws Exception {
         StringBuilder response = new StringBuilder();
-        streamDeepAgents(systemPrompt, normalizeConversationContext(messages), response::append, event -> {
+        streamDeepAgents(systemPrompt, normalizeConversationContext(messages), null, response::append, event -> {
         });
         return response.toString();
     }
@@ -110,7 +134,7 @@ public class DeepAgentsBuildModeHandler {
     public void streamDefault(String systemPrompt, List<Map<String, String>> messages,
             Consumer<String> chunkConsumer, Runnable onComplete, Consumer<Exception> onError) {
         try {
-            streamDeepAgents(systemPrompt, normalizeConversationContext(messages), chunkConsumer, event -> {
+            streamDeepAgents(systemPrompt, normalizeConversationContext(messages), null, chunkConsumer, event -> {
             });
             onComplete.run();
         } catch (Exception e) {
@@ -139,12 +163,10 @@ public class DeepAgentsBuildModeHandler {
         return messages;
     }
 
-    private void streamDeepAgents(String systemPrompt, List<Map<String, String>> messages,
+    private void streamDeepAgents(String systemPrompt, List<Map<String, String>> messages, Agent agent,
             Consumer<String> chunkConsumer, Consumer<JsonNode> eventConsumer) throws Exception {
         String endpoint = deepAgentsBaseUrl.replaceAll("/+$", "") + "/v1/agents/stream";
-        Map<String, Object> requestBody = Map.of(
-                "system_prompt", systemPrompt,
-                "messages", messages);
+        Map<String, Object> requestBody = buildDeepAgentsRequest(systemPrompt, messages, agent);
         String jsonBody = objectMapper.writeValueAsString(requestBody);
 
         HttpURLConnection conn = (HttpURLConnection) URI.create(endpoint).toURL().openConnection();
@@ -203,6 +225,70 @@ public class DeepAgentsBuildModeHandler {
                 }
             }
         }
+    }
+
+    private Map<String, Object> buildDeepAgentsRequest(String systemPrompt, List<Map<String, String>> messages,
+            Agent agent) {
+        Map<String, Object> requestBody = new java.util.LinkedHashMap<>();
+        requestBody.put("system_prompt", systemPrompt);
+        requestBody.put("messages", messages);
+        if (agent == null) {
+            return requestBody;
+        }
+        if (agent.getAgentCode() != null && !agent.getAgentCode().isBlank()) {
+            requestBody.put("agent_code", agent.getAgentCode());
+        }
+        List<String> memoryFiles = parseStringList(agent.getMemoryFiles());
+        if (!memoryFiles.isEmpty()) {
+            requestBody.put("memory_files", memoryFiles);
+        }
+        List<String> skillDirs = parseStringList(agent.getSkillDirs());
+        if (!skillDirs.isEmpty()) {
+            requestBody.put("skill_dirs", skillDirs);
+        }
+        List<String> toolAllowlist = parseStringList(agent.getToolAllowlist());
+        if (!toolAllowlist.isEmpty()) {
+            requestBody.put("tool_allowlist", toolAllowlist);
+        }
+        return requestBody;
+    }
+
+    private List<String> parseStringList(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        String trimmed = value.trim();
+        if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+            try {
+                List<String> parsed = objectMapper.readValue(trimmed, new TypeReference<List<String>>() {
+                });
+                return parsed.stream().filter(item -> item != null && !item.isBlank()).toList();
+            } catch (Exception ignored) {
+                // Fall through to delimiter parsing.
+            }
+        }
+        List<String> items = new ArrayList<>();
+        for (String item : trimmed.split("[,，;；\\n\\r\\t ]+")) {
+            if (!item.isBlank()) {
+                items.add(item.trim());
+            }
+        }
+        return items;
+    }
+
+    private void recordDeepAgentsEvent(String runId, String sessionId, Agent agent, JsonNode event) {
+        String type = event.path("type").asText("agent_event");
+        String title = event.path("title").asText(type);
+        String content = event.path("content").asText("");
+        Map<String, Object> payload = objectMapper.convertValue(event, new TypeReference<Map<String, Object>>() {
+        });
+        String eventType = switch (type) {
+            case "tool_call" -> "tool_call_started";
+            case "tool_result" -> "tool_call_completed";
+            case "thinking" -> "agent_thinking";
+            default -> type;
+        };
+        aiAgentRunService.recordEvent(runId, sessionId, agent, eventType, title, content, payload, "RUNNING");
     }
 
     private String invokeDeepAgents(String systemPrompt, List<Map<String, String>> messages) throws Exception {

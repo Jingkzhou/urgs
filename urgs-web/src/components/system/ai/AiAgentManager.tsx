@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Card, Tag, Space, Modal, Form, Input, Select, Switch, message, Segmented, Checkbox } from 'antd';
+import { Table, Button, Card, Tag, Space, Modal, Form, Input, Select, Switch, message, Segmented, Checkbox, InputNumber } from 'antd';
 import { RobotOutlined, PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
 import { get, post, del, put } from '../../../utils/request';
 
@@ -11,7 +11,9 @@ interface RecommendedPrompt {
 
 interface AgentConfig {
     id: number;
+    agentCode?: string;
     name: string;
+    agentType?: string;
     description?: string;
     systemPrompt?: string;
     status: number;
@@ -22,6 +24,14 @@ interface AgentConfig {
     difyApiKey?: string;
     difyApiBase?: string;
     agentAppTools?: string[] | string;
+    capabilityTags?: string;
+    routingExamples?: string;
+    memoryFiles?: string;
+    skillDirs?: string;
+    toolAllowlist?: string;
+    policyConfig?: string;
+    modelConfig?: string;
+    sortOrder?: number;
     updatedAt: string;
 }
 
@@ -88,6 +98,15 @@ const AiAgentManager: React.FC = () => {
             dataIndex: 'name',
             key: 'name',
             render: (text: string) => <span className="font-bold">{text}</span>
+        },
+        {
+            title: 'Agent Code',
+            dataIndex: 'agentCode',
+            key: 'agentCode',
+            width: 140,
+            render: (text: string) => text
+                ? <Tag color="default">{text}</Tag>
+                : <span className="text-slate-400">-</span>
         },
         {
             title: '构建方式',
@@ -258,7 +277,14 @@ const AiAgentManager: React.FC = () => {
                         onClick={() => {
                             setEditingId(null);
                             form.resetFields();
-                            form.setFieldsValue({ buildMode: 'RAG', status: true, prompts: [], agentAppTools: [] });
+                            form.setFieldsValue({
+                                buildMode: 'RAG',
+                                agentType: 'SPECIALIST',
+                                sortOrder: 0,
+                                status: true,
+                                prompts: [],
+                                agentAppTools: []
+                            });
                             setIsModalOpen(true);
                         }}
                     >
@@ -283,15 +309,46 @@ const AiAgentManager: React.FC = () => {
                 open={isModalOpen}
                 onCancel={() => setIsModalOpen(false)}
                 onOk={handleSave}
-                width={600}
+                width={760}
             >
                 <Form form={form} layout="vertical">
-                    <Form.Item name="name" label="助手名称" rules={[{ required: true }]}>
-                        <Input placeholder="例如: 财务报销助手" />
-                    </Form.Item>
+                    <div className="grid grid-cols-2 gap-3">
+                        <Form.Item name="name" label="助手名称" rules={[{ required: true }]}>
+                            <Input placeholder="例如: 财务报销助手" />
+                        </Form.Item>
+
+                        <Form.Item name="agentCode" label="Agent Code">
+                            <Input placeholder="例如: finance_reimbursement" />
+                        </Form.Item>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <Form.Item name="agentType" label="Agent 类型">
+                            <Select
+                                options={[
+                                    { label: '专业 Agent', value: 'SPECIALIST' },
+                                    { label: 'Router', value: 'ROUTER' },
+                                    { label: 'Supervisor', value: 'SUPERVISOR' },
+                                    { label: '通用 Agent', value: 'GENERAL' }
+                                ]}
+                            />
+                        </Form.Item>
+
+                        <Form.Item name="sortOrder" label="排序">
+                            <InputNumber min={0} className="w-full" />
+                        </Form.Item>
+                    </div>
 
                     <Form.Item name="description" label="功能描述">
                         <Input.TextArea placeholder="简要描述该助手的用途" rows={2} />
+                    </Form.Item>
+
+                    <Form.Item name="capabilityTags" label="能力标签">
+                        <Input.TextArea placeholder="支持 JSON 数组或逗号分隔，例如: React, 前端工程, 代码审查" rows={2} />
+                    </Form.Item>
+
+                    <Form.Item name="routingExamples" label="路由示例">
+                        <Input.TextArea placeholder="每行一个典型任务，例如: 帮我实现 React 深色模式切换" rows={3} />
                     </Form.Item>
 
                     <Form.Item name="buildMode" label="构建方式" rules={[{ required: true, message: '请选择构建方式' }]}>
@@ -314,6 +371,25 @@ const AiAgentManager: React.FC = () => {
                             <p className="text-xs text-slate-500">
                                 该助手的 ARK 对话将转发到 urgs-deepagents 微服务执行，并使用 AI API 配置管理中的默认模型。
                             </p>
+                            <div className="grid grid-cols-2 gap-3 mt-4">
+                                <Form.Item name="memoryFiles" label="Memory Files">
+                                    <Input.TextArea placeholder={'/AGENTS.md\n/agents/frontend/AGENTS.md'} rows={3} />
+                                </Form.Item>
+                                <Form.Item name="skillDirs" label="Skill Dirs">
+                                    <Input.TextArea placeholder={'/skills/frontend\n/skills/review'} rows={3} />
+                                </Form.Item>
+                            </div>
+                            <Form.Item name="toolAllowlist" label="工具白名单">
+                                <Input.TextArea placeholder="read_file, grep, glob" rows={2} />
+                            </Form.Item>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Form.Item name="policyConfig" label="Policy Config">
+                                    <Input.TextArea placeholder='{"write": "deny"}' rows={3} className="font-mono text-xs" />
+                                </Form.Item>
+                                <Form.Item name="modelConfig" label="Model Config">
+                                    <Input.TextArea placeholder='{"model": "default"}' rows={3} className="font-mono text-xs" />
+                                </Form.Item>
+                            </div>
                         </div>
                     )}
 

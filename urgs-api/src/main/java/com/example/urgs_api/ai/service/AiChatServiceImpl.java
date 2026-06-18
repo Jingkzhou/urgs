@@ -1,5 +1,8 @@
 package com.example.urgs_api.ai.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.example.urgs_api.ai.client.DeepAgentsRouterClient;
+import com.example.urgs_api.ai.entity.Agent;
 import com.example.urgs_api.ai.service.agent.AgentAppBuildModeHandler;
 import com.example.urgs_api.ai.service.agent.DeepAgentsBuildModeHandler;
 import com.example.urgs_api.ai.service.agent.DifyBuildModeHandler;
@@ -45,6 +48,12 @@ public class AiChatServiceImpl implements AiChatService {
 
     @Autowired
     private DifyBuildModeHandler difyBuildModeHandler;
+
+    @Autowired
+    private DeepAgentsRouterClient deepAgentsRouterClient;
+
+    @Autowired
+    private AiAgentRunService aiAgentRunService;
 
     @Override
     public String chat(String systemPrompt, String userPrompt) {
@@ -99,15 +108,63 @@ public class AiChatServiceImpl implements AiChatService {
         // 1. 保存用户消息 (Save User Message)
         aiChatHistoryService.saveMessage(sessionId, "user", userPrompt);
 
-        com.example.urgs_api.ai.entity.Agent sessionAgent = resolveSessionAgent(sessionId);
+        com.example.urgs_api.ai.entity.AiChatSession sessionInfo = resolveSession(sessionId);
+        com.example.urgs_api.ai.entity.Agent sessionAgent = sessionInfo != null && sessionInfo.getAgentId() != null
+                ? agentRepository.selectById(sessionInfo.getAgentId())
+                : null;
+        String runId = aiAgentRunService.createRun(sessionId, sessionInfo == null ? null : sessionInfo.getUserId(),
+                sessionAgent, userPrompt);
+        sendAgentEvent(runId, sessionId, sessionAgent, emitter, "routing_started", "thinking",
+                "任务识别", "正在识别任务类型和可用助手", Map.of("manual", sessionAgent != null), "RUNNING");
+
+        if (sessionAgent == null) {
+            List<Agent> routingAgents = listRoutingAgents();
+            try {
+                DeepAgentsRouterClient.RouteResult routeResult = deepAgentsRouterClient.route(userPrompt, routingAgents);
+                sessionAgent = findAgentByCode(routingAgents, routeResult.agentCode());
+                if (sessionAgent == null) {
+                    failBeforeExecution(runId, sessionId, emitter, "Router Agent 返回了不存在或未启用的 Agent: " + routeResult.agentCode(),
+                            Map.of("agentCode", routeResult.agentCode()));
+                    return;
+                }
+                aiAgentRunService.updateRouting(runId, sessionAgent, routeResult.taskType(), routeResult.confidence());
+                sendAgentEvent(runId, sessionId, sessionAgent, emitter, "routing_completed", "status",
+                        "任务识别完成", "Router Agent 已完成任务分发",
+                        routePayload(routeResult, sessionAgent), "RUNNING");
+                sendAgentEvent(runId, sessionId, sessionAgent, emitter, "agent_selected", "status",
+                        "Agent 选择", selectedAgentDescription(routeResult, sessionAgent),
+                        routePayload(routeResult, sessionAgent), "RUNNING");
+            } catch (Exception e) {
+                String errorMessage = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                failBeforeExecution(runId, sessionId, emitter, "Router Agent 分发失败: " + errorMessage,
+                        Map.of("error", errorMessage));
+                return;
+            }
+            if (sessionInfo != null && sessionInfo.getAgentId() == null) {
+                sessionInfo.setAgentId(sessionAgent.getId());
+                aiChatHistoryService.updateSession(sessionInfo);
+            }
+        } else {
+            aiAgentRunService.updateRouting(runId, sessionAgent, "manual", 1.0);
+            sendAgentEvent(runId, sessionId, sessionAgent, emitter, "routing_completed", "status",
+                    "任务识别完成", "已检测到手动选择的 Agent，跳过 Router Agent",
+                    manualRoutePayload(sessionAgent), "RUNNING");
+            sendAgentEvent(runId, sessionId, sessionAgent, emitter, "agent_selected", "status",
+                    "Agent 选择", "已使用手动选择的 Agent：" + sessionAgent.getName(),
+                    manualRoutePayload(sessionAgent),
+                    "RUNNING");
+        }
+
         if (agentAppBuildModeHandler.supports(sessionAgent)) {
+            sendAgentEvent(runId, sessionId, sessionAgent, emitter, "model_stream", "status",
+                    "生成中", "已进入 Agent App 执行流程", Map.of("buildMode", "AGENT_APP"), "RUNNING");
             agentAppBuildModeHandler.streamWithPersistence(sessionId, sessionAgent, userPrompt, agentAppSkillAppCode,
-                    agentAppSkillCode, conversationContext, emitter);
+                    agentAppSkillCode, conversationContext, emitter, runId);
             return;
         }
         if (deepAgentsBuildModeHandler.supports(sessionAgent)) {
             deepAgentsBuildModeHandler.streamWithPersistence(sessionId, sessionAgent, systemPrompt, userPrompt,
-                    conversationContext, emitter);
+                    conversationContext, emitter, runId);
             return;
         }
 
@@ -170,10 +227,17 @@ public class AiChatServiceImpl implements AiChatService {
         }
 
         StringBuilder aiResponse = new StringBuilder();
+        final boolean[] modelStreamRecorded = { false };
+        final com.example.urgs_api.ai.entity.Agent activeAgent = sessionAgent;
 
         streamChat(sessionId, messages, "chat",
                 chunk -> {
                     aiResponse.append(chunk);
+                    if (!modelStreamRecorded[0]) {
+                        modelStreamRecorded[0] = true;
+                        sendAgentEvent(runId, sessionId, activeAgent, emitter, "model_stream", "status",
+                                "生成中", "模型开始流式输出", Map.of("requestType", "chat"), "RUNNING");
+                    }
                     // Do NOT try-catch around emitter.send!
                     // If client disconnected, this will throw an exception which will propagate to
                     // executeCoreStream's while loop, safely terminating the background processing.
@@ -190,6 +254,11 @@ public class AiChatServiceImpl implements AiChatService {
                     // 5. 聊天完成，保存 AI 回复 (Save AI Message on Complete)
                     try {
                         aiChatHistoryService.saveMessage(sessionId, "assistant", aiResponse.toString());
+                        aiAgentRunService.recordEvent(runId, sessionId, activeAgent, "run_completed", "完成",
+                                "模型响应已完成", Map.of("responseLength", aiResponse.length()), "COMPLETED");
+                        aiAgentRunService.completeRun(runId);
+                        sendAgentEvent(runId, sessionId, activeAgent, emitter, "ui_completed", "status",
+                                "完成", "回答已生成", Map.of("responseLength", aiResponse.length()), "COMPLETED");
                         try {
                             emitter.send(SseEmitter.event().data("[DONE]"));
                             emitter.complete();
@@ -209,6 +278,9 @@ public class AiChatServiceImpl implements AiChatService {
                                     aiResponse.length());
                             aiChatHistoryService.saveMessage(sessionId, "assistant", aiResponse.toString());
                         }
+                        aiAgentRunService.recordEvent(runId, sessionId, activeAgent, "run_failed", "执行失败",
+                                e.getMessage(), Map.of("responseLength", aiResponse.length()), "FAILED");
+                        aiAgentRunService.failRun(runId, e.getMessage());
 
                         try {
                             emitter.send(SseEmitter.event()
@@ -222,6 +294,97 @@ public class AiChatServiceImpl implements AiChatService {
                         log.error("Failed in error callback", ex);
                     }
                 });
+    }
+
+    private void sendAgentEvent(String runId, String sessionId, com.example.urgs_api.ai.entity.Agent agent,
+            SseEmitter emitter, String eventType, String type, String title, String content,
+            Map<String, Object> payload, String status) {
+        aiAgentRunService.recordEvent(runId, sessionId, agent, eventType, title, content, payload, status);
+        try {
+            java.util.Map<String, Object> event = new java.util.LinkedHashMap<>();
+            event.put("type", type);
+            event.put("title", title);
+            if (content != null && !content.isBlank()) {
+                event.put("content", content);
+            }
+            if (payload != null) {
+                event.putAll(payload);
+            }
+            emitter.send(SseEmitter.event().name("agent").data(objectMapper.writeValueAsString(event)));
+        } catch (Exception e) {
+            log.warn("Failed to send agent event {} for session {}", eventType, sessionId, e);
+        }
+    }
+
+    private void failBeforeExecution(String runId, String sessionId, SseEmitter emitter, String message,
+            Map<String, Object> payload) {
+        aiAgentRunService.recordEvent(runId, sessionId, null, "router_failed", "任务分发失败", message, payload, "FAILED");
+        aiAgentRunService.failRun(runId, message);
+        try {
+            emitter.send(SseEmitter.event().name("agent")
+                    .data(objectMapper.writeValueAsString(Map.of(
+                            "type", "status",
+                            "title", "任务分发失败",
+                            "content", message))));
+            emitter.send(SseEmitter.event().data(objectMapper.writeValueAsString(Map.of("error", message))));
+            emitter.complete();
+        } catch (Exception e) {
+            log.warn("Failed to send router failure event for session {}", sessionId, e);
+        }
+    }
+
+    private List<Agent> listRoutingAgents() {
+        return agentRepository.selectList(new QueryWrapper<Agent>()
+                .eq("status", 1)
+                .isNotNull("agent_code")
+                .ne("agent_code", "")
+                .orderByAsc("sort_order")
+                .orderByDesc("id"));
+    }
+
+    private Agent findAgentByCode(List<Agent> agents, String agentCode) {
+        if (agents == null || agentCode == null || agentCode.isBlank()) {
+            return null;
+        }
+        for (Agent agent : agents) {
+            if (agentCode.equals(agent.getAgentCode())) {
+                return agent;
+            }
+        }
+        return null;
+    }
+
+    private Map<String, Object> routePayload(DeepAgentsRouterClient.RouteResult result, Agent agent) {
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("intent", result.taskType());
+        payload.put("confidence", result.confidence());
+        payload.put("reason", result.reason());
+        payload.put("requiresCollaboration", result.requiresCollaboration());
+        payload.put("collaborationPlan", result.collaborationPlan());
+        if (agent != null) {
+            payload.put("agentId", agent.getId());
+            payload.put("agentCode", agent.getAgentCode());
+            payload.put("agentName", agent.getName());
+            payload.put("buildMode", agent.getBuildMode());
+        }
+        return payload;
+    }
+
+    private Map<String, Object> manualRoutePayload(Agent agent) {
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("manual", true);
+        if (agent != null) {
+            payload.put("agentId", agent.getId());
+            payload.put("agentCode", agent.getAgentCode());
+            payload.put("agentName", agent.getName());
+            payload.put("buildMode", agent.getBuildMode());
+        }
+        return payload;
+    }
+
+    private String selectedAgentDescription(DeepAgentsRouterClient.RouteResult result, Agent agent) {
+        int confidence = (int) Math.round(result.confidence() * 100);
+        return "已选择 " + agent.getName() + "，置信度 " + confidence + "%：" + result.reason();
     }
 
     /**
@@ -348,18 +511,6 @@ public class AiChatServiceImpl implements AiChatService {
             messages.add(Map.of("role", msg.getRole(), "content", msg.getContent() != null ? msg.getContent() : ""));
         }
         return messages;
-    }
-
-    private com.example.urgs_api.ai.entity.Agent resolveSessionAgent(String sessionId) {
-        try {
-            com.example.urgs_api.ai.entity.AiChatSession sessionInfo = resolveSession(sessionId);
-            if (sessionInfo != null && sessionInfo.getAgentId() != null) {
-                return agentRepository.selectById(sessionInfo.getAgentId());
-            }
-        } catch (Exception e) {
-            log.warn("Failed to resolve session agent for session {}", sessionId, e);
-        }
-        return null;
     }
 
     private com.example.urgs_api.ai.entity.AiChatSession resolveSession(String sessionId) {

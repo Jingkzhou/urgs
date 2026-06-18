@@ -440,6 +440,10 @@ start_deepagents() {
     export DEEPAGENTS_URGS_API_URL="${URGS_API_URL:-${AGENT_URGS_API_URL:-http://127.0.0.1:8080}}"
   fi
   export DEEPAGENTS_INTERNAL_API_TOKEN="${DEEPAGENTS_INTERNAL_API_TOKEN:-$URGS_INTERNAL_API_TOKEN}"
+  export DEEPAGENTS_WORKSPACE_ROOT="${DEEPAGENTS_WORKSPACE_ROOT:-$SCRIPT_DIR}"
+  if [ -f "$SCRIPT_DIR/AGENTS.md" ]; then
+    export DEEPAGENTS_MEMORY_FILES="${DEEPAGENTS_MEMORY_FILES:-/AGENTS.md}"
+  fi
 
   echo "Preparing DeepAgents Python 3.11 environment..."
   if [ -d ".venv" ] && [ ! -x ".venv/bin/python" ]; then

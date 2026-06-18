@@ -13,7 +13,13 @@ public class Agent {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    @TableField("agent_code")
+    private String agentCode;
+
     private String name;
+
+    @TableField("agent_type")
+    private String agentType;
 
     private String description;
 
@@ -43,6 +49,30 @@ public class Agent {
 
     @TableField("agent_app_tools")
     private String agentAppTools;
+
+    @TableField("capability_tags")
+    private String capabilityTags;
+
+    @TableField("routing_examples")
+    private String routingExamples;
+
+    @TableField("memory_files")
+    private String memoryFiles;
+
+    @TableField("skill_dirs")
+    private String skillDirs;
+
+    @TableField("tool_allowlist")
+    private String toolAllowlist;
+
+    @TableField("policy_config")
+    private String policyConfig;
+
+    @TableField("model_config")
+    private String modelConfig;
+
+    @TableField("sort_order")
+    private Integer sortOrder;
 
     @TableField("updated_at")
     private Date updatedAt;

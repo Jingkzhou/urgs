@@ -4,6 +4,7 @@ import com.example.urgs_api.ai.entity.AiChatMessage;
 import com.example.urgs_api.ai.entity.AiChatSession;
 import com.example.urgs_api.ai.entity.Agent;
 import com.example.urgs_api.ai.entity.AgentAppSkill;
+import com.example.urgs_api.ai.service.AiAgentRunService;
 import com.example.urgs_api.ai.service.AiChatHistoryService;
 import com.example.urgs_api.ai.service.AgentAppSkillService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -54,12 +55,20 @@ public class AgentAppBuildModeHandler {
     @Autowired
     private AgentAppSkillService agentAppSkillService;
 
+    @Autowired
+    private AiAgentRunService aiAgentRunService;
+
     public boolean supports(Agent agent) {
         return agent != null && "AGENT_APP".equalsIgnoreCase(agent.getBuildMode());
     }
 
     public void streamWithPersistence(String sessionId, Agent agent, String userPrompt, String skillAppCode,
             String skillCode, List<Map<String, String>> conversationContext, SseEmitter emitter) {
+        streamWithPersistence(sessionId, agent, userPrompt, skillAppCode, skillCode, conversationContext, emitter, null);
+    }
+
+    public void streamWithPersistence(String sessionId, Agent agent, String userPrompt, String skillAppCode,
+            String skillCode, List<Map<String, String>> conversationContext, SseEmitter emitter, String runId) {
         executor.submit(() -> {
             StringBuilder response = new StringBuilder();
             AgentAppPrompt agentAppPrompt = null;
@@ -90,16 +99,23 @@ public class AgentAppBuildModeHandler {
                 });
 
                 aiChatHistoryService.saveMessage(sessionId, "assistant", response.toString());
+                aiAgentRunService.recordEvent(runId, sessionId, agent, "run_completed", "完成",
+                        "Agent App 响应已完成", Map.of("responseLength", response.length()), "COMPLETED");
+                aiAgentRunService.completeRun(runId);
                 emitter.send(SseEmitter.event().data("[DONE]"));
                 emitter.complete();
             } catch (Exception e) {
                 log.error("Agent App execution failed for session {}", sessionId, e);
                 try {
+                    String errorMessage = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
                     if (response.length() > 0) {
                         aiChatHistoryService.saveMessage(sessionId, "assistant", response.toString());
                     }
+                    aiAgentRunService.recordEvent(runId, sessionId, agent, "run_failed", "执行失败",
+                            errorMessage, Map.of("responseLength", response.length()), "FAILED");
+                    aiAgentRunService.failRun(runId, errorMessage);
                     emitter.send(SseEmitter.event()
-                            .data(objectMapper.writeValueAsString(Map.of("error", e.getMessage()))));
+                            .data(objectMapper.writeValueAsString(Map.of("error", errorMessage))));
                     emitter.complete();
                 } catch (Exception ex) {
                     log.warn("Failed to send Agent App error event", ex);

@@ -117,13 +117,13 @@ Router -> Planner -> Async Job -> 前端订阅进度 -> 完成后汇总
 
 3. Router MVP
 
-   支持规则优先、模型兜底：
+   Router 是 DeepAgents 内置的 Router Agent，API 只负责调用与落库，不实现规则兜底：
 
    ```text
    用户手动选择 Agent -> 直接使用该 Agent
-   Agent 关键词/标签命中 -> 使用规则路由
-   规则不确定 -> 调用模型分类
-   置信度低 -> 回退通用助手，并提示可选择专业 Agent
+   未手动选择 Agent -> 调用 DeepAgents Router Agent
+   Router Agent 返回 agent_code/confidence/reason -> API 使用该 Agent
+   Router Agent 失败或返回无效 agent_code -> 本次请求失败并写入 router_failed
    ```
 
 4. Run Event 基础表
@@ -495,4 +495,3 @@ P3: 可视化编排器、Agent 市场、跨机器分布式 Agent runtime
 - Agent 专属 `AGENTS.md` 和 skills 属于提示词供应链，必须纳入版本管理和审核。
 - 工具输出必须摘要化入上下文，避免大结果撑爆模型上下文。
 - 评测集必须与 Agent 发布绑定，否则后期无法控制质量回退。
-

@@ -21,7 +21,7 @@ public class AgentService {
     private AgentRoleRepository agentRoleRepository;
 
     public List<Agent> listAgents() {
-        return agentRepository.selectList(new QueryWrapper<Agent>().orderByDesc("id"));
+        return agentRepository.selectList(new QueryWrapper<Agent>().orderByAsc("sort_order").orderByDesc("id"));
     }
 
     public List<Long> getRoleAgents(Long roleId) {
@@ -80,6 +80,12 @@ public class AgentService {
             buildMode = "RAG";
         }
         agent.setBuildMode(buildMode);
+        if (isBlank(agent.getAgentType())) {
+            agent.setAgentType("SPECIALIST");
+        }
+        if (agent.getSortOrder() == null) {
+            agent.setSortOrder(0);
+        }
 
         if ("DIFY".equals(buildMode)) {
             agent.setKnowledgeBase(null);
