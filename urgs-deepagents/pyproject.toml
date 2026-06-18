@@ -50,6 +50,10 @@ strict = true
 packages = ["urgs_deepagents_service"]
 exclude = "^src/deepagents/"
 
+[[tool.mypy.overrides]]
+module = ["deepagents", "deepagents.*"]
+ignore_errors = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

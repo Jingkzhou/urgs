@@ -99,6 +99,31 @@ async def _make_stream(monkeypatch, request: OrchestratorRequest) -> list[tuple[
     return await _collect(stream_orchestration(request, _FakeSettings()))
 
 
+def _assert_envelope(events: list[tuple[str, Any]]) -> str:
+    assert events
+    run_ids = {data["run_id"] for _, data in events}
+    assert len(run_ids) == 1
+    run_id = next(iter(run_ids))
+    for name, data in events:
+        assert data["event"] == name
+        assert data["type"]
+        assert data["run_id"] == run_id
+        assert data["step_id"]
+        assert "agent_code" in data
+        assert data["timestamp"].endswith("Z")
+        assert data["status"]
+        assert data["message"]
+    return run_id
+
+
+def _assert_subsequence(names: list[str], expected: list[str]) -> None:
+    cursor = 0
+    for name in names:
+        if cursor < len(expected) and name == expected[cursor]:
+            cursor += 1
+    assert cursor == len(expected)
+
+
 def _patch_guard(monkeypatch, passed: bool, reason: str = "") -> None:
     async def fake_guard(model: Any, user_message: str) -> GuardResult:
         return GuardResult(passed=passed, reason=reason, category="" if passed else "injection")
@@ -159,6 +184,7 @@ def _patch_review(monkeypatch, passed: bool, reason: str = "ok") -> None:
 
 def _patch_worker(monkeypatch, answer: str = "worker-answer") -> None:
     async def fake_run_worker(**kwargs: Any):
+        stream_context = kwargs.get("stream_context")
         run = worker_mod.WorkerRun(
             agent_code=kwargs["agent_code"],
             task=kwargs["task"],
@@ -174,12 +200,14 @@ def _patch_worker(monkeypatch, answer: str = "worker-answer") -> None:
             yield sse(
                 "worker",
                 {"type": "worker", "status": "started", "agent_code": kwargs["agent_code"]},
+                stream_context,
             )
             if kwargs["stream_content"]:
-                yield sse("content", {"content": answer})
+                yield sse("content", {"content": answer}, stream_context)
             yield sse(
                 "worker",
                 {"type": "worker", "status": "completed", "agent_code": kwargs["agent_code"]},
+                stream_context,
             )
 
         run._events_factory = events
@@ -195,8 +223,9 @@ def _patch_finalizer(monkeypatch, answer: str = "final-answer") -> None:
     async def fake_finalize(**kwargs: Any) -> AsyncIterator[str]:
         from urgs_deepagents_service.orchestrator.utils import sse
 
-        yield sse("agent", {"type": "thinking", "title": "Finalizer 汇总"})
-        yield sse("content", {"content": answer})
+        stream_context = kwargs.get("stream_context")
+        yield sse("agent", {"type": "thinking", "title": "Finalizer 汇总"}, stream_context)
+        yield sse("content", {"content": answer}, stream_context)
 
     monkeypatch.setattr(finalizer_mod, "stream_finalizer", fake_finalize)
     monkeypatch.setattr(
@@ -245,6 +274,84 @@ async def test_simple_path_passes_through_worker_answer(monkeypatch) -> None:
     # 简单路径验收通过：直接透传 Worker 答案，不调 Finalizer
     content = "".join(data["content"] for name, data in events if name == "content")
     assert content == "hello"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_sse_envelope_and_simple_order(monkeypatch) -> None:
+    _patch_guard(monkeypatch, passed=True)
+    _patch_router(monkeypatch, "general-agent", is_complex=False)
+    _patch_worker(monkeypatch, answer="hello")
+    _patch_review(monkeypatch, passed=True)
+    request = OrchestratorRequest(messages="你好", agents=_agents(), agent_configs=_configs())
+    events = await _make_stream(monkeypatch, request)
+
+    _assert_envelope(events)
+    names = [name for name, _ in events]
+    _assert_subsequence(
+        names,
+        [
+            "agent",
+            "input_guard",
+            "agent",
+            "routing",
+            "worker",
+            "review",
+            "finalizing",
+            "content",
+            "done",
+        ],
+    )
+    done = events[-1][1]
+    assert done["done"] is True
+    assert done["quality_risk"] is False
+    assert done["handoff"] is False
+    assert done["rework_attempts"] == 0
+    assert done["audit_event_count"] > 0
+
+
+@pytest.mark.asyncio
+async def test_local_input_guard_rejects_empty_without_model_config(monkeypatch) -> None:
+    def fail_build_model(*args: Any, **kwargs: Any) -> object:
+        raise AssertionError("empty input should be rejected before model config")
+
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.build_chat_model",
+        fail_build_model,
+    )
+    request = OrchestratorRequest(messages="   ", agents=_agents())
+    events = await _collect(stream_orchestration(request, _FakeSettings()))
+
+    _assert_envelope(events)
+    guard = next(data for name, data in events if name == "input_guard")
+    done = events[-1][1]
+    assert guard["status"] == "rejected"
+    assert guard["category"] == "empty"
+    assert done["quality_risk"] is True
+
+
+@pytest.mark.asyncio
+async def test_model_config_failure_emits_sanitized_error(monkeypatch) -> None:
+    def fail_build_model(*args: Any, **kwargs: Any) -> object:
+        raise RuntimeError(
+            "token=secret-token sk-secret123 http://127.0.0.1:8080/api/internal/config"
+        )
+
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.build_chat_model",
+        fail_build_model,
+    )
+    request = OrchestratorRequest(messages="普通问题", agents=_agents())
+    events = await _collect(stream_orchestration(request, _FakeSettings()))
+
+    _assert_envelope(events)
+    assert [name for name, _ in events] == ["agent", "error"]
+    error = events[-1][1]
+    error_text = json.dumps(error, ensure_ascii=False)
+    assert "secret-token" not in error_text
+    assert "sk-secret123" not in error_text
+    assert "127.0.0.1" not in error_text
+    assert "[REDACTED]" in error_text
+    assert "[INTERNAL_URL]" in error_text
 
 
 @pytest.mark.asyncio

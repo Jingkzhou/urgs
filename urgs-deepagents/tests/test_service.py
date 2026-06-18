@@ -1,3 +1,6 @@
+import json
+from types import SimpleNamespace
+
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -12,6 +15,18 @@ from urgs_deepagents_service.main import (
 )
 from urgs_deepagents_service.model_config import _parse_default_config, build_chat_model
 from urgs_deepagents_service.schemas import InvokeRequest
+
+
+def _parse_sse(raw: str) -> list[tuple[str, dict[str, object]]]:
+    events: list[tuple[str, dict[str, object]]] = []
+    for block in raw.strip().split("\n\n"):
+        if not block:
+            continue
+        lines = block.splitlines()
+        event = lines[0].removeprefix("event: ").strip()
+        data = lines[1].removeprefix("data: ").strip()
+        events.append((event, json.loads(data)))
+    return events
 
 
 def test_health_live() -> None:
@@ -91,6 +106,72 @@ def test_agent_runtime_merges_workspace_memory_skills_and_tool_allowlist(tmp_pat
     assert kwargs["memory"] == ["/AGENTS.md", "/agents/frontend/AGENTS.md"]
     assert kwargs["skills"] == ["/skills/platform", "/skills/frontend"]
     assert middleware.allowed == frozenset({"read_file", "grep"})
+
+
+def test_agents_invoke_basic_path(monkeypatch) -> None:
+    class FakeAgent:
+        def invoke(
+            self, payload: dict[str, object], config: dict[str, object] | None = None
+        ) -> dict[str, object]:
+            assert payload == {"messages": "hello"}
+            assert config is not None
+            return {"messages": [{"role": "assistant", "content": "hi"}]}
+
+    monkeypatch.setattr(
+        "urgs_deepagents_service.main.build_chat_model", lambda settings, model: object()
+    )
+    monkeypatch.setattr(
+        "urgs_deepagents_service.runtime.create_deep_agent", lambda **kwargs: FakeAgent()
+    )
+
+    client = TestClient(app)
+    response = client.post("/v1/agents/invoke", json={"messages": "hello"})
+
+    assert response.status_code == 200
+    assert response.json()["output"]["messages"][0]["content"] == "hi"
+
+
+def test_agents_stream_sse_schema(monkeypatch) -> None:
+    class FakeAgent:
+        async def astream_events(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+            version: str = "v2",
+        ):
+            assert payload == {"messages": "hello"}
+            assert config is not None
+            assert version == "v2"
+            yield {
+                "event": "on_chat_model_stream",
+                "name": "model",
+                "data": {"chunk": SimpleNamespace(content="hi")},
+            }
+
+    monkeypatch.setattr(
+        "urgs_deepagents_service.main.build_chat_model", lambda settings, model: object()
+    )
+    monkeypatch.setattr(
+        "urgs_deepagents_service.runtime.create_deep_agent", lambda **kwargs: FakeAgent()
+    )
+
+    client = TestClient(app)
+    with client.stream("POST", "/v1/agents/stream", json={"messages": "hello"}) as response:
+        raw = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    events = _parse_sse(raw)
+    names = [name for name, _ in events]
+    assert names == ["agent", "content", "done"]
+    run_ids = {data["run_id"] for _, data in events}
+    assert len(run_ids) == 1
+    for name, data in events:
+        assert data["event"] == name
+        assert data["step_id"]
+        assert data["timestamp"]
+        assert data["status"]
+        assert data["message"]
+    assert events[1][1]["content"] == "hi"
 
 
 def test_router_route_does_not_use_response_format_tool_choice(monkeypatch) -> None:

@@ -32,7 +32,12 @@ from urgs_deepagents_service.orchestrator.input_guard import local_input_guard, 
 from urgs_deepagents_service.orchestrator.planner import run_planner
 from urgs_deepagents_service.orchestrator.reviewer import run_review, run_review_with_feedback
 from urgs_deepagents_service.orchestrator.router import run_router
-from urgs_deepagents_service.orchestrator.state import PlanStep, RoutingResult, WorkerOutput
+from urgs_deepagents_service.orchestrator.state import (
+    OrchestrationState,
+    PlanStep,
+    RoutingResult,
+    WorkerOutput,
+)
 from urgs_deepagents_service.orchestrator.utils import StreamContext, sse
 from urgs_deepagents_service.orchestrator.worker import run_worker
 from urgs_deepagents_service.schemas import OrchestratorRequest, RouterAgentDescriptor
@@ -61,6 +66,7 @@ def _find_agent(agents: list[RouterAgentDescriptor], code: str) -> RouterAgentDe
 async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> AsyncIterator[str]:
     """编排主入口，产出 SSE 事件流。"""
     context = StreamContext()
+    state = OrchestrationState(run_id=context.run_id)
 
     def emit(
         event: str,
@@ -81,10 +87,16 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
             message=message,
         )
 
+    def done_payload() -> dict[str, Any]:
+        state.record("done", "completed", "编排完成")
+        return state.done_payload()
+
     try:
         user_message = _extract_user_message(request.messages)
+        state.user_message = user_message
 
         # 1. Input Guard
+        state.record("input_guard", "started", "正在校验输入")
         yield emit(
             "agent",
             {"type": "thinking", "title": "Input Guard", "content": "正在校验输入"},
@@ -100,6 +112,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
             model = build_chat_model(settings, request.model or settings.model)
             guard = await run_input_guard(model, user_message)
         if guard.passed:
+            state.record("input_guard", "passed", guard.reason or "Input Guard 通过")
             yield emit(
                 "input_guard",
                 {
@@ -113,6 +126,10 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                 message=guard.reason or "Input Guard 通过",
             )
         else:
+            state.quality_risk = True
+            state.quality_risk_reason = f"输入被拒绝：{guard.reason}"
+            state.record("input_guard", "rejected", guard.reason or "Input Guard 拒绝")
+            state.record("quality_risk", "failed", state.quality_risk_reason)
             yield emit(
                 "input_guard",
                 {
@@ -134,7 +151,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
             )
             yield emit(
                 "done",
-                {"done": True},
+                done_payload(),
                 step_id="orchestrator.done",
                 status="completed",
                 message="编排完成",
@@ -153,6 +170,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
             routing_agent_code = request.selected_agent_code
             selected = _find_agent(request.agents, routing_agent_code)
             if selected is None:
+                state.record("error", "failed", "预选 agent_code 不在目录中")
                 yield emit(
                     "error",
                     {"error": "预选 agent_code 不在目录中", "agent_code": routing_agent_code},
@@ -169,7 +187,11 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                 task_type="manual",
                 is_complex=False,
             )
+            state.record(
+                "routing", "skipped", "手动预选 Agent，跳过 Router", agent_code=routing_agent_code
+            )
         else:
+            state.record("routing", "started", "正在识别任务并选择 Agent")
             yield emit(
                 "agent",
                 {"type": "thinking", "title": "Router", "content": "正在识别任务并选择 Agent"},
@@ -181,6 +203,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
             routing_agent_code = routing.agent_code
             selected = _find_agent(request.agents, routing_agent_code)
             if selected is None:
+                state.record("error", "failed", "Router 选择了不存在的 agent_code")
                 yield emit(
                     "error",
                     {"error": "Router 选择了不存在的 agent_code", "agent_code": routing_agent_code},
@@ -191,6 +214,8 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                 )
                 return
 
+        state.routing = routing
+        state.selected_agent_code = routing_agent_code
         yield emit(
             "routing",
             {
@@ -211,6 +236,14 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
 
         # 非 DEEPAGENTS Agent（无运行时配置）：交回 API 侧走遗留执行路径
         if get_config(routing_agent_code) is None:
+            state.path = "handoff"
+            state.handoff_agent_code = routing_agent_code
+            state.record(
+                "handoff",
+                "completed",
+                "非 DEEPAGENTS Agent，交回 API 侧执行",
+                agent_code=routing_agent_code,
+            )
             yield emit(
                 "handoff",
                 {
@@ -226,7 +259,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
             )
             yield emit(
                 "done",
-                {"done": True},
+                done_payload(),
                 step_id="orchestrator.done",
                 status="completed",
                 message="编排完成",
@@ -237,6 +270,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
         steps: list[PlanStep] = []
 
         if not routing.is_complex:
+            state.path = "simple"
             # 简单路径：Worker 内部执行，不直接流式到前端。
             # 验收未过前不向用户暴露半成品，最终答案统一由 Finalizer 输出。
             cfg = get_config(routing.agent_code)
@@ -254,9 +288,12 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
             async for evt in run.events():
                 yield evt
             outputs = [run.output]
+            state.worker_outputs = outputs
         else:
+            state.path = "complex"
             # 复杂路径：Planner 拆解 -> 串行 Worker 执行（不流式，仅过程事件）
             candidate_agents = [a.agent_code for a in request.agents]
+            state.record("planning", "started", "开始拆解复杂任务")
             yield emit(
                 "planning",
                 {"type": "planning", "status": "started"},
@@ -265,6 +302,8 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                 message="开始拆解复杂任务",
             )
             steps = await run_planner(model, user_message, candidate_agents)
+            state.plan = steps
+            state.record("planning", "completed", "复杂任务拆解完成", details={"steps": len(steps)})
             yield emit(
                 "planning",
                 {
@@ -302,9 +341,11 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                     yield evt
                 run.output.step = step.step
                 outputs.append(run.output)
+                state.worker_outputs = outputs
                 context_parts.append(f"[{step.agent}] {run.output.answer}")
 
         # 3. Reviewer 验收
+        state.record("review", "started", "正在验收产出")
         yield emit(
             "agent",
             {"type": "thinking", "title": "Reviewer", "content": "正在验收产出"},
@@ -313,10 +354,14 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
             message="正在验收产出",
         )
         review = await run_review(model, user_message, outputs)
+        state.reviews.append(review)
+        state.record("review", "passed" if review.passed else "failed", review.reason)
         yield _review_event(review, context)
 
         # 4. 返工判定
         if not review.passed:
+            state.rework_attempts = 1
+            state.record("rework", "started", "验收未通过，开始第 1 次返工")
             yield emit(
                 "rework",
                 {"type": "rework", "status": "started", "attempt": 1},
@@ -365,10 +410,14 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                     context_parts2.append(f"[{step.agent}] {run.output.answer}")
 
             review2 = await run_review_with_feedback(model, user_message, rework_outputs, feedback)
+            state.reviews.append(review2)
+            state.record("review", "passed" if review2.passed else "failed", review2.reason)
             yield _review_event(review2, context, step_id="review.rework")
 
             if review2.passed:
                 outputs = rework_outputs
+                state.worker_outputs = outputs
+                state.record("finalizing", "started", "开始生成最终答案")
                 yield emit(
                     "finalizing",
                     {"type": "finalizing"},
@@ -413,7 +462,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                         yield evt
                 yield emit(
                     "done",
-                    {"done": True},
+                    done_payload(),
                     step_id="orchestrator.done",
                     status="completed",
                     message="编排完成",
@@ -421,13 +470,18 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                 return
             else:
                 # 仍不合格：返回最佳结果 + quality_risk
+                state.worker_outputs = rework_outputs
+                state.quality_risk = True
+                state.quality_risk_reason = f"返工后仍未通过验收：{review2.reason}"
+                state.record("quality_risk", "failed", state.quality_risk_reason)
                 yield emit(
                     "quality_risk",
-                    {"type": "quality_risk", "reason": f"返工后仍未通过验收：{review2.reason}"},
+                    {"type": "quality_risk", "reason": state.quality_risk_reason},
                     step_id="quality_risk.rework",
                     status="failed",
                     message="返工后仍未通过验收",
                 )
+                state.record("finalizing", "started", "开始生成带质量风险的最终答案")
                 yield emit(
                     "finalizing",
                     {"type": "finalizing"},
@@ -450,7 +504,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                     yield evt
                 yield emit(
                     "done",
-                    {"done": True},
+                    done_payload(),
                     step_id="orchestrator.done",
                     status="completed",
                     message="编排完成",
@@ -458,6 +512,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                 return
 
         # 验收合格：输出最终答案
+        state.record("finalizing", "started", "开始生成最终答案")
         yield emit(
             "finalizing",
             {"type": "finalizing"},
@@ -505,12 +560,13 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
 
         yield emit(
             "done",
-            {"done": True},
+            done_payload(),
             step_id="orchestrator.done",
             status="completed",
             message="编排完成",
         )
     except Exception as exc:
+        state.record("error", "failed", "编排失败")
         yield sse("error", safe_error_payload(context, message="编排失败", exc=exc), context)
 
 
