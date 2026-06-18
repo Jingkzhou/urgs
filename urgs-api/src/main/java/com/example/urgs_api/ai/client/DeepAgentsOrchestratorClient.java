@@ -23,10 +23,19 @@ public class DeepAgentsOrchestratorClient {
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private final String deepAgentsBaseUrl;
+    private final String internalApiAuthHeader;
+    private final String internalApiAuthPrefix;
+    private final String internalApiAuthToken;
 
     public DeepAgentsOrchestratorClient(
-            @Value("${urgs.deepagents.base-url:http://127.0.0.1:8003}") String deepAgentsBaseUrl) {
+            @Value("${urgs.deepagents.base-url:http://127.0.0.1:8003}") String deepAgentsBaseUrl,
+            @Value("${urgs.internal-api.auth-header:Authorization}") String internalApiAuthHeader,
+            @Value("${urgs.internal-api.auth-prefix:Bearer }") String internalApiAuthPrefix,
+            @Value("${urgs.internal-api.auth-token:}") String internalApiAuthToken) {
         this.deepAgentsBaseUrl = deepAgentsBaseUrl;
+        this.internalApiAuthHeader = internalApiAuthHeader;
+        this.internalApiAuthPrefix = internalApiAuthPrefix;
+        this.internalApiAuthToken = internalApiAuthToken;
     }
 
     public interface EventListener {
@@ -41,6 +50,7 @@ public class DeepAgentsOrchestratorClient {
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setRequestProperty("Accept", "text/event-stream");
+        applyInternalApiAuth(conn);
         conn.setDoOutput(true);
         conn.setConnectTimeout(10000);
         conn.setReadTimeout(900000);
@@ -79,5 +89,12 @@ public class DeepAgentsOrchestratorClient {
                 listener.onEvent(currentEvent, node);
             }
         }
+    }
+
+    private void applyInternalApiAuth(HttpURLConnection conn) {
+        if (internalApiAuthToken == null || internalApiAuthToken.isBlank()) {
+            return;
+        }
+        conn.setRequestProperty(internalApiAuthHeader, internalApiAuthPrefix + internalApiAuthToken);
     }
 }

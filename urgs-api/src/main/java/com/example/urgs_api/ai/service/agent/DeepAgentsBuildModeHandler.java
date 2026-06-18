@@ -41,18 +41,27 @@ public class DeepAgentsBuildModeHandler {
     private final AiTokenBudgetService aiTokenBudgetService;
     private final String deepAgentsBaseUrl;
     private final DeepAgentsOrchestratorClient orchestratorClient;
+    private final String internalApiAuthHeader;
+    private final String internalApiAuthPrefix;
+    private final String internalApiAuthToken;
 
     public DeepAgentsBuildModeHandler(
             AiChatHistoryService aiChatHistoryService,
             AiAgentRunService aiAgentRunService,
             AiTokenBudgetService aiTokenBudgetService,
             DeepAgentsOrchestratorClient orchestratorClient,
-            @Value("${urgs.deepagents.base-url:http://127.0.0.1:8003}") String deepAgentsBaseUrl) {
+            @Value("${urgs.deepagents.base-url:http://127.0.0.1:8003}") String deepAgentsBaseUrl,
+            @Value("${urgs.internal-api.auth-header:Authorization}") String internalApiAuthHeader,
+            @Value("${urgs.internal-api.auth-prefix:Bearer }") String internalApiAuthPrefix,
+            @Value("${urgs.internal-api.auth-token:}") String internalApiAuthToken) {
         this.aiChatHistoryService = aiChatHistoryService;
         this.aiAgentRunService = aiAgentRunService;
         this.aiTokenBudgetService = aiTokenBudgetService;
         this.orchestratorClient = orchestratorClient;
         this.deepAgentsBaseUrl = deepAgentsBaseUrl;
+        this.internalApiAuthHeader = internalApiAuthHeader;
+        this.internalApiAuthPrefix = internalApiAuthPrefix;
+        this.internalApiAuthToken = internalApiAuthToken;
     }
 
     public boolean supports(Agent agent) {
@@ -402,6 +411,7 @@ public class DeepAgentsBuildModeHandler {
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setRequestProperty("Accept", "text/event-stream");
+        applyInternalApiAuth(conn);
         conn.setDoOutput(true);
         conn.setConnectTimeout(10000);
         conn.setReadTimeout(900000);
@@ -555,6 +565,7 @@ public class DeepAgentsBuildModeHandler {
         HttpURLConnection conn = (HttpURLConnection) URI.create(endpoint).toURL().openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");
+        applyInternalApiAuth(conn);
         conn.setDoOutput(true);
         conn.setConnectTimeout(10000);
         conn.setReadTimeout(900000);
@@ -573,6 +584,13 @@ public class DeepAgentsBuildModeHandler {
             throw new RuntimeException("DeepAgents 调用失败: " + responseCode + " - " + responseBody);
         }
         return extractAssistantContent(objectMapper.readTree(responseBody));
+    }
+
+    private void applyInternalApiAuth(HttpURLConnection conn) {
+        if (internalApiAuthToken == null || internalApiAuthToken.isBlank()) {
+            return;
+        }
+        conn.setRequestProperty(internalApiAuthHeader, internalApiAuthPrefix + internalApiAuthToken);
     }
 
     private String extractAssistantContent(JsonNode root) {
