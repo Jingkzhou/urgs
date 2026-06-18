@@ -11,6 +11,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -59,10 +61,26 @@ public class DeepAgentsBuildModeHandler {
                 emitter.send(SseEmitter.event().name("metrics")
                         .data(objectMapper.writeValueAsString(Map.of("used", used, "limit", MAX_CONTEXT_TOKENS))));
 
-                response = invokeDeepAgents(resolveSystemPrompt(agent, systemPrompt), messages);
-                if (!response.isBlank()) {
-                    emitter.send(SseEmitter.event().data(objectMapper.writeValueAsString(Map.of("content", response))));
-                }
+                StringBuilder responseBuilder = new StringBuilder();
+                streamDeepAgents(resolveSystemPrompt(agent, systemPrompt), messages,
+                        chunk -> {
+                            responseBuilder.append(chunk);
+                            try {
+                                emitter.send(SseEmitter.event()
+                                        .data(objectMapper.writeValueAsString(Map.of("content", chunk))));
+                            } catch (Exception e) {
+                                throw new RuntimeException("SSE connection broken", e);
+                            }
+                        },
+                        event -> {
+                            try {
+                                emitter.send(SseEmitter.event().name("agent")
+                                        .data(objectMapper.writeValueAsString(event)));
+                            } catch (Exception e) {
+                                throw new RuntimeException("SSE connection broken", e);
+                            }
+                        });
+                response = responseBuilder.toString();
                 aiChatHistoryService.saveMessage(sessionId, "assistant", response);
                 emitter.send(SseEmitter.event().data("[DONE]"));
                 emitter.complete();
@@ -83,16 +101,17 @@ public class DeepAgentsBuildModeHandler {
     }
 
     public String invokeDefault(String systemPrompt, List<Map<String, String>> messages) throws Exception {
-        return invokeDeepAgents(systemPrompt, normalizeConversationContext(messages));
+        StringBuilder response = new StringBuilder();
+        streamDeepAgents(systemPrompt, normalizeConversationContext(messages), response::append, event -> {
+        });
+        return response.toString();
     }
 
     public void streamDefault(String systemPrompt, List<Map<String, String>> messages,
             Consumer<String> chunkConsumer, Runnable onComplete, Consumer<Exception> onError) {
         try {
-            String response = invokeDefault(systemPrompt, messages);
-            if (!response.isBlank()) {
-                chunkConsumer.accept(response);
-            }
+            streamDeepAgents(systemPrompt, normalizeConversationContext(messages), chunkConsumer, event -> {
+            });
             onComplete.run();
         } catch (Exception e) {
             onError.accept(e);
@@ -118,6 +137,72 @@ public class DeepAgentsBuildModeHandler {
             }
         }
         return messages;
+    }
+
+    private void streamDeepAgents(String systemPrompt, List<Map<String, String>> messages,
+            Consumer<String> chunkConsumer, Consumer<JsonNode> eventConsumer) throws Exception {
+        String endpoint = deepAgentsBaseUrl.replaceAll("/+$", "") + "/v1/agents/stream";
+        Map<String, Object> requestBody = Map.of(
+                "system_prompt", systemPrompt,
+                "messages", messages);
+        String jsonBody = objectMapper.writeValueAsString(requestBody);
+
+        HttpURLConnection conn = (HttpURLConnection) URI.create(endpoint).toURL().openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("Accept", "text/event-stream");
+        conn.setDoOutput(true);
+        conn.setConnectTimeout(10000);
+        conn.setReadTimeout(900000);
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
+        }
+
+        int responseCode = conn.getResponseCode();
+        if (responseCode < 200 || responseCode >= 300) {
+            String responseBody = conn.getErrorStream() == null
+                    ? ""
+                    : new String(conn.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+            throw new RuntimeException("DeepAgents 流式调用失败: " + responseCode + " - " + responseBody);
+        }
+
+        String currentEvent = "message";
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.startsWith("event:")) {
+                    currentEvent = line.substring(6).trim();
+                    continue;
+                }
+                if (!line.startsWith("data:")) {
+                    if (line.isBlank()) {
+                        currentEvent = "message";
+                    }
+                    continue;
+                }
+                String data = line.substring(5).trim();
+                if (data.isBlank()) {
+                    continue;
+                }
+                if ("done".equals(currentEvent)) {
+                    break;
+                }
+                if ("error".equals(currentEvent)) {
+                    JsonNode errorNode = objectMapper.readTree(data);
+                    throw new RuntimeException(errorNode.path("error").asText("DeepAgents 调用失败"));
+                }
+                JsonNode node = objectMapper.readTree(data);
+                if ("content".equals(currentEvent)) {
+                    String content = node.path("content").asText("");
+                    if (!content.isEmpty()) {
+                        chunkConsumer.accept(content);
+                    }
+                } else if ("agent".equals(currentEvent)) {
+                    eventConsumer.accept(node);
+                }
+            }
+        }
     }
 
     private String invokeDeepAgents(String systemPrompt, List<Map<String, String>> messages) throws Exception {

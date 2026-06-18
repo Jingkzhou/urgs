@@ -9,6 +9,18 @@ export interface Message {
     sources?: Array<{ fileName: string; content: string; score: number }>;
     status?: string;
     intent?: string;
+    agentEvents?: AgentStreamEvent[];
+}
+
+export interface AgentStreamEvent {
+    id: string;
+    type: 'thinking' | 'tool_call' | 'tool_result' | 'status';
+    title: string;
+    content?: string;
+    toolName?: string;
+    toolCallId?: string;
+    args?: any;
+    timestamp: number;
 }
 
 export interface Session {
@@ -222,7 +234,8 @@ export const streamChatResponse = async (
     onIntent?: (intent: string) => void,
     ragConfig?: { fusionStrategy?: string; topK?: number },
     agentAppSkill?: { appCode: string; code: string; name: string } | null,
-    conversationContext?: ConversationContextMessage[]
+    conversationContext?: ConversationContextMessage[],
+    onAgentEvent?: (event: AgentStreamEvent) => void
 ) => {
     try {
         const token = localStorage.getItem('auth_token');
@@ -271,7 +284,7 @@ export const streamChatResponse = async (
                 const { done, value } = await reader.read();
                 if (done) {
                     if (buffer.trim()) {
-                        processLines(buffer, onChunk, safeOnComplete, onMetrics, onStatus, onSources, onIntent, currentEventName);
+                        processLines(buffer, onChunk, safeOnComplete, onMetrics, onStatus, onSources, onIntent, currentEventName, onAgentEvent);
                     }
                     safeOnComplete();
                     break;
@@ -293,7 +306,7 @@ export const streamChatResponse = async (
                         continue;
                     }
                     // 处理 data: 行
-                    processLine(line, onChunk, safeOnComplete, onMetrics, onStatus, onSources, onIntent, currentEventName);
+                    processLine(line, onChunk, safeOnComplete, onMetrics, onStatus, onSources, onIntent, currentEventName, onAgentEvent);
                     // 空行表示事件结束，重置事件名称
                     if (!line.trim()) {
                         currentEventName = '';
@@ -310,14 +323,14 @@ export const streamChatResponse = async (
     }
 };
 
-const processLines = (text: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void, onIntent?: (i: string) => void, eventName?: string) => {
+const processLines = (text: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void, onIntent?: (i: string) => void, eventName?: string, onAgentEvent?: (event: AgentStreamEvent) => void) => {
     const lines = text.split('\n');
     for (const line of lines) {
-        processLine(line, onChunk, onComplete, onMetrics, onStatus, onSources, onIntent, eventName);
+        processLine(line, onChunk, onComplete, onMetrics, onStatus, onSources, onIntent, eventName, onAgentEvent);
     }
 };
 
-const processLine = (line: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void, onIntent?: (i: string) => void, eventName?: string) => {
+const processLine = (line: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void, onIntent?: (i: string) => void, eventName?: string, onAgentEvent?: (event: AgentStreamEvent) => void) => {
     if (!line.trim()) return;
 
     // event: 行已在主循环中处理，这里直接跳过
@@ -368,6 +381,22 @@ const processLine = (line: string, onChunk: (c: string) => void, onComplete: () 
 
         if (eventName === 'status') {
             if (onStatus && parsed.status) onStatus(parsed.status);
+            return;
+        }
+
+        if (eventName === 'agent') {
+            if (onAgentEvent) {
+                onAgentEvent({
+                    id: parsed.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                    type: parsed.type || 'status',
+                    title: parsed.title || parsed.status || '执行中',
+                    content: parsed.content,
+                    toolName: parsed.toolName,
+                    toolCallId: parsed.toolCallId,
+                    args: parsed.args,
+                    timestamp: Date.now()
+                });
+            }
             return;
         }
 

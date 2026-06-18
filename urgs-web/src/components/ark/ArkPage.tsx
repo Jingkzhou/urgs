@@ -7,7 +7,7 @@ import Sidebar from './Sidebar';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import {
-    Message, Session, type AgentAppSkill, type ConversationContextMessage, getSessions, createSession, streamChatResponse, loadSessionMessages, generateSessionTitle, getAgents, getRoleAgents, getAgentAppSkills
+    Message, Session, type AgentAppSkill, type AgentStreamEvent, type ConversationContextMessage, getSessions, createSession, streamChatResponse, loadSessionMessages, generateSessionTitle, getAgents, getRoleAgents, getAgentAppSkills
 } from '../../api/chat';
 
 const STREAM_THROTTLE_MS = 80;
@@ -501,7 +501,7 @@ const ArkPage: React.FC = () => {
         setIsGenerating(true);
         const userMsg: Message = { id: uuidv4(), role: 'user', content: userText, timestamp: Date.now() };
         const aiMsgId = uuidv4();
-        const aiMsgPlaceholder: Message = { id: aiMsgId, role: 'assistant', content: '', timestamp: Date.now() };
+        const aiMsgPlaceholder: Message = { id: aiMsgId, role: 'assistant', content: '', timestamp: Date.now(), agentEvents: [] };
         streamingMessageIdRef.current = aiMsgId;
         streamingMessageIndexRef.current = null;
         streamingContentRef.current = '';
@@ -563,7 +563,22 @@ const ArkPage: React.FC = () => {
                 },
                 ragConfig, // Pass config here
                 selectedAgentAppSkill,
-                conversationContext
+                conversationContext,
+                (event: AgentStreamEvent) => {
+                    setMessages(prev => {
+                        const index = prev.findIndex(m => m.id === aiMsgId);
+                        if (index === -1) return prev;
+                        const current = prev[index];
+                        const existing = current.agentEvents || [];
+                        const last = existing[existing.length - 1];
+                        if (last && last.type === event.type && last.title === event.title && last.content === event.content) {
+                            return prev;
+                        }
+                        const next = prev.slice();
+                        next[index] = { ...current, agentEvents: [...existing, event], status: null };
+                        return next;
+                    });
+                }
             );
         } catch (e) {
             flushStreamingUpdate();

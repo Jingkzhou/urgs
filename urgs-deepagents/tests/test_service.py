@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from langchain_openai import ChatOpenAI
 
-from urgs_deepagents_service.main import app
+from urgs_deepagents_service.main import READ_ONLY_FILESYSTEM_PERMISSIONS, app
 from urgs_deepagents_service.model_config import _parse_default_config, build_chat_model
 
 
@@ -23,6 +23,14 @@ def test_upstream_info() -> None:
     body = response.json()
     assert body["package"] == "deepagents"
     assert body["commit"] == "4ffea88690418207b5e4fa800ee8c1abfa454bec"
+
+
+def test_deepagents_filesystem_write_is_denied() -> None:
+    assert len(READ_ONLY_FILESYSTEM_PERMISSIONS) == 1
+    permission = READ_ONLY_FILESYSTEM_PERMISSIONS[0]
+    assert permission.operations == ["write"]
+    assert permission.paths == ["/**"]
+    assert permission.mode == "deny"
 
 
 def test_parse_default_config_strips_chat_completions_suffix() -> None:

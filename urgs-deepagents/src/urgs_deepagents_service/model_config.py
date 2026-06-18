@@ -70,6 +70,7 @@ def build_chat_model(settings: Settings, model_override: str | None) -> str | Ch
         "model": config.model,
         "api_key": config.api_key,
         "base_url": config.endpoint,
+        "streaming": True,
     }
     if config.max_tokens is not None:
         kwargs["max_tokens"] = config.max_tokens

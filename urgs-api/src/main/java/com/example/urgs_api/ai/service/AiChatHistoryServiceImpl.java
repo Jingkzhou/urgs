@@ -169,7 +169,11 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
 
     private boolean isInvalidGeneratedTitle(String title) {
         String normalized = title.trim().toLowerCase();
-        return normalized.matches("^(null)+.*") || normalized.matches("^(undefined)+.*");
+        return normalized.matches("^(null)+.*")
+                || normalized.matches("^(undefined)+.*")
+                || normalized.startsWith("#")
+                || normalized.contains("\n")
+                || normalized.length() > 50;
     }
 
     private void repairInvalidSessionTitle(AiChatSession session) {
