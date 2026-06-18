@@ -53,8 +53,10 @@ vendor                          upstream 文档备份
 LICENSE.upstream                upstream MIT License
 ```
 
-默认模型来源于 URGS 后端“系统管理 -> AI API 配置管理”中标记为默认且启用的配置：
-`GET ${DEEPAGENTS_URGS_API_URL}/api/ai/config/default`。
+默认模型来源于 URGS 后端“系统管理 -> AI API 配置管理”中标记为默认且启用的配置。
+DeepAgents 通过内部接口读取：
+`GET ${DEEPAGENTS_URGS_API_URL}/api/internal/ai/config/default`。
+该接口使用 `DEEPAGENTS_INTERNAL_API_TOKEN` 鉴权；通过根目录 `start.sh` 启动时会自动复用 `URGS_INTERNAL_API_TOKEN`。
 
 只有显式设置 `DEEPAGENTS_MODEL` 或在 `/v1/agents/invoke` 请求体里传 `model` 时，才会覆盖该默认配置。
 

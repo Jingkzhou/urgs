@@ -47,9 +47,14 @@ def _parse_default_config(payload: dict[str, Any] | None) -> AiApiConfig:
 
 
 def load_default_ai_config(settings: Settings) -> AiApiConfig:
-    url = settings.urgs_api_url.rstrip("/") + "/api/ai/config/default"
+    if not settings.internal_api_token:
+        raise HTTPException(status_code=502, detail="缺少内部 API 令牌，无法读取默认 AI API 配置")
+
+    url = settings.urgs_api_url.rstrip("/") + "/api/internal/ai/config/default"
+    auth_value = settings.internal_api_auth_prefix + settings.internal_api_token
+    headers = {settings.internal_api_auth_header: auth_value}
     try:
-        response = httpx.get(url, timeout=settings.config_request_timeout_seconds)
+        response = httpx.get(url, headers=headers, timeout=settings.config_request_timeout_seconds)
         response.raise_for_status()
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"读取默认 AI API 配置失败: {exc}") from exc

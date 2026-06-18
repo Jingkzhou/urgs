@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from deepagents import __version__, create_deep_agent
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from urgs_deepagents_service.config import get_settings
 from urgs_deepagents_service.model_config import build_chat_model
@@ -49,15 +49,20 @@ def create_app() -> FastAPI:
 
     @app.post("/v1/agents/invoke", response_model=InvokeResponse, tags=["deepagents"])
     def invoke(request: InvokeRequest) -> InvokeResponse:
-        model = build_chat_model(settings, request.model or settings.model)
-        agent = create_deep_agent(
-            model=model,
-            tools=[],
-            system_prompt=request.system_prompt,
-            debug=request.debug,
-        )
-        result = agent.invoke({"messages": request.messages})
-        return InvokeResponse(output=_serialize(result))
+        try:
+            model = build_chat_model(settings, request.model or settings.model)
+            agent = create_deep_agent(
+                model=model,
+                tools=[],
+                system_prompt=request.system_prompt,
+                debug=request.debug,
+            )
+            result = agent.invoke({"messages": request.messages})
+            return InvokeResponse(output=_serialize(result))
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"DeepAgents 调用失败: {exc}") from exc
 
     return app
 

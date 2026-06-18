@@ -421,6 +421,8 @@ start_deepagents() {
   echo "Starting DeepAgents service..."
   cd "$DEEPAGENTS_DIR"
   load_env_file
+  configure_storage_env
+  configure_internal_api_auth
 
   local deepagents_port="${DEEPAGENTS_PORT:-8003}"
   kill_port_if_exists "$deepagents_port"
@@ -433,6 +435,7 @@ start_deepagents() {
   if [ -z "${DEEPAGENTS_URGS_API_URL:-}" ]; then
     export DEEPAGENTS_URGS_API_URL="${URGS_API_URL:-${AGENT_URGS_API_URL:-http://127.0.0.1:8080}}"
   fi
+  export DEEPAGENTS_INTERNAL_API_TOKEN="${DEEPAGENTS_INTERNAL_API_TOKEN:-$URGS_INTERNAL_API_TOKEN}"
 
   echo "Preparing DeepAgents Python 3.11 environment..."
   if [ "$ENVIRONMENT" = "local" ] || [ "$ENVIRONMENT" = "dev" ]; then

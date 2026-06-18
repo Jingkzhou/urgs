@@ -44,6 +44,9 @@ def test_parse_default_config_strips_chat_completions_suffix() -> None:
 def test_build_chat_model_uses_ai_api_default(monkeypatch) -> None:
     class FakeSettings:
         urgs_api_url = "http://127.0.0.1:8080"
+        internal_api_token = "internal-token"
+        internal_api_auth_header = "Authorization"
+        internal_api_auth_prefix = "Bearer "
         config_request_timeout_seconds = 10.0
 
     class FakeResponse:
@@ -60,8 +63,9 @@ def test_build_chat_model_uses_ai_api_default(monkeypatch) -> None:
                 "temperature": 0.2,
             }
 
-    def fake_get(url: str, timeout: float) -> FakeResponse:
-        assert url == "http://127.0.0.1:8080/api/ai/config/default"
+    def fake_get(url: str, headers: dict[str, str], timeout: float) -> FakeResponse:
+        assert url == "http://127.0.0.1:8080/api/internal/ai/config/default"
+        assert headers == {"Authorization": "Bearer internal-token"}
         assert timeout == 10.0
         return FakeResponse()
 

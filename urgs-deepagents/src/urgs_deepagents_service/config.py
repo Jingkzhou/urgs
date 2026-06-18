@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +16,12 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     urgs_api_url: str = "http://127.0.0.1:8080"
+    internal_api_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("DEEPAGENTS_INTERNAL_API_TOKEN", "URGS_INTERNAL_API_TOKEN"),
+    )
+    internal_api_auth_header: str = "Authorization"
+    internal_api_auth_prefix: str = "Bearer "
     model: str | None = None
     request_timeout_seconds: float = 600.0
     config_request_timeout_seconds: float = 10.0
