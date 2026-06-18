@@ -29,9 +29,21 @@ ROUTER_SYSTEM_PROMPT = """你是 URGS 的 Router Agent，负责把用户任务�
 
 规则：
 1. 只能从请求提供的 agents 列表中选择一个 agent_code。
-2. 不允许创造新的 agent_code，不允许使用列表外的通用兜底。
-3. 如果任务需要多个 Agent 协作，仍然先选择主责 Agent，并设置 requires_collaboration=true。
-4. 返回必须符合结构化输出字段，不要输出解释性正文。
+2. 优先选择最匹配的专业 Agent。
+3. 如果没有专业 Agent 适合，选择 agent_type=GENERAL 的通用 Agent；如果列表中存在 general-agent，优先选择 general-agent。
+4. 不允许创造新的 agent_code，不允许使用列表外的 Agent。
+5. 如果任务需要多个 Agent 协作，仍然先选择主责 Agent，并设置 requires_collaboration=true。
+6. 只返回 JSON 对象，不要输出 Markdown，不要输出解释性正文。
+
+JSON 字段：
+{
+  "agent_code": "从 agents 列表选择的编码",
+  "confidence": 0.0 到 1.0 的数字,
+  "reason": "选择原因",
+  "task_type": "任务类型",
+  "requires_collaboration": false,
+  "collaboration_plan": ""
+}
 """
 
 
@@ -369,7 +381,6 @@ def create_app() -> FastAPI:
                 system_prompt=ROUTER_SYSTEM_PROMPT,
                 permissions=READ_ONLY_FILESYSTEM_PERMISSIONS,
                 middleware=[ToolVisibilityMiddleware(allowed=frozenset())],
-                response_format=RouterRouteResponse,
                 debug=request.debug,
             )
             result = router.invoke(

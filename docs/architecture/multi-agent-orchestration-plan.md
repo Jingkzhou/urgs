@@ -117,12 +117,13 @@ Router -> Planner -> Async Job -> 前端订阅进度 -> 完成后汇总
 
 3. Router MVP
 
-   Router 是 DeepAgents 内置的 Router Agent，API 只负责调用与落库，不实现规则兜底：
+   Router 是 DeepAgents 内置的 Router Agent，API 只负责调用与落库，不实现关键词规则：
 
    ```text
    用户手动选择 Agent -> 直接使用该 Agent
    未手动选择 Agent -> 调用 DeepAgents Router Agent
    Router Agent 返回 agent_code/confidence/reason -> API 使用该 Agent
+   没有专业 Agent 适合 -> Router Agent 选择 general-agent
    Router Agent 失败或返回无效 agent_code -> 本次请求失败并写入 router_failed
    ```
 

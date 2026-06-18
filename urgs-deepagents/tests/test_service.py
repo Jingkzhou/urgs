@@ -93,6 +93,52 @@ def test_agent_runtime_merges_workspace_memory_skills_and_tool_allowlist(tmp_pat
     assert middleware.allowed == frozenset({"read_file", "grep"})
 
 
+def test_router_route_does_not_use_response_format_tool_choice(monkeypatch) -> None:
+    captured_kwargs: dict[str, object] = {}
+
+    class FakeRouter:
+        def invoke(self, payload: dict[str, object]) -> dict[str, object]:
+            return {
+                "messages": [
+                    {
+                        "type": "ai",
+                        "content": (
+                            '{"agent_code":"general-agent","confidence":0.8,'
+                            '"reason":"no specialist fits","task_type":"general",'
+                            '"requires_collaboration":false,"collaboration_plan":""}'
+                        ),
+                    }
+                ]
+            }
+
+    def fake_create_deep_agent(**kwargs: object) -> FakeRouter:
+        captured_kwargs.update(kwargs)
+        return FakeRouter()
+
+    monkeypatch.setattr("urgs_deepagents_service.main.build_chat_model", lambda settings, model: object())
+    monkeypatch.setattr("urgs_deepagents_service.main.create_deep_agent", fake_create_deep_agent)
+
+    client = TestClient(app)
+    response = client.post(
+        "/v1/router/route",
+        json={
+            "message": "随便问一个问题",
+            "agents": [
+                {
+                    "agent_code": "general-agent",
+                    "agent_name": "通用助手",
+                    "agent_type": "GENERAL",
+                    "description": "General fallback agent",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["agent_code"] == "general-agent"
+    assert "response_format" not in captured_kwargs
+
+
 def test_parse_default_config_strips_chat_completions_suffix() -> None:
     config = _parse_default_config(
         {
