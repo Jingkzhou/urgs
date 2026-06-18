@@ -54,6 +54,7 @@ const ArkPage: React.FC = () => {
     const [metrics, setMetrics] = useState<{ used: number, limit: number } | null>(null);
     const [agents, setAgents] = useState<any[]>([]);
     const [activeAgent, setActiveAgent] = useState<any | null>(null);
+    const [isChatActive, setIsChatActive] = useState(false);
     const [agentAppSkills, setAgentAppSkills] = useState<AgentAppSkill[]>([]);
     const [selectedAgentAppSkill, setSelectedAgentAppSkill] = useState<AgentAppSkill | null>(null);
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -112,25 +113,11 @@ const ArkPage: React.FC = () => {
 
     useEffect(() => {
         const init = async () => {
-            const filteredAgents = await fetchAgents();
+            await fetchAgents();
             const sessionList = await getSessions();
             setSessions(sessionList);
 
-            if (sessionList.length > 0) {
-                const firstId = sessionList[0].id;
-                isSwitchingSession.current = true;
-                setCurrentSessionId(firstId);
-                const msgs = await loadSessionMessages(firstId);
-                setMessages(msgs);
-                const session = sessionList.find(s => s.id === firstId);
-                if (session?.agentId) {
-                    setActiveAgent(filteredAgents.find(a => a.id === session.agentId) || null);
-                } else {
-                    setActiveAgent(null);
-                }
-            } else {
-                handleNewChat();
-            }
+            handleNewChat();
             setLoading(false);
         };
         init();
@@ -398,6 +385,7 @@ const ArkPage: React.FC = () => {
         setMessages(msgs);
         setInputValue('');
         setMetrics(null);
+        setIsChatActive(true);
         if (agentId !== undefined && agentId !== null) {
             setActiveAgent(agents.find(a => String(a.id) === String(agentId)) || null);
         } else {
@@ -415,12 +403,14 @@ const ArkPage: React.FC = () => {
             setInputValue('');
             setMetrics(null);
             setActiveAgent(agents.find(a => String(a.id) === String(searchId)) || null);
+            setIsChatActive(true);
         } else {
             setCurrentSessionId(null);
             setMessages([]);
             setInputValue('');
             setMetrics(null);
             setActiveAgent(null);
+            setIsChatActive(false);
         }
         if (isGenerating) handleStop();
     };
@@ -484,6 +474,7 @@ const ArkPage: React.FC = () => {
             sessionIdForRequest = newSession.id;
             setCurrentSessionId(newSession.id);
             setSessions(prev => [newSession, ...prev]);
+            setIsChatActive(true);
         }
         const conversationContext = buildConversationContext(messages);
         const isFirstMessage = messages.length === 0;
@@ -698,7 +689,7 @@ const ArkPage: React.FC = () => {
 
                 <main className="relative flex min-w-0 flex-1 flex-col bg-white">
                     <AnimatePresence mode="wait">
-                        {!currentSessionId ? (
+                        {!currentSessionId && !isChatActive ? (
                         <motion.div
                             key="hub"
                             initial={{ opacity: 0, y: 8 }}
@@ -715,6 +706,7 @@ const ArkPage: React.FC = () => {
                                         setInputValue('');
                                         setMetrics(null);
                                         setActiveAgent(null);
+                                        setIsChatActive(true);
                                     }}
                                     className="mb-6 flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-sm transition-colors hover:bg-[#f4f4f4]"
                                     title="打开通用助手"
@@ -759,6 +751,7 @@ const ArkPage: React.FC = () => {
                                             setInputValue('');
                                             setMetrics(null);
                                             setActiveAgent(null);
+                                            setIsChatActive(true);
                                         }}
                                         className="group flex min-h-[92px] items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:bg-[#f7f7f7]"
                                     >

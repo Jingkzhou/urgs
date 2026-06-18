@@ -280,11 +280,13 @@ async def _stream_deep_agent(request: InvokeRequest, settings: Any) -> AsyncIter
             **runtime_kwargs,
         )
         emitted_text = False
+        tool_inputs: dict[str, Any] = {}
         yield _sse("agent", {"type": "thinking", "title": "正在思考", "content": "正在分析问题并规划下一步"})
         async for event in agent.astream_events({"messages": request.messages}, version="v2"):
             event_name = event.get("event")
             name = event.get("name") or ""
             data = event.get("data") or {}
+            run_id = event.get("run_id")
 
             if event_name == "on_chain_start" and name == "model":
                 yield _sse("agent", {"type": "thinking", "title": "正在组织回答", "content": "正在调用模型生成响应"})
@@ -298,6 +300,8 @@ async def _stream_deep_agent(request: InvokeRequest, settings: Any) -> AsyncIter
                 continue
 
             if event_name == "on_tool_start":
+                if run_id:
+                    tool_inputs[run_id] = data.get("input")
                 yield _sse(
                     "agent",
                     {
@@ -310,14 +314,21 @@ async def _stream_deep_agent(request: InvokeRequest, settings: Any) -> AsyncIter
                 continue
 
             if event_name == "on_tool_end":
+                output = data.get("output")
+                payload: dict[str, Any] = {
+                    "type": "tool_result",
+                    "title": f"工具 {name} 返回结果",
+                    "toolName": name,
+                    "content": _tool_result_text(output),
+                }
+                if run_id and run_id in tool_inputs:
+                    payload["args"] = tool_inputs.pop(run_id)
+                status = getattr(output, "status", None)
+                if status:
+                    payload["status"] = status
                 yield _sse(
                     "agent",
-                    {
-                        "type": "tool_result",
-                        "title": f"工具 {name} 返回结果",
-                        "toolName": name,
-                        "content": _tool_result_text(data.get("output")),
-                    },
+                    payload,
                 )
                 continue
 

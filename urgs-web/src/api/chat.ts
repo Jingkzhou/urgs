@@ -19,6 +19,7 @@ export interface AgentStreamEvent {
     content?: string;
     toolName?: string;
     toolCallId?: string;
+    status?: string;
     args?: any;
     timestamp: number;
 }
@@ -393,6 +394,7 @@ const processLine = (line: string, onChunk: (c: string) => void, onComplete: () 
                     content: parsed.content,
                     toolName: parsed.toolName,
                     toolCallId: parsed.toolCallId,
+                    status: parsed.status,
                     args: parsed.args,
                     timestamp: Date.now()
                 });

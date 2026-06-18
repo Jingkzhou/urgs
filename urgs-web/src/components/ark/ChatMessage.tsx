@@ -57,7 +57,27 @@ const isIndentedProseCode = (value: string) => {
     return value.length > 24 && /[\u4e00-\u9fff]/.test(value) && /[，。！？：；「」《》、]/.test(value);
 };
 
+const getToolPath = (event: AgentStreamEvent) => {
+    const args = event.args;
+    if (!args || typeof args !== 'object') return '';
+    const value = args.file_path || args.path;
+    return typeof value === 'string' ? value : '';
+};
+
+const formatAgentEventTitle = (event: AgentStreamEvent) => {
+    if (event.toolName === 'read_file') {
+        const path = getToolPath(event);
+        if (path) {
+            return event.type === 'tool_result' ? `已读取 ${path}` : `正在读取 ${path}`;
+        }
+    }
+    return event.title;
+};
+
 const formatAgentEventDetail = (event: AgentStreamEvent) => {
+    if (event.toolName === 'read_file' && getToolPath(event)) {
+        return '';
+    }
     const argsText = event.args === undefined || event.args === null
         ? ''
         : typeof event.args === 'string'
@@ -76,8 +96,17 @@ const getAgentEventStatus = (
     events: AgentStreamEvent[],
     isStreaming: boolean
 ): ThinkingStep['status'] => {
-    const text = `${event.title || ''} ${event.content || ''}`.toLowerCase();
-    if (text.includes('error') || text.includes('失败') || text.includes('异常')) {
+    const titleText = `${event.title || ''}`.toLowerCase();
+    const contentText = `${event.content || ''}`.trim().toLowerCase();
+    const explicitError = event.status === 'error'
+        || titleText.includes('error')
+        || titleText.includes('失败')
+        || titleText.includes('异常')
+        || contentText.startsWith('error:')
+        || contentText.startsWith('failed:')
+        || contentText.startsWith('permission denied')
+        || contentText.includes('file_not_found');
+    if (explicitError) {
         return 'error';
     }
     if (event.type === 'tool_result') {
@@ -92,7 +121,7 @@ const getAgentEventStatus = (
 const toThinkingSteps = (events: AgentStreamEvent[], isStreaming: boolean): ThinkingStep[] => {
     return events.map((event, index) => ({
         id: event.id,
-        title: event.title,
+        title: formatAgentEventTitle(event),
         description: formatAgentEventDetail(event),
         status: getAgentEventStatus(event, index, events, isStreaming),
         timestamp: event.timestamp ? new Date(event.timestamp).toLocaleTimeString() : undefined

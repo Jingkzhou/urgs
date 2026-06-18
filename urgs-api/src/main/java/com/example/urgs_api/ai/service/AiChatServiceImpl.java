@@ -51,6 +51,9 @@ public class AiChatServiceImpl implements AiChatService {
     @Autowired
     private AiAgentRunService aiAgentRunService;
 
+    @Autowired
+    private AiTokenBudgetService aiTokenBudgetService;
+
     @Override
     public String chat(String systemPrompt, String userPrompt) {
         return chat(null, systemPrompt, userPrompt, "chat");
@@ -87,7 +90,6 @@ public class AiChatServiceImpl implements AiChatService {
      * 持久化流式聊天 (New)
      */
     // Configuration Constants
-    private static final int MAX_CONTEXT_TOKENS = 30000; // 上下文最大 Token 限制
     private static final double TRIGGER_THRESHOLD = 0.2; // 触发压缩的阈值比例 (0.2 means 20% of MAX_TOKENS triggers compression
                                                          // - Modified for testing)
     private static final int KEEP_RECENT_ROUNDS = 3; // 保留最近的对话轮数 (不被压缩)
@@ -210,12 +212,8 @@ public class AiChatServiceImpl implements AiChatService {
             ragBuildModeHandler.applyContextToMessages(agent, messages, contextAugmentation);
         }
 
-        long totalChars = 0;
-        for (Map<String, String> msg : messages) {
-            totalChars += msg.getOrDefault("content", "").length();
-        }
-        final long used = totalChars / 4;
-        final long limit = MAX_CONTEXT_TOKENS;
+        final int used = aiTokenBudgetService.estimateMessages(messages);
+        final int limit = aiTokenBudgetService.resolveContextWindow(agent);
 
         try {
             emitter.send(SseEmitter.event().name("metrics")
@@ -341,15 +339,6 @@ public class AiChatServiceImpl implements AiChatService {
     }
 
     /**
-     * 简单估算 Token 数 (按字符数/4)
-     */
-    private int estimateTokens(String text) {
-        if (text == null || text.isEmpty())
-            return 0;
-        return text.length() / 4;
-    }
-
-    /**
      * 检查并压缩上下文 (Adaptive Context Summarization)
      * 如果历史消息 Token 超过阈值，则触发压缩
      * 
@@ -361,11 +350,15 @@ public class AiChatServiceImpl implements AiChatService {
             return false;
 
         // 估算当前所有消息的 Token 总数
-        long totalTokens = estimateTokens(history.stream().map(com.example.urgs_api.ai.entity.AiChatMessage::getContent)
-                .reduce("", String::concat));
+        long totalTokens = aiTokenBudgetService.estimateMessages(history.stream()
+                .map(message -> Map.of(
+                        "role", message.getRole() == null ? "" : message.getRole(),
+                        "content", message.getContent() == null ? "" : message.getContent()))
+                .toList());
+        int contextWindow = aiTokenBudgetService.resolveContextWindow(resolveSessionAgent(sessionId));
 
         // 只有超过阈值才触发 (default 80%, testing 20%)
-        if (totalTokens < MAX_CONTEXT_TOKENS * TRIGGER_THRESHOLD) {
+        if (totalTokens < contextWindow * TRIGGER_THRESHOLD) {
             return false;
         }
 
@@ -471,6 +464,11 @@ public class AiChatServiceImpl implements AiChatService {
             return null;
         }
         return aiChatHistoryService.getSession(sessionId);
+    }
+
+    private com.example.urgs_api.ai.entity.Agent resolveSessionAgent(String sessionId) {
+        com.example.urgs_api.ai.entity.AiChatSession session = resolveSession(sessionId);
+        return session != null && session.getAgentId() != null ? agentRepository.selectById(session.getAgentId()) : null;
     }
 
     // Internal helper for SSE Emitter non-persistence

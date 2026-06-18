@@ -83,6 +83,7 @@ async def run_worker(
 
     async def events() -> AsyncIterator[str]:
         nonlocal emitted_text
+        tool_inputs: dict[str, Any] = {}
         yield sse("worker", {"type": "worker", "status": "started", "agent_code": agent_code, "task": task})
         yield sse(
             "agent",
@@ -92,6 +93,7 @@ async def run_worker(
             event_name = event.get("event")
             name = event.get("name") or ""
             data = event.get("data") or {}
+            run_id = event.get("run_id")
 
             if event_name == "on_chat_model_stream":
                 text = chunk_text(data.get("chunk"))
@@ -104,6 +106,8 @@ async def run_worker(
                 continue
 
             if event_name == "on_tool_start":
+                if run_id:
+                    tool_inputs[run_id] = data.get("input")
                 yield sse(
                     "agent",
                     {
@@ -116,14 +120,21 @@ async def run_worker(
                 continue
 
             if event_name == "on_tool_end":
+                output = data.get("output")
+                payload: dict[str, Any] = {
+                    "type": "tool_result",
+                    "title": f"工具 {name} 返回结果",
+                    "toolName": name,
+                    "content": tool_result_text(output),
+                }
+                if run_id and run_id in tool_inputs:
+                    payload["args"] = tool_inputs.pop(run_id)
+                status = getattr(output, "status", None)
+                if status:
+                    payload["status"] = status
                 yield sse(
                     "agent",
-                    {
-                        "type": "tool_result",
-                        "title": f"工具 {name} 返回结果",
-                        "toolName": name,
-                        "content": tool_result_text(data.get("output")),
-                    },
+                    payload,
                 )
                 continue
 

@@ -6,6 +6,7 @@ import com.example.urgs_api.ai.entity.Agent;
 import com.example.urgs_api.ai.entity.AgentAppSkill;
 import com.example.urgs_api.ai.service.AiAgentRunService;
 import com.example.urgs_api.ai.service.AiChatHistoryService;
+import com.example.urgs_api.ai.service.AiTokenBudgetService;
 import com.example.urgs_api.ai.service.AgentAppSkillService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,7 +39,6 @@ public class AgentAppBuildModeHandler {
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final ExecutorService executor = Executors.newCachedThreadPool();
     private static final int AGENT_APP_TIMEOUT_SECONDS = 600;
-    private static final int MAX_CONTEXT_TOKENS = 30000;
     private static final int KEEP_RECENT_ROUNDS = 3;
     private static final String CONTEXT_FILE_SECURITY_NOTICE = """
             # 上下文安全说明
@@ -57,6 +57,9 @@ public class AgentAppBuildModeHandler {
 
     @Autowired
     private AiAgentRunService aiAgentRunService;
+
+    @Autowired
+    private AiTokenBudgetService aiTokenBudgetService;
 
     public boolean supports(Agent agent) {
         return agent != null && "AGENT_APP".equalsIgnoreCase(agent.getBuildMode());
@@ -82,12 +85,13 @@ public class AgentAppBuildModeHandler {
                 }
                 effectiveContext = prependSessionSummary(sessionId, effectiveContext);
                 effectiveContext = keepRecentConversationRounds(effectiveContext);
-                effectiveContext = limitConversationContext(effectiveContext, userPrompt, skill);
+                int contextWindow = aiTokenBudgetService.resolveContextWindow(agent);
+                effectiveContext = limitConversationContext(effectiveContext, userPrompt, skill, contextWindow);
                 agentAppPrompt = buildAgentAppPrompt(skill, userPrompt, effectiveContext);
 
                 emitter.send(SseEmitter.event().name("metrics")
                         .data(objectMapper.writeValueAsString(Map.of("used", agentAppPrompt.estimatedTokens(),
-                                "limit", MAX_CONTEXT_TOKENS))));
+                                "limit", contextWindow))));
 
                 executeAgentApp(agent, skill == null ? null : skill.getAppCode(), agentAppPrompt.query(), chunk -> {
                     response.append(chunk);
@@ -146,7 +150,7 @@ public class AgentAppBuildModeHandler {
         String contextFileContent = buildContextFileContent(skill, conversationContext);
         String currentPrompt = nullToEmpty(userPrompt);
         if (contextFileContent.isBlank()) {
-            return new AgentAppPrompt(currentPrompt, null, estimateTokens(currentPrompt));
+            return new AgentAppPrompt(currentPrompt, null, aiTokenBudgetService.estimateText(currentPrompt));
         }
 
         Path contextFile = Files.createTempFile("urgs-agent-app-context-", ".md");
@@ -158,7 +162,8 @@ public class AgentAppBuildModeHandler {
 
                 %s
                 """.formatted(contextFile.toAbsolutePath(), currentPrompt);
-        return new AgentAppPrompt(query, contextFile, estimateTokens(query) + estimateTokens(contextFileContent));
+        return new AgentAppPrompt(query, contextFile,
+                aiTokenBudgetService.estimateText(query) + aiTokenBudgetService.estimateText(contextFileContent));
     }
 
     private String buildContextFileContent(AgentAppSkill skill, List<Map<String, String>> conversationContext) {
@@ -298,17 +303,17 @@ public class AgentAppBuildModeHandler {
     }
 
     private List<Map<String, String>> limitConversationContext(List<Map<String, String>> context, String userPrompt,
-            AgentAppSkill skill) {
+            AgentAppSkill skill, int contextWindow) {
         if (context == null || context.isEmpty()) {
             return List.of();
         }
-        int reservedTokens = estimateTokens(nullToEmpty(userPrompt)) + 512;
+        int reservedTokens = aiTokenBudgetService.estimateText(nullToEmpty(userPrompt)) + 512;
         if (skill != null) {
-            reservedTokens += estimateTokens(nullToEmpty(skill.getName()))
-                    + estimateTokens(nullToEmpty(skill.getCode()))
-                    + estimateTokens(nullToEmpty(skill.getInstruction()));
+            reservedTokens += aiTokenBudgetService.estimateText(nullToEmpty(skill.getName()))
+                    + aiTokenBudgetService.estimateText(nullToEmpty(skill.getCode()))
+                    + aiTokenBudgetService.estimateText(nullToEmpty(skill.getInstruction()));
         }
-        int contextBudget = Math.max(0, MAX_CONTEXT_TOKENS - reservedTokens);
+        int contextBudget = Math.max(0, contextWindow - reservedTokens);
         if (contextBudget <= 0) {
             return List.of();
         }
@@ -326,11 +331,11 @@ public class AgentAppBuildModeHandler {
         List<Map<String, String>> selected = new ArrayList<>(systemMessages);
         int usedTokens = 0;
         for (Map<String, String> item : systemMessages) {
-            usedTokens += estimateTokens(formatContextMessage(item));
+            usedTokens += aiTokenBudgetService.estimateText(formatContextMessage(item));
         }
         for (int i = conversationMessages.size() - 1; i >= 0; i--) {
             Map<String, String> item = conversationMessages.get(i);
-            int itemTokens = estimateTokens(formatContextMessage(item));
+            int itemTokens = aiTokenBudgetService.estimateText(formatContextMessage(item));
             if (itemTokens <= 0) {
                 continue;
             }
@@ -521,13 +526,6 @@ public class AgentAppBuildModeHandler {
             }
         }
         return null;
-    }
-
-    private int estimateTokens(String text) {
-        if (text == null || text.isEmpty()) {
-            return 0;
-        }
-        return text.length() / 4;
     }
 
     private String stripAnsi(String text) {

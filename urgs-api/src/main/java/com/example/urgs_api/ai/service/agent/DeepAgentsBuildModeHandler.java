@@ -5,6 +5,7 @@ import com.example.urgs_api.ai.entity.AiChatMessage;
 import com.example.urgs_api.ai.entity.Agent;
 import com.example.urgs_api.ai.service.AiAgentRunService;
 import com.example.urgs_api.ai.service.AiChatHistoryService;
+import com.example.urgs_api.ai.service.AiTokenBudgetService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,21 +34,23 @@ public class DeepAgentsBuildModeHandler {
     private static final Logger log = LoggerFactory.getLogger(DeepAgentsBuildModeHandler.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final ExecutorService executor = Executors.newCachedThreadPool();
-    private static final int MAX_CONTEXT_TOKENS = 30000;
     private static final int KEEP_RECENT_ROUNDS = 3;
 
     private final AiChatHistoryService aiChatHistoryService;
     private final AiAgentRunService aiAgentRunService;
+    private final AiTokenBudgetService aiTokenBudgetService;
     private final String deepAgentsBaseUrl;
     private final DeepAgentsOrchestratorClient orchestratorClient;
 
     public DeepAgentsBuildModeHandler(
             AiChatHistoryService aiChatHistoryService,
             AiAgentRunService aiAgentRunService,
+            AiTokenBudgetService aiTokenBudgetService,
             DeepAgentsOrchestratorClient orchestratorClient,
             @Value("${urgs.deepagents.base-url:http://127.0.0.1:8003}") String deepAgentsBaseUrl) {
         this.aiChatHistoryService = aiChatHistoryService;
         this.aiAgentRunService = aiAgentRunService;
+        this.aiTokenBudgetService = aiTokenBudgetService;
         this.orchestratorClient = orchestratorClient;
         this.deepAgentsBaseUrl = deepAgentsBaseUrl;
     }
@@ -82,11 +85,10 @@ public class DeepAgentsBuildModeHandler {
                 emitter.send(SseEmitter.event().name("status").data("deepagents_orchestrating"));
 
                 List<Map<String, String>> messages = buildMessages(sessionId, userPrompt, conversationContext);
-                long used = estimateTokens(messages.stream()
-                        .map(item -> item.getOrDefault("content", ""))
-                        .reduce("", String::concat));
+                int used = aiTokenBudgetService.estimateMessages(messages);
+                int limit = aiTokenBudgetService.resolveContextWindow(preselectedAgent);
                 emitter.send(SseEmitter.event().name("metrics")
-                        .data(objectMapper.writeValueAsString(Map.of("used", used, "limit", MAX_CONTEXT_TOKENS))));
+                        .data(objectMapper.writeValueAsString(Map.of("used", used, "limit", limit))));
 
                 Map<String, Object> body = buildOrchestratorRequest(
                         resolveSystemPrompt(preselectedAgent, systemPrompt), messages, preselectedAgent, catalog);
@@ -675,7 +677,4 @@ public class DeepAgentsBuildModeHandler {
         return value == null ? "" : value;
     }
 
-    private long estimateTokens(String text) {
-        return text == null || text.isEmpty() ? 0 : text.length() / 4;
-    }
 }
