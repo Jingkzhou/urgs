@@ -2,6 +2,7 @@ package com.example.urgs_api.ai.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.urgs_api.ai.entity.Agent;
+import com.example.urgs_api.ai.client.DefaultAiChatClient;
 import com.example.urgs_api.ai.service.agent.AgentAppBuildModeHandler;
 import com.example.urgs_api.ai.service.agent.DeepAgentsBuildModeHandler;
 import com.example.urgs_api.ai.service.agent.DifyBuildModeHandler;
@@ -41,6 +42,9 @@ public class AiChatServiceImpl implements AiChatService {
 
     @Autowired
     private DeepAgentsBuildModeHandler deepAgentsBuildModeHandler;
+
+    @Autowired
+    private DefaultAiChatClient defaultAiChatClient;
 
     @Autowired
     private RagBuildModeHandler ragBuildModeHandler;
@@ -570,7 +574,7 @@ public class AiChatServiceImpl implements AiChatService {
             }
 
             String systemPrompt = extractSystemPrompt(messages);
-            deepAgentsBuildModeHandler.streamDefault(systemPrompt, messages, chunkConsumer, onComplete, onError);
+            defaultAiChatClient.stream(systemPrompt, messages, chunkConsumer, onComplete, onError);
         } catch (Exception e) {
             log.error("AI stream chat error", e);
             onError.accept(e);

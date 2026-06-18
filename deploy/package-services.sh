@@ -30,6 +30,7 @@ Services:
   executor     Build and package urgs-executor Spring Boot service.
   rag          Package urgs-rag Python service source and requirements.
   agent        Package urgs-agent LangGraph runtime source and lock file.
+  deepagents   Package urgs-deepagents DeepAgents service source and lock file.
   lineage      Package sql-lineage-engine source and requirements.
 
 Components:
@@ -38,7 +39,7 @@ Components:
   onlyoffice   Package official ARM64 ONLYOFFICE Document Server DEB.
 
 Groups:
-  app-all      api web executor rag agent lineage
+  app-all      api web executor rag agent deepagents lineage
   deps-all     nginx redis onlyoffice
   full         app-all deps-all
 
@@ -89,6 +90,7 @@ normalize_service() {
         executor | urgs-executor) echo "executor" ;;
         rag | urgs-rag) echo "rag" ;;
         agent | urgs-agent) echo "agent" ;;
+        deepagents | urgs-deepagents) echo "deepagents" ;;
         lineage | sql-lineage-engine) echo "lineage" ;;
         nginx) echo "nginx" ;;
         redis) echo "redis" ;;
@@ -341,6 +343,14 @@ package_agent() {
     copy_with_rsync "${ROOT_DIR}/urgs-agent/" "${WORK_DIR}/services/agent/"
 }
 
+package_deepagents() {
+    log "Packaging urgs-deepagents source."
+    [ -f "${ROOT_DIR}/urgs-deepagents/pyproject.toml" ] || die "urgs-deepagents/pyproject.toml does not exist."
+    [ -f "${ROOT_DIR}/urgs-deepagents/uv.lock" ] || die "urgs-deepagents/uv.lock does not exist. Run uv sync first."
+    mkdir -p "${WORK_DIR}/services/deepagents"
+    copy_with_rsync "${ROOT_DIR}/urgs-deepagents/" "${WORK_DIR}/services/deepagents/"
+}
+
 package_lineage() {
     log "Packaging sql-lineage-engine source."
     [ -f "${ROOT_DIR}/sql-lineage-engine/requirements.txt" ] || die "sql-lineage-engine/requirements.txt does not exist."
@@ -460,13 +470,13 @@ configure_package_name
 for raw_service in "${ARGS[@]}"; do
     case "$raw_service" in
         app-all)
-            for service in api web executor rag agent lineage; do append_service "$service"; done
+            for service in api web executor rag agent deepagents lineage; do append_service "$service"; done
             ;;
         deps-all)
             for service in nginx redis onlyoffice; do append_service "$service"; done
             ;;
         full)
-            for service in api web executor rag agent lineage nginx redis onlyoffice; do append_service "$service"; done
+            for service in api web executor rag agent deepagents lineage nginx redis onlyoffice; do append_service "$service"; done
             ;;
         *)
             service="$(normalize_service "$raw_service")" || die "Unknown service: ${raw_service}"
@@ -490,6 +500,7 @@ for service in "${SERVICES[@]}"; do
         executor) build_executor ;;
         rag) package_rag ;;
         agent) package_agent ;;
+        deepagents) package_deepagents ;;
         lineage) package_lineage ;;
         nginx | redis | onlyoffice) package_component "$service" ;;
         *) die "Unhandled service: ${service}" ;;

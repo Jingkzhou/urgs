@@ -32,8 +32,9 @@ config/deploy.env
 - Neo4j：`NEO4J_HOST` / `NEO4J_PORT_BOLT` / `NEO4J_USER` / `NEO4J_PASSWORD`
 - SSO 私钥：`URGS_INBOUND_SSO_RSA_PRIVATE_KEY`
 - RAG/LLM：`LLM_API_BASE` / `LLM_MODEL` / `LLM_API_KEY`
-- 端口：`API_PORT` / `EXECUTOR_PORT` / `RAG_PORT` / `AGENT_PORT` / `WEB_LISTEN_PORT`
+- 端口：`API_PORT` / `EXECUTOR_PORT` / `RAG_PORT` / `AGENT_PORT` / `DEEPAGENTS_PORT` / `WEB_LISTEN_PORT`
 - Agent Runtime：`AGENT_DATABASE_URL` / `AGENT_CHECKPOINT_DATABASE_URL` / `AGENT_REDIS_URL` / `AGENT_OPENAI_BASE_URL`
+- DeepAgents Service：`URGS_DEEPAGENTS_BASE_URL` / `DEEPAGENTS_MODEL` / `DEEPAGENTS_ENABLE_WRITE_TOOLS`
 - Nginx 代理：`API_TARGET` / `API_UPSTREAM_SERVERS` / `RAG_TARGET` / `IM_API_TARGET`
 - JVM：`API_JAVA_OPTS` / `EXECUTOR_JAVA_OPTS`
 
@@ -109,11 +110,11 @@ dist-packages/urgs-<环境>-<时间戳>.tar.gz
 常用服务组合：
 
 ```bash
-# 完整包：api web executor rag agent lineage nginx redis onlyoffice
+# 完整包：api web executor rag agent deepagents lineage nginx redis onlyoffice
 DEPLOY_ENV=prod deploy/package-services.sh full
 
 # 只打应用，不带 nginx / redis
-DEPLOY_ENV=prod deploy/package-services.sh api web executor rag agent lineage
+DEPLOY_ENV=prod deploy/package-services.sh api web executor rag agent deepagents lineage
 
 # 只升级 api 和 web
 DEPLOY_ENV=prod PACKAGE_NAME=urgs-api-web deploy/package-services.sh api web nginx

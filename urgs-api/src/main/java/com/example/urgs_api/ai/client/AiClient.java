@@ -1,6 +1,5 @@
 package com.example.urgs_api.ai.client;
 
-import com.example.urgs_api.ai.service.agent.DeepAgentsBuildModeHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,7 +42,7 @@ public class AiClient {
     private static final ExecutorService executor = Executors.newCachedThreadPool();
 
     @Autowired
-    private DeepAgentsBuildModeHandler deepAgentsBuildModeHandler;
+    private DefaultAiChatClient defaultAiChatClient;
 
     /**
      * 简单聊天（使用默认系统提示）
@@ -120,7 +119,7 @@ public class AiClient {
      */
     void executeRequest(ChatRequestBuilder builder) {
         try {
-            String response = deepAgentsBuildModeHandler.invokeDefault(builder.systemPrompt, List.of(
+            String response = defaultAiChatClient.invoke(builder.systemPrompt, List.of(
                     Map.of("role", "user", "content", builder.userPrompt)));
             if (response != null && !response.isEmpty() && builder.onChunk != null) {
                 builder.onChunk.accept(response);

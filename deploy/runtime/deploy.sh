@@ -40,6 +40,7 @@ apply_runtime_defaults() {
     EXECUTOR_PORT="${EXECUTOR_PORT:-8082}"
     RAG_PORT="${RAG_PORT:-8001}"
     AGENT_PORT="${AGENT_PORT:-8002}"
+    DEEPAGENTS_PORT="${DEEPAGENTS_PORT:-8003}"
     WEB_LISTEN_PORT="${WEB_LISTEN_PORT:-18080}"
     WEB_SERVER_NAME="${WEB_SERVER_NAME:-_}"
     API_TARGET="${API_TARGET:-http://127.0.0.1:${API_PORT}}"
@@ -96,7 +97,7 @@ Usage:
   bin/deploy.sh stop             Stop selected services.
   bin/deploy.sh restart          Restart selected services.
   bin/deploy.sh status           Show selected service status.
-  bin/deploy.sh restart api      Restart one service: api, executor, rag, redis, nginx, web-static.
+  bin/deploy.sh restart api      Restart one service: api, executor, rag, deepagents, redis, nginx, web-static.
   bin/deploy.sh nginx-config     Render nginx config to stdout.
 
 Before running, edit config/deploy.env only when the package was not generated with production values.
@@ -191,7 +192,7 @@ install_package_to_deploy_home() {
     while IFS= read -r service || [ -n "$service" ]; do
         [ -n "$service" ] || continue
         case "$service" in
-            api | web | executor | rag | lineage)
+            api | web | executor | rag | deepagents | lineage)
                 copy_dir_replace_with_backup "${PACKAGE_DIR}/services/${service}" "${ROOT_DIR}/services/${service}" "$backup_dir" "services/${service}"
                 ;;
             nginx | redis | onlyoffice)
@@ -538,6 +539,7 @@ export_common_env() {
     export RAG_BASE_URL="${RAG_BASE_URL:-http://127.0.0.1:${RAG_PORT}/api/rag}"
     export EXECUTOR_BASE_URL="${EXECUTOR_BASE_URL:-http://127.0.0.1:${EXECUTOR_PORT}}"
     export URGS_API_BASE_URL="${URGS_API_BASE_URL:-}"
+    export URGS_DEEPAGENTS_BASE_URL="${URGS_DEEPAGENTS_BASE_URL:-http://127.0.0.1:${DEEPAGENTS_PORT}}"
     export ONLYOFFICE_DOCUMENT_SERVER_URL="${ONLYOFFICE_DOCUMENT_SERVER_URL:-http://localhost:${ONLYOFFICE_PORT}}"
     export ONLYOFFICE_CALLBACK_SECRET="${ONLYOFFICE_CALLBACK_SECRET:-urgs-onlyoffice-callback-secret}"
     export ONLYOFFICE_JWT_SECRET="${ONLYOFFICE_JWT_SECRET:-}"
@@ -551,6 +553,8 @@ export_common_env() {
     export CLEAN_SAMPLE_DIR="${CLEAN_SAMPLE_DIR:-${DATA_ROOT}/rag/clean_samples}"
     export DEPLOY_TOOL_WORKDIR="${DEPLOY_TOOL_WORKDIR:-${DATA_ROOT}/db_deploy}"
     export LINEAGE_ENGINE_SHARED_DIR="${LINEAGE_ENGINE_SHARED_DIR:-${DATA_ROOT}/lineage/share}"
+    export DEEPAGENTS_URGS_API_URL="${DEEPAGENTS_URGS_API_URL:-http://127.0.0.1:${API_PORT}}"
+    export DEEPAGENTS_INTERNAL_API_TOKEN="${DEEPAGENTS_INTERNAL_API_TOKEN:-${URGS_INTERNAL_API_TOKEN}}"
 }
 
 start_api() {
@@ -618,6 +622,17 @@ start_agent() {
         start_background agent-api .venv/bin/python -m uvicorn urgs_agent.main:app --host "${AGENT_HOST:-0.0.0.0}" --port "$AGENT_PORT")
     (cd "${ROOT_DIR}/services/agent" && \
         start_background agent-worker .venv/bin/python -m urgs_agent.worker)
+}
+
+start_deepagents() {
+    service_enabled deepagents || return 0
+    ensure_venv deepagents
+    stop_conflicting_port deepagents "$DEEPAGENTS_PORT"
+    export_common_env
+    export DEEPAGENTS_PORT DEEPAGENTS_URGS_API_URL DEEPAGENTS_INTERNAL_API_TOKEN
+    export DEEPAGENTS_MODEL DEEPAGENTS_LOG_LEVEL DEEPAGENTS_ENABLE_WRITE_TOOLS
+    (cd "${ROOT_DIR}/services/deepagents" && \
+        start_background deepagents .venv/bin/python -m uvicorn urgs_deepagents_service.main:app --host "${DEEPAGENTS_HOST:-0.0.0.0}" --port "$DEEPAGENTS_PORT")
 }
 
 start_web_static() {
@@ -804,6 +819,7 @@ install_all() {
     service_enabled onlyoffice && install_onlyoffice
     service_enabled rag && ensure_venv rag
     service_enabled agent && ensure_venv agent
+    service_enabled deepagents && ensure_venv deepagents
     service_enabled lineage && ensure_venv lineage
     install_nginx_config
     log "Install step completed."
@@ -838,6 +854,7 @@ start_all() {
     start_onlyoffice
     start_rag
     start_agent
+    start_deepagents
     start_executor
     start_api
     render_runtime_config
@@ -853,6 +870,7 @@ start_one() {
         executor) start_executor ;;
         rag) start_rag ;;
         agent) start_agent ;;
+        deepagents) start_deepagents ;;
         redis) start_redis ;;
         onlyoffice) start_onlyoffice ;;
         nginx) install_nginx_config; start_nginx ;;
@@ -869,6 +887,7 @@ stop_all() {
     service_enabled rag && stop_service rag
     service_enabled agent && stop_service agent-worker
     service_enabled agent && stop_service agent-api
+    service_enabled deepagents && stop_service deepagents
     service_enabled redis && stop_service redis
     stop_onlyoffice
     true
@@ -876,7 +895,7 @@ stop_all() {
 
 stop_one() {
     case "$1" in
-        api | executor | rag | redis | web-static) stop_service "$1" ;;
+        api | executor | rag | deepagents | redis | web-static) stop_service "$1" ;;
         onlyoffice) stop_onlyoffice ;;
         agent) stop_service agent-worker; stop_service agent-api ;;
         nginx) stop_nginx ;;
@@ -890,6 +909,7 @@ status_all() {
     service_enabled rag && status_service rag
     service_enabled agent && status_service agent-api
     service_enabled agent && status_service agent-worker
+    service_enabled deepagents && status_service deepagents
     service_enabled redis && status_service redis
     service_enabled onlyoffice && status_onlyoffice
     service_enabled nginx && status_service nginx
@@ -900,7 +920,7 @@ status_all() {
 
 status_one() {
     case "$1" in
-        api | executor | rag | redis | nginx | web-static) status_service "$1" ;;
+        api | executor | rag | deepagents | redis | nginx | web-static) status_service "$1" ;;
         onlyoffice) status_onlyoffice ;;
         agent) status_service agent-api; status_service agent-worker ;;
         *) die "Unknown service: $1" ;;
