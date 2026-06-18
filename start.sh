@@ -398,6 +398,10 @@ start_agent() {
   fi
 
   echo "Preparing agent Python 3.11 environment..."
+  if [ -d ".venv" ] && [ ! -x ".venv/bin/python" ]; then
+    echo "Found invalid agent .venv; recreating it..."
+    rm -rf .venv
+  fi
   if [ "$ENVIRONMENT" = "local" ] || [ "$ENVIRONMENT" = "dev" ]; then
     uv sync --frozen --extra dev
   else
@@ -438,6 +442,10 @@ start_deepagents() {
   export DEEPAGENTS_INTERNAL_API_TOKEN="${DEEPAGENTS_INTERNAL_API_TOKEN:-$URGS_INTERNAL_API_TOKEN}"
 
   echo "Preparing DeepAgents Python 3.11 environment..."
+  if [ -d ".venv" ] && [ ! -x ".venv/bin/python" ]; then
+    echo "Found invalid DeepAgents .venv; recreating it..."
+    rm -rf .venv
+  fi
   if [ "$ENVIRONMENT" = "local" ] || [ "$ENVIRONMENT" = "dev" ]; then
     uv sync --frozen --extra dev
   else
