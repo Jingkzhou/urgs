@@ -42,6 +42,7 @@ EXECUTOR_DIR="$SCRIPT_DIR/urgs-executor"
 WEB_DIR="$SCRIPT_DIR/urgs-web"
 RAG_DIR="$SCRIPT_DIR/urgs-rag"
 PRESENTATION_DIR="$SCRIPT_DIR/urgs+-presentation-platform"
+DEEPAGENTS_DIR="$SCRIPT_DIR/urgs-deepagents"
 LOCAL_ENV_FILE="${START_ENV_FILE:-$SCRIPT_DIR/deploy/templates/deploy.${ENVIRONMENT}.env}"
 if [ "$ENVIRONMENT" = "local" ]; then
   LOCAL_ENV_FILE="${START_ENV_FILE:-$SCRIPT_DIR/deploy/templates/deploy.local.env}"
@@ -59,6 +60,7 @@ ENABLE_FRONTEND=false
 ENABLE_RAG=false
 ENABLE_PRESENTATION=false
 ENABLE_ONLYOFFICE=false
+ENABLE_DEEPAGENTS=false
 
 NODE_BIN=""
 NPM_BIN=""
@@ -415,9 +417,39 @@ start_agent() {
   pids+=($!)
 }
 
+start_deepagents() {
+  echo "Starting DeepAgents service..."
+  cd "$DEEPAGENTS_DIR"
+  load_env_file
+
+  local deepagents_port="${DEEPAGENTS_PORT:-8003}"
+  kill_port_if_exists "$deepagents_port"
+
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "uv not found. Install uv before starting urgs-deepagents."
+    exit 1
+  fi
+
+  if [ -z "${DEEPAGENTS_URGS_API_URL:-}" ]; then
+    export DEEPAGENTS_URGS_API_URL="${URGS_API_URL:-${AGENT_URGS_API_URL:-http://127.0.0.1:8080}}"
+  fi
+
+  echo "Preparing DeepAgents Python 3.11 environment..."
+  if [ "$ENVIRONMENT" = "local" ] || [ "$ENVIRONMENT" = "dev" ]; then
+    uv sync --frozen --extra dev
+  else
+    uv sync --frozen --no-dev
+  fi
+  export PYTHONPATH="$DEEPAGENTS_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
+
+  echo "Starting DeepAgents API on port $deepagents_port..."
+  .venv/bin/uvicorn urgs_deepagents_service.main:app --host "${DEEPAGENTS_HOST:-0.0.0.0}" --port "$deepagents_port" &
+  pids+=($!)
+}
+
 # --- Interactive Menu ---
 echo "Multiple services detected. Please select which ones to start:"
-echo "  [1] All Services (Backend, Executor, Frontend, RAG, Agent)"
+echo "  [1] All Services (Backend, Executor, Frontend, RAG, Agent, DeepAgents)"
 echo "  [2] Backend (urgs-api)"
 echo "  [3] Executor (urgs-executor)"
 echo "  [4] Frontend (urgs-web)"
@@ -425,6 +457,7 @@ echo "  [5] RAG (urgs-rag)"
 echo "  [6] Presentation (urgs-presentation)"
 echo "  [7] Agent (urgs-agent)"
 echo "  [8] ONLYOFFICE Docs"
+echo "  [9] DeepAgents (urgs-deepagents)"
 echo ""
 echo "Enter your choice (e.g., '1' for all, or '2 7' for Backend+Agent):"
 read -r -a choices
@@ -444,6 +477,7 @@ for choice in "${choices[@]}"; do
       ENABLE_PRESENTATION=true
       ENABLE_AGENT=true
       ENABLE_ONLYOFFICE=true
+      ENABLE_DEEPAGENTS=true
       ;;
     2) ENABLE_BACKEND=true ;;
     3) ENABLE_EXECUTOR=true ;;
@@ -452,6 +486,7 @@ for choice in "${choices[@]}"; do
     6) ENABLE_PRESENTATION=true ;;
     7) ENABLE_AGENT=true ;;
     8) ENABLE_ONLYOFFICE=true ;;
+    9) ENABLE_DEEPAGENTS=true ;;
     *) echo "Unknown option: $choice (ignored)" ;;
   esac
 done
@@ -469,6 +504,7 @@ if [ "$ENABLE_FRONTEND" = true ]; then start_frontend; fi
 if [ "$ENABLE_RAG" = true ]; then start_rag; fi
 if [ "$ENABLE_PRESENTATION" = true ]; then start_presentation; fi
 if [ "$ENABLE_AGENT" = true ]; then start_agent; fi
+if [ "$ENABLE_DEEPAGENTS" = true ]; then start_deepagents; fi
 
 if [ ${#pids[@]} -eq 0 ] && [ "$external_services" -eq 0 ]; then
   echo "No services selected. Exiting."
