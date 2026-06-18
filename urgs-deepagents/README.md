@@ -110,6 +110,7 @@ Input Guard → Router/Supervisor → Planner (if complex) → Worker → Review
 | 端点 | 方法 | 描述 |
 |------|------|------|
 | `/health/live` | GET | 健康检查 |
+| `/health/ready` | GET | 就绪检查：校验模型配置来源或 URGS 默认 AI API 配置 |
 | `/v1/upstream` | GET | 返回 upstream 信息（包名、版本、仓库、commit、license） |
 | `/v1/router/route` | POST | Router Agent：根据任务描述和 agent 目录选择最合适的 agent |
 | `/v1/agents/invoke` | POST | 同步调用 DeepAgent |
@@ -122,6 +123,8 @@ Input Guard → Router/Supervisor → Planner (if complex) → Worker → Review
 - **默认排除 execute 工具** — `DEFAULT_EXCLUDED_TOOLS` = `{"execute"}`
 - **工具可见性过滤** — 支持 `tool_allowlist` 白名单控制，`ToolVisibilityMiddleware` 在每次模型调用时动态过滤工具列表
 - **Input Guard** — 编排管道前置安全校验
+- **错误脱敏** — SSE/HTTP 错误会脱敏 token、密钥和内部地址
+- **本地前置校验** — 空输入、常见提示词注入、敏感信息、高危生产动作会先于模型调用被拒绝
 
 ## 模型获取机制
 
@@ -134,6 +137,28 @@ GET ${DEEPAGENTS_URGS_API_URL}/api/internal/ai/config/default
 该接口使用 `DEEPAGENTS_INTERNAL_API_TOKEN` 鉴权；通过根目录 `start.sh` 启动时会自动复用 `URGS_INTERNAL_API_TOKEN`。
 
 只有显式设置 `DEEPAGENTS_MODEL` 或在请求体中传 `model` 时，才会覆盖该默认配置。
+
+模型来源优先级：
+
+1. 请求体 `model`
+2. `DEEPAGENTS_MODEL`
+3. URGS 后端默认 AI API 配置
+
+`/health/ready` 使用相同的配置来源判断服务是否可接收请求：如果配置了 `DEEPAGENTS_MODEL`，直接返回 ready；否则会读取 URGS 默认 AI API 配置，失败时返回 503。
+
+## SSE 事件约定
+
+`/v1/agents/stream` 与 `/v1/orchestrator/stream` 保持原有 `event` 名称与旧字段，同时为每个 payload 增加稳定 envelope 字段：
+
+| 字段 | 说明 |
+|------|------|
+| `event` | SSE event 名称 |
+| `run_id` | 本次请求级 ID，同一条流内保持一致 |
+| `step_id` | 阶段/步骤 ID |
+| `agent_code` | 当前 Agent 编码；无 Agent 上下文时为 `null` |
+| `timestamp` | UTC ISO 时间 |
+| `status` | `started` / `completed` / `passed` / `failed` / `rejected` / `streaming` 等 |
+| `message` | 面向日志与调试的阶段消息 |
 
 ## 本地开发
 
@@ -148,6 +173,7 @@ uv run uvicorn urgs_deepagents_service.main:app --host 0.0.0.0 --port 8003
 
 ```bash
 curl http://127.0.0.1:8003/health/live
+curl http://127.0.0.1:8003/health/ready
 ```
 
 查看 upstream 信息：
@@ -177,7 +203,11 @@ curl -X POST http://127.0.0.1:8003/v1/agents/stream \
 
 ```bash
 uv run pytest tests/ -v
+uv run ruff check .
+uv run mypy src/
 ```
+
+`src/deepagents/` 是 vendored upstream 源码，ruff/mypy 配置排除或忽略该包的静态检查错误，避免为了本服务门禁修改 upstream 文件。
 
 ## 环境变量
 
