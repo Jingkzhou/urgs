@@ -1,9 +1,10 @@
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from hmac import compare_digest
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from deepagents import __version__
@@ -316,6 +317,15 @@ def create_app() -> FastAPI:
     app = FastAPI(title="URGS DeepAgents Service", version="0.1.0", lifespan=lifespan)
     app.middleware("http")(request_context_middleware)
 
+    def require_internal_auth(request: Request) -> None:
+        if not settings.internal_api_token:
+            return
+        actual = request.headers.get(settings.internal_api_auth_header, "")
+        expected = settings.internal_api_auth_prefix + settings.internal_api_token
+        if compare_digest(actual, expected) or compare_digest(actual, settings.internal_api_token):
+            return
+        raise HTTPException(status_code=401, detail="内部 API 鉴权失败")
+
     @app.get("/health/live", tags=["health"])
     def live() -> dict[str, str]:
         return {"status": "UP", "service": settings.service_name}
@@ -341,7 +351,12 @@ def create_app() -> FastAPI:
             license="MIT",
         )
 
-    @app.post("/v1/router/route", response_model=RouterRouteResponse, tags=["router"])
+    @app.post(
+        "/v1/router/route",
+        response_model=RouterRouteResponse,
+        tags=["router"],
+        dependencies=[Depends(require_internal_auth)],
+    )
     def route(request: RouterRouteRequest) -> RouterRouteResponse:
         if not request.agents:
             raise HTTPException(status_code=400, detail="agents 不能为空")
@@ -371,7 +386,12 @@ def create_app() -> FastAPI:
                 detail=f"Router Agent 分发失败: {sanitize_text(exc)}",
             ) from exc
 
-    @app.post("/v1/agents/invoke", response_model=InvokeResponse, tags=["deepagents"])
+    @app.post(
+        "/v1/agents/invoke",
+        response_model=InvokeResponse,
+        tags=["deepagents"],
+        dependencies=[Depends(require_internal_auth)],
+    )
     def invoke(request: InvokeRequest) -> InvokeResponse:
         try:
             model = build_chat_model(settings, request.model or settings.model)
@@ -396,7 +416,9 @@ def create_app() -> FastAPI:
                 detail=f"DeepAgents 调用失败: {sanitize_text(exc)}",
             ) from exc
 
-    @app.post("/v1/agents/stream", tags=["deepagents"])
+    @app.post(
+        "/v1/agents/stream", tags=["deepagents"], dependencies=[Depends(require_internal_auth)]
+    )
     def stream(request: InvokeRequest) -> StreamingResponse:
         return StreamingResponse(
             _stream_deep_agent(request, settings),
@@ -404,7 +426,11 @@ def create_app() -> FastAPI:
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    @app.post("/v1/orchestrator/stream", tags=["orchestrator"])
+    @app.post(
+        "/v1/orchestrator/stream",
+        tags=["orchestrator"],
+        dependencies=[Depends(require_internal_auth)],
+    )
     def orchestrator_stream(request: OrchestratorRequest) -> StreamingResponse:
         return StreamingResponse(
             stream_orchestration(request, settings),

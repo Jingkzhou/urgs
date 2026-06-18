@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     request_timeout_seconds: float = Field(default=600.0, gt=0)
     config_request_timeout_seconds: float = Field(default=10.0, gt=0)
     recursion_limit: int = Field(default=100, ge=25)
+    enable_write_tools: bool = False
     workspace_root: str | None = None
     memory_files: str = ""
     skill_dirs: str = ""

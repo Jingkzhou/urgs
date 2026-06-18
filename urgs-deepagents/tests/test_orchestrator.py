@@ -381,6 +381,56 @@ async def test_complex_path_uses_planner_and_finalizer(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_complex_planner_only_receives_deepagents_candidates(monkeypatch) -> None:
+    _patch_guard(monkeypatch, passed=True)
+    _patch_router(monkeypatch, "lineage-agent", is_complex=True)
+    captured_candidates: list[str] = []
+
+    async def fake_planner(
+        model: Any, user_message: str, candidate_agents: list[str]
+    ) -> list[PlanStep]:
+        captured_candidates.extend(candidate_agents)
+        return [PlanStep(step=1, agent="lineage-agent", task="分析", depends_on=[])]
+
+    monkeypatch.setattr(planner_mod, "run_planner", fake_planner)
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.run_planner", fake_planner
+    )
+    _patch_worker(monkeypatch, answer="step-output")
+    _patch_review(monkeypatch, passed=True)
+    _patch_finalizer(monkeypatch, answer="final")
+    request = OrchestratorRequest(messages="复杂任务", agents=_agents(), agent_configs=_configs())
+    events = await _make_stream(monkeypatch, request)
+
+    assert captured_candidates == ["general-agent", "lineage-agent"]
+    assert "rag-agent" not in captured_candidates
+    assert events[-1][0] == "done"
+
+
+@pytest.mark.asyncio
+async def test_complex_plan_handoffs_non_deepagents_step(monkeypatch) -> None:
+    _patch_guard(monkeypatch, passed=True)
+    _patch_router(monkeypatch, "lineage-agent", is_complex=True)
+    _patch_planner(monkeypatch, [("rag-agent", "知识库问答")])
+
+    async def fail_worker(**kwargs: Any):
+        raise AssertionError("non-DeepAgents planned step must not run a worker")
+
+    monkeypatch.setattr(worker_mod, "run_worker", fail_worker)
+    monkeypatch.setattr("urgs_deepagents_service.orchestrator.orchestrator.run_worker", fail_worker)
+    request = OrchestratorRequest(messages="复杂任务", agents=_agents(), agent_configs=_configs())
+    events = await _make_stream(monkeypatch, request)
+
+    names = [name for name, _ in events]
+    handoff = next(data for name, data in events if name == "handoff")
+    done = events[-1][1]
+    assert "worker" not in names
+    assert handoff["agent_code"] == "rag-agent"
+    assert handoff["reason"] == "planned_step_without_deepagents_config"
+    assert done["handoff"] is True
+
+
+@pytest.mark.asyncio
 async def test_rework_pass_finalizes_without_quality_risk(monkeypatch) -> None:
     _patch_guard(monkeypatch, passed=True)
     _patch_router(monkeypatch, "general-agent", is_complex=False)
@@ -486,6 +536,7 @@ def test_build_agent_kwargs_writable_requires_write_tools(tmp_path) -> None:
         memory_files = ""
         skill_dirs = ""
         workspace_root = None
+        enable_write_tools = False
 
     # allow_write=True 但白名单不含 write_file/edit_file：仍只读（避免无效放开）
     kwargs = build_agent_kwargs(
@@ -499,9 +550,24 @@ def test_build_agent_kwargs_writable_requires_write_tools(tmp_path) -> None:
     )
     assert kwargs["permissions"] == READ_ONLY_FILESYSTEM_PERMISSIONS
 
-    # 白名单含 write_file 且 allow_write=True：放开写权限，且 backend 使用 agent 级根
+    # 即使白名单含 write_file，服务端未启用写工具时仍只读
     kwargs = build_agent_kwargs(
         settings=S(),
+        memory_files=None,
+        skill_dirs=None,
+        tool_allowlist=["ls", "read_file", "write_file", "edit_file"],
+        allow_write=True,
+        workspace_root=str(tmp_path),
+        debug=False,
+    )
+    assert kwargs["permissions"] == READ_ONLY_FILESYSTEM_PERMISSIONS
+
+    class WriteEnabledSettings(S):
+        enable_write_tools = True
+
+    # 白名单含 write_file 且服务端启用写工具：放开写权限，且 backend 使用 agent 级根
+    kwargs = build_agent_kwargs(
+        settings=WriteEnabledSettings(),
         memory_files=None,
         skill_dirs=None,
         tool_allowlist=["ls", "read_file", "write_file", "edit_file"],

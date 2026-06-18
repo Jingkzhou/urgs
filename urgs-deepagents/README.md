@@ -122,6 +122,8 @@ Input Guard → Router/Supervisor → Planner (if complex) → Worker → Review
 - **默认只读文件系统权限** — `READ_ONLY_FILESYSTEM_PERMISSIONS`：deny write on `/**`
 - **默认排除 execute 工具** — `DEFAULT_EXCLUDED_TOOLS` = `{"execute"}`
 - **工具可见性过滤** — 支持 `tool_allowlist` 白名单控制，`ToolVisibilityMiddleware` 在每次模型调用时动态过滤工具列表
+- **写工具服务端开关** — 即使请求传入 `allow_write=true` 且白名单包含 `write_file`/`edit_file`，仍必须显式设置 `DEEPAGENTS_ENABLE_WRITE_TOOLS=true` 才会放开写权限
+- **内部鉴权** — 配置 `DEEPAGENTS_INTERNAL_API_TOKEN` 后，`/v1/router/route`、`/v1/agents/invoke`、`/v1/agents/stream`、`/v1/orchestrator/stream` 需要携带内部鉴权头；未配置 token 时保留本地开发兼容
 - **Input Guard** — 编排管道前置安全校验
 - **错误脱敏** — SSE/HTTP 错误会脱敏 token、密钥和内部地址
 - **本地前置校验** — 空输入、常见提示词注入、敏感信息、高危生产动作会先于模型调用被拒绝
@@ -220,6 +222,7 @@ uv run mypy src/
 | `DEEPAGENTS_URGS_API_URL` | URGS 后端地址 | `http://127.0.0.1:8080` |
 | `DEEPAGENTS_INTERNAL_API_TOKEN` | 内部 API 鉴权令牌 | `""` |
 | `DEEPAGENTS_MODEL` | 模型覆盖（可选） | — |
+| `DEEPAGENTS_ENABLE_WRITE_TOOLS` | 是否允许请求体按 allow_write 放开写文件工具 | `false` |
 | `DEEPAGENTS_WORKSPACE_ROOT` | 工作空间根目录 | — |
 | `DEEPAGENTS_MEMORY_FILES` | 平台级记忆文件列表 | — |
 | `DEEPAGENTS_SKILL_DIRS` | 平台级技能目录列表 | — |

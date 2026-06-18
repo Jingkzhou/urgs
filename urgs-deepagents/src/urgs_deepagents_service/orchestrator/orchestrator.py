@@ -292,7 +292,11 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
         else:
             state.path = "complex"
             # 复杂路径：Planner 拆解 -> 串行 Worker 执行（不流式，仅过程事件）
-            candidate_agents = [a.agent_code for a in request.agents]
+            candidate_agents = [
+                agent.agent_code
+                for agent in request.agents
+                if get_config(agent.agent_code) is not None
+            ]
             state.record("planning", "started", "开始拆解复杂任务")
             yield emit(
                 "planning",
@@ -326,6 +330,37 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
             context_parts: list[str] = []
             for step in steps:
                 cfg = get_config(step.agent)
+                if cfg is None:
+                    state.path = "handoff"
+                    state.handoff_agent_code = step.agent
+                    state.record(
+                        "handoff",
+                        "completed",
+                        "Planner 选择了非 DEEPAGENTS Agent，交回 API 侧执行",
+                        agent_code=step.agent,
+                        details={"step": step.step},
+                    )
+                    yield emit(
+                        "handoff",
+                        {
+                            "type": "handoff",
+                            "agent_code": step.agent,
+                            "step": step.step,
+                            "reason": "planned_step_without_deepagents_config",
+                        },
+                        step_id=f"handoff.step.{step.step}",
+                        agent_code=step.agent,
+                        status="completed",
+                        message="Planner 选择了非 DEEPAGENTS Agent，交回 API 侧执行",
+                    )
+                    yield emit(
+                        "done",
+                        done_payload(),
+                        step_id="orchestrator.done",
+                        status="completed",
+                        message="编排完成",
+                    )
+                    return
                 run = await run_worker(
                     model=model,
                     settings=settings,
@@ -392,6 +427,37 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                 context_parts2: list[str] = []
                 for step in steps:
                     cfg = get_config(step.agent)
+                    if cfg is None:
+                        state.path = "handoff"
+                        state.handoff_agent_code = step.agent
+                        state.record(
+                            "handoff",
+                            "completed",
+                            "返工计划包含非 DEEPAGENTS Agent，交回 API 侧执行",
+                            agent_code=step.agent,
+                            details={"step": step.step},
+                        )
+                        yield emit(
+                            "handoff",
+                            {
+                                "type": "handoff",
+                                "agent_code": step.agent,
+                                "step": step.step,
+                                "reason": "rework_step_without_deepagents_config",
+                            },
+                            step_id=f"handoff.rework.step.{step.step}",
+                            agent_code=step.agent,
+                            status="completed",
+                            message="返工计划包含非 DEEPAGENTS Agent，交回 API 侧执行",
+                        )
+                        yield emit(
+                            "done",
+                            done_payload(),
+                            step_id="orchestrator.done",
+                            status="completed",
+                            message="编排完成",
+                        )
+                        return
                     run = await run_worker(
                         model=model,
                         settings=settings,

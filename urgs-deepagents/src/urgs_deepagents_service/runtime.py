@@ -111,7 +111,8 @@ def build_agent_kwargs(
         normalize_path_list(skill_dirs),
     )
     allow_set = frozenset(normalize_path_list(tool_allowlist))
-    effective_allow_write = allow_write and bool(allow_set & WRITE_TOOLS)
+    write_tools_enabled = bool(getattr(settings, "enable_write_tools", False))
+    effective_allow_write = write_tools_enabled and allow_write and bool(allow_set & WRITE_TOOLS)
     permissions: list[FilesystemPermission] = (
         [] if effective_allow_write else READ_ONLY_FILESYSTEM_PERMISSIONS
     )

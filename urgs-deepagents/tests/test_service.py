@@ -7,12 +7,14 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from langchain_openai import ChatOpenAI
 
+from urgs_deepagents_service.config import get_settings
 from urgs_deepagents_service.main import (
     DEFAULT_EXCLUDED_TOOLS,
     READ_ONLY_FILESYSTEM_PERMISSIONS,
     ToolVisibilityMiddleware,
     _agent_runtime_kwargs,
     app,
+    create_app,
 )
 from urgs_deepagents_service.model_config import (
     _parse_default_config,
@@ -70,6 +72,22 @@ def test_health_ready_down(monkeypatch) -> None:
 
     assert response.status_code == 503
     assert response.json()["status"] == "DOWN"
+
+
+def test_internal_auth_required_when_token_configured(monkeypatch) -> None:
+    monkeypatch.setenv("DEEPAGENTS_INTERNAL_API_TOKEN", "test-token")
+    get_settings.cache_clear()
+    try:
+        secured_app = create_app()
+        client = TestClient(secured_app)
+
+        live_response = client.get("/health/live")
+        unauthorized = client.post("/v1/agents/invoke", json={"messages": "hello"})
+
+        assert live_response.status_code == 200
+        assert unauthorized.status_code == 401
+    finally:
+        get_settings.cache_clear()
 
 
 def test_upstream_info() -> None:
