@@ -40,6 +40,9 @@ public class AiAgentRun {
     @TableField("router_confidence")
     private Double routerConfidence;
 
+    @TableField("quality_risk")
+    private Integer qualityRisk;
+
     @TableField("start_time")
     private LocalDateTime startTime;
 

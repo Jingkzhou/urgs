@@ -1,7 +1,6 @@
 package com.example.urgs_api.ai.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.example.urgs_api.ai.client.DeepAgentsRouterClient;
 import com.example.urgs_api.ai.entity.Agent;
 import com.example.urgs_api.ai.service.agent.AgentAppBuildModeHandler;
 import com.example.urgs_api.ai.service.agent.DeepAgentsBuildModeHandler;
@@ -48,9 +47,6 @@ public class AiChatServiceImpl implements AiChatService {
 
     @Autowired
     private DifyBuildModeHandler difyBuildModeHandler;
-
-    @Autowired
-    private DeepAgentsRouterClient deepAgentsRouterClient;
 
     @Autowired
     private AiAgentRunService aiAgentRunService;
@@ -117,108 +113,105 @@ public class AiChatServiceImpl implements AiChatService {
         sendAgentEvent(runId, sessionId, sessionAgent, emitter, "routing_started", "thinking",
                 "任务识别", "正在识别任务类型和可用助手", Map.of("manual", sessionAgent != null), "RUNNING");
 
-        if (sessionAgent == null) {
-            List<Agent> routingAgents = listRoutingAgents();
-            try {
-                DeepAgentsRouterClient.RouteResult routeResult = deepAgentsRouterClient.route(userPrompt, routingAgents);
-                sessionAgent = findAgentByCode(routingAgents, routeResult.agentCode());
-                if (sessionAgent == null) {
-                    failBeforeExecution(runId, sessionId, emitter, "Router Agent 返回了不存在或未启用的 Agent: " + routeResult.agentCode(),
-                            Map.of("agentCode", routeResult.agentCode()));
-                    return;
-                }
-                aiAgentRunService.updateRouting(runId, sessionAgent, routeResult.taskType(), routeResult.confidence());
-                sendAgentEvent(runId, sessionId, sessionAgent, emitter, "routing_completed", "status",
-                        "任务识别完成", "Router Agent 已完成任务分发",
-                        routePayload(routeResult, sessionAgent), "RUNNING");
-                sendAgentEvent(runId, sessionId, sessionAgent, emitter, "agent_selected", "status",
-                        "Agent 选择", selectedAgentDescription(routeResult, sessionAgent),
-                        routePayload(routeResult, sessionAgent), "RUNNING");
-            } catch (Exception e) {
-                String errorMessage = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-                failBeforeExecution(runId, sessionId, emitter, "Router Agent 分发失败: " + errorMessage,
-                        Map.of("error", errorMessage));
-                return;
+        List<Agent> catalog = listRoutingAgents();
+        final com.example.urgs_api.ai.entity.AiChatSession sessionRef = sessionInfo;
+        final String finalSystemPrompt = systemPrompt;
+        final String finalUserPrompt = userPrompt;
+        final List<Map<String, String>> finalContext = conversationContext;
+        final String finalSkillAppCode = agentAppSkillAppCode;
+        final String finalSkillCode = agentAppSkillCode;
+
+        java.util.function.Consumer<DeepAgentsBuildModeHandler.RoutingInfo> routingCallback = info -> {
+            Agent routed = findAgentByCode(catalog, info.agentCode());
+            if (routed != null && sessionRef != null && sessionRef.getAgentId() == null) {
+                sessionRef.setAgentId(routed.getId());
+                aiChatHistoryService.updateSession(sessionRef);
             }
-            if (sessionInfo != null && sessionInfo.getAgentId() == null) {
-                sessionInfo.setAgentId(sessionAgent.getId());
-                aiChatHistoryService.updateSession(sessionInfo);
-            }
-        } else {
+        };
+
+        java.util.function.Consumer<Agent> legacyDispatch = agent -> runLegacyDispatch(sessionId, agent,
+                finalSystemPrompt, finalUserPrompt, finalSkillAppCode, finalSkillCode, finalContext, emitter, runId);
+
+        // 手动预选的 DEEPAGENTS Agent：编排跳过路由，仍执行 Input Guard 与后续流程
+        if (sessionAgent != null && deepAgentsBuildModeHandler.supports(sessionAgent)) {
+            deepAgentsBuildModeHandler.streamWithPersistence(sessionId, sessionAgent, systemPrompt, userPrompt,
+                    conversationContext, catalog, emitter, runId, routingCallback, legacyDispatch);
+            return;
+        }
+
+        // 手动预选的非 DEEPAGENTS Agent：记录手动路由事件后走遗留执行路径
+        if (sessionAgent != null) {
             aiAgentRunService.updateRouting(runId, sessionAgent, "manual", 1.0);
             sendAgentEvent(runId, sessionId, sessionAgent, emitter, "routing_completed", "status",
                     "任务识别完成", "已检测到手动选择的 Agent，跳过 Router Agent",
                     manualRoutePayload(sessionAgent), "RUNNING");
             sendAgentEvent(runId, sessionId, sessionAgent, emitter, "agent_selected", "status",
                     "Agent 选择", "已使用手动选择的 Agent：" + sessionAgent.getName(),
-                    manualRoutePayload(sessionAgent),
-                    "RUNNING");
-        }
-
-        if (agentAppBuildModeHandler.supports(sessionAgent)) {
-            sendAgentEvent(runId, sessionId, sessionAgent, emitter, "model_stream", "status",
-                    "生成中", "已进入 Agent App 执行流程", Map.of("buildMode", "AGENT_APP"), "RUNNING");
-            agentAppBuildModeHandler.streamWithPersistence(sessionId, sessionAgent, userPrompt, agentAppSkillAppCode,
+                    manualRoutePayload(sessionAgent), "RUNNING");
+            runLegacyDispatch(sessionId, sessionAgent, systemPrompt, userPrompt, agentAppSkillAppCode,
                     agentAppSkillCode, conversationContext, emitter, runId);
             return;
         }
-        if (deepAgentsBuildModeHandler.supports(sessionAgent)) {
-            deepAgentsBuildModeHandler.streamWithPersistence(sessionId, sessionAgent, systemPrompt, userPrompt,
-                    conversationContext, emitter, runId);
+
+        // 未手动选择 Agent：编排内部完成路由（DEEPAGENTS 直接编排，非 DEEPAGENTS 经 handoff 回遗留路径）
+        deepAgentsBuildModeHandler.streamWithPersistence(sessionId, null, systemPrompt, userPrompt,
+                conversationContext, catalog, emitter, runId, routingCallback, legacyDispatch);
+    }
+
+    /**
+     * 遗留执行路径：Agent App / RAG / Dify / 通用对话。
+     * 由 streamChatWithPersistence 在手动选择非 DEEPAGENTS Agent、或编排 handoff 回退时调用。
+     */
+    private void runLegacyDispatch(String sessionId, Agent agent, String systemPrompt, String userPrompt,
+            String agentAppSkillAppCode, String agentAppSkillCode, List<Map<String, String>> conversationContext,
+            SseEmitter emitter, String runId) {
+        if (agentAppBuildModeHandler.supports(agent)) {
+            sendAgentEvent(runId, sessionId, agent, emitter, "model_stream", "status",
+                    "生成中", "已进入 Agent App 执行流程", Map.of("buildMode", "AGENT_APP"), "RUNNING");
+            agentAppBuildModeHandler.streamWithPersistence(sessionId, agent, userPrompt, agentAppSkillAppCode,
+                    agentAppSkillCode, conversationContext, emitter, runId);
             return;
         }
 
         String contextAugmentation = "";
-        if (sessionAgent != null) {
+        if (agent != null) {
             log.info("Checking Agent Configuration - ID: {}, Name: {}, Mode: {}, KB: {}",
-                    sessionAgent.getId(), sessionAgent.getName(), sessionAgent.getBuildMode(), sessionAgent.getKnowledgeBase());
-            if (ragBuildModeHandler.supports(sessionAgent)) {
+                    agent.getId(), agent.getName(), agent.getBuildMode(), agent.getKnowledgeBase());
+            if (ragBuildModeHandler.supports(agent)) {
                 RagBuildModeHandler.RagPreparation preparation = ragBuildModeHandler
-                        .prepare(sessionAgent, systemPrompt, userPrompt, emitter);
+                        .prepare(agent, systemPrompt, userPrompt, emitter);
                 systemPrompt = preparation.systemPrompt();
                 contextAugmentation = preparation.contextAugmentation();
-            } else if (sessionAgent.getSystemPrompt() != null && !sessionAgent.getSystemPrompt().isBlank()) {
-                systemPrompt = sessionAgent.getSystemPrompt();
+            } else if (agent.getSystemPrompt() != null && !agent.getSystemPrompt().isBlank()) {
+                systemPrompt = agent.getSystemPrompt();
             }
         }
 
-        // Merge Context to User Prompt logic moved to AFTER message construction to
-        // ensure visibility
-        // previously: userPrompt = userPrompt + contextAugmentation; (removed as it was
-        // ignored)
-
-        // 2. 检查并执行上下文压缩 (Check and Summarize if needed)
-        // 如果当前 Token 超过阈值，会触发 AI 总结旧消息，并更新 DB 中的 summary 字段
-        boolean isSummarized = false;
+        // 检查并执行上下文压缩 (Check and Summarize if needed)
         try {
-            isSummarized = checkAndSummarizeContext(sessionId, emitter);
+            checkAndSummarizeContext(sessionId, emitter);
         } catch (Exception e) {
             log.error("Context summarization failed", e);
-            // 失败不影响主流程，继续执行
         }
 
-        // 3. 获取完整历史消息 & 构建最终发送给 AI 的上下文 (Fetch History & Build Context)
         List<com.example.urgs_api.ai.entity.AiChatMessage> history = aiChatHistoryService.getSessionMessages(sessionId);
         com.example.urgs_api.ai.entity.AiChatSession session = aiChatHistoryService.getSession(sessionId);
         String sessionSummary = session != null ? session.getSummary() : null;
 
-        // 构建消息列表：System + [Summary] + Recent History (Pruned)
         List<Map<String, String>> messages = buildContextMessages(systemPrompt, history, sessionSummary);
 
         if (!contextAugmentation.isEmpty()) {
             log.info("Injecting RAG Context into Request Messages");
-            ragBuildModeHandler.applyContextToMessages(sessionAgent, messages, contextAugmentation);
+            ragBuildModeHandler.applyContextToMessages(agent, messages, contextAugmentation);
         }
 
-        // 计算当前上下文 Token 用量，用于前端展示 (Calculate usage for frontend display)
         long totalChars = 0;
         for (Map<String, String> msg : messages) {
             totalChars += msg.getOrDefault("content", "").length();
         }
-        final long used = totalChars / 4; // 简单估算：4个字符约等于1个 Token
+        final long used = totalChars / 4;
         final long limit = MAX_CONTEXT_TOKENS;
 
-        // 4. 发送 Token 用量数据 & 开启流式响应 (Send Metrics & Stream Response)
         try {
             emitter.send(SseEmitter.event().name("metrics")
                     .data(objectMapper.writeValueAsString(Map.of("used", used, "limit", limit))));
@@ -228,7 +221,7 @@ public class AiChatServiceImpl implements AiChatService {
 
         StringBuilder aiResponse = new StringBuilder();
         final boolean[] modelStreamRecorded = { false };
-        final com.example.urgs_api.ai.entity.Agent activeAgent = sessionAgent;
+        final com.example.urgs_api.ai.entity.Agent activeAgent = agent;
 
         streamChat(sessionId, messages, "chat",
                 chunk -> {
@@ -238,20 +231,14 @@ public class AiChatServiceImpl implements AiChatService {
                         sendAgentEvent(runId, sessionId, activeAgent, emitter, "model_stream", "status",
                                 "生成中", "模型开始流式输出", Map.of("requestType", "chat"), "RUNNING");
                     }
-                    // Do NOT try-catch around emitter.send!
-                    // If client disconnected, this will throw an exception which will propagate to
-                    // executeCoreStream's while loop, safely terminating the background processing.
                     try {
                         emitter.send(
                                 SseEmitter.event().data(objectMapper.writeValueAsString(Map.of("content", chunk))));
                     } catch (java.io.IOException | IllegalStateException e) {
-                        // Re-throw as RuntimeException to ensure it breaks out of the streaming reader
-                        // loop in executeCoreStream
                         throw new RuntimeException("SSE connection broken", e);
                     }
                 },
                 () -> {
-                    // 5. 聊天完成，保存 AI 回复 (Save AI Message on Complete)
                     try {
                         aiChatHistoryService.saveMessage(sessionId, "assistant", aiResponse.toString());
                         aiAgentRunService.recordEvent(runId, sessionId, activeAgent, "run_completed", "完成",
@@ -271,7 +258,6 @@ public class AiChatServiceImpl implements AiChatService {
                     }
                 },
                 e -> {
-                    // 6. Handle Error - Also save partial response if possible
                     try {
                         if (aiResponse.length() > 0) {
                             log.info("Saving partial AI response before error/disconnect: {} chars",
@@ -316,23 +302,6 @@ public class AiChatServiceImpl implements AiChatService {
         }
     }
 
-    private void failBeforeExecution(String runId, String sessionId, SseEmitter emitter, String message,
-            Map<String, Object> payload) {
-        aiAgentRunService.recordEvent(runId, sessionId, null, "router_failed", "任务分发失败", message, payload, "FAILED");
-        aiAgentRunService.failRun(runId, message);
-        try {
-            emitter.send(SseEmitter.event().name("agent")
-                    .data(objectMapper.writeValueAsString(Map.of(
-                            "type", "status",
-                            "title", "任务分发失败",
-                            "content", message))));
-            emitter.send(SseEmitter.event().data(objectMapper.writeValueAsString(Map.of("error", message))));
-            emitter.complete();
-        } catch (Exception e) {
-            log.warn("Failed to send router failure event for session {}", sessionId, e);
-        }
-    }
-
     private List<Agent> listRoutingAgents() {
         return agentRepository.selectList(new QueryWrapper<Agent>()
                 .eq("status", 1)
@@ -354,22 +323,6 @@ public class AiChatServiceImpl implements AiChatService {
         return null;
     }
 
-    private Map<String, Object> routePayload(DeepAgentsRouterClient.RouteResult result, Agent agent) {
-        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
-        payload.put("intent", result.taskType());
-        payload.put("confidence", result.confidence());
-        payload.put("reason", result.reason());
-        payload.put("requiresCollaboration", result.requiresCollaboration());
-        payload.put("collaborationPlan", result.collaborationPlan());
-        if (agent != null) {
-            payload.put("agentId", agent.getId());
-            payload.put("agentCode", agent.getAgentCode());
-            payload.put("agentName", agent.getName());
-            payload.put("buildMode", agent.getBuildMode());
-        }
-        return payload;
-    }
-
     private Map<String, Object> manualRoutePayload(Agent agent) {
         java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("manual", true);
@@ -380,11 +333,6 @@ public class AiChatServiceImpl implements AiChatService {
             payload.put("buildMode", agent.getBuildMode());
         }
         return payload;
-    }
-
-    private String selectedAgentDescription(DeepAgentsRouterClient.RouteResult result, Agent agent) {
-        int confidence = (int) Math.round(result.confidence() * 100);
-        return "已选择 " + agent.getName() + "，置信度 " + confidence + "%：" + result.reason();
     }
 
     /**

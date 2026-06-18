@@ -47,6 +47,33 @@ class RouterRouteResponse(BaseModel):
     collaboration_plan: str = ""
 
 
+class AgentRuntimeConfig(BaseModel):
+    """编排请求中单个 Agent 的运行时配置，与 API 侧 Agent 字段对应。"""
+
+    system_prompt: str | None = Field(default=None, description="Agent 系统提示词")
+    memory_files: str | list[str] | None = Field(default=None, description="DeepAgents memory 文件列表")
+    skill_dirs: str | list[str] | None = Field(default=None, description="DeepAgents skills 目录列表")
+    tool_allowlist: str | list[str] | None = Field(default=None, description="允许调用的工具白名单")
+
+
+class OrchestratorRequest(BaseModel):
+    """多 Agent 编排请求。编排接口内部完成路由，API 无需单独调用 router。"""
+
+    messages: str | list[dict[str, Any]] = Field(
+        description="User input string or LangChain-compatible message dictionaries."
+    )
+    agents: list[RouterAgentDescriptor] = Field(description="可选 Agent 目录，供 Router/Planner 选择")
+    agent_configs: dict[str, AgentRuntimeConfig] | None = Field(
+        default=None, description="agent_code -> 运行时配置映射；未提供的 agent 视为非 DEEPAGENTS，触发 handoff"
+    )
+    selected_agent_code: str | None = Field(
+        default=None, description="手动预选 Agent；提供时跳过 Router，仍执行 Input Guard 与后续编排"
+    )
+    system_prompt: str | None = Field(default=None, description="平台级兜底系统提示词")
+    model: str | None = Field(default=None, description="Optional provider:model override.")
+    debug: bool = False
+
+
 class UpstreamInfo(BaseModel):
     package: str
     version: str

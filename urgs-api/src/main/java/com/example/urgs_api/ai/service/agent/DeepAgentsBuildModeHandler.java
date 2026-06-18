@@ -1,5 +1,6 @@
 package com.example.urgs_api.ai.service.agent;
 
+import com.example.urgs_api.ai.client.DeepAgentsOrchestratorClient;
 import com.example.urgs_api.ai.entity.AiChatMessage;
 import com.example.urgs_api.ai.entity.Agent;
 import com.example.urgs_api.ai.service.AiAgentRunService;
@@ -38,13 +39,16 @@ public class DeepAgentsBuildModeHandler {
     private final AiChatHistoryService aiChatHistoryService;
     private final AiAgentRunService aiAgentRunService;
     private final String deepAgentsBaseUrl;
+    private final DeepAgentsOrchestratorClient orchestratorClient;
 
     public DeepAgentsBuildModeHandler(
             AiChatHistoryService aiChatHistoryService,
             AiAgentRunService aiAgentRunService,
+            DeepAgentsOrchestratorClient orchestratorClient,
             @Value("${urgs.deepagents.base-url:http://127.0.0.1:8003}") String deepAgentsBaseUrl) {
         this.aiChatHistoryService = aiChatHistoryService;
         this.aiAgentRunService = aiAgentRunService;
+        this.orchestratorClient = orchestratorClient;
         this.deepAgentsBaseUrl = deepAgentsBaseUrl;
     }
 
@@ -52,18 +56,30 @@ public class DeepAgentsBuildModeHandler {
         return agent != null && "DEEPAGENTS".equalsIgnoreCase(agent.getBuildMode());
     }
 
-    public void streamWithPersistence(String sessionId, Agent agent, String systemPrompt, String userPrompt,
-            List<Map<String, String>> conversationContext, SseEmitter emitter) {
-        streamWithPersistence(sessionId, agent, systemPrompt, userPrompt, conversationContext, emitter, null);
+    public record RoutingInfo(String agentCode, String agentName, long agentId, double confidence,
+            String reason, String taskType, boolean isComplex, String buildMode) {
     }
 
-    public void streamWithPersistence(String sessionId, Agent agent, String systemPrompt, String userPrompt,
-            List<Map<String, String>> conversationContext, SseEmitter emitter, String runId) {
+    /**
+     * DEEPAGENTS 编排入口：调用 /v1/orchestrator/stream，由 DeepAgents 侧完成
+     * Input Guard -> Router -> Planner -> Worker -> Reviewer -> 返工 -> Finalizer 全流程。
+     * API 仅作为适配器：转发 SSE、持久化事件、处理 quality_risk 与非 DEEPAGENTS 的 handoff。
+     *
+     * @param preselectedAgent 手动预选 Agent；null 表示由编排内部 Router 路由
+     * @param catalog          全部启用 Agent 目录，供编排 Router/Planner 选择
+     * @param routingCallback  路由完成回调（更新 run 路由信息与 session agent）
+     * @param legacyDispatch   handoff 回调：编排路由到非 DEEPAGENTS Agent 时，交回遗留执行路径
+     */
+    public void streamWithPersistence(String sessionId, Agent preselectedAgent, String systemPrompt,
+            String userPrompt, List<Map<String, String>> conversationContext, List<Agent> catalog,
+            SseEmitter emitter, String runId, Consumer<RoutingInfo> routingCallback,
+            Consumer<Agent> legacyDispatch) {
         executor.submit(() -> {
-            String response = "";
+            StringBuilder responseBuilder = new StringBuilder();
             boolean[] streamStarted = { false };
+            final Agent[] activeAgent = { preselectedAgent };
             try {
-                emitter.send(SseEmitter.event().name("status").data("deepagents_running"));
+                emitter.send(SseEmitter.event().name("status").data("deepagents_orchestrating"));
 
                 List<Map<String, String>> messages = buildMessages(sessionId, userPrompt, conversationContext);
                 long used = estimateTokens(messages.stream()
@@ -72,46 +88,131 @@ public class DeepAgentsBuildModeHandler {
                 emitter.send(SseEmitter.event().name("metrics")
                         .data(objectMapper.writeValueAsString(Map.of("used", used, "limit", MAX_CONTEXT_TOKENS))));
 
-                StringBuilder responseBuilder = new StringBuilder();
-                streamDeepAgents(resolveSystemPrompt(agent, systemPrompt), messages, agent,
-                        chunk -> {
-                            responseBuilder.append(chunk);
-                            if (!streamStarted[0]) {
-                                streamStarted[0] = true;
-                                aiAgentRunService.recordEvent(runId, sessionId, agent, "model_stream", "生成中",
-                                        "DeepAgents 开始流式输出", Map.of("buildMode", "DEEPAGENTS"), "RUNNING");
+                Map<String, Object> body = buildOrchestratorRequest(
+                        resolveSystemPrompt(preselectedAgent, systemPrompt), messages, preselectedAgent, catalog);
+
+                final boolean[] handoff = { false };
+                final Agent[] handoffAgent = { null };
+
+                orchestratorClient.stream(body, (eventName, data) -> {
+                    switch (eventName) {
+                        case "input_guard":
+                            recordOrchestratorEvent(runId, sessionId, activeAgent[0],
+                                    "input_guard_" + data.path("status").asText("passed"),
+                                    "Input Guard", data.path("reason").asText(""), data, "RUNNING");
+                            forwardAgentEvent(emitter, data);
+                            break;
+                        case "routing":
+                            handleRoutingEvent(runId, sessionId, catalog, data, activeAgent,
+                                    routingCallback, emitter);
+                            break;
+                        case "planning":
+                            recordOrchestratorEvent(runId, sessionId, activeAgent[0],
+                                    "planning_" + data.path("status").asText("started"),
+                                    "Planner 拆解", data.path("reason").asText(""), data, "RUNNING");
+                            forwardAgentEvent(emitter, data);
+                            break;
+                        case "worker":
+                            recordOrchestratorEvent(runId, sessionId, activeAgent[0],
+                                    "worker_" + data.path("status").asText("started"),
+                                    "Worker 执行", data.path("task").asText(""), data, "RUNNING");
+                            forwardAgentEvent(emitter, data);
+                            break;
+                        case "content":
+                            String content = data.path("content").asText("");
+                            if (!content.isEmpty()) {
+                                responseBuilder.append(content);
+                                if (!streamStarted[0]) {
+                                    streamStarted[0] = true;
+                                    aiAgentRunService.recordEvent(runId, sessionId, activeAgent[0],
+                                            "model_stream", "生成中", "编排开始流式输出",
+                                            Map.of("buildMode", "DEEPAGENTS"), "RUNNING");
+                                }
+                                try {
+                                    emitter.send(SseEmitter.event()
+                                            .data(objectMapper.writeValueAsString(Map.of("content", content))));
+                                } catch (Exception e) {
+                                    throw new RuntimeException("SSE connection broken", e);
+                                }
                             }
-                            try {
-                                emitter.send(SseEmitter.event()
-                                        .data(objectMapper.writeValueAsString(Map.of("content", chunk))));
-                            } catch (Exception e) {
-                                throw new RuntimeException("SSE connection broken", e);
-                            }
-                        },
-                        event -> {
-                            recordDeepAgentsEvent(runId, sessionId, agent, event);
+                            break;
+                        case "agent":
+                            recordDeepAgentsEvent(runId, sessionId, activeAgent[0], data);
                             try {
                                 emitter.send(SseEmitter.event().name("agent")
-                                        .data(objectMapper.writeValueAsString(event)));
+                                        .data(objectMapper.writeValueAsString(data)));
                             } catch (Exception e) {
                                 throw new RuntimeException("SSE connection broken", e);
                             }
-                        });
-                response = responseBuilder.toString();
+                            break;
+                        case "review":
+                            recordOrchestratorEvent(runId, sessionId, activeAgent[0],
+                                    "review_" + data.path("status").asText("passed"),
+                                    "Reviewer 验收", data.path("reason").asText(""), data, "RUNNING");
+                            forwardAgentEvent(emitter, data);
+                            break;
+                        case "rework":
+                            // 返工开始：清空已累积的首跑内容，最终只保留返工/Finalizer 产出
+                            responseBuilder.setLength(0);
+                            recordOrchestratorEvent(runId, sessionId, activeAgent[0], "rework_started",
+                                    "返工", data.path("reason").asText(""), data, "RUNNING");
+                            forwardAgentEvent(emitter, data);
+                            break;
+                        case "finalizing":
+                            recordOrchestratorEvent(runId, sessionId, activeAgent[0], "finalizing",
+                                    "Finalizer 汇总", "", data, "RUNNING");
+                            forwardAgentEvent(emitter, data);
+                            break;
+                        case "quality_risk":
+                            aiAgentRunService.markQualityRisk(runId);
+                            recordOrchestratorEvent(runId, sessionId, activeAgent[0], "quality_risk",
+                                    "质量风险", data.path("reason").asText(""), data, "COMPLETED");
+                            forwardAgentEvent(emitter, data);
+                            break;
+                        case "handoff":
+                            handoff[0] = true;
+                            handoffAgent[0] = findAgentByCode(catalog, data.path("agent_code").asText(""));
+                            recordOrchestratorEvent(runId, sessionId, activeAgent[0], "handoff",
+                                    "移交遗留执行", data.path("agent_code").asText(""), data, "RUNNING");
+                            break;
+                        case "done":
+                            // 流结束后统一处理
+                            break;
+                        case "error":
+                            throw new RuntimeException(data.path("error").asText("编排失败"));
+                        default:
+                            // 未知事件忽略
+                    }
+                });
+
+                if (handoff[0] && handoffAgent[0] != null) {
+                    // 交回遗留执行路径，由回调负责完成 emitter 与 run
+                    Agent legacy = handoffAgent[0];
+                    if (routingCallback != null) {
+                        routingCallback.accept(new RoutingInfo(legacy.getAgentCode(), legacy.getName(),
+                                legacy.getId() == null ? 0 : legacy.getId(), 1.0, "handoff", "handoff",
+                                false, legacy.getBuildMode()));
+                    }
+                    legacyDispatch.accept(legacy);
+                    return;
+                }
+
+                String response = responseBuilder.toString();
                 aiChatHistoryService.saveMessage(sessionId, "assistant", response);
-                aiAgentRunService.recordEvent(runId, sessionId, agent, "run_completed", "完成",
-                        "DeepAgents 响应已完成", Map.of("responseLength", response.length()), "COMPLETED");
+                aiAgentRunService.recordEvent(runId, sessionId, activeAgent[0], "run_completed", "完成",
+                        "DeepAgents 编排已完成", Map.of("responseLength", response.length()), "COMPLETED");
                 aiAgentRunService.completeRun(runId);
                 emitter.send(SseEmitter.event().data("[DONE]"));
                 emitter.complete();
             } catch (Exception e) {
-                log.error("DeepAgents execution failed for session {}", sessionId, e);
+                log.error("DeepAgents orchestration failed for session {}", sessionId, e);
                 try {
                     String errorMessage = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                    String response = responseBuilder.toString();
                     if (!response.isBlank()) {
                         aiChatHistoryService.saveMessage(sessionId, "assistant", response);
                     }
-                    aiAgentRunService.recordEvent(runId, sessionId, agent, "run_failed", "执行失败",
+                    aiAgentRunService.recordEvent(runId, sessionId, activeAgent[0], "run_failed", "执行失败",
                             errorMessage, Map.of("responseLength", response.length()), "FAILED");
                     aiAgentRunService.failRun(runId, errorMessage);
                     emitter.send(SseEmitter.event()
@@ -122,6 +223,123 @@ public class DeepAgentsBuildModeHandler {
                 }
             }
         });
+    }
+
+    private void handleRoutingEvent(String runId, String sessionId, List<Agent> catalog, JsonNode data,
+            Agent[] activeAgent, Consumer<RoutingInfo> routingCallback, SseEmitter emitter) throws Exception {
+        String agentCode = data.path("agent_code").asText("");
+        Agent routed = findAgentByCode(catalog, agentCode);
+        if (routed != null) {
+            activeAgent[0] = routed;
+        }
+        RoutingInfo info = new RoutingInfo(agentCode, data.path("agent_name").asText(""),
+                routed != null && routed.getId() != null ? routed.getId() : 0,
+                data.path("confidence").asDouble(0.0), data.path("reason").asText(""),
+                data.path("task_type").asText(""), data.path("is_complex").asBoolean(false),
+                data.path("build_mode").asText(""));
+        if (routingCallback != null) {
+            routingCallback.accept(info);
+        }
+        aiAgentRunService.updateRouting(runId, routed, info.taskType(),
+                info.confidence() >= 1.0 && "manual".equals(info.taskType()) ? 1.0 : info.confidence());
+        aiAgentRunService.recordEvent(runId, sessionId, routed, "routing_completed", "任务识别完成",
+                "Router Agent 已完成任务分发", objectMapper.convertValue(data, new TypeReference<Map<String, Object>>() {
+                }), "RUNNING");
+        aiAgentRunService.recordEvent(runId, sessionId, routed, "agent_selected", "Agent 选择",
+                "已选择 " + info.agentName(), objectMapper.convertValue(data, new TypeReference<Map<String, Object>>() {
+                }), "RUNNING");
+        Map<String, Object> statusEvent = new java.util.LinkedHashMap<>();
+        statusEvent.put("type", "status");
+        statusEvent.put("title", "任务识别完成");
+        statusEvent.put("content", "已选择 " + info.agentName() + "：" + info.reason());
+        statusEvent.putAll(objectMapper.convertValue(data, new TypeReference<Map<String, Object>>() {
+        }));
+        emitter.send(SseEmitter.event().name("agent").data(objectMapper.writeValueAsString(statusEvent)));
+    }
+
+    private void forwardAgentEvent(SseEmitter emitter, JsonNode data) {
+        try {
+            emitter.send(SseEmitter.event().name("agent")
+                    .data(objectMapper.writeValueAsString(data)));
+        } catch (Exception e) {
+            throw new RuntimeException("SSE connection broken", e);
+        }
+    }
+
+    private void recordOrchestratorEvent(String runId, String sessionId, Agent agent, String eventType,
+            String title, String content, JsonNode data, String status) {
+        Map<String, Object> payload = objectMapper.convertValue(data, new TypeReference<Map<String, Object>>() {
+        });
+        aiAgentRunService.recordEvent(runId, sessionId, agent, eventType, title, content, payload, status);
+    }
+
+    private Agent findAgentByCode(List<Agent> catalog, String agentCode) {
+        if (catalog == null || agentCode == null || agentCode.isBlank()) {
+            return null;
+        }
+        for (Agent agent : catalog) {
+            if (agentCode.equals(agent.getAgentCode())) {
+                return agent;
+            }
+        }
+        return null;
+    }
+
+    private Map<String, Object> buildOrchestratorRequest(String systemPrompt, List<Map<String, String>> messages,
+            Agent preselectedAgent, List<Agent> catalog) {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("system_prompt", systemPrompt);
+        body.put("messages", messages);
+        if (preselectedAgent != null && preselectedAgent.getAgentCode() != null
+                && !preselectedAgent.getAgentCode().isBlank()) {
+            body.put("selected_agent_code", preselectedAgent.getAgentCode());
+        }
+        body.put("agents", serializeCatalog(catalog));
+        Map<String, Object> configs = new java.util.LinkedHashMap<>();
+        if (catalog != null) {
+            for (Agent agent : catalog) {
+                if (agent == null || !"DEEPAGENTS".equalsIgnoreCase(agent.getBuildMode())) {
+                    continue;
+                }
+                Map<String, Object> cfg = new java.util.LinkedHashMap<>();
+                cfg.put("system_prompt", agent.getSystemPrompt());
+                List<String> memoryFiles = parseStringList(agent.getMemoryFiles());
+                if (!memoryFiles.isEmpty()) {
+                    cfg.put("memory_files", memoryFiles);
+                }
+                List<String> skillDirs = parseStringList(agent.getSkillDirs());
+                if (!skillDirs.isEmpty()) {
+                    cfg.put("skill_dirs", skillDirs);
+                }
+                List<String> toolAllowlist = parseStringList(agent.getToolAllowlist());
+                if (!toolAllowlist.isEmpty()) {
+                    cfg.put("tool_allowlist", toolAllowlist);
+                }
+                configs.put(agent.getAgentCode(), cfg);
+            }
+        }
+        body.put("agent_configs", configs);
+        return body;
+    }
+
+    private List<Map<String, Object>> serializeCatalog(List<Agent> catalog) {
+        List<Map<String, Object>> items = new ArrayList<>();
+        if (catalog == null) {
+            return items;
+        }
+        for (Agent agent : catalog) {
+            Map<String, Object> item = new java.util.LinkedHashMap<>();
+            item.put("agent_code", agent.getAgentCode());
+            item.put("agent_name", agent.getName());
+            item.put("agent_type", agent.getAgentType());
+            item.put("build_mode", agent.getBuildMode());
+            item.put("description", agent.getDescription());
+            item.put("capability_tags", agent.getCapabilityTags());
+            item.put("routing_examples", agent.getRoutingExamples());
+            item.put("sort_order", agent.getSortOrder());
+            items.add(item);
+        }
+        return items;
     }
 
     public String invokeDefault(String systemPrompt, List<Map<String, String>> messages) throws Exception {

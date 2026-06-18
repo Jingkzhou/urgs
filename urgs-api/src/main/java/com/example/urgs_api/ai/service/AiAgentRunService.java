@@ -95,6 +95,20 @@ public class AiAgentRunService {
         finishRun(runId, "FAILED", errorMessage);
     }
 
+    public void markQualityRisk(String runId) {
+        if (isBlank(runId)) {
+            return;
+        }
+        try {
+            AiAgentRun run = new AiAgentRun();
+            run.setId(runId);
+            run.setQualityRisk(1);
+            runRepository.updateById(run);
+        } catch (Exception e) {
+            log.warn("Failed to mark quality risk for run {}", runId, e);
+        }
+    }
+
     private void finishRun(String runId, String status, String errorMessage) {
         if (isBlank(runId)) {
             return;

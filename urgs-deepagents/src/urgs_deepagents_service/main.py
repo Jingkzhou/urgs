@@ -11,9 +11,11 @@ from langchain.agents.middleware.types import AgentMiddleware
 
 from urgs_deepagents_service.config import get_settings
 from urgs_deepagents_service.model_config import build_chat_model
+from urgs_deepagents_service.orchestrator import stream_orchestration
 from urgs_deepagents_service.schemas import (
     InvokeRequest,
     InvokeResponse,
+    OrchestratorRequest,
     RouterRouteRequest,
     RouterRouteResponse,
     UpstreamInfo,
@@ -421,6 +423,14 @@ def create_app() -> FastAPI:
     def stream(request: InvokeRequest) -> StreamingResponse:
         return StreamingResponse(
             _stream_deep_agent(request, settings),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @app.post("/v1/orchestrator/stream", tags=["orchestrator"])
+    def orchestrator_stream(request: OrchestratorRequest) -> StreamingResponse:
+        return StreamingResponse(
+            stream_orchestration(request, settings),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
