@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from langchain_openai import ChatOpenAI
 
 from urgs_deepagents_service.config import Settings
+from urgs_deepagents_service.sse import sanitize_text
 
 
 @dataclass(frozen=True)
@@ -48,19 +49,73 @@ def _parse_default_config(payload: dict[str, Any] | None) -> AiApiConfig:
     )
 
 
-def load_default_ai_config(settings: Settings) -> AiApiConfig:
+def _default_config_url(settings: Settings) -> str:
+    return settings.urgs_api_url.rstrip("/") + "/api/internal/ai/config/default"
+
+
+def _default_config_headers(settings: Settings) -> dict[str, str]:
     if not settings.internal_api_token:
         raise HTTPException(status_code=502, detail="缺少内部 API 令牌，无法读取默认 AI API 配置")
-
-    url = settings.urgs_api_url.rstrip("/") + "/api/internal/ai/config/default"
     auth_value = settings.internal_api_auth_prefix + settings.internal_api_token
-    headers = {settings.internal_api_auth_header: auth_value}
+    return {settings.internal_api_auth_header: auth_value}
+
+
+def _load_default_ai_config_payload(settings: Settings) -> dict[str, Any]:
+    url = _default_config_url(settings)
+    headers = _default_config_headers(settings)
+    last_error: httpx.HTTPError | None = None
+    max_attempts = 2
+    for attempt in range(max_attempts):
+        try:
+            response = httpx.get(
+                url, headers=headers, timeout=settings.config_request_timeout_seconds
+            )
+            response.raise_for_status()
+            payload = response.json()
+            return payload if isinstance(payload, dict) else {}
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response is not None else "unknown"
+            if attempt + 1 < max_attempts and isinstance(status_code, int) and status_code >= 500:
+                last_error = exc
+                continue
+            raise HTTPException(
+                status_code=502,
+                detail=f"读取默认 AI API 配置失败: HTTP {status_code}",
+            ) from exc
+        except httpx.HTTPError as exc:
+            last_error = exc
+            if attempt + 1 < max_attempts:
+                continue
+            break
+    error_type = last_error.__class__.__name__ if last_error else "HTTPError"
+    raise HTTPException(status_code=502, detail=f"读取默认 AI API 配置失败: {error_type}")
+
+
+def load_default_ai_config(settings: Settings) -> AiApiConfig:
     try:
-        response = httpx.get(url, headers=headers, timeout=settings.config_request_timeout_seconds)
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"读取默认 AI API 配置失败: {exc}") from exc
-    return _parse_default_config(response.json())
+        return _parse_default_config(_load_default_ai_config_payload(settings))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"默认 AI API 配置解析失败: {sanitize_text(exc)}",
+        ) from exc
+
+
+def check_model_config_ready(settings: Settings) -> dict[str, Any]:
+    if settings.model:
+        return {"status": "UP", "source": "DEEPAGENTS_MODEL", "model": settings.model}
+    try:
+        config = load_default_ai_config(settings)
+        return {
+            "status": "UP",
+            "source": "urgs-api",
+            "provider": config.provider,
+            "model": config.model,
+        }
+    except HTTPException as exc:
+        return {"status": "DOWN", "source": "urgs-api", "reason": sanitize_text(exc.detail)}
 
 
 def build_chat_model(settings: Settings, model_override: str | None) -> str | ChatOpenAI:

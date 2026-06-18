@@ -1,6 +1,7 @@
 import json
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -13,7 +14,11 @@ from urgs_deepagents_service.main import (
     _agent_runtime_kwargs,
     app,
 )
-from urgs_deepagents_service.model_config import _parse_default_config, build_chat_model
+from urgs_deepagents_service.model_config import (
+    _parse_default_config,
+    build_chat_model,
+    load_default_ai_config,
+)
 from urgs_deepagents_service.schemas import InvokeRequest
 
 
@@ -36,6 +41,35 @@ def test_health_live() -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "UP"
+    assert response.headers["X-Request-ID"]
+
+
+def test_health_ready_up(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "urgs_deepagents_service.main.check_model_config_ready",
+        lambda settings: {"status": "UP", "source": "DEEPAGENTS_MODEL", "model": "openai:gpt-4.1"},
+    )
+    client = TestClient(app)
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "UP"
+    assert body["dependencies"]["model_config"]["source"] == "DEEPAGENTS_MODEL"
+
+
+def test_health_ready_down(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "urgs_deepagents_service.main.check_model_config_ready",
+        lambda settings: {"status": "DOWN", "source": "urgs-api", "reason": "missing token"},
+    )
+    client = TestClient(app)
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "DOWN"
 
 
 def test_upstream_info() -> None:
@@ -272,3 +306,63 @@ def test_build_chat_model_uses_ai_api_default(monkeypatch) -> None:
 
     assert isinstance(model, ChatOpenAI)
     assert model.model_name == "qwen3"
+
+
+def test_load_default_ai_config_retries_transient_http_errors(monkeypatch) -> None:
+    class FakeSettings:
+        urgs_api_url = "http://127.0.0.1:8080"
+        internal_api_token = "internal-token"
+        internal_api_auth_header = "Authorization"
+        internal_api_auth_prefix = "Bearer "
+        config_request_timeout_seconds = 10.0
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "provider": "custom",
+                "model": "qwen3",
+                "endpoint": "http://127.0.0.1:11434/v1",
+                "apiKey": "sk-test",
+                "maxTokens": 2048,
+                "temperature": 0.2,
+            }
+
+    calls = {"count": 0}
+
+    def fake_get(url: str, headers: dict[str, str], timeout: float) -> FakeResponse:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise httpx.ConnectError("temporary")
+        return FakeResponse()
+
+    monkeypatch.setattr("urgs_deepagents_service.model_config.httpx.get", fake_get)
+
+    config = load_default_ai_config(FakeSettings())  # type: ignore[arg-type]
+
+    assert calls["count"] == 2
+    assert config.model == "qwen3"
+
+
+def test_load_default_ai_config_failure_is_sanitized(monkeypatch) -> None:
+    class FakeSettings:
+        urgs_api_url = "http://127.0.0.1:8080"
+        internal_api_token = "internal-token"
+        internal_api_auth_header = "Authorization"
+        internal_api_auth_prefix = "Bearer "
+        config_request_timeout_seconds = 10.0
+
+    def fake_get(url: str, headers: dict[str, str], timeout: float) -> object:
+        raise httpx.ConnectError("token=secret sk-secret123 http://127.0.0.1:8080")
+
+    monkeypatch.setattr("urgs_deepagents_service.model_config.httpx.get", fake_get)
+
+    with pytest.raises(HTTPException) as exc_info:
+        load_default_ai_config(FakeSettings())  # type: ignore[arg-type]
+
+    detail = str(exc_info.value.detail)
+    assert "secret" not in detail
+    assert "127.0.0.1" not in detail
+    assert "ConnectError" in detail

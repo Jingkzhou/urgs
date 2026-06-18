@@ -4,11 +4,12 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from deepagents import __version__
 from urgs_deepagents_service.config import get_settings
-from urgs_deepagents_service.model_config import build_chat_model
+from urgs_deepagents_service.model_config import build_chat_model, check_model_config_ready
+from urgs_deepagents_service.observability import request_context_middleware, setup_logging
 from urgs_deepagents_service.orchestrator import stream_orchestration
 from urgs_deepagents_service.orchestrator.utils import (
     assistant_text_from_output,
@@ -311,11 +312,24 @@ async def _stream_deep_agent(request: InvokeRequest, settings: Any) -> AsyncIter
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    setup_logging(settings.log_level)
     app = FastAPI(title="URGS DeepAgents Service", version="0.1.0", lifespan=lifespan)
+    app.middleware("http")(request_context_middleware)
 
     @app.get("/health/live", tags=["health"])
     def live() -> dict[str, str]:
         return {"status": "UP", "service": settings.service_name}
+
+    @app.get("/health/ready", tags=["health"])
+    def ready() -> JSONResponse:
+        model_config = check_model_config_ready(settings)
+        ready_status = model_config.get("status") == "UP"
+        body = {
+            "status": "UP" if ready_status else "DOWN",
+            "service": settings.service_name,
+            "dependencies": {"model_config": model_config},
+        }
+        return JSONResponse(status_code=200 if ready_status else 503, content=body)
 
     @app.get("/v1/upstream", response_model=UpstreamInfo, tags=["deepagents"])
     def upstream() -> UpstreamInfo:
