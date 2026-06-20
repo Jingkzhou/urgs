@@ -518,6 +518,74 @@ async def test_rework_pass_finalizes_without_quality_risk(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_rework_context_includes_required_fixes_and_previous_output(monkeypatch) -> None:
+    _patch_guard(monkeypatch, passed=True)
+    _patch_router(monkeypatch, "general-agent", is_complex=False)
+    contexts: list[str] = []
+    captured_feedback: dict[str, str] = {}
+
+    async def fake_run_worker(**kwargs: Any):
+        stream_context = kwargs.get("stream_context")
+        contexts.append(kwargs["context"])
+        answer = "只有过程，没有结论" if len(contexts) == 1 else "补充后的明确结论"
+        run = worker_mod.WorkerRun(
+            agent_code=kwargs["agent_code"],
+            task=kwargs["task"],
+            stream_content=kwargs["stream_content"],
+        )
+        run.output = WorkerOutput(
+            agent_code=kwargs["agent_code"], task=kwargs["task"], answer=answer
+        )
+
+        async def events() -> AsyncIterator[str]:
+            from urgs_deepagents_service.orchestrator.utils import sse
+
+            yield sse("worker", {"type": "worker", "status": "completed"}, stream_context)
+
+        run._events_factory = events
+        return run
+
+    async def fake_review(
+        model: Any, user_message: str, outputs: list[WorkerOutput]
+    ) -> ReviewResult:
+        return ReviewResult(
+            passed=False,
+            score=0.35,
+            reason="缺少明确结论",
+            issues=["没有回答用户最终要什么"],
+            required_fixes=["补充明确结论", "给出可执行下一步"],
+        )
+
+    async def fake_review_fb(
+        model: Any, user_message: str, outputs: list[WorkerOutput], feedback: str
+    ) -> ReviewResult:
+        captured_feedback["value"] = feedback
+        return ReviewResult(passed=True, score=0.9, reason="返工通过")
+
+    monkeypatch.setattr(worker_mod, "run_worker", fake_run_worker)
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.run_worker", fake_run_worker
+    )
+    monkeypatch.setattr(reviewer_mod, "run_review", fake_review)
+    monkeypatch.setattr(reviewer_mod, "run_review_with_feedback", fake_review_fb)
+    monkeypatch.setattr("urgs_deepagents_service.orchestrator.orchestrator.run_review", fake_review)
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.run_review_with_feedback", fake_review_fb
+    )
+    request = OrchestratorRequest(messages="问题", agents=_agents(), agent_configs=_configs())
+    events = await _make_stream(monkeypatch, request)
+
+    assert contexts[0] == ""
+    assert "补充明确结论" in contexts[1]
+    assert "给出可执行下一步" in contexts[1]
+    assert "只有过程，没有结论" in contexts[1]
+    assert "不要机械复述" in contexts[1]
+    assert "补充明确结论" in captured_feedback["value"]
+    rework = next(data for name, data in events if name == "rework")
+    assert rework["required_fixes"] == ["补充明确结论", "给出可执行下一步"]
+
+
+@pytest.mark.asyncio
 async def test_rework_fail_emits_quality_risk(monkeypatch) -> None:
     _patch_guard(monkeypatch, passed=True)
     _patch_router(monkeypatch, "general-agent", is_complex=False)
@@ -532,6 +600,26 @@ async def test_rework_fail_emits_quality_risk(monkeypatch) -> None:
     assert "rework" in names
     assert "quality_risk" in names
     assert names[-1] == "done"
+
+
+@pytest.mark.asyncio
+async def test_reviewer_parse_failure_fails_closed(monkeypatch) -> None:
+    class FakeReviewer:
+        async def ainvoke(self, payload: dict[str, object]) -> dict[str, object]:
+            return {"messages": [{"role": "assistant", "content": "不是 JSON"}]}
+
+    monkeypatch.setattr(reviewer_mod, "create_control_agent", lambda **kwargs: FakeReviewer())
+
+    review = await reviewer_mod.run_review(
+        object(),
+        "用户问题",
+        [WorkerOutput(agent_code="general-agent", task="回答", answer="候选答案")],
+    )
+
+    assert review.passed is False
+    assert review.score == 0.0
+    assert "解析失败" in review.reason
+    assert review.required_fixes
 
 
 @pytest.mark.asyncio

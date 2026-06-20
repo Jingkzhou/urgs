@@ -68,6 +68,7 @@ class ReviewResult(BaseModel):
     score: float = Field(default=0.0, ge=0.0, le=1.0, description="质量评分")
     reason: str = ""
     issues: list[str] = Field(default_factory=list)
+    required_fixes: list[str] = Field(default_factory=list, description="返工时必须修复的问题")
 
 
 class WorkerOutput(BaseModel):

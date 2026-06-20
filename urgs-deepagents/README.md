@@ -335,6 +335,30 @@ docker build -t urgs-deepagents .
 docker run -p 8003:8003 --env-file .env urgs-deepagents
 ```
 
+## 版本提交记录
+
+以下记录按当前分支 `codex/langchainaideepagents` 中涉及 `urgs-deepagents/` 的 Git 提交倒序整理。后续每次对本模块做功能、修复、文档或验证类提交时，应继续在本节顶部追加一条。
+
+| 提交 | 日期 | 类型 | 内容 |
+|------|------|------|------|
+| `d2293cee` | 2026-06-19 | docs | 更新 README，按当前分支实际源码补充项目目标、技术栈、结构、API、SSE、配置、安全策略和测试方式。 |
+| `d5e5e3b9` | 2026-06-18 | refactor | 将最终答案输出集中到 Finalizer 阶段；简单单 Worker 验收通过时直接发布完整答案，复杂或质量风险场景仍由无工具 control agent 汇总。 |
+| `dbce413d` | 2026-06-18 | fix/security | 增加写工具服务端总开关；即使请求允许写入，也必须显式启用 `DEEPAGENTS_ENABLE_WRITE_TOOLS`；补齐非 DeepAgents Agent 的 handoff 兼容路径和测试。 |
+| `5348be6b` | 2026-06-18 | docs | 文档补充 ready 检查、SSE envelope、内部鉴权和安全策略说明。 |
+| `8b2f4dbd` | 2026-06-18 | feat/observability | 新增 `/health/ready`、请求追踪和结构化日志；优化默认 AI API 配置读取、重试、错误脱敏与 Docker 健康检查。 |
+| `c77a6471` | 2026-06-18 | test | 为编排生命周期、SSE envelope、ready 状态和服务端路径补充测试；新增结构化编排状态模型。 |
+| `1a77bb0d` | 2026-06-18 | refactor | 抽出 `runtime.py` 和 `sse.py`，集中管理 DeepAgent 运行时参数、工具可见性、只读权限、SSE envelope 与错误脱敏；梳理 guard/router/planner/reviewer/finalizer/worker 职责边界。 |
+| `3d278a64` | 2026-06-18 | docs | 扩充 DeepAgents 微服务架构说明，补充 vendored upstream、两层架构、编排流程、API、环境变量、Docker 和测试说明。 |
+| `13340343` | 2026-06-18 | feat | 增加递归限制配置，将 `recursion_limit` 传入 DeepAgent/Finalizer/Worker 运行配置。 |
+| `a9b89079` | 2026-06-18 | feat | 集成 AI token 预算相关能力，优化 DeepAgent 调用和 Worker 上下文管理。 |
+| `3dd74018` | 2026-06-18 | feat | 增加 AI 聊天消息校验和 Agent 运行策略配置；扩展请求 schema 与编排/Worker 测试。 |
+| `50b6c23d` | 2026-06-18 | feat | 引入完整多 Agent 编排模块，包括 Input Guard、Router、Planner、Worker、Reviewer、Finalizer、一次 Rework 和 `quality_risk` 标记。 |
+| `a27ec8d2` | 2026-06-18 | feat | 完善 Router Agent 路由逻辑和响应解析，确保只从请求提供的 Agent 目录中选择有效 Agent。 |
+| `c0610038` | 2026-06-18 | feat/api | 实现 DeepAgents Router API 和运行事件追踪；补充 Agent 描述、路由请求/响应 schema、`.env.example` 配置和服务测试。 |
+| `1b42fdc7` | 2026-06-18 | feat | 增加 DeepAgents SSE 流式调用能力，转发模型内容、工具调用和工具结果事件。 |
+| `7e012b53` | 2026-06-18 | feat/security | 增加内部 API token 鉴权，优化默认 AI 配置拉取和错误处理，并补充相关配置与测试。 |
+| `ca4d8121` | 2026-06-18 | feat/startup | 初始化 `urgs-deepagents` 服务：vendoring upstream DeepAgents 0.6.10，新增 FastAPI 微服务、`pyproject.toml`、Dockerfile、环境样例、License、README 和基础测试。 |
+
 ## 当前状态
 
 - 当前分支包含 `pyproject.toml`、`uv.lock`、`.env.example`、`Dockerfile`、`src/**/*.py`、`tests/**/*.py` 和 `vendor/`。

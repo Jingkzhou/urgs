@@ -30,7 +30,11 @@ from urgs_deepagents_service.model_config import build_chat_model
 from urgs_deepagents_service.orchestrator.finalizer import stream_final_answer
 from urgs_deepagents_service.orchestrator.input_guard import local_input_guard, run_input_guard
 from urgs_deepagents_service.orchestrator.planner import run_planner
-from urgs_deepagents_service.orchestrator.reviewer import run_review, run_review_with_feedback
+from urgs_deepagents_service.orchestrator.reviewer import (
+    build_rework_feedback,
+    run_review,
+    run_review_with_feedback,
+)
 from urgs_deepagents_service.orchestrator.router import run_router
 from urgs_deepagents_service.orchestrator.state import (
     OrchestrationState,
@@ -397,14 +401,22 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
         if not review.passed:
             state.rework_attempts = 1
             state.record("rework", "started", "验收未通过，开始第 1 次返工")
+            feedback = build_rework_feedback(review, outputs)
             yield emit(
                 "rework",
-                {"type": "rework", "status": "started", "attempt": 1},
+                {
+                    "type": "rework",
+                    "status": "started",
+                    "attempt": 1,
+                    "score": review.score,
+                    "reason": review.reason,
+                    "issues": review.issues,
+                    "required_fixes": review.required_fixes,
+                },
                 step_id="rework.1.start",
                 status="started",
                 message="验收未通过，开始第 1 次返工",
             )
-            feedback = review.reason + ("；" + "; ".join(review.issues) if review.issues else "")
             # 返工：对原 Worker 重跑（简单路径重跑同一 agent；复杂路径重跑所有步骤）
             rework_outputs: list[WorkerOutput] = []
             if not routing.is_complex:
@@ -522,7 +534,14 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                 state.record("quality_risk", "failed", state.quality_risk_reason)
                 yield emit(
                     "quality_risk",
-                    {"type": "quality_risk", "reason": state.quality_risk_reason},
+                    {
+                        "type": "quality_risk",
+                        "reason": state.quality_risk_reason,
+                        "score": review2.score,
+                        "issues": review2.issues,
+                        "required_fixes": review2.required_fixes,
+                        "rework_attempts": state.rework_attempts,
+                    },
                     step_id="quality_risk.rework",
                     status="failed",
                     message="返工后仍未通过验收",
@@ -602,6 +621,7 @@ def _review_event(review: Any, context: StreamContext, step_id: str = "review.co
             "score": review.score,
             "reason": review.reason,
             "issues": review.issues,
+            "required_fixes": review.required_fixes,
         },
         context,
         step_id=step_id,

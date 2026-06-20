@@ -41,6 +41,8 @@ def _build_system_prompt(quality_risk: bool, review: ReviewResult | None) -> str
         )
     if review is not None and review.issues:
         base += f"5. 验收发现的问题：{'; '.join(review.issues)}\n"
+    if review is not None and review.required_fixes:
+        base += f"6. 仍需人工关注或补齐的修复项：{'; '.join(review.required_fixes)}\n"
     return base
 
 
