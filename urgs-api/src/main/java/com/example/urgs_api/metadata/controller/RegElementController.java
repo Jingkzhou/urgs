@@ -3,8 +3,11 @@ package com.example.urgs_api.metadata.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.urgs_api.common.PageResult;
+import com.example.urgs_api.metadata.dto.RegElementQueryConfigDTO;
+import com.example.urgs_api.metadata.dto.RegElementQueryConfigValidationResult;
 import com.example.urgs_api.metadata.model.RegElement;
 import com.example.urgs_api.metadata.service.RegPhysicalBindingService;
+import com.example.urgs_api.metadata.service.RegElementQueryConfigService;
 import com.example.urgs_api.metadata.service.RegElementService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +35,9 @@ public class RegElementController {
 
     @Autowired
     private RegPhysicalBindingService regPhysicalBindingService;
+
+    @Autowired
+    private RegElementQueryConfigService regElementQueryConfigService;
 
     @Autowired
     private com.example.urgs_api.metadata.component.MaintenanceLogManager maintenanceLogManager;
@@ -123,6 +129,25 @@ public class RegElementController {
         return element;
     }
 
+    @GetMapping("/{id}/query-config")
+    public RegElementQueryConfigDTO getQueryConfig(@PathVariable Long id) {
+        return regElementQueryConfigService.getByElementId(id);
+    }
+
+    @PutMapping("/{id}/query-config")
+    public RegElementQueryConfigDTO saveQueryConfig(
+            @PathVariable Long id,
+            @RequestBody RegElementQueryConfigDTO config) {
+        return regElementQueryConfigService.saveForElement(id, config);
+    }
+
+    @PostMapping("/{id}/query-config/validate")
+    public RegElementQueryConfigValidationResult validateQueryConfig(
+            @PathVariable Long id,
+            @RequestBody RegElementQueryConfigDTO config) {
+        return regElementQueryConfigService.validateForElement(id, config);
+    }
+
     /**
      * 新增或更新元素
      *
@@ -170,6 +195,7 @@ public class RegElementController {
 
         RegElement oldElement = regElementService.getById(req.getId());
         regPhysicalBindingService.removeElementBindings(List.of(req.getId()));
+        regElementQueryConfigService.removeByElementId(req.getId());
         boolean result = regElementService.removeById(req.getId());
 
         if (result && oldElement != null) {
@@ -199,6 +225,7 @@ public class RegElementController {
 
         List<RegElement> oldElements = regElementService.listByIds(req.getIds());
         regPhysicalBindingService.removeElementBindings(req.getIds());
+        req.getIds().forEach(regElementQueryConfigService::removeByElementId);
         boolean result = regElementService.removeByIds(req.getIds());
 
         if (result && oldElements != null) {
@@ -230,6 +257,7 @@ public class RegElementController {
     public boolean delete(@PathVariable Long id) {
         RegElement oldElement = regElementService.getById(id);
         regPhysicalBindingService.removeElementBindings(List.of(id));
+        regElementQueryConfigService.removeByElementId(id);
         boolean result = regElementService.removeById(id);
 
         if (result && oldElement != null) {
@@ -257,6 +285,7 @@ public class RegElementController {
 
         List<RegElement> oldElements = regElementService.listByIds(ids);
         regPhysicalBindingService.removeElementBindings(ids);
+        ids.forEach(regElementQueryConfigService::removeByElementId);
         boolean result = regElementService.removeByIds(ids);
 
         if (result && oldElements != null) {

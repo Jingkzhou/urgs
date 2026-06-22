@@ -6,6 +6,7 @@
   "runtime_entrypoint": "runtime.py",
   "tools": [
     "browse_regulatory_catalog",
+    "list_regulatory_periods",
     "search_regulatory_metrics",
     "search_regulatory_fields",
     "query_regulatory_summary",

@@ -81,6 +81,31 @@ export interface RegElement {
     physicalFields?: PhysicalFieldBinding[];
 }
 
+export interface RegElementQueryConfig {
+    id?: number | string;
+    regElementId?: number | string;
+    enabled?: number;
+    queryMode?: 'SUMMARY' | 'DETAIL';
+    dataSourceId?: number | string;
+    modelTableId?: string;
+    dateFieldId?: string;
+    orgCodeFieldId?: string;
+    orgNameFieldId?: string;
+    metricCodeFieldId?: string;
+    valueFieldId?: string;
+    defaultReturnFieldIds?: string[];
+    filterFieldIds?: string[];
+    sortFieldIds?: string[];
+    maskFieldIds?: string[];
+    detailMaxRows?: number;
+}
+
+export interface RegElementQueryConfigValidationResult {
+    valid: boolean;
+    errors: string[];
+    warnings: string[];
+}
+
 export interface PhysicalTableBinding {
     modelTableId: string;
     dataSourceId?: number;

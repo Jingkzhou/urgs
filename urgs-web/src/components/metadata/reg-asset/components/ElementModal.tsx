@@ -7,6 +7,7 @@ import ReqInfoFormGroup from '../../ReqInfoFormGroup';
 import { AiOptimizeButton } from '../../../common/AiOptimizeButton';
 import { PhysicalTableBinding } from '../types';
 import { PhysicalBindingSelector } from './PhysicalBindingSelector';
+import { QueryConfigPanel } from './QueryConfigPanel';
 
 interface ElementModalProps {
     element: RegElement;
@@ -151,6 +152,10 @@ export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode,
                                     <option value={1}>是</option>
                                 </select>
                             </div>
+                            <QueryConfigPanel
+                                elementId={form.id}
+                                preferredPhysicalTables={preferredPhysicalTables}
+                            />
                         </>
                     )}
                     <div className="relative" onClick={(e) => e.stopPropagation()}>

@@ -10,39 +10,27 @@
           "code": "loan_summary",
           "name": "贷款指标汇总表",
           "table": "regulatory_test_summary",
-          "date_column": "stat_date",
+          "date_column": "data_date",
           "organization_column": "org_code",
+          "organization_name_column": "org_name",
+          "metric_code_column": "metric_code",
           "indicators": [
-            {
-              "code": "loan_balance",
-              "name": "各项贷款余额",
-              "column": "loan_balance",
-              "type": "number"
-            },
-            {
-              "code": "npl_balance",
-              "name": "不良贷款余额",
-              "column": "npl_balance",
-              "type": "number"
-            },
-            {
-              "code": "deposit_balance",
-              "name": "各项存款余额",
-              "column": "deposit_balance",
-              "type": "number"
-            }
+            {"code": "loan_balance", "name": "各项贷款余额", "type": "number"},
+            {"code": "npl_balance", "name": "不良贷款余额", "type": "number"}
+          ],
+          "result_fields": [
+            {"code": "data_date", "name": "数据日期", "column": "data_date", "type": "date", "returnable": true, "filterable": false, "sortable": false},
+            {"code": "org_name", "name": "机构名称", "column": "org_name", "type": "string", "returnable": true, "filterable": false, "sortable": false},
+            {"code": "org_code", "name": "机构编号", "column": "org_code", "type": "string", "returnable": true, "filterable": false, "sortable": false},
+            {"code": "report_name", "name": "报表名称", "column": "report_name", "type": "string", "returnable": true, "filterable": false, "sortable": false},
+            {"code": "report_code", "name": "报表编号", "column": "report_code", "type": "string", "returnable": true, "filterable": false, "sortable": false},
+            {"code": "metric_name", "name": "指标名称", "column": "metric_name", "type": "string", "returnable": true, "filterable": false, "sortable": false},
+            {"code": "metric_code", "name": "指标编号", "column": "metric_code", "type": "string", "returnable": true, "filterable": false, "sortable": false},
+            {"code": "metric_value", "name": "值", "column": "metric_value", "type": "number", "returnable": true, "filterable": false, "sortable": false},
+            {"code": "metric_description", "name": "指标描述", "column": "metric_description", "type": "string", "returnable": true, "filterable": false, "sortable": false}
           ],
           "filters": [
-            {
-              "code": "product_type",
-              "name": "产品类型",
-              "column": "product_type",
-              "type": "string",
-              "filterable": true,
-              "returnable": false,
-              "sortable": false,
-              "operators": ["eq", "in"]
-            }
+            {"code": "report_code", "name": "报表编号", "column": "report_code", "type": "string", "returnable": false, "filterable": true, "sortable": false, "operators": ["eq", "in"]}
           ],
           "max_rows": 100,
           "order_by": []
@@ -53,76 +41,25 @@
           "code": "loan_detail",
           "name": "贷款明细表",
           "table": "regulatory_test_detail",
-          "date_column": "stat_date",
+          "date_column": "data_date",
           "organization_column": "org_code",
-          "default_return_fields": ["contract_no", "customer_name", "loan_balance", "loan_status"],
+          "organization_name_column": "org_name",
+          "default_return_fields": ["data_date", "org_name", "org_code", "contract_no", "customer_name", "metric_name", "metric_value", "record_status"],
           "fields": [
-            {
-              "code": "contract_no",
-              "name": "合同号",
-              "column": "contract_no",
-              "type": "string",
-              "returnable": true,
-              "filterable": true,
-              "sortable": true,
-              "operators": ["eq", "in", "like"],
-              "mask": "ACCOUNT"
-            },
-            {
-              "code": "customer_name",
-              "name": "客户名称",
-              "column": "customer_name",
-              "type": "string",
-              "returnable": true,
-              "filterable": true,
-              "sortable": false,
-              "operators": ["eq", "like"],
-              "mask": "NAME"
-            },
-            {
-              "code": "mobile",
-              "name": "手机号",
-              "column": "mobile",
-              "type": "string",
-              "returnable": true,
-              "filterable": false,
-              "sortable": false,
-              "mask": "MOBILE"
-            },
-            {
-              "code": "product_type",
-              "name": "产品类型",
-              "column": "product_type",
-              "type": "string",
-              "returnable": false,
-              "filterable": true,
-              "sortable": false,
-              "operators": ["eq", "in"]
-            },
-            {
-              "code": "loan_balance",
-              "name": "贷款余额",
-              "column": "loan_balance",
-              "type": "number",
-              "returnable": true,
-              "filterable": true,
-              "sortable": true,
-              "operators": ["eq", "in"]
-            },
-            {
-              "code": "loan_status",
-              "name": "贷款状态",
-              "column": "loan_status",
-              "type": "string",
-              "returnable": true,
-              "filterable": true,
-              "sortable": false,
-              "operators": ["eq", "in"]
-            }
+            {"code": "data_date", "name": "数据日期", "column": "data_date", "type": "date", "returnable": true, "filterable": false, "sortable": true},
+            {"code": "org_name", "name": "机构名称", "column": "org_name", "type": "string", "returnable": true, "filterable": true, "sortable": false, "operators": ["eq", "like"]},
+            {"code": "org_code", "name": "机构编号", "column": "org_code", "type": "string", "returnable": true, "filterable": true, "sortable": false, "operators": ["eq", "in"]},
+            {"code": "report_name", "name": "报表名称", "column": "report_name", "type": "string", "returnable": true, "filterable": true, "sortable": false, "operators": ["eq", "like"]},
+            {"code": "report_code", "name": "报表编号", "column": "report_code", "type": "string", "returnable": true, "filterable": true, "sortable": false, "operators": ["eq", "in"]},
+            {"code": "metric_name", "name": "指标名称", "column": "metric_name", "type": "string", "returnable": true, "filterable": true, "sortable": false, "operators": ["eq", "like"]},
+            {"code": "contract_no", "name": "合同号", "column": "contract_no", "type": "string", "returnable": true, "filterable": true, "sortable": true, "operators": ["eq", "in", "like"], "mask": "ACCOUNT"},
+            {"code": "customer_name", "name": "客户名称", "column": "customer_name", "type": "string", "returnable": true, "filterable": true, "sortable": false, "operators": ["eq", "like"], "mask": "NAME"},
+            {"code": "mobile", "name": "手机号", "column": "mobile", "type": "string", "returnable": true, "filterable": false, "sortable": false, "mask": "MOBILE"},
+            {"code": "metric_code", "name": "指标编号", "column": "metric_code", "type": "string", "returnable": true, "filterable": true, "sortable": false, "operators": ["eq", "in"]},
+            {"code": "metric_value", "name": "指标值", "column": "metric_value", "type": "number", "returnable": true, "filterable": true, "sortable": true, "operators": ["eq", "in"]},
+            {"code": "record_status", "name": "记录状态", "column": "record_status", "type": "string", "returnable": true, "filterable": true, "sortable": false, "operators": ["eq", "in"]}
           ],
-          "order_by": [
-            {"field": "contract_no", "direction": "asc"}
-          ],
+          "order_by": [{"field": "contract_no", "direction": "asc"}],
           "max_rows": 5
         }
       ]

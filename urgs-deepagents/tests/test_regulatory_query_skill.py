@@ -28,6 +28,7 @@ load_regulatory_query_skill = _MODULE.load_regulatory_query_skill
 
 TOOLS = [
     "browse_regulatory_catalog",
+    "list_regulatory_periods",
     "search_regulatory_metrics",
     "search_regulatory_fields",
     "query_regulatory_summary",
@@ -63,18 +64,47 @@ def _catalog(*, detail_max_rows: int = 5) -> dict[str, Any]:
                         "table": "reg_summary",
                         "date_column": "stat_date",
                         "organization_column": "org_code",
+                        "organization_name_column": "org_name",
+                        "metric_code_column": "metric_code",
                         "indicators": [
                             {
                                 "code": "loan_balance",
                                 "name": "各项贷款余额",
-                                "column": "loan_balance",
                                 "type": "number",
                             },
                             {
                                 "code": "npl_balance",
                                 "name": "不良贷款余额",
-                                "column": "npl_balance",
                                 "type": "number",
+                            },
+                        ],
+                        "result_fields": [
+                            {
+                                "code": "data_date",
+                                "name": "数据日期",
+                                "column": "stat_date",
+                                "type": "date",
+                                "returnable": True,
+                                "filterable": False,
+                                "sortable": False,
+                            },
+                            {
+                                "code": "metric_code",
+                                "name": "指标编号",
+                                "column": "metric_code",
+                                "type": "string",
+                                "returnable": True,
+                                "filterable": False,
+                                "sortable": False,
+                            },
+                            {
+                                "code": "metric_value",
+                                "name": "指标值",
+                                "column": "metric_value",
+                                "type": "number",
+                                "returnable": True,
+                                "filterable": False,
+                                "sortable": False,
                             },
                         ],
                         "filters": [
@@ -100,6 +130,7 @@ def _catalog(*, detail_max_rows: int = 5) -> dict[str, Any]:
                         "table": "reg_detail",
                         "date_column": "stat_date",
                         "organization_column": "org_code",
+                        "organization_name_column": "org_name",
                         "default_return_fields": ["contract_no", "customer_name", "loan_balance"],
                         "fields": [
                             {
@@ -200,15 +231,34 @@ class _FakeConnection:
     def execute(self, statement: Any, parameters: dict[str, Any]) -> _FakeResult:
         sql = str(statement)
         self.calls.append((sql, parameters))
+        if "reg_element_query_config" in sql:
+            return _FakeResult([])
+        if "FROM model_field" in sql:
+            return _FakeResult([])
+        if "COUNT(DISTINCT" in sql:
+            return _FakeResult([{"total_count": 2}])
+        if "SELECT DISTINCT" in sql:
+            return _FakeResult([{"data_date": "2026-02-28"}, {"data_date": "2026-01-31"}])
         if "COUNT(*)" in sql:
             return _FakeResult([{"total_count": 7}])
         if "`reg_summary`" in sql:
             return _FakeResult(
-                [{"stat_date": "2026-01-31", "org_code": "1100", "loan_balance": 12.5}]
+                [
+                    {
+                        "data_date": "2026-01-31",
+                        "org_name": "总行",
+                        "org_code": "1100",
+                        "metric_code": "loan_balance",
+                        "metric_value": 12.5,
+                    }
+                ]
             )
         return _FakeResult(
             [
                 {
+                    "stat_date": "2026-01-31",
+                    "org_name": "总行",
+                    "org_code": "1100",
                     "contract_no": "HT20260001",
                     "customer_name": "张三",
                     "loan_balance": 12.5,
@@ -226,12 +276,126 @@ class _FakeEngine:
         return _FakeConnection(self.calls)
 
 
+class _AssetFakeConnection(_FakeConnection):
+    def execute(self, statement: Any, parameters: dict[str, Any]) -> _FakeResult:
+        sql = str(statement)
+        self.calls.append((sql, parameters))
+        if "reg_element_query_config" in sql:
+            return _FakeResult(
+                [
+                    {
+                        "config_id": 1,
+                        "reg_element_id": 101,
+                        "query_mode": "SUMMARY",
+                        "model_table_id": "mt_loan",
+                        "date_field_id": "f_date",
+                        "org_code_field_id": "f_org",
+                        "org_name_field_id": "f_org_name",
+                        "metric_code_field_id": "f_metric",
+                        "value_field_id": "f_value",
+                        "default_return_field_ids": json.dumps(
+                            ["f_date", "f_org", "f_org_name", "f_value"]
+                        ),
+                        "filter_field_ids": json.dumps(["f_status"]),
+                        "sort_field_ids": json.dumps(["f_date"]),
+                        "mask_field_ids": "[]",
+                        "detail_max_rows": 5,
+                        "element_code": "loan_balance_asset",
+                        "element_name": "各项贷款余额",
+                        "element_description": "资产配置指标",
+                        "reg_table_id": 10,
+                        "reg_table_code": "loan_asset",
+                        "reg_table_name": "资产贷款指标表",
+                        "system_code": "credit_asset",
+                        "physical_table": "asset_summary",
+                        "physical_owner": "",
+                    }
+                ]
+            )
+        if "FROM model_field" in sql:
+            return _FakeResult(
+                [
+                    {
+                        "id": "f_date",
+                        "table_id": "mt_loan",
+                        "name": "data_date",
+                        "cn_name": "数据日期",
+                        "type": "date",
+                    },
+                    {
+                        "id": "f_org",
+                        "table_id": "mt_loan",
+                        "name": "org_code",
+                        "cn_name": "机构编号",
+                        "type": "varchar",
+                    },
+                    {
+                        "id": "f_org_name",
+                        "table_id": "mt_loan",
+                        "name": "org_name",
+                        "cn_name": "机构名称",
+                        "type": "varchar",
+                    },
+                    {
+                        "id": "f_metric",
+                        "table_id": "mt_loan",
+                        "name": "metric_code",
+                        "cn_name": "指标编号",
+                        "type": "varchar",
+                    },
+                    {
+                        "id": "f_value",
+                        "table_id": "mt_loan",
+                        "name": "metric_value",
+                        "cn_name": "指标值",
+                        "type": "decimal",
+                    },
+                    {
+                        "id": "f_status",
+                        "table_id": "mt_loan",
+                        "name": "record_status",
+                        "cn_name": "记录状态",
+                        "type": "varchar",
+                    },
+                ]
+            )
+        if "`asset_summary`" in sql:
+            return _FakeResult(
+                [
+                    {
+                        "data_date": "2026-02-28",
+                        "org_code": "1200",
+                        "org_name": "分行一",
+                        "metric_value": 760000,
+                    }
+                ]
+            )
+        return super().execute(statement, parameters)
+
+
+class _AssetFakeEngine(_FakeEngine):
+    def connect(self) -> _AssetFakeConnection:
+        return _AssetFakeConnection(self.calls)
+
+
 def _runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, _FakeEngine]:
     skill = load_regulatory_query_skill(_write_skill(tmp_path))
     monkeypatch.setenv(
         "DEEPAGENTS_REGULATORY_QUERY_DATABASE_URL", "mysql+pymysql://user:pass@db/test"
     )
     engine = _FakeEngine()
+    return create_regulatory_query_skill_runtime(
+        skill, engine_factory=lambda *_args, **_kwargs: engine
+    ), engine
+
+
+def _runtime_with_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, engine: _FakeEngine
+) -> tuple[Any, _FakeEngine]:
+    skill = load_regulatory_query_skill(_write_skill(tmp_path))
+    monkeypatch.setenv(
+        "DEEPAGENTS_REGULATORY_QUERY_DATABASE_URL", "mysql+pymysql://user:pass@db/test"
+    )
     return create_regulatory_query_skill_runtime(
         skill, engine_factory=lambda *_args, **_kwargs: engine
     ), engine
@@ -268,6 +432,55 @@ def test_catalog_tools_return_logical_system_table_metric_and_field_directory(
     )["fields"]
     assert fields[0]["code"] == "contract_no"
     assert "column" not in fields[0]
+
+
+def test_catalog_tools_accept_unique_chinese_system_and_table_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime, _ = _runtime(tmp_path, monkeypatch)
+    tools = {tool.name: tool for tool in runtime.tools}
+
+    catalog = tools["browse_regulatory_catalog"].invoke(
+        {"system_code": "信贷监管系统", "view": "summary"}
+    )
+    metrics = tools["search_regulatory_metrics"].invoke(
+        {"system_code": "信贷监管系统", "table_code": "贷款指标汇总表", "keyword": "贷款"}
+    )
+
+    assert catalog["systems"][0]["system_code"] == "credit"
+    assert metrics["system_code"] == "credit"
+    assert metrics["table_code"] == "loan_summary"
+    assert metrics["candidate_count"] == 2
+
+
+def test_period_tool_lists_available_dates_with_normalized_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime, engine = _runtime(tmp_path, monkeypatch)
+    tool = next(tool for tool in runtime.tools if tool.name == "list_regulatory_periods")
+
+    result = tool.invoke(
+        {
+            "system_code": "信贷监管系统",
+            "table_code": "贷款指标汇总表",
+            "view": "summary",
+            "indicator_codes": ["各项贷款余额"],
+            "organization": "1200机构",
+            "filters": [{"field": "product_type", "operator": "eq", "value": "loan"}],
+        }
+    )
+
+    assert result["system_code"] == "credit"
+    assert result["table_code"] == "loan_summary"
+    assert result["organization"] == "1200"
+    assert result["dates"] == ["2026-02-28", "2026-01-31"]
+    count_sql, count_params = next(
+        (sql, params) for sql, params in engine.calls if "COUNT(DISTINCT `stat_date`)" in sql
+    )
+    assert "COUNT(DISTINCT `stat_date`)" in count_sql
+    assert "(`org_code` = :organization OR `org_name` = :organization)" in count_sql
+    assert count_params["organization"] == "1200"
+    assert count_params["metric_0"] == "loan_balance"
 
 
 def test_query_tools_use_catalog_columns_parameters_masks_and_hard_detail_limit(
@@ -310,6 +523,128 @@ def test_query_tools_use_catalog_columns_parameters_masks_and_hard_detail_limit(
     detail_calls = [params for sql, params in engine.calls if "`reg_detail`" in sql]
     assert detail_calls[-1]["limit"] == 5
     assert detail_calls[-1]["filter_0"] == "%HT%"
+
+
+def test_query_tools_accept_compact_dates_org_suffix_and_org_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime, engine = _runtime(tmp_path, monkeypatch)
+    tool = next(tool for tool in runtime.tools if tool.name == "query_regulatory_summary")
+
+    suffix_result = tool.invoke(
+        {
+            "system_code": "credit",
+            "table_code": "loan_summary",
+            "indicator_codes": ["loan_balance"],
+            "start_date": "20260228",
+            "end_date": "2026/02/28",
+            "organization": "1200机构",
+        }
+    )
+    name_result = tool.invoke(
+        {
+            "system_code": "credit",
+            "table_code": "loan_summary",
+            "indicator_codes": ["loan_balance"],
+            "start_date": "2026年2月28日",
+            "end_date": "2026.02.28",
+            "organization": "分行一",
+        }
+    )
+
+    assert suffix_result["start_date"] == "2026-02-28"
+    assert suffix_result["end_date"] == "2026-02-28"
+    assert suffix_result["organization"] == "1200"
+    assert name_result["organization"] == "分行一"
+    summary_calls = [(sql, params) for sql, params in engine.calls if "`reg_summary`" in sql]
+    suffix_sql, suffix_params = summary_calls[-2]
+    _, name_params = summary_calls[-1]
+    assert "(`org_code` = :organization OR `org_name` = :organization)" in suffix_sql
+    assert suffix_params["start_date"].isoformat() == "2026-02-28"
+    assert suffix_params["end_date"].isoformat() == "2026-02-28"
+    assert suffix_params["organization"] == "1200"
+    assert name_params["organization"] == "分行一"
+
+
+def test_summary_query_accepts_unique_indicator_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime, _ = _runtime(tmp_path, monkeypatch)
+    tool = next(tool for tool in runtime.tools if tool.name == "query_regulatory_summary")
+
+    result = tool.invoke(
+        {
+            "system_code": "credit",
+            "table_code": "loan_summary",
+            "indicator_codes": ["各项贷款余额"],
+            "start_date": "2026-01-01",
+            "end_date": "2026-01-31",
+            "organization": "1100",
+        }
+    )
+
+    assert result["indicators"] == [{"code": "loan_balance", "name": "各项贷款余额"}]
+
+
+def test_summary_query_accepts_unique_chinese_system_table_and_indicator_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime, _ = _runtime(tmp_path, monkeypatch)
+    tool = next(tool for tool in runtime.tools if tool.name == "query_regulatory_summary")
+
+    result = tool.invoke(
+        {
+            "system_code": "信贷监管系统",
+            "table_code": "贷款指标汇总表",
+            "indicator_codes": ["各项贷款余额"],
+            "start_date": "2026-01-01",
+            "end_date": "2026-01-31",
+            "organization": "1100",
+        }
+    )
+
+    assert result["system_code"] == "credit"
+    assert result["table_code"] == "loan_summary"
+    assert result["indicators"] == [{"code": "loan_balance", "name": "各项贷款余额"}]
+
+
+def test_asset_query_config_overrides_catalog_with_parameterized_summary_query(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime, engine = _runtime_with_engine(tmp_path, monkeypatch, _AssetFakeEngine())
+    tools = {tool.name: tool for tool in runtime.tools}
+
+    catalog = tools["browse_regulatory_catalog"].invoke({"system_code": "credit_asset"})
+    metrics = tools["search_regulatory_metrics"].invoke(
+        {"system_code": "credit_asset", "table_code": "loan_asset", "keyword": "各项贷款"}
+    )
+    result = tools["query_regulatory_summary"].invoke(
+        {
+            "system_code": "credit_asset",
+            "table_code": "loan_asset",
+            "indicator_codes": ["各项贷款余额"],
+            "start_date": "2026-02-28",
+            "end_date": "2026-02-28",
+            "organization": "1200",
+            "filters": [{"field": "record_status", "operator": "eq", "value": "normal"}],
+        }
+    )
+
+    assert catalog["systems"][0]["tables"] == [
+        {"code": "loan_asset", "name": "资产贷款指标表", "view": "summary"}
+    ]
+    assert metrics["candidates"] == [
+        {"code": "loan_balance_asset", "name": "各项贷款余额", "type": "number"}
+    ]
+    assert result["rows"][0]["metric_value"] == 760000
+    asset_sql, asset_params = next(
+        (sql, params) for sql, params in engine.calls if "`asset_summary`" in sql
+    )
+    assert "`metric_code` = :asset_metric_code" in asset_sql
+    assert "`record_status` = :filter_0" in asset_sql
+    assert asset_params["asset_metric_code"] == "loan_balance_asset"
+    assert asset_params["filter_0"] == "normal"
+    assert "'normal'" not in asset_sql
 
 
 def test_query_tools_reject_unknown_return_filter_or_sort_field(
