@@ -3,28 +3,40 @@
   "version": 1,
   "systems": [
     {
-      "code": "replace_system_code",
-      "name": "请替换为实际监管系统名称",
+      "code": "credit",
+      "name": "信贷监管测试系统",
       "summary_tables": [
         {
-          "code": "replace_summary_table_code",
-          "name": "请替换为实际汇总表名称",
-          "table": "replace_summary_table",
-          "date_column": "replace_stat_date_column",
-          "organization_column": "replace_organization_column",
+          "code": "loan_summary",
+          "name": "贷款指标汇总表",
+          "table": "regulatory_test_summary",
+          "date_column": "stat_date",
+          "organization_column": "org_code",
           "indicators": [
             {
-              "code": "replace_indicator_code",
-              "name": "请替换为实际指标名称",
-              "column": "replace_indicator_column",
+              "code": "loan_balance",
+              "name": "各项贷款余额",
+              "column": "loan_balance",
+              "type": "number"
+            },
+            {
+              "code": "npl_balance",
+              "name": "不良贷款余额",
+              "column": "npl_balance",
+              "type": "number"
+            },
+            {
+              "code": "deposit_balance",
+              "name": "各项存款余额",
+              "column": "deposit_balance",
               "type": "number"
             }
           ],
           "filters": [
             {
-              "code": "replace_filter_code",
-              "name": "请替换为实际筛选字段名称",
-              "column": "replace_filter_column",
+              "code": "product_type",
+              "name": "产品类型",
+              "column": "product_type",
               "type": "string",
               "filterable": true,
               "returnable": false,
@@ -38,27 +50,78 @@
       ],
       "detail_tables": [
         {
-          "code": "replace_detail_table_code",
-          "name": "请替换为实际明细表名称",
-          "table": "replace_detail_table",
-          "date_column": "replace_stat_date_column",
-          "organization_column": "replace_organization_column",
-          "default_return_fields": ["replace_detail_field_code"],
+          "code": "loan_detail",
+          "name": "贷款明细表",
+          "table": "regulatory_test_detail",
+          "date_column": "stat_date",
+          "organization_column": "org_code",
+          "default_return_fields": ["contract_no", "customer_name", "loan_balance", "loan_status"],
           "fields": [
             {
-              "code": "replace_detail_field_code",
-              "name": "请替换为实际明细字段名称",
-              "column": "replace_detail_field_column",
+              "code": "contract_no",
+              "name": "合同号",
+              "column": "contract_no",
               "type": "string",
               "returnable": true,
               "filterable": true,
               "sortable": true,
               "operators": ["eq", "in", "like"],
-              "mask": "FULL"
+              "mask": "ACCOUNT"
+            },
+            {
+              "code": "customer_name",
+              "name": "客户名称",
+              "column": "customer_name",
+              "type": "string",
+              "returnable": true,
+              "filterable": true,
+              "sortable": false,
+              "operators": ["eq", "like"],
+              "mask": "NAME"
+            },
+            {
+              "code": "mobile",
+              "name": "手机号",
+              "column": "mobile",
+              "type": "string",
+              "returnable": true,
+              "filterable": false,
+              "sortable": false,
+              "mask": "MOBILE"
+            },
+            {
+              "code": "product_type",
+              "name": "产品类型",
+              "column": "product_type",
+              "type": "string",
+              "returnable": false,
+              "filterable": true,
+              "sortable": false,
+              "operators": ["eq", "in"]
+            },
+            {
+              "code": "loan_balance",
+              "name": "贷款余额",
+              "column": "loan_balance",
+              "type": "number",
+              "returnable": true,
+              "filterable": true,
+              "sortable": true,
+              "operators": ["eq", "in"]
+            },
+            {
+              "code": "loan_status",
+              "name": "贷款状态",
+              "column": "loan_status",
+              "type": "string",
+              "returnable": true,
+              "filterable": true,
+              "sortable": false,
+              "operators": ["eq", "in"]
             }
           ],
           "order_by": [
-            {"field": "replace_detail_field_code", "direction": "asc"}
+            {"field": "contract_no", "direction": "asc"}
           ],
           "max_rows": 5
         }

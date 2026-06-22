@@ -28,6 +28,7 @@ from urgs_deepagents_service.orchestrator import stream_orchestration
 from urgs_deepagents_service.orchestrator import (
     worker as worker_mod,
 )
+from urgs_deepagents_service.orchestrator.orchestrator import _conversation_context
 from urgs_deepagents_service.orchestrator.state import (
     GuardResult,
     PlanStep,
@@ -181,6 +182,25 @@ def _patch_review(monkeypatch, passed: bool, reason: str = "ok") -> None:
     monkeypatch.setattr(
         "urgs_deepagents_service.orchestrator.orchestrator.run_review_with_feedback", fake_review_fb
     )
+
+
+def test_reviewer_prompt_accepts_required_clarification() -> None:
+    assert "缺少必填输入" in reviewer_mod.REVIEWER_SYSTEM_PROMPT
+    assert "不得要求 Worker 使用空条件" in reviewer_mod.REVIEWER_SYSTEM_PROMPT
+
+
+def test_conversation_context_excludes_current_turn_and_keeps_prior_slots() -> None:
+    context = _conversation_context(
+        [
+            {"role": "user", "content": "查各项贷款余额"},
+            {"role": "assistant", "content": "请提供日期和机构"},
+            {"role": "user", "content": "1200机构 2026-02-28"},
+        ],
+        "1200机构 2026-02-28",
+    )
+    assert "查各项贷款余额" in context
+    assert "请提供日期和机构" in context
+    assert "用户：1200机构 2026-02-28" not in context
 
 
 def _patch_worker(monkeypatch, answer: str = "worker-answer") -> None:

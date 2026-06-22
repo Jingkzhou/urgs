@@ -1,7 +1,7 @@
 {
   "skill_code": "regulatory-data-query",
   "version": 2,
-  "enabled": false,
+  "enabled": true,
   "agent_code": "regulatory-data-query-agent",
   "runtime_entrypoint": "runtime.py",
   "tools": [
@@ -13,7 +13,8 @@
   ],
   "database": {
     "dialect": "mysql",
-    "url_env": "DEEPAGENTS_REGULATORY_QUERY_DATABASE_URL"
+    "url_env": "DEEPAGENTS_REGULATORY_QUERY_DATABASE_URL",
+    "url_example": "mysql+pymysql://readonly_user:password@db-host:3306/urgs?charset=utf8mb4"
   },
   "catalog_limit": 50
 }

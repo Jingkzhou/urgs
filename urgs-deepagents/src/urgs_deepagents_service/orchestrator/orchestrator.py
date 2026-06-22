@@ -61,6 +61,38 @@ def _extract_user_message(messages: str | list[dict[str, Any]]) -> str:
     return "\n".join(str(item.get("content", "")) for item in messages if isinstance(item, dict))
 
 
+def _conversation_context(messages: str | list[dict[str, Any]], current_message: str) -> str:
+    """Preserve prior turns so Workers can inherit already-confirmed query slots."""
+
+    if isinstance(messages, str):
+        return ""
+    rows: list[str] = []
+    current_index = next(
+        (
+            index
+            for index in range(len(messages) - 1, -1, -1)
+            if isinstance(messages[index], dict)
+            and messages[index].get("role") == "user"
+            and str(messages[index].get("content") or "").strip() == current_message
+        ),
+        None,
+    )
+    for index, item in enumerate(messages):
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip()
+        content = item.get("content")
+        if role not in {"user", "assistant"} or not isinstance(content, str) or not content.strip():
+            continue
+        if index == current_index:
+            continue
+        label = "用户" if role == "user" else "助手"
+        rows.append(f"{label}：{content.strip()}")
+    if not rows:
+        return ""
+    return "历史对话中已确认的信息，必须优先继承，不要重复询问：\n" + "\n".join(rows)
+
+
 def _find_agent(agents: list[RouterAgentDescriptor], code: str) -> RouterAgentDescriptor | None:
     for agent in agents:
         if agent.agent_code == code:
@@ -98,6 +130,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
 
     try:
         user_message = _extract_user_message(request.messages)
+        conversation_context = _conversation_context(request.messages, user_message)
         state.user_message = user_message
 
         # 1. Input Guard
@@ -285,7 +318,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                 agent_code=routing.agent_code,
                 agent_config=cfg,
                 task=user_message,
-                context="",
+                context=conversation_context,
                 stream_content=False,
                 debug=request.debug,
                 stream_context=context,
@@ -332,7 +365,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                 status="completed",
                 message="复杂任务拆解完成",
             )
-            context_parts: list[str] = []
+            context_parts: list[str] = [conversation_context] if conversation_context else []
             for step in steps:
                 cfg = get_config(step.agent)
                 if cfg is None:
@@ -428,7 +461,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                     agent_code=routing.agent_code,
                     agent_config=cfg,
                     task=user_message,
-                    context=f"前次验收反馈：\n{feedback}",
+                    context=f"{conversation_context}\n前次验收反馈：\n{feedback}".strip(),
                     stream_content=False,
                     debug=request.debug,
                     stream_context=context,
@@ -437,7 +470,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                     yield evt
                 rework_outputs = [run.output]
             else:
-                context_parts2: list[str] = []
+                context_parts2: list[str] = [conversation_context] if conversation_context else []
                 for step in steps:
                     cfg = get_config(step.agent)
                     if cfg is None:

@@ -24,6 +24,9 @@ REVIEWER_SYSTEM_PROMPT = """你是 URGS 的 Reviewer，负责验收 Worker 的�
 
 判定规则：
 - 只有所有维度均达标、score >= 0.75、且没有阻断问题时 passed=true。
+- Worker 因已声明的 Skill、工具或数据权限要求而缺少必填输入时，明确说明缺失项并向用户反问，
+  属于合格的直接答复，应判定 passed=true。不得要求 Worker 使用空条件、猜测默认范围、
+  伪造数据或绕过日期、机构等必填约束来换取查询结果。
 - 存在明显缺陷、答案为空、泛泛而谈、没有直接回答问题、遗漏关键要求、
   工具结果不可验证或存在安全风险时 passed=false。
 - passed=false 时必须列出具体 issues，并在 required_fixes 中给出可执行返工项。
