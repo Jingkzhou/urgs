@@ -98,10 +98,10 @@ const TaskListTable: React.FC<TaskListTableProps> = ({
     ];
 
     return (
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-            <div className="overflow-x-auto">
+        <div className="h-full bg-white rounded-2xl border border-slate-200 overflow-hidden">
+            <div className="h-full overflow-auto">
                 <table className="w-full min-w-[1100px] text-sm text-left">
-                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
+                    <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
                         <tr>
                             <th className="px-4 py-3 font-semibold">任务名称</th>
                             <th className="px-4 py-3 font-semibold">任务类型</th>
