@@ -74,6 +74,7 @@ async def run_worker(
         allow_write=getattr(agent_config, "allow_write", False),
         workspace_root=getattr(agent_config, "workspace_root", None),
         debug=debug,
+        agent_code=agent_code,
     )
 
     messages: list[dict[str, str]] = []
@@ -157,7 +158,11 @@ async def run_worker(
                     "type": "tool_result",
                     "title": f"工具 {name} 返回结果",
                     "toolName": name,
-                    "content": tool_result_text(output),
+                    "content": (
+                        f"技能工具 {name} 已完成"
+                        if getattr(agent_config, "skill_dirs", None)
+                        else tool_result_text(output)
+                    ),
                 }
                 if run_id and run_id in tool_inputs:
                     payload["args"] = tool_inputs.pop(run_id)

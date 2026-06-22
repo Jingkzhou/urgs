@@ -352,6 +352,28 @@ async def test_model_config_failure_emits_sanitized_error(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_skill_configuration_failure_emits_actionable_error(monkeypatch) -> None:
+    _patch_guard(monkeypatch, passed=True)
+    _patch_router(monkeypatch, "general-agent", is_complex=False)
+
+    async def fail_worker(**kwargs: Any) -> worker_mod.WorkerRun:
+        from urgs_deepagents_service.skill_loader import SkillConfigurationError
+
+        raise SkillConfigurationError("监管查询 Skill 尚未启用或映射未完成")
+
+    monkeypatch.setattr(worker_mod, "run_worker", fail_worker)
+    monkeypatch.setattr("urgs_deepagents_service.orchestrator.orchestrator.run_worker", fail_worker)
+    request = OrchestratorRequest(
+        messages="查询贷款指标", agents=_agents(), agent_configs=_configs()
+    )
+    events = await _make_stream(monkeypatch, request)
+
+    error = events[-1][1]
+    assert error["error"] == "监管查询 Skill 配置不完整，请完成 Skill 映射后再启用 Agent"
+    assert error["detail"] == "监管查询 Skill 尚未启用或映射未完成"
+
+
+@pytest.mark.asyncio
 async def test_complex_path_uses_planner_and_finalizer(monkeypatch) -> None:
     _patch_guard(monkeypatch, passed=True)
     _patch_router(monkeypatch, "lineage-agent", is_complex=True)

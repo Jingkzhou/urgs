@@ -7,6 +7,7 @@ import com.example.urgs_api.ai.service.agent.AgentAppBuildModeHandler;
 import com.example.urgs_api.ai.service.agent.DeepAgentsBuildModeHandler;
 import com.example.urgs_api.ai.service.agent.DifyBuildModeHandler;
 import com.example.urgs_api.ai.service.agent.RagBuildModeHandler;
+import com.example.urgs_api.user.service.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +31,8 @@ public class AiChatServiceImpl implements AiChatService {
     private static final Logger log = LoggerFactory.getLogger(AiChatServiceImpl.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final ExecutorService executor = Executors.newCachedThreadPool();
+    private static final String REGULATORY_DATA_QUERY_AGENT_CODE = "regulatory-data-query-agent";
+    private static final String REGULATORY_DATA_QUERY_PERMISSION = "ai:regulatory-query:use";
 
     @Autowired
     private AiChatHistoryService aiChatHistoryService; // Inject history service
@@ -57,6 +60,9 @@ public class AiChatServiceImpl implements AiChatService {
 
     @Autowired
     private AiTokenBudgetService aiTokenBudgetService;
+
+    @Autowired
+    private UserService userService;
 
     @Override
     public String chat(String systemPrompt, String userPrompt) {
@@ -104,7 +110,7 @@ public class AiChatServiceImpl implements AiChatService {
      */
     public void streamChatWithPersistence(String sessionId, String systemPrompt, String userPrompt,
             String agentAppSkillAppCode, String agentAppSkillCode, List<Map<String, String>> conversationContext,
-            SseEmitter emitter) {
+            Long requesterUserId, SseEmitter emitter) {
         log.info("Starting streamChatWithPersistence for session: {}", sessionId);
 
         if (userPrompt == null || userPrompt.isBlank()) {
@@ -119,12 +125,16 @@ public class AiChatServiceImpl implements AiChatService {
         com.example.urgs_api.ai.entity.Agent sessionAgent = sessionInfo != null && sessionInfo.getAgentId() != null
                 ? agentRepository.selectById(sessionInfo.getAgentId())
                 : null;
+        if (sessionAgent != null && !canUseAgent(requesterUserId, sessionAgent)) {
+            sendAccessDenied(emitter);
+            return;
+        }
         String runId = aiAgentRunService.createRun(sessionId, sessionInfo == null ? null : sessionInfo.getUserId(),
                 sessionAgent, userPrompt);
         sendAgentEvent(runId, sessionId, sessionAgent, emitter, "routing_started", "thinking",
                 "任务识别", "正在识别任务类型和可用助手", Map.of("manual", sessionAgent != null), "RUNNING");
 
-        List<Agent> catalog = listRoutingAgents();
+        List<Agent> catalog = listRoutingAgents(requesterUserId);
         final com.example.urgs_api.ai.entity.AiChatSession sessionRef = sessionInfo;
         final String finalSystemPrompt = systemPrompt;
         final String finalUserPrompt = userPrompt;
@@ -309,13 +319,35 @@ public class AiChatServiceImpl implements AiChatService {
         }
     }
 
-    private List<Agent> listRoutingAgents() {
+    private List<Agent> listRoutingAgents(Long requesterUserId) {
         return agentRepository.selectList(new QueryWrapper<Agent>()
                 .eq("status", 1)
                 .isNotNull("agent_code")
                 .ne("agent_code", "")
                 .orderByAsc("sort_order")
-                .orderByDesc("id"));
+                .orderByDesc("id"))
+                .stream()
+                .filter(agent -> canUseAgent(requesterUserId, agent))
+                .toList();
+    }
+
+    private boolean canUseAgent(Long requesterUserId, Agent agent) {
+        if (agent == null || !REGULATORY_DATA_QUERY_AGENT_CODE.equals(agent.getAgentCode())) {
+            return true;
+        }
+        return requesterUserId != null
+                && userService.getUserPermissions(requesterUserId).contains(REGULATORY_DATA_QUERY_PERMISSION);
+    }
+
+    private void sendAccessDenied(SseEmitter emitter) {
+        try {
+            emitter.send(SseEmitter.event().name("error")
+                    .data(objectMapper.writeValueAsString(Map.of("error", "无权使用监管指标查询 Agent"))));
+        } catch (Exception e) {
+            log.warn("Failed to send regulatory query access denied event", e);
+        } finally {
+            emitter.complete();
+        }
     }
 
     private Agent findAgentByCode(List<Agent> agents, String agentCode) {

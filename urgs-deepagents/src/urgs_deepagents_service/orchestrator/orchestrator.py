@@ -45,6 +45,7 @@ from urgs_deepagents_service.orchestrator.state import (
 from urgs_deepagents_service.orchestrator.utils import StreamContext, sse
 from urgs_deepagents_service.orchestrator.worker import run_worker
 from urgs_deepagents_service.schemas import OrchestratorRequest, RouterAgentDescriptor
+from urgs_deepagents_service.skill_loader import SkillConfigurationError
 from urgs_deepagents_service.sse import safe_error_payload
 
 
@@ -608,8 +609,13 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
             message="编排完成",
         )
     except Exception as exc:
-        state.record("error", "failed", "编排失败")
-        yield sse("error", safe_error_payload(context, message="编排失败", exc=exc), context)
+        error_message = (
+            "监管查询 Skill 配置不完整，请完成 Skill 映射后再启用 Agent"
+            if isinstance(exc, SkillConfigurationError)
+            else "编排失败"
+        )
+        state.record("error", "failed", error_message)
+        yield sse("error", safe_error_payload(context, message=error_message, exc=exc), context)
 
 
 def _review_event(review: Any, context: StreamContext, step_id: str = "review.completed") -> str:

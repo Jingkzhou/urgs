@@ -154,6 +154,7 @@ async def _stream_deep_agent(request: InvokeRequest, settings: Any) -> AsyncIter
             allow_write=False,
             workspace_root=None,
             debug=request.debug,
+            agent_code=request.agent_code,
         )
         emitted_text = False
         tool_inputs: dict[str, Any] = {}
@@ -405,6 +406,7 @@ def create_app() -> FastAPI:
                 allow_write=False,
                 workspace_root=None,
                 debug=request.debug,
+                agent_code=request.agent_code,
             )
             result = agent.invoke({"messages": request.messages}, config=_graph_config(settings))
             return InvokeResponse(output=_serialize(result))

@@ -1,0 +1,19 @@
+{
+  "skill_code": "regulatory-data-query",
+  "version": 2,
+  "enabled": false,
+  "agent_code": "regulatory-data-query-agent",
+  "runtime_entrypoint": "runtime.py",
+  "tools": [
+    "browse_regulatory_catalog",
+    "search_regulatory_metrics",
+    "search_regulatory_fields",
+    "query_regulatory_summary",
+    "query_regulatory_detail"
+  ],
+  "database": {
+    "dialect": "mysql",
+    "url_env": "DEEPAGENTS_REGULATORY_QUERY_DATABASE_URL"
+  },
+  "catalog_limit": 50
+}

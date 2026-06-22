@@ -45,6 +45,6 @@ public interface AiChatService {
 
     void streamChatWithPersistence(String sessionId, String systemPrompt, String userPrompt,
             String agentAppSkillAppCode, String agentAppSkillCode, List<Map<String, String>> conversationContext,
-            SseEmitter emitter);
+            Long requesterUserId, SseEmitter emitter);
 
 }

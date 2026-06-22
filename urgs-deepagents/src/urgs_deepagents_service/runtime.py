@@ -9,6 +9,7 @@ from langchain.agents.middleware.types import AgentMiddleware
 
 from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import FilesystemBackend
+from urgs_deepagents_service.skill_loader import load_agent_skill_runtime
 
 READ_ONLY_FILESYSTEM_PERMISSIONS = [
     FilesystemPermission(operations=["write"], paths=["/**"], mode="deny")
@@ -94,6 +95,7 @@ def build_agent_kwargs(
     tool_allowlist: str | list[str] | None,
     allow_write: bool = False,
     workspace_root: str | None = None,
+    include_platform_skills: bool = True,
     debug: bool,
 ) -> dict[str, Any]:
     """Build safe `create_deep_agent` runtime kwargs.
@@ -107,7 +109,9 @@ def build_agent_kwargs(
         normalize_path_list(memory_files),
     )
     merged_skills = merge_unique(
-        normalize_path_list(getattr(settings, "skill_dirs", "") or ""),
+        normalize_path_list(getattr(settings, "skill_dirs", "") or "")
+        if include_platform_skills
+        else [],
         normalize_path_list(skill_dirs),
     )
     allow_set = frozenset(normalize_path_list(tool_allowlist))
@@ -168,21 +172,40 @@ def create_runtime_agent(
     allow_write: bool = False,
     workspace_root: str | None = None,
     debug: bool,
+    agent_code: str | None = None,
 ) -> Any:
     """Create a DeepAgent with centralized permission, backend, memory, and skill policy."""
+
+    regulatory_runtime = load_agent_skill_runtime(settings, agent_code, skill_dirs)
+    effective_system_prompt = system_prompt
+    effective_tool_allowlist = tool_allowlist
+    effective_skill_dirs = skill_dirs
+    include_platform_skills = True
+    runtime_tools: list[Any] = []
+    if regulatory_runtime is not None:
+        effective_system_prompt = (
+            f"{system_prompt or ''}\n\n"
+            "## 已启用监管指标查询 Skill\n"
+            f"{regulatory_runtime.instructions}"
+        ).strip()
+        effective_tool_allowlist = list(regulatory_runtime.tool_names)
+        effective_skill_dirs = None
+        include_platform_skills = False
+        runtime_tools = list(regulatory_runtime.tools)
 
     runtime_kwargs = build_agent_kwargs(
         settings=settings,
         memory_files=memory_files,
-        skill_dirs=skill_dirs,
-        tool_allowlist=tool_allowlist,
+        skill_dirs=effective_skill_dirs,
+        tool_allowlist=effective_tool_allowlist,
         allow_write=allow_write,
         workspace_root=workspace_root,
+        include_platform_skills=include_platform_skills,
         debug=debug,
     )
     return create_deep_agent(
         model=model,
-        tools=[],
-        system_prompt=system_prompt,
+        tools=runtime_tools,
+        system_prompt=effective_system_prompt,
         **runtime_kwargs,
     )

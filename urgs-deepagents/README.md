@@ -196,6 +196,8 @@ Input Guard -> Router/Supervisor -> Planner (if complex) -> Worker -> Reviewer -
 | `DEEPAGENTS_WORKSPACE_ROOT` | 空 | Agent 工作空间根目录 |
 | `DEEPAGENTS_MEMORY_FILES` | 空 | 平台级记忆文件列表 |
 | `DEEPAGENTS_SKILL_DIRS` | 空 | 平台级技能目录列表 |
+| `DEEPAGENTS_SKILLS_ROOT` | `skills` | 服务内置 Skill 包根目录 |
+| `DEEPAGENTS_REGULATORY_QUERY_DATABASE_URL` | 空 | 监管查询 Agent 使用的只读 MySQL 连接串 |
 
 ## 模型获取机制
 
@@ -260,6 +262,12 @@ GET ${DEEPAGENTS_URGS_API_URL}/api/internal/ai/config/default
 - 编排入口前置 Input Guard。
 - 内部 API 使用 token 鉴权。
 - SSE/HTTP 错误会脱敏 token、密钥和内部地址。
+
+## 监管指标查询 Skill
+
+`regulatory-data-query-agent` 通过 `skills/regulatory-data-query/` 直接连接 MySQL。`SKILL.md` 定义反问和结果表达规则，`skill.json` 定义开关、工具和连接环境变量，`catalog.json` 按“系统 -> 汇总表 -> 指标”和“系统 -> 明细表 -> 字段”维护受控目录；连接串仅从 `DEEPAGENTS_REGULATORY_QUERY_DATABASE_URL` 读取。
+
+Agent 默认停用。启用前必须完成 `catalog.json` 的实际系统、表、指标和字段映射，并为数据库账号只授予目录中目标表的 `SELECT` 权限。运行时只允许目录浏览、指标检索、字段检索、汇总查询和明细查询五个受控工具，不开放 `execute` 或文件工具。明细查询由工具强制限制为最多 5 条。
 
 ## 本地开发
 
@@ -364,4 +372,4 @@ docker run -p 8003:8003 --env-file .env urgs-deepagents
 - 当前分支包含 `pyproject.toml`、`uv.lock`、`.env.example`、`Dockerfile`、`src/**/*.py`、`tests/**/*.py` 和 `vendor/`。
 - `urgs-deepagents-service` 当前版本为 `0.1.0`。
 - 服务默认端口为 `8003`。
-- 当前服务默认不注册 URGS 业务工具，也不提供真实 shell 沙箱；后续接入业务工具时，应先定义权限边界、审计和沙箱策略。
+- 当前服务默认不注册 URGS 业务工具，也不提供真实 shell 沙箱；监管查询 Agent 是受 Skill 白名单约束的例外，未完成 Skill 映射时不会启用。

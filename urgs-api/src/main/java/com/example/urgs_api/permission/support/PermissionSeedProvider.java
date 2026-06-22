@@ -64,6 +64,7 @@ public class PermissionSeedProvider {
         list.add(new PermissionDTO(null, "新增", "sys:metric:add", "button", "-", 2, "3-9"));
         list.add(new PermissionDTO(null, "编辑", "sys:metric:edit", "button", "-", 2, "3-9"));
         list.add(new PermissionDTO(null, "删除", "sys:metric:del", "button", "-", 2, "3-9"));
+        list.add(new PermissionDTO(null, "监管指标查询", "ai:regulatory-query:use", "button", "-", 3, "3-7-2"));
         return list;
     }
 }

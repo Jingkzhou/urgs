@@ -631,6 +631,7 @@ start_deepagents() {
     export_common_env
     export DEEPAGENTS_PORT DEEPAGENTS_URGS_API_URL DEEPAGENTS_INTERNAL_API_TOKEN
     export DEEPAGENTS_MODEL DEEPAGENTS_LOG_LEVEL DEEPAGENTS_ENABLE_WRITE_TOOLS
+    export DEEPAGENTS_SKILLS_ROOT DEEPAGENTS_REGULATORY_QUERY_DATABASE_URL
     (cd "${ROOT_DIR}/services/deepagents" && \
         start_background deepagents .venv/bin/python -m uvicorn urgs_deepagents_service.main:app --host "${DEEPAGENTS_HOST:-0.0.0.0}" --port "$DEEPAGENTS_PORT")
 }

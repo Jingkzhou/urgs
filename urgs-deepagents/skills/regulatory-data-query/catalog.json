@@ -1,0 +1,68 @@
+{
+  "skill_code": "regulatory-data-query",
+  "version": 1,
+  "systems": [
+    {
+      "code": "replace_system_code",
+      "name": "请替换为实际监管系统名称",
+      "summary_tables": [
+        {
+          "code": "replace_summary_table_code",
+          "name": "请替换为实际汇总表名称",
+          "table": "replace_summary_table",
+          "date_column": "replace_stat_date_column",
+          "organization_column": "replace_organization_column",
+          "indicators": [
+            {
+              "code": "replace_indicator_code",
+              "name": "请替换为实际指标名称",
+              "column": "replace_indicator_column",
+              "type": "number"
+            }
+          ],
+          "filters": [
+            {
+              "code": "replace_filter_code",
+              "name": "请替换为实际筛选字段名称",
+              "column": "replace_filter_column",
+              "type": "string",
+              "filterable": true,
+              "returnable": false,
+              "sortable": false,
+              "operators": ["eq", "in"]
+            }
+          ],
+          "max_rows": 100,
+          "order_by": []
+        }
+      ],
+      "detail_tables": [
+        {
+          "code": "replace_detail_table_code",
+          "name": "请替换为实际明细表名称",
+          "table": "replace_detail_table",
+          "date_column": "replace_stat_date_column",
+          "organization_column": "replace_organization_column",
+          "default_return_fields": ["replace_detail_field_code"],
+          "fields": [
+            {
+              "code": "replace_detail_field_code",
+              "name": "请替换为实际明细字段名称",
+              "column": "replace_detail_field_column",
+              "type": "string",
+              "returnable": true,
+              "filterable": true,
+              "sortable": true,
+              "operators": ["eq", "in", "like"],
+              "mask": "FULL"
+            }
+          ],
+          "order_by": [
+            {"field": "replace_detail_field_code", "direction": "asc"}
+          ],
+          "max_rows": 5
+        }
+      ]
+    }
+  ]
+}

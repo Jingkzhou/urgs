@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     workspace_root: str | None = None
     memory_files: str = ""
     skill_dirs: str = ""
+    skills_root: str = "skills"
 
     @field_validator("urgs_api_url")
     @classmethod

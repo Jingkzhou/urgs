@@ -29,7 +29,8 @@ public class AiChatController {
      * 发送聊天请求 (流式响应)
      */
     @PostMapping("/stream")
-    public org.springframework.http.ResponseEntity<SseEmitter> streamChat(@RequestBody Map<String, Object> request) {
+    public org.springframework.http.ResponseEntity<SseEmitter> streamChat(@RequestBody Map<String, Object> request,
+            @RequestAttribute(value = "userId", required = false) Long requesterUserId) {
         String systemPrompt = (String) request.getOrDefault("systemPrompt", "You are a helpful assistant.");
         String userPrompt = (String) request.get("userPrompt");
         // 如果有 sessionId，则使用持久化逻辑；否则仅流式返回
@@ -42,7 +43,7 @@ public class AiChatController {
 
         if (sessionId != null && !sessionId.isEmpty()) {
             aiChatService.streamChatWithPersistence(sessionId, systemPrompt, userPrompt, agentAppSkillAppCode,
-                    agentAppSkillCode, conversationContext, emitter);
+                    agentAppSkillCode, conversationContext, requesterUserId, emitter);
         } else {
             aiChatService.streamChat(systemPrompt, userPrompt, emitter);
         }

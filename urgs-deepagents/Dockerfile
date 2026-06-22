@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir uv==0.8.17
 COPY pyproject.toml uv.lock* README.md ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
+COPY skills ./skills
 COPY LICENSE.upstream ./LICENSE.upstream
 COPY vendor ./vendor
 RUN uv sync --frozen --no-dev
