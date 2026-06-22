@@ -84,3 +84,8 @@ deploy/components-cache/onlyoffice-documentserver_9.4.0_arm64.deb
 backups/
 .hermes/
 data/
+urgs-deepagents/src/urgs_deepagents_service.egg-info/dependency_links.txt
+urgs-deepagents/src/urgs_deepagents_service.egg-info/PKG-INFO
+urgs-deepagents/src/urgs_deepagents_service.egg-info/requires.txt
+urgs-deepagents/src/urgs_deepagents_service.egg-info/SOURCES.txt
+urgs-deepagents/src/urgs_deepagents_service.egg-info/top_level.txt
