@@ -794,12 +794,19 @@ def test_query_tools_reject_unknown_return_filter_or_sort_field(
         "end_date": "2026-01-31",
         "organization": "1100",
     }
-    with pytest.raises(ValueError, match="明细返回字段未在 Skill"):
-        tool.invoke({**base, "return_fields": ["not_exists"]})
-    with pytest.raises(ValueError, match="筛选字段未在 Skill"):
-        tool.invoke({**base, "filters": [{"field": "mobile", "operator": "eq", "value": "x"}]})
-    with pytest.raises(ValueError, match="排序字段"):
-        tool.invoke({**base, "sort_field": "customer_name"})
+    unknown_return = tool.invoke({**base, "return_fields": ["not_exists"]})
+    assert unknown_return["ok"] is False
+    assert "明细返回字段未在 Skill" in unknown_return["error"]
+
+    unknown_filter = tool.invoke(
+        {**base, "filters": [{"field": "mobile", "operator": "eq", "value": "x"}]}
+    )
+    assert unknown_filter["ok"] is False
+    assert "筛选字段未在 Skill" in unknown_filter["error"]
+
+    unknown_sort = tool.invoke({**base, "sort_field": "customer_name"})
+    assert unknown_sort["ok"] is False
+    assert "排序字段" in unknown_sort["error"]
 
 
 def test_skill_runtime_requires_database_url_environment(

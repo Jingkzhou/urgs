@@ -2040,6 +2040,8 @@ def is_regulatory_query_tool(name: str) -> bool:
 def summarize_regulatory_query_result(output: Any) -> str:
     if not isinstance(output, dict):
         return "监管数据查询已完成"
+    if output.get("ok") is False:
+        return f"监管数据查询失败：{output.get('error') or '工具执行失败'}"
     if "systems" in output:
         return f"监管目录检索完成，共 {output.get('system_count', 0)} 个系统"
     if "dates" in output:

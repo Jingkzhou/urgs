@@ -78,6 +78,7 @@ class WorkerOutput(BaseModel):
     task: str
     answer: str
     step: int | None = None
+    tool_results: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class StageRecord(BaseModel):

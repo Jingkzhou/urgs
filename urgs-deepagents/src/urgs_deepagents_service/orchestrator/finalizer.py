@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -22,7 +23,11 @@ def _outputs_text(outputs: list[WorkerOutput]) -> str:
         if output.step is not None:
             header += f" 步骤{output.step}"
         header += f" 任务：{output.task}"
-        parts.append(f"{header}\n{output.answer}")
+        body = output.answer
+        if output.tool_results:
+            body += "\n\n工具调用结果（可信证据）：\n"
+            body += json.dumps(output.tool_results, ensure_ascii=False, default=str)
+        parts.append(f"{header}\n{body}")
     return "\n\n".join(parts)
 
 

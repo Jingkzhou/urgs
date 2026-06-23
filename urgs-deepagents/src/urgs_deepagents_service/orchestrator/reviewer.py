@@ -104,7 +104,11 @@ def _outputs_text(outputs: list[WorkerOutput]) -> str:
         if output.step is not None:
             header += f" 步骤{output.step}"
         header += f" 任务：{output.task}"
-        parts.append(f"{header}\n{output.answer}")
+        body = output.answer
+        if output.tool_results:
+            body += "\n\n工具调用结果（可信证据，返工时必须优先使用，不要重复询问工具入参中已确认的信息）：\n"
+            body += json.dumps(output.tool_results, ensure_ascii=False, default=str)
+        parts.append(f"{header}\n{body}")
     return "\n\n".join(parts)
 
 
@@ -140,6 +144,8 @@ def build_rework_feedback(review: ReviewResult, outputs: list[WorkerOutput]) -> 
         "前次 Worker 产出（仅作为需要修正的参考，不要机械复述）：\n"
         f"{_outputs_text(outputs)}\n\n"
         "返工要求：直接重做当前任务，优先补齐缺失结论、关键依据、边界条件和可执行步骤；"
+        "如果前次产出包含工具调用结果，应基于工具返回的数据修正答案；"
+        "不要重复询问工具入参或历史上下文中已经确认的系统、表、指标、日期、机构；"
         "不要解释 Reviewer 或编排流程。"
     )
 

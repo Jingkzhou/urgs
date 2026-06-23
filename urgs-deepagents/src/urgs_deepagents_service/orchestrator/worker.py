@@ -12,6 +12,7 @@ from urgs_deepagents_service.orchestrator.utils import (
     assistant_text_from_output,
     chunk_text,
     graph_config,
+    serialize,
     sse,
     tool_result_text,
 )
@@ -79,8 +80,22 @@ async def run_worker(
 
     messages: list[dict[str, str]] = []
     if context:
-        messages.append({"role": "user", "content": f"前置上下文：\n{context}"})
-    messages.append({"role": "user", "content": task})
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "前置上下文：\n"
+                    f"{context}\n\n"
+                    "当前用户补充：\n"
+                    f"{task}\n\n"
+                    "请把当前补充与前置上下文合并理解。历史中已经确认的系统、表、指标、"
+                    "日期、机构、筛选条件等槽位必须继承；只反问仍然缺失或存在歧义的信息，"
+                    "不要重复询问已经确认的内容。"
+                ),
+            }
+        )
+    else:
+        messages.append({"role": "user", "content": task})
 
     run = WorkerRun(agent_code=agent_code, task=task, stream_content=stream_content)
     collected: list[str] = []
@@ -154,6 +169,14 @@ async def run_worker(
 
             if event_name == "on_tool_end":
                 output = data.get("output")
+                result_text = tool_result_text(output)
+                result_record: dict[str, Any] = {
+                    "tool_name": name,
+                    "result": result_text[:4000],
+                }
+                if run_id and run_id in tool_inputs:
+                    result_record["args"] = serialize(tool_inputs[run_id])
+                run.output.tool_results.append(result_record)
                 payload: dict[str, Any] = {
                     "type": "tool_result",
                     "title": f"工具 {name} 返回结果",

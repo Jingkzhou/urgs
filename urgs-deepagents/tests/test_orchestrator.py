@@ -219,6 +219,47 @@ def test_conversation_context_excludes_current_turn_and_keeps_prior_slots() -> N
     assert "用户：1200机构 2026-02-28" not in context
 
 
+@pytest.mark.asyncio
+async def test_worker_merges_context_and_current_slot_completion(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeAgent:
+        async def astream_events(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+            version: str = "v2",
+        ) -> AsyncIterator[dict[str, object]]:
+            captured["messages"] = payload["messages"]
+            yield {
+                "event": "on_chat_model_end",
+                "name": "model",
+                "data": {"output": SimpleNamespace(content="ok")},
+            }
+
+    monkeypatch.setattr(worker_mod, "create_runtime_agent", lambda **kwargs: FakeAgent())
+    run = await worker_mod.run_worker(
+        model=object(),
+        settings=_FakeSettings(),
+        agent_code="regulatory-data-query-agent",
+        agent_config=AgentRuntimeConfig(system_prompt="监管查询"),
+        task="总行 2月末",
+        context="历史对话中已确认的信息，必须优先继承，不要重复询问：\n用户：帮我查一下1各项贷款.本外币合计数据\n助手：指标：1各项贷款.本外币合计（编码：g01_2_1_c）；可用统计期间：2026-01-31、2026-02-28",
+        stream_content=False,
+        debug=False,
+    )
+
+    await _collect(run.events())
+
+    messages = captured["messages"]
+    assert len(messages) == 1
+    content = messages[0]["content"]
+    assert "当前用户补充" in content
+    assert "总行 2月末" in content
+    assert "g01_2_1_c" in content
+    assert "必须继承" in content
+
+
 def _patch_worker(monkeypatch, answer: str = "worker-answer") -> None:
     async def fake_run_worker(**kwargs: Any):
         stream_context = kwargs.get("stream_context")
