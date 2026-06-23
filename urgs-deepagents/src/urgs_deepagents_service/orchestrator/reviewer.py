@@ -106,7 +106,10 @@ def _outputs_text(outputs: list[WorkerOutput]) -> str:
         header += f" 任务：{output.task}"
         body = output.answer
         if output.tool_results:
-            body += "\n\n工具调用结果（可信证据，返工时必须优先使用，不要重复询问工具入参中已确认的信息）：\n"
+            body += (
+                "\n\n工具调用结果（可信证据，返工时必须优先使用，"
+                "不要重复询问工具入参中已确认的信息）：\n"
+            )
             body += json.dumps(output.tool_results, ensure_ascii=False, default=str)
         parts.append(f"{header}\n{body}")
     return "\n\n".join(parts)

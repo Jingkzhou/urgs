@@ -232,6 +232,32 @@ async def test_worker_merges_context_and_current_slot_completion(monkeypatch) ->
         ) -> AsyncIterator[dict[str, object]]:
             captured["messages"] = payload["messages"]
             yield {
+                "event": "on_tool_start",
+                "name": "query_regulatory_summary",
+                "run_id": "tool-1",
+                "data": {
+                    "input": {
+                        "system_code": "URGS",
+                        "table_code": "g01_2",
+                        "indicator_codes": ["g01_2_1_c"],
+                        "organization": "1100",
+                    }
+                },
+            }
+            yield {
+                "event": "on_tool_end",
+                "name": "query_regulatory_summary",
+                "run_id": "tool-1",
+                "data": {
+                    "output": {
+                        "content": (
+                            '{"ok": true, "returned_count": 1, '
+                            '"rows": [{"metric_value": "100.00"}]}'
+                        )
+                    }
+                },
+            }
+            yield {
                 "event": "on_chat_model_end",
                 "name": "model",
                 "data": {"output": SimpleNamespace(content="ok")},
@@ -258,6 +284,46 @@ async def test_worker_merges_context_and_current_slot_completion(monkeypatch) ->
     assert "总行 2月末" in content
     assert "g01_2_1_c" in content
     assert "必须继承" in content
+    assert run.output.tool_results[0]["tool_name"] == "query_regulatory_summary"
+    assert run.output.tool_results[0]["args"]["organization"] == "1100"
+    assert "metric_value" in run.output.tool_results[0]["result"]
+
+
+def test_rework_feedback_includes_tool_results_as_evidence() -> None:
+    feedback = reviewer_mod.build_rework_feedback(
+        ReviewResult(
+            passed=False,
+            score=0.5,
+            reason="答案未使用工具结果",
+            issues=["缺少查询值"],
+            required_fixes=["基于工具结果返回数值"],
+        ),
+        [
+            WorkerOutput(
+                agent_code="regulatory-data-query-agent",
+                task="2026年2月末",
+                answer="请确认指标",
+                tool_results=[
+                    {
+                        "tool_name": "query_regulatory_summary",
+                        "args": {
+                            "system_code": "URGS",
+                            "table_code": "g01_2",
+                            "indicator_codes": ["g01_2_1_c"],
+                            "organization": "1100",
+                        },
+                        "result": (
+                            '{"ok": true, "returned_count": 1, '
+                            '"rows": [{"metric_value": "100.00"}]}'
+                        ),
+                    }
+                ],
+            )
+        ],
+    )
+    assert "工具调用结果" in feedback
+    assert "metric_value" in feedback
+    assert "不要重复询问工具入参" in feedback
 
 
 def _patch_worker(monkeypatch, answer: str = "worker-answer") -> None:
