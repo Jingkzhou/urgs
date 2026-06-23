@@ -65,6 +65,20 @@ apply_runtime_defaults() {
     NGINX_LOG_DIR="${NGINX_LOG_DIR:-${ROOT_DIR}/logs/nginx}"
     NGINX_ERROR_LOG="${NGINX_ERROR_LOG:-${NGINX_LOG_DIR}/error.log}"
     NGINX_ACCESS_LOG="${NGINX_ACCESS_LOG:-${NGINX_LOG_DIR}/access.log}"
+    LOG_HOME="${LOG_HOME:-${LOG_DIR}/java}"
+    case "$LOG_HOME" in
+        /*) ;;
+        *) LOG_HOME="${ROOT_DIR}/${LOG_HOME}" ;;
+    esac
+    LOG_LEVEL_ROOT="${LOG_LEVEL_ROOT:-INFO}"
+    LOG_LEVEL_SPRING_WEB="${LOG_LEVEL_SPRING_WEB:-INFO}"
+    LOG_LEVEL_APP="${LOG_LEVEL_APP:-INFO}"
+    LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-30}"
+    LOG_MAX_FILE_SIZE="${LOG_MAX_FILE_SIZE:-50MB}"
+    LOG_TOTAL_SIZE_CAP="${LOG_TOTAL_SIZE_CAP:-5GB}"
+    SERVICE_LOG_MAX_SIZE_MB="${SERVICE_LOG_MAX_SIZE_MB:-200}"
+    LOG_CLEAN_ON_START="${LOG_CLEAN_ON_START:-1}"
+    RAG_LOG_LEVEL="${RAG_LOG_LEVEL:-INFO}"
     STOP_CONFLICTING_PORTS="${STOP_CONFLICTING_PORTS:-1}"
     BACKUP_BEFORE_DEPLOY="${BACKUP_BEFORE_DEPLOY:-1}"
     BACKUP_ROOT="${BACKUP_ROOT:-${ROOT_DIR}/backups}"
@@ -85,6 +99,50 @@ log() {
 die() {
     printf '[urgs-deploy][error] %s\n' "$*" >&2
     exit 1
+}
+
+lowercase() {
+    printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+log_size_bytes() {
+    if stat -f%z "$1" >/dev/null 2>&1; then
+        stat -f%z "$1"
+    else
+        stat -c%s "$1" 2>/dev/null || printf '0'
+    fi
+}
+
+gzip_log_if_available() {
+    local file="$1"
+    if command -v gzip >/dev/null 2>&1; then
+        gzip -f "$file" >/dev/null 2>&1 || true
+    fi
+}
+
+rotate_log_file() {
+    local file="$1"
+    local label="$2"
+    local max_bytes=$((SERVICE_LOG_MAX_SIZE_MB * 1024 * 1024))
+    local size
+    [ -f "$file" ] || return 0
+    size="$(log_size_bytes "$file")"
+    [ "${size:-0}" -gt "$max_bytes" ] || return 0
+
+    local archive_dir timestamp archive_file
+    archive_dir="$(dirname "$file")/archive"
+    timestamp="$(date +%Y%m%d%H%M%S)"
+    archive_file="${archive_dir}/${label}.${timestamp}.log"
+    mkdir -p "$archive_dir"
+    mv "$file" "$archive_file"
+    gzip_log_if_available "$archive_file"
+    log "Rotated ${file} to ${archive_file}."
+}
+
+cleanup_old_logs() {
+    [ "$LOG_CLEAN_ON_START" = "1" ] || return 0
+    [ -d "$LOG_DIR" ] || return 0
+    find "$LOG_DIR" -type f \( -name '*.log.*' -o -name '*.log.gz' -o -name '*.gz' \) -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
 }
 
 usage() {
@@ -462,8 +520,10 @@ start_background() {
         return
     fi
     mkdir -p "$LOG_DIR" "$PID_DIR"
+    cleanup_old_logs
+    rotate_log_file "${LOG_DIR}/${service}.log" "$service"
     log "Starting ${service}."
-    nohup "$@" > "${LOG_DIR}/${service}.log" 2>&1 &
+    nohup "$@" >> "${LOG_DIR}/${service}.log" 2>&1 &
     printf '%s\n' "$!" > "$(pid_file "$service")"
 }
 
@@ -542,6 +602,7 @@ export_common_env() {
     export ONLYOFFICE_CALLBACK_SECRET="${ONLYOFFICE_CALLBACK_SECRET:-urgs-onlyoffice-callback-secret}"
     export ONLYOFFICE_JWT_SECRET="${ONLYOFFICE_JWT_SECRET:-}"
     export LINEAGE_ENGINE_WORKDIR="${LINEAGE_ENGINE_WORKDIR:-${ROOT_DIR}/services/lineage}"
+    export LOG_HOME LOG_LEVEL_ROOT LOG_LEVEL_SPRING_WEB LOG_LEVEL_APP LOG_MAX_FILE_SIZE LOG_RETENTION_DAYS LOG_TOTAL_SIZE_CAP
     export URGS_PROFILE="${URGS_PROFILE:-${DATA_ROOT}/api/uploads}"
     export IM_UPLOAD_PATH="${IM_UPLOAD_PATH:-${DATA_ROOT}/api/im-uploads}"
     export RAG_DOC_STORE_PATH="${RAG_DOC_STORE_PATH:-${DATA_ROOT}/rag/doc_store}"
@@ -601,7 +662,7 @@ start_rag() {
     export LLM_MODEL="${LLM_MODEL:-}"
     export LLM_API_KEY="${LLM_API_KEY:-}"
     export URGS_API_URL="${URGS_API_URL:-http://127.0.0.1:${API_PORT}}"
-    (cd "${ROOT_DIR}/services/rag" && start_background rag .venv/bin/python -m uvicorn app.main:app --host "${RAG_HOST:-0.0.0.0}" --port "$RAG_PORT")
+    (cd "${ROOT_DIR}/services/rag" && start_background rag .venv/bin/python -m uvicorn app.main:app --host "${RAG_HOST:-0.0.0.0}" --port "$RAG_PORT" --log-level "$(lowercase "$RAG_LOG_LEVEL")")
 }
 
 start_agent() {
@@ -615,7 +676,7 @@ start_agent() {
     export AGENT_CALLBACK_HMAC_SECRET AGENT_ENVIRONMENT AGENT_LOG_LEVEL
     (cd "${ROOT_DIR}/services/agent" && .venv/bin/python -m alembic upgrade head)
     (cd "${ROOT_DIR}/services/agent" && \
-        start_background agent-api .venv/bin/python -m uvicorn urgs_agent.main:app --host "${AGENT_HOST:-0.0.0.0}" --port "$AGENT_PORT")
+        start_background agent-api .venv/bin/python -m uvicorn urgs_agent.main:app --host "${AGENT_HOST:-0.0.0.0}" --port "$AGENT_PORT" --log-level "$(lowercase "$AGENT_LOG_LEVEL")")
     (cd "${ROOT_DIR}/services/agent" && \
         start_background agent-worker .venv/bin/python -m urgs_agent.worker)
 }
@@ -772,6 +833,9 @@ start_nginx() {
     else
         render_local_nginx_config
         stop_conflicting_port nginx "$WEB_LISTEN_PORT"
+        cleanup_old_logs
+        rotate_log_file "$NGINX_ACCESS_LOG" "nginx-access"
+        rotate_log_file "$NGINX_ERROR_LOG" "nginx-error"
         "$nginx_bin" -p "${ROOT_DIR}/" -e "$NGINX_ERROR_LOG" -c "$NGINX_LOCAL_CONF" -t
         start_background nginx "$nginx_bin" -p "${ROOT_DIR}/" -e "$NGINX_ERROR_LOG" -c "$NGINX_LOCAL_CONF" -g "daemon off;"
     fi

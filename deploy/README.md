@@ -250,7 +250,16 @@ logs/agent-api.log
 logs/agent-worker.log
 logs/nginx/error.log
 logs/nginx/access.log
+logs/java/urgs-api-prod.log
+logs/java/urgs-executor-prod.log
 ```
+
+默认日志策略：
+
+- Java 服务使用 `logs/java/` 下的 logback 滚动日志，按 `LOG_MAX_FILE_SIZE` 切分，历史保留 `LOG_RETENTION_DAYS` 天，总量受 `LOG_TOTAL_SIZE_CAP` 控制。
+- `api.log`、`executor.log`、`rag.log`、`agent-*.log` 和 nginx 日志用于进程 stdout/stderr，启动前超过 `SERVICE_LOG_MAX_SIZE_MB` 会归档到 `logs/**/archive/`。
+- `LOG_CLEAN_ON_START=1` 时，启动服务会清理 `logs/` 下超过 `LOG_RETENTION_DAYS` 的归档日志。
+- prod 默认 `LOG_LEVEL_ROOT/SPRING_WEB/APP=ERROR`；sit 默认 `ROOT=INFO`、`SPRING_WEB=WARN`、`APP=INFO`。
 
 ## 8. 补充说明
 

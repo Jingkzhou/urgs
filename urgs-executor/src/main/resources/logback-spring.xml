@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration scan="true" scanPeriod="60 seconds">
-    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="urgs-api"/>
-    <springProperty scope="context" name="ACTIVE_PROFILE" source="spring.profiles.active" defaultValue="dev"/>
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="urgs-executor"/>
+    <springProperty scope="context" name="ACTIVE_PROFILE" source="spring.profiles.active" defaultValue="prod"/>
     <property name="LOG_HOME" value="${LOG_HOME:-${LOG_PATH:-logs}}"/>
     <property name="LOG_FILE" value="${LOG_HOME}/${APP_NAME}-${ACTIVE_PROFILE}.log"/>
     <property name="ROOT_LOG_LEVEL" value="${LOG_LEVEL_ROOT:-INFO}"/>
     <property name="SPRING_WEB_LOG_LEVEL" value="${LOG_LEVEL_SPRING_WEB:-INFO}"/>
-    <property name="APP_LOG_LEVEL" value="${LOG_LEVEL_APP:-DEBUG}"/>
+    <property name="APP_LOG_LEVEL" value="${LOG_LEVEL_APP:-INFO}"/>
     <property name="LOG_MAX_FILE_SIZE" value="${LOG_MAX_FILE_SIZE:-50MB}"/>
     <property name="LOG_RETENTION_DAYS" value="${LOG_RETENTION_DAYS:-30}"/>
     <property name="LOG_TOTAL_SIZE_CAP" value="${LOG_TOTAL_SIZE_CAP:-5GB}"/>
