@@ -56,6 +56,9 @@ export const ReportCard: React.FC<ReportCardProps> = ({
             </div>
 
             <div className="flex flex-wrap gap-2 mt-auto">
+                <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold border ${table.queryTableType === 'DETAIL' ? 'bg-cyan-50 text-cyan-700 border-cyan-100' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>
+                    <Table2 size={10} /> {table.queryTableType === 'DETAIL' ? '明细表' : '汇总表'}
+                </div>
                 <div className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-50 text-slate-600 text-[10px] font-bold border border-slate-100">
                     <Calendar size={10} className="text-slate-400" /> {table.frequency || '未知频度'}
                 </div>

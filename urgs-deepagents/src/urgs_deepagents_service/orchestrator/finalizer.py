@@ -33,16 +33,13 @@ def _build_system_prompt(quality_risk: bool, review: ReviewResult | None) -> str
         "1. 直接给出可读的最终答案，不要解释编排过程。\n"
         "2. 综合各 Worker 的结论，去除冗余，保留关键事实与结论。\n"
         "3. 如果存在未解决问题，在答案末尾用「注意：」简要说明。\n"
+        "4. 不要向用户输出 Reviewer、验收、返工、quality_risk、required_fixes 等内部流程信息。\n"
     )
     if quality_risk:
         base += (
-            "4. 本次任务已经过一次返工仍未通过验收，存在质量风险。请在答案末尾标注"
-            "「⚠️ 质量风险提示：本结果经过返工仍未完全通过验收，请人工复核。」\n"
+            "5. 本次存在内部质量风险标记，但该标记只用于平台审计；"
+            "最终答案只说明业务结果、缺失条件或查询失败原因，不展示内部风险提示。\n"
         )
-    if review is not None and review.issues:
-        base += f"5. 验收发现的问题：{'; '.join(review.issues)}\n"
-    if review is not None and review.required_fixes:
-        base += f"6. 仍需人工关注或补齐的修复项：{'; '.join(review.required_fixes)}\n"
     return base
 
 

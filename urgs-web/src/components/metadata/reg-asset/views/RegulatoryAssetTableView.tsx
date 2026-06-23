@@ -363,6 +363,7 @@ const RegulatoryAssetTableView: React.FC<RegulatoryAssetTableViewProps> = ({
                                 <div className="w-10"></div>
                                 <div className="w-16 text-center">序号</div>
                                 <div className="w-64">中文名/表代码</div>
+                                <div className="w-20">表类型</div>
                                 <div className="w-24">报送频度</div>
                                 <div className="w-24">取数来源</div>
                                 <div className="w-28">状态</div>
@@ -405,6 +406,11 @@ const RegulatoryAssetTableView: React.FC<RegulatoryAssetTableViewProps> = ({
                                         <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex items-center gap-1">
                                             <span className="bg-slate-100 px-1 py-px rounded uppercase tracking-tighter">{table.name}</span>
                                         </div>
+                                    </div>
+                                    <div className="w-20">
+                                        <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold ${table.queryTableType === 'DETAIL' ? 'bg-cyan-50 text-cyan-700' : 'bg-indigo-50 text-indigo-700'}`}>
+                                            {table.queryTableType === 'DETAIL' ? '明细表' : '汇总表'}
+                                        </span>
                                     </div>
                                     <div className="w-24 text-xs font-semibold text-slate-600">{table.frequency || '-'}</div>
                                     <div className="w-24 text-xs font-medium text-slate-500">{table.sourceType || '-'}</div>

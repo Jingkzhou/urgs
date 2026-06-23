@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Save, ShieldCheck } from 'lucide-react';
-import { physicalAssetService } from '../../../../services/physicalAssetService';
+import { Save, Search, ShieldCheck } from 'lucide-react';
+import { physicalAssetService, PhysicalDataSourceOption } from '../../../../services/physicalAssetService';
 import {
     PhysicalFieldBinding,
     PhysicalTableBinding,
@@ -34,30 +34,29 @@ export const QueryConfigPanel: React.FC<QueryConfigPanelProps> = ({
     preferredPhysicalTables
 }) => {
     const [config, setConfig] = useState<RegElementQueryConfig>(EMPTY_CONFIG);
+    const [sources, setSources] = useState<PhysicalDataSourceOption[]>([]);
+    const [owners, setOwners] = useState<string[]>([]);
+    const [owner, setOwner] = useState('');
+    const [tableKeyword, setTableKeyword] = useState('');
+    const [tables, setTables] = useState<PhysicalTableBinding[]>([]);
     const [fields, setFields] = useState<PhysicalFieldBinding[]>([]);
     const [loading, setLoading] = useState(false);
+    const [tableLoading, setTableLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [validation, setValidation] = useState<RegElementQueryConfigValidationResult | null>(null);
 
-    const dataSourceOptions = useMemo(() => {
-        const seen = new Set<string>();
-        return preferredPhysicalTables
-            .filter(table => table.dataSourceId !== undefined && table.dataSourceId !== null)
-            .filter(table => {
-                const key = String(table.dataSourceId);
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-            })
-            .map(table => ({ value: String(table.dataSourceId), label: `数据源 ${table.dataSourceId}` }));
-    }, [preferredPhysicalTables]);
-
     const tableOptions = useMemo(() => {
         const selectedDataSource = config.dataSourceId ? String(config.dataSourceId) : '';
-        return preferredPhysicalTables.filter(table => (
-            !selectedDataSource || String(table.dataSourceId || '') === selectedDataSource
-        ));
-    }, [config.dataSourceId, preferredPhysicalTables]);
+        const merged = [...preferredPhysicalTables, ...tables];
+        const seen = new Set<string>();
+        return merged
+            .filter(table => !selectedDataSource || String(table.dataSourceId || '') === selectedDataSource)
+            .filter(table => {
+                if (seen.has(table.modelTableId)) return false;
+                seen.add(table.modelTableId);
+                return true;
+            });
+    }, [config.dataSourceId, preferredPhysicalTables, tables]);
 
     useEffect(() => {
         if (!elementId) {
@@ -82,13 +81,65 @@ export const QueryConfigPanel: React.FC<QueryConfigPanelProps> = ({
     }, [elementId]);
 
     useEffect(() => {
-        const table = preferredPhysicalTables.find(item => item.modelTableId === config.modelTableId);
+        physicalAssetService.listDataSources()
+            .then(data => setSources(data))
+            .catch(() => setSources([]));
+    }, []);
+
+    useEffect(() => {
+        if (!config.dataSourceId) {
+            setOwners([]);
+            setOwner('');
+            setTables([]);
+            return;
+        }
+        const sourceId = Number(config.dataSourceId);
+        physicalAssetService.listOwners(sourceId)
+            .then(data => {
+                const ownerList = Array.isArray(data) ? data : [];
+                setOwners(ownerList);
+                setOwner(prev => (prev && ownerList.includes(prev) ? prev : ''));
+            })
+            .catch(() => {
+                setOwners([]);
+                setOwner('');
+            });
+    }, [config.dataSourceId]);
+
+    const searchTables = async () => {
+        if (!config.dataSourceId) return;
+        setTableLoading(true);
+        try {
+            const data = await physicalAssetService.listTables({
+                dataSourceId: Number(config.dataSourceId),
+                owner: owner || undefined,
+                keyword: tableKeyword || undefined,
+                page: 1,
+                size: 50
+            });
+            setTables(data);
+        } catch {
+            setTables([]);
+        } finally {
+            setTableLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (config.dataSourceId) {
+            searchTables();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [config.dataSourceId, owner]);
+
+    useEffect(() => {
+        const table = tableOptions.find(item => item.modelTableId === config.modelTableId);
         if (!table) {
             setFields([]);
             return;
         }
         physicalAssetService.listFields(table).then(setFields).catch(() => setFields([]));
-    }, [config.modelTableId, preferredPhysicalTables]);
+    }, [config.modelTableId, tableOptions]);
 
     const patchConfig = (patch: Partial<RegElementQueryConfig>) => {
         setConfig(prev => ({ ...prev, ...patch }));
@@ -213,10 +264,45 @@ export const QueryConfigPanel: React.FC<QueryConfigPanelProps> = ({
                         })}
                     >
                         <option value="">-- 请选择 --</option>
-                        {dataSourceOptions.map(option => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
+                        {sources.map(source => (
+                            <option key={source.id} value={source.id}>
+                                {source.name}{source.metaName ? `（${source.metaName}）` : ''}
+                            </option>
                         ))}
                     </select>
+                </div>
+                <div className="col-span-2">
+                    <label className="block text-xs font-medium text-slate-600 mb-1">物理表筛选</label>
+                    <div className="grid grid-cols-12 gap-2">
+                        <select
+                            className="col-span-4 border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none"
+                            value={owner}
+                            disabled={!config.dataSourceId}
+                            onChange={event => setOwner(event.target.value)}
+                        >
+                            <option value="">全部 Schema</option>
+                            {owners.map(item => (
+                                <option key={item} value={item}>{item}</option>
+                            ))}
+                        </select>
+                        <input
+                            className="col-span-7 border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none"
+                            value={tableKeyword}
+                            disabled={!config.dataSourceId}
+                            placeholder="按表名或中文名搜索"
+                            onChange={event => setTableKeyword(event.target.value)}
+                            onKeyDown={event => event.key === 'Enter' && searchTables()}
+                        />
+                        <button
+                            type="button"
+                            disabled={!config.dataSourceId || tableLoading}
+                            onClick={searchTables}
+                            className="col-span-1 inline-flex items-center justify-center border border-indigo-200 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 disabled:opacity-50"
+                            title="搜索物理表"
+                        >
+                            <Search size={15} />
+                        </button>
+                    </div>
                 </div>
                 <div className="col-span-2">
                     <label className="block text-xs font-medium text-slate-600 mb-1">主查询物理表</label>
@@ -236,7 +322,7 @@ export const QueryConfigPanel: React.FC<QueryConfigPanelProps> = ({
                             maskFieldIds: []
                         })}
                     >
-                        <option value="">-- 请选择 --</option>
+                        <option value="">{tableLoading ? '加载中...' : '-- 请选择 --'}</option>
                         {tableOptions.map(table => (
                             <option key={table.modelTableId} value={table.modelTableId}>
                                 {[table.owner, table.tableName].filter(Boolean).join('.')}

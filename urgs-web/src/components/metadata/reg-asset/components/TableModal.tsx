@@ -4,7 +4,7 @@ import { RegTable } from '../types';
 import { FormField } from './RegAssetHelper';
 import ReqInfoFormGroup from '../../ReqInfoFormGroup';
 import { AiOptimizeButton } from '../../../common/AiOptimizeButton';
-import { PhysicalBindingSelector } from './PhysicalBindingSelector';
+import { TableQueryConfigPanel } from './TableQueryConfigPanel';
 
 // Define the system interface locally if needed, or pass only what's necessary
 interface SsoConfig {
@@ -25,7 +25,7 @@ export const TableModal: React.FC<TableModalProps> = ({ table, systems, defaultS
     const [form, setForm] = useState<RegTable>(table || {
         name: '', cnName: '', sortOrder: 0, systemCode: defaultSystemCode || '',
         subjectCode: '', subjectName: '', theme: '', frequency: '',
-        sourceType: '', autoFetchStatus: '', dispatchNo: '',
+        sourceType: '', queryTableType: 'SUMMARY', autoFetchStatus: '', dispatchNo: '',
         businessCaliber: '', fillInstruction: '', devNotes: '', owner: '', status: 1,
         reqId: '', plannedDate: '', physicalTables: []
     });
@@ -91,6 +91,24 @@ export const TableModal: React.FC<TableModalProps> = ({ table, systems, defaultS
                     <FormField label="科目名称" value={form.subjectName} onChange={v => setForm({ ...form, subjectName: v })} />
                     <FormField label="监管主题" value={form.theme} onChange={v => setForm({ ...form, theme: v })} />
                     <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">表类型</label>
+                        <select
+                            className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none"
+                            value={form.queryTableType || 'SUMMARY'}
+                            onChange={e => {
+                                const nextType = e.target.value as 'SUMMARY' | 'DETAIL';
+                                setForm({
+                                    ...form,
+                                    queryTableType: nextType,
+                                    physicalTables: nextType === 'SUMMARY' ? [] : form.physicalTables
+                                });
+                            }}
+                        >
+                            <option value="SUMMARY">汇总表</option>
+                            <option value="DETAIL">明细表</option>
+                        </select>
+                    </div>
+                    <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">报送频度</label>
                         <select className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.frequency || ''} onChange={e => setForm({ ...form, frequency: e.target.value })}>
                             <option value="">-- 请选择 --</option>
@@ -122,11 +140,13 @@ export const TableModal: React.FC<TableModalProps> = ({ table, systems, defaultS
                     <FormField label="发文号" value={form.dispatchNo} onChange={v => setForm({ ...form, dispatchNo: v })} />
 
                     <FormField label="责任人" value={form.owner} onChange={v => setForm({ ...form, owner: v })} />
-                    <PhysicalBindingSelector
-                        mode="table"
-                        selectedTables={form.physicalTables || []}
-                        onTablesChange={(physicalTables) => setForm({ ...form, physicalTables })}
-                    />
+                    {form.queryTableType === 'DETAIL' && (
+                        <TableQueryConfigPanel
+                            tableId={form.id}
+                            physicalTables={form.physicalTables || []}
+                            onPhysicalTablesChange={(physicalTables) => setForm({ ...form, physicalTables })}
+                        />
+                    )}
                     <div className="col-span-2">
                         <div className="flex justify-between items-center mb-1">
                             <label className="block text-sm font-medium text-slate-700">业务口径</label>

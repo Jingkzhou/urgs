@@ -9,11 +9,14 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.urgs_api.common.PageResult;
 import com.example.urgs_api.metadata.dto.RegElementImportExportDTO;
+import com.example.urgs_api.metadata.dto.RegElementQueryConfigValidationResult;
 import com.example.urgs_api.metadata.dto.RegTableImportExportDTO;
+import com.example.urgs_api.metadata.dto.RegTableQueryConfigDTO;
 import com.example.urgs_api.metadata.model.RegElement;
 import com.example.urgs_api.metadata.model.RegTable;
 import com.example.urgs_api.metadata.service.RegPhysicalBindingService;
 import com.example.urgs_api.metadata.service.RegElementService;
+import com.example.urgs_api.metadata.service.RegTableQueryConfigService;
 import com.example.urgs_api.metadata.service.RegTableService;
 import org.apache.commons.lang3.StringUtils;
 import jakarta.servlet.http.HttpServletResponse;
@@ -62,6 +65,9 @@ public class RegTableController {
 
     @Autowired
     private RegPhysicalBindingService regPhysicalBindingService;
+
+    @Autowired
+    private RegTableQueryConfigService regTableQueryConfigService;
 
     @Autowired
     private com.example.urgs_api.user.service.UserService userService;
@@ -278,6 +284,25 @@ public class RegTableController {
         return table;
     }
 
+    @GetMapping("/{id}/query-config")
+    public RegTableQueryConfigDTO getQueryConfig(@PathVariable Long id) {
+        return regTableQueryConfigService.getByTableId(id);
+    }
+
+    @PutMapping("/{id}/query-config")
+    public RegTableQueryConfigDTO saveQueryConfig(
+            @PathVariable Long id,
+            @RequestBody RegTableQueryConfigDTO config) {
+        return regTableQueryConfigService.saveForTable(id, config);
+    }
+
+    @PostMapping("/{id}/query-config/validate")
+    public RegElementQueryConfigValidationResult validateQueryConfig(
+            @PathVariable Long id,
+            @RequestBody RegTableQueryConfigDTO config) {
+        return regTableQueryConfigService.validateForTable(id, config);
+    }
+
     /**
      * 新增或更新报表
      *
@@ -325,6 +350,7 @@ public class RegTableController {
         regPhysicalBindingService.removeElementBindings(elementIds);
         regElementService.remove(new LambdaQueryWrapper<RegElement>().eq(RegElement::getTableId, req.getId()));
         regPhysicalBindingService.removeTableBindings(List.of(req.getId()));
+        regTableQueryConfigService.removeByTableId(req.getId());
         boolean result = regTableService.removeById(req.getId());
 
         if (result && oldTable != null) {
@@ -366,6 +392,7 @@ public class RegTableController {
         regPhysicalBindingService.removeElementBindings(oldElements.stream().map(RegElement::getId).toList());
         regElementService.remove(new LambdaQueryWrapper<RegElement>().in(RegElement::getTableId, req.getIds()));
         regPhysicalBindingService.removeTableBindings(req.getIds());
+        req.getIds().forEach(regTableQueryConfigService::removeByTableId);
 
         boolean result = regTableService.removeByIds(req.getIds());
 
@@ -402,6 +429,7 @@ public class RegTableController {
         regPhysicalBindingService.removeElementBindings(oldElements.stream().map(RegElement::getId).toList());
         regElementService.remove(new LambdaQueryWrapper<RegElement>().eq(RegElement::getTableId, id));
         regPhysicalBindingService.removeTableBindings(List.of(id));
+        regTableQueryConfigService.removeByTableId(id);
         boolean result = regTableService.removeById(id);
 
         if (result && oldTable != null) {

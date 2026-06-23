@@ -189,6 +189,22 @@ def test_reviewer_prompt_accepts_required_clarification() -> None:
     assert "不得要求 Worker 使用空条件" in reviewer_mod.REVIEWER_SYSTEM_PROMPT
 
 
+def test_finalizer_prompt_hides_review_internals() -> None:
+    prompt = finalizer_mod._build_system_prompt(
+        quality_risk=True,
+        review=ReviewResult(
+            passed=False,
+            score=0.2,
+            reason="验收未通过",
+            issues=["不应展示的问题"],
+            required_fixes=["不应展示的修复项"],
+        ),
+    )
+    assert "不应展示的问题" not in prompt
+    assert "不应展示的修复项" not in prompt
+    assert "不要向用户输出 Reviewer" in prompt
+
+
 def test_conversation_context_excludes_current_turn_and_keeps_prior_slots() -> None:
     context = _conversation_context(
         [

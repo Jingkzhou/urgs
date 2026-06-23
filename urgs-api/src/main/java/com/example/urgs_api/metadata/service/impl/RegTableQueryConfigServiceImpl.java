@@ -4,17 +4,19 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.urgs_api.datasource.entity.DataSourceConfig;
 import com.example.urgs_api.datasource.repository.DataSourceConfigMapper;
-import com.example.urgs_api.metadata.dto.RegElementQueryConfigDTO;
 import com.example.urgs_api.metadata.dto.RegElementQueryConfigValidationResult;
-import com.example.urgs_api.metadata.mapper.RegElementQueryConfigMapper;
+import com.example.urgs_api.metadata.dto.RegTableQueryConfigDTO;
+import com.example.urgs_api.metadata.mapper.RegTableModelTableRelMapper;
+import com.example.urgs_api.metadata.mapper.RegTableQueryConfigMapper;
 import com.example.urgs_api.metadata.model.ModelField;
 import com.example.urgs_api.metadata.model.ModelTable;
-import com.example.urgs_api.metadata.model.RegElement;
-import com.example.urgs_api.metadata.model.RegElementQueryConfig;
+import com.example.urgs_api.metadata.model.RegTable;
+import com.example.urgs_api.metadata.model.RegTableModelTableRel;
+import com.example.urgs_api.metadata.model.RegTableQueryConfig;
 import com.example.urgs_api.metadata.service.ModelFieldService;
 import com.example.urgs_api.metadata.service.ModelTableService;
-import com.example.urgs_api.metadata.service.RegElementQueryConfigService;
-import com.example.urgs_api.metadata.service.RegElementService;
+import com.example.urgs_api.metadata.service.RegTableQueryConfigService;
+import com.example.urgs_api.metadata.service.RegTableService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,45 +30,46 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
-public class RegElementQueryConfigServiceImpl
-        extends ServiceImpl<RegElementQueryConfigMapper, RegElementQueryConfig>
-        implements RegElementQueryConfigService {
+public class RegTableQueryConfigServiceImpl
+        extends ServiceImpl<RegTableQueryConfigMapper, RegTableQueryConfig>
+        implements RegTableQueryConfigService {
 
     private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {
     };
-    private static final Set<String> QUERY_MODES = Set.of("SUMMARY", "DETAIL");
 
     private final ObjectMapper objectMapper;
-    private final RegElementService regElementService;
+    private final RegTableService regTableService;
     private final ModelTableService modelTableService;
     private final ModelFieldService modelFieldService;
+    private final RegTableModelTableRelMapper tableRelMapper;
     private final DataSourceConfigMapper dataSourceConfigMapper;
 
-    public RegElementQueryConfigServiceImpl(
+    public RegTableQueryConfigServiceImpl(
             ObjectMapper objectMapper,
-            RegElementService regElementService,
+            RegTableService regTableService,
             ModelTableService modelTableService,
             ModelFieldService modelFieldService,
+            RegTableModelTableRelMapper tableRelMapper,
             DataSourceConfigMapper dataSourceConfigMapper) {
         this.objectMapper = objectMapper;
-        this.regElementService = regElementService;
+        this.regTableService = regTableService;
         this.modelTableService = modelTableService;
         this.modelFieldService = modelFieldService;
+        this.tableRelMapper = tableRelMapper;
         this.dataSourceConfigMapper = dataSourceConfigMapper;
     }
 
     @Override
-    public RegElementQueryConfigDTO getByElementId(Long elementId) {
-        RegElementQueryConfig config = getOne(new LambdaQueryWrapper<RegElementQueryConfig>()
-                .eq(RegElementQueryConfig::getRegElementId, elementId), false);
+    public RegTableQueryConfigDTO getByTableId(Long tableId) {
+        RegTableQueryConfig config = getOne(new LambdaQueryWrapper<RegTableQueryConfig>()
+                .eq(RegTableQueryConfig::getRegTableId, tableId), false);
         if (config == null) {
-            RegElementQueryConfigDTO dto = new RegElementQueryConfigDTO();
-            dto.setRegElementId(elementId);
+            RegTableQueryConfigDTO dto = new RegTableQueryConfigDTO();
+            dto.setRegTableId(tableId);
             return dto;
         }
         return toDTO(config);
@@ -74,16 +77,16 @@ public class RegElementQueryConfigServiceImpl
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public RegElementQueryConfigDTO saveForElement(Long elementId, RegElementQueryConfigDTO request) {
-        RegElementQueryConfigDTO normalized = normalizeDTO(elementId, request);
-        RegElementQueryConfigValidationResult validation = validateForElement(elementId, normalized);
+    public RegTableQueryConfigDTO saveForTable(Long tableId, RegTableQueryConfigDTO request) {
+        RegTableQueryConfigDTO normalized = normalizeDTO(tableId, request);
+        RegElementQueryConfigValidationResult validation = validateForTable(tableId, normalized);
         if (normalized.getEnabled() != null && normalized.getEnabled() == 1 && !validation.isValid()) {
             throw new IllegalArgumentException(String.join("；", validation.getErrors()));
         }
 
-        RegElementQueryConfig existing = getOne(new LambdaQueryWrapper<RegElementQueryConfig>()
-                .eq(RegElementQueryConfig::getRegElementId, elementId), false);
-        RegElementQueryConfig entity = existing == null ? new RegElementQueryConfig() : existing;
+        RegTableQueryConfig existing = getOne(new LambdaQueryWrapper<RegTableQueryConfig>()
+                .eq(RegTableQueryConfig::getRegTableId, tableId), false);
+        RegTableQueryConfig entity = existing == null ? new RegTableQueryConfig() : existing;
         copyToEntity(normalized, entity);
         if (entity.getCreateTime() == null) {
             entity.setCreateTime(LocalDateTime.now());
@@ -94,27 +97,22 @@ public class RegElementQueryConfigServiceImpl
     }
 
     @Override
-    public RegElementQueryConfigValidationResult validateForElement(
-            Long elementId, RegElementQueryConfigDTO request) {
+    public RegElementQueryConfigValidationResult validateForTable(
+            Long tableId, RegTableQueryConfigDTO request) {
         RegElementQueryConfigValidationResult result = RegElementQueryConfigValidationResult.ok();
-        RegElement element = regElementService.getById(elementId);
-        if (element == null) {
-            result.addError("监管字段/指标不存在");
-            return result;
-        }
-        if (!"INDICATOR".equalsIgnoreCase(StringUtils.defaultString(element.getType()))) {
-            result.addError("只有指标类型可以配置查询");
+        RegTable regTable = regTableService.getById(tableId);
+        if (regTable == null) {
+            result.addError("监管报表不存在");
             return result;
         }
 
-        RegElementQueryConfigDTO dto = normalizeDTO(elementId, request);
+        RegTableQueryConfigDTO dto = normalizeDTO(tableId, request);
         if (dto.getEnabled() == null || dto.getEnabled() != 1) {
             result.addWarning("查询配置未启用，仅保存为草稿");
             return result;
         }
-
-        if (!QUERY_MODES.contains(dto.getQueryMode())) {
-            result.addError("查询模式只支持 SUMMARY 或 DETAIL");
+        if (!"DETAIL".equalsIgnoreCase(StringUtils.defaultString(regTable.getQueryTableType(), "SUMMARY"))) {
+            result.addError("只有明细表可以配置表级查询");
         }
         if (dto.getDataSourceId() == null) {
             result.addError("数据源不能为空");
@@ -140,15 +138,19 @@ public class RegElementQueryConfigServiceImpl
         if (dto.getDataSourceId() != null && !Objects.equals(table.getDataSourceId(), dto.getDataSourceId())) {
             result.addError("主查询物理表不属于所选数据源");
         }
+        boolean boundToRegTable = tableRelMapper.selectCount(new LambdaQueryWrapper<RegTableModelTableRel>()
+                .eq(RegTableModelTableRel::getRegTableId, tableId)
+                .eq(RegTableModelTableRel::getModelTableId, dto.getModelTableId())) > 0;
+        if (!boundToRegTable) {
+            result.addError("主查询物理表未绑定到该监管报表");
+        }
 
         List<ModelField> fields = modelFieldService.getFieldsByTableId(dto.getModelTableId());
         Map<String, ModelField> fieldMap = fields.stream()
                 .collect(Collectors.toMap(ModelField::getId, Function.identity(), (a, b) -> a));
         requireField(result, fieldMap, dto.getDateFieldId(), "日期字段");
         requireField(result, fieldMap, dto.getOrgCodeFieldId(), "机构编号字段");
-        requireField(result, fieldMap, dto.getValueFieldId(), "指标值字段");
         optionalField(result, fieldMap, dto.getOrgNameFieldId(), "机构名称字段");
-        optionalField(result, fieldMap, dto.getMetricCodeFieldId(), "指标编号字段");
         requireFieldList(result, fieldMap, dto.getDefaultReturnFieldIds(), "默认返回字段");
         validateFieldList(result, fieldMap, dto.getFilterFieldIds(), "允许筛选字段");
         validateFieldList(result, fieldMap, dto.getSortFieldIds(), "允许排序字段");
@@ -157,9 +159,9 @@ public class RegElementQueryConfigServiceImpl
     }
 
     @Override
-    public void removeByElementId(Long elementId) {
-        remove(new LambdaQueryWrapper<RegElementQueryConfig>()
-                .eq(RegElementQueryConfig::getRegElementId, elementId));
+    public void removeByTableId(Long tableId) {
+        remove(new LambdaQueryWrapper<RegTableQueryConfig>()
+                .eq(RegTableQueryConfig::getRegTableId, tableId));
     }
 
     private void requireField(
@@ -211,17 +213,14 @@ public class RegElementQueryConfigServiceImpl
         }
     }
 
-    private RegElementQueryConfigDTO normalizeDTO(Long elementId, RegElementQueryConfigDTO request) {
-        RegElementQueryConfigDTO dto = request == null ? new RegElementQueryConfigDTO() : request;
-        dto.setRegElementId(elementId);
+    private RegTableQueryConfigDTO normalizeDTO(Long tableId, RegTableQueryConfigDTO request) {
+        RegTableQueryConfigDTO dto = request == null ? new RegTableQueryConfigDTO() : request;
+        dto.setRegTableId(tableId);
         dto.setEnabled(dto.getEnabled() != null && dto.getEnabled() == 1 ? 1 : 0);
-        dto.setQueryMode(StringUtils.defaultIfBlank(dto.getQueryMode(), "SUMMARY").trim().toUpperCase());
         dto.setModelTableId(blankToNull(dto.getModelTableId()));
         dto.setDateFieldId(blankToNull(dto.getDateFieldId()));
         dto.setOrgCodeFieldId(blankToNull(dto.getOrgCodeFieldId()));
         dto.setOrgNameFieldId(blankToNull(dto.getOrgNameFieldId()));
-        dto.setMetricCodeFieldId(blankToNull(dto.getMetricCodeFieldId()));
-        dto.setValueFieldId(blankToNull(dto.getValueFieldId()));
         dto.setDefaultReturnFieldIds(normalizeList(dto.getDefaultReturnFieldIds()));
         dto.setFilterFieldIds(normalizeList(dto.getFilterFieldIds()));
         dto.setSortFieldIds(normalizeList(dto.getSortFieldIds()));
@@ -242,23 +241,19 @@ public class RegElementQueryConfigServiceImpl
     }
 
     private String blankToNull(String value) {
-        String trimmed = StringUtils.trimToNull(value);
-        return trimmed == null ? null : trimmed;
+        return StringUtils.trimToNull(value);
     }
 
-    private RegElementQueryConfigDTO toDTO(RegElementQueryConfig entity) {
-        RegElementQueryConfigDTO dto = new RegElementQueryConfigDTO();
+    private RegTableQueryConfigDTO toDTO(RegTableQueryConfig entity) {
+        RegTableQueryConfigDTO dto = new RegTableQueryConfigDTO();
         dto.setId(entity.getId());
-        dto.setRegElementId(entity.getRegElementId());
+        dto.setRegTableId(entity.getRegTableId());
         dto.setEnabled(entity.getEnabled());
-        dto.setQueryMode(entity.getQueryMode());
         dto.setDataSourceId(entity.getDataSourceId());
         dto.setModelTableId(entity.getModelTableId());
         dto.setDateFieldId(entity.getDateFieldId());
         dto.setOrgCodeFieldId(entity.getOrgCodeFieldId());
         dto.setOrgNameFieldId(entity.getOrgNameFieldId());
-        dto.setMetricCodeFieldId(entity.getMetricCodeFieldId());
-        dto.setValueFieldId(entity.getValueFieldId());
         dto.setDefaultReturnFieldIds(readList(entity.getDefaultReturnFieldIds()));
         dto.setFilterFieldIds(readList(entity.getFilterFieldIds()));
         dto.setSortFieldIds(readList(entity.getSortFieldIds()));
@@ -267,17 +262,14 @@ public class RegElementQueryConfigServiceImpl
         return dto;
     }
 
-    private void copyToEntity(RegElementQueryConfigDTO dto, RegElementQueryConfig entity) {
-        entity.setRegElementId(dto.getRegElementId());
+    private void copyToEntity(RegTableQueryConfigDTO dto, RegTableQueryConfig entity) {
+        entity.setRegTableId(dto.getRegTableId());
         entity.setEnabled(dto.getEnabled());
-        entity.setQueryMode(dto.getQueryMode());
         entity.setDataSourceId(dto.getDataSourceId());
         entity.setModelTableId(dto.getModelTableId());
         entity.setDateFieldId(dto.getDateFieldId());
         entity.setOrgCodeFieldId(dto.getOrgCodeFieldId());
         entity.setOrgNameFieldId(dto.getOrgNameFieldId());
-        entity.setMetricCodeFieldId(dto.getMetricCodeFieldId());
-        entity.setValueFieldId(dto.getValueFieldId());
         entity.setDefaultReturnFieldIds(writeList(dto.getDefaultReturnFieldIds()));
         entity.setFilterFieldIds(writeList(dto.getFilterFieldIds()));
         entity.setSortFieldIds(writeList(dto.getSortFieldIds()));

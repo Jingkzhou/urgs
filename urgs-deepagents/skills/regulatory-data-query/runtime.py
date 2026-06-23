@@ -517,6 +517,15 @@ def _mask_value(value: Any, rule: str) -> Any:
     raise SkillConfigurationError("未知脱敏规则")
 
 
+def _safe_tool_error(exc: Exception) -> dict[str, Any]:
+    message = str(exc).strip().splitlines()[0] if str(exc).strip() else "监管查询工具执行失败"
+    return {
+        "ok": False,
+        "error": message,
+        "error_type": exc.__class__.__name__,
+    }
+
+
 class RegulatoryDataQueryService:
     """Build parameterized MySQL reads from approved logical catalog items only."""
 
@@ -532,6 +541,7 @@ class RegulatoryDataQueryService:
         self.skill = self._merge_asset_catalog(skill)
 
     def _merge_asset_catalog(self, skill: RegulatoryQuerySkill) -> RegulatoryQuerySkill:
+        systems = self._copy_systems(skill.systems)
         try:
             asset_rows = self._rows(
                 text(
@@ -571,25 +581,136 @@ class RegulatoryDataQueryService:
                 {},
             )
         except SQLAlchemyError:
-            return skill
-        if not asset_rows:
-            return skill
+            asset_rows = []
+
+        if asset_rows:
+            field_ids = sorted(
+                {
+                    field_id
+                    for row in asset_rows
+                    for field_id in self._asset_config_field_ids(row)
+                    if field_id
+                }
+            )
+            field_rows = self._load_asset_fields(field_ids)
+            for row in asset_rows:
+                metric = self._asset_metric_from_row(row, field_rows)
+                query_config = metric.query_config
+                if query_config is None:
+                    continue
+                system_code = _safe_asset_code(row.get("system_code"), "asset")
+                system = systems.get(system_code)
+                if system is None:
+                    system = SystemConfig(
+                        code=system_code,
+                        name=str(row.get("system_code") or "资产管理监管系统"),
+                        summary_tables={},
+                        detail_tables={},
+                    )
+                table_code = _safe_asset_code(
+                    row.get("reg_table_code"), f"asset_table_{row.get('reg_table_id')}"
+                )
+                table_name = str(
+                    row.get("reg_table_name") or row.get("reg_table_code") or table_code
+                )
+                if query_config.query_mode == "SUMMARY":
+                    summary_tables = dict(system.summary_tables)
+                    current = summary_tables.get(table_code)
+                    if current is None:
+                        current = self._asset_summary_table(table_code, table_name, metric)
+                    summary_tables[table_code] = SummaryTableConfig(
+                        code=current.code,
+                        name=current.name,
+                        table=current.table,
+                        date_column=current.date_column,
+                        organization_column=current.organization_column,
+                        organization_name_column=current.organization_name_column,
+                        metric_code_column=current.metric_code_column,
+                        indicators={**current.indicators, metric.code: metric},
+                        result_fields=current.result_fields,
+                        filters=current.filters,
+                        max_rows=current.max_rows,
+                        order_by=current.order_by,
+                    )
+                    systems[system_code] = SystemConfig(
+                        code=system.code,
+                        name=system.name,
+                        summary_tables=summary_tables,
+                        detail_tables=system.detail_tables,
+                    )
+                else:
+                    detail_tables = dict(system.detail_tables)
+                    current_detail = detail_tables.get(table_code)
+                    if current_detail is None:
+                        current_detail = self._asset_detail_table(table_code, table_name, metric)
+                    else:
+                        current_detail = self._merge_asset_detail_table(current_detail, metric)
+                    detail_tables[table_code] = current_detail
+                    systems[system_code] = SystemConfig(
+                        code=system.code,
+                        name=system.name,
+                        summary_tables=system.summary_tables,
+                        detail_tables=detail_tables,
+                    )
+
+        systems = self._merge_table_detail_catalog(systems)
+        return RegulatoryQuerySkill(
+            skill_code=skill.skill_code,
+            skill_dir=skill.skill_dir,
+            instructions=skill.instructions,
+            database_url_env=skill.database_url_env,
+            catalog_limit=skill.catalog_limit,
+            systems=systems,
+        )
+
+    def _merge_table_detail_catalog(
+        self, systems: dict[str, SystemConfig]
+    ) -> dict[str, SystemConfig]:
+        try:
+            table_rows = self._rows(
+                text(
+                    """
+                    SELECT
+                        cfg.id AS config_id,
+                        cfg.reg_table_id,
+                        cfg.model_table_id,
+                        cfg.date_field_id,
+                        cfg.org_code_field_id,
+                        cfg.org_name_field_id,
+                        cfg.default_return_field_ids,
+                        cfg.filter_field_ids,
+                        cfg.sort_field_ids,
+                        cfg.mask_field_ids,
+                        cfg.detail_max_rows,
+                        tbl.name AS reg_table_code,
+                        tbl.cn_name AS reg_table_name,
+                        tbl.system_code AS system_code,
+                        mt.name AS physical_table,
+                        mt.owner AS physical_owner
+                    FROM reg_table_query_config cfg
+                    JOIN reg_table tbl ON tbl.id = cfg.reg_table_id
+                    JOIN model_table mt ON mt.id = cfg.model_table_id
+                    WHERE cfg.enabled = 1
+                      AND UPPER(COALESCE(tbl.query_table_type, 'SUMMARY')) = 'DETAIL'
+                    """
+                ),
+                {},
+            )
+        except SQLAlchemyError:
+            return systems
+        if not table_rows:
+            return systems
 
         field_ids = sorted(
             {
                 field_id
-                for row in asset_rows
-                for field_id in self._asset_config_field_ids(row)
+                for row in table_rows
+                for field_id in self._table_config_field_ids(row)
                 if field_id
             }
         )
         field_rows = self._load_asset_fields(field_ids)
-        systems = self._copy_systems(skill.systems)
-        for row in asset_rows:
-            metric = self._asset_metric_from_row(row, field_rows)
-            query_config = metric.query_config
-            if query_config is None:
-                continue
+        for row in table_rows:
             system_code = _safe_asset_code(row.get("system_code"), "asset")
             system = systems.get(system_code)
             if system is None:
@@ -602,55 +723,20 @@ class RegulatoryDataQueryService:
             table_code = _safe_asset_code(
                 row.get("reg_table_code"), f"asset_table_{row.get('reg_table_id')}"
             )
-            table_name = str(row.get("reg_table_name") or row.get("reg_table_code") or table_code)
-            if query_config.query_mode == "SUMMARY":
-                summary_tables = dict(system.summary_tables)
-                current = summary_tables.get(table_code)
-                if current is None:
-                    current = self._asset_summary_table(table_code, table_name, metric)
-                summary_tables[table_code] = SummaryTableConfig(
-                    code=current.code,
-                    name=current.name,
-                    table=current.table,
-                    date_column=current.date_column,
-                    organization_column=current.organization_column,
-                    organization_name_column=current.organization_name_column,
-                    metric_code_column=current.metric_code_column,
-                    indicators={**current.indicators, metric.code: metric},
-                    result_fields=current.result_fields,
-                    filters=current.filters,
-                    max_rows=current.max_rows,
-                    order_by=current.order_by,
-                )
-                systems[system_code] = SystemConfig(
-                    code=system.code,
-                    name=system.name,
-                    summary_tables=summary_tables,
-                    detail_tables=system.detail_tables,
-                )
-            else:
-                detail_tables = dict(system.detail_tables)
-                current_detail = detail_tables.get(table_code)
-                if current_detail is None:
-                    current_detail = self._asset_detail_table(table_code, table_name, metric)
-                else:
-                    current_detail = self._merge_asset_detail_table(current_detail, metric)
-                detail_tables[table_code] = current_detail
-                systems[system_code] = SystemConfig(
-                    code=system.code,
-                    name=system.name,
-                    summary_tables=system.summary_tables,
-                    detail_tables=detail_tables,
-                )
-
-        return RegulatoryQuerySkill(
-            skill_code=skill.skill_code,
-            skill_dir=skill.skill_dir,
-            instructions=skill.instructions,
-            database_url_env=skill.database_url_env,
-            catalog_limit=skill.catalog_limit,
-            systems=systems,
-        )
+            detail_tables = dict(system.detail_tables)
+            detail_tables[table_code] = self._table_detail_from_row(
+                table_code,
+                str(row.get("reg_table_name") or row.get("reg_table_code") or table_code),
+                row,
+                field_rows,
+            )
+            systems[system_code] = SystemConfig(
+                code=system.code,
+                name=system.name,
+                summary_tables=system.summary_tables,
+                detail_tables=detail_tables,
+            )
+        return systems
 
     @staticmethod
     def _copy_systems(systems: Mapping[str, SystemConfig]) -> dict[str, SystemConfig]:
@@ -672,6 +758,19 @@ class RegulatoryDataQueryService:
             row.get("org_name_field_id"),
             row.get("metric_code_field_id"),
             row.get("value_field_id"),
+        ]
+        field_ids.extend(_read_json_list(row.get("default_return_field_ids")))
+        field_ids.extend(_read_json_list(row.get("filter_field_ids")))
+        field_ids.extend(_read_json_list(row.get("sort_field_ids")))
+        field_ids.extend(_read_json_list(row.get("mask_field_ids")))
+        return tuple(dict.fromkeys(str(item) for item in field_ids if str(item or "").strip()))
+
+    @staticmethod
+    def _table_config_field_ids(row: Mapping[str, Any]) -> tuple[str, ...]:
+        field_ids = [
+            row.get("date_field_id"),
+            row.get("org_code_field_id"),
+            row.get("org_name_field_id"),
         ]
         field_ids.extend(_read_json_list(row.get("default_return_field_ids")))
         field_ids.extend(_read_json_list(row.get("filter_field_ids")))
@@ -769,6 +868,64 @@ class RegulatoryDataQueryService:
                     else None
                 ),
             ),
+        )
+
+    def _table_detail_from_row(
+        self,
+        table_code: str,
+        table_name: str,
+        row: Mapping[str, Any],
+        fields_by_id: Mapping[str, Mapping[str, Any]],
+    ) -> DetailTableConfig:
+        model_table_id = str(row.get("model_table_id") or "")
+        physical_table = self._asset_table_identifier(row)
+        default_ids = tuple(_read_json_list(row.get("default_return_field_ids")))
+        filter_ids = set(_read_json_list(row.get("filter_field_ids")))
+        sort_ids = set(_read_json_list(row.get("sort_field_ids")))
+        mask_ids = set(_read_json_list(row.get("mask_field_ids")))
+        max_rows = int(row.get("detail_max_rows") or 5)
+        if max_rows < 1 or max_rows > 5:
+            raise SkillConfigurationError("表级明细查询配置的最大返回行数必须在 1 到 5 之间")
+        required_ids = {
+            str(row.get("date_field_id") or ""),
+            str(row.get("org_code_field_id") or ""),
+        }
+        if not all(required_ids):
+            raise SkillConfigurationError("表级明细查询配置缺少日期或机构编号字段")
+        selected_ids = self._table_config_field_ids(row)
+        field_configs, field_code_by_id = self._asset_field_configs(
+            model_table_id=model_table_id,
+            field_ids=selected_ids,
+            fields_by_id=fields_by_id,
+            default_ids=set(default_ids),
+            filter_ids=filter_ids,
+            sort_ids=sort_ids,
+            mask_ids=mask_ids,
+        )
+        for field_id in required_ids:
+            if field_id not in field_code_by_id:
+                raise SkillConfigurationError("表级明细查询配置引用了不存在的必填字段")
+        default_codes = tuple(field_code_by_id[field_id] for field_id in default_ids)
+        if not default_codes:
+            raise SkillConfigurationError("表级明细查询配置必须选择默认返回字段")
+        order_by = tuple(
+            OrderRule(field_code_by_id[field_id], "asc")
+            for field_id in _read_json_list(row.get("sort_field_ids"))
+            if field_id in field_code_by_id
+        )
+        return DetailTableConfig(
+            code=table_code,
+            name=table_name,
+            table=physical_table,
+            date_column=self._asset_column(row.get("date_field_id"), fields_by_id),
+            organization_column=self._asset_column(row.get("org_code_field_id"), fields_by_id),
+            organization_name_column=self._asset_optional_column(
+                row.get("org_name_field_id"), fields_by_id
+            ),
+            fields=field_configs,
+            default_return_fields=default_codes,
+            max_rows=max_rows,
+            order_by=order_by,
         )
 
     def _asset_field_configs(
@@ -1828,7 +1985,7 @@ def create_regulatory_query_skill_runtime(
             StructuredTool.from_function(
                 service.search_metrics,
                 name="search_regulatory_metrics",
-                description="在指定系统和汇总/明细表中检索受控指标目录，不读取业务数据。",
+                description="在指定系统和汇总表中检索受控指标目录，不读取业务数据。",
                 args_schema=SearchCatalogInput,
             ),
             StructuredTool.from_function(
@@ -1851,8 +2008,8 @@ def create_regulatory_query_skill_runtime(
                 ),
                 name="query_regulatory_detail",
                 description=(
-                    "按受控系统、明细表、明细指标、返回字段、日期、机构和筛选条件查询明细数据，"
-                    "最多返回 5 条；只有一个明细指标时可不传 indicator_codes。"
+                    "按受控系统、明细表、返回字段、日期、机构和筛选条件查询表级明细数据，"
+                    "最多返回 5 条。"
                 ),
                 args_schema=QueryDetailInput,
             ),

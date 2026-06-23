@@ -233,6 +233,8 @@ class _FakeConnection:
         self.calls.append((sql, parameters))
         if "reg_element_query_config" in sql:
             return _FakeResult([])
+        if "reg_table_query_config" in sql:
+            return _FakeResult([])
         if "FROM model_field" in sql:
             return _FakeResult([])
         if "COUNT(DISTINCT" in sql:
@@ -312,6 +314,8 @@ class _AssetFakeConnection(_FakeConnection):
                     }
                 ]
             )
+        if "reg_table_query_config" in sql:
+            return _FakeResult([])
         if "FROM model_field" in sql:
             return _FakeResult(
                 [
@@ -376,6 +380,101 @@ class _AssetFakeConnection(_FakeConnection):
 class _AssetFakeEngine(_FakeEngine):
     def connect(self) -> _AssetFakeConnection:
         return _AssetFakeConnection(self.calls)
+
+
+class _TableDetailFakeConnection(_FakeConnection):
+    def execute(self, statement: Any, parameters: dict[str, Any]) -> _FakeResult:
+        sql = str(statement)
+        self.calls.append((sql, parameters))
+        if "reg_element_query_config" in sql:
+            return _FakeResult([])
+        if "reg_table_query_config" in sql:
+            return _FakeResult(
+                [
+                    {
+                        "config_id": 2,
+                        "reg_table_id": 20,
+                        "model_table_id": "mt_detail",
+                        "date_field_id": "d_date",
+                        "org_code_field_id": "d_org",
+                        "org_name_field_id": "d_org_name",
+                        "default_return_field_ids": json.dumps(["d_contract", "d_customer"]),
+                        "filter_field_ids": json.dumps(["d_status"]),
+                        "sort_field_ids": json.dumps(["d_contract"]),
+                        "mask_field_ids": json.dumps(["d_customer"]),
+                        "detail_max_rows": 5,
+                        "reg_table_code": "loan_detail_asset",
+                        "reg_table_name": "资产贷款明细表",
+                        "system_code": "credit_asset",
+                        "physical_table": "asset_detail",
+                        "physical_owner": "",
+                    }
+                ]
+            )
+        if "FROM model_field" in sql:
+            return _FakeResult(
+                [
+                    {
+                        "id": "d_date",
+                        "table_id": "mt_detail",
+                        "name": "data_date",
+                        "cn_name": "数据日期",
+                        "type": "date",
+                    },
+                    {
+                        "id": "d_org",
+                        "table_id": "mt_detail",
+                        "name": "org_code",
+                        "cn_name": "机构编号",
+                        "type": "varchar",
+                    },
+                    {
+                        "id": "d_org_name",
+                        "table_id": "mt_detail",
+                        "name": "org_name",
+                        "cn_name": "机构名称",
+                        "type": "varchar",
+                    },
+                    {
+                        "id": "d_contract",
+                        "table_id": "mt_detail",
+                        "name": "contract_no",
+                        "cn_name": "合同号",
+                        "type": "varchar",
+                    },
+                    {
+                        "id": "d_customer",
+                        "table_id": "mt_detail",
+                        "name": "customer_name",
+                        "cn_name": "客户名称",
+                        "type": "varchar",
+                    },
+                    {
+                        "id": "d_status",
+                        "table_id": "mt_detail",
+                        "name": "record_status",
+                        "cn_name": "记录状态",
+                        "type": "varchar",
+                    },
+                ]
+            )
+        if "COUNT(*)" in sql and "`asset_detail`" in sql:
+            return _FakeResult([{"total_count": 6}])
+        if "`asset_detail`" in sql:
+            return _FakeResult(
+                [
+                    {
+                        "contract_no": "HT20260001",
+                        "customer_name": "张三",
+                    }
+                ]
+            )
+        return super().execute(statement, parameters)
+
+
+class _TableDetailFakeEngine(_FakeEngine):
+    def connect(self) -> _TableDetailFakeConnection:
+        return _TableDetailFakeConnection(self.calls)
 
 
 def _runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, _FakeEngine]:
@@ -645,6 +744,42 @@ def test_asset_query_config_overrides_catalog_with_parameterized_summary_query(
     assert asset_params["asset_metric_code"] == "loan_balance_asset"
     assert asset_params["filter_0"] == "normal"
     assert "'normal'" not in asset_sql
+
+
+def test_table_level_detail_query_config_does_not_require_detail_indicator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime, engine = _runtime_with_engine(tmp_path, monkeypatch, _TableDetailFakeEngine())
+    tools = {tool.name: tool for tool in runtime.tools}
+
+    fields = tools["search_regulatory_fields"].invoke(
+        {"system_code": "credit_asset", "table_code": "loan_detail_asset", "keyword": "客户"}
+    )
+    result = tools["query_regulatory_detail"].invoke(
+        {
+            "system_code": "credit_asset",
+            "table_code": "loan_detail_asset",
+            "return_fields": ["contract_no", "customer_name"],
+            "start_date": "2026-02-28",
+            "end_date": "2026-02-28",
+            "organization": "1200机构",
+            "filters": [{"field": "record_status", "operator": "eq", "value": "normal"}],
+            "sort_field": "contract_no",
+            "sort_direction": "asc",
+        }
+    )
+
+    assert fields["fields"][0]["code"] == "customer_name"
+    assert result["returned_count"] == 1
+    assert result["total_count"] == 6
+    assert result["truncated"] is True
+    assert result["rows"][0]["customer_name"] == "张*"
+    detail_sql, detail_params = next(
+        (sql, params) for sql, params in engine.calls if "`asset_detail`" in sql and "LIMIT" in sql
+    )
+    assert "`record_status` = :filter_0" in detail_sql
+    assert detail_params["organization"] == "1200"
+    assert detail_params["limit"] == 5
 
 
 def test_query_tools_reject_unknown_return_filter_or_sort_field(

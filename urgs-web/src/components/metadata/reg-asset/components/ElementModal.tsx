@@ -12,12 +12,13 @@ import { QueryConfigPanel } from './QueryConfigPanel';
 interface ElementModalProps {
     element: RegElement;
     systemCode?: string;
+    tableQueryType?: 'SUMMARY' | 'DETAIL';
     preferredPhysicalTables?: PhysicalTableBinding[];
     onSave: (data: RegElement) => void;
     onClose: () => void;
 }
 
-export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode, preferredPhysicalTables = [], onSave, onClose }) => {
+export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode, tableQueryType = 'SUMMARY', preferredPhysicalTables = [], onSave, onClose }) => {
     const [form, setForm] = useState<RegElement>(element);
     const isField = form.type === 'FIELD';
     const [codeTables, setCodeTables] = useState<any[]>([]);
@@ -152,10 +153,12 @@ export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode,
                                     <option value={1}>是</option>
                                 </select>
                             </div>
-                            <QueryConfigPanel
-                                elementId={form.id}
-                                preferredPhysicalTables={preferredPhysicalTables}
-                            />
+                            {tableQueryType !== 'DETAIL' && (
+                                <QueryConfigPanel
+                                    elementId={form.id}
+                                    preferredPhysicalTables={preferredPhysicalTables}
+                                />
+                            )}
                         </>
                     )}
                     <div className="relative" onClick={(e) => e.stopPropagation()}>

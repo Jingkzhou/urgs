@@ -50,6 +50,9 @@ public class RegTable {
     @TableField("source_type")
     private String sourceType;
 
+    @TableField("query_table_type")
+    private String queryTableType;
+
     @TableField("auto_fetch_status")
     private String autoFetchStatus;
 

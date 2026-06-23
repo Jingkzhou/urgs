@@ -19,6 +19,7 @@ export interface RegTable {
     theme?: string;
     frequency?: string;
     sourceType?: string;
+    queryTableType?: 'SUMMARY' | 'DETAIL';
     autoFetchStatus?: string;
     dispatchNo?: string;
 
@@ -104,6 +105,22 @@ export interface RegElementQueryConfigValidationResult {
     valid: boolean;
     errors: string[];
     warnings: string[];
+}
+
+export interface RegTableQueryConfig {
+    id?: number | string;
+    regTableId?: number | string;
+    enabled?: number;
+    dataSourceId?: number | string;
+    modelTableId?: string;
+    dateFieldId?: string;
+    orgCodeFieldId?: string;
+    orgNameFieldId?: string;
+    defaultReturnFieldIds?: string[];
+    filterFieldIds?: string[];
+    sortFieldIds?: string[];
+    maskFieldIds?: string[];
+    detailMaxRows?: number;
 }
 
 export interface PhysicalTableBinding {
