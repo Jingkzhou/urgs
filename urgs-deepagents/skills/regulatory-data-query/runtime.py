@@ -1965,17 +1965,24 @@ def create_regulatory_query_skill_runtime(
             for item in items
         ]
 
+    def safe_call(operation: Callable[..., dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
+        try:
+            return {"ok": True, **operation(**kwargs)}
+        except (ValueError, SQLAlchemyError) as exc:
+            return _safe_tool_error(exc)
+
     return SkillRuntime(
         instructions=skill.instructions,
         tools=(
             StructuredTool.from_function(
-                service.browse_catalog,
+                lambda **kwargs: safe_call(service.browse_catalog, **kwargs),
                 name="browse_regulatory_catalog",
                 description="查询已配置的监管系统和汇总/明细表目录，不读取业务数据。",
                 args_schema=BrowseCatalogInput,
             ),
             StructuredTool.from_function(
-                lambda **kwargs: service.list_periods(
+                lambda **kwargs: safe_call(
+                    service.list_periods,
                     **{**kwargs, "filters": filters(kwargs["filters"])}
                 ),
                 name="list_regulatory_periods",
@@ -1983,19 +1990,20 @@ def create_regulatory_query_skill_runtime(
                 args_schema=ListPeriodsInput,
             ),
             StructuredTool.from_function(
-                service.search_metrics,
+                lambda **kwargs: safe_call(service.search_metrics, **kwargs),
                 name="search_regulatory_metrics",
                 description="在指定系统和汇总表中检索受控指标目录，不读取业务数据。",
                 args_schema=SearchCatalogInput,
             ),
             StructuredTool.from_function(
-                service.search_fields,
+                lambda **kwargs: safe_call(service.search_fields, **kwargs),
                 name="search_regulatory_fields",
                 description="在指定系统和明细表中检索可用字段目录，不读取业务数据。",
                 args_schema=SearchCatalogInput,
             ),
             StructuredTool.from_function(
-                lambda **kwargs: service.query_summary(
+                lambda **kwargs: safe_call(
+                    service.query_summary,
                     **{**kwargs, "filters": filters(kwargs["filters"])}
                 ),
                 name="query_regulatory_summary",
@@ -2003,7 +2011,8 @@ def create_regulatory_query_skill_runtime(
                 args_schema=QuerySummaryInput,
             ),
             StructuredTool.from_function(
-                lambda **kwargs: service.query_detail(
+                lambda **kwargs: safe_call(
+                    service.query_detail,
                     **{**kwargs, "filters": filters(kwargs["filters"])}
                 ),
                 name="query_regulatory_detail",
