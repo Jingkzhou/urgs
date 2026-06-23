@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, message } from 'antd';
 import dayjs from 'dayjs';
 import {
@@ -33,6 +33,9 @@ const normalizeDateKey = (value?: string | null) => {
 };
 const getDateTimeValue = (value?: string | null) => value ? dayjs(value).valueOf() : 0;
 const BATCH_RERUN_CHUNK_SIZE = 20;
+const TASK_INSTANCE_REFRESH_INTERVAL_MS = 3000;
+const SUMMARY_STATS_ACTIVE_REFRESH_INTERVAL_MS = 3000;
+const SUMMARY_STATS_HIDDEN_REFRESH_INTERVAL_MS = 30000;
 
 const chunkArray = <T,>(items: T[], chunkSize: number) => {
     const chunks: T[][] = [];
@@ -96,6 +99,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
     const [missedTasks, setMissedTasks] = useState<QuartzMissedTaskApiModel[]>([]);
     const [missedLoading, setMissedLoading] = useState(false);
     const [triggeringMissedKey, setTriggeringMissedKey] = useState<string | null>(null);
+    const summaryStatsRefreshInFlightRef = useRef(false);
 
     const buildInstanceQueryParams = useCallback((filters?: {
         createDate?: string;
@@ -213,7 +217,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         }
     }, [queryAllInstances]);
 
-    const loadTodaySummaryStats = useCallback(async () => {
+    const loadTodaySummaryStats = useCallback(async (options?: { silent?: boolean }) => {
         const todayInstances = await queryAllInstances({
             createDate: todayDate,
             dataDate: '',
@@ -222,7 +226,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
             theme: '',
             remark: '',
             keyword: '',
-        });
+        }, options);
         if (todayInstances) {
             const nextStats = buildStats(todayInstances);
             setSummaryStats(nextStats);
@@ -244,7 +248,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
                 return;
             }
             void loadInstances(undefined, { silent: true });
-        }, 3000);
+        }, TASK_INSTANCE_REFRESH_INTERVAL_MS);
         return () => {
             window.clearInterval(timer);
         };
@@ -253,6 +257,44 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
     useEffect(() => {
         loadTodaySummaryStats();
     }, [loadTodaySummaryStats]);
+
+    useEffect(() => {
+        let disposed = false;
+        let timer: number | undefined;
+
+        const scheduleNextRefresh = () => {
+            const delay = document.visibilityState === 'hidden'
+                ? SUMMARY_STATS_HIDDEN_REFRESH_INTERVAL_MS
+                : SUMMARY_STATS_ACTIVE_REFRESH_INTERVAL_MS;
+            timer = window.setTimeout(refreshStats, delay);
+        };
+
+        const refreshStats = async () => {
+            if (disposed) return;
+            if (batchRerunExecuting || summaryStatsRefreshInFlightRef.current) {
+                scheduleNextRefresh();
+                return;
+            }
+
+            summaryStatsRefreshInFlightRef.current = true;
+            try {
+                await loadTodaySummaryStats({ silent: true });
+            } finally {
+                summaryStatsRefreshInFlightRef.current = false;
+                if (!disposed) {
+                    scheduleNextRefresh();
+                }
+            }
+        };
+
+        scheduleNextRefresh();
+        return () => {
+            disposed = true;
+            if (timer !== undefined) {
+                window.clearTimeout(timer);
+            }
+        };
+    }, [batchRerunExecuting, loadTodaySummaryStats]);
 
     useEffect(() => {
         const taskId = selectedInstance?.plan_id;

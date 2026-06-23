@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { Server, Activity, CheckCircle, Cpu, AlertCircle, Clock, PieChart as PieChartIcon } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, BarChart, Bar, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, BarChart, Bar, LabelList } from 'recharts';
 import { fetchDailyStats, fetchHourlyThroughput, fetchWorkflowStats, TaskInstanceStatsVO, WorkflowStatsVO } from '../../api/stats';
 import { useSmartPolling } from '../../hooks/useSmartPolling';
 
@@ -81,6 +81,20 @@ const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default' }
         { name: '等待中', value: stats.waiting, color: '#AF52DE' },
     ] : [];
 
+    const workflowChartData = workflowStats.map(stat => ({
+        ...stat,
+        completed: stat.success + stat.failed,
+        totalLabel: `总 ${Number(stat.total || 0)}`
+    }));
+
+    const workflowRowHeight = isCompact ? 34 : 38;
+    const workflowChartContentHeight = workflowChartData.length
+        ? Math.max(isCompact ? 112 : 136, workflowChartData.length * workflowRowHeight + 44)
+        : isCompact ? 92 : 118;
+    const workflowChartViewportHeight = workflowChartData.length
+        ? Math.min(isCompact ? 260 : 360, workflowChartContentHeight)
+        : workflowChartContentHeight;
+
 
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (active && payload && payload.length) {
@@ -98,6 +112,25 @@ const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default' }
             );
         }
         return null;
+    };
+
+    const renderWorkflowBarValue = ({ x, y, width, height, value }: any) => {
+        const numberValue = Number(value || 0);
+        if (!numberValue || width < 20) return null;
+
+        return (
+            <text
+                x={x + width / 2}
+                y={y + height / 2}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill="#FFFFFF"
+                fontSize={11}
+                fontWeight={900}
+            >
+                {numberValue}
+            </text>
+        );
     };
 
     return (
@@ -156,60 +189,98 @@ const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default' }
             {/* Main Content Grid */}
             <div className={`grid grid-cols-1 lg:grid-cols-3 ${isCompact ? 'gap-4' : 'gap-8'}`}>
                 {/* Workflow Stats Chart */}
-                <div className={`relative lg:col-span-2 bg-white/70 backdrop-blur-md ${isCompact ? 'rounded-[1.75rem] p-5' : 'rounded-[2.5rem] p-8'} shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] transition-all duration-500 group overflow-hidden`}>
-                    <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-red-600 via-red-400 to-transparent opacity-40" />
-                    <div className={`flex justify-between items-center ${isCompact ? 'mb-3' : 'mb-10'}`}>
+                <div className={`relative lg:col-span-2 bg-white/80 backdrop-blur-md ${isCompact ? 'rounded-[1.5rem] p-4' : 'rounded-[2rem] p-6'} shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/60 hover:shadow-[0_18px_34px_rgba(15,23,42,0.06)] transition-all duration-500 group overflow-hidden`}>
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-rose-300 to-transparent opacity-50" />
+                    <div className={`flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${isCompact ? 'mb-3' : 'mb-5'}`}>
                         <div className="flex flex-col">
-                            <h3 className={`${isCompact ? 'text-lg' : 'text-xl'} font-black text-slate-800 tracking-tight`}>
-                                工作流执行概览
-                            </h3>
-                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Workflow Execution View</span>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <h3 className={`${isCompact ? 'text-lg' : 'text-xl'} font-black text-slate-800 tracking-tight`}>
+                                    工作流执行概览
+                                </h3>
+                                {workflowChartData.length > 0 && (
+                                    <span className="rounded-full border border-slate-200 bg-white/70 px-2 py-0.5 text-[10px] font-bold text-slate-500">
+                                        共 {workflowChartData.length} 套系统
+                                    </span>
+                                )}
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Workflow Execution</span>
                         </div>
-                        <div className={`${isCompact ? 'p-2 rounded-xl' : 'p-3 rounded-2xl'} bg-slate-50 border border-slate-100 shadow-inner group-hover:scale-110 transition-transform duration-500`}>
-                            <Activity className="w-5 h-5 text-red-600" />
+                        <div className="flex flex-wrap items-center gap-2.5">
+                            <div className="flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50/80 px-2.5 py-1">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.35)]" />
+                                <span className="text-[11px] font-bold text-slate-500">成功</span>
+                            </div>
+                            <div className="flex items-center gap-2 rounded-full border border-rose-100 bg-rose-50/80 px-2.5 py-1">
+                                <span className="h-2 w-2 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.35)]" />
+                                <span className="text-[11px] font-bold text-slate-500">失败</span>
+                            </div>
+                            <div className={`${isCompact ? 'h-8 w-8 rounded-xl' : 'h-9 w-9 rounded-2xl'} hidden sm:flex items-center justify-center bg-slate-50 border border-slate-100 shadow-inner`}>
+                                <Activity className="h-4 w-4 text-red-600" />
+                            </div>
                         </div>
                     </div>
-                    <div className={`${isCompact ? 'h-[165px]' : 'h-[340px]'} w-full min-w-0 overflow-hidden`}>
-                        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                            <BarChart data={workflowStats.map(stat => ({
-                                ...stat,
-                                remaining: Math.max(0, stat.total - stat.success - stat.failed)
-                            }))} barCategoryGap="30%">
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-                                <XAxis
-                                    dataKey="workflowName"
-                                    stroke="#94A3B8"
-                                    fontSize={10}
-                                    fontWeight={800}
-                                    tickLine={false}
-                                    axisLine={false}
-                                    interval={0}
-                                    angle={-15}
-                                    textAnchor="end"
-                                    height={60}
-                                    tickMargin={12}
-                                />
-                                <YAxis
-                                    stroke="#94A3B8"
-                                    fontSize={10}
-                                    fontWeight={800}
-                                    tickLine={false}
-                                    axisLine={false}
-                                />
-                                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(241, 245, 249, 0.5)', radius: 12 }} />
-                                <Legend
-                                    iconType="circle"
-                                    layout="horizontal"
-                                    verticalAlign="top"
-                                    align="right"
-                                    iconSize={8}
-                                    wrapperStyle={{ paddingBottom: '30px', fontSize: '11px', fontWeight: 800, color: '#64748B' }}
-                                />
-                                <Bar dataKey="success" name="成功" stackId="a" fill="#10B981" radius={[0, 0, 0, 0]} animationDuration={1000} barSize={isCompact ? 22 : 32} />
-                                <Bar dataKey="failed" name="失败" stackId="a" fill="#EF4444" radius={[0, 0, 0, 0]} animationDuration={1000} barSize={isCompact ? 22 : 32} />
-                                <Bar dataKey="remaining" name="剩余" stackId="a" fill="#F1F5F9" radius={[8, 8, 0, 0]} animationDuration={1000} barSize={isCompact ? 22 : 32} />
-                            </BarChart>
-                        </ResponsiveContainer>
+                    <div className={`${isCompact ? 'rounded-2xl p-2' : 'rounded-[1.5rem] p-3'} w-full min-w-0 overflow-hidden border border-slate-100 bg-slate-50/60`}>
+                        {workflowChartData.length ? (
+                            <div className="overflow-auto pr-1" style={{ maxHeight: workflowChartViewportHeight }}>
+                                <div style={{ height: workflowChartContentHeight, minWidth: 560 }}>
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                                        <BarChart
+                                            data={workflowChartData}
+                                            layout="vertical"
+                                            barCategoryGap={isCompact ? 12 : 14}
+                                            margin={{ top: 8, right: 38, left: 4, bottom: 4 }}
+                                        >
+                                            <defs>
+                                                <linearGradient id="barSuccessGrad" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="0%" stopColor="#34D399" />
+                                                    <stop offset="100%" stopColor="#059669" />
+                                                </linearGradient>
+                                                <linearGradient id="barFailedGrad" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="0%" stopColor="#FB7185" />
+                                                    <stop offset="100%" stopColor="#E11D48" />
+                                                </linearGradient>
+                                            </defs>
+                                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
+                                            <XAxis
+                                                type="number"
+                                                stroke="#94A3B8"
+                                                fontSize={10}
+                                                fontWeight={700}
+                                                tickLine={false}
+                                                axisLine={false}
+                                                allowDecimals={false}
+                                                domain={[0, (dataMax: number) => Math.max(dataMax, 1)]}
+                                            />
+                                            <YAxis
+                                                dataKey="workflowName"
+                                                type="category"
+                                                stroke="#94A3B8"
+                                                fontSize={10}
+                                                fontWeight={700}
+                                                tickLine={false}
+                                                axisLine={false}
+                                                interval={0}
+                                                width={isCompact ? 128 : 156}
+                                                tickMargin={8}
+                                                tickFormatter={(value: string) => value.length > (isCompact ? 10 : 14) ? `${value.slice(0, isCompact ? 10 : 14)}...` : value}
+                                            />
+                                            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(241, 245, 249, 0.5)', radius: 10 }} />
+                                            <Bar dataKey="success" name="成功" stackId="a" fill="url(#barSuccessGrad)" radius={[8, 0, 0, 8]} animationDuration={800} barSize={isCompact ? 14 : 16}>
+                                                <LabelList dataKey="success" content={renderWorkflowBarValue} />
+                                            </Bar>
+                                            <Bar dataKey="failed" name="失败" stackId="a" fill="url(#barFailedGrad)" radius={[0, 8, 8, 0]} animationDuration={800} barSize={isCompact ? 14 : 16}>
+                                                <LabelList dataKey="failed" content={renderWorkflowBarValue} />
+                                                <LabelList dataKey="totalLabel" position="right" fill="#64748B" fontSize={11} fontWeight={800} />
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className={`${isCompact ? 'h-[92px]' : 'h-[118px]'} flex items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/70`}>
+                                <span className="text-[11px] font-bold text-slate-400">暂无工作流执行数据</span>
+                            </div>
+                        )}
                     </div>
                 </div>
 
