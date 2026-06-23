@@ -1,6 +1,8 @@
 package com.example.urgs_api.quartz.domain.entity;
 
+import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.annotations.ApiModelProperty;
 import com.example.urgs_api.quartz.support.domain.BaseEntity;
@@ -20,6 +22,9 @@ import lombok.Data;
 @Data
 @TableName("t_quartz_task")
 public class QuartzTaskEntity extends BaseEntity {
+    @TableId(type = IdType.AUTO)
+    private Long id;
+
     /**
      * 任务名称参数
      */
