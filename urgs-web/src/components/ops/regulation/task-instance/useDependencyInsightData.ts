@@ -17,6 +17,7 @@ interface UseDependencyInsightDataParams {
     taskList: QuartzTask[];
     instanceList: QuartzTaskStatus[];
     taskMap: Map<number, QuartzTask>;
+    enabled?: boolean;
 }
 
 interface UpstreamQueueItem {
@@ -80,12 +81,13 @@ export const useDependencyInsightData = ({
     taskList,
     instanceList,
     taskMap,
+    enabled = true,
 }: UseDependencyInsightDataParams): DependencyInsightData | null => {
     const [dateInstances, setDateInstances] = useState<QuartzTaskStatus[]>([]);
 
     useEffect(() => {
         const dataDate = selectedInstance?.data_date;
-        if (!dataDate) {
+        if (!enabled || !dataDate) {
             setDateInstances([]);
             return;
         }
@@ -136,7 +138,7 @@ export const useDependencyInsightData = ({
         return () => {
             canceled = true;
         };
-    }, [selectedInstance?.data_date]);
+    }, [enabled, selectedInstance?.data_date]);
 
     const instanceByPlanDate = useMemo(() => {
         const map = new Map<string, QuartzTaskStatus>();
@@ -174,7 +176,7 @@ export const useDependencyInsightData = ({
     );
 
     return useMemo<DependencyInsightData | null>(() => {
-        if (!selectedInstance) return null;
+        if (!enabled || !selectedInstance) return null;
 
         const selectedTask = taskMap.get(selectedInstance.plan_id);
         const pickRelatedInstance = (taskId: number) => {
@@ -551,6 +553,7 @@ export const useDependencyInsightData = ({
         dataDownstreamTaskIdMap,
         dataUpstreamTaskIdMap,
         instanceByPlanDate,
+        enabled,
         selectedInstance,
         taskMap,
     ]);

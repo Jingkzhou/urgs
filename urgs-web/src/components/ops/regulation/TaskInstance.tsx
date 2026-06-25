@@ -507,12 +507,14 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         taskList,
         instanceList,
         taskMap,
+        enabled: instanceDetailTabKey === 'dependency',
     });
     const rerunExecutionDependencyData = useDependencyInsightData({
         selectedInstance: rerunExecutionInstance,
         taskList,
         instanceList,
         taskMap,
+        enabled: !!rerunExecutionInstance,
     });
 
     const updateInstance = (instanceId: number, updater: (instance: QuartzTaskStatus) => QuartzTaskStatus) => {
