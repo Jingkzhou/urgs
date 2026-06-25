@@ -508,6 +508,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         instanceList,
         taskMap,
         enabled: instanceDetailTabKey === 'dependency',
+        includeImpact: false,
     });
     const rerunExecutionDependencyData = useDependencyInsightData({
         selectedInstance: rerunExecutionInstance,

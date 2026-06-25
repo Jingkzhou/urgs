@@ -179,6 +179,85 @@ public class QuartzTaskService {
         return ResponseDTO.succData(SmartPageUtil.convert2PageResult(pageParam));
     }
 
+    public ResponseDTO<QuartzDependencyImpactPageVO> queryDependencyImpact(QuartzDependencyImpactQueryDTO queryDTO) {
+        Long planId = queryDTO.getPlanId();
+        String dataDate = queryDTO.getDataDate();
+        if ((planId == null || dataDate == null || dataDate.trim().isEmpty()) && queryDTO.getStatusId() != null) {
+            QuartzTaskStatusEntity statusEntity = quartzTaskStatusDao.selectById(queryDTO.getStatusId());
+            if (statusEntity != null) {
+                planId = statusEntity.getPlanId();
+                dataDate = statusEntity.getDataDate();
+            }
+        }
+        if (planId == null || dataDate == null || dataDate.trim().isEmpty()) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "计划ID和数据日期不能为空");
+        }
+
+        List<QuartzTaskEntity> allTasks = quartzTaskDao.queryAllList();
+        Map<Long, QuartzTaskEntity> taskMap = allTasks.stream()
+                .filter(task -> task.getId() != null)
+                .collect(Collectors.toMap(QuartzTaskEntity::getId, task -> task, (left, right) -> left, LinkedHashMap::new));
+        Map<Long, List<Long>> dataDownstreamMap = buildDataDownstreamMap(allTasks);
+        List<DependencyImpactNode> nodes = collectDependencyImpactNodes(planId, dataDownstreamMap);
+
+        List<Long> planIds = nodes.stream()
+                .map(DependencyImpactNode::getTaskId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<Long, QuartzTaskStatusEntity> statusMap = new HashMap<>();
+        if (!planIds.isEmpty()) {
+            List<QuartzTaskStatusEntity> statuses = quartzTaskStatusDao.getStatusBatch(planIds, dataDate, dataDate);
+            for (QuartzTaskStatusEntity status : statuses) {
+                statusMap.put(status.getPlanId(), status);
+            }
+        }
+
+        List<QuartzDependencyImpactItemVO> allRows = nodes.stream()
+                .map(node -> buildDependencyImpactItem(node, taskMap.get(node.getTaskId()), statusMap.get(node.getTaskId()), dataDownstreamMap))
+                .collect(Collectors.toList());
+        Map<Long, QuartzDependencyImpactItemVO> rowMap = allRows.stream()
+                .collect(Collectors.toMap(QuartzDependencyImpactItemVO::getTaskId, row -> row, (left, right) -> left, LinkedHashMap::new));
+        allRows.forEach(row -> {
+            Set<Long> descendantIds = collectDescendantTaskIds(row.getTaskId(), dataDownstreamMap);
+            row.setDescendantCount(descendantIds.size());
+            row.setHasImpactedDescendant(descendantIds.stream()
+                    .map(rowMap::get)
+                    .filter(Objects::nonNull)
+                    .anyMatch(item -> Boolean.TRUE.equals(item.getImpacted())));
+        });
+
+        QuartzDependencyImpactPageVO result = new QuartzDependencyImpactPageVO();
+        result.setMaxLevel(allRows.stream().map(QuartzDependencyImpactItemVO::getLevel).filter(Objects::nonNull).max(Integer::compareTo).orElse(0));
+        result.setWaitingCount((int) allRows.stream().filter(item -> Integer.valueOf(1).equals(item.getStatus())).count());
+        result.setRunningCount((int) allRows.stream().filter(item -> Integer.valueOf(2).equals(item.getStatus())).count());
+        result.setSuccessCount((int) allRows.stream().filter(item -> Integer.valueOf(3).equals(item.getStatus())).count());
+        result.setFailedCount((int) allRows.stream().filter(item -> Integer.valueOf(4).equals(item.getStatus())).count());
+        result.setMissingCount((int) allRows.stream().filter(item -> item.getStatusId() == null).count());
+        result.setImpactedCount((int) allRows.stream().filter(item -> Boolean.TRUE.equals(item.getImpacted())).count());
+
+        List<QuartzDependencyImpactItemVO> filteredRows = allRows.stream()
+                .filter(item -> matchesDependencyImpactKeyword(item, queryDTO.getKeyword()))
+                .filter(item -> matchesDependencyImpactStatus(item, queryDTO.getStatus()))
+                .filter(item -> !Boolean.TRUE.equals(queryDTO.getImpactedOnly())
+                        || Boolean.TRUE.equals(item.getImpacted())
+                        || Boolean.TRUE.equals(item.getHasImpactedDescendant()))
+                .collect(Collectors.toList());
+
+        int pageNum = Math.max(1, Optional.ofNullable(queryDTO.getPageNum()).orElse(1));
+        int pageSize = Math.min(200, Math.max(1, Optional.ofNullable(queryDTO.getPageSize()).orElse(50)));
+        int total = filteredRows.size();
+        int fromIndex = Math.min((pageNum - 1) * pageSize, total);
+        int toIndex = Math.min(fromIndex + pageSize, total);
+
+        result.setPageNum((long) pageNum);
+        result.setPageSize((long) pageSize);
+        result.setTotal((long) total);
+        result.setPages((long) ((total + pageSize - 1) / pageSize));
+        result.setList(filteredRows.subList(fromIndex, toIndex));
+        return ResponseDTO.succData(result);
+    }
+
     public ResponseDTO<String> batchExecuteTaskStatus(QuartzBatchExecuteDTO batchExecuteDTO) {
         List<Long> statusIds = batchExecuteDTO.getStatusIds() == null
                 ? Collections.emptyList()
@@ -212,13 +291,23 @@ public class QuartzTaskService {
         if (executeStatusIds.isEmpty()) {
             return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "未找到可重跑的任务实例");
         }
+
+        Set<String> executeStatusKeys = executeStatusList.stream()
+                .map(this::buildTaskDateKey)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        List<QuartzTaskStatusEntity> rootStatusList = filterBatchRerunRootStatuses(executeStatusList, executeStatusKeys);
+        if (rootStatusList.isEmpty()) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM,
+                    "本次重跑集合内未找到可首批触发的根节点，请检查是否存在循环依赖");
+        }
+
         quartzTaskStatusDao.batchResetToWaiting(executeStatusIds,
                 Boolean.TRUE.equals(batchExecuteDTO.getWithDataDownstream())
                         ? "实例已按数据依赖链路重置为等待执行。"
                         : "实例已批量重置为等待执行。");
 
         List<String> triggerFailures = new ArrayList<>();
-        for (QuartzTaskStatusEntity statusEntity : executeStatusList) {
+        for (QuartzTaskStatusEntity statusEntity : rootStatusList) {
             ResponseDTO<String> triggerResult = executorClientService.triggerNow(statusEntity.getPlanId(), statusEntity.getDataDate(), "rerun");
             if (!triggerResult.isSuccess()) {
                 String failureMsg = trimTo500("触发执行器失败: " + firstNotBlank(triggerResult.getMsg(), "未知错误"));
@@ -232,8 +321,37 @@ public class QuartzTaskService {
                     "部分实例未实际执行，已标记失败: " + String.join("; ", triggerFailures));
         }
         return ResponseDTO.succData(Boolean.TRUE.equals(batchExecuteDTO.getWithDataDownstream())
-                ? "已按数据依赖链路重置并触发 " + executeStatusIds.size() + " 条实例"
-                : "已重置并触发 " + executeStatusIds.size() + " 条实例");
+                ? "已按数据依赖链路重置 " + executeStatusIds.size() + " 条实例，首批触发 " + rootStatusList.size() + " 条，其余实例将等待本轮上游完成后继续执行"
+                : "已重置 " + executeStatusIds.size() + " 条实例，首批触发 " + rootStatusList.size() + " 条，其余实例将等待本轮上游完成后继续执行");
+    }
+
+    private List<QuartzTaskStatusEntity> filterBatchRerunRootStatuses(List<QuartzTaskStatusEntity> executeStatusList,
+                                                                      Set<String> executeStatusKeys) {
+        return executeStatusList.stream()
+                .filter(status -> !hasUpstreamInBatch(status, executeStatusKeys))
+                .collect(Collectors.toList());
+    }
+
+    private boolean hasUpstreamInBatch(QuartzTaskStatusEntity status, Set<String> executeStatusKeys) {
+        if (status.getDataDate() == null) {
+            return false;
+        }
+        List<Long> upstreamTaskIds = quartzTaskDao.getPreTaskIdsByTaskId(status.getPlanId());
+        if (upstreamTaskIds == null || upstreamTaskIds.isEmpty()) {
+            return false;
+        }
+        return upstreamTaskIds.stream()
+                .filter(Objects::nonNull)
+                .map(upstreamTaskId -> buildTaskDateKey(upstreamTaskId, status.getDataDate()))
+                .anyMatch(executeStatusKeys::contains);
+    }
+
+    private String buildTaskDateKey(QuartzTaskStatusEntity status) {
+        return buildTaskDateKey(status.getPlanId(), status.getDataDate());
+    }
+
+    private String buildTaskDateKey(Long planId, String dataDate) {
+        return planId + "_" + dataDate;
     }
 
     private void markTriggerFailed(QuartzTaskStatusEntity statusEntity, String msg) {
@@ -586,6 +704,141 @@ public class QuartzTaskService {
             collectDataRerunStatus(rootStatus.getPlanId(), rootStatus.getDataDate(), statusMap, new HashSet<>());
         }
         return new ArrayList<>(statusMap.values());
+    }
+
+    private Map<Long, List<Long>> buildDataDownstreamMap(List<QuartzTaskEntity> taskList) {
+        Map<Long, List<Long>> downstreamMap = new HashMap<>();
+        for (QuartzTaskEntity task : taskList) {
+            if (task.getId() == null) {
+                continue;
+            }
+            for (Long upstreamTaskId : parseDependIds(firstNotBlank(task.getDataDependId(), task.getDependId()))) {
+                downstreamMap.computeIfAbsent(upstreamTaskId, key -> new ArrayList<>()).add(task.getId());
+            }
+        }
+        downstreamMap.values().forEach(ids -> ids.sort(Long::compareTo));
+        return downstreamMap;
+    }
+
+    private List<DependencyImpactNode> collectDependencyImpactNodes(Long rootTaskId, Map<Long, List<Long>> downstreamMap) {
+        Map<Long, DependencyImpactNode> nodeMap = new LinkedHashMap<>();
+        Deque<DependencyImpactNode> queue = new ArrayDeque<>();
+        for (Long childTaskId : downstreamMap.getOrDefault(rootTaskId, Collections.emptyList())) {
+            queue.add(new DependencyImpactNode(childTaskId, 1));
+        }
+
+        Set<Long> visited = new HashSet<>();
+        while (!queue.isEmpty()) {
+            DependencyImpactNode current = queue.poll();
+            if (current.getTaskId() == null || current.getTaskId().equals(rootTaskId)) {
+                continue;
+            }
+
+            DependencyImpactNode existing = nodeMap.get(current.getTaskId());
+            if (existing == null || current.getLevel() < existing.getLevel()) {
+                nodeMap.put(current.getTaskId(), current);
+            }
+            if (!visited.add(current.getTaskId())) {
+                continue;
+            }
+
+            for (Long childTaskId : downstreamMap.getOrDefault(current.getTaskId(), Collections.emptyList())) {
+                if (!visited.contains(childTaskId)) {
+                    queue.add(new DependencyImpactNode(childTaskId, current.getLevel() + 1));
+                }
+            }
+        }
+        return new ArrayList<>(nodeMap.values()).stream()
+                .sorted(Comparator.comparing(DependencyImpactNode::getLevel).thenComparing(DependencyImpactNode::getTaskId))
+                .collect(Collectors.toList());
+    }
+
+    private QuartzDependencyImpactItemVO buildDependencyImpactItem(DependencyImpactNode node,
+                                                                  QuartzTaskEntity task,
+                                                                  QuartzTaskStatusEntity status,
+                                                                  Map<Long, List<Long>> downstreamMap) {
+        QuartzDependencyImpactItemVO item = new QuartzDependencyImpactItemVO();
+        item.setTaskId(node.getTaskId());
+        item.setTaskName(task == null || task.getTaskName() == null ? "任务 #" + node.getTaskId() : task.getTaskName());
+        item.setTaskSystem(task == null || task.getTaskSystem() == null ? "-" : task.getTaskSystem());
+        item.setTheme(task == null || task.getTheme() == null ? "-" : task.getTheme());
+        item.setMissingTask(task == null);
+        item.setLevel(node.getLevel());
+        item.setDependencyTypes(Collections.singletonList(DATA_DEPENDENCY_TYPE));
+        item.setDirectChildCount(downstreamMap.getOrDefault(node.getTaskId(), Collections.emptyList()).size());
+        item.setDescendantCount(0);
+        item.setHasImpactedDescendant(false);
+
+        if (status != null) {
+            item.setStatusId(status.getId());
+            item.setDataDate(status.getDataDate());
+            item.setStatus(status.getStatus());
+            item.setBeginTime(status.getBeginTime());
+            item.setUpdateTime(status.getUpdateTime());
+            item.setEndTime(status.getEndTime());
+            item.setCreateTime(status.getCreateTime());
+            item.setMsg(status.getMsg());
+        }
+        item.setImpacted(status == null || !Integer.valueOf(TaskExeStatusEnum.SUCCESS.getCode()).equals(status.getStatus()));
+        return item;
+    }
+
+    private Set<Long> collectDescendantTaskIds(Long taskId, Map<Long, List<Long>> downstreamMap) {
+        Set<Long> descendantIds = new LinkedHashSet<>();
+        Deque<Long> queue = new ArrayDeque<>(downstreamMap.getOrDefault(taskId, Collections.emptyList()));
+        while (!queue.isEmpty()) {
+            Long currentTaskId = queue.poll();
+            if (currentTaskId == null || !descendantIds.add(currentTaskId)) {
+                continue;
+            }
+            queue.addAll(downstreamMap.getOrDefault(currentTaskId, Collections.emptyList()));
+        }
+        return descendantIds;
+    }
+
+    private boolean matchesDependencyImpactKeyword(QuartzDependencyImpactItemVO item, String keyword) {
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return true;
+        }
+        String normalizedKeyword = keyword.trim().toLowerCase(Locale.ROOT);
+        return String.valueOf(item.getTaskId()).contains(normalizedKeyword)
+                || containsIgnoreCase(item.getTaskName(), normalizedKeyword)
+                || containsIgnoreCase(item.getTaskSystem(), normalizedKeyword)
+                || containsIgnoreCase(item.getTheme(), normalizedKeyword)
+                || containsIgnoreCase(item.getMsg(), normalizedKeyword);
+    }
+
+    private boolean containsIgnoreCase(String value, String normalizedKeyword) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(normalizedKeyword);
+    }
+
+    private boolean matchesDependencyImpactStatus(QuartzDependencyImpactItemVO item, String status) {
+        if (status == null || status.trim().isEmpty() || "all".equalsIgnoreCase(status.trim())) {
+            return true;
+        }
+        String normalizedStatus = status.trim();
+        if ("missing".equalsIgnoreCase(normalizedStatus)) {
+            return item.getStatusId() == null;
+        }
+        return item.getStatus() != null && normalizedStatus.equals(String.valueOf(item.getStatus()));
+    }
+
+    private static class DependencyImpactNode {
+        private final Long taskId;
+        private final Integer level;
+
+        private DependencyImpactNode(Long taskId, Integer level) {
+            this.taskId = taskId;
+            this.level = level;
+        }
+
+        private Long getTaskId() {
+            return taskId;
+        }
+
+        private Integer getLevel() {
+            return level;
+        }
     }
 
     private void collectDataRerunStatus(Long taskId, String dataDate, Map<String, QuartzTaskStatusEntity> statusMap, Set<Long> visitedTaskIds) {

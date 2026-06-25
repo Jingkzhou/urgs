@@ -6,6 +6,7 @@ import {
     ArrowUpCircle,
     CheckCircle2,
     ChevronDown,
+    ChevronLeft,
     ChevronRight,
     Eye,
     EyeOff,
@@ -14,6 +15,11 @@ import {
     Search,
     X,
 } from 'lucide-react';
+import {
+    QuartzDependencyImpactItemApiModel,
+    QuartzDependencyImpactPageApiModel,
+    queryQuartzDependencyImpact,
+} from '@/api/ops';
 import { QuartzTaskStatus } from '../mockData';
 import {
     detailSectionBodyClass,
@@ -38,6 +44,22 @@ interface ImpactTraversalRow {
     level: number;
     routeKey: string;
 }
+
+const impactPageSizeOptions = [20, 50, 100];
+const emptyImpactPage: QuartzDependencyImpactPageApiModel = {
+    pageNum: 1,
+    pageSize: 50,
+    total: 0,
+    pages: 0,
+    list: [],
+    maxLevel: 0,
+    waitingCount: 0,
+    runningCount: 0,
+    successCount: 0,
+    failedCount: 0,
+    missingCount: 0,
+    impactedCount: 0,
+};
 
 const statusFilterOptions: Array<{ value: ImpactStatusFilter; label: string }> = [
     { value: 'all', label: '全部状态' },
@@ -64,6 +86,10 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
 }) => {
     const [impactKeyword, setImpactKeyword] = useState('');
     const [impactStatusFilter, setImpactStatusFilter] = useState<ImpactStatusFilter>('all');
+    const [impactPage, setImpactPage] = useState(1);
+    const [impactPageSize, setImpactPageSize] = useState(50);
+    const [impactLoading, setImpactLoading] = useState(false);
+    const [impactPageData, setImpactPageData] = useState<QuartzDependencyImpactPageApiModel>(emptyImpactPage);
     const [showBlockingDetail, setShowBlockingDetail] = useState(false);
     const [showImpactDetail, setShowImpactDetail] = useState(false);
     const normalizedImpactKeyword = impactKeyword.trim().toLowerCase();
@@ -71,83 +97,18 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
     useEffect(() => {
         setShowBlockingDetail(false);
         setShowImpactDetail(false);
+        setImpactPage(1);
     }, [selectedInstance.id]);
 
-    const downstreamItems = useMemo(
-        () => Array.from(dependencyPanelData.downstreamMetaMap.values()),
-        [dependencyPanelData.downstreamMetaMap]
-    );
-
-    const impactStats = useMemo(() => {
-        const maxLevelByTaskId = new Map<number, number>();
-        const collectLevel = (taskIds: number[], level: number, path: Set<number>) => {
-            taskIds.forEach(taskId => {
-                if (path.has(taskId)) {
-                    return;
-                }
-                const item = dependencyPanelData.downstreamMetaMap.get(taskId);
-                if (!item) {
-                    return;
-                }
-                maxLevelByTaskId.set(taskId, Math.max(maxLevelByTaskId.get(taskId) || 0, level));
-                collectLevel(item.directChildIds, level + 1, new Set([...path, taskId]));
-            });
-        };
-
-        collectLevel(dependencyPanelData.downstreamRootTaskIds, 1, new Set([selectedInstance.plan_id]));
-
-        return {
-            maxLevel: Math.max(0, ...Array.from(maxLevelByTaskId.values())),
-            waitingCount: downstreamItems.filter(item => item.relatedInstance?.status === 1).length,
-            runningCount: downstreamItems.filter(item => item.relatedInstance?.status === 2).length,
-            successCount: downstreamItems.filter(item => item.relatedInstance?.status === 3).length,
-            failedCount: downstreamItems.filter(item => item.relatedInstance?.status === 4).length,
-            missingCount: downstreamItems.filter(item => !item.relatedInstance).length,
-        };
-    }, [dependencyPanelData.downstreamMetaMap, dependencyPanelData.downstreamRootTaskIds, downstreamItems, selectedInstance.plan_id]);
-
-    const impactTraversalRows = useMemo<ImpactTraversalRow[]>(() => {
-        const rows: ImpactTraversalRow[] = [];
-
-        const walk = (taskIds: number[], level: number, ancestors: number[], path: Set<number>) => {
-            taskIds.forEach(taskId => {
-                if (path.has(taskId)) {
-                    return;
-                }
-                const item = dependencyPanelData.downstreamMetaMap.get(taskId);
-                if (!item) {
-                    return;
-                }
-
-                const route = [...ancestors, taskId];
-                rows.push({
-                    item,
-                    level,
-                    routeKey: route.join('>'),
-                });
-                walk(item.directChildIds, level + 1, route, new Set([...path, taskId]));
-            });
-        };
-
-        walk(dependencyPanelData.downstreamRootTaskIds, 1, [selectedInstance.plan_id], new Set([selectedInstance.plan_id]));
-        return rows;
-    }, [dependencyPanelData.downstreamMetaMap, dependencyPanelData.downstreamRootTaskIds, selectedInstance.plan_id]);
-
-    const impactFlatRows = useMemo<ImpactTraversalRow[]>(() => {
-        const rowByTaskId = new Map<number, ImpactTraversalRow>();
-        impactTraversalRows.forEach(row => {
-            const existing = rowByTaskId.get(row.item.taskId);
-            if (!existing || row.level < existing.level) {
-                rowByTaskId.set(row.item.taskId, row);
-            }
-        });
-        return Array.from(rowByTaskId.values()).sort((a, b) => {
-            if (a.level !== b.level) {
-                return a.level - b.level;
-            }
-            return a.item.taskId - b.item.taskId;
-        });
-    }, [impactTraversalRows]);
+    const impactStats = {
+        maxLevel: impactPageData.maxLevel || 0,
+        waitingCount: impactPageData.waitingCount || 0,
+        runningCount: impactPageData.runningCount || 0,
+        successCount: impactPageData.successCount || 0,
+        failedCount: impactPageData.failedCount || 0,
+        missingCount: impactPageData.missingCount || 0,
+        impactedCount: impactPageData.impactedCount || 0,
+    };
 
     const renderRelationStatus = (relation?: QuartzTaskStatus) => {
         if (!relation) {
@@ -186,42 +147,110 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
         </>
     );
 
-    const matchesImpactKeyword = (item: DownstreamImpactMeta) => {
-        if (!normalizedImpactKeyword) {
-            return true;
-        }
-        return [
-            String(item.taskId),
-            item.taskName,
-            item.taskSystem,
-            item.theme,
-            item.relatedInstance?.msg || '',
-        ].some(value => value.toLowerCase().includes(normalizedImpactKeyword));
-    };
+    useEffect(() => {
+        setImpactPage(1);
+    }, [normalizedImpactKeyword, impactStatusFilter, showImpactedOnly, selectedInstance.id]);
 
-    const matchesImpactStatus = (item: DownstreamImpactMeta) => {
-        if (impactStatusFilter === 'all') {
-            return true;
-        }
-        if (impactStatusFilter === 'missing') {
-            return !item.relatedInstance;
-        }
-        return String(item.relatedInstance?.status) === impactStatusFilter;
-    };
+    useEffect(() => {
+        let canceled = false;
+        const loadImpactPage = async () => {
+            setImpactLoading(true);
+            try {
+                const response = await queryQuartzDependencyImpact({
+                    statusId: selectedInstance.id,
+                    planId: selectedInstance.plan_id,
+                    dataDate: selectedInstance.data_date,
+                    keyword: normalizedImpactKeyword || undefined,
+                    status: impactStatusFilter === 'all' ? undefined : impactStatusFilter,
+                    impactedOnly: showImpactedOnly,
+                    pageNum: impactPage,
+                    pageSize: impactPageSize,
+                });
+                if (canceled) return;
+                if (response?.success) {
+                    setImpactPageData(response.data || emptyImpactPage);
+                } else {
+                    console.warn(response?.msg || '加载依赖影响失败');
+                    setImpactPageData(emptyImpactPage);
+                }
+            } catch (error) {
+                if (!canceled) {
+                    console.warn(error);
+                    setImpactPageData(emptyImpactPage);
+                }
+            } finally {
+                if (!canceled) {
+                    setImpactLoading(false);
+                }
+            }
+        };
 
-    const matchesImpactFocus = (item: DownstreamImpactMeta) =>
-        !showImpactedOnly || item.impacted || item.hasImpactedDescendant;
-
-    const visibleImpactRows = useMemo(() => {
-        return impactFlatRows.filter(row =>
-            matchesImpactFocus(row.item) && matchesImpactKeyword(row.item) && matchesImpactStatus(row.item)
-        );
+        void loadImpactPage();
+        return () => {
+            canceled = true;
+        };
     }, [
-        impactFlatRows,
+        impactPage,
+        impactPageSize,
         impactStatusFilter,
         normalizedImpactKeyword,
+        selectedInstance.data_date,
+        selectedInstance.id,
+        selectedInstance.plan_id,
         showImpactedOnly,
     ]);
+
+    const impactTotalPages = Math.max(1, Number(impactPageData.pages || 1));
+
+    useEffect(() => {
+        setImpactPage(prev => Math.min(prev, impactTotalPages));
+    }, [impactTotalPages]);
+
+    const normalizeImpactRow = (item: QuartzDependencyImpactItemApiModel): ImpactTraversalRow => {
+        const relatedInstance = item.statusId
+            ? {
+                id: Number(item.statusId),
+                plan_id: Number(item.taskId),
+                data_date: item.dataDate || selectedInstance.data_date,
+                status: item.status ?? null,
+                begin_time: item.beginTime || null,
+                update_time: item.updateTime || null,
+                end_time: item.endTime || null,
+                msg: item.msg || null,
+                create_time: item.createTime || '',
+                create_date: (item.createTime || selectedInstance.data_date || '').slice(0, 10).replaceAll('-', ''),
+            }
+            : undefined;
+
+        return {
+            item: {
+                taskId: Number(item.taskId),
+                taskName: item.taskName || `任务 #${item.taskId}`,
+                taskSystem: item.taskSystem || '-',
+                theme: item.theme || '-',
+                relatedInstance,
+                missingTask: !!item.missingTask,
+                dependencyTypes: (item.dependencyTypes || ['DATA'])
+                    .filter((type): type is 'DATA' | 'CONTROL' => type === 'DATA' || type === 'CONTROL'),
+                impacted: !!item.impacted,
+                hasImpactedDescendant: !!item.hasImpactedDescendant,
+                directChildIds: [],
+                directChildCount: item.directChildCount || 0,
+                descendantCount: item.descendantCount || 0,
+            },
+            level: item.level || 1,
+            routeKey: `${selectedInstance.plan_id}>${item.taskId}`,
+        };
+    };
+
+    const pagedImpactRows = useMemo(
+        () => (impactPageData.list || []).map(normalizeImpactRow),
+        [impactPageData.list, selectedInstance.data_date, selectedInstance.plan_id]
+    );
+
+    const impactTotal = Number(impactPageData.total || 0);
+    const impactStartIndex = impactTotal === 0 ? 0 : (impactPage - 1) * impactPageSize + 1;
+    const impactEndIndex = Math.min(impactPage * impactPageSize, impactTotal);
 
     const hasImpactFilterValue = normalizedImpactKeyword.length > 0 || impactStatusFilter !== 'all';
 
@@ -297,7 +326,7 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
     const renderImpactRow = (row: ImpactTraversalRow, index: number) => {
         const { item, level, routeKey } = row;
         const mappedStatus = instanceStatusMap[item.relatedInstance?.status ?? -1];
-        const isLast = index === visibleImpactRows.length - 1;
+        const isLast = index === pagedImpactRows.length - 1;
 
         return (
             <div
@@ -324,7 +353,7 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                             <div className="mt-2 flex flex-wrap items-center gap-1.5">
                                 <span className={taskMetaPillClass}>{item.taskSystem}</span>
                                 <span className={taskMetaPillClass}>{item.theme}</span>
-                                <span className={taskMetaPillClass}>直接 {item.directChildIds.length}</span>
+                                <span className={taskMetaPillClass}>直接 {item.directChildCount ?? item.directChildIds.length}</span>
                                 <span className={taskMetaPillClass}>累计 {item.descendantCount}</span>
                                 {renderDependencyTypeTags(item.dependencyTypes)}
                                 {item.missingTask && (
@@ -408,11 +437,20 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                                 <ArrowDownCircle size={13} />
                                 数据影响
                             </div>
-                            <div className="mt-1 text-xl font-bold text-blue-700">{dependencyPanelData.impactedDownstreamCount}</div>
+                            <div className="mt-1 text-xl font-bold text-blue-700">{impactStats.impactedCount}</div>
                         </div>
                     </div>
                 </div>
             </section>
+
+            {(dependencyPanelData.graphTruncated || dependencyPanelData.instanceDataTruncated) && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+                    当前依赖链路或同日实例数量较大，页面已启用保护性截断：
+                    {dependencyPanelData.graphTruncated && ' 依赖图仅展示前 800 个节点。'}
+                    {dependencyPanelData.instanceDataTruncated && ` 同日实例已加载 ${dependencyPanelData.loadedDateInstanceCount || 0}/${dependencyPanelData.totalDateInstanceCount || 0} 条。`}
+                    如需完整链路，建议增加后端按当前任务分页查询依赖接口。
+                </div>
+            )}
 
             <section className={detailSectionClass}>
                 <div className={`${detailSectionHeaderClass} flex items-start justify-between gap-3`}>
@@ -456,7 +494,7 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                                 数据重跑影响范围
                             </div>
                             <div className="mt-1 text-xs text-slate-500">
-                                仅沿数据依赖传播，共 {dependencyPanelData.downstreamTotalCount} 个下游节点，最深 L{impactStats.maxLevel || 0}
+                                仅沿数据依赖传播，当前匹配 {impactTotal} 个下游节点，最深 L{impactStats.maxLevel || 0}
                             </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -548,6 +586,7 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                                     onClick={() => {
                                         setImpactKeyword('');
                                         setImpactStatusFilter('all');
+                                        setImpactPage(1);
                                     }}
                                     disabled={!hasImpactFilterValue}
                                     className="inline-flex h-9 items-center justify-center gap-1.5 rounded border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
@@ -563,17 +602,63 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                 {showImpactDetail && (
                     <div className="p-5 pt-0">
                         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs text-slate-500">
-                                <div>
-                                    展示 {visibleImpactRows.length} / {impactFlatRows.length} 项
+                            <div className="flex flex-col gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs text-slate-500 md:flex-row md:items-center md:justify-between">
+                                <div className="min-w-0">
+                                    展示 {impactStartIndex}-{impactEndIndex} / {impactTotal} 项
                                 </div>
-                                <div className="font-mono">
-                                    {selectedInstance.data_date || '-'}
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <select
+                                        value={impactPageSize}
+                                        onChange={event => {
+                                            setImpactPageSize(Number(event.target.value));
+                                            setImpactPage(1);
+                                        }}
+                                        className="h-7 rounded border border-slate-200 bg-white px-2 text-xs text-slate-600 outline-none"
+                                        aria-label="每页展示数量"
+                                    >
+                                        {impactPageSizeOptions.map(size => (
+                                            <option key={size} value={size}>
+                                                每页 {size}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <button
+                                        type="button"
+                                        onClick={() => setImpactPage(prev => Math.max(1, prev - 1))}
+                                        disabled={impactPage <= 1}
+                                        className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45"
+                                        aria-label="上一页"
+                                        title="上一页"
+                                    >
+                                        <ChevronLeft size={14} />
+                                    </button>
+                                    <span className="font-mono text-slate-500">
+                                        {impactPage}/{impactTotalPages}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setImpactPage(prev => Math.min(impactTotalPages, prev + 1))}
+                                        disabled={impactPage >= impactTotalPages}
+                                        className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45"
+                                        aria-label="下一页"
+                                        title="下一页"
+                                    >
+                                        <ChevronRight size={14} />
+                                    </button>
+                                    <div className="font-mono">
+                                        {selectedInstance.data_date || '-'}
+                                    </div>
                                 </div>
                             </div>
-                            {visibleImpactRows.length > 0 ? (
+                            {impactTotal > 0 ? (
                                 <div className="max-h-[520px] overflow-y-auto">
-                                    {visibleImpactRows.map(renderImpactRow)}
+                                    {impactLoading ? (
+                                        <div className="px-4 py-10 text-center text-sm text-slate-500">
+                                            加载依赖影响中...
+                                        </div>
+                                    ) : (
+                                        pagedImpactRows.map(renderImpactRow)
+                                    )}
                                 </div>
                             ) : (
                                 <div className="px-4 py-12 text-center text-sm text-slate-500">

@@ -20,6 +20,7 @@ export interface DownstreamImpactMeta extends DependencyRelationItem {
     impacted: boolean;
     hasImpactedDescendant: boolean;
     directChildIds: number[];
+    directChildCount?: number;
     descendantCount: number;
 }
 
@@ -40,6 +41,10 @@ export interface DependencyInsightData {
     downstreamTotalCount: number;
     impactedDownstreamCount: number;
     failedUpstreamCount: number;
+    graphTruncated?: boolean;
+    instanceDataTruncated?: boolean;
+    loadedDateInstanceCount?: number;
+    totalDateInstanceCount?: number;
 }
 
 export interface RowContextMenuState {

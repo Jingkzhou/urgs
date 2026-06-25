@@ -12,12 +12,17 @@ import {
 } from './types';
 import { getAllDependIds, getControlDependIds, getDataDependIds, normalizeStatus } from './utils';
 
+const DEPENDENCY_DATE_INSTANCE_PAGE_SIZE = 500;
+const MAX_DEPENDENCY_DATE_INSTANCE_PAGES = 8;
+const MAX_DEPENDENCY_GRAPH_NODES = 800;
+
 interface UseDependencyInsightDataParams {
     selectedInstance: QuartzTaskStatus | null;
     taskList: QuartzTask[];
     instanceList: QuartzTaskStatus[];
     taskMap: Map<number, QuartzTask>;
     enabled?: boolean;
+    includeImpact?: boolean;
 }
 
 interface UpstreamQueueItem {
@@ -82,53 +87,68 @@ export const useDependencyInsightData = ({
     instanceList,
     taskMap,
     enabled = true,
+    includeImpact = true,
 }: UseDependencyInsightDataParams): DependencyInsightData | null => {
     const [dateInstances, setDateInstances] = useState<QuartzTaskStatus[]>([]);
+    const [dateInstanceMeta, setDateInstanceMeta] = useState({
+        total: 0,
+        loaded: 0,
+        truncated: false,
+    });
 
     useEffect(() => {
         const dataDate = selectedInstance?.data_date;
         if (!enabled || !dataDate) {
             setDateInstances([]);
+            setDateInstanceMeta({ total: 0, loaded: 0, truncated: false });
             return;
         }
 
         let canceled = false;
-        const pageSize = 500;
 
         const loadDateInstances = async () => {
             try {
                 const firstResponse = await queryQuartzTaskStatus({
                     dataDate,
                     pageNum: 1,
-                    pageSize,
+                    pageSize: DEPENDENCY_DATE_INSTANCE_PAGE_SIZE,
                 });
                 if (!firstResponse?.success) {
                     throw new Error(firstResponse?.msg || '加载依赖实例失败');
                 }
 
                 const totalPages = Number(firstResponse.data?.pages || 1);
+                const totalCount = Number(firstResponse.data?.total || firstResponse.data?.list?.length || 0);
+                const pagesToLoad = Math.min(totalPages, MAX_DEPENDENCY_DATE_INSTANCE_PAGES);
                 const mergedInstances = [...(firstResponse.data?.list || []).map(normalizeStatus)];
 
-                if (totalPages > 1) {
-                    const restResponses = await Promise.all(
-                        Array.from({ length: totalPages - 1 }, (_, index) =>
-                            queryQuartzTaskStatus({ dataDate, pageNum: index + 2, pageSize })
-                        )
-                    );
-                    restResponses.forEach(response => {
-                        if (response?.success) {
-                            mergedInstances.push(...(response.data?.list || []).map(normalizeStatus));
-                        }
+                for (let pageNum = 2; pageNum <= pagesToLoad; pageNum += 1) {
+                    const response = await queryQuartzTaskStatus({
+                        dataDate,
+                        pageNum,
+                        pageSize: DEPENDENCY_DATE_INSTANCE_PAGE_SIZE,
                     });
+                    if (canceled) {
+                        return;
+                    }
+                    if (response?.success) {
+                        mergedInstances.push(...(response.data?.list || []).map(normalizeStatus));
+                    }
                 }
 
                 if (!canceled) {
                     setDateInstances(mergedInstances);
+                    setDateInstanceMeta({
+                        total: totalCount,
+                        loaded: mergedInstances.length,
+                        truncated: totalPages > pagesToLoad,
+                    });
                 }
             } catch (error) {
                 if (!canceled) {
                     console.warn(error);
                     setDateInstances([]);
+                    setDateInstanceMeta({ total: 0, loaded: 0, truncated: false });
                 }
             }
         };
@@ -178,6 +198,18 @@ export const useDependencyInsightData = ({
     return useMemo<DependencyInsightData | null>(() => {
         if (!enabled || !selectedInstance) return null;
 
+        let graphTruncated = false;
+        const canAppendNode = (map: Map<number, unknown>, taskId: number) => {
+            if (map.has(taskId)) {
+                return true;
+            }
+            if (map.size >= MAX_DEPENDENCY_GRAPH_NODES) {
+                graphTruncated = true;
+                return false;
+            }
+            return true;
+        };
+
         const selectedTask = taskMap.get(selectedInstance.plan_id);
         const pickRelatedInstance = (taskId: number) => {
             return instanceByPlanDate.get(`${taskId}_${selectedInstance.data_date}`);
@@ -214,6 +246,10 @@ export const useDependencyInsightData = ({
             if (!current) {
                 continue;
             }
+            if (visitedUpstreamIds.size >= MAX_DEPENDENCY_GRAPH_NODES) {
+                graphTruncated = true;
+                break;
+            }
 
             const existingBlocking = blockingUpstreamMap.get(current.taskId);
             if (existingBlocking) {
@@ -247,9 +283,38 @@ export const useDependencyInsightData = ({
             });
         }
 
+        const blockingUpstream = Array.from(blockingUpstreamMap.values()).sort((a, b) => {
+            const aStatus = a.relatedInstance?.status ?? 99;
+            const bStatus = b.relatedInstance?.status ?? 99;
+            const rankDiff = (blockingStatusRank[aStatus] ?? 99) - (blockingStatusRank[bStatus] ?? 99);
+            if (rankDiff !== 0) {
+                return rankDiff;
+            }
+            return a.level - b.level;
+        });
         const downstreamMetaMap = new Map<number, DownstreamImpactMeta>();
-        const downstreamDescendantIdSetMap = new Map<number, Set<number>>();
         const allDownstreamMetaMap = new Map<number, DownstreamImpactMeta>();
+
+        if (!includeImpact) {
+            return {
+                selectedTask,
+                blockingUpstream,
+                downstreamRootTaskIds: [],
+                downstreamMetaMap,
+                allDownstreamRootTaskIds: [],
+                allDownstreamMetaMap,
+                rerunImpactItems: [],
+                downstreamTotalCount: 0,
+                impactedDownstreamCount: 0,
+                failedUpstreamCount: blockingUpstream.filter(item => item.relatedInstance?.status === 4).length,
+                graphTruncated,
+                instanceDataTruncated: dateInstanceMeta.truncated,
+                loadedDateInstanceCount: dateInstanceMeta.loaded,
+                totalDateInstanceCount: dateInstanceMeta.total,
+            };
+        }
+
+        const downstreamDescendantIdSetMap = new Map<number, Set<number>>();
         const allDownstreamDescendantIdSetMap = new Map<number, Set<number>>();
 
         const mergeTaskIds = (...groups: number[][]) =>
@@ -280,6 +345,16 @@ export const useDependencyInsightData = ({
             const cached = downstreamMetaMap.get(taskId);
             if (cached) {
                 return cached;
+            }
+
+            if (!canAppendNode(downstreamMetaMap, taskId)) {
+                return {
+                    ...toRelationItem(taskId, ['DATA']),
+                    impacted: false,
+                    hasImpactedDescendant: false,
+                    directChildIds: [],
+                    descendantCount: 0,
+                };
             }
 
             const relation = toRelationItem(taskId, ['DATA']);
@@ -329,6 +404,16 @@ export const useDependencyInsightData = ({
                 dependencyTypes.forEach(type => mergeDependencyType(cached, type));
                 cached.directChildIds = mergeTaskIds(cached.directChildIds, directChildIds);
                 return cached;
+            }
+
+            if (!canAppendNode(allDownstreamMetaMap, taskId)) {
+                return {
+                    ...toRelationItem(taskId, dependencyTypes),
+                    impacted: false,
+                    hasImpactedDescendant: false,
+                    directChildIds: [],
+                    descendantCount: 0,
+                };
             }
 
             const relation = toRelationItem(taskId, dependencyTypes);
@@ -387,6 +472,10 @@ export const useDependencyInsightData = ({
                 return existing;
             }
 
+            if (!canAppendNode(rerunImpactItemMap, taskId)) {
+                return null;
+            }
+
             const relation = toRelationItem(taskId, [...dependencyTypes]);
             const relatedInstance = current ? selectedInstance : relation.relatedInstance;
             const item: RerunImpactItem = {
@@ -425,6 +514,9 @@ export const useDependencyInsightData = ({
 
             const route = [...ancestors, taskId];
             const item = ensureRerunImpactItem(taskId, ['CONTROL'], level, route.join('>'));
+            if (!item) {
+                return;
+            }
             if (visitedRerunDataIds.has(taskId) || visitedRerunControlIds.has(taskId)) {
                 return;
             }
@@ -443,6 +535,9 @@ export const useDependencyInsightData = ({
 
             const route = [...ancestors, taskId];
             const item = ensureRerunImpactItem(taskId, ['DATA'], level, route.join('>'));
+            if (!item) {
+                return;
+            }
             if (visitedRerunDataIds.has(taskId)) {
                 return;
             }
@@ -466,6 +561,7 @@ export const useDependencyInsightData = ({
             `${selectedInstance.plan_id}`,
             true
         );
+        if (!sourceItem) return null;
         visitedRerunDataIds.add(selectedInstance.plan_id);
         const sourceDataChildIds = (dataDownstreamTaskIdMap.get(selectedInstance.plan_id) || [])
             .filter(childTaskId => childTaskId !== selectedInstance.plan_id);
@@ -524,16 +620,6 @@ export const useDependencyInsightData = ({
             buildAllDownstreamMeta(child.taskId, new Set([selectedInstance.plan_id, child.taskId]), child.dependencyTypes);
         });
 
-        const blockingUpstream = Array.from(blockingUpstreamMap.values()).sort((a, b) => {
-            const aStatus = a.relatedInstance?.status ?? 99;
-            const bStatus = b.relatedInstance?.status ?? 99;
-            const rankDiff = (blockingStatusRank[aStatus] ?? 99) - (blockingStatusRank[bStatus] ?? 99);
-            if (rankDiff !== 0) {
-                return rankDiff;
-            }
-            return a.level - b.level;
-        });
-
         return {
             selectedTask,
             blockingUpstream,
@@ -545,6 +631,10 @@ export const useDependencyInsightData = ({
             downstreamTotalCount: downstreamMetaMap.size,
             impactedDownstreamCount: Array.from(downstreamMetaMap.values()).filter(item => item.impacted).length,
             failedUpstreamCount: blockingUpstream.filter(item => item.relatedInstance?.status === 4).length,
+            graphTruncated,
+            instanceDataTruncated: dateInstanceMeta.truncated,
+            loadedDateInstanceCount: dateInstanceMeta.loaded,
+            totalDateInstanceCount: dateInstanceMeta.total,
         };
     }, [
         allUpstreamTaskIdMap,
@@ -552,8 +642,10 @@ export const useDependencyInsightData = ({
         controlDownstreamTaskIdMap,
         dataDownstreamTaskIdMap,
         dataUpstreamTaskIdMap,
+        dateInstanceMeta,
         instanceByPlanDate,
         enabled,
+        includeImpact,
         selectedInstance,
         taskMap,
     ]);

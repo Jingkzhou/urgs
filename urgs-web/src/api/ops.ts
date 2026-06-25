@@ -467,6 +467,54 @@ export interface QuartzTaskStatusQueryParams {
     beginDate?: string;
 }
 
+export interface QuartzDependencyImpactQueryParams {
+    pageNum?: number;
+    pageSize?: number;
+    statusId?: number;
+    planId: number;
+    dataDate: string;
+    keyword?: string;
+    status?: string;
+    impactedOnly?: boolean;
+}
+
+export interface QuartzDependencyImpactItemApiModel {
+    taskId: number;
+    taskName: string;
+    taskSystem?: string | null;
+    theme?: string | null;
+    statusId?: number | null;
+    dataDate?: string | null;
+    status?: number | null;
+    beginTime?: string | null;
+    updateTime?: string | null;
+    endTime?: string | null;
+    createTime?: string | null;
+    msg?: string | null;
+    level: number;
+    dependencyTypes?: string[] | null;
+    missingTask?: boolean | null;
+    impacted?: boolean | null;
+    hasImpactedDescendant?: boolean | null;
+    directChildCount?: number | null;
+    descendantCount?: number | null;
+}
+
+export interface QuartzDependencyImpactPageApiModel {
+    pageNum: number;
+    pageSize: number;
+    total: number;
+    pages: number;
+    list: QuartzDependencyImpactItemApiModel[];
+    maxLevel?: number | null;
+    waitingCount?: number | null;
+    runningCount?: number | null;
+    successCount?: number | null;
+    failedCount?: number | null;
+    missingCount?: number | null;
+    impactedCount?: number | null;
+}
+
 export interface QuartzTaskLogApiModel {
     id: number;
     taskId: number;
@@ -482,6 +530,9 @@ export interface QuartzTaskLogApiModel {
 
 export const queryQuartzTaskStatus = (params: QuartzTaskStatusQueryParams) =>
     post<ApiResponse<PageResult<QuartzTaskStatusApiModel>>>('/api/quartz/task/status/query', params);
+
+export const queryQuartzDependencyImpact = (params: QuartzDependencyImpactQueryParams) =>
+    post<ApiResponse<QuartzDependencyImpactPageApiModel>>('/api/quartz/task/status/dependencyImpact', params);
 
 export interface ExecutorPoolStats {
     activeCount: number;

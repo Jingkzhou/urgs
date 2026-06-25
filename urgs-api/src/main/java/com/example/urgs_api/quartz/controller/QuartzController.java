@@ -78,6 +78,12 @@ public class QuartzController {
         return quartzTaskService.queryTaskStatus(queryDTO);
     }
 
+    @PostMapping("/quartz/task/status/dependencyImpact")
+    @ApiOperation(value = "分页查询任务实例依赖影响范围")
+    public ResponseDTO<QuartzDependencyImpactPageVO> queryDependencyImpact(@RequestBody @Valid QuartzDependencyImpactQueryDTO queryDTO){
+        return quartzTaskService.queryDependencyImpact(queryDTO);
+    }
+
     @GetMapping("/quartz/executor/pool/stats")
     @ApiOperation(value = "查询执行器线程池实时统计")
     public ResponseDTO<ExecutorPoolStatsVO> getExecutorPoolStats() {
