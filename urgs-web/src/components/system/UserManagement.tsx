@@ -764,6 +764,16 @@ const UserManagement: React.FC = () => {
         setLoading(true);
         try {
             const token = localStorage.getItem('auth_token');
+            const readErrorMessage = async (res: Response, fallback: string) => {
+                const text = await res.text();
+                if (!text) return fallback;
+                try {
+                    const data = JSON.parse(text);
+                    return data.message || data.error || fallback;
+                } catch (e) {
+                    return text;
+                }
+            };
             if (userData.id) {
                 // Update existing user
                 const res = await fetch(`/api/users/${userData.id}`, {
@@ -774,7 +784,7 @@ const UserManagement: React.FC = () => {
                     },
                     body: JSON.stringify(userData)
                 });
-                if (!res.ok) throw new Error('Update failed');
+                if (!res.ok) throw new Error(await readErrorMessage(res, '保存失败，请稍后重试'));
             } else {
                 // Create new user with default password
                 const res = await fetch('/api/users', {
@@ -785,20 +795,13 @@ const UserManagement: React.FC = () => {
                     },
                     body: JSON.stringify({ ...userData, password: '123456' })
                 });
-                if (!res.ok) throw new Error('Create failed');
+                if (!res.ok) throw new Error(await readErrorMessage(res, '保存失败，请稍后重试'));
             }
             await fetchUsers();
             setShowForm(false);
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            alert('保存失败，请稍后重试');
-            // Fallback for demo/mock environment if API fails
-            if (userData.id) {
-                setUsers(prev => prev.map(u => u.id === userData.id ? { ...u, ...userData, lastLogin: u.lastLogin } : u));
-            } else {
-                setUsers(prev => [...prev, { ...userData, id: Date.now().toString(), lastLogin: '-' } as User]);
-            }
-            setShowForm(false);
+            alert(err?.message || '保存失败，请稍后重试');
         } finally {
             setLoading(false);
         }

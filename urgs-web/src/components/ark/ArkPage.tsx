@@ -7,7 +7,7 @@ import Sidebar from './Sidebar';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import {
-    Message, Session, type AgentAppSkill, type ConversationContextMessage, getSessions, createSession, streamChatResponse, loadSessionMessages, generateSessionTitle, getAgents, getRoleAgents, getAgentAppSkills
+    Message, type AgentAppSkill, type ConversationContextMessage, createSession, streamChatResponse, loadSessionMessages, generateSessionTitle, getAgents, getRoleAgents, getAgentAppSkills
 } from '../../api/chat';
 
 const STREAM_THROTTLE_MS = 80;
@@ -56,8 +56,8 @@ const ArkPage: React.FC = () => {
     const [activeAgent, setActiveAgent] = useState<any | null>(null);
     const [agentAppSkills, setAgentAppSkills] = useState<AgentAppSkill[]>([]);
     const [selectedAgentAppSkill, setSelectedAgentAppSkill] = useState<AgentAppSkill | null>(null);
-    const [sessions, setSessions] = useState<Session[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isDraftOpen, setIsDraftOpen] = useState(true);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
@@ -112,32 +112,13 @@ const ArkPage: React.FC = () => {
 
     useEffect(() => {
         const init = async () => {
-            const filteredAgents = await fetchAgents();
-            const sessionList = await getSessions();
-            setSessions(sessionList);
-
-            if (sessionList.length > 0) {
-                const firstId = sessionList[0].id;
-                isSwitchingSession.current = true;
-                setCurrentSessionId(firstId);
-                const msgs = await loadSessionMessages(firstId);
-                setMessages(msgs);
-                const session = sessionList.find(s => s.id === firstId);
-                if (session?.agentId) {
-                    setActiveAgent(filteredAgents.find(a => a.id === session.agentId) || null);
-                } else {
-                    setActiveAgent(null);
-                }
-            } else {
-                if (filteredAgents.length === 0) {
-                    const newSession = await createSession();
-                    setCurrentSessionId(newSession.id);
-                    setMessages([]);
-                    setActiveAgent(null);
-                } else {
-                    handleNewChat();
-                }
-            }
+            await fetchAgents();
+            setCurrentSessionId(null);
+            setMessages([]);
+            setActiveAgent(null);
+            setInputValue('');
+            setMetrics(null);
+            setIsDraftOpen(true);
             setLoading(false);
         };
         init();
@@ -401,6 +382,7 @@ const ArkPage: React.FC = () => {
         saveSessionState();
         isSwitchingSession.current = true;
         setCurrentSessionId(id);
+        setIsDraftOpen(false);
         const msgs = await loadSessionMessages(id);
         setMessages(msgs);
         setInputValue('');
@@ -416,29 +398,14 @@ const ArkPage: React.FC = () => {
     const handleNewChat = async (agentId?: number | string | React.MouseEvent) => {
         saveSessionState();
         const searchId = (typeof agentId === 'number' || typeof agentId === 'string') ? agentId : undefined;
-        if (searchId !== undefined && searchId !== null) {
-            const newSession = await createSession(searchId);
-            setCurrentSessionId(newSession.id);
-            setMessages([]);
-            setInputValue('');
-            setMetrics(null);
-            setActiveAgent(agents.find(a => String(a.id) === String(searchId)) || null);
-        } else {
-            if (agents.length === 0) {
-                const newSession = await createSession();
-                setCurrentSessionId(newSession.id);
-                setMessages([]);
-                setInputValue('');
-                setMetrics(null);
-                setActiveAgent(null);
-            } else {
-                setCurrentSessionId(null);
-                setMessages([]);
-                setInputValue('');
-                setMetrics(null);
-                setActiveAgent(null);
-            }
-        }
+        setCurrentSessionId(null);
+        setMessages([]);
+        setInputValue('');
+        setMetrics(null);
+        setIsDraftOpen(true);
+        setActiveAgent(searchId !== undefined && searchId !== null
+            ? agents.find(a => String(a.id) === String(searchId)) || null
+            : null);
         if (isGenerating) handleStop();
     };
 
@@ -493,12 +460,21 @@ const ArkPage: React.FC = () => {
     const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0);
 
     const handleSubmit = async () => {
-        if (!inputValue.trim() || !currentSessionId) return;
+        if (!inputValue.trim()) return;
         const userText = inputValue;
         const conversationContext = buildConversationContext(messages);
         const isFirstMessage = messages.length === 0;
         setInputValue('');
         setIsGenerating(true);
+        let sessionIdForRequest = currentSessionId;
+        if (!sessionIdForRequest) {
+            const newSession = await createSession(activeAgent?.id);
+            sessionIdForRequest = newSession.id;
+            isSwitchingSession.current = true;
+            setCurrentSessionId(newSession.id);
+            setIsDraftOpen(false);
+        }
+        const persistedSessionId = sessionIdForRequest;
         const userMsg: Message = { id: uuidv4(), role: 'user', content: userText, timestamp: Date.now() };
         const aiMsgId = uuidv4();
         const aiMsgPlaceholder: Message = { id: aiMsgId, role: 'assistant', content: '', timestamp: Date.now() };
@@ -524,7 +500,7 @@ const ArkPage: React.FC = () => {
                     setIsGenerating(false);
                     if (isFirstMessage || messages.length < 4) {
                         try {
-                            await generateSessionTitle(currentSessionId);
+                            await generateSessionTitle(persistedSessionId);
                             setSidebarRefreshTrigger(prev => prev + 1);
                         } catch (e) {
                             console.error("Title generation failed", e);
@@ -532,7 +508,7 @@ const ArkPage: React.FC = () => {
                     }
                 },
                 abortControllerRef.current.signal,
-                currentSessionId,
+                persistedSessionId,
                 (m) => setMetrics(m),
                 (sources) => {
                     setMessages(prev => {
@@ -693,7 +669,7 @@ const ArkPage: React.FC = () => {
 
                 <main className="relative flex min-w-0 flex-1 flex-col bg-white">
                     <AnimatePresence mode="wait">
-                        {!currentSessionId ? (
+                        {!isDraftOpen && !currentSessionId ? (
                         <motion.div
                             key="hub"
                             initial={{ opacity: 0, y: 8 }}
@@ -705,11 +681,11 @@ const ArkPage: React.FC = () => {
                                 <button
                                     type="button"
                                     onClick={async () => {
-                                        const newSession = await createSession();
-                                        setCurrentSessionId(newSession.id);
+                                        setCurrentSessionId(null);
                                         setMessages([]);
                                         setInputValue('');
                                         setActiveAgent(null);
+                                        setIsDraftOpen(true);
                                     }}
                                     className="mb-6 flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-sm transition-colors hover:bg-[#f4f4f4]"
                                     title="打开通用助手"
@@ -749,11 +725,11 @@ const ArkPage: React.FC = () => {
                                     <button
                                         type="button"
                                         onClick={async () => {
-                                            const newSession = await createSession();
-                                            setCurrentSessionId(newSession.id);
+                                            setCurrentSessionId(null);
                                             setMessages([]);
                                             setInputValue('');
                                             setActiveAgent(null);
+                                            setIsDraftOpen(true);
                                         }}
                                         className="group flex min-h-[92px] items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:bg-[#f7f7f7]"
                                     >

@@ -94,11 +94,11 @@ public class AiChatServiceImpl implements AiChatService {
     /**
      * 持久化流式聊天 (New)
      */
-    // Configuration Constants
-    private static final int MAX_CONTEXT_TOKENS = 30000; // 上下文最大 Token 限制
-    private static final double TRIGGER_THRESHOLD = 0.2; // 触发压缩的阈值比例 (0.2 means 20% of MAX_TOKENS triggers compression
-                                                         // - Modified for testing)
-    private static final int KEEP_RECENT_ROUNDS = 3; // 保留最近的对话轮数 (不被压缩)
+    private static final int DEFAULT_CONTEXT_WINDOW_TOKENS = 128000;
+    private static final int MIN_CONTEXT_WINDOW_TOKENS = 16000;
+    private static final double COMPRESSION_TRIGGER_RATIO = 0.75;
+    private static final double COMPRESSION_TARGET_RATIO = 0.35;
+    private static final int KEEP_RECENT_ROUNDS = 4;
 
     /**
      * 持久化流式聊天 (New)
@@ -138,11 +138,13 @@ public class AiChatServiceImpl implements AiChatService {
         // previously: userPrompt = userPrompt + contextAugmentation; (removed as it was
         // ignored)
 
+        AiApiConfig activeConfig = aiApiConfigService.getDefaultConfig();
+        int contextWindowTokens = resolveContextWindowTokens(activeConfig);
+
         // 2. 检查并执行上下文压缩 (Check and Summarize if needed)
-        // 如果当前 Token 超过阈值，会触发 AI 总结旧消息，并更新 DB 中的 summary 字段
-        boolean isSummarized = false;
+        // 如果当前 Token 超过模型上下文窗口的高水位，会触发 AI 总结旧消息，并更新 DB 中的 summary 字段。
         try {
-            isSummarized = checkAndSummarizeContext(sessionId, emitter);
+            checkAndSummarizeContext(sessionId, emitter, contextWindowTokens);
         } catch (Exception e) {
             log.error("Context summarization failed", e);
             // 失败不影响主流程，继续执行
@@ -167,7 +169,7 @@ public class AiChatServiceImpl implements AiChatService {
             totalChars += msg.getOrDefault("content", "").length();
         }
         final long used = totalChars / 4; // 简单估算：4个字符约等于1个 Token
-        final long limit = MAX_CONTEXT_TOKENS;
+        final long limit = contextWindowTokens;
 
         // 4. 发送 Token 用量数据 & 开启流式响应 (Send Metrics & Stream Response)
         try {
@@ -247,7 +249,7 @@ public class AiChatServiceImpl implements AiChatService {
      * 
      * @return true if summarization occurred
      */
-    private boolean checkAndSummarizeContext(String sessionId, SseEmitter emitter) {
+    private boolean checkAndSummarizeContext(String sessionId, SseEmitter emitter, int contextWindowTokens) {
         List<com.example.urgs_api.ai.entity.AiChatMessage> history = aiChatHistoryService.getSessionMessages(sessionId);
         if (history.isEmpty())
             return false;
@@ -256,8 +258,7 @@ public class AiChatServiceImpl implements AiChatService {
         long totalTokens = estimateTokens(history.stream().map(com.example.urgs_api.ai.entity.AiChatMessage::getContent)
                 .reduce("", String::concat));
 
-        // 只有超过阈值才触发 (default 80%, testing 20%)
-        if (totalTokens < MAX_CONTEXT_TOKENS * TRIGGER_THRESHOLD) {
+        if (totalTokens < contextWindowTokens * COMPRESSION_TRIGGER_RATIO) {
             return false;
         }
 
@@ -289,7 +290,9 @@ public class AiChatServiceImpl implements AiChatService {
         String existingSummary = session != null ? session.getSummary() : "";
 
         // 构建压缩用的 Prompt (包含旧摘要 + 待压缩消息)
-        String systemPrompt = "你是一个专业的对话记录员。你的任务是将一段过长的对话历史压缩成简练的'前情提要'。要求：保留关键信息：必须保留代码中的关键变量名、用户提到的具体需求、已经达成的结论。第三人称叙述：例如'用户询问了...助手建议...'。极度精简：去除客套话（如'你好'、'谢谢'），字数控制在原始文本的 20% 以内。增量更新：如果输入中已经包含了之前的'前情提要'，请将其与新的对话内容合并更新。";
+        int summaryTargetTokens = Math.max(1200, (int) (contextWindowTokens * COMPRESSION_TARGET_RATIO));
+        String systemPrompt = "你是一个专业的对话上下文压缩器。请把长对话压缩成可继续执行任务的前情提要，目标不是摘要好看，而是让下一轮 AI 不丢失关键工作状态。规则：1. 保留用户目标、约束、已经确认的决策、未完成事项、文件路径、接口名、错误信息、命令和验证结果；2. 删除寒暄、重复解释、已废弃方案和无行动价值的过程话；3. 以结构化中文输出，分为【当前目标】【关键约束】【已完成】【待继续】【重要证据】；4. 如已有前情提要，执行增量合并，去重并保留最新事实；5. 不编造没有出现在输入中的内容；6. 控制在约 "
+                + summaryTargetTokens + " tokens 以内。";
         String userPrompt = (existingSummary != null && !existingSummary.isEmpty()
                 ? "之前的【前情提要】:\n" + existingSummary + "\n\n"
                 : "") +
@@ -305,6 +308,33 @@ public class AiChatServiceImpl implements AiChatService {
         }
 
         return false;
+    }
+
+    private int resolveContextWindowTokens(AiApiConfig config) {
+        if (config == null || config.getModel() == null || config.getModel().isBlank()) {
+            return DEFAULT_CONTEXT_WINDOW_TOKENS;
+        }
+        String model = config.getModel().toLowerCase();
+        int inferred;
+        if (model.contains("gemini-1.5") || model.contains("gemini-2") || model.contains("qwen-long")
+                || model.contains("gpt-4.1")) {
+            inferred = 1000000;
+        } else if (model.contains("claude") || model.contains("o3") || model.contains("o4")) {
+            inferred = 200000;
+        } else if (model.contains("gpt-4o") || model.contains("gpt-4-turbo") || model.contains("qwen")
+                || model.contains("doubao") || model.contains("moonshot") || model.contains("kimi")) {
+            inferred = 128000;
+        } else if (model.contains("deepseek")) {
+            inferred = 64000;
+        } else {
+            inferred = DEFAULT_CONTEXT_WINDOW_TOKENS;
+        }
+
+        Integer configuredMaxTokens = config.getMaxTokens();
+        if (configuredMaxTokens != null && configuredMaxTokens > 0) {
+            inferred = configuredMaxTokens;
+        }
+        return Math.max(MIN_CONTEXT_WINDOW_TOKENS, inferred);
     }
 
     /**

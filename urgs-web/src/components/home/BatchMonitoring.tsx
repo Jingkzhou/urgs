@@ -94,6 +94,7 @@ const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default' }
     const workflowChartViewportHeight = workflowChartData.length
         ? Math.min(isCompact ? 260 : 360, workflowChartContentHeight)
         : workflowChartContentHeight;
+    const statusChartSize = isCompact ? 125 : 260;
 
 
     const CustomTooltip = ({ active, payload, label }: any) => {
@@ -294,29 +295,27 @@ const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default' }
                         <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Status Distribution</span>
                     </div>
 
-                    <div className={`${isCompact ? 'h-[125px]' : 'h-[260px]'} w-full min-w-0 overflow-hidden relative mt-2`}>
-                        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                            <PieChart>
-                                <Pie
-                                    data={statusDataFixed}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={isCompact ? 38 : 80}
-                                    outerRadius={isCompact ? 56 : 105}
-                                    paddingAngle={6}
-                                    dataKey="value"
-                                    stroke="none"
-                                    animationDuration={1000}
-                                    animationBegin={0}
-                                    cornerRadius={8}
-                                >
-                                    {statusDataFixed.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.color} />
-                                    ))}
-                                </Pie>
-                                <Tooltip content={<CustomTooltip />} />
-                            </PieChart>
-                        </ResponsiveContainer>
+                    <div className={`${isCompact ? 'h-[125px]' : 'h-[260px]'} w-full min-w-0 overflow-hidden relative mt-2 flex items-center justify-center`}>
+                        <PieChart width={statusChartSize} height={statusChartSize}>
+                            <Pie
+                                data={statusDataFixed}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={isCompact ? 38 : 80}
+                                outerRadius={isCompact ? 56 : 105}
+                                paddingAngle={6}
+                                dataKey="value"
+                                stroke="none"
+                                animationDuration={1000}
+                                animationBegin={0}
+                                cornerRadius={8}
+                            >
+                                {statusDataFixed.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                ))}
+                            </Pie>
+                            <Tooltip content={<CustomTooltip />} />
+                        </PieChart>
                         {/* Center Text */}
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                             <span className={`${isCompact ? 'text-2xl' : 'text-4xl'} font-black text-slate-900 tracking-tighter`}>{stats?.total || 0}</span>

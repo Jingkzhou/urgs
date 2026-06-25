@@ -41,6 +41,8 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
         List<AiChatSession> sessions = sessionMapper.selectList(new LambdaQueryWrapper<AiChatSession>()
                 .eq(AiChatSession::getUserId, userId)
                 .orderByDesc(AiChatSession::getUpdateTime));
+        sessions.removeIf(session -> messageMapper.selectCount(new LambdaQueryWrapper<AiChatMessage>()
+                .eq(AiChatMessage::getSessionId, session.getId())) == 0);
         for (AiChatSession session : sessions) {
             repairInvalidSessionTitle(session);
         }

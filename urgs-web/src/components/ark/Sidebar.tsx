@@ -33,7 +33,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
 
     useEffect(() => {
         loadSessions();
-    }, [currentSessionId, refreshTrigger]);
+    }, [refreshTrigger]);
 
     const handleDelete = async (e: React.MouseEvent, id: string) => {
         e.stopPropagation();

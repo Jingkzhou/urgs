@@ -13,7 +13,6 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -42,7 +41,6 @@ public class DataSourceService extends ServiceImpl<DataSourceConfigMapper, DataS
                 config.setTypeCode(meta.getCode());
                 config.setCategory(meta.getCategory());
             }
-            config.setConnectionParams(maskSensitiveParams(config.getConnectionParams(), meta));
         }
         return list;
     }
@@ -85,31 +83,4 @@ public class DataSourceService extends ServiceImpl<DataSourceConfigMapper, DataS
         return updateById(restoreMaskedSecrets(config));
     }
 
-    private Map<String, Object> maskSensitiveParams(Map<String, Object> params, DataSourceMeta meta) {
-        if (params == null) {
-            return null;
-        }
-
-        Set<String> sensitiveFields = meta == null || meta.getFormSchema() == null
-                ? Set.of()
-                : meta.getFormSchema().stream()
-                        .filter(field -> "password".equalsIgnoreCase(String.valueOf(field.get("type"))))
-                        .map(field -> String.valueOf(field.get("name")))
-                        .collect(Collectors.toSet());
-        Map<String, Object> masked = new LinkedHashMap<>(params);
-        masked.replaceAll((key, value) -> sensitiveFields.contains(key) || isSensitiveKey(key)
-                ? MASKED_SECRET
-                : value);
-        return masked;
-    }
-
-    private boolean isSensitiveKey(String key) {
-        String normalized = key == null ? "" : key.replace("_", "").replace("-", "").toLowerCase();
-        return normalized.contains("password")
-                || normalized.contains("secret")
-                || normalized.contains("token")
-                || normalized.equals("accesskey")
-                || normalized.equals("apikey")
-                || normalized.equals("privatekey");
-    }
 }

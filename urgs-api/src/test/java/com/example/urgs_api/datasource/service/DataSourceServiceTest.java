@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
 class DataSourceServiceTest {
 
     @Test
-    void optionsDoNotSerializeConnectionCredentials() throws Exception {
+    void configManagementShowsConnectionCredentialsButOptionsDoNotSerializeThem() throws Exception {
         DataSourceConfigMapper configMapper = mock(DataSourceConfigMapper.class);
         DataSourceMetaMapper metaMapper = mock(DataSourceMetaMapper.class);
         DataSourceService service = new DataSourceService();
@@ -51,8 +51,8 @@ class DataSourceServiceTest {
         List<DataSourceConfig> configs = service.getAllConfigs();
 
         assertEquals("reporter", configs.get(0).getConnectionParams().get("username"));
-        assertEquals(DataSourceService.MASKED_SECRET, configs.get(0).getConnectionParams().get("password"));
-        assertEquals(DataSourceService.MASKED_SECRET, configs.get(0).getConnectionParams().get("accessKey"));
+        assertEquals("secret", configs.get(0).getConnectionParams().get("password"));
+        assertEquals("access-secret", configs.get(0).getConnectionParams().get("accessKey"));
 
         List<DataSourceOptionDTO> options = service.getAllOptions();
 

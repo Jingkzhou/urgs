@@ -16,7 +16,7 @@ interface AgentConfig {
     systemPrompt?: string;
     status: number;
     prompts?: any; // String from backend, parsed to RecommendedPrompt[] in frontend
-    buildMode?: 'DIFY' | 'RAG' | 'AGENT_APP';
+    buildMode?: string;
     knowledgeBase?: string;
     ragInstruction?: string;
     difyApiKey?: string;
@@ -75,7 +75,8 @@ const AiAgentManager: React.FC = () => {
     };
 
     const inferBuildMode = (agent: AgentConfig) => {
-        if (agent.buildMode) return agent.buildMode;
+        const normalizedMode = typeof agent.buildMode === 'string' ? agent.buildMode.trim().toUpperCase() : '';
+        if (normalizedMode) return normalizedMode;
         if (agent.difyApiKey) return 'DIFY';
         if (agent.knowledgeBase) return 'RAG';
         if (agent.agentAppTools) return 'AGENT_APP';
@@ -100,7 +101,7 @@ const AiAgentManager: React.FC = () => {
                     DIFY: { label: 'Dify 引擎', color: 'blue' },
                     RAG: { label: 'RAG', color: 'cyan' },
                     AGENT_APP: { label: 'Agent App', color: 'purple' }
-                }[mode];
+                }[mode] || { label: mode || '未知', color: 'default' };
                 return <Tag color={modeMeta.color}>{modeMeta.label}</Tag>;
             }
         },

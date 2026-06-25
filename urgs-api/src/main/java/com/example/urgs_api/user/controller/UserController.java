@@ -6,8 +6,10 @@ import com.example.urgs_api.user.dto.UserDTO;
 import com.example.urgs_api.user.dto.UserRequest;
 import com.example.urgs_api.user.model.User;
 import com.example.urgs_api.user.service.UserService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -32,6 +34,7 @@ public class UserController {
     @RequirePermission("sys:user:add")
     public UserDTO create(@RequestBody UserRequest req) {
         User user = toEntity(req, null);
+        validateUniqueEmpId(user.getEmpId(), null);
         // Default password if not provided, though frontend sends "123456"
         if (user.getPassword() == null || user.getPassword().isEmpty()) {
             user.setPassword("123456");
@@ -57,6 +60,7 @@ public class UserController {
             return ResponseEntity.notFound().build();
         }
         User user = toEntity(req, id);
+        validateUniqueEmpId(user.getEmpId(), id);
         userService.updateById(user);
         return ResponseEntity.ok(UserDTO.fromEntity(userService.getById(id)));
     }
@@ -133,10 +137,23 @@ public class UserController {
         return ResponseEntity.ok(UserDTO.fromEntity(user));
     }
 
+    private void validateUniqueEmpId(String empId, Long currentUserId) {
+        if (empId == null || empId.isBlank()) {
+            return;
+        }
+        long duplicateCount = userService.lambdaQuery()
+                .eq(User::getEmpId, empId.trim())
+                .ne(currentUserId != null, User::getId, currentUserId)
+                .count();
+        if (duplicateCount > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "工号已存在，不允许保存");
+        }
+    }
+
     private User toEntity(UserRequest req, Long id) {
         User u = new User();
         u.setId(id);
-        u.setEmpId(req.getEmpId());
+        u.setEmpId(req.getEmpId() == null ? null : req.getEmpId().trim());
         u.setName(req.getName());
         u.setOrgName(req.getOrgName());
         u.setRoleName(req.getRoleName());

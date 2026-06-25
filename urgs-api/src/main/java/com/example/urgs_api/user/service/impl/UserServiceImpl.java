@@ -94,30 +94,33 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             return result;
         }
 
+        java.util.Set<String> batchEmpIds = new java.util.HashSet<>();
         for (User user : users) {
             if (user.getEmpId() == null || user.getEmpId().isEmpty()) {
                 result.setSkipped(result.getSkipped() + 1);
                 continue;
             }
+            user.setEmpId(user.getEmpId().trim());
+            if (!batchEmpIds.add(user.getEmpId())) {
+                result.setSkipped(result.getSkipped() + 1);
+                continue;
+            }
 
-            // Check if user exists by empId
-            User existing = baseMapper.selectOne(
+            long existingCount = baseMapper.selectCount(
                     new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<User>()
                             .eq(User::getEmpId, user.getEmpId()));
 
-            if (existing != null) {
-                // Update: carry over the database ID
-                user.setId(existing.getId());
-                this.updateById(user);
-                result.setUpdated(result.getUpdated() + 1);
-            } else {
-                // Insert: ensure password is set (default 123456 if empty)
-                if (user.getPassword() == null || user.getPassword().isEmpty()) {
-                    user.setPassword("123456");
-                }
-                this.save(user);
-                result.setInserted(result.getInserted() + 1);
+            if (existingCount > 0) {
+                result.setSkipped(result.getSkipped() + 1);
+                continue;
             }
+
+            // Insert: ensure password is set (default 123456 if empty)
+            if (user.getPassword() == null || user.getPassword().isEmpty()) {
+                user.setPassword("123456");
+            }
+            this.save(user);
+            result.setInserted(result.getInserted() + 1);
         }
         return result;
     }
