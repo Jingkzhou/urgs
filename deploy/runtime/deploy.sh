@@ -56,6 +56,7 @@ apply_runtime_defaults() {
     REDIS_PORT="${REDIS_PORT:-6379}"
     REDIS_BIND="${REDIS_BIND:-127.0.0.1}"
     ONLYOFFICE_PORT="${ONLYOFFICE_PORT:-8088}"
+    ONLYOFFICE_TARGET="${ONLYOFFICE_TARGET:-http://127.0.0.1:${ONLYOFFICE_PORT}}"
     ONLYOFFICE_JWT_SECRET="${ONLYOFFICE_JWT_SECRET:-}"
     ONLYOFFICE_DB_PASSWORD="${ONLYOFFICE_DB_PASSWORD:-onlyoffice}"
     ONLYOFFICE_DB_NAME="${ONLYOFFICE_DB_NAME:-onlyoffice}"
@@ -754,6 +755,7 @@ render_nginx_config() {
         line="${line//__API_PROXY_TARGET__/$api_proxy_target}"
         line="${line//__RAG_TARGET__/$RAG_TARGET}"
         line="${line//__IM_API_TARGET__/$IM_API_TARGET}"
+        line="${line//__ONLYOFFICE_TARGET__/$ONLYOFFICE_TARGET}"
         printf '%s\n' "$line"
     done < "$template"
 }
