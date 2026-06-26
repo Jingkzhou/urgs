@@ -1,5 +1,5 @@
 import React from 'react';
-import { Dropdown, Modal, Tag } from 'antd';
+import { Checkbox, Dropdown, Modal, Tag } from 'antd';
 import type { MenuProps } from 'antd';
 import { FileCog, FileText, PauseCircle, Play, PlayCircle, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
@@ -15,6 +15,9 @@ interface TaskListTableProps {
     onStartTask: (task: QuartzTask) => void;
     onViewExecutionLog: (task: QuartzTask) => void;
     onDeleteTask: (task: QuartzTask) => void;
+    selectedTaskIds: Set<number>;
+    onToggleTaskSelection: (taskId: number, checked: boolean) => void;
+    onToggleAllTaskSelection: (checked: boolean) => void;
 }
 
 const TaskListTable: React.FC<TaskListTableProps> = ({
@@ -26,7 +29,15 @@ const TaskListTable: React.FC<TaskListTableProps> = ({
     onStartTask,
     onViewExecutionLog,
     onDeleteTask,
+    selectedTaskIds,
+    onToggleTaskSelection,
+    onToggleAllTaskSelection,
 }) => {
+    const selectableTaskIds = taskList.map(task => task.id);
+    const selectedCount = selectableTaskIds.filter(id => selectedTaskIds.has(id)).length;
+    const allSelected = selectableTaskIds.length > 0 && selectedCount === selectableTaskIds.length;
+    const indeterminate = selectedCount > 0 && selectedCount < selectableTaskIds.length;
+
     const getMoreMenuItems = (task: QuartzTask): MenuProps['items'] => [
         {
             key: `edit-${task.id}`,
@@ -103,6 +114,14 @@ const TaskListTable: React.FC<TaskListTableProps> = ({
                 <table className="w-full min-w-[1100px] text-sm text-left">
                     <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
                         <tr>
+                            <th className="w-12 px-4 py-3 font-semibold">
+                                <Checkbox
+                                    checked={allSelected}
+                                    indeterminate={indeterminate}
+                                    disabled={taskList.length === 0}
+                                    onChange={(event) => onToggleAllTaskSelection(event.target.checked)}
+                                />
+                            </th>
                             <th className="px-4 py-3 font-semibold">任务名称</th>
                             <th className="px-4 py-3 font-semibold">任务类型</th>
                             <th className="px-4 py-3 font-semibold">Cron</th>
@@ -116,7 +135,7 @@ const TaskListTable: React.FC<TaskListTableProps> = ({
                     <tbody className="divide-y divide-slate-100">
                         {taskList.length === 0 ? (
                             <tr>
-                                <td colSpan={8} className="px-6 py-16 text-center text-slate-500">
+                                <td colSpan={9} className="px-6 py-16 text-center text-slate-500">
                                     未找到符合条件的监管任务。
                                 </td>
                             </tr>
@@ -133,6 +152,13 @@ const TaskListTable: React.FC<TaskListTableProps> = ({
                                         className="cursor-pointer hover:bg-slate-50/80 transition-colors"
                                         title="右键查看操作菜单"
                                     >
+                                        <td className="px-4 py-4">
+                                            <Checkbox
+                                                checked={selectedTaskIds.has(task.id)}
+                                                onClick={(event) => event.stopPropagation()}
+                                                onChange={(event) => onToggleTaskSelection(task.id, event.target.checked)}
+                                            />
+                                        </td>
                                         <td className="px-4 py-4">
                                             <div className="space-y-1 text-left">
                                                 <div className="font-semibold text-slate-800">{task.task_name}</div>

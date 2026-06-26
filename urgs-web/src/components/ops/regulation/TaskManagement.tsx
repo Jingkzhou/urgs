@@ -63,9 +63,10 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, hea
     const [modalVisible, setModalVisible] = useState(false);
     const [editingTask, setEditingTask] = useState<QuartzTask | null>(null);
     const [startTaskModalVisible, setStartTaskModalVisible] = useState(false);
-    const [pendingStartTask, setPendingStartTask] = useState<QuartzTask | null>(null);
+    const [pendingStartTasks, setPendingStartTasks] = useState<QuartzTask[]>([]);
     const [startDataDate, setStartDataDate] = useState(dayjs().format('YYYY-MM-DD'));
     const [startTaskLoading, setStartTaskLoading] = useState(false);
+    const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(() => new Set());
     const [dataSources, setDataSources] = useState<DataSourceOption[]>([]);
     const [dataSourcePools, setDataSourcePools] = useState<DataSourcePoolOption[]>([]);
     const [dataSourceLoading, setDataSourceLoading] = useState(false);
@@ -282,6 +283,10 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, hea
     }, [keyword, remarkFilter, statusFilter, systemFilter, themeFilter, typeFilter]);
 
     useEffect(() => {
+        setSelectedTaskIds(new Set());
+    }, [currentPage, keyword, pageSize, remarkFilter, statusFilter, systemFilter, themeFilter, typeFilter]);
+
+    useEffect(() => {
         setSelectedTaskDetailTab('config');
         setSelectedTaskDataDependencies([]);
         setSelectedTaskControlDependencies([]);
@@ -334,6 +339,17 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, hea
         if (dataCount === 0 && controlCount === 0) return '无前置依赖';
         return `数据依赖 ${dataCount} 项，控制依赖 ${controlCount} 项`;
     }, [selectedTaskControlDependencies.length, selectedTaskDataDependencies.length]);
+
+    const selectedTasks = useMemo(
+        () => taskList.filter(task => selectedTaskIds.has(task.id)),
+        [selectedTaskIds, taskList]
+    );
+
+    const pendingStartTaskNames = useMemo(() => {
+        if (pendingStartTasks.length === 0) return '任务运行配置';
+        if (pendingStartTasks.length === 1) return pendingStartTasks[0].task_name;
+        return pendingStartTasks.map(task => task.task_name).join('、');
+    }, [pendingStartTasks]);
 
     // ===== 事件处理 =====
 
@@ -444,29 +460,82 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, hea
     };
 
     const handleStartTask = (task: QuartzTask) => {
-        setPendingStartTask(task);
+        setPendingStartTasks([task]);
+        setStartDataDate(dayjs().format('YYYY-MM-DD'));
+        setStartTaskModalVisible(true);
+    };
+
+    const handleBatchStartTasks = () => {
+        if (selectedTasks.length === 0) {
+            message.warning('请先勾选需要立即开始的任务');
+            return;
+        }
+        setPendingStartTasks(selectedTasks);
         setStartDataDate(dayjs().format('YYYY-MM-DD'));
         setStartTaskModalVisible(true);
     };
 
     const handleConfirmStartTask = async () => {
-        if (!pendingStartTask || !startDataDate) {
+        if (pendingStartTasks.length === 0 || !startDataDate) {
             message.error('请选择数据日期');
             return;
         }
         setStartTaskLoading(true);
         try {
             const dataDateFormatted = startDataDate.replace(/-/g, '');
-            const response = await triggerNowQuartzTask(pendingStartTask.id, dataDateFormatted);
-            if (!response?.success) throw new Error(response?.msg || '立即执行失败');
-            message.success(`任务 ${pendingStartTask.task_name} 已成功触发手动执行`);
+            const results = await Promise.allSettled(
+                pendingStartTasks.map(async task => {
+                    const response = await triggerNowQuartzTask(task.id, dataDateFormatted);
+                    if (!response?.success) throw new Error(response?.msg || `任务 ${task.task_name} 立即执行失败`);
+                    return task;
+                })
+            );
+            const successCount = results.filter(result => result.status === 'fulfilled').length;
+            const failedResults = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+            if (failedResults.length > 0) {
+                const firstReason = failedResults[0].reason;
+                const errorMessage = firstReason instanceof Error ? firstReason.message : '立即执行失败';
+                throw new Error(successCount > 0 ? `已触发 ${successCount} 个任务，${failedResults.length} 个失败：${errorMessage}` : errorMessage);
+            }
+            message.success(
+                successCount === 1
+                    ? `任务 ${pendingStartTasks[0].task_name} 已成功触发手动执行`
+                    : `已成功触发 ${successCount} 个任务手动执行`
+            );
             setStartTaskModalVisible(false);
-            setPendingStartTask(null);
+            setPendingStartTasks([]);
+            setSelectedTaskIds(new Set());
         } catch (error: any) {
             message.error(error?.message || '立即执行失败');
         } finally {
             setStartTaskLoading(false);
         }
+    };
+
+    const handleToggleTaskSelection = (taskId: number, checked: boolean) => {
+        setSelectedTaskIds(prev => {
+            const next = new Set(prev);
+            if (checked) {
+                next.add(taskId);
+            } else {
+                next.delete(taskId);
+            }
+            return next;
+        });
+    };
+
+    const handleToggleAllTaskSelection = (checked: boolean) => {
+        setSelectedTaskIds(prev => {
+            const next = new Set(prev);
+            taskList.forEach(task => {
+                if (checked) {
+                    next.add(task.id);
+                } else {
+                    next.delete(task.id);
+                }
+            });
+            return next;
+        });
     };
 
     const handlePauseTask = async (task: QuartzTask) => {
@@ -627,7 +696,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, hea
                                 />
                                 </div>
                             </label>
-                            <div className="w-[190px] shrink-0 space-y-1">
+                            <div className="w-[300px] shrink-0 space-y-1">
                                 <div className="text-[11px] font-medium text-slate-500">操作</div>
                                 <div className="flex gap-1.5">
                                     <motion.button
@@ -639,6 +708,16 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, hea
                                     >
                                         <RefreshCw size={13} className={`${refreshing ? 'animate-spin' : ''} text-slate-400`} />
                                         刷新
+                                    </motion.button>
+                                    <motion.button
+                                        whileHover={{ scale: selectedTasks.length > 0 ? 1.02 : 1 }}
+                                        whileTap={{ scale: selectedTasks.length > 0 ? 0.98 : 1 }}
+                                        onClick={handleBatchStartTasks}
+                                        disabled={selectedTasks.length === 0}
+                                        className="inline-flex h-8 flex-1 items-center justify-center gap-1 rounded-lg border border-red-100 bg-red-50 px-2 text-xs font-bold text-red-600 shadow-sm transition-all duration-200 hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 disabled:opacity-70"
+                                    >
+                                        <Clock3 size={13} />
+                                        批量开始{selectedTasks.length > 0 ? `(${selectedTasks.length})` : ''}
                                     </motion.button>
                                     <motion.button
                                         whileHover={{ scale: 1.02, y: -1 }}
@@ -666,6 +745,9 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, hea
                         onStartTask={handleStartTask}
                         onViewExecutionLog={handleViewExecutionLog}
                         onDeleteTask={handleDeleteTask}
+                        selectedTaskIds={selectedTaskIds}
+                        onToggleTaskSelection={handleToggleTaskSelection}
+                        onToggleAllTaskSelection={handleToggleAllTaskSelection}
                     />
                 </div>
 
@@ -689,7 +771,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, hea
                 open={startTaskModalVisible}
                 onCancel={() => {
                     setStartTaskModalVisible(false);
-                    setPendingStartTask(null);
+                    setPendingStartTasks([]);
                 }}
                 onOk={handleConfirmStartTask}
                 confirmLoading={startTaskLoading}
@@ -702,7 +784,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, hea
                             type="button"
                             onClick={() => {
                                 setStartTaskModalVisible(false);
-                                setPendingStartTask(null);
+                                setPendingStartTasks([]);
                             }}
                             className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-xs font-bold text-slate-600 transition-all duration-200 hover:bg-slate-50 active:scale-95"
                         >
@@ -727,13 +809,13 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, hea
                         <div>
                             <h3 className="text-base font-bold text-slate-800">立即触发监管任务</h3>
                             <p className="mt-0.5 text-xs text-slate-400 font-medium truncate max-w-[340px]">
-                                {pendingStartTask?.task_name || '任务运行配置'}
+                                {pendingStartTaskNames}
                             </p>
                         </div>
                     </div>
                     <div className="space-y-4">
                         <div className="rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500 border border-slate-100 leading-relaxed font-medium">
-                            立即执行将手动触发该定时任务。系统会为选中的“数据日期”生成运行实例并进入调度系统。请确保已核验其前置依赖。
+                            立即执行将手动触发{pendingStartTasks.length > 1 ? ` ${pendingStartTasks.length} 个` : '该'}定时任务。系统会为选中的“数据日期”生成运行实例并进入调度系统。请确保已核验其前置依赖。
                         </div>
                         <div>
                             <label className="block mb-2 text-slate-600 font-semibold text-xs uppercase tracking-wider">
