@@ -619,8 +619,7 @@ public class OnlineDocumentService {
 
         Map<String, Object> document = new HashMap<>();
         document.put("fileType", extension);
-        // Keep the key stable so all users editing the same document join one co-editing session.
-        document.put("key", "online-" + doc.getId());
+        document.put("key", buildOnlyOfficeDocumentKey(doc));
         document.put("title", fileName);
         document.put("url", fileUrl);
         document.put("permissions", Map.of(
@@ -637,7 +636,7 @@ public class OnlineDocumentService {
                 "name", getUserDisplayName(userId)));
         editorConfig.put("customization", Map.of(
                 "autosave", true,
-                "forcesave", true,
+                "forcesave", false,
                 "compactToolbar", false,
                 "help", false));
 
@@ -684,6 +683,13 @@ public class OnlineDocumentService {
 
     private boolean isEditableByOnlyOffice(String extension) {
         return List.of("docx", "xlsx", "pptx").contains(extension);
+    }
+
+    private String buildOnlyOfficeDocumentKey(OnlineDocument doc) {
+        LocalDateTime versionTime = doc.getUpdateTime() != null ? doc.getUpdateTime() : doc.getCreateTime();
+        String version = versionTime == null ? "0" : versionTime.toString().replaceAll("[^0-9]", "");
+        String size = doc.getFileSize() == null ? "0" : String.valueOf(doc.getFileSize());
+        return "online-" + doc.getId() + "-" + version + "-" + size;
     }
 
     private String normalizeDocumentServerUrl() {

@@ -205,8 +205,7 @@ public class OnlineDocumentController {
         }
 
         Integer status = callbackRequest.getStatus();
-        if ((Integer.valueOf(2).equals(status) || Integer.valueOf(6).equals(status))
-                && StringUtils.hasText(callbackRequest.getUrl())) {
+        if (Integer.valueOf(2).equals(status) && StringUtils.hasText(callbackRequest.getUrl())) {
             documentService.saveOnlyOfficeDocument(id, callbackRequest.getUrl());
         }
         return ResponseEntity.ok(Map.of("error", 0));
