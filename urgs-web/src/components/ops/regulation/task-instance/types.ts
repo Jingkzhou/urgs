@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { QuartzTask, QuartzTaskStatus } from '../mockData';
 
 export type DependencyRelationType = 'DATA' | 'CONTROL';
@@ -74,6 +75,7 @@ export interface TaskInstanceInitialFilters {
 export interface TaskInstanceProps {
     onStatsChange?: (stats: TaskInstanceStats) => void;
     initialFilters?: TaskInstanceInitialFilters;
+    headerExtra?: ReactNode;
 }
 
 export type InstanceDetailTabKey =

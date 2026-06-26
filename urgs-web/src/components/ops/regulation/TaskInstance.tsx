@@ -45,7 +45,7 @@ const chunkArray = <T,>(items: T[], chunkSize: number) => {
     return chunks;
 };
 
-const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilters }) => {
+const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilters, headerExtra }) => {
     const todayDate = dayjs().format('YYYY-MM-DD');
     const initialKeyword = initialFilters?.keyword?.trim() || '';
     const initialTaskSystem = initialFilters?.taskSystem || '';
@@ -953,6 +953,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
                 pagedInstances={pagedInstances}
                 selectedInstances={selectedInstances}
                 summaryStats={summaryStats}
+                headerExtra={headerExtra}
                 executorPoolStatsState={executorPoolStatsState}
                 taskMap={taskMap}
                 taskNameMap={taskNameMap}

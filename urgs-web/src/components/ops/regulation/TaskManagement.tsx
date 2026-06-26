@@ -38,9 +38,10 @@ import {
 
 interface TaskManagementProps {
     onViewExecutionLog?: (task: QuartzTask) => void;
+    headerExtra?: React.ReactNode;
 }
 
-const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) => {
+const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, headerExtra }) => {
     const [taskList, setTaskList] = useState<QuartzTask[]>([]);
     const [dependencyCandidateTaskList, setDependencyCandidateTaskList] = useState<QuartzTask[]>([]);
     const [taskTotal, setTaskTotal] = useState(0);
@@ -509,6 +510,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog }) =
 
                         {/* High-fidelity Statistics Metric Chips and Action Button Container */}
                         <div className="flex flex-wrap items-center gap-2 text-xs">
+                            {headerExtra}
                             {/* Metric 1 */}
                             <div className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 font-semibold text-slate-700">
                                 <SlidersHorizontal size={13} className="text-slate-400" />

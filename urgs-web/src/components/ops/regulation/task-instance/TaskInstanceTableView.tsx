@@ -17,6 +17,7 @@ interface TaskInstanceTableViewProps {
     pagedInstances: QuartzTaskStatus[];
     selectedInstances: QuartzTaskStatus[];
     summaryStats: TaskInstanceStats;
+    headerExtra?: React.ReactNode;
     executorPoolStatsState: ExecutorPoolStatsState;
     taskMap: Map<number, QuartzTask>;
     taskNameMap: Map<number, string>;
@@ -64,6 +65,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     pagedInstances,
     selectedInstances,
     summaryStats,
+    headerExtra,
     executorPoolStatsState,
     taskMap,
     taskNameMap,
@@ -156,6 +158,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                         <div className="text-xs text-slate-500">点击行查看详情，右键或更多按钮打开实例操作。</div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                        {headerExtra}
                         <div className="flex flex-wrap items-center gap-1.5">
                             {statusPills.map(item => (
                                 <button

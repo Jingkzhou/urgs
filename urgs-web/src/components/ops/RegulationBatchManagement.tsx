@@ -114,41 +114,40 @@ const RegulationBatchManagement: React.FC = () => {
         setSelectedLogTask({ id: null, name: null });
     };
 
+    const viewSwitcher = (
+        <div className="inline-flex h-8 rounded-lg border border-slate-200/90 bg-white/90 p-0.5 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.55)]">
+            {navItems.map(item => {
+                const isActive = activeView === item.id;
+                return (
+                    <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleSwitchView(item.id)}
+                        className={`inline-flex items-center gap-1.5 rounded-md px-2.5 text-xs transition-all ${isActive
+                            ? 'bg-red-50 font-semibold text-red-700 shadow-[0_8px_20px_-18px_rgba(220,38,38,0.9)]'
+                            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                            }`}
+                    >
+                        <item.icon className={`h-3.5 w-3.5 ${isActive ? 'text-red-600' : 'text-slate-400'}`} />
+                        {item.label}
+                    </button>
+                );
+            })}
+        </div>
+    );
+
     const renderContent = () => {
         switch (activeView) {
             case 'task-instance':
-                return <TaskInstance initialFilters={initialTaskInstanceFilters} />;
+                return <TaskInstance initialFilters={initialTaskInstanceFilters} headerExtra={viewSwitcher} />;
             case 'task-management':
             default:
-                return <TaskManagement onViewExecutionLog={handleOpenTaskLog} />;
+                return <TaskManagement onViewExecutionLog={handleOpenTaskLog} headerExtra={viewSwitcher} />;
         }
     };
 
     return (
         <div className="h-[calc(100vh-112px)] w-full bg-slate-50 rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col relative animate-fade-in">
-            <div className="border-b border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.94)_100%)] backdrop-blur px-3 py-2">
-                <div>
-                    <div className="inline-flex rounded-lg border border-slate-200/90 bg-white/90 p-0.5 shadow-[0_12px_32px_-28px_rgba(15,23,42,0.55)]">
-                        {navItems.map(item => {
-                            const isActive = activeView === item.id;
-                            return (
-                                <button
-                                    key={item.id}
-                                    onClick={() => handleSwitchView(item.id)}
-                                    className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-all ${isActive
-                                        ? 'bg-red-50 text-red-700 shadow-[0_8px_20px_-18px_rgba(220,38,38,0.9)] font-semibold'
-                                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-                                        }`}
-                                >
-                                    <item.icon className={`h-3.5 w-3.5 ${isActive ? 'text-red-600' : 'text-slate-400'}`} />
-                                    {item.label}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
-            </div>
-
             <div className="flex-1 overflow-auto p-3">
                 {renderContent()}
             </div>
