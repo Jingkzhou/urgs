@@ -507,6 +507,14 @@ export interface QuartzTaskStatusQueryParams {
     beginDate?: string;
 }
 
+export interface QuartzTaskStatusStatsApiModel {
+    totalInstances?: number | null;
+    waitingInstances?: number | null;
+    runningInstances?: number | null;
+    successInstances?: number | null;
+    failedInstances?: number | null;
+}
+
 export interface QuartzDependencyImpactQueryParams {
     pageNum?: number;
     pageSize?: number;
@@ -571,6 +579,9 @@ export interface QuartzTaskLogApiModel {
 export const queryQuartzTaskStatus = (params: QuartzTaskStatusQueryParams) =>
     post<ApiResponse<PageResult<QuartzTaskStatusApiModel>>>('/api/quartz/task/status/query', params);
 
+export const queryQuartzTaskStatusStats = (params: QuartzTaskStatusQueryParams) =>
+    post<ApiResponse<QuartzTaskStatusStatsApiModel>>('/api/quartz/task/status/stats', params);
+
 export const queryQuartzDependencyImpact = (params: QuartzDependencyImpactQueryParams) =>
     post<ApiResponse<QuartzDependencyImpactPageApiModel>>('/api/quartz/task/status/dependencyImpact', params);
 
@@ -586,7 +597,7 @@ export interface ExecutorPoolStats {
 }
 
 export const getExecutorPoolStats = () =>
-    get<ApiResponse<ExecutorPoolStats>>('/api/quartz/executor/pool/stats', undefined, { timeoutMs: 2500 });
+    get<ApiResponse<ExecutorPoolStats>>('/api/quartz/executor/pool/stats', undefined, { timeoutMs: 6000 });
 
 export interface QuartzMissedTaskQueryParams {
     pageNum?: number;

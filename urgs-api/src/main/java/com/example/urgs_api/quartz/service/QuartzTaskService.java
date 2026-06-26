@@ -198,6 +198,19 @@ public class QuartzTaskService {
         return ResponseDTO.succData(SmartPageUtil.convert2PageResult(pageParam));
     }
 
+    public ResponseDTO<QuartzTaskStatusStatsVO> queryTaskStatusStats(QuartzQueryDTO queryDTO) {
+        QuartzTaskStatusStatsVO stats = quartzTaskStatusDao.queryStats(queryDTO);
+        if (stats == null) {
+            stats = new QuartzTaskStatusStatsVO();
+            stats.setTotalInstances(0L);
+            stats.setWaitingInstances(0L);
+            stats.setRunningInstances(0L);
+            stats.setSuccessInstances(0L);
+            stats.setFailedInstances(0L);
+        }
+        return ResponseDTO.succData(stats);
+    }
+
     public ResponseDTO<QuartzDependencyImpactPageVO> queryDependencyImpact(QuartzDependencyImpactQueryDTO queryDTO) {
         Long planId = queryDTO.getPlanId();
         String dataDate = queryDTO.getDataDate();

@@ -3,6 +3,7 @@ package com.example.urgs_api.quartz.dao;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.urgs_api.quartz.domain.dto.QuartzQueryDTO;
+import com.example.urgs_api.quartz.domain.dto.QuartzTaskStatusStatsVO;
 import com.example.urgs_api.quartz.domain.dto.QuartzTaskStatusVO;
 import com.example.urgs_api.quartz.domain.dto.QuartzTaskVO;
 import com.example.urgs_api.quartz.domain.entity.QuartzTaskStatusEntity;
@@ -36,6 +37,8 @@ public interface QuartzTaskStatusDao extends BaseMapper<QuartzTaskStatusEntity> 
     int insert(@Param("taskStatusEntity")QuartzTaskStatusEntity taskStatusEntity);
 
     List<QuartzTaskStatusVO> queryList(Page page, @Param("queryDTO") QuartzQueryDTO queryDTO);
+
+    QuartzTaskStatusStatsVO queryStats(@Param("queryDTO") QuartzQueryDTO queryDTO);
 
     List<QuartzTaskVO> queryYlList(Page pageParam, @Param("queryDTO")QuartzQueryDTO queryDTO);
     List<QuartzTaskStatusVO> queryList(@Param("queryDTO") QuartzQueryDTO queryDTO);

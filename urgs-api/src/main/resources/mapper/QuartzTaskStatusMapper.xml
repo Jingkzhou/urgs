@@ -133,6 +133,53 @@
         ORDER BY s.update_time DESC
     </select>
 
+    <select id="queryStats" resultType="com.example.urgs_api.quartz.domain.dto.QuartzTaskStatusStatsVO">
+        SELECT COUNT(1) AS totalInstances,
+               COALESCE(SUM(CASE WHEN s.status = '1' THEN 1 ELSE 0 END), 0) AS waitingInstances,
+               COALESCE(SUM(CASE WHEN s.status = '2' THEN 1 ELSE 0 END), 0) AS runningInstances,
+               COALESCE(SUM(CASE WHEN s.status = '3' THEN 1 ELSE 0 END), 0) AS successInstances,
+               COALESCE(SUM(CASE WHEN s.status = '4' THEN 1 ELSE 0 END), 0) AS failedInstances
+        FROM t_quartz_task_status s
+                 INNER JOIN t_quartz_task t ON s.plan_id = t.id
+        WHERE 1 = 1
+        <if test="queryDTO.beginDate != null and queryDTO.beginDate != ''">
+            AND s.update_time &gt;= STR_TO_DATE(#{queryDTO.beginDate}, '%Y%m%d')
+            AND s.update_time &lt; DATE_ADD(STR_TO_DATE(#{queryDTO.beginDate}, '%Y%m%d'), INTERVAL 1 DAY)
+        </if>
+        <if test="queryDTO.dataDate != null and queryDTO.dataDate != ''">
+            AND s.data_date = #{queryDTO.dataDate}
+        </if>
+        <if test="queryDTO.id != null">
+            AND t.id = #{queryDTO.id}
+        </if>
+        <if test="queryDTO.ids != null and queryDTO.ids.size() > 0">
+            AND t.id IN
+            <foreach collection="queryDTO.ids" item="id" open="(" separator="," close=")">
+                #{id}
+            </foreach>
+        </if>
+        <if test="queryDTO.statusId != null">
+            AND s.id = #{queryDTO.statusId}
+        </if>
+        <if test="queryDTO.taskName != null and queryDTO.taskName != ''">
+            AND (
+                INSTR(CAST(s.id AS CHAR), #{queryDTO.taskName})
+                OR INSTR(CAST(s.plan_id AS CHAR), #{queryDTO.taskName})
+                OR INSTR(t.task_name, #{queryDTO.taskName})
+                OR INSTR(s.msg, #{queryDTO.taskName})
+            )
+        </if>
+        <if test="queryDTO.taskSystem != null and queryDTO.taskSystem != ''">
+            AND INSTR(t.task_system, #{queryDTO.taskSystem})
+        </if>
+        <if test="queryDTO.theme != null and queryDTO.theme != ''">
+            AND INSTR(t.theme, #{queryDTO.theme})
+        </if>
+        <if test="queryDTO.remark != null and queryDTO.remark != ''">
+            AND INSTR(t.remark, #{queryDTO.remark})
+        </if>
+    </select>
+
     <select id="queryYlList" resultType="com.example.urgs_api.quartz.domain.dto.QuartzTaskVO">
         SELECT
             t.id AS id,

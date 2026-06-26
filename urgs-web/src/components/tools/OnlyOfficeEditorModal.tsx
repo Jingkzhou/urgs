@@ -92,6 +92,7 @@ const OnlyOfficeEditorModal: React.FC<OnlyOfficeEditorModalProps> = ({
 }) => {
     const editorId = useMemo(() => `onlyoffice-editor-${doc?.id || 'empty'}`, [doc?.id]);
     const editorRef = useRef<{ destroyEditor?: () => void } | null>(null);
+    const hostHashRef = useRef<string>('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -119,9 +120,8 @@ const OnlyOfficeEditorModal: React.FC<OnlyOfficeEditorModalProps> = ({
                 throw new Error('ONLYOFFICE API 未就绪');
             }
 
-            const hostHash = window.location.hash;
             editorRef.current = new window.DocsAPI.DocEditor(editorId, config);
-            window.setTimeout(() => restoreHostHash(hostHash), 0);
+            window.setTimeout(() => restoreHostHash(hostHashRef.current), 0);
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'ONLYOFFICE 打开失败';
             setError(errorMessage);
@@ -133,9 +133,30 @@ const OnlyOfficeEditorModal: React.FC<OnlyOfficeEditorModalProps> = ({
 
     useEffect(() => {
         if (!open || !doc) return;
+        hostHashRef.current = window.location.hash || '#/tools';
         openEditor();
         return destroyEditor;
         // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, doc?.id]);
+
+    useEffect(() => {
+        if (!open || !doc) return;
+
+        const restore = () => restoreHostHash(hostHashRef.current);
+        const handleHashChange = () => {
+            window.setTimeout(restore, 0);
+        };
+        const startupGuard = window.setInterval(restore, 250);
+        const stopStartupGuard = window.setTimeout(() => {
+            window.clearInterval(startupGuard);
+        }, 5000);
+
+        window.addEventListener('hashchange', handleHashChange);
+        return () => {
+            window.removeEventListener('hashchange', handleHashChange);
+            window.clearInterval(startupGuard);
+            window.clearTimeout(stopStartupGuard);
+        };
     }, [open, doc?.id]);
 
     useEffect(() => {

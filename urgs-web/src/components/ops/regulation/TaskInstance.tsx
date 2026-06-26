@@ -10,6 +10,7 @@ import {
     queryQuartzTaskLog,
     queryQuartzTasks,
     queryQuartzTaskStatus,
+    queryQuartzTaskStatusStats,
     triggerNowQuartzTask,
 } from '@/api/ops';
 import { QuartzTask, QuartzTaskExecutionLog, QuartzTaskStatus } from './mockData';
@@ -26,14 +27,8 @@ import {
 import { normalizeLog, normalizeStatus, normalizeTask } from './task-instance/utils';
 import { useDependencyInsightData } from './task-instance/useDependencyInsightData';
 
-const normalizeDateKey = (value?: string | null) => {
-    if (!value) return '';
-    const normalized = value.trim().replaceAll('-', '');
-    return normalized.length >= 8 ? normalized.slice(0, 8) : normalized;
-};
-const getDateTimeValue = (value?: string | null) => value ? dayjs(value).valueOf() : 0;
 const BATCH_RERUN_CHUNK_SIZE = 20;
-const TASK_INSTANCE_REFRESH_INTERVAL_MS = 3000;
+const TASK_INSTANCE_REFRESH_INTERVAL_MS = 5000;
 const SUMMARY_STATS_ACTIVE_REFRESH_INTERVAL_MS = 3000;
 const SUMMARY_STATS_HIDDEN_REFRESH_INTERVAL_MS = 30000;
 
@@ -56,6 +51,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
     const initialStatus = initialFilters?.status || '';
     const [taskList, setTaskList] = useState<QuartzTask[]>([]);
     const [instanceList, setInstanceList] = useState<QuartzTaskStatus[]>([]);
+    const [instanceTotal, setInstanceTotal] = useState(0);
     const [summaryStats, setSummaryStats] = useState({
         totalInstances: 0,
         waitingInstances: 0,
@@ -91,6 +87,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
     const [rowContextMenu, setRowContextMenu] = useState<RowContextMenuState | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
+    const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
     const [missedModalVisible, setMissedModalVisible] = useState(false);
     const [missedStartDate, setMissedStartDate] = useState(todayDate);
     const [missedEndDate, setMissedEndDate] = useState(todayDate);
@@ -109,11 +106,13 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         theme?: string;
         remark?: string;
         keyword?: string;
+        pageNum?: number;
+        pageSize?: number;
     }) => {
         const nextFilters = filters || {};
         return {
-            pageNum: 1,
-            pageSize: 500,
+            pageNum: nextFilters.pageNum ?? currentPage,
+            pageSize: nextFilters.pageSize ?? pageSize,
             beginDate: (nextFilters.createDate ?? createDateFilter)?.replaceAll('-', '') || undefined,
             dataDate: (nextFilters.dataDate ?? dataDateFilter)?.replaceAll('-', '') || undefined,
             status: (nextFilters.status ?? statusFilter) || undefined,
@@ -122,7 +121,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
             remark: (nextFilters.remark ?? remarkFilter.trim()) || undefined,
             taskName: (nextFilters.keyword ?? searchKeyword.trim()) || undefined,
         };
-    }, [createDateFilter, dataDateFilter, remarkFilter, searchKeyword, statusFilter, taskSystemFilter, themeFilter]);
+    }, [createDateFilter, currentPage, dataDateFilter, pageSize, remarkFilter, searchKeyword, statusFilter, taskSystemFilter, themeFilter]);
 
     const loadTasks = useCallback(async () => {
         try {
@@ -153,55 +152,6 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         }
     }, []);
 
-    const queryAllInstances = useCallback(async (filters?: {
-        createDate?: string;
-        dataDate?: string;
-        status?: string;
-        taskSystem?: string;
-        theme?: string;
-        remark?: string;
-        keyword?: string;
-    }, options?: { silent?: boolean }) => {
-        try {
-            const queryParams = buildInstanceQueryParams(filters);
-            const firstResponse = await queryQuartzTaskStatus(queryParams);
-            if (!firstResponse?.success) {
-                throw new Error(firstResponse?.msg || '加载实例失败');
-            }
-
-            const totalPages = Number(firstResponse.data?.pages || 1);
-            const mergedInstances = [...(firstResponse.data?.list || []).map(normalizeStatus)];
-
-            if (totalPages > 1) {
-                const restResponses = await Promise.all(
-                    Array.from({ length: totalPages - 1 }, (_, index) =>
-                        queryQuartzTaskStatus({ ...queryParams, pageNum: index + 2 })
-                    )
-                );
-                restResponses.forEach(response => {
-                    if (response?.success) {
-                        mergedInstances.push(...(response.data?.list || []).map(normalizeStatus));
-                    }
-                });
-            }
-
-            return mergedInstances;
-        } catch (error: any) {
-            if (!options?.silent) {
-                message.error(error?.message || '加载实例失败');
-            }
-            return null;
-        }
-    }, [buildInstanceQueryParams]);
-
-    const buildStats = useCallback((instances: QuartzTaskStatus[]) => ({
-        totalInstances: instances.length,
-        waitingInstances: instances.filter(instance => instance.status === 1).length,
-        runningInstances: instances.filter(instance => instance.status === 2).length,
-        successInstances: instances.filter(instance => instance.status === 3).length,
-        failedInstances: instances.filter(instance => instance.status === 4).length,
-    }), []);
-
     const loadInstances = useCallback(async (filters?: {
         createDate?: string;
         dataDate?: string;
@@ -210,29 +160,48 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         theme?: string;
         remark?: string;
         keyword?: string;
+        pageNum?: number;
+        pageSize?: number;
     }, options?: { silent?: boolean }) => {
-        const mergedInstances = await queryAllInstances(filters, options);
-        if (mergedInstances) {
-            setInstanceList(mergedInstances);
+        try {
+            const queryParams = buildInstanceQueryParams(filters);
+            const response = await queryQuartzTaskStatus(queryParams);
+            if (!response?.success) {
+                throw new Error(response?.msg || '加载实例失败');
+            }
+            setInstanceList((response.data?.list || []).map(normalizeStatus));
+            setInstanceTotal(Number(response.data?.total || 0));
+        } catch (error: any) {
+            if (!options?.silent) {
+                message.error(error?.message || '加载实例失败');
+            }
         }
-    }, [queryAllInstances]);
+    }, [buildInstanceQueryParams]);
 
     const loadTodaySummaryStats = useCallback(async (options?: { silent?: boolean }) => {
-        const todayInstances = await queryAllInstances({
-            createDate: todayDate,
-            dataDate: '',
-            status: '',
-            taskSystem: '',
-            theme: '',
-            remark: '',
-            keyword: '',
-        }, options);
-        if (todayInstances) {
-            const nextStats = buildStats(todayInstances);
+        try {
+            const response = await queryQuartzTaskStatusStats({
+                beginDate: todayDate.replaceAll('-', ''),
+                dataDate: undefined,
+            });
+            if (!response?.success) {
+                throw new Error(response?.msg || '加载统计失败');
+            }
+            const nextStats = {
+                totalInstances: Number(response.data?.totalInstances || 0),
+                waitingInstances: Number(response.data?.waitingInstances || 0),
+                runningInstances: Number(response.data?.runningInstances || 0),
+                successInstances: Number(response.data?.successInstances || 0),
+                failedInstances: Number(response.data?.failedInstances || 0),
+            };
             setSummaryStats(nextStats);
             onStatsChange?.(nextStats);
+        } catch (error: any) {
+            if (!options?.silent) {
+                message.error(error?.message || '加载统计失败');
+            }
         }
-    }, [buildStats, onStatsChange, queryAllInstances, todayDate]);
+    }, [onStatsChange, todayDate]);
 
     useEffect(() => {
         loadTasks();
@@ -243,6 +212,9 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
     }, [loadInstances]);
 
     useEffect(() => {
+        if (!autoRefreshEnabled) {
+            return;
+        }
         const timer = window.setInterval(() => {
             if (batchRerunExecuting) {
                 return;
@@ -252,7 +224,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         return () => {
             window.clearInterval(timer);
         };
-    }, [batchRerunExecuting, loadInstances]);
+    }, [autoRefreshEnabled, batchRerunExecuting, loadInstances]);
 
     useEffect(() => {
         loadTodaySummaryStats();
@@ -377,37 +349,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         [taskList]
     );
 
-    const filteredInstances = useMemo(() => {
-        return instanceList.filter(instance => {
-            const task = taskMap.get(instance.plan_id);
-            const keyword = searchKeyword.trim().toLowerCase();
-            const matchesKeyword = !keyword || [
-                String(instance.id),
-                String(instance.plan_id),
-                task?.task_name || '',
-                instance.msg || '',
-            ].some(item => item.toLowerCase().includes(keyword));
-            const matchesTaskSystem = !taskSystemFilter || (task?.task_system || '') === taskSystemFilter;
-            const matchesTheme = !themeFilter || (task?.theme || '').toLowerCase().includes(themeFilter.toLowerCase());
-            const matchesRemark = !remarkFilter || (task?.remark || '').toLowerCase().includes(remarkFilter.toLowerCase());
-            const matchesDataDate = !dataDateFilter || normalizeDateKey(instance.data_date) === normalizeDateKey(dataDateFilter);
-            const matchesUpdateDate = !createDateFilter || normalizeDateKey(instance.update_time) === normalizeDateKey(createDateFilter);
-            const matchesStatus = statusFilter === '' || String(instance.status ?? '') === statusFilter;
-
-            return matchesKeyword && matchesTaskSystem && matchesTheme && matchesRemark && matchesDataDate && matchesUpdateDate && matchesStatus;
-        }).sort((left, right) => {
-            const updateTimeDiff = getDateTimeValue(right.update_time) - getDateTimeValue(left.update_time);
-            if (updateTimeDiff !== 0) {
-                return updateTimeDiff;
-            }
-            return right.id - left.id;
-        });
-    }, [createDateFilter, dataDateFilter, instanceList, remarkFilter, searchKeyword, statusFilter, taskMap, taskSystemFilter, themeFilter]);
-
-    const pagedInstances = useMemo(() => {
-        const start = (currentPage - 1) * pageSize;
-        return filteredInstances.slice(start, start + pageSize);
-    }, [currentPage, filteredInstances, pageSize]);
+    const pagedInstances = instanceList;
 
     useEffect(() => {
         setCurrentPage(1);
@@ -425,7 +367,9 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         setCreateDateFilter(draftCreateDateFilter);
         setStatusFilter(draftStatusFilter);
         setCurrentPage(1);
+        setSelectedInstanceIds([]);
         void loadInstances({
+            pageNum: 1,
             keyword: nextKeyword,
             taskSystem: draftTaskSystemFilter,
             theme: nextTheme,
@@ -458,7 +402,9 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         setCreateDateFilter(draftCreateDateFilter);
         setStatusFilter(nextStatus);
         setCurrentPage(1);
+        setSelectedInstanceIds([]);
         void loadInstances({
+            pageNum: 1,
             keyword: nextKeyword,
             taskSystem: draftTaskSystemFilter,
             theme: nextTheme,
@@ -493,14 +439,15 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         setCreateDateFilter(todayDate);
         setStatusFilter('');
         setCurrentPage(1);
+        setSelectedInstanceIds([]);
     }, [todayDate]);
 
     useEffect(() => {
-        const totalPages = Math.max(1, Math.ceil(filteredInstances.length / pageSize));
+        const totalPages = Math.max(1, Math.ceil(instanceTotal / pageSize));
         if (currentPage > totalPages) {
             setCurrentPage(totalPages);
         }
-    }, [currentPage, filteredInstances.length, pageSize]);
+    }, [currentPage, instanceTotal, pageSize]);
 
     const dependencyPanelData = useDependencyInsightData({
         selectedInstance,
@@ -949,7 +896,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
     return (
         <>
             <TaskInstanceTableView
-                filteredInstances={filteredInstances}
+                totalInstances={instanceTotal}
                 pagedInstances={pagedInstances}
                 selectedInstances={selectedInstances}
                 summaryStats={summaryStats}
@@ -967,6 +914,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
                 statusFilter={draftStatusFilter}
                 selectedInstanceIds={selectedInstanceIds}
                 batchRerunExecuting={batchRerunExecuting}
+                autoRefreshEnabled={autoRefreshEnabled}
                 allVisibleSelected={allVisibleSelected}
                 rowContextMenu={rowContextMenu}
                 rowContextMenuStyle={rowContextMenuStyle}
@@ -987,6 +935,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
                 onBatchExecute={handleBatchExecute}
                 onBatchForceStop={handleBatchForceStop}
                 onBatchForcePass={handleBatchForcePass}
+                onAutoRefreshEnabledChange={setAutoRefreshEnabled}
                 onOpenMissedTasks={handleOpenMissedTasks}
                 onClearSelectedInstances={() => setSelectedInstanceIds([])}
                 onCloseRowContextMenu={closeRowContextMenu}
@@ -996,6 +945,7 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
                 onPageChange={(page, size) => {
                     setCurrentPage(page);
                     setPageSize(size);
+                    setSelectedInstanceIds([]);
                 }}
             />
 

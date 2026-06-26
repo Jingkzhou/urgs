@@ -78,6 +78,12 @@ public class QuartzController {
         return quartzTaskService.queryTaskStatus(queryDTO);
     }
 
+    @PostMapping("/quartz/task/status/stats")
+    @ApiOperation(value = "统计任务执行状态")
+    public ResponseDTO<QuartzTaskStatusStatsVO> queryStatusStats(@RequestBody @Valid QuartzQueryDTO queryDTO){
+        return quartzTaskService.queryTaskStatusStats(queryDTO);
+    }
+
     @PostMapping("/quartz/task/status/dependencyImpact")
     @ApiOperation(value = "分页查询任务实例依赖影响范围")
     public ResponseDTO<QuartzDependencyImpactPageVO> queryDependencyImpact(@RequestBody @Valid QuartzDependencyImpactQueryDTO queryDTO){

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tag, Tooltip } from 'antd';
-import { AlertTriangle, CheckCircle2, Eye, MoreHorizontal, Play, RotateCcw, Search, Square } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Eye, MoreHorizontal, Play, RefreshCw, RotateCcw, Search, Square } from 'lucide-react';
 import Pagination from '@/components/common/Pagination';
 import { QuartzTask, QuartzTaskStatus } from '../mockData';
 import {
@@ -13,7 +13,7 @@ import ExecutorPoolStatsPanel from './ExecutorPoolStatsPanel';
 import type { ExecutorPoolStatsState } from './useExecutorPoolStats';
 
 interface TaskInstanceTableViewProps {
-    filteredInstances: QuartzTaskStatus[];
+    totalInstances: number;
     pagedInstances: QuartzTaskStatus[];
     selectedInstances: QuartzTaskStatus[];
     summaryStats: TaskInstanceStats;
@@ -31,6 +31,7 @@ interface TaskInstanceTableViewProps {
     statusFilter: string;
     selectedInstanceIds: number[];
     batchRerunExecuting: boolean;
+    autoRefreshEnabled: boolean;
     allVisibleSelected: boolean;
     rowContextMenu: RowContextMenuState | null;
     rowContextMenuStyle?: React.CSSProperties;
@@ -51,6 +52,7 @@ interface TaskInstanceTableViewProps {
     onBatchExecute: () => void;
     onBatchForceStop: () => void;
     onBatchForcePass: () => void;
+    onAutoRefreshEnabledChange: (enabled: boolean) => void;
     onOpenMissedTasks: () => void;
     onClearSelectedInstances: () => void;
     onCloseRowContextMenu: () => void;
@@ -61,7 +63,7 @@ interface TaskInstanceTableViewProps {
 }
 
 const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
-    filteredInstances,
+    totalInstances,
     pagedInstances,
     selectedInstances,
     summaryStats,
@@ -79,6 +81,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     statusFilter,
     selectedInstanceIds,
     batchRerunExecuting,
+    autoRefreshEnabled,
     allVisibleSelected,
     rowContextMenu,
     rowContextMenuStyle,
@@ -99,6 +102,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
     onBatchExecute,
     onBatchForceStop,
     onBatchForcePass,
+    onAutoRefreshEnabledChange,
     onOpenMissedTasks,
     onClearSelectedInstances,
     onCloseRowContextMenu,
@@ -172,6 +176,18 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                                 </button>
                             ))}
                         </div>
+                        <button
+                            type="button"
+                            onClick={() => onAutoRefreshEnabledChange(!autoRefreshEnabled)}
+                            className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
+                                autoRefreshEnabled
+                                    ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                            }`}
+                        >
+                            <RefreshCw size={13} />
+                            实时刷新
+                        </button>
                         <button
                             type="button"
                             onClick={onOpenMissedTasks}
@@ -420,7 +436,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                 <div className="flex flex-col gap-1.5 border-b border-slate-100 px-4 py-2.5 md:flex-row md:items-center md:justify-between">
                     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                         <div className="text-sm font-bold text-slate-800">实例列表</div>
-                        <div className="text-xs text-slate-500">当前筛选 {filteredInstances.length} 条，展示第 {currentPage} 页。</div>
+                        <div className="text-xs text-slate-500">当前筛选 {totalInstances} 条，展示第 {currentPage} 页。</div>
                     </div>
                     <div className="text-xs text-slate-500">
                         {selectedInstanceIds.length > 0 ? `已选择 ${selectedInstanceIds.length} 条` : '可多选后批量重跑、停止或强制通过'}
@@ -467,7 +483,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {filteredInstances.length === 0 ? (
+                            {pagedInstances.length === 0 ? (
                                 <tr>
                                     <td colSpan={12} className="px-6 py-16 text-center text-slate-500">
                                         未找到符合条件的任务实例。
@@ -576,7 +592,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                 <div className="border-t border-slate-100 px-4 py-3">
                     <Pagination
                         current={currentPage}
-                        total={filteredInstances.length}
+                        total={totalInstances}
                         pageSize={pageSize}
                         showSizeChanger
                         onChange={onPageChange}
