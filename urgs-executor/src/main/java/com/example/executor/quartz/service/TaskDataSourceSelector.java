@@ -59,7 +59,20 @@ public class TaskDataSourceSelector {
     }
 
     public boolean hasAvailablePoolMember(Long poolId) {
-        return poolId != null && dataSourcePoolDao.listEnabledMembers(poolId).stream().anyMatch(this::hasCapacity);
+        return !listAvailablePoolMembers(poolId).isEmpty();
+    }
+
+    public List<DataSourcePoolMemberEntity> listAvailablePoolMembers(Long poolId) {
+        if (poolId == null) {
+            return List.of();
+        }
+        return dataSourcePoolDao.listEnabledMembers(poolId).stream()
+                .filter(this::hasCapacity)
+                .toList();
+    }
+
+    public ResolvedDataSourceConfig resolveConfig(Long datasourceId) {
+        return dataSourceConfigClient.getResolvedConfig(datasourceId);
     }
 
     public void release(TaskDataSourceSelection selection) {

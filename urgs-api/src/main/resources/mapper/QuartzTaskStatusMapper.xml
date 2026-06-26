@@ -3,14 +3,27 @@
 <mapper namespace="com.example.urgs_api.quartz.dao.QuartzTaskStatusDao">
 
     <select id="getFinishCount" resultType="integer">
-        SELECT COUNT(DISTINCT plan_id)
-        FROM t_quartz_task_status
-        WHERE status = 3
-          AND data_date = #{dataDate}
-          AND plan_id IN
+        SELECT COUNT(DISTINCT s.plan_id)
+        FROM t_quartz_task_status s
+        WHERE s.status = 3
+          AND s.data_date = #{dataDate}
+          AND s.plan_id IN
         <foreach collection="dependIds" item="id" open="(" separator="," close=")">
             #{id}
         </foreach>
+          AND NOT EXISTS (
+            SELECT 1
+            FROM t_quartz_task_status newer_s
+            WHERE newer_s.plan_id = s.plan_id
+              AND newer_s.data_date = s.data_date
+              AND (
+                COALESCE(newer_s.update_time, newer_s.create_time) > COALESCE(s.update_time, s.create_time)
+                OR (
+                  COALESCE(newer_s.update_time, newer_s.create_time) = COALESCE(s.update_time, s.create_time)
+                  AND newer_s.id > s.id
+                )
+              )
+          )
     </select>
 
     <update id="insert">
@@ -244,6 +257,7 @@
         FROM t_quartz_task_status
         WHERE plan_id = #{planId}
           AND data_date = #{dataDate}
+        ORDER BY COALESCE(update_time, create_time) DESC, id DESC
         LIMIT 1
     </select>
 
@@ -264,29 +278,43 @@
         FROM t_quartz_task_status
         WHERE plan_id = #{planId}
           AND data_date = #{dataDate}
+        ORDER BY COALESCE(update_time, create_time) DESC, id DESC
         LIMIT 1
     </select>
 
     <select id="getStatusBatch" resultType="com.example.urgs_api.quartz.domain.entity.QuartzTaskStatusEntity">
-        SELECT id,
-               plan_id AS planId,
-               data_date AS dataDate,
-               status,
-               begin_time AS beginTime,
-               end_time AS endTime,
-               msg,
-               execute_pool_id AS executePoolId,
-               execute_pool_name AS executePoolName,
-               execute_datasource_id AS executeDatasourceId,
-               execute_datasource_name AS executeDatasourceName,
-               create_time AS createTime,
-               update_time AS updateTime
-        FROM t_quartz_task_status
-        WHERE plan_id IN
+        SELECT s.id,
+               s.plan_id AS planId,
+               s.data_date AS dataDate,
+               s.status,
+               s.begin_time AS beginTime,
+               s.end_time AS endTime,
+               s.msg,
+               s.execute_pool_id AS executePoolId,
+               s.execute_pool_name AS executePoolName,
+               s.execute_datasource_id AS executeDatasourceId,
+               s.execute_datasource_name AS executeDatasourceName,
+               s.create_time AS createTime,
+               s.update_time AS updateTime
+        FROM t_quartz_task_status s
+        WHERE s.plan_id IN
         <foreach collection="planIds" item="id" open="(" separator="," close=")">
             #{id}
         </foreach>
-          AND data_date BETWEEN #{startDate} AND #{endDate}
+          AND s.data_date BETWEEN #{startDate} AND #{endDate}
+          AND NOT EXISTS (
+            SELECT 1
+            FROM t_quartz_task_status newer_s
+            WHERE newer_s.plan_id = s.plan_id
+              AND newer_s.data_date = s.data_date
+              AND (
+                COALESCE(newer_s.update_time, newer_s.create_time) > COALESCE(s.update_time, s.create_time)
+                OR (
+                  COALESCE(newer_s.update_time, newer_s.create_time) = COALESCE(s.update_time, s.create_time)
+                  AND newer_s.id > s.id
+                )
+              )
+          )
     </select>
 
     <select id="getLastSuccess" resultType="com.example.urgs_api.quartz.domain.entity.QuartzTaskStatusEntity">

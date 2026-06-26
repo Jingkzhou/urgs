@@ -25,18 +25,32 @@
         FROM t_quartz_task_status
         WHERE plan_id = #{planId}
           AND data_date = #{dataDate}
+        ORDER BY COALESCE(update_time, create_time) DESC, id DESC
         LIMIT 1
     </select>
 
     <select id="getFinishCount" resultType="int">
-        SELECT count(DISTINCT plan_id)
-        FROM t_quartz_task_status
-        WHERE status = 3
-          AND data_date = #{dataDate}
-          AND plan_id IN
+        SELECT count(DISTINCT s.plan_id)
+        FROM t_quartz_task_status s
+        WHERE s.status = 3
+          AND s.data_date = #{dataDate}
+          AND s.plan_id IN
           <foreach collection="dependIds" item="id" open="(" separator="," close=")">
               #{id}
           </foreach>
+          AND NOT EXISTS (
+            SELECT 1
+            FROM t_quartz_task_status newer_s
+            WHERE newer_s.plan_id = s.plan_id
+              AND newer_s.data_date = s.data_date
+              AND (
+                COALESCE(newer_s.update_time, newer_s.create_time) > COALESCE(s.update_time, s.create_time)
+                OR (
+                  COALESCE(newer_s.update_time, newer_s.create_time) = COALESCE(s.update_time, s.create_time)
+                  AND newer_s.id > s.id
+                )
+              )
+          )
     </select>
 
     <insert id="insertStatus">

@@ -89,6 +89,19 @@
           AND t.task_status = 0
           AND NOT EXISTS (
             SELECT 1
+            FROM t_quartz_task_status newer_ws
+            WHERE newer_ws.plan_id = ws.plan_id
+              AND newer_ws.data_date = ws.data_date
+              AND (
+                COALESCE(newer_ws.update_time, newer_ws.create_time) > COALESCE(ws.update_time, ws.create_time)
+                OR (
+                  COALESCE(newer_ws.update_time, newer_ws.create_time) = COALESCE(ws.update_time, ws.create_time)
+                  AND newer_ws.id > ws.id
+                )
+              )
+          )
+          AND NOT EXISTS (
+            SELECT 1
             FROM t_quartz_task_dependency d
             WHERE d.task_id = ws.plan_id
               AND NOT EXISTS (
@@ -97,6 +110,19 @@
                 WHERE ds.plan_id = d.pre_task_id
                   AND ds.data_date = ws.data_date
                   AND ds.status = 3
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM t_quartz_task_status newer_ds
+                    WHERE newer_ds.plan_id = ds.plan_id
+                      AND newer_ds.data_date = ds.data_date
+                      AND (
+                        COALESCE(newer_ds.update_time, newer_ds.create_time) > COALESCE(ds.update_time, ds.create_time)
+                        OR (
+                          COALESCE(newer_ds.update_time, newer_ds.create_time) = COALESCE(ds.update_time, ds.create_time)
+                          AND newer_ds.id > ds.id
+                        )
+                      )
+                  )
               )
         )
         ORDER BY ws.id

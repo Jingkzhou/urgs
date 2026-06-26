@@ -7,6 +7,7 @@ import com.example.executor.notification.TaskNotificationService;
 import com.example.executor.quartz.constant.TaskExeStatusEnum;
 import com.example.executor.quartz.dao.QuartzTaskDao;
 import com.example.executor.quartz.dao.QuartzTaskStatusDao;
+import com.example.executor.quartz.domain.entity.DataSourcePoolMemberEntity;
 import com.example.executor.quartz.domain.entity.QuartzTaskEntity;
 import com.example.executor.quartz.domain.entity.QuartzTaskStatusEntity;
 import com.example.executor.quartz.service.task.ShellScriptExecutor;
@@ -17,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
@@ -87,10 +89,25 @@ public class ExecutorTaskService {
             return "任务不存在";
         }
         if (task.getDatasourcePoolId() != null) {
-            if (!taskDataSourceSelector.hasAvailablePoolMember(task.getDatasourcePoolId())) {
+            List<DataSourcePoolMemberEntity> availableMembers =
+                    taskDataSourceSelector.listAvailablePoolMembers(task.getDatasourcePoolId());
+            if (availableMembers.isEmpty()) {
                 return "数据池无可用数据源，请检查数据池成员和并发设置";
             }
-            return null;
+            List<String> invalidMemberMessages = new ArrayList<>();
+            for (DataSourcePoolMemberEntity member : availableMembers) {
+                try {
+                    ResolvedDataSourceConfig config = taskDataSourceSelector.resolveConfig(member.getDatasourceId());
+                    String validationError = validateResolvedDataSourceConfig(task, config);
+                    if (validationError == null) {
+                        return null;
+                    }
+                    invalidMemberMessages.add(member.getDatasourceName() + ": " + validationError);
+                } catch (Exception e) {
+                    invalidMemberMessages.add(member.getDatasourceName() + ": 加载数据源配置失败: " + trimTo500(e.getMessage()));
+                }
+            }
+            return "数据池可用成员配置不满足任务执行要求: " + trimTo500(String.join("; ", invalidMemberMessages));
         }
         if (task.getDatasourceId() == null) {
             return "任务未绑定数据源，请先在任务配置中选择数据源";
@@ -101,6 +118,10 @@ public class ExecutorTaskService {
         } catch (Exception e) {
             return "加载数据源配置失败: " + trimTo500(e.getMessage());
         }
+        return validateResolvedDataSourceConfig(task, config);
+    }
+
+    private String validateResolvedDataSourceConfig(QuartzTaskEntity task, ResolvedDataSourceConfig config) {
         if (config == null || config.getId() == null) {
             return "数据源配置不存在或不可用，请检查任务绑定的数据源";
         }
@@ -145,12 +166,20 @@ public class ExecutorTaskService {
         taskExecutorPool.submitTask(taskKey, () -> {
             TaskDataSourceSelection dataSourceSelection = null;
             try {
+                if (!checkPredecessors(task, dataDate)) {
+                    keepWaitingForPredecessors(task, dataDate);
+                    return;
+                }
                 dataSourceSelection = taskDataSourceSelector.select(task);
                 if (task.getDatasourcePoolId() != null && dataSourceSelection == null) {
                     log.debug("{} datasource pool has no capacity, keep waiting", taskTag(task, dataDate));
                     return;
                 }
                 ResolvedDataSourceConfig resolvedDataSourceConfig = dataSourceSelection == null ? null : dataSourceSelection.getConfig();
+                String validationError = validateResolvedDataSourceConfig(task, resolvedDataSourceConfig);
+                if (validationError != null) {
+                    throw new IllegalStateException(validationError);
+                }
                 if (resolvedDataSourceConfig != null) {
                     log.debug("{} resolved datasource: poolId={}, poolName={}, id={}, name={}, url={}, driver={}",
                             taskTag(task, dataDate),
@@ -177,6 +206,16 @@ public class ExecutorTaskService {
                 taskDataSourceSelector.release(dataSourceSelection);
             }
         });
+    }
+
+    private void keepWaitingForPredecessors(QuartzTaskEntity task, String dataDate) {
+        QuartzTaskStatusEntity status = buildStatus(task.getId(), dataDate,
+                TaskExeStatusEnum.WAITING.getCode(), "等待执行");
+        Integer currentStatus = quartzTaskStatusDao.getStatusByPlanIdAndDate(task.getId(), dataDate);
+        resetOrInsertStatus(status, currentStatus);
+        status.setMsg("等待前置任务完成");
+        updateStatus(status);
+        log.info("{} predecessors not finished, keep waiting", taskTag(task, dataDate));
     }
 
     // ===== 内部调度核心 =====

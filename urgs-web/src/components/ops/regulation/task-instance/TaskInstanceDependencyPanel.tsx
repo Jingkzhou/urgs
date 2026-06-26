@@ -253,8 +253,22 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
     const impactEndIndex = Math.min(impactPage * impactPageSize, impactTotal);
 
     const hasImpactFilterValue = normalizedImpactKeyword.length > 0 || impactStatusFilter !== 'all';
+    const selectedStatusLabel = instanceStatusMap[selectedInstance.status ?? -1]?.label || '未知状态';
+    const isWaitingInstance = selectedInstance.status === 1;
 
     const renderBlockingDependencyList = (items: BlockingDependencyItem[]) => {
+        if (!isWaitingInstance) {
+            return (
+                <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-5 text-center">
+                    <CheckCircle2 size={24} className="mx-auto text-slate-500" />
+                    <div className="mt-2 text-sm font-semibold text-slate-700">当前实例已是{selectedStatusLabel}</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                        调度阻塞只对等待中实例生效；如上游正在重跑，请以数据重跑影响范围判断下游是否需要补跑。
+                    </div>
+                </div>
+            );
+        }
+
         if (items.length === 0) {
             return (
                 <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 px-4 py-5 text-center">
@@ -460,7 +474,9 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                             调度阻塞原因
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
-                            {dependencyPanelData.blockingUpstream.length > 0
+                            {!isWaitingInstance
+                                ? `当前实例已是${selectedStatusLabel}`
+                                : dependencyPanelData.blockingUpstream.length > 0
                                 ? `${dependencyPanelData.blockingUpstream.length} 个上游节点需要处理`
                                 : '上游依赖正常'}
                         </div>

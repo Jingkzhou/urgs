@@ -24,12 +24,6 @@ interface UseDependencyInsightDataParams {
     includeImpact?: boolean;
 }
 
-interface UpstreamQueueItem {
-    taskId: number;
-    level: number;
-    dependencyType: DependencyRelationType;
-}
-
 const buildUpstreamTaskIdMap = (
     taskList: QuartzTask[],
     picker: (task: QuartzTask) => number[]
@@ -224,10 +218,6 @@ export const useDependencyInsightData = ({
         () => buildUpstreamTaskIdMap(taskList, getControlDependIds),
         [taskList]
     );
-    const allUpstreamTaskIdMap = useMemo(
-        () => buildUpstreamTaskIdMap(taskList, getAllDependIds),
-        [taskList]
-    );
     const dataDownstreamTaskIdMap = useMemo(
         () => buildDownstreamTaskIdMap(taskList, getDataDependIds),
         [taskList]
@@ -273,56 +263,29 @@ export const useDependencyInsightData = ({
             };
         };
 
-        const enqueueUpstream = (queue: UpstreamQueueItem[], taskIds: number[], level: number, dependencyType: DependencyRelationType) => {
-            taskIds.forEach(taskId => queue.push({ taskId, level, dependencyType }));
-        };
-
         const blockingUpstreamMap = new Map<number, BlockingDependencyItem>();
-        const upstreamQueue: UpstreamQueueItem[] = [];
-        enqueueUpstream(upstreamQueue, dataUpstreamTaskIdMap.get(selectedInstance.plan_id) || [], 1, 'DATA');
-        enqueueUpstream(upstreamQueue, controlUpstreamTaskIdMap.get(selectedInstance.plan_id) || [], 1, 'CONTROL');
-        const visitedUpstreamIds = new Set<number>();
+        const appendDirectBlockingUpstream = (taskIds: number[], dependencyType: DependencyRelationType) => {
+            taskIds.forEach(taskId => {
+                const existingBlocking = blockingUpstreamMap.get(taskId);
+                if (existingBlocking) {
+                    mergeDependencyType(existingBlocking, dependencyType);
+                    return;
+                }
 
-        while (upstreamQueue.length > 0) {
-            const current = upstreamQueue.shift();
-            if (!current) {
-                continue;
-            }
-            if (visitedUpstreamIds.size >= MAX_DEPENDENCY_GRAPH_NODES) {
-                graphTruncated = true;
-                break;
-            }
-
-            const existingBlocking = blockingUpstreamMap.get(current.taskId);
-            if (existingBlocking) {
-                mergeDependencyType(existingBlocking, current.dependencyType);
-                existingBlocking.level = Math.min(existingBlocking.level, current.level);
-            }
-
-            if (visitedUpstreamIds.has(current.taskId)) {
-                continue;
-            }
-            visitedUpstreamIds.add(current.taskId);
-
-            const relation = toRelationItem(current.taskId, [current.dependencyType]);
-            const status = relation.relatedInstance?.status;
-            if (!status || incompleteInstanceStatuses.has(status)) {
-                blockingUpstreamMap.set(current.taskId, {
-                    ...relation,
-                    level: current.level,
-                });
-            }
-
-            (allUpstreamTaskIdMap.get(current.taskId) || []).forEach(nextTaskId => {
-                if (!visitedUpstreamIds.has(nextTaskId)) {
-                    const isData = (dataUpstreamTaskIdMap.get(current.taskId) || []).includes(nextTaskId);
-                    upstreamQueue.push({
-                        taskId: nextTaskId,
-                        level: current.level + 1,
-                        dependencyType: isData ? 'DATA' : 'CONTROL',
+                const relation = toRelationItem(taskId, [dependencyType]);
+                const status = relation.relatedInstance?.status;
+                if (!status || incompleteInstanceStatuses.has(status)) {
+                    blockingUpstreamMap.set(taskId, {
+                        ...relation,
+                        level: 1,
                     });
                 }
             });
+        };
+
+        if (selectedInstance.status === 1) {
+            appendDirectBlockingUpstream(dataUpstreamTaskIdMap.get(selectedInstance.plan_id) || [], 'DATA');
+            appendDirectBlockingUpstream(controlUpstreamTaskIdMap.get(selectedInstance.plan_id) || [], 'CONTROL');
         }
 
         const blockingUpstream = Array.from(blockingUpstreamMap.values()).sort((a, b) => {
@@ -679,7 +642,6 @@ export const useDependencyInsightData = ({
             totalDateInstanceCount: dateInstanceMeta.total,
         };
     }, [
-        allUpstreamTaskIdMap,
         controlUpstreamTaskIdMap,
         controlDownstreamTaskIdMap,
         dataDownstreamTaskIdMap,
