@@ -70,6 +70,9 @@ public class QuartzTaskDTO {
     @ApiModelProperty("数据源ID")
     private Long datasourceId;
 
+    @ApiModelProperty("数据源执行池ID")
+    private Long datasourcePoolId;
+
     @ApiModelProperty("系统")
     private String taskSystem;
 

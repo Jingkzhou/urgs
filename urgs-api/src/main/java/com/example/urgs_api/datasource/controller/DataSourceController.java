@@ -2,8 +2,10 @@ package com.example.urgs_api.datasource.controller;
 
 import com.example.urgs_api.auth.annotation.RequirePermission;
 import com.example.urgs_api.datasource.dto.DataSourceOptionDTO;
+import com.example.urgs_api.datasource.dto.DataSourcePoolDTO;
 import com.example.urgs_api.datasource.entity.DataSourceConfig;
 import com.example.urgs_api.datasource.entity.DataSourceMeta;
+import com.example.urgs_api.datasource.service.DataSourcePoolService;
 import com.example.urgs_api.datasource.service.DataSourceService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -16,11 +18,14 @@ import java.util.List;
 public class DataSourceController {
 
     private final DataSourceService dataSourceService;
+    private final DataSourcePoolService dataSourcePoolService;
     private final com.example.urgs_api.datasource.service.DynamicDataSourceService dynamicDataSourceService;
 
     public DataSourceController(DataSourceService dataSourceService,
+            DataSourcePoolService dataSourcePoolService,
             com.example.urgs_api.datasource.service.DynamicDataSourceService dynamicDataSourceService) {
         this.dataSourceService = dataSourceService;
+        this.dataSourcePoolService = dataSourcePoolService;
         this.dynamicDataSourceService = dynamicDataSourceService;
     }
 
@@ -51,6 +56,36 @@ public class DataSourceController {
     @GetMapping("/options")
     public List<DataSourceOptionDTO> getOptions() {
         return dataSourceService.getAllOptions();
+    }
+
+    @GetMapping("/pool")
+    @RequirePermission("datasource:list")
+    public List<DataSourcePoolDTO> getPools() {
+        return dataSourcePoolService.listPools();
+    }
+
+    @GetMapping("/pool/options")
+    public List<DataSourcePoolDTO> getPoolOptions() {
+        return dataSourcePoolService.listPools();
+    }
+
+    @PostMapping("/pool")
+    @RequirePermission("datasource:list")
+    public boolean createPool(@RequestBody DataSourcePoolDTO pool) {
+        return dataSourcePoolService.savePool(pool);
+    }
+
+    @PutMapping("/pool/{id}")
+    @RequirePermission("datasource:list")
+    public boolean updatePool(@PathVariable Long id, @RequestBody DataSourcePoolDTO pool) {
+        pool.setId(id);
+        return dataSourcePoolService.savePool(pool);
+    }
+
+    @DeleteMapping("/pool/{id}")
+    @RequirePermission("datasource:list")
+    public boolean deletePool(@PathVariable Long id) {
+        return dataSourcePoolService.deletePool(id);
     }
 
     @PostMapping("/config")

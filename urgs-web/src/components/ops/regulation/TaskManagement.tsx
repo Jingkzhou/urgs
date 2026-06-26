@@ -12,6 +12,7 @@ import Pagination from '@/components/common/Pagination';
 import {
     deleteQuartzTask,
     getDatasourceConfig,
+    getDatasourcePools,
     pauseQuartzTask,
     queryQuartzTaskDependencies,
     queryQuartzTasks,
@@ -22,6 +23,7 @@ import {
 import { getSsoList, SsoConfig } from '@/api/version';
 import {
     DataSourceOption,
+    DataSourcePoolOption,
     NotificationContact,
     TaskFormValues,
     describeCron,
@@ -65,6 +67,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, hea
     const [startDataDate, setStartDataDate] = useState(dayjs().format('YYYY-MM-DD'));
     const [startTaskLoading, setStartTaskLoading] = useState(false);
     const [dataSources, setDataSources] = useState<DataSourceOption[]>([]);
+    const [dataSourcePools, setDataSourcePools] = useState<DataSourcePoolOption[]>([]);
     const [dataSourceLoading, setDataSourceLoading] = useState(false);
     const [regulationSystems, setRegulationSystems] = useState<SsoConfig[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
@@ -112,7 +115,10 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, hea
         const fetchDataSources = async () => {
             setDataSourceLoading(true);
             try {
-                const list = await getDatasourceConfig();
+                const [list, poolList] = await Promise.all([
+                    getDatasourceConfig(),
+                    getDatasourcePools(),
+                ]);
                 if (!mounted) return;
                 const normalized = Array.isArray(list) ? list.map((item: any) => ({
                     id: Number(item.id),
@@ -124,6 +130,16 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, hea
                     connectionInfo: describeDataSourceConnection(item.connectionParams, item.typeCode),
                 })).filter((item: DataSourceOption) => Number.isFinite(item.id) && !!item.name) : [];
                 setDataSources(normalized);
+                const normalizedPools = Array.isArray(poolList) ? poolList.map((item: any) => ({
+                    id: Number(item.id),
+                    name: item.name,
+                    poolType: item.poolType,
+                    strategy: item.strategy,
+                    status: item.status,
+                    memberCount: item.memberCount,
+                    enabledMemberCount: item.enabledMemberCount,
+                })).filter((item: DataSourcePoolOption) => Number.isFinite(item.id) && !!item.name) : [];
+                setDataSourcePools(normalizedPools);
             } catch (error) {
                 if (!mounted) return;
                 console.error('Failed to fetch data sources:', error);
@@ -384,6 +400,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, hea
                 dataDependId: emptyToNull(values.data_depend_id || values.depend_id),
                 controlDependId: emptyToNull(values.control_depend_id),
                 datasourceId: values.datasource_id ?? null,
+                datasourcePoolId: values.datasource_pool_id ?? null,
                 period: values.period ?? null,
                 taskSystem: emptyToNull(values.task_system || undefined),
                 theme: emptyToNull(values.theme || undefined),
@@ -744,6 +761,7 @@ const TaskManagement: React.FC<TaskManagementProps> = ({ onViewExecutionLog, hea
                 taskTypes={taskTypes}
                 systems={systems}
                 datasourceOptions={datasourceOptions}
+                datasourcePoolOptions={dataSourcePools}
                 dataSourceLoading={dataSourceLoading}
                 editorLanguageMap={editorLanguageMap}
                 getInitialFormValues={getInitialFormValues}

@@ -172,7 +172,7 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
             `任务类型: ${selectedTask?.task_type || '-'}`,
             `任务 Bean: ${selectedTask?.task_bean || '-'}`,
             `任务参数: ${selectedTask?.task_params || '-'}`,
-            `数据源: ${selectedTask?.datasource_name || selectedTask?.datasource_id || '-'}`,
+            `执行资源: ${selectedTask?.datasource_pool_name || selectedTask?.datasource_name || selectedTask?.datasource_id || '-'}`,
             `实例消息: ${selectedInstance?.msg || '-'}`,
             scriptText ? `执行脚本:\n${scriptText.slice(0, 4000)}` : '执行脚本: -',
         ].join('\n');
@@ -594,12 +594,12 @@ const TaskInstanceDetailDrawer: React.FC<TaskInstanceDetailDrawerProps> = ({
                                             <div className={detailSectionBodyClass}>
                                                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                                                     <div className={detailItemClass}>
-                                                        <div className="text-xs text-slate-400">数据源名称</div>
-                                                        <div className="mt-1 text-slate-700">{selectedTask?.datasource_name || '-'}</div>
+                                                        <div className="text-xs text-slate-400">绑定数据池/数据源</div>
+                                                        <div className="mt-1 text-slate-700">{selectedTask?.datasource_pool_name || selectedTask?.datasource_name || '-'}</div>
                                                     </div>
                                                     <div className={detailItemClass}>
-                                                        <div className="text-xs text-slate-400">数据源ID</div>
-                                                        <div className="mt-1 font-mono text-xs text-slate-700">{selectedTask?.datasource_id ?? '-'}</div>
+                                                        <div className="text-xs text-slate-400">实际执行数据源</div>
+                                                        <div className="mt-1 text-slate-700">{selectedInstance.execute_datasource_name || selectedInstance.execute_datasource_id || '-'}</div>
                                                     </div>
                                                     <div className={`md:col-span-2 ${detailItemClass}`}>
                                                         <div className="text-xs text-slate-400">连接说明</div>

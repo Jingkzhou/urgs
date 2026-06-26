@@ -20,4 +20,6 @@ public interface QuartzTaskStatusDao {
     int resetStatusForDispatch(@Param("entity") QuartzTaskStatusEntity entity);
 
     int updateStatus(@Param("entity") QuartzTaskStatusEntity entity);
+
+    int updateExecutionDataSource(@Param("entity") QuartzTaskStatusEntity entity);
 }

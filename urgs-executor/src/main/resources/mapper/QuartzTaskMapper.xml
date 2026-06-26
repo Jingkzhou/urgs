@@ -16,6 +16,8 @@
         t.exe_path,
         t.datasource_id,
         ds.name AS datasource_name,
+        t.datasource_pool_id,
+        dsp.name AS datasource_pool_name,
         (
             SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
             FROM t_quartz_task_dependency d
@@ -47,6 +49,7 @@
         SELECT <include refid="baseSql"/>
         FROM t_quartz_task t
         LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
+        LEFT JOIN sys_datasource_pool dsp ON dsp.id = t.datasource_pool_id
         WHERE t.id = #{id}
     </select>
 
@@ -54,6 +57,7 @@
         SELECT <include refid="baseSql"/>
         FROM t_quartz_task t
         LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
+        LEFT JOIN sys_datasource_pool dsp ON dsp.id = t.datasource_pool_id
         WHERE t.task_status = 0
         ORDER BY t.id
     </select>
@@ -62,6 +66,7 @@
         SELECT <include refid="baseSql"/>
         FROM t_quartz_task t
         LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
+        LEFT JOIN sys_datasource_pool dsp ON dsp.id = t.datasource_pool_id
         INNER JOIN t_quartz_task_dependency d ON d.task_id = t.id
         WHERE d.pre_task_id = #{id}
     </select>
@@ -79,6 +84,7 @@
         FROM t_quartz_task_status ws
         INNER JOIN t_quartz_task t ON t.id = ws.plan_id
         LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
+        LEFT JOIN sys_datasource_pool dsp ON dsp.id = t.datasource_pool_id
         WHERE ws.status = 1
           AND t.task_status = 0
           AND NOT EXISTS (

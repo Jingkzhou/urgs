@@ -13,12 +13,16 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 @Slf4j
 @Component
 public class DataSourceConfigClient {
 
     private final RestTemplate restTemplate;
     private final InternalApiAuthHeaderProvider authHeaderProvider;
+    private final Map<Long, ResolvedDataSourceConfig> configCache = new ConcurrentHashMap<>();
 
     @Value("${task.api-base-url:http://127.0.0.1:8080}")
     private String apiBaseUrl;
@@ -33,6 +37,10 @@ public class DataSourceConfigClient {
         if (datasourceId == null) {
             return null;
         }
+        return configCache.computeIfAbsent(datasourceId, this::fetchResolvedConfig);
+    }
+
+    private ResolvedDataSourceConfig fetchResolvedConfig(Long datasourceId) {
         String url = apiBaseUrl + "/api/internal/datasource/config/" + datasourceId + "/resolved";
         try {
             HttpHeaders headers = new HttpHeaders();

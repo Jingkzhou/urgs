@@ -12,8 +12,7 @@ import {
 } from './types';
 import { getAllDependIds, getControlDependIds, getDataDependIds, normalizeStatus } from './utils';
 
-const DEPENDENCY_DATE_INSTANCE_PAGE_SIZE = 500;
-const MAX_DEPENDENCY_DATE_INSTANCE_PAGES = 8;
+const DEPENDENCY_INSTANCE_QUERY_PAGE_SIZE = 500;
 const MAX_DEPENDENCY_GRAPH_NODES = 800;
 
 interface UseDependencyInsightDataParams {
@@ -81,6 +80,53 @@ const mergeInstanceByPlanDate = (
     }
 };
 
+const collectUpstreamTaskIds = (taskList: QuartzTask[], rootTaskId: number) => {
+    const upstreamMap = buildUpstreamTaskIdMap(taskList, getAllDependIds);
+    const result: number[] = [];
+    const visited = new Set<number>();
+    const queue = [...(upstreamMap.get(rootTaskId) || [])];
+
+    while (queue.length > 0 && visited.size < MAX_DEPENDENCY_GRAPH_NODES) {
+        const taskId = queue.shift();
+        if (!taskId || visited.has(taskId)) {
+            continue;
+        }
+        visited.add(taskId);
+        result.push(taskId);
+        queue.push(...(upstreamMap.get(taskId) || []));
+    }
+
+    return result;
+};
+
+const collectDownstreamTaskIds = (taskList: QuartzTask[], rootTaskId: number) => {
+    const downstreamMap = buildDownstreamTaskIdMap(taskList, getAllDependIds);
+    const result: number[] = [];
+    const visited = new Set<number>();
+    const queue = [...(downstreamMap.get(rootTaskId) || [])];
+
+    while (queue.length > 0 && visited.size < MAX_DEPENDENCY_GRAPH_NODES) {
+        const taskId = queue.shift();
+        if (!taskId || visited.has(taskId)) {
+            continue;
+        }
+        visited.add(taskId);
+        result.push(taskId);
+        queue.push(...(downstreamMap.get(taskId) || []));
+    }
+
+    return result;
+};
+
+const collectRelatedTaskIds = (taskList: QuartzTask[], rootTaskId: number, includeImpact: boolean) => {
+    const taskIds = [
+        rootTaskId,
+        ...collectUpstreamTaskIds(taskList, rootTaskId),
+        ...(includeImpact ? collectDownstreamTaskIds(taskList, rootTaskId) : []),
+    ];
+    return Array.from(new Set(taskIds)).slice(0, MAX_DEPENDENCY_GRAPH_NODES);
+};
+
 export const useDependencyInsightData = ({
     selectedInstance,
     taskList,
@@ -108,40 +154,36 @@ export const useDependencyInsightData = ({
 
         const loadDateInstances = async () => {
             try {
-                const firstResponse = await queryQuartzTaskStatus({
-                    dataDate,
-                    pageNum: 1,
-                    pageSize: DEPENDENCY_DATE_INSTANCE_PAGE_SIZE,
-                });
-                if (!firstResponse?.success) {
-                    throw new Error(firstResponse?.msg || '加载依赖实例失败');
-                }
+                const relatedTaskIds = selectedInstance
+                    ? collectRelatedTaskIds(taskList, selectedInstance.plan_id, includeImpact)
+                    : [];
+                const mergedInstances: QuartzTaskStatus[] = [];
 
-                const totalPages = Number(firstResponse.data?.pages || 1);
-                const totalCount = Number(firstResponse.data?.total || firstResponse.data?.list?.length || 0);
-                const pagesToLoad = Math.min(totalPages, MAX_DEPENDENCY_DATE_INSTANCE_PAGES);
-                const mergedInstances = [...(firstResponse.data?.list || []).map(normalizeStatus)];
-
-                for (let pageNum = 2; pageNum <= pagesToLoad; pageNum += 1) {
+                for (let start = 0; start < relatedTaskIds.length; start += DEPENDENCY_INSTANCE_QUERY_PAGE_SIZE) {
+                    const ids = relatedTaskIds
+                        .slice(start, start + DEPENDENCY_INSTANCE_QUERY_PAGE_SIZE)
+                        .map(String);
                     const response = await queryQuartzTaskStatus({
                         dataDate,
-                        pageNum,
-                        pageSize: DEPENDENCY_DATE_INSTANCE_PAGE_SIZE,
+                        ids,
+                        pageNum: 1,
+                        pageSize: ids.length,
                     });
                     if (canceled) {
                         return;
                     }
-                    if (response?.success) {
-                        mergedInstances.push(...(response.data?.list || []).map(normalizeStatus));
+                    if (!response?.success) {
+                        throw new Error(response?.msg || '加载依赖实例失败');
                     }
+                    mergedInstances.push(...(response.data?.list || []).map(normalizeStatus));
                 }
 
                 if (!canceled) {
                     setDateInstances(mergedInstances);
                     setDateInstanceMeta({
-                        total: totalCount,
+                        total: mergedInstances.length,
                         loaded: mergedInstances.length,
-                        truncated: totalPages > pagesToLoad,
+                        truncated: false,
                     });
                 }
             } catch (error) {
@@ -158,7 +200,7 @@ export const useDependencyInsightData = ({
         return () => {
             canceled = true;
         };
-    }, [enabled, selectedInstance?.data_date]);
+    }, [enabled, includeImpact, selectedInstance?.data_date, selectedInstance?.plan_id, taskList]);
 
     const instanceByPlanDate = useMemo(() => {
         const map = new Map<string, QuartzTaskStatus>();

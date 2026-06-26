@@ -45,4 +45,24 @@ public class QuartzTaskStatusEntity extends BaseEntity {
      * 执行描述
      */
     private String msg;
+
+    /**
+     * 本次执行选择的数据池ID
+     */
+    private Long executePoolId;
+
+    /**
+     * 本次执行选择的数据池名称
+     */
+    private String executePoolName;
+
+    /**
+     * 本次执行选择的数据源ID
+     */
+    private Long executeDatasourceId;
+
+    /**
+     * 本次执行选择的数据源名称
+     */
+    private String executeDatasourceName;
 }

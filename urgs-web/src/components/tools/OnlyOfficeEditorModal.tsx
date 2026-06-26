@@ -67,6 +67,17 @@ const getDocumentExtension = (fileName: string) => {
     return extension || '';
 };
 
+const restoreHostHash = (expectedHash: string) => {
+    if (!expectedHash || window.location.hash === expectedHash) return;
+
+    window.history.replaceState(
+        null,
+        document.title,
+        `${window.location.pathname}${window.location.search}${expectedHash}`
+    );
+    window.dispatchEvent(new Event('hashchange'));
+};
+
 export const isOnlyOfficeSupported = (fileName: string) => {
     const extension = getDocumentExtension(fileName);
     return ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf'].includes(extension);
@@ -108,7 +119,9 @@ const OnlyOfficeEditorModal: React.FC<OnlyOfficeEditorModalProps> = ({
                 throw new Error('ONLYOFFICE API 未就绪');
             }
 
+            const hostHash = window.location.hash;
             editorRef.current = new window.DocsAPI.DocEditor(editorId, config);
+            window.setTimeout(() => restoreHostHash(hostHash), 0);
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'ONLYOFFICE 打开失败';
             setError(errorMessage);

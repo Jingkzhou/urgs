@@ -79,6 +79,12 @@ public class QuartzTaskVO {
     @ApiModelProperty("数据源名称")
     private String datasourceName;
 
+    @ApiModelProperty("数据源执行池ID")
+    private Long datasourcePoolId;
+
+    @ApiModelProperty("数据源执行池名称")
+    private String datasourcePoolName;
+
     @ApiModelProperty("更新时间")
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
     private Date updateTime;

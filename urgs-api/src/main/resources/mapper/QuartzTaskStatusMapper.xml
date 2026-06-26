@@ -68,6 +68,8 @@
             ) AS controlDependId,
             t.datasource_id AS datasourceId,
             ds.name AS datasourceName,
+            t.datasource_pool_id AS datasourcePoolId,
+            dsp.name AS datasourcePoolName,
             t.task_system AS taskSystem,
             t.theme AS theme,
             t.period AS period,
@@ -78,11 +80,16 @@
             s.update_time AS updateTime,
             s.end_time AS endTime,
             s.msg AS msg,
+            s.execute_pool_id AS executePoolId,
+            s.execute_pool_name AS executePoolName,
+            s.execute_datasource_id AS executeDatasourceId,
+            s.execute_datasource_name AS executeDatasourceName,
             CASE WHEN s.status = '3' OR s.status = '4' THEN 'true' ELSE 'false' END AS _disabled,
             s.create_time AS createTime
         FROM t_quartz_task_status s
                  INNER JOIN t_quartz_task t ON s.plan_id = t.id
                  LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
+                 LEFT JOIN sys_datasource_pool dsp ON dsp.id = t.datasource_pool_id
         WHERE 1 = 1
         <if test="queryDTO.beginDate != null and queryDTO.beginDate != ''">
             AND s.update_time &gt;= STR_TO_DATE(#{queryDTO.beginDate}, '%Y%m%d')
@@ -93,6 +100,12 @@
         </if>
         <if test="queryDTO.id != null">
             AND t.id = #{queryDTO.id}
+        </if>
+        <if test="queryDTO.ids != null and queryDTO.ids.size() > 0">
+            AND t.id IN
+            <foreach collection="queryDTO.ids" item="id" open="(" separator="," close=")">
+                #{id}
+            </foreach>
         </if>
         <if test="queryDTO.statusId != null">
             AND s.id = #{queryDTO.statusId}
@@ -133,6 +146,8 @@
             t.exe_path AS exePath,
             t.datasource_id AS datasourceId,
             ds.name AS datasourceName,
+            t.datasource_pool_id AS datasourcePoolId,
+            dsp.name AS datasourcePoolName,
             (
                 SELECT GROUP_CONCAT(d.pre_task_id ORDER BY d.pre_task_id SEPARATOR ',')
                 FROM t_quartz_task_dependency d
@@ -163,6 +178,7 @@
             t.create_time AS createTime
         FROM t_quartz_task t
                  LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
+                 LEFT JOIN sys_datasource_pool dsp ON dsp.id = t.datasource_pool_id
                  LEFT JOIN t_quartz_task_status s ON s.plan_id = t.id AND s.data_date = #{queryDTO.dataDate}
         WHERE t.id IN
         <foreach collection="queryDTO.dependIds" item="id" open="(" separator="," close=")">
@@ -192,6 +208,10 @@
                begin_time AS beginTime,
                end_time AS endTime,
                msg,
+               execute_pool_id AS executePoolId,
+               execute_pool_name AS executePoolName,
+               execute_datasource_id AS executeDatasourceId,
+               execute_datasource_name AS executeDatasourceName,
                create_time AS createTime,
                update_time AS updateTime
         FROM t_quartz_task_status
@@ -208,6 +228,10 @@
                begin_time AS beginTime,
                end_time AS endTime,
                msg,
+               execute_pool_id AS executePoolId,
+               execute_pool_name AS executePoolName,
+               execute_datasource_id AS executeDatasourceId,
+               execute_datasource_name AS executeDatasourceName,
                create_time AS createTime,
                update_time AS updateTime
         FROM t_quartz_task_status
@@ -239,6 +263,10 @@
                begin_time AS beginTime,
                end_time AS endTime,
                msg,
+               execute_pool_id AS executePoolId,
+               execute_pool_name AS executePoolName,
+               execute_datasource_id AS executeDatasourceId,
+               execute_datasource_name AS executeDatasourceName,
                create_time AS createTime,
                update_time AS updateTime
         FROM t_quartz_task_status
@@ -253,6 +281,10 @@
         SET status = 1,
             begin_time = NULL,
             end_time = NULL,
+            execute_pool_id = NULL,
+            execute_pool_name = NULL,
+            execute_datasource_id = NULL,
+            execute_datasource_name = NULL,
             msg = #{msg},
             update_time = NOW()
         WHERE id IN

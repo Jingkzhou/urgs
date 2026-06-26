@@ -2,6 +2,8 @@ package com.example.urgs_api.quartz.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.example.urgs_api.datasource.repository.DataSourceConfigMapper;
+import com.example.urgs_api.datasource.repository.DataSourcePoolMapper;
 import lombok.extern.slf4j.Slf4j;
 import com.example.urgs_api.issue.model.Issue;
 import com.example.urgs_api.issue.service.IssueService;
@@ -53,6 +55,12 @@ public class QuartzTaskService {
     @Autowired
     private IssueService issueService;
 
+    @Autowired
+    private DataSourceConfigMapper dataSourceConfigMapper;
+
+    @Autowired
+    private DataSourcePoolMapper dataSourcePoolMapper;
+
     public ResponseDTO<PageResultDTO<QuartzTaskVO>> query(QuartzQueryDTO queryDTO) {
         Page<QuartzTaskVO> pageParam = SmartPageUtil.convert2QueryPage(queryDTO);
         List<QuartzTaskVO> taskList = quartzTaskDao.queryList(pageParam, queryDTO);
@@ -93,6 +101,17 @@ public class QuartzTaskService {
     private ResponseDTO<String> baseValid(QuartzTaskDTO quartzTaskDTO) {
         if (!CronExpression.isValidExpression(quartzTaskDTO.getTaskCron())) {
             return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "请传入正确的cron表达式");
+        }
+        if (quartzTaskDTO.getDatasourcePoolId() == null && quartzTaskDTO.getDatasourceId() == null) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "请选择执行数据池或执行数据源");
+        }
+        if (quartzTaskDTO.getDatasourcePoolId() != null
+                && dataSourcePoolMapper.selectById(quartzTaskDTO.getDatasourcePoolId()) == null) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "执行数据池不存在");
+        }
+        if (quartzTaskDTO.getDatasourceId() != null
+                && dataSourceConfigMapper.selectById(quartzTaskDTO.getDatasourceId()) == null) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "执行数据源不存在");
         }
         return ResponseDTO.succ();
     }

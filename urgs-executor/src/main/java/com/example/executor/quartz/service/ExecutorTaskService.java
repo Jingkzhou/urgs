@@ -15,6 +15,7 @@ import com.example.executor.quartz.service.task.TaskExecutor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.util.Collections;
 import java.util.Date;
@@ -55,6 +56,9 @@ public class ExecutorTaskService {
     private DataSourceConfigClient dataSourceConfigClient;
 
     @Autowired
+    private TaskDataSourceSelector taskDataSourceSelector;
+
+    @Autowired
     private TaskNotificationService taskNotificationService;
 
     @Autowired
@@ -81,6 +85,12 @@ public class ExecutorTaskService {
     public String validateTaskReadyForSubmit(QuartzTaskEntity task) {
         if (task == null) {
             return "任务不存在";
+        }
+        if (task.getDatasourcePoolId() != null) {
+            if (!taskDataSourceSelector.hasAvailablePoolMember(task.getDatasourcePoolId())) {
+                return "数据池无可用数据源，请检查数据池成员和并发设置";
+            }
+            return null;
         }
         if (task.getDatasourceId() == null) {
             return "任务未绑定数据源，请先在任务配置中选择数据源";
@@ -133,14 +143,21 @@ public class ExecutorTaskService {
         String taskKey = buildTaskKey(task.getId(), dataDate);
         String normalizedTriggerType = normalizeTriggerType(triggerType);
         taskExecutorPool.submitTask(taskKey, () -> {
+            TaskDataSourceSelection dataSourceSelection = null;
             try {
-                ResolvedDataSourceConfig resolvedDataSourceConfig = task.getDatasourceId() == null
-                        ? null
-                        : dataSourceConfigClient.getResolvedConfig(task.getDatasourceId());
+                dataSourceSelection = taskDataSourceSelector.select(task);
+                if (task.getDatasourcePoolId() != null && dataSourceSelection == null) {
+                    log.debug("{} datasource pool has no capacity, keep waiting", taskTag(task, dataDate));
+                    return;
+                }
+                ResolvedDataSourceConfig resolvedDataSourceConfig = dataSourceSelection == null ? null : dataSourceSelection.getConfig();
                 if (resolvedDataSourceConfig != null) {
-                    log.info("{} resolved datasource: id={}, url={}, driver={}",
+                    log.debug("{} resolved datasource: poolId={}, poolName={}, id={}, name={}, url={}, driver={}",
                             taskTag(task, dataDate),
+                            dataSourceSelection.getPoolId(),
+                            dataSourceSelection.getPoolName(),
                             resolvedDataSourceConfig.getId(),
+                            resolvedDataSourceConfig.getName(),
                             resolvedDataSourceConfig.getUrl(),
                             resolvedDataSourceConfig.getDriver());
                 }
@@ -149,10 +166,15 @@ public class ExecutorTaskService {
                 TaskExecutor executor = createExecutor(task, ds, resolvedDataSourceConfig);
                 // 注册 cancel 资源：调用 cancelTask() 时会触发 executor.cancel()
                 taskExecutorPool.registerResource(taskKey, executor::cancel);
-                taskDispatch(task, dataDate, executor, normalizedTriggerType);
+                taskDispatch(task, dataDate, executor, normalizedTriggerType, dataSourceSelection);
+            } catch (ResourceAccessException e) {
+                log.debug("{} datasource config service unavailable, keep waiting: {}",
+                        taskTag(task, dataDate), trimTo500(e.getMessage()));
             } catch (Exception e) {
                 log.error("{} task execute failed", taskTag(task, dataDate), e);
                 recordStartupFailure(task, dataDate, e);
+            } finally {
+                taskDataSourceSelector.release(dataSourceSelection);
             }
         });
     }
@@ -163,19 +185,28 @@ public class ExecutorTaskService {
      * 任务调度主流程：状态流转 + 依赖检查 + 执行 + 重试。
      */
     void taskDispatch(QuartzTaskEntity task, String dataDate, TaskExecutor executor) {
-        taskDispatch(task, dataDate, executor, "schedule");
+        taskDispatch(task, dataDate, executor, "schedule", null);
     }
 
     /**
      * 任务调度主流程：状态流转 + 依赖检查 + 执行 + 重试。
      */
     void taskDispatch(QuartzTaskEntity task, String dataDate, TaskExecutor executor, String triggerType) {
+        taskDispatch(task, dataDate, executor, triggerType, null);
+    }
+
+    /**
+     * 任务调度主流程：状态流转 + 依赖检查 + 执行 + 重试。
+     */
+    void taskDispatch(QuartzTaskEntity task, String dataDate, TaskExecutor executor, String triggerType,
+                      TaskDataSourceSelection dataSourceSelection) {
         // 已在运行或已成功则跳过（防止重复执行）
         Integer currentStatus = quartzTaskStatusDao.getStatusByPlanIdAndDate(task.getId(), dataDate);
         if (currentStatus != null
                 && (TaskExeStatusEnum.RUNNING.getCode().equals(currentStatus)
                 || TaskExeStatusEnum.SUCCESS.getCode().equals(currentStatus))) {
             log.info("{} already running/success, skip", taskTag(task, dataDate));
+            taskDataSourceSelector.release(dataSourceSelection);
             return;
         }
 
@@ -189,8 +220,12 @@ public class ExecutorTaskService {
         if (!checkPredecessors(task, dataDate)) {
             status.setMsg("等待前置任务完成");
             updateStatus(status);
+            taskDataSourceSelector.release(dataSourceSelection);
             return;
         }
+
+        applyExecutionDataSource(status, dataSourceSelection);
+        taskDataSourceSelector.release(dataSourceSelection);
 
         // 切换为执行中
         status.setStatus(TaskExeStatusEnum.RUNNING.getCode());
@@ -218,6 +253,18 @@ public class ExecutorTaskService {
             return triggerType;
         }
         return "schedule";
+    }
+
+    private void applyExecutionDataSource(QuartzTaskStatusEntity status, TaskDataSourceSelection selection) {
+        if (selection == null) {
+            return;
+        }
+        status.setExecutePoolId(selection.getPoolId());
+        status.setExecutePoolName(selection.getPoolName());
+        status.setExecuteDatasourceId(selection.getDatasourceId());
+        status.setExecuteDatasourceName(selection.getDatasourceName());
+        status.setUpdateTime(new Date());
+        quartzTaskStatusDao.updateExecutionDataSource(status);
     }
 
     /**

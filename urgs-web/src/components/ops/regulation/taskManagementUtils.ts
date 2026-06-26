@@ -18,6 +18,7 @@ export interface TaskFormValues {
     control_depend_id?: string;
     period?: number | null;
     datasource_id?: number;
+    datasource_pool_id?: number;
     script?: string;
     notification_completed?: string;
     notification_failed?: string;
@@ -38,6 +39,16 @@ export interface DataSourceOption {
     category?: string;
     status?: number;
     connectionInfo?: string;
+}
+
+export interface DataSourcePoolOption {
+    id: number;
+    name: string;
+    poolType?: string | null;
+    strategy?: string | null;
+    status?: number;
+    memberCount?: number;
+    enabledMemberCount?: number;
 }
 
 // ===== 常量 =====
@@ -189,6 +200,9 @@ export const getInitialFormValues = (task?: QuartzTask | null): TaskFormValues =
     datasource_id: task?.datasource_id === null || task?.datasource_id === undefined
         ? undefined
         : Number(task.datasource_id),
+    datasource_pool_id: task?.datasource_pool_id === null || task?.datasource_pool_id === undefined
+        ? undefined
+        : Number(task.datasource_pool_id),
     script: task?.script || undefined,
     notification_completed: task?.notification_completed || undefined,
     notification_failed: task?.notification_failed || undefined,
@@ -273,6 +287,8 @@ export const normalizeQuartzTask = (item: QuartzTaskApiModel): QuartzTask => {
         driver: item.driver ?? null,
         datasource_id: Number.isFinite(datasourceId) ? datasourceId : null,
         datasource_name: item.datasourceName ?? null,
+        datasource_pool_id: item.datasourcePoolId ?? null,
+        datasource_pool_name: item.datasourcePoolName ?? null,
         period: item.period ?? null,
         task_system: item.taskSystem ?? null,
         theme: item.theme ?? null,

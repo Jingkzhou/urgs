@@ -19,6 +19,8 @@ export interface QuartzTask {
     driver?: string | null;
     datasource_id?: number | null;
     datasource_name?: string | null;
+    datasource_pool_id?: number | null;
+    datasource_pool_name?: string | null;
     period?: number | null;
     task_system?: string | null;
     theme?: string | null;
@@ -40,6 +42,14 @@ export interface QuartzTaskStatus {
     id: number;
     create_time: string;
     create_date: string;
+    datasource_id?: number | null;
+    datasource_name?: string | null;
+    datasource_pool_id?: number | null;
+    datasource_pool_name?: string | null;
+    execute_pool_id?: number | null;
+    execute_pool_name?: string | null;
+    execute_datasource_id?: number | null;
+    execute_datasource_name?: string | null;
 }
 
 export interface QuartzTaskExecutionLog {

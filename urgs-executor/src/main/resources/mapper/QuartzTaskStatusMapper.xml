@@ -10,6 +10,10 @@
                begin_time as beginTime,
                end_time as endTime,
                msg,
+               execute_pool_id as executePoolId,
+               execute_pool_name as executePoolName,
+               execute_datasource_id as executeDatasourceId,
+               execute_datasource_name as executeDatasourceName,
                create_time as createTime,
                update_time as updateTime
         FROM t_quartz_task_status
@@ -36,8 +40,11 @@
     </select>
 
     <insert id="insertStatus">
-        INSERT INTO t_quartz_task_status(plan_id, data_date, status, begin_time, end_time, msg, update_time, create_time, create_date)
+        INSERT INTO t_quartz_task_status(plan_id, data_date, status, begin_time, end_time, msg,
+                                         execute_pool_id, execute_pool_name, execute_datasource_id, execute_datasource_name,
+                                         update_time, create_time, create_date)
         VALUES (#{entity.planId}, #{entity.dataDate}, #{entity.status}, #{entity.beginTime}, #{entity.endTime}, #{entity.msg},
+                #{entity.executePoolId}, #{entity.executePoolName}, #{entity.executeDatasourceId}, #{entity.executeDatasourceName},
                 #{entity.updateTime}, #{entity.createTime}, DATE_FORMAT(#{entity.createTime}, '%Y%m%d'))
     </insert>
 
@@ -47,6 +54,10 @@
             begin_time = NULL,
             end_time = NULL,
             msg = #{entity.msg},
+            execute_pool_id = NULL,
+            execute_pool_name = NULL,
+            execute_datasource_id = NULL,
+            execute_datasource_name = NULL,
             update_time = #{entity.updateTime}
         WHERE plan_id = #{entity.planId}
           AND data_date = #{entity.dataDate}
@@ -61,6 +72,17 @@
         <if test="entity.beginTime != null">
             , begin_time = #{entity.beginTime}
         </if>
+        WHERE plan_id = #{entity.planId}
+          AND data_date = #{entity.dataDate}
+    </update>
+
+    <update id="updateExecutionDataSource">
+        UPDATE t_quartz_task_status
+        SET execute_pool_id = #{entity.executePoolId},
+            execute_pool_name = #{entity.executePoolName},
+            execute_datasource_id = #{entity.executeDatasourceId},
+            execute_datasource_name = #{entity.executeDatasourceName},
+            update_time = #{entity.updateTime}
         WHERE plan_id = #{entity.planId}
           AND data_date = #{entity.dataDate}
     </update>

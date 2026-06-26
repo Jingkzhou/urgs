@@ -20,6 +20,8 @@ public class QuartzTaskEntity {
     private Long period;
     private Long datasourceId;
     private String datasourceName;
+    private Long datasourcePoolId;
+    private String datasourcePoolName;
     private String taskSystem;
     private String theme;
     private Integer offset;

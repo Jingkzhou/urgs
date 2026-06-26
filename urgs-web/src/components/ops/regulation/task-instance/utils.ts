@@ -61,6 +61,8 @@ export const normalizeTask = (item: QuartzTaskApiModel): QuartzTask => {
         control_depend_id: item.controlDependId ?? null,
         datasource_id: Number.isFinite(datasourceId) ? datasourceId : null,
         datasource_name: item.datasourceName ?? null,
+        datasource_pool_id: item.datasourcePoolId ?? null,
+        datasource_pool_name: item.datasourcePoolName ?? null,
         period: item.period ?? null,
         task_system: item.taskSystem ?? null,
         theme: item.theme ?? null,
@@ -85,6 +87,14 @@ export const normalizeStatus = (item: QuartzTaskStatusApiModel): QuartzTaskStatu
         msg: item.msg || null,
         create_time: createTime,
         create_date: dayjs(createTime).format('YYYYMMDD'),
+        datasource_id: item.datasourceId ?? null,
+        datasource_name: item.datasourceName ?? null,
+        datasource_pool_id: item.datasourcePoolId ?? null,
+        datasource_pool_name: item.datasourcePoolName ?? null,
+        execute_pool_id: item.executePoolId ?? null,
+        execute_pool_name: item.executePoolName ?? null,
+        execute_datasource_id: item.executeDatasourceId ?? null,
+        execute_datasource_name: item.executeDatasourceName ?? null,
     };
 };
 

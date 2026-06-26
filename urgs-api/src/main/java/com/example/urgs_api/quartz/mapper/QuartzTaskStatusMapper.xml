@@ -81,6 +81,8 @@
             ) AS control_depend_id,
             t.datasource_id,
             ds.name AS datasource_name,
+            t.datasource_pool_id,
+            dsp.name AS datasource_pool_name,
             t.task_system,
             t.theme,
             t.period,
@@ -90,6 +92,10 @@
             s.update_time,
             s.end_time,
             s.msg,
+            s.execute_pool_id,
+            s.execute_pool_name,
+            s.execute_datasource_id,
+            s.execute_datasource_name,
         case when s.status = '3' or s.status = '4' then
         'true'
         else
@@ -100,6 +106,7 @@
             t_quartz_task_status s
                 INNER JOIN t_quartz_task t ON s.plan_id = t.id
                 LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
+                LEFT JOIN sys_datasource_pool dsp ON dsp.id = t.datasource_pool_id
         WHERE
           1=1
         <if test="queryDTO.beginDate != null">
@@ -157,6 +164,8 @@
         ) AS control_depend_id,
         t.datasource_id,
         ds.name AS datasource_name,
+        t.datasource_pool_id,
+        dsp.name AS datasource_pool_name,
         t.task_system,
         t.theme,
         t.period,
@@ -166,6 +175,10 @@
         s.update_time,
         s.end_time,
         s.msg,
+        s.execute_pool_id,
+        s.execute_pool_name,
+        s.execute_datasource_id,
+        s.execute_datasource_name,
         case when s.status = '3' or s.status = '4' then
         'true'
         else
@@ -175,6 +188,7 @@
         FROM
             t_quartz_task t
         LEFT JOIN sys_datasource_config ds ON ds.id = t.datasource_id
+        LEFT JOIN sys_datasource_pool dsp ON dsp.id = t.datasource_pool_id
         left JOIN t_quartz_task_status s ON s.plan_id = t.id and   s.data_date = #{queryDTO.dataDate}
         WHERE
         t.id in

@@ -59,6 +59,24 @@ public class QuartzTaskStatusVO {
     @ApiModelProperty("数据源名称")
     private String datasourceName;
 
+    @ApiModelProperty("数据源执行池ID")
+    private Long datasourcePoolId;
+
+    @ApiModelProperty("数据源执行池名称")
+    private String datasourcePoolName;
+
+    @ApiModelProperty("本次执行选择的数据池ID")
+    private Long executePoolId;
+
+    @ApiModelProperty("本次执行选择的数据池名称")
+    private String executePoolName;
+
+    @ApiModelProperty("本次执行选择的数据源ID")
+    private Long executeDatasourceId;
+
+    @ApiModelProperty("本次执行选择的数据源名称")
+    private String executeDatasourceName;
+
     @ApiModelProperty("执行状态")
     private String status;
 

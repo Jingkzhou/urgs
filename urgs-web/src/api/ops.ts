@@ -318,6 +318,9 @@ export const getDatasourceMeta = () =>
 export const getDatasourceConfig = () =>
     get<any>('/api/datasource/options');
 
+export const getDatasourcePools = () =>
+    get<DataSourcePoolApiModel[]>('/api/datasource/pool/options');
+
 // ===== Quartz Task API =====
 
 export interface ApiResponse<T> {
@@ -333,6 +336,33 @@ export interface PageResult<T> {
     total: number;
     pages: number;
     list: T[];
+}
+
+export interface DataSourcePoolMemberApiModel {
+    id?: number;
+    poolId?: number;
+    datasourceId: number;
+    datasourceName?: string | null;
+    typeName?: string | null;
+    typeCode?: string | null;
+    category?: string | null;
+    enabled?: number;
+    weight?: number;
+    maxConcurrency?: number | null;
+    sortNo?: number;
+    remark?: string | null;
+}
+
+export interface DataSourcePoolApiModel {
+    id?: number;
+    name: string;
+    poolType?: string | null;
+    strategy?: string | null;
+    status?: number;
+    remark?: string | null;
+    memberCount?: number;
+    enabledMemberCount?: number;
+    members?: DataSourcePoolMemberApiModel[];
 }
 
 export interface QuartzTaskApiModel {
@@ -356,6 +386,8 @@ export interface QuartzTaskApiModel {
     driver?: string | null;
     datasourceId?: number | null;
     datasourceName?: string | null;
+    datasourcePoolId?: number | null;
+    datasourcePoolName?: string | null;
     period?: number | null;
     taskSystem?: string | null;
     theme?: string | null;
@@ -397,6 +429,7 @@ export interface QuartzTaskSavePayload {
     password?: string | null;
     driver?: string | null;
     datasourceId?: number | null;
+    datasourcePoolId?: number | null;
     taskSystem?: string | null;
     theme?: string | null;
     offset?: number;
@@ -440,6 +473,12 @@ export interface QuartzTaskStatusApiModel {
     exePath?: string | null;
     datasourceId?: number | null;
     datasourceName?: string | null;
+    datasourcePoolId?: number | null;
+    datasourcePoolName?: string | null;
+    executePoolId?: number | null;
+    executePoolName?: string | null;
+    executeDatasourceId?: number | null;
+    executeDatasourceName?: string | null;
     period?: string | number | null;
     status?: string | number | null;
     beginTime?: string | null;
@@ -458,6 +497,7 @@ export interface QuartzTaskStatusQueryParams {
     pageSize?: number;
     dataDate?: string;
     id?: number;
+    ids?: string[];
     statusId?: number;
     taskName?: string;
     taskSystem?: string;

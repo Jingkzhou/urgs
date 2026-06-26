@@ -61,7 +61,7 @@ apply_runtime_defaults() {
     ONLYOFFICE_DB_PASSWORD="${ONLYOFFICE_DB_PASSWORD:-onlyoffice}"
     ONLYOFFICE_DB_NAME="${ONLYOFFICE_DB_NAME:-onlyoffice}"
     ONLYOFFICE_DB_USER="${ONLYOFFICE_DB_USER:-onlyoffice}"
-    DATA_ROOT="${DATA_ROOT:-/data/urgs}"
+    DATA_ROOT="${DATA_ROOT:-/urgs-data/urgs}"
     REDIS_DATA_DIR="${REDIS_DATA_DIR:-${DATA_ROOT}/redis}"
     NGINX_LOG_DIR="${NGINX_LOG_DIR:-${ROOT_DIR}/logs/nginx}"
     NGINX_ERROR_LOG="${NGINX_ERROR_LOG:-${NGINX_LOG_DIR}/error.log}"
@@ -587,7 +587,7 @@ ensure_internal_api_token() {
 
 export_common_env() {
     ensure_internal_api_token
-    export DATA_ROOT="${DATA_ROOT:-/data/urgs}"
+    export DATA_ROOT="${DATA_ROOT:-/urgs-data/urgs}"
     export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-prod}"
     export SPRING_DATASOURCE_URL="${SPRING_DATASOURCE_URL:-jdbc:mysql://${DB_HOST:-127.0.0.1}:${DB_PORT:-3306}/${DB_NAME:-urgs}?${MYSQL_JDBC_PARAMS}}"
     export SPRING_DATASOURCE_USERNAME="${SPRING_DATASOURCE_USERNAME:-${DB_USER:-urgs}}"
@@ -606,6 +606,7 @@ export_common_env() {
     export LOG_HOME LOG_LEVEL_ROOT LOG_LEVEL_SPRING_WEB LOG_LEVEL_APP LOG_MAX_FILE_SIZE LOG_RETENTION_DAYS LOG_TOTAL_SIZE_CAP
     export URGS_PROFILE="${URGS_PROFILE:-${DATA_ROOT}/api/uploads}"
     export IM_UPLOAD_PATH="${IM_UPLOAD_PATH:-${DATA_ROOT}/api/im-uploads}"
+    export ISSUE_ATTACHMENT_PATH="${ISSUE_ATTACHMENT_PATH:-${DATA_ROOT}/api/attachments}"
     export RAG_DOC_STORE_PATH="${RAG_DOC_STORE_PATH:-${DATA_ROOT}/rag/doc_store}"
     export CHROMA_PERSIST_DIRECTORY="${CHROMA_PERSIST_DIRECTORY:-${DATA_ROOT}/rag/chroma_db}"
     export DOC_STORAGE_PATH="${DOC_STORAGE_PATH:-${DATA_ROOT}/rag/doc_store}"
@@ -862,7 +863,7 @@ stop_nginx() {
 
 install_all() {
     export_common_env
-    mkdir -p "$LOG_DIR" "$PID_DIR" "$DATA_ROOT" "$URGS_PROFILE" "$IM_UPLOAD_PATH" \
+    mkdir -p "$LOG_DIR" "$PID_DIR" "$DATA_ROOT" "$URGS_PROFILE" "$IM_UPLOAD_PATH" "$ISSUE_ATTACHMENT_PATH" \
         "$RAG_DOC_STORE_PATH" "$CHROMA_PERSIST_DIRECTORY" "$PARENT_DOC_STORE_PATH" \
         "$CLEAN_SAMPLE_DIR" "$DEPLOY_TOOL_WORKDIR" "$LINEAGE_ENGINE_SHARED_DIR"
     service_enabled nginx && extract_component_tarballs nginx

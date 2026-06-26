@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.executor.quartz.dao.DataSourcePoolDao">
+
+    <select id="listEnabledMembers" resultType="com.example.executor.quartz.domain.entity.DataSourcePoolMemberEntity">
+        SELECT
+            p.id AS poolId,
+            p.name AS poolName,
+            p.strategy AS strategy,
+            m.datasource_id AS datasourceId,
+            ds.name AS datasourceName,
+            m.enabled,
+            m.weight,
+            m.max_concurrency AS maxConcurrency,
+            m.sort_no AS sortNo,
+            COALESCE(r.running_count, 0) AS runningCount
+        FROM sys_datasource_pool p
+        INNER JOIN sys_datasource_pool_member m ON m.pool_id = p.id
+        INNER JOIN sys_datasource_config ds ON ds.id = m.datasource_id
+        LEFT JOIN (
+            SELECT execute_datasource_id, COUNT(1) AS running_count
+            FROM t_quartz_task_status
+            WHERE status = 2
+              AND execute_datasource_id IS NOT NULL
+            GROUP BY execute_datasource_id
+        ) r ON r.execute_datasource_id = m.datasource_id
+        WHERE p.id = #{poolId}
+          AND p.status = 1
+          AND m.enabled = 1
+          AND COALESCE(ds.status, 1) = 1
+        ORDER BY m.sort_no, m.id
+    </select>
+</mapper>

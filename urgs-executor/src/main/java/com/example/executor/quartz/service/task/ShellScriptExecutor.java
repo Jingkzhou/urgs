@@ -82,7 +82,7 @@ public class ShellScriptExecutor implements TaskExecutor {
             execChannel = channel;
             channel.connect();
 
-            log.info("[taskId={}][dataDate={}] Shell 脚本已提交，等待执行完成...",
+            log.debug("[taskId={}][dataDate={}] Shell 脚本已提交，等待执行完成...",
                     task.getId(), dataDate);
             if (logConsumer != null) {
                 logConsumer.accept("[SHELL] 脚本已提交，开始执行");
@@ -101,7 +101,7 @@ public class ShellScriptExecutor implements TaskExecutor {
 
             int exitCode = channel.getExitStatus();
             if (exitCode == 0) {
-                log.info("[taskId={}][dataDate={}] Shell 脚本执行成功", task.getId(), dataDate);
+                log.debug("[taskId={}][dataDate={}] Shell 脚本执行成功", task.getId(), dataDate);
                 if (logConsumer != null) {
                     logConsumer.accept("[SHELL] 执行成功");
                 }

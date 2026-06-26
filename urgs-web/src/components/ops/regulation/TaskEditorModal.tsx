@@ -24,6 +24,7 @@ interface TaskFormValues {
     control_depend_id?: string;
     period?: number | null;
     datasource_id?: number;
+    datasource_pool_id?: number;
     script?: string;
     notification_completed?: string;
     notification_failed?: string;
@@ -41,6 +42,16 @@ interface DataSourceOption {
     connectionInfo?: string;
 }
 
+interface DataSourcePoolOption {
+    id: number;
+    name: string;
+    poolType?: string | null;
+    strategy?: string | null;
+    status?: number;
+    memberCount?: number;
+    enabledMemberCount?: number;
+}
+
 interface TaskEditorModalProps {
     open: boolean;
     editingTask: QuartzTask | null;
@@ -49,6 +60,7 @@ interface TaskEditorModalProps {
     taskTypes: readonly string[];
     systems: string[];
     datasourceOptions: DataSourceOption[];
+    datasourcePoolOptions: DataSourcePoolOption[];
     dataSourceLoading: boolean;
     editorLanguageMap: Record<string, string>;
     getInitialFormValues: (task?: QuartzTask | null) => TaskFormValues;
@@ -67,6 +79,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
     taskTypes,
     systems,
     datasourceOptions,
+    datasourcePoolOptions,
     dataSourceLoading,
     editorLanguageMap,
     getInitialFormValues,
@@ -148,6 +161,8 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                         depend_id: item.dependId ?? null,
                         datasource_id: Number.isFinite(datasourceId) ? datasourceId : null,
                         datasource_name: item.datasourceName ?? null,
+                        datasource_pool_id: item.datasourcePoolId ?? null,
+                        datasource_pool_name: item.datasourcePoolName ?? null,
                         period: item.period ?? null,
                         task_system: item.taskSystem ?? null,
                         theme: item.theme ?? null,
@@ -639,8 +654,47 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                             </div>
                                         </div>
                                         <Form.Item
+                                            name="datasource_pool_id"
+                                            label={<span className="text-slate-600 font-semibold text-xs">执行数据池</span>}
+                                        >
+                                            <Select
+                                                showSearch
+                                                allowClear
+                                                loading={dataSourceLoading}
+                                                className="premium-select"
+                                                placeholder="优先选择数据池，由执行器按规则分配实际数据源"
+                                                optionFilterProp="label"
+                                                options={datasourcePoolOptions.map(item => ({
+                                                    value: item.id,
+                                                    label: item.name,
+                                                    poolType: item.poolType,
+                                                    strategy: item.strategy,
+                                                    memberCount: item.memberCount,
+                                                    enabledMemberCount: item.enabledMemberCount,
+                                                    searchLabel: [item.name, item.poolType, item.strategy].filter(Boolean).join(' '),
+                                                }))}
+                                                filterOption={(input, option) =>
+                                                    (option?.searchLabel ?? option?.label ?? '')
+                                                        .toString()
+                                                        .toLowerCase()
+                                                        .includes(input.toLowerCase())
+                                                }
+                                                optionRender={(option) => (
+                                                    <div className="flex items-center justify-between gap-3 py-1">
+                                                        <div className="min-w-0">
+                                                            <div className="truncate text-sm font-semibold text-slate-800">{option.data.label}</div>
+                                                            <div className="mt-0.5 truncate text-[11px] text-slate-400">
+                                                                {option.data.strategy || 'LEAST_RUNNING'} · 可用 {option.data.enabledMemberCount ?? 0}/{option.data.memberCount ?? 0}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                notFoundContent={dataSourceLoading ? '数据池装载中...' : '请先在数据源管理中创建数据池'}
+                                            />
+                                        </Form.Item>
+                                        <Form.Item
                                             name="datasource_id"
-                                            label={<span className="text-slate-600 font-semibold text-xs">执行数据源</span>}
+                                            label={<span className="text-slate-600 font-semibold text-xs">备用执行数据源</span>}
                                         >
                                             <Select
                                                 showSearch

@@ -337,8 +337,10 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
                                 </div>
                                 <div className="space-y-3 p-5">
                                     <div className={detailItemClass}>
-                                        <div className="text-xs text-slate-400">数据源</div>
-                                        <div className="mt-1 text-slate-700">{selectedTask.datasource_name || '-'}</div>
+                                        <div className="text-xs text-slate-400">执行资源</div>
+                                        <div className="mt-1 text-slate-700">
+                                            {selectedTask.datasource_pool_name || selectedTask.datasource_name || '-'}
+                                        </div>
                                     </div>
                                     <div className={detailItemClass}>
                                         <div className="text-xs text-slate-400">执行脚本</div>

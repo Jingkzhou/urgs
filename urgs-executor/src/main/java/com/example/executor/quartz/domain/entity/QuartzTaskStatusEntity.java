@@ -14,6 +14,10 @@ public class QuartzTaskStatusEntity {
     private Date beginTime;
     private Date endTime;
     private String msg;
+    private Long executePoolId;
+    private String executePoolName;
+    private Long executeDatasourceId;
+    private String executeDatasourceName;
     private Date createTime;
     private Date updateTime;
 }

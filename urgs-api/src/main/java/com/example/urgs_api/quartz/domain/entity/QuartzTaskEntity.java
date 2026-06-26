@@ -89,6 +89,11 @@ public class QuartzTaskEntity extends BaseEntity {
     private Long datasourceId;
 
     /**
+     * 数据源执行池ID
+     */
+    private Long datasourcePoolId;
+
+    /**
      * 系统
      */
     private String taskSystem;
