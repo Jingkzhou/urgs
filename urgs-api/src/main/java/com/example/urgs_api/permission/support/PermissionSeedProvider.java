@@ -64,6 +64,11 @@ public class PermissionSeedProvider {
         list.add(new PermissionDTO(null, "新增", "sys:metric:add", "button", "-", 2, "3-9"));
         list.add(new PermissionDTO(null, "编辑", "sys:metric:edit", "button", "-", 2, "3-9"));
         list.add(new PermissionDTO(null, "删除", "sys:metric:del", "button", "-", 2, "3-9"));
+
+        list.add(new PermissionDTO(null, "性能监控", "sys:monitor", "menu", "/ops/infra/monitor", 2, "6-3"));
+        list.add(new PermissionDTO(null, "查询", "sys:monitor:query", "button", "-", 3, "6-3-1"));
+        list.add(new PermissionDTO(null, "阈值配置", "sys:monitor:config", "button", "-", 3, "6-3-1"));
+        list.add(new PermissionDTO(null, "立即采集", "sys:monitor:collect", "button", "-", 3, "6-3-1"));
         return list;
     }
 }

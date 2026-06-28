@@ -45,6 +45,14 @@ executor:
   stats-connect-timeout-ms: "${EXECUTOR_STATS_CONNECT_TIMEOUT_MS:2000}"
   stats-read-timeout-ms: "${EXECUTOR_STATS_READ_TIMEOUT_MS:3000}"
 
+monitoring:
+  collect-interval-ms: "${MONITOR_COLLECT_INTERVAL_MS:60000}"
+  slow-sql-interval-ms: "${MONITOR_SLOW_SQL_INTERVAL_MS:300000}"
+  cleanup-cron: "${MONITOR_CLEANUP_CRON:0 15 2 * * ?}"
+  ssh:
+    known-hosts: "${MONITOR_SSH_KNOWN_HOSTS:${user.home}/.ssh/known_hosts}"
+    connect-timeout-ms: "${MONITOR_SSH_CONNECT_TIMEOUT_MS:8000}"
+
 urgs:
   profile: "${URGS_PROFILE:${user.dir}/data/api/uploads}"
   api-base-url: "${URGS_API_BASE_URL:}"

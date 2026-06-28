@@ -36,6 +36,11 @@ config/deploy.env
 - Agent Runtime：`AGENT_DATABASE_URL` / `AGENT_CHECKPOINT_DATABASE_URL` / `AGENT_REDIS_URL` / `AGENT_OPENAI_BASE_URL`
 - Nginx 代理：`API_TARGET` / `API_UPSTREAM_SERVERS` / `RAG_TARGET` / `IM_API_TARGET`
 - JVM：`API_JAVA_OPTS` / `EXECUTOR_JAVA_OPTS`
+- 性能监控：`MONITOR_SSH_KNOWN_HOSTS` / `MONITOR_COLLECT_INTERVAL_MS` / `MONITOR_SLOW_SQL_INTERVAL_MS`
+
+服务器性能监控启用严格 SSH 主机密钥校验。部署前应把资产服务器公钥加入
+`MONITOR_SSH_KNOWN_HOSTS` 指向的文件；监控进程不会自动信任未知主机。MySQL 慢 SQL
+监控账号还需要读取 `performance_schema.events_statements_summary_by_digest` 的权限。
 
 API 与 Executor 之间的 `/api/internal/**` 接口使用共享令牌鉴权。默认情况下部署脚本会首次启动时生成
 `config/internal-api.token`（权限为 `600`）并在单服务重启时复用；如需由密钥管理系统托管，可显式设置

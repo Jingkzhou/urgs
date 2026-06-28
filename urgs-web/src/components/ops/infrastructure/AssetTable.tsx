@@ -1,9 +1,11 @@
 import React from 'react';
-import { Button, Popconfirm, Space, Table, Tag } from 'antd';
+import { Button, Popconfirm, Space, Switch, Table, Tag, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { Activity, Cpu, Edit, Eye, HardDrive, Server, Trash2, Users } from 'lucide-react';
 import type { InfrastructureAsset } from '@/api/ops';
+import type { ServerMonitorSummary } from '@/api/systemMonitor';
 import type { SsoConfig } from '@/api/version';
+import Auth from '@/components/Auth';
 import { getSystemName, roleLabels, statusLabels } from './utils';
 
 interface AssetTableProps {
@@ -11,10 +13,13 @@ interface AssetTableProps {
     systems: SsoConfig[];
     loading: boolean;
     selectedRowKeys: React.Key[];
+    monitorSummaryByAssetId: Record<number, ServerMonitorSummary>;
+    monitorUpdatingIds: React.Key[];
     onSelectionChange: (keys: React.Key[]) => void;
     onView: (asset: InfrastructureAsset) => void;
     onEdit: (asset: InfrastructureAsset) => void;
     onDelete: (id: number) => void;
+    onToggleMonitor: (asset: InfrastructureAsset, enabled: boolean) => void;
 }
 
 const statusColors: Record<string, string> = {
@@ -28,10 +33,13 @@ const AssetTable: React.FC<AssetTableProps> = ({
     systems,
     loading,
     selectedRowKeys,
+    monitorSummaryByAssetId,
+    monitorUpdatingIds,
     onSelectionChange,
     onView,
     onEdit,
     onDelete,
+    onToggleMonitor,
 }) => {
     const columns: ColumnsType<InfrastructureAsset> = [
         {
@@ -103,6 +111,32 @@ const AssetTable: React.FC<AssetTableProps> = ({
             key: 'status',
             width: 100,
             render: status => <Tag color={statusColors[status] || 'default'}>{statusLabels[status] || status}</Tag>,
+        },
+        {
+            title: '监控',
+            key: 'monitor',
+            width: 110,
+            render: (_, record) => {
+                const assetId = Number(record.id);
+                const summary = monitorSummaryByAssetId[assetId];
+                const checked = !!summary?.monitorEnabled;
+                const disabled = !record.id || record.status !== 'active';
+                return (
+                    <Auth code="sys:monitor:config">
+                        <Tooltip title={disabled ? '仅 active 主机可开启监控' : checked ? '关闭后停止采集该主机' : '开启后纳入服务器性能采集'}>
+                            <Switch
+                                size="small"
+                                checked={checked}
+                                disabled={disabled}
+                                loading={monitorUpdatingIds.includes(assetId)}
+                                checkedChildren="开"
+                                unCheckedChildren="关"
+                                onChange={value => onToggleMonitor(record, value)}
+                            />
+                        </Tooltip>
+                    </Auth>
+                );
+            },
         },
         {
             title: '操作',

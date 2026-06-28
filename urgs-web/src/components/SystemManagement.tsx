@@ -35,7 +35,7 @@ const SystemManagement: React.FC = () => {
       </div>
 
       {/* Module Tabs */}
-      <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit mb-6">
+      <div className="flex flex-wrap gap-1 bg-slate-100 p-1 rounded-lg w-fit mb-6">
         {tabs.map(tab => (
           <Auth key={tab.id} code={tab.permission}>
             <button

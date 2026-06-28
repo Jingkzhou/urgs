@@ -3,6 +3,12 @@ import { message, Tabs } from 'antd';
 import type { UploadProps } from 'antd';
 import { getDeployEnvironments, type SsoConfig } from '@/api/version';
 import {
+    collectMonitorTarget,
+    getServerMonitors,
+    setServerMonitorEnabled,
+    type ServerMonitorSummary,
+} from '@/api/systemMonitor';
+import {
     createInfrastructureAsset,
     deleteInfrastructureAsset,
     exportInfrastructureAssets,
@@ -20,6 +26,7 @@ import AssetTable from './infrastructure/AssetTable';
 import InfrastructureToolbar from './infrastructure/InfrastructureToolbar';
 import SystemManualPanel from './infrastructure/SystemManualPanel';
 import SystemSidebar from './infrastructure/SystemSidebar';
+import SystemPerformanceMonitor from '../system/monitor/SystemPerformanceMonitor';
 import type { AssetFilters } from './infrastructure/types';
 import {
     buildSystemOptions,
@@ -28,6 +35,7 @@ import {
     getSystemName,
     getUniqueValues,
 } from './infrastructure/utils';
+import { hasPermission } from '@/utils/permission';
 
 const defaultFilters: AssetFilters = {
     keyword: '',
@@ -46,6 +54,8 @@ const InfrastructureManagement: React.FC = () => {
     const [editingAsset, setEditingAsset] = useState<InfrastructureAsset | null>(null);
     const [detailOpen, setDetailOpen] = useState(false);
     const [selectedAsset, setSelectedAsset] = useState<InfrastructureAsset | null>(null);
+    const [serverMonitors, setServerMonitors] = useState<ServerMonitorSummary[]>([]);
+    const [monitorUpdatingIds, setMonitorUpdatingIds] = useState<React.Key[]>([]);
 
     const fetchAssets = async () => {
         setLoading(true);
@@ -56,6 +66,15 @@ const InfrastructureManagement: React.FC = () => {
             message.error('获取资产列表失败');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchServerMonitors = async () => {
+        try {
+            const data = await getServerMonitors({ includeDisabled: true });
+            setServerMonitors(data || []);
+        } catch (error) {
+            setServerMonitors([]);
         }
     };
 
@@ -91,7 +110,7 @@ const InfrastructureManagement: React.FC = () => {
     };
 
     const refreshAll = async () => {
-        await Promise.all([fetchAssets(), fetchManuals(), fetchSystems()]);
+        await Promise.all([fetchAssets(), fetchManuals(), fetchSystems(), fetchServerMonitors()]);
     };
 
     useEffect(() => {
@@ -132,6 +151,11 @@ const InfrastructureManagement: React.FC = () => {
     const roleOptions = useMemo(
         () => getUniqueValues(scopedAssets.map(asset => asset.role)),
         [scopedAssets],
+    );
+
+    const monitorSummaryByAssetId = useMemo(
+        () => Object.fromEntries(serverMonitors.map(item => [item.assetId, item])),
+        [serverMonitors],
     );
 
     const handleAdd = () => {
@@ -200,6 +224,33 @@ const InfrastructureManagement: React.FC = () => {
             await fetchAssets();
         } catch (error) {
             message.error('批量删除失败');
+        }
+    };
+
+    const handleToggleMonitor = async (asset: InfrastructureAsset, enabled: boolean) => {
+        if (!asset.id) return;
+        setMonitorUpdatingIds(prev => [...prev, asset.id!]);
+        try {
+            await setServerMonitorEnabled(asset.id, enabled);
+            if (enabled) {
+                try {
+                    const result = await collectMonitorTarget('SERVER', asset.id);
+                    if (result.accepted) {
+                        message.success('已开启监控，采集任务已提交');
+                    } else {
+                        message.warning(result.message || '已开启监控，但当前目标暂不可采集');
+                    }
+                } catch {
+                    message.warning('已开启监控，但立即采集提交失败');
+                }
+            } else {
+                message.success('已关闭监控');
+            }
+            await fetchServerMonitors();
+        } catch (error) {
+            message.error(enabled ? '开启监控失败' : '关闭监控失败');
+        } finally {
+            setMonitorUpdatingIds(prev => prev.filter(id => id !== asset.id));
         }
     };
 
@@ -290,14 +341,30 @@ const InfrastructureManagement: React.FC = () => {
                                         systems={systems}
                                         loading={loading}
                                         selectedRowKeys={selectedRowKeys}
+                                        monitorSummaryByAssetId={monitorSummaryByAssetId}
+                                        monitorUpdatingIds={monitorUpdatingIds}
                                         onSelectionChange={setSelectedRowKeys}
                                         onView={handleView}
                                         onEdit={handleEdit}
                                         onDelete={handleDelete}
+                                        onToggleMonitor={handleToggleMonitor}
                                     />
                                 </div>
                             ),
                         },
+                        ...(hasPermission('sys:monitor:query') ? [{
+                            key: 'monitor',
+                            label: '性能监控',
+                            children: (
+                                <div className="pb-4">
+                                    <SystemPerformanceMonitor
+                                        scopedSystemId={selectedSystemId === 'all' ? undefined : selectedSystemId}
+                                        systemOptions={systems.map(item => ({ id: Number(item.id), name: item.name }))}
+                                        onScopedSystemChange={systemId => handleSelectSystem(systemId ?? 'all')}
+                                    />
+                                </div>
+                            ),
+                        }] : []),
                         {
                             key: 'manuals',
                             label: '运维手册',

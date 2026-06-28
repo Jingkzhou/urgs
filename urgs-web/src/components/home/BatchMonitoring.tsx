@@ -81,17 +81,11 @@ const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default' }
         { name: '等待中', value: stats.waiting, color: '#AF52DE' },
     ] : [];
 
-    const workflowChartData = workflowStats.map(stat => ({
-        ...stat,
-        completed: stat.success + stat.failed,
-        totalLabel: `总 ${Number(stat.total || 0)}`
-    }));
-
     const workflowRowHeight = isCompact ? 34 : 38;
-    const workflowChartContentHeight = workflowChartData.length
-        ? Math.max(isCompact ? 112 : 136, workflowChartData.length * workflowRowHeight + 44)
+    const workflowChartContentHeight = workflowStats.length
+        ? Math.max(isCompact ? 112 : 136, workflowStats.length * workflowRowHeight + 44)
         : isCompact ? 92 : 118;
-    const workflowChartViewportHeight = workflowChartData.length
+    const workflowChartViewportHeight = workflowStats.length
         ? Math.min(isCompact ? 260 : 360, workflowChartContentHeight)
         : workflowChartContentHeight;
     const statusChartSize = isCompact ? 125 : 260;
@@ -198,18 +192,22 @@ const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default' }
                                 <h3 className={`${isCompact ? 'text-lg' : 'text-xl'} font-black text-slate-800 tracking-tight`}>
                                     工作流执行概览
                                 </h3>
-                                {workflowChartData.length > 0 && (
+                                {workflowStats.length > 0 && (
                                     <span className="rounded-full border border-slate-200 bg-white/70 px-2 py-0.5 text-[10px] font-bold text-slate-500">
-                                        共 {workflowChartData.length} 套系统
+                                        共 {workflowStats.length} 套系统
                                     </span>
                                 )}
                             </div>
                             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Workflow Execution</span>
                         </div>
                         <div className="flex flex-wrap items-center gap-2.5">
-                            <div className="flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50/80 px-2.5 py-1">
-                                <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.35)]" />
-                                <span className="text-[11px] font-bold text-slate-500">成功</span>
+                            <div className="flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50/80 px-2.5 py-1">
+                                <span className="h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.35)]" />
+                                <span className="text-[11px] font-bold text-slate-500">正在运行</span>
+                            </div>
+                            <div className="flex items-center gap-2 rounded-full border border-purple-100 bg-purple-50/80 px-2.5 py-1">
+                                <span className="h-2 w-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.35)]" />
+                                <span className="text-[11px] font-bold text-slate-500">等待中</span>
                             </div>
                             <div className="flex items-center gap-2 rounded-full border border-rose-100 bg-rose-50/80 px-2.5 py-1">
                                 <span className="h-2 w-2 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.35)]" />
@@ -221,20 +219,24 @@ const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default' }
                         </div>
                     </div>
                     <div className={`${isCompact ? 'rounded-2xl p-2' : 'rounded-[1.5rem] p-3'} w-full min-w-0 overflow-hidden border border-slate-100 bg-slate-50/60`}>
-                        {workflowChartData.length ? (
+                        {workflowStats.length ? (
                             <div className="overflow-auto pr-1" style={{ maxHeight: workflowChartViewportHeight }}>
                                 <div style={{ height: workflowChartContentHeight, minWidth: 560 }}>
                                     <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                         <BarChart
-                                            data={workflowChartData}
+                                            data={workflowStats}
                                             layout="vertical"
                                             barCategoryGap={isCompact ? 12 : 14}
                                             margin={{ top: 8, right: 38, left: 4, bottom: 4 }}
                                         >
                                             <defs>
-                                                <linearGradient id="barSuccessGrad" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="0%" stopColor="#34D399" />
-                                                    <stop offset="100%" stopColor="#059669" />
+                                                <linearGradient id="barRunningGrad" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="0%" stopColor="#60A5FA" />
+                                                    <stop offset="100%" stopColor="#2563EB" />
+                                                </linearGradient>
+                                                <linearGradient id="barWaitingGrad" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="0%" stopColor="#C084FC" />
+                                                    <stop offset="100%" stopColor="#9333EA" />
                                                 </linearGradient>
                                                 <linearGradient id="barFailedGrad" x1="0" y1="0" x2="0" y2="1">
                                                     <stop offset="0%" stopColor="#FB7185" />
@@ -266,12 +268,14 @@ const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default' }
                                                 tickFormatter={(value: string) => value.length > (isCompact ? 10 : 14) ? `${value.slice(0, isCompact ? 10 : 14)}...` : value}
                                             />
                                             <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(241, 245, 249, 0.5)', radius: 10 }} />
-                                            <Bar dataKey="success" name="成功" stackId="a" fill="url(#barSuccessGrad)" radius={[8, 0, 0, 8]} animationDuration={800} barSize={isCompact ? 14 : 16}>
-                                                <LabelList dataKey="success" content={renderWorkflowBarValue} />
+                                            <Bar dataKey="running" name="正在运行" stackId="a" fill="url(#barRunningGrad)" radius={[8, 0, 0, 8]} animationDuration={800} barSize={isCompact ? 14 : 16}>
+                                                <LabelList dataKey="running" content={renderWorkflowBarValue} />
+                                            </Bar>
+                                            <Bar dataKey="waiting" name="等待中" stackId="a" fill="url(#barWaitingGrad)" animationDuration={800} barSize={isCompact ? 14 : 16}>
+                                                <LabelList dataKey="waiting" content={renderWorkflowBarValue} />
                                             </Bar>
                                             <Bar dataKey="failed" name="失败" stackId="a" fill="url(#barFailedGrad)" radius={[0, 8, 8, 0]} animationDuration={800} barSize={isCompact ? 14 : 16}>
                                                 <LabelList dataKey="failed" content={renderWorkflowBarValue} />
-                                                <LabelList dataKey="totalLabel" position="right" fill="#64748B" fontSize={11} fontWeight={800} />
                                             </Bar>
                                         </BarChart>
                                     </ResponsiveContainer>

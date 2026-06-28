@@ -13,7 +13,7 @@ export const manifestMeta: PermissionManifestMeta = {
 };
 
 // Single source of truth for all menus & buttons.
-// Add new routes/buttons here (or generate this file via a build script) so they appear in“功能资源维护”与角色授权。
+// Add new routes/buttons here (or generate this file via a build script) so they appear in "功能资源维护" 与角色授权。
 export const permissionManifest: FunctionPoint[] = [
     { id: '1', name: '工作台', code: 'dashboard', type: 'menu', path: '/dashboard', level: 0, parentId: 'root' },
     { id: '1-0-1', name: '业务首页', code: 'dash:view:business', type: 'menu', path: '/dashboard/business', level: 1, parentId: '1' },
@@ -205,6 +205,10 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '6-2-5', name: '批量删除', code: 'ops:issue:batchDelete', type: 'button', path: '/ops/issue/batchDelete', level: 2, parentId: '6-2' },
 
     { id: '6-3', name: '基础设施管理', code: 'ops:infra:view', type: 'menu', path: '/ops/infra', level: 1, parentId: '6' },
+    { id: '6-3-1', name: '性能监控', code: 'sys:monitor', type: 'menu', path: '/ops/infra/monitor', level: 2, parentId: '6-3' },
+    { id: '6-3-1-1', name: '查询', code: 'sys:monitor:query', type: 'button', path: '-', level: 3, parentId: '6-3-1' },
+    { id: '6-3-1-2', name: '阈值配置', code: 'sys:monitor:config', type: 'button', path: '-', level: 3, parentId: '6-3-1' },
+    { id: '6-3-1-3', name: '立即采集', code: 'sys:monitor:collect', type: 'button', path: '-', level: 3, parentId: '6-3-1' },
 
     // ================= 知识中心 =================
     { id: '8', name: '知识中心', code: 'knowledge', type: 'menu', path: '/knowledge', level: 0, parentId: 'root' },
