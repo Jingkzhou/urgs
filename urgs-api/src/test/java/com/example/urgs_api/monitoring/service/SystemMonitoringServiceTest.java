@@ -115,4 +115,35 @@ class SystemMonitoringServiceTest {
         assertThat(visibleHosts).containsExactly("enabled-host");
         assertThat(configurableHosts).containsExactlyInAnyOrder("disabled-host", "enabled-host");
     }
+
+    @Test
+    void databaseListFiltersByBoundSystemAndEnvironment() {
+        DataSourceConfig matched = new DataSourceConfig();
+        matched.setId(11L);
+        matched.setName("matched-mysql");
+        matched.setStatus(1);
+        matched.setTypeCode("mysql");
+        matched.setAppSystemId(100L);
+        matched.setEnvId(200L);
+
+        DataSourceConfig otherSystem = new DataSourceConfig();
+        otherSystem.setId(12L);
+        otherSystem.setName("other-mysql");
+        otherSystem.setStatus(1);
+        otherSystem.setTypeCode("mysql");
+        otherSystem.setAppSystemId(101L);
+        otherSystem.setEnvId(200L);
+
+        when(dataSourceService.getAllConfigs()).thenReturn(List.of(matched, otherSystem));
+        when(databaseSampleRepository.findTopByDatasourceIdOrderByCollectedAtDesc(11L)).thenReturn(Optional.empty());
+        when(thresholdService.getConfig(MonitorThresholdService.DATABASE, 11L))
+                .thenReturn(new MonitorThresholdService.ConfigView(
+                        MonitorThresholdService.DATABASE, 11L, true, Map.<String, Double>of(), List.of()));
+
+        List<String> names = service.listDatabases(100L, 200L, null).stream()
+                .map(MonitoringDtos.DatabaseSummary::name)
+                .toList();
+
+        assertThat(names).containsExactly("matched-mysql");
+    }
 }

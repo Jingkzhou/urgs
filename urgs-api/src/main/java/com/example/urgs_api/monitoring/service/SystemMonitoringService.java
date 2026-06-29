@@ -85,8 +85,10 @@ public class SystemMonitoringService {
                 .toList();
     }
 
-    public List<MonitoringDtos.DatabaseSummary> listDatabases(String status) {
+    public List<MonitoringDtos.DatabaseSummary> listDatabases(Long systemId, Long envId, String status) {
         return mysqlDataSources().stream()
+                .filter(datasource -> systemId == null || Objects.equals(systemId, datasource.getAppSystemId()))
+                .filter(datasource -> envId == null || Objects.equals(envId, datasource.getEnvId()))
                 .map(this::toDatabaseSummary)
                 .filter(item -> status == null || status.isBlank()
                         || status.equalsIgnoreCase(item.severity())
@@ -105,7 +107,7 @@ public class SystemMonitoringService {
                     statuses.add(new StatusView(item.severity(), item.collectionState(), item.collectedAt())));
         }
         if (targetType == null || targetType.isBlank() || MonitorThresholdService.DATABASE.equalsIgnoreCase(targetType)) {
-            listDatabases(status).forEach(item ->
+            listDatabases(systemId, envId, status).forEach(item ->
                     statuses.add(new StatusView(item.severity(), item.collectionState(), item.collectedAt())));
         }
         int normal = 0;

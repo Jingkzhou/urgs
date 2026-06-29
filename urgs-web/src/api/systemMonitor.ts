@@ -124,7 +124,7 @@ export const getMonitorOverview = (params: MonitorQuery) =>
 export const getServerMonitors = (params: Omit<MonitorQuery, 'targetType'>) =>
     get<ServerMonitorSummary[]>('/api/system-monitor/servers', params);
 
-export const getDatabaseMonitors = (params: Pick<MonitorQuery, 'status'>) =>
+export const getDatabaseMonitors = (params: Pick<MonitorQuery, 'systemId' | 'envId' | 'status'>) =>
     get<DatabaseMonitorSummary[]>('/api/system-monitor/databases', params);
 
 export const getServerTrend = (assetId: number, range: MonitorRange) =>

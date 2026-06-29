@@ -125,6 +125,8 @@ public class DynamicDataSourceService implements DisposableBean {
         dto.setTypeCode(meta.getCode());
         dto.setCategory(meta.getCategory());
         dto.setStatus(config.getStatus());
+        dto.setAppSystemId(config.getAppSystemId());
+        dto.setEnvId(config.getEnvId());
         dto.setUrl(buildJdbcUrl(type, params));
         dto.setUsername(getString(params, "username"));
         dto.setPassword(getString(params, "password"));

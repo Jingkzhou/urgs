@@ -14,6 +14,8 @@ public class ResolvedDataSourceConfigDTO {
     private String typeCode;
     private String category;
     private Integer status;
+    private Long appSystemId;
+    private Long envId;
 
     private String url;
     private String username;

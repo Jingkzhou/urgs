@@ -51,6 +51,8 @@ public class DataSourceService extends ServiceImpl<DataSourceConfigMapper, DataS
             option.setId(config.getId());
             option.setName(config.getName());
             option.setMetaId(config.getMetaId());
+            option.setAppSystemId(config.getAppSystemId());
+            option.setEnvId(config.getEnvId());
             option.setStatus(config.getStatus());
             option.setTypeName(config.getTypeName());
             option.setTypeCode(config.getTypeCode());

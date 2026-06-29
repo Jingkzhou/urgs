@@ -23,6 +23,10 @@ public class DataSourceConfig {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<String, Object> connectionParams;
 
+    private Long appSystemId;
+
+    private Long envId;
+
     private Integer status;
 
     @TableField(exist = false)
@@ -66,6 +70,22 @@ public class DataSourceConfig {
 
     public void setConnectionParams(Map<String, Object> connectionParams) {
         this.connectionParams = connectionParams;
+    }
+
+    public Long getAppSystemId() {
+        return appSystemId;
+    }
+
+    public void setAppSystemId(Long appSystemId) {
+        this.appSystemId = appSystemId;
+    }
+
+    public Long getEnvId() {
+        return envId;
+    }
+
+    public void setEnvId(Long envId) {
+        this.envId = envId;
     }
 
     public Integer getStatus() {

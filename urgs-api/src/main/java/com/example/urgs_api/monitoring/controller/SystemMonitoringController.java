@@ -52,8 +52,10 @@ public class SystemMonitoringController {
     @GetMapping("/databases")
     @RequirePermission("sys:monitor:query")
     public List<MonitoringDtos.DatabaseSummary> databases(
+            @RequestParam(required = false) Long systemId,
+            @RequestParam(required = false) Long envId,
             @RequestParam(required = false) String status) {
-        return monitoringService.listDatabases(status);
+        return monitoringService.listDatabases(systemId, envId, status);
     }
 
     @GetMapping("/databases/{datasourceId}/trend")

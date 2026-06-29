@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Space, Tag, Popconfirm, Card, Divider, Switch } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, ApiOutlined, DatabaseOutlined } from '@ant-design/icons';
+import { getDeployEnvironments, type DeployEnvironment, type SsoConfig } from '@/api/version';
+import { getSystemList } from '@/api/ops';
 
 // ==========================================
 // 1. Types Definitions
@@ -36,6 +38,8 @@ interface DataSourceConfig {
     id: number;
     name: string;
     metaId: number;
+    appSystemId?: number;
+    envId?: number;
     connectionParams: Record<string, any>;
     status: number;
     // Helper fields for display
@@ -96,7 +100,11 @@ const DataSourceManager: React.FC = () => {
     const [editingPoolId, setEditingPoolId] = useState<number | null>(null);
     const [form] = Form.useForm();
     const [poolForm] = Form.useForm();
+    const selectedSystemInForm = Form.useWatch('appSystemId', form);
     const [selectedMetaId, setSelectedMetaId] = useState<number | null>(null);
+    const [systems, setSystems] = useState<SsoConfig[]>([]);
+    const [allEnvironments, setAllEnvironments] = useState<DeployEnvironment[]>([]);
+    const [environments, setEnvironments] = useState<DeployEnvironment[]>([]);
     const [loading, setLoading] = useState(false);
     const [poolLoading, setPoolLoading] = useState(false);
     const [testLoading, setTestLoading] = useState(false);
@@ -136,8 +144,34 @@ const DataSourceManager: React.FC = () => {
         }
     };
 
+    const fetchSystems = async () => {
+        try {
+            const data = await getSystemList({ showAll: true });
+            setSystems(data || []);
+            const envData = await getDeployEnvironments();
+            setAllEnvironments(envData || []);
+        } catch {
+            setSystems([]);
+            setAllEnvironments([]);
+        }
+    };
+
+    const fetchEnvironments = async (systemId?: number) => {
+        if (!systemId) {
+            setEnvironments([]);
+            return;
+        }
+        try {
+            const data = await getDeployEnvironments(systemId);
+            setEnvironments(data || []);
+        } catch {
+            setEnvironments([]);
+        }
+    };
+
     useEffect(() => {
         fetchData();
+        fetchSystems();
     }, []);
 
     // Handle Modal Open
@@ -149,11 +183,15 @@ const DataSourceManager: React.FC = () => {
             form.setFieldsValue({
                 name: record.name,
                 metaId: record.metaId,
+                appSystemId: record.appSystemId,
+                envId: record.envId,
                 ...record.connectionParams
             });
+            void fetchEnvironments(record.appSystemId);
         } else {
             setEditingId(null);
             setSelectedMetaId(null);
+            setEnvironments([]);
             // Default to first meta if available
             if (metaList.length > 0) {
                 // Don't auto select to force user choice
@@ -168,8 +206,10 @@ const DataSourceManager: React.FC = () => {
     const handleMetaChange = (metaId: number) => {
         setSelectedMetaId(metaId);
         const name = form.getFieldValue('name');
+        const appSystemId = form.getFieldValue('appSystemId');
+        const envId = form.getFieldValue('envId');
         form.resetFields();
-        form.setFieldsValue({ name, metaId });
+        form.setFieldsValue({ name, metaId, appSystemId, envId });
 
         const meta = metaList.find(m => m.id === metaId);
         if (meta) {
@@ -184,14 +224,25 @@ const DataSourceManager: React.FC = () => {
         }
     };
 
+    const handleSystemChange = (systemId?: number) => {
+        form.setFieldsValue({ appSystemId: systemId, envId: undefined });
+        void fetchEnvironments(systemId);
+    };
+
+    const getSystemName = (systemId?: number) =>
+        systems.find(system => system.id === systemId)?.name || '-';
+
+    const getEnvName = (envId?: number) =>
+        allEnvironments.find(env => env.id === envId)?.name || '-';
+
     // Handle Test Connection
     const handleTestConnection = async () => {
         try {
             const values = await form.validateFields();
             setTestLoading(true);
 
-            const { name, metaId, ...connectionParams } = values;
-            const payload = { id: editingId, metaId, connectionParams };
+            const { name, metaId, appSystemId, envId, ...connectionParams } = values;
+            const payload = { id: editingId, metaId, appSystemId, envId, connectionParams };
 
             const token = localStorage.getItem('auth_token');
             const res = await fetch('/api/datasource/test', {
@@ -220,10 +271,12 @@ const DataSourceManager: React.FC = () => {
             const values = await form.validateFields();
             setLoading(true);
 
-            const { name, metaId, ...connectionParams } = values;
+            const { name, metaId, appSystemId, envId, ...connectionParams } = values;
             const payload = {
                 name,
                 metaId,
+                appSystemId,
+                envId,
                 connectionParams,
                 status: 1
             };
@@ -428,6 +481,17 @@ const DataSourceManager: React.FC = () => {
 
                 return '-';
             }
+        },
+        {
+            title: '归属',
+            key: 'binding',
+            width: 190,
+            render: (_: any, record: DataSourceConfig) => (
+                <div className="text-xs leading-5 text-slate-600">
+                    <div>{getSystemName(record.appSystemId)}</div>
+                    <div className="text-slate-400">{getEnvName(record.envId)}</div>
+                </div>
+            )
         },
         {
             title: '操作',
@@ -648,6 +712,31 @@ const DataSourceManager: React.FC = () => {
                                 filterOption={(input, option) =>
                                     (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                                 }
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            name="appSystemId"
+                            label="关联系统"
+                            rules={[{ required: true, message: '请选择关联系统' }]}
+                        >
+                            <Select
+                                allowClear
+                                showSearch
+                                optionFilterProp="label"
+                                placeholder="选择所属系统"
+                                onChange={handleSystemChange}
+                                options={systems.map(system => ({ value: system.id, label: system.name }))}
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            name="envId"
+                            label="关联环境"
+                        >
+                            <Select
+                                allowClear
+                                disabled={!selectedSystemInForm}
+                                placeholder="选择所属环境"
+                                options={environments.map(env => ({ value: env.id!, label: env.name }))}
                             />
                         </Form.Item>
                     </div>

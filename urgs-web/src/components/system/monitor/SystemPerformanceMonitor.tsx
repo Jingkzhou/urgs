@@ -132,8 +132,8 @@ const SystemPerformanceMonitor: React.FC<SystemPerformanceMonitorProps> = ({
         try {
             const query = {
                 targetType,
-                systemId: targetType === 'SERVER' ? systemId : undefined,
-                envId: targetType === 'SERVER' ? envId : undefined,
+                systemId,
+                envId,
                 status,
             };
             const overviewRequest = getMonitorOverview(query);
@@ -147,7 +147,7 @@ const SystemPerformanceMonitor: React.FC<SystemPerformanceMonitorProps> = ({
             } else {
                 const [overviewData, databaseData] = await Promise.all([
                     overviewRequest,
-                    getDatabaseMonitors({ status }),
+                    getDatabaseMonitors({ systemId, envId, status }),
                 ]);
                 setOverview(overviewData);
                 setDatabases(databaseData || []);
@@ -430,33 +430,29 @@ const SystemPerformanceMonitor: React.FC<SystemPerformanceMonitorProps> = ({
             <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-2">
-                        {targetType === 'SERVER' && (
-                            <>
-                                <Select
-                                    allowClear
-                                    showSearch
-                                    optionFilterProp="label"
-                                    className="w-40"
-                                    placeholder="全部系统"
-                                    value={systemId}
-                                    onChange={value => {
-                                        setSystemId(value);
-                                        setEnvId(undefined);
-                                        onScopedSystemChange?.(value);
-                                    }}
-                                    options={systems.map(item => ({ value: item.id, label: item.name }))}
-                                />
-                                <Select
-                                    allowClear
-                                    className="w-36"
-                                    placeholder="全部环境"
-                                    disabled={!systemId}
-                                    value={envId}
-                                    onChange={setEnvId}
-                                    options={environments.map(item => ({ value: item.id!, label: item.name }))}
-                                />
-                            </>
-                        )}
+                        <Select
+                            allowClear
+                            showSearch
+                            optionFilterProp="label"
+                            className="w-40"
+                            placeholder="全部系统"
+                            value={systemId}
+                            onChange={value => {
+                                setSystemId(value);
+                                setEnvId(undefined);
+                                onScopedSystemChange?.(value);
+                            }}
+                            options={systems.map(item => ({ value: item.id, label: item.name }))}
+                        />
+                        <Select
+                            allowClear
+                            className="w-36"
+                            placeholder="全部环境"
+                            disabled={!systemId}
+                            value={envId}
+                            onChange={setEnvId}
+                            options={environments.map(item => ({ value: item.id!, label: item.name }))}
+                        />
                         <Select
                             allowClear
                             className="w-32"

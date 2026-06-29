@@ -8,6 +8,8 @@ public class DataSourceOptionDTO {
     private Long id;
     private String name;
     private Long metaId;
+    private Long appSystemId;
+    private Long envId;
     private Integer status;
     private String typeName;
     private String typeCode;
