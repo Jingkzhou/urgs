@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 
@@ -50,6 +51,8 @@ public class MaintenanceRecordController {
             @RequestParam(required = false) String modTypes,
             @RequestParam(required = false) String reqId,
             @RequestParam(required = false) String operator,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer size) {
         LambdaQueryWrapper<MaintenanceRecord> query = new LambdaQueryWrapper<>();
@@ -97,6 +100,12 @@ public class MaintenanceRecordController {
         if (StringUtils.hasText(operator)) {
             query.like(MaintenanceRecord::getOperator, operator);
         }
+        if (StringUtils.hasText(startDate)) {
+            query.ge(MaintenanceRecord::getTime, LocalDate.parse(startDate).atStartOfDay());
+        }
+        if (StringUtils.hasText(endDate)) {
+            query.le(MaintenanceRecord::getTime, LocalDate.parse(endDate).atTime(23, 59, 59));
+        }
 
         if (StringUtils.hasText(modTypes)) {
             List<String> types = Arrays.asList(modTypes.split(","));
@@ -137,8 +146,10 @@ public class MaintenanceRecordController {
      * 获取统计数据
      */
     @GetMapping("/stats")
-    public MaintenanceRecordStatsVO getStats() {
-        return maintenanceRecordService.getStats();
+    public MaintenanceRecordStatsVO getStats(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        return maintenanceRecordService.getStats(startDate, endDate);
     }
 
     /**

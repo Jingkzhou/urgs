@@ -3,9 +3,11 @@ package com.example.urgs_api.metadata.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.urgs_api.common.PageResult;
+import com.example.urgs_api.metadata.dto.RegElementMaintenanceDTO;
 import com.example.urgs_api.metadata.model.RegElement;
 import com.example.urgs_api.metadata.service.RegPhysicalBindingService;
 import com.example.urgs_api.metadata.service.RegElementService;
+import com.example.urgs_api.metadata.service.RegElementMaintenanceService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -32,6 +34,9 @@ public class RegElementController {
 
     @Autowired
     private RegPhysicalBindingService regPhysicalBindingService;
+
+    @Autowired
+    private RegElementMaintenanceService regElementMaintenanceService;
 
     @Autowired
     private com.example.urgs_api.metadata.component.MaintenanceLogManager maintenanceLogManager;
@@ -151,6 +156,14 @@ public class RegElementController {
                     getCurrentOperator());
         }
         return result;
+    }
+
+    /**
+     * 在同一事务中维护监管字段及其关联码值。
+     */
+    @PostMapping("/maintenance")
+    public boolean maintain(@RequestBody RegElementMaintenanceDTO maintenanceDTO) {
+        return regElementMaintenanceService.maintain(maintenanceDTO, getCurrentOperator());
     }
 
     /**

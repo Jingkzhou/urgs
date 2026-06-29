@@ -1,25 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { X, Clock } from 'lucide-react';
+import { ListTree, X, Clock } from 'lucide-react';
 import Editor from '@monaco-editor/react';
-import { RegElement } from '../types';
+import { CodeDirectoryChange, CodeTable, RegElement } from '../types';
 import { FormField } from './RegAssetHelper';
 import ReqInfoFormGroup from '../../ReqInfoFormGroup';
 import { AiOptimizeButton } from '../../../common/AiOptimizeButton';
 import { PhysicalTableBinding } from '../types';
 import { PhysicalBindingSelector } from './PhysicalBindingSelector';
+import { CodeValueEditor } from './CodeValueEditor';
 
 interface ElementModalProps {
     element: RegElement;
     systemCode?: string;
     preferredPhysicalTables?: PhysicalTableBinding[];
-    onSave: (data: RegElement) => void;
+    onSave: (data: RegElement, codeChanges: CodeDirectoryChange[]) => void;
     onClose: () => void;
 }
 
 export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode, preferredPhysicalTables = [], onSave, onClose }) => {
     const [form, setForm] = useState<RegElement>(element);
     const isField = form.type === 'FIELD';
-    const [codeTables, setCodeTables] = useState<any[]>([]);
+    const [codeTables, setCodeTables] = useState<CodeTable[]>([]);
+    const [codeChanges, setCodeChanges] = useState<CodeDirectoryChange[]>([]);
+    const [showCodeValueEditor, setShowCodeValueEditor] = useState(false);
 
     useEffect(() => {
         const fetchCodeTables = async () => {
@@ -53,10 +56,23 @@ export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode,
         const kw = ctSearch.toLowerCase();
         return (ct.tableCode?.toLowerCase().includes(kw) || ct.tableName?.toLowerCase().includes(kw));
     });
+    const selectedCodeTable = codeTables.find(ct => ct.tableCode === form.codeTableCode);
+
+    const selectCodeTable = (codeTable?: CodeTable) => {
+        if (codeChanges.length > 0 && !window.confirm('切换代码表会丢弃当前未保存的码值修改，是否继续？')) {
+            setCtSearch(form.codeTableCode || '');
+            return;
+        }
+        setCodeChanges([]);
+        setForm({ ...form, codeTableCode: codeTable?.tableCode || '' });
+        setCtSearch(codeTable?.tableCode || '');
+        setShowCtDropdown(false);
+        setShowCodeValueEditor(false);
+    };
 
     return (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-2xl w-[700px] max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-5 duration-200">
+            <div className="bg-white rounded-xl shadow-2xl w-[960px] max-w-[95vw] max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-5 duration-200">
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-xl">
                     <h3 className="text-lg font-bold text-slate-800">{element.id ? '编辑' : '新增'}{isField ? '字段' : '指标'}</h3>
                     <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full"><X size={20} /></button>
@@ -154,7 +170,20 @@ export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode,
                         </>
                     )}
                     <div className="relative" onClick={(e) => e.stopPropagation()}>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">值域代码表</label>
+                        <div className="flex items-center justify-between mb-1">
+                            <label className="block text-sm font-medium text-slate-700">值域代码表</label>
+                            {isField && (
+                                <button
+                                    type="button"
+                                    disabled={!form.codeTableCode}
+                                    onClick={() => setShowCodeValueEditor(true)}
+                                    className="text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:text-slate-300 disabled:cursor-not-allowed flex items-center gap-1"
+                                >
+                                    <ListTree size={13} />
+                                    维护码值
+                                </button>
+                            )}
+                        </div>
                         <div className="relative">
                             <input
                                 type="text"
@@ -162,24 +191,23 @@ export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode,
                                 placeholder="搜索名称或编码..."
                                 value={ctSearch}
                                 onChange={(e) => {
+                                    if (!e.target.value && form.codeTableCode) {
+                                        selectCodeTable();
+                                        return;
+                                    }
                                     setCtSearch(e.target.value);
                                     setShowCtDropdown(true);
-                                    if (!e.target.value) setForm({ ...form, codeTableCode: '' });
                                 }}
                                 onFocus={() => setShowCtDropdown(true)}
                             />
                             {showCtDropdown && (
                                 <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto z-10">
                                     {filteredCodeTables.length > 0 ? (
-                                        filteredCodeTables.map((ct: any) => (
+                                        filteredCodeTables.map((ct: CodeTable) => (
                                             <div
                                                 key={ct.id}
                                                 className="px-3 py-2 text-sm hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0"
-                                                onClick={() => {
-                                                    setForm({ ...form, codeTableCode: ct.tableCode });
-                                                    setCtSearch(ct.tableCode);
-                                                    setShowCtDropdown(false);
-                                                }}
+                                                onClick={() => selectCodeTable(ct)}
                                             >
                                                 <div className="font-medium text-slate-700">{ct.tableCode}</div>
                                                 <div className="text-xs text-slate-500">{ct.tableName}</div>
@@ -213,25 +241,29 @@ export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode,
                     />
                     <div className="col-span-2">
                         <div className="flex justify-between items-center mb-1">
-                            <label className="block text-sm font-medium text-slate-700">业务口径</label>
+                            <label className="block text-sm font-medium text-slate-700">
+                                业务口径 <span className="text-red-500">*</span>
+                            </label>
                             <AiOptimizeButton
                                 value={form.businessCaliber || ''}
                                 onApply={(val) => setForm({ ...form, businessCaliber: val })}
                                 promptGenerator={(val) => `你是一个金融监管报送专家。请优化以下【业务口径】描述，使其更加专业、准确，符合监管规范。保持语义不变，语言精炼。内容：${val}`}
                             />
                         </div>
-                        <textarea className="w-full border border-slate-200 rounded-lg p-2 text-sm h-16 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.businessCaliber || ''} onChange={e => setForm({ ...form, businessCaliber: e.target.value })} />
+                        <textarea required className="w-full border border-slate-200 rounded-lg p-2 text-sm h-16 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.businessCaliber || ''} onChange={e => setForm({ ...form, businessCaliber: e.target.value })} />
                     </div>
                     <div className="col-span-2">
                         <div className="flex justify-between items-center mb-1">
-                            <label className="block text-sm font-medium text-slate-700">填报说明</label>
+                            <label className="block text-sm font-medium text-slate-700">
+                                填报说明 <span className="text-red-500">*</span>
+                            </label>
                             <AiOptimizeButton
                                 value={form.fillInstruction || ''}
                                 onApply={(val) => setForm({ ...form, fillInstruction: val })}
                                 promptGenerator={(val) => `你是一个银行监管报送业务专家。请优化以下【填报说明】，语气亲切且权威，清晰指导业务人员如何填报，包含注意事项。内容：${val}`}
                             />
                         </div>
-                        <textarea className="w-full border border-slate-200 rounded-lg p-2 text-sm h-16 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.fillInstruction || ''} onChange={e => setForm({ ...form, fillInstruction: e.target.value })} />
+                        <textarea required className="w-full border border-slate-200 rounded-lg p-2 text-sm h-16 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" value={form.fillInstruction || ''} onChange={e => setForm({ ...form, fillInstruction: e.target.value })} />
                     </div>
                     <div className="col-span-2">
                         <div className="flex justify-between items-center mb-1">
@@ -247,6 +279,7 @@ export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode,
 
                     <div className="col-span-2 border-t border-slate-100 pt-4 mt-2">
                         <ReqInfoFormGroup
+                            required
                             data={{
                                 reqId: form.reqId || '',
                                 plannedDate: form.plannedDate || '',
@@ -263,10 +296,86 @@ export const ElementModal: React.FC<ElementModalProps> = ({ element, systemCode,
                             alert('请选择脱敏字段类型');
                             return;
                         }
-                        onSave(form);
-                    }} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200">保存</button>
+                        if (!form.businessCaliber?.trim()) {
+                            alert('请填写业务口径');
+                            return;
+                        }
+                        if (!form.fillInstruction?.trim()) {
+                            alert('请填写填报说明');
+                            return;
+                        }
+                        if (!form.reqId?.trim()) {
+                            alert('请填写需求编号');
+                            return;
+                        }
+                        if (!form.plannedDate) {
+                            alert('请选择计划上线日期');
+                            return;
+                        }
+                        if (!form.changeDescription?.trim()) {
+                            alert('请填写需求变更描述');
+                            return;
+                        }
+                        const invalidCode = codeChanges.find(change => (
+                            change.operation !== 'DELETE'
+                            && (!change.data.code.trim() || !change.data.name.trim())
+                        ));
+                        if (invalidCode) {
+                            alert('码值编码和名称不能为空');
+                            return;
+                        }
+                        const activeCodes = codeChanges
+                            .filter(change => change.operation !== 'DELETE')
+                            .map(change => change.data.code.trim());
+                        if (new Set(activeCodes).size !== activeCodes.length) {
+                            alert('本次修改中存在重复的码值编码');
+                            return;
+                        }
+                        onSave(form, codeChanges);
+                    }} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200">
+                        {codeChanges.length > 0 ? '保存字段及码值变更' : '保存'}
+                    </button>
                 </div>
             </div>
+            {isField && showCodeValueEditor && (
+                <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6">
+                    <div className="w-[1040px] max-w-[96vw] max-h-[85vh] bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden">
+                        <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                            <div>
+                                <h4 className="text-base font-bold text-slate-800">维护码值</h4>
+                                <p className="text-xs text-slate-500 mt-1">
+                                    {form.codeTableCode}{selectedCodeTable?.tableName ? ` · ${selectedCodeTable.tableName}` : ''}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowCodeValueEditor(false)}
+                                className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded-full"
+                                title="关闭码值维护"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="p-5 overflow-y-auto">
+                            <CodeValueEditor
+                                tableCode={form.codeTableCode}
+                                tableName={selectedCodeTable?.tableName}
+                                systemCode={selectedCodeTable?.systemCode || systemCode}
+                                onChangesChange={setCodeChanges}
+                            />
+                        </div>
+                        <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex justify-end">
+                            <button
+                                type="button"
+                                onClick={() => setShowCodeValueEditor(false)}
+                                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm"
+                            >
+                                完成码值维护
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

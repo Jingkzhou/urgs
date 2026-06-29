@@ -44,6 +44,27 @@ export interface CodeTable {
     autoFetchStatus?: string;
 }
 
+export interface CodeDirectoryItem {
+    id?: string;
+    tableCode: string;
+    tableName: string;
+    sortOrder?: number;
+    code: string;
+    name: string;
+    parentCode?: string;
+    level?: string;
+    description?: string;
+    startDate?: string;
+    endDate?: string;
+    standard?: string;
+    systemCode?: string;
+}
+
+export interface CodeDirectoryChange {
+    operation: 'CREATE' | 'UPDATE' | 'DELETE';
+    data: CodeDirectoryItem;
+}
+
 export interface RegElement {
     id?: number | string;
     tableId: number | string;

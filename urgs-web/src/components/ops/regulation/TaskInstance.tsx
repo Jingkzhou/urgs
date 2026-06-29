@@ -27,18 +27,9 @@ import {
 import { normalizeLog, normalizeStatus, normalizeTask } from './task-instance/utils';
 import { useDependencyInsightData } from './task-instance/useDependencyInsightData';
 
-const BATCH_RERUN_CHUNK_SIZE = 20;
 const TASK_INSTANCE_REFRESH_INTERVAL_MS = 5000;
 const SUMMARY_STATS_ACTIVE_REFRESH_INTERVAL_MS = 3000;
 const SUMMARY_STATS_HIDDEN_REFRESH_INTERVAL_MS = 30000;
-
-const chunkArray = <T,>(items: T[], chunkSize: number) => {
-    const chunks: T[][] = [];
-    for (let index = 0; index < items.length; index += chunkSize) {
-        chunks.push(items.slice(index, index + chunkSize));
-    }
-    return chunks;
-};
 
 const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilters, headerExtra }) => {
     const todayDate = dayjs().format('YYYY-MM-DD');
@@ -681,32 +672,20 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         }
 
         setBatchRerunExecuting(true);
-        const chunks = chunkArray(targetIds, BATCH_RERUN_CHUNK_SIZE);
-        let executedCount = 0;
         try {
-            for (let index = 0; index < chunks.length; index += 1) {
-                const chunk = chunks[index];
-                const executed = await executeCurrentNodeRerun(
-                    chunk,
-                    `批量重跑进度 ${Math.min(executedCount + chunk.length, targetIds.length)}/${targetIds.length}`,
-                    `批量执行失败（第 ${index + 1}/${chunks.length} 批）`,
-                    { refresh: false, silentSuccess: true }
-                );
-                if (!executed) {
-                    break;
-                }
-                executedCount += chunk.length;
-            }
+            const executed = await executeCurrentNodeRerun(
+                targetIds,
+                `已批量重跑当前节点 ${targetIds.length} 条实例`,
+                '批量执行失败',
+                { refresh: false, silentSuccess: true }
+            );
 
             await loadInstances();
             await loadTodaySummaryStats();
 
-            if (executedCount === targetIds.length) {
+            if (executed) {
                 setSelectedInstanceIds([]);
-                message.success(`已分批重跑当前节点 ${executedCount} 条实例`);
-            } else if (executedCount > 0) {
-                setSelectedInstanceIds(prev => prev.filter(id => !targetIds.slice(0, executedCount).includes(id)));
-                message.warning(`已重跑 ${executedCount}/${targetIds.length} 条实例，剩余实例未提交成功`);
+                message.success(`已批量重跑当前节点 ${targetIds.length} 条实例`);
             }
         } finally {
             setBatchRerunExecuting(false);

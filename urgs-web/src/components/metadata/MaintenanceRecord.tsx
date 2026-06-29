@@ -5,6 +5,7 @@ import AddMaintenanceModal from './AddMaintenanceModal';
 import MaintenanceDetailPanel, { MaintenanceRecordItem } from './MaintenanceDetailPanel';
 import MaintenanceStats from './MaintenanceStats';
 import Auth from '../Auth';
+import dayjs from 'dayjs';
 
 // 模拟统计数据（后续对接API）
 const MOCK_STATS = {
@@ -33,7 +34,10 @@ const defaultFilters: MaintenanceFilters = {
     modTypes: [],
     operator: '',
     reqId: '',
-    dateRange: null
+    dateRange: [
+        dayjs().startOf('month').format('YYYY-MM-DD'),
+        dayjs().format('YYYY-MM-DD')
+    ]
 };
 
 // 变更类型选项
@@ -63,7 +67,10 @@ const MaintenanceRecord: React.FC = () => {
     const fetchStats = async () => {
         try {
             const token = localStorage.getItem('auth_token');
-            const res = await fetch('/api/metadata/maintenance-record/stats', {
+            const params = new URLSearchParams();
+            if (filters.dateRange?.[0]) params.append('startDate', filters.dateRange[0]);
+            if (filters.dateRange?.[1]) params.append('endDate', filters.dateRange[1]);
+            const res = await fetch(`/api/metadata/maintenance-record/stats?${params.toString()}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -138,10 +145,12 @@ const MaintenanceRecord: React.FC = () => {
         }
     };
 
-    // Initial load
+    // 时间范围变化时同步刷新顶部统计
     useEffect(() => {
-        fetchStats();
-    }, []);
+        if (filters.dateRange?.[0] && filters.dateRange?.[1]) {
+            fetchStats();
+        }
+    }, [filters.dateRange?.[0], filters.dateRange?.[1]]);
 
     // Debounce Search
     useEffect(() => {
@@ -218,9 +227,20 @@ const MaintenanceRecord: React.FC = () => {
 
     // 统计子页面
     if (subPage === 'stats') {
+        const [statsStartDate, statsEndDate] = filters.dateRange || [
+            dayjs().startOf('month').format('YYYY-MM-DD'),
+            dayjs().format('YYYY-MM-DD')
+        ];
         return (
             <div className="flex flex-col h-full bg-slate-50 relative overflow-hidden p-4">
-                <MaintenanceStats onBack={() => setSubPage('list')} />
+                <MaintenanceStats
+                    onBack={() => setSubPage('list')}
+                    startDate={statsStartDate}
+                    endDate={statsEndDate}
+                    onDateRangeChange={(startDate, endDate) => {
+                        setFilters(prev => ({ ...prev, dateRange: [startDate, endDate] }));
+                    }}
+                />
             </div>
         );
     }
@@ -230,7 +250,7 @@ const MaintenanceRecord: React.FC = () => {
             {/* 1. 统计概览卡片区 */}
             <div className="grid grid-cols-4 gap-4 px-4 pt-4 mb-2 flex-none">
                 <StatsCard
-                    title="本月变更总数"
+                    title="筛选范围变更总数"
                     value={stats.totalThisMonth}
                     trend={stats.trend}
                     icon={<BarChart3 className="text-white opacity-20" size={48} />}

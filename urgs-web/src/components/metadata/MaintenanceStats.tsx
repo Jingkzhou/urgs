@@ -51,6 +51,9 @@ interface ReqSummary {
 
 interface MaintenanceStatsProps {
     onBack: () => void;
+    startDate: string;
+    endDate: string;
+    onDateRangeChange: (startDate: string, endDate: string) => void;
 }
 
 // ---- Colors ----
@@ -61,9 +64,12 @@ const TREND_COLORS = { add: '#22c55e', update: '#3b82f6', delete: '#ef4444' };
 
 // ---- Component ----
 
-const MaintenanceStats: React.FC<MaintenanceStatsProps> = ({ onBack }) => {
-    const [startDate, setStartDate] = useState<string>(() => dayjs().startOf('month').format('YYYY-MM-DD'));
-    const [endDate, setEndDate] = useState<string>(() => dayjs().format('YYYY-MM-DD'));
+const MaintenanceStats: React.FC<MaintenanceStatsProps> = ({
+    onBack,
+    startDate,
+    endDate,
+    onDateRangeChange,
+}) => {
     const [stats, setStats] = useState<StatsDetail | null>(null);
     const [reqList, setReqList] = useState<ReqSummary[]>([]);
     const [loading, setLoading] = useState(true);
@@ -145,8 +151,7 @@ const MaintenanceStats: React.FC<MaintenanceStatsProps> = ({ onBack }) => {
                         ]}
                         onChange={(_dates, dateStrings) => {
                             if (dateStrings && dateStrings[0] && dateStrings[1]) {
-                                setStartDate(dateStrings[0]);
-                                setEndDate(dateStrings[1]);
+                                onDateRangeChange(dateStrings[0], dateStrings[1]);
                             }
                         }}
                         className="border-slate-200"

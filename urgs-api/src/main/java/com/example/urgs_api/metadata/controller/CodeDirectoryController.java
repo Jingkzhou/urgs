@@ -184,8 +184,17 @@ public class CodeDirectoryController {
      */
     @PutMapping
     public boolean update(@RequestBody CodeDirectory codeDirectory) {
+        CodeDirectory oldDirectory = codeDirectoryService.getById(codeDirectory.getId());
         codeDirectory.setUpdateTime(LocalDateTime.now());
-        return codeDirectoryService.updateById(codeDirectory);
+        boolean result = codeDirectoryService.updateById(codeDirectory);
+        if (result) {
+            maintenanceLogManager.logChange(
+                    com.example.urgs_api.metadata.component.MaintenanceLogManager.LogType.CODE_DIR,
+                    oldDirectory,
+                    codeDirectory,
+                    getCurrentOperator());
+        }
+        return result;
     }
 
     /**

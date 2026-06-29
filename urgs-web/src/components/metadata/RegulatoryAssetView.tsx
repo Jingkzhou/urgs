@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Database, Server, Upload } from 'lucide-react';
 import { systemService, SsoConfig } from '../../services/systemService';
 import MaintenanceHistoryModal from './MaintenanceHistoryModal';
-import { Stats, RegTable, CodeTable, RegElement } from './reg-asset/types';
+import { Stats, RegTable, CodeTable, CodeDirectoryChange, RegElement } from './reg-asset/types';
 import { TableModal } from './reg-asset/components/TableModal';
 import { ElementModal } from './reg-asset/components/ElementModal';
 import { AssetDetailSidebar } from './reg-asset/AssetDetailSidebar';
@@ -501,16 +501,30 @@ const RegulatoryAssetView: React.FC = () => {
         fetchTables();
     };
 
-    const handleSaveElement = async (formData: RegElement) => {
+    const handleSaveElement = async (formData: RegElement, codeChanges: CodeDirectoryChange[]) => {
         const token = localStorage.getItem('auth_token');
-        await fetch('/api/reg/element', {
+        const response = await fetch('/api/reg/element/maintenance', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify(formData)
+            body: JSON.stringify({
+                element: formData,
+                codeChanges,
+            })
         });
+        if (!response.ok) {
+            let message = '保存失败，请检查数据后重试';
+            try {
+                const error = await response.json();
+                message = error.message || message;
+            } catch {
+                // Keep the default message when the response is not JSON.
+            }
+            alert(message);
+            return;
+        }
         setShowElementModal(false);
         if (currentTable) fetchElements(currentTable.id!);
     };

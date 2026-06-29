@@ -13,11 +13,13 @@ import java.util.List;
  */
 public interface MaintenanceRecordService extends IService<MaintenanceRecord> {
     /**
-     * 获取本月维护记录统计信息
+     * 获取指定时间范围内的维护记录统计信息
      *
+     * @param startDate 开始日期
+     * @param endDate   结束日期
      * @return 统计信息
      */
-    MaintenanceRecordStatsVO getStats();
+    MaintenanceRecordStatsVO getStats(String startDate, String endDate);
 
     /**
      * 获取详细统计数据（按系统、操作人、类型分组 + 趋势）
