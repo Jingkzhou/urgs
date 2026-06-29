@@ -17,7 +17,7 @@ export interface ImMessage {
     senderId: number;
     receiverId?: number;
     groupId?: number;
-    msgType: number; // 1: Text
+    msgType: number; // 1: Text, 2: Image, 7: File
     content: string;
     sendTime?: string;
     senderName?: string;
@@ -85,6 +85,10 @@ export const imService = {
 
     getGroupMembers: async (groupId: number) => {
         return get<ImUser[]>(`${API_BASE}/group/${groupId}/members`);
+    },
+
+    renameGroup: async (groupId: number, name: string) => {
+        return post<string>(`${API_BASE}/group/rename`, { groupId, name });
     },
 
     // Session

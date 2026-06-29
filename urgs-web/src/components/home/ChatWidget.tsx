@@ -7,6 +7,8 @@ import ChatWindow from '../im/ChatWindow';
 import { imService } from '../../services/imService';
 import { userService } from '../../services/userService';
 import { WS_URL } from '../../config';
+type ImMessageType = 'text' | 'image' | 'file';
+
 const ChatWidget: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
@@ -66,6 +68,8 @@ const ChatWidget: React.FC = () => {
     const [showAddMember, setShowAddMember] = useState(false);
     const [isDeleteMode, setIsDeleteMode] = useState(false);
     const [groupMembers, setGroupMembers] = useState<any[]>([]);
+    const [groupNameDraft, setGroupNameDraft] = useState('');
+    const [isRenamingGroup, setIsRenamingGroup] = useState(false);
 
     const handleShowGroupDetails = async () => {
         if (!activeSessionId) return;
@@ -74,6 +78,7 @@ const ChatWidget: React.FC = () => {
 
         setShowGroupDetails(true);
         setIsDeleteMode(false); // Reset delete mode
+        setGroupNameDraft(session.name || '');
         try {
             const members = await imService.getGroupMembers(activeSessionId);
             setGroupMembers(members);
@@ -124,6 +129,41 @@ const ChatWidget: React.FC = () => {
         return uid1 < uid2 ? uid1 + '_' + uid2 : uid2 + '_' + uid1;
     };
 
+    const getCurrentUserId = () => {
+        const id = currentUser?.userId ?? currentUser?.id;
+        const parsed = Number(id);
+        return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    const getUiMessageType = (msgType?: number): ImMessageType => {
+        if (msgType === 2) return 'image';
+        if (msgType === 7) return 'file';
+        return 'text';
+    };
+
+    const getBackendMsgType = (type: ImMessageType) => {
+        if (type === 'image') return 2;
+        if (type === 'file') return 7;
+        return 1;
+    };
+
+    const getFileMessageName = (content: string) => {
+        try {
+            const payload = JSON.parse(content);
+            if (payload?.name) return payload.name;
+            if (payload?.url) return payload.url.split('/').pop() || '文件';
+        } catch (e) {
+            // Older file messages may only store the URL.
+        }
+        return content.split('/').pop() || '文件';
+    };
+
+    const getMessagePreview = (content: string, type: ImMessageType) => {
+        if (type === 'image') return '[图片]';
+        if (type === 'file') return `[文件] ${getFileMessageName(content)}`;
+        return content;
+    };
+
     useEffect(() => {
         if (!activeSessionId) return;
         const loadHistory = async () => {
@@ -159,7 +199,7 @@ const ChatWidget: React.FC = () => {
                     senderId: m.senderId,
                     time: m.sendTime ? new Date(m.sendTime).toLocaleTimeString() : '',
                     isSelf: m.senderId === currentUser.userId,
-                    type: m.msgType === 2 ? 'image' : 'text',
+                    type: getUiMessageType(m.msgType),
                     senderName: m.senderName || (m.senderId === currentUser.userId ? (currentUser.wxId || 'Me') : ('User ' + m.senderId)),
                     senderAvatar: m.senderAvatar || (m.senderId === currentUser.userId ? currentUser.avatarUrl : null)
                 }));
@@ -236,7 +276,7 @@ const ChatWidget: React.FC = () => {
                     senderId: msg.senderId,
                     time: msg.sendTime ? new Date(msg.sendTime).toLocaleTimeString() : new Date().toLocaleTimeString(),
                     isSelf: msg.senderId === currentUser.userId,
-                    type: msg.msgType === 2 ? 'image' : 'text',
+                    type: getUiMessageType(msg.msgType),
                     senderName: msg.senderName || (msg.senderId === currentUser.userId ? (currentUser.wxId || 'Me') : ('User ' + msg.senderId)),
                     senderAvatar: msg.senderAvatar || (msg.senderId === currentUser.userId ? currentUser.avatarUrl : null)
                 };
@@ -283,7 +323,7 @@ const ChatWidget: React.FC = () => {
                         if (session.id === peerId) {
                             return {
                                 ...session,
-                                message: incomingMsg.type === 'image' ? '[Image]' : incomingMsg.content,
+                                message: getMessagePreview(incomingMsg.content, incomingMsg.type),
                                 time: incomingMsg.time,
                                 // Use Refs to check current state safely within closure
                                 unread: (isOpenRef.current && activeSessionIdRef.current === peerId) ? 0 : ((session.unread || 0) + 1)
@@ -301,7 +341,7 @@ const ChatWidget: React.FC = () => {
         }
     }, [currentUser]);
 
-    const handleSendMessage = async (content: string, type: 'text' | 'image' = 'text') => {
+    const handleSendMessage = async (content: string, type: ImMessageType = 'text') => {
         if (!activeSessionId) return;
 
         // Construct Message Object
@@ -313,7 +353,7 @@ const ChatWidget: React.FC = () => {
             receiverId: session.id, // session.id is peerId from mapping
             groupId: session.type === 'group' ? session.id : undefined,
             content,
-            msgType: type === 'image' ? 2 : 1,
+            msgType: getBackendMsgType(type),
             conversationId: getConversationId(currentUser.userId, session.id),
             type: type, // Frontend prop
             isSelf: true,
@@ -333,7 +373,7 @@ const ChatWidget: React.FC = () => {
             if (s.id === activeSessionId) {
                 return {
                     ...s,
-                    message: type === 'image' ? '[Image]' : content,
+                    message: getMessagePreview(content, type),
                     time: newMessage.time
                 };
             }
@@ -345,7 +385,7 @@ const ChatWidget: React.FC = () => {
             receiverId: session.id,
             groupId: session.type === 'group' ? session.id : undefined,
             content,
-            msgType: type === 'image' ? 2 : 1,
+            msgType: getBackendMsgType(type),
             conversationId: getConversationId(currentUser.userId, session.id)
         };
 
@@ -437,20 +477,23 @@ const ChatWidget: React.FC = () => {
         setSearchTerm('');
         setGroupNameInput('');
         setSelectedUserIds([]);
+        setAvailableUsers([]);
+        setShowCreateGroup(true);
         try {
             // Ideally fetch friends list instead of all users? 
             // For now reusing searchUsers('') to get everyone for demo
+            const currentUserId = getCurrentUserId();
             const users = await imService.searchUsers('');
-            setAvailableUsers(users.filter((u: any) => u.userId !== currentUser.userId));
-            setShowCreateGroup(true);
+            setAvailableUsers(currentUserId == null ? users : users.filter((u: any) => u.userId !== currentUserId));
         } catch (e) {
             console.error(e);
-            alert('Failed to load users');
+            alert('加载用户失败');
         }
     };
 
     const handleCreateGroup = async () => {
-        const memberIds = Array.from(new Set(selectedUserIds)).filter(id => id !== currentUser?.userId);
+        const currentUserId = getCurrentUserId();
+        const memberIds = Array.from(new Set(selectedUserIds)).filter(id => id !== currentUserId);
         if (memberIds.length === 0) return;
         try {
             const group = await imService.createGroup(groupNameInput.trim(), memberIds);
@@ -463,6 +506,23 @@ const ChatWidget: React.FC = () => {
         } catch (e) {
             console.error(e);
             alert('创建群聊失败');
+        }
+    };
+
+    const handleRenameGroup = async () => {
+        if (!activeSessionId) return;
+        const name = groupNameDraft.trim();
+        if (!name) return;
+        try {
+            setIsRenamingGroup(true);
+            await imService.renameGroup(activeSessionId, name);
+            setSessions(prev => prev.map(session => session.id === activeSessionId ? { ...session, name } : session));
+            await fetchSessions();
+        } catch (e) {
+            console.error(e);
+            alert('修改群名称失败');
+        } finally {
+            setIsRenamingGroup(false);
         }
     };
 
@@ -547,37 +607,37 @@ const ChatWidget: React.FC = () => {
                     >
 
                             {/* 1. Left Navigation Bar (Slim) */}
-                            <div className="w-[68px] bg-slate-900 border-r border-slate-800 flex flex-col items-center py-6 flex-shrink-0 z-10 rounded-l-2xl relative">
+                            <div className="w-[68px] bg-white border-r border-slate-200 flex flex-col items-center py-6 flex-shrink-0 z-30 rounded-l-2xl relative">
                                 {/* Current User Avatar */}
                                 <div className="relative mb-8 group cursor-pointer">
                                     <img
                                         src={getAvatarUrl(currentUser?.avatarUrl, currentUser?.name || currentUser?.wxId || 'Me')}
-                                        className="w-10 h-10 rounded-xl object-cover ring-1 ring-white/10 group-hover:ring-white/30 transition-all"
+                                        className="w-10 h-10 rounded-xl object-cover ring-1 ring-slate-200 group-hover:ring-indigo-200 transition-all"
                                         alt="My Profile"
                                     />
-                                    <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-500 border-2 border-slate-900 rounded-full"></div>
+                                    <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></div>
                                 </div>
 
                                 {/* Nav Icons */}
                                 <div className="flex-1 flex flex-col gap-4 w-full px-2">
-                                    <button className="w-full aspect-square flex items-center justify-center rounded-xl bg-white/10 text-white relative group">
-                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1/2 bg-white rounded-r"></div>
+                                    <button className="w-full aspect-square flex items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 relative group">
+                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1/2 bg-indigo-500 rounded-r"></div>
                                         <MessageCircle size={22} strokeWidth={2} />
                                     </button>
                                     <button 
                                         onClick={handleOpenAddFriend}
-                                        className="w-full aspect-square flex items-center justify-center rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                                        className="w-full aspect-square flex items-center justify-center rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
                                     >
                                         <Plus size={22} strokeWidth={2} />
                                     </button>
                                 </div>
 
                                 {/* Settings / Menu icon at bottom */}
-                                <div className="mt-auto pt-4 border-t border-slate-800 w-full px-2">
+                                <div className="mt-auto pt-4 border-t border-slate-200 w-full px-2">
                                     <div className="relative">
                                         <button
                                             onClick={() => setShowMenu(!showMenu)}
-                                            className="w-full aspect-square flex items-center justify-center rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                                            className="w-full aspect-square flex items-center justify-center rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
                                         >
                                             <MoreHorizontal size={22} strokeWidth={2} />
                                         </button>
@@ -751,7 +811,7 @@ const ChatWidget: React.FC = () => {
                         </div>
                         <input
                             className="w-full px-3 py-2 border border-slate-200 rounded-md text-[13px] focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 mb-3"
-                            placeholder="群聊名称（可选）"
+                            placeholder="群聊名称（可选，留空自动使用成员名称）"
                             value={groupNameInput}
                             onChange={(e) => setGroupNameInput(e.target.value)}
                         />
@@ -813,6 +873,25 @@ const ChatWidget: React.FC = () => {
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="font-bold">群聊详情</h3>
                             <button onClick={() => setShowGroupDetails(false)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
+                        </div>
+                        <div className="mb-4">
+                            <div className="text-xs font-semibold text-slate-400 mb-2">群名称</div>
+                            <div className="flex gap-2">
+                                <input
+                                    value={groupNameDraft}
+                                    maxLength={32}
+                                    title={groupNameDraft}
+                                    onChange={(e) => setGroupNameDraft(e.target.value)}
+                                    className="min-w-0 flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                                />
+                                <button
+                                    onClick={handleRenameGroup}
+                                    disabled={!groupNameDraft.trim() || isRenamingGroup}
+                                    className={`px-3 py-2 text-sm rounded-lg text-white transition-colors ${groupNameDraft.trim() && !isRenamingGroup ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-slate-300 cursor-not-allowed'}`}
+                                >
+                                    保存
+                                </button>
+                            </div>
                         </div>
                         <div className="flex-1 overflow-y-auto">
                             <h4 className="text-xs font-semibold text-slate-400 mb-3">成员 ({groupMembers.length})</h4>
@@ -927,16 +1006,16 @@ const ChatWidget: React.FC = () => {
                 }}
                 className={`
                     ${isOpen
-                        ? 'bg-slate-800 hover:bg-slate-900 shadow-xl'
+                        ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-xl'
                         : 'bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-600/30'
                     }
                     ${!isOpen && totalUnread > 0 ? 'ring-4 ring-indigo-500/20' : ''}
-                    text-white w-[56px] h-[56px] rounded-2xl flex items-center justify-center relative z-50 transition-colors duration-200
+                    ${isOpen ? 'text-slate-700' : 'text-white'} w-[56px] h-[56px] rounded-2xl flex items-center justify-center relative z-50 transition-colors duration-200
                 `}
             >
                 <div className="relative z-10 flex items-center justify-center w-full h-full">
                     {isOpen ? (
-                        <X size={24} strokeWidth={2.5} className="text-white" />
+                        <X size={24} strokeWidth={2.5} className="text-slate-700" />
                     ) : (
                         <MessageCircle size={24} className="text-white drop-shadow-md" strokeWidth={2.5} />
                     )}

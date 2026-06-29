@@ -53,7 +53,7 @@ public class ImChatServiceImpl implements ImChatService {
 
         messageMapper.insert(message);
 
-        String preview = message.getMsgType() == 2 ? "[Image]" : message.getContent();
+        String preview = buildMessagePreview(message);
 
         updateConversation(message.getSenderId(), message.getReceiverId(), preview, false, 1);
         updateConversation(message.getReceiverId(), message.getSenderId(), preview, true, 1);
@@ -74,7 +74,7 @@ public class ImChatServiceImpl implements ImChatService {
         // Fetch Sender Name for Preview
         com.example.urgs_api.im.entity.ImUser sender = userMapper.selectById(message.getSenderId());
         String senderName = sender != null ? sender.getWxId() : "User " + message.getSenderId();
-        String content = message.getMsgType() == 2 ? "[Image]" : message.getContent();
+        String content = buildMessagePreview(message);
         String preview = senderName + ": " + content;
 
         // Convert to VO for push
@@ -126,6 +126,19 @@ public class ImChatServiceImpl implements ImChatService {
         } else {
             conversationMapper.updateById(conversation);
         }
+    }
+
+    private String buildMessagePreview(ImMessage message) {
+        if (message.getMsgType() == null) {
+            return message.getContent();
+        }
+        if (message.getMsgType() == 2) {
+            return "[图片]";
+        }
+        if (message.getMsgType() == 7) {
+            return "[文件]";
+        }
+        return message.getContent();
     }
 
     @Override

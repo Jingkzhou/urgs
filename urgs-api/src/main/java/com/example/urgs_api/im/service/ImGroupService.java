@@ -10,6 +10,8 @@ public interface ImGroupService {
 
     List<com.example.urgs_api.im.entity.ImUser> getGroupMembers(Long groupId);
 
+    void renameGroup(Long requesterId, Long groupId, String name);
+
     void addMembers(Long groupId, List<Long> memberIds);
 
     void removeMembers(Long requesterId, Long groupId, List<Long> memberIds);

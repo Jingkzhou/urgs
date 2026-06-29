@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS `im_message` (
   `sender_id` BIGINT NOT NULL,
   `receiver_id` BIGINT COMMENT 'Null if group chat',
   `group_id` BIGINT COMMENT 'Null if private chat',
-  `msg_type` TINYINT NOT NULL COMMENT '1:Text, 2:Image, 3:Audio, 4:Video, 5:Recall, 6:System',
+  `msg_type` TINYINT NOT NULL COMMENT '1:Text, 2:Image, 3:Audio, 4:Video, 5:Recall, 6:System, 7:File',
   `content` TEXT COMMENT 'Content or JSON metadata',
   `refer_msg_id` BIGINT COMMENT 'Reply functionality',
   `send_time` DATETIME DEFAULT CURRENT_TIMESTAMP,

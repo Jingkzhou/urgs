@@ -33,7 +33,8 @@ public class ImGroupServiceImpl implements ImGroupService {
 
         ImGroup group = new ImGroup();
         group.setOwnerId(ownerId);
-        group.setName(name);
+        String groupName = resolveGroupName(name, ownerId, memberIds);
+        group.setName(groupName);
         group.setMemberCount(memberIds.size() + 1);
         group.setCreatedAt(LocalDateTime.now());
         groupMapper.insert(group);
@@ -56,11 +57,11 @@ public class ImGroupServiceImpl implements ImGroupService {
             groupMemberMapper.insert(member);
 
             // Create Conversation for Member
-            createGroupConversation(memberId, group.getId(), name);
+            createGroupConversation(memberId, group.getId(), groupName);
         }
 
         // Create Conversation for Owner (skipped in loop)
-        createGroupConversation(ownerId, group.getId(), name);
+        createGroupConversation(ownerId, group.getId(), groupName);
         return group;
     }
 
@@ -108,6 +109,84 @@ public class ImGroupServiceImpl implements ImGroupService {
         List<Long> userIds = members.stream().map(ImGroupMember::getUserId).collect(Collectors.toList());
         // Batch fetch users
         return userIds.stream().map(uid -> userService.getUser(uid)).collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public void renameGroup(Long requesterId, Long groupId, String name) {
+        String groupName = name == null ? "" : name.trim();
+        if (groupName.isEmpty()) {
+            throw new RuntimeException("Group name cannot be empty");
+        }
+
+        ImGroup group = groupMapper.selectById(groupId);
+        if (group == null) {
+            throw new RuntimeException("Group not found");
+        }
+
+        Long count = groupMemberMapper.selectCount(new QueryWrapper<ImGroupMember>()
+                .eq("group_id", groupId)
+                .eq("user_id", requesterId));
+        if (count == null || count == 0) {
+            throw new RuntimeException("Only group members can rename group");
+        }
+
+        group.setName(truncateGroupName(groupName));
+        groupMapper.updateById(group);
+
+        com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<com.example.urgs_api.im.entity.ImConversation> update = new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<>();
+        update.eq("peer_id", groupId)
+                .eq("chat_type", 2)
+                .set("name", group.getName());
+        conversationMapper.update(null, update);
+    }
+
+    private String resolveGroupName(String name, Long ownerId, List<Long> memberIds) {
+        if (name != null && !name.trim().isEmpty()) {
+            return truncateGroupName(name.trim());
+        }
+        List<Long> userIds = new java.util.ArrayList<>();
+        userIds.add(ownerId);
+        userIds.addAll(memberIds);
+        List<String> names = userIds.stream()
+                .map(this::resolveUserDisplayName)
+                .filter(displayName -> displayName != null && !displayName.isBlank())
+                .distinct()
+                .collect(Collectors.toList());
+        if (names.isEmpty()) {
+            return "群聊";
+        }
+        int visibleCount = Math.min(names.size(), 4);
+        String baseName = String.join("、", names.subList(0, visibleCount));
+        if (names.size() > visibleCount) {
+            baseName = baseName + "等" + names.size() + "人";
+        }
+        return truncateGroupName(baseName);
+    }
+
+    private String resolveUserDisplayName(Long userId) {
+        com.example.urgs_api.im.entity.ImUser user = userService.getUser(userId);
+        if (user == null) {
+            return "用户" + userId;
+        }
+        if (user.getName() != null && !user.getName().isBlank()) {
+            return user.getName();
+        }
+        if (user.getWxId() != null && !user.getWxId().isBlank()) {
+            return user.getWxId();
+        }
+        if (user.getEmpId() != null && !user.getEmpId().isBlank()) {
+            return user.getEmpId();
+        }
+        return "用户" + userId;
+    }
+
+    private String truncateGroupName(String name) {
+        int maxLength = 32;
+        if (name.length() <= maxLength) {
+            return name;
+        }
+        return name.substring(0, maxLength - 3) + "...";
     }
 
     @Autowired

@@ -76,7 +76,7 @@ const SessionList: React.FC<SessionListProps> = ({ sessions, activeSessionId, on
                     </div>
                     <div className="flex-1 min-w-0 flex flex-col justify-center">
                         <div className="flex justify-between items-baseline mb-0.5">
-                            <h4 className={`font-medium text-[13px] truncate ${activeSessionId === session.id ? 'text-indigo-600 font-semibold' : 'text-slate-800'}`}>{session.name}</h4>
+                            <h4 className={`font-medium text-[13px] truncate ${activeSessionId === session.id ? 'text-indigo-600 font-semibold' : 'text-slate-800'}`} title={session.name}>{session.name}</h4>
                             <span className="text-[11px] text-slate-400 whitespace-nowrap ml-2">{session.time}</span>
                         </div>
                         <div className="flex justify-between items-center">

@@ -58,12 +58,7 @@ public class ImDataController {
     public ImGroup createGroup(@RequestAttribute("userId") Long userId, @RequestBody CreateGroupRequest request) {
         String name = request.getName();
         List<Long> members = request.getMembers() == null ? List.of() : request.getMembers();
-        // Default name if empty
-        if (name == null || name.trim().isEmpty()) {
-            name = "Unnamed Group";
-        } else {
-            name = name.trim();
-        }
+        name = name == null ? null : name.trim();
         return groupService.createGroup(userId, name, members);
     }
 
@@ -83,6 +78,18 @@ public class ImDataController {
     public static class AddMembersRequest {
         private Long groupId;
         private List<Long> memberIds;
+    }
+
+    @PostMapping("/group/rename")
+    public String renameGroup(@RequestAttribute("userId") Long userId, @RequestBody RenameGroupRequest request) {
+        groupService.renameGroup(userId, request.getGroupId(), request.getName());
+        return "success";
+    }
+
+    @lombok.Data
+    public static class RenameGroupRequest {
+        private Long groupId;
+        private String name;
     }
 
     @PostMapping("/group/kick")

@@ -39,7 +39,10 @@ public class CommonController {
 
             // Generate unique filename
             String originalFilename = file.getOriginalFilename();
-            String extension = originalFilename.substring(originalFilename.lastIndexOf("."));
+            String extension = "";
+            if (originalFilename != null && originalFilename.contains(".")) {
+                extension = originalFilename.substring(originalFilename.lastIndexOf("."));
+            }
             String filename = UUID.randomUUID().toString() + extension;
 
             // Save file
@@ -51,7 +54,7 @@ public class CommonController {
             String url = "/profile/" + datePath + "/" + filename;
             Map<String, String> response = new HashMap<>();
             response.put("url", url);
-            response.put("name", originalFilename);
+            response.put("name", originalFilename == null || originalFilename.isBlank() ? filename : originalFilename);
 
             return ResponseEntity.ok(response);
         } catch (IOException e) {
