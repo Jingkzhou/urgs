@@ -25,10 +25,16 @@ public class ImGroupServiceImpl implements ImGroupService {
     @Override
     @Transactional
     public ImGroup createGroup(Long ownerId, String name, List<Long> initialMembers) {
+        List<Long> memberIds = initialMembers == null ? List.of()
+                : initialMembers.stream()
+                        .filter(memberId -> memberId != null && !memberId.equals(ownerId))
+                        .distinct()
+                        .collect(Collectors.toList());
+
         ImGroup group = new ImGroup();
         group.setOwnerId(ownerId);
         group.setName(name);
-        group.setMemberCount(initialMembers.size() + 1);
+        group.setMemberCount(memberIds.size() + 1);
         group.setCreatedAt(LocalDateTime.now());
         groupMapper.insert(group);
 
@@ -41,11 +47,7 @@ public class ImGroupServiceImpl implements ImGroupService {
         groupMemberMapper.insert(ownerMember);
 
         // Add members
-        for (Long memberId : initialMembers) {
-            // Owner already added with Role 2
-            if (memberId.equals(ownerId)) {
-                continue;
-            }
+        for (Long memberId : memberIds) {
             ImGroupMember member = new ImGroupMember();
             member.setGroupId(group.getId());
             member.setUserId(memberId);

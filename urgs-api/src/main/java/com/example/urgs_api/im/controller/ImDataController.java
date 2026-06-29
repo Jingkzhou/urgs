@@ -57,17 +57,12 @@ public class ImDataController {
     @PostMapping("/group/create")
     public ImGroup createGroup(@RequestAttribute("userId") Long userId, @RequestBody CreateGroupRequest request) {
         String name = request.getName();
-        List<Long> members = request.getMembers();
-
-        // Ensure creator is in members
-        if (members == null)
-            members = new java.util.ArrayList<>();
-        if (!members.contains(userId)) {
-            members.add(userId);
-        }
+        List<Long> members = request.getMembers() == null ? List.of() : request.getMembers();
         // Default name if empty
-        if (name == null || name.isEmpty()) {
+        if (name == null || name.trim().isEmpty()) {
             name = "Unnamed Group";
+        } else {
+            name = name.trim();
         }
         return groupService.createGroup(userId, name, members);
     }

@@ -85,7 +85,6 @@ const ChatWidget: React.FC = () => {
     // Inputs
     const [friendIdInput, setFriendIdInput] = useState('');
     const [groupNameInput, setGroupNameInput] = useState('');
-    const [groupMembersInput, setGroupMembersInput] = useState(''); // comma separated IDs for demo
 
     // User Selection State
     const [availableUsers, setAvailableUsers] = useState<any[]>([]);
@@ -383,6 +382,13 @@ const ChatWidget: React.FC = () => {
         }
     };
 
+    const closeCreateGroupModal = () => {
+        setShowCreateGroup(false);
+        setGroupNameInput('');
+        setSelectedUserIds([]);
+        setSearchTerm('');
+    };
+
     const handleAddFriend = async () => {
         if (selectedUserIds.length === 0) return;
         try {
@@ -429,6 +435,8 @@ const ChatWidget: React.FC = () => {
     const handleOpenCreateGroup = async () => {
         setShowMenu(false);
         setSearchTerm('');
+        setGroupNameInput('');
+        setSelectedUserIds([]);
         try {
             // Ideally fetch friends list instead of all users? 
             // For now reusing searchUsers('') to get everyone for demo
@@ -442,14 +450,19 @@ const ChatWidget: React.FC = () => {
     };
 
     const handleCreateGroup = async () => {
-        if (selectedUserIds.length === 0) return;
+        const memberIds = Array.from(new Set(selectedUserIds)).filter(id => id !== currentUser?.userId);
+        if (memberIds.length === 0) return;
         try {
-            await imService.createGroup(groupNameInput, selectedUserIds);
+            const group = await imService.createGroup(groupNameInput.trim(), memberIds);
             alert('群聊创建成功');
-            setShowCreateGroup(false);
-            fetchSessions(); // Refresh list
+            closeCreateGroupModal();
+            await fetchSessions(); // Refresh list
+            if (group?.id) {
+                setActiveSessionId(group.id);
+            }
         } catch (e) {
-            alert('Failed to create group');
+            console.error(e);
+            alert('创建群聊失败');
         }
     };
 
@@ -718,6 +731,77 @@ const ChatWidget: React.FC = () => {
                         <div className="flex justify-end gap-3 font-medium">
                             <button onClick={() => setShowAddFriend(false)} className="px-4 py-1.5 text-sm text-slate-600 hover:bg-slate-50 rounded border border-transparent">取消</button>
                             <button onClick={handleAddFriend} className="px-4 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors shadow-sm">添加</button>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
+
+            {showCreateGroup && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        className="bg-white p-6 rounded-xl w-full max-w-md shadow-2xl border border-slate-100 flex flex-col"
+                    >
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-base font-semibold text-slate-900">发起群聊</h3>
+                            <button onClick={closeCreateGroupModal} className="p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-50">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <input
+                            className="w-full px-3 py-2 border border-slate-200 rounded-md text-[13px] focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 mb-3"
+                            placeholder="群聊名称（可选）"
+                            value={groupNameInput}
+                            onChange={(e) => setGroupNameInput(e.target.value)}
+                        />
+                        <div className="mb-4 relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                            <input
+                                className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-md text-[13px] focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                                placeholder="搜索联系人..."
+                                value={searchTerm}
+                                onChange={(e) => handleSearchUsers(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex-1 overflow-y-auto border border-slate-100 rounded-md p-1 mb-6 max-h-[300px]">
+                            <h4 className="text-[11px] font-semibold text-slate-400 mb-2 px-2 uppercase">选择联系人</h4>
+                            {availableUsers.map(u => (
+                                <div key={u.userId} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer" onClick={() => {
+                                    if (selectedUserIds.includes(u.userId)) {
+                                        setSelectedUserIds(prev => prev.filter(id => id !== u.userId));
+                                    } else {
+                                        setSelectedUserIds(prev => [...prev, u.userId]);
+                                    }
+                                }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedUserIds.includes(u.userId)}
+                                        readOnly
+                                        className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                                    />
+                                    <img
+                                        src={getAvatarUrl(u.avatarUrl, u.name || u.empId || u.wxId || '用户')}
+                                        className="w-8 h-8 rounded-full object-cover"
+                                        alt={u.name || u.wxId || '用户'}
+                                    />
+                                    <span className="text-[13px] text-slate-700">
+                                        {u.name || u.wxId || `用户 ${u.userId}`}
+                                        {u.empId ? ` (${u.empId})` : ''}
+                                    </span>
+                                </div>
+                            ))}
+                            {availableUsers.length === 0 && <div className="text-center p-4 text-slate-400 text-sm">暂无可选联系人</div>}
+                        </div>
+                        <div className="flex justify-end gap-3 font-medium">
+                            <button onClick={closeCreateGroupModal} className="px-4 py-1.5 text-sm text-slate-600 hover:bg-slate-50 rounded border border-transparent">取消</button>
+                            <button
+                                onClick={handleCreateGroup}
+                                disabled={selectedUserIds.length === 0}
+                                className={`px-4 py-1.5 text-sm text-white rounded transition-colors shadow-sm ${selectedUserIds.length > 0 ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-slate-300 cursor-not-allowed border-transparent'}`}
+                            >
+                                创建 ({selectedUserIds.length})
+                            </button>
                         </div>
                     </motion.div>
                 </div>
