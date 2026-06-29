@@ -245,22 +245,32 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit, defaultSele
 
                         <div className="h-8 w-px bg-slate-200 mx-1" />
 
-                        {(!forceCategory || forceCategory !== 'Log') && (
-                            <div className="flex gap-2">
-                                {['all', 'urgent', 'normal', 'update'].map((type) => (
-                                    <button
-                                        key={type}
-                                        onClick={() => setFilterType(type)}
-                                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border ${filterType === type
-                                                ? 'bg-violet-600 text-white border-violet-600 shadow-lg shadow-violet-200'
-                                                : 'bg-white text-slate-500 border-slate-200 hover:border-violet-300 hover:text-violet-600'
-                                            }`}
-                                    >
-                                        {type === 'all' ? '全部' : typeConfig[type]?.label || type}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
+                        <div className="flex items-center gap-3 ml-auto">
+                            <button
+                                onClick={handleMarkAllAsRead}
+                                className="flex items-center gap-2 px-4 py-2 text-[11px] font-black uppercase tracking-widest text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition-all group shrink-0"
+                            >
+                                <CheckCircle size={15} className="group-hover:scale-110 transition-transform" />
+                                全部标记为已读
+                            </button>
+
+                            {(!forceCategory || forceCategory !== 'Log') && (
+                                <div className="flex gap-2">
+                                    {['all', 'urgent', 'normal', 'update'].map((type) => (
+                                        <button
+                                            key={type}
+                                            onClick={() => setFilterType(type)}
+                                            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border ${filterType === type
+                                                    ? 'bg-violet-600 text-white border-violet-600 shadow-lg shadow-violet-200'
+                                                    : 'bg-white text-slate-500 border-slate-200 hover:border-violet-300 hover:text-violet-600'
+                                                }`}
+                                        >
+                                            {type === 'all' ? '全部' : typeConfig[type]?.label || type}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -524,17 +534,9 @@ const AnnouncementList: React.FC<AnnouncementListProps> = ({ onEdit, defaultSele
                 )}
             </AnimatePresence>
 
-            {/* Pagination & Batch Actions */}
+            {/* Pagination */}
             {total > 0 && (
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pt-8 border-t border-slate-100 mt-8">
-                    <button
-                        onClick={(e) => { e.stopPropagation(); handleMarkAllAsRead(); }}
-                        className="flex items-center gap-2 px-5 py-2.5 text-[11px] font-black uppercase tracking-widest text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition-all group"
-                    >
-                        <CheckCircle size={15} className="group-hover:scale-110 transition-transform" />
-                        全部标记为已读
-                    </button>
-
                     <div className="flex items-center gap-4">
                         <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                             <span className="text-violet-600">{currentPage}</span>
