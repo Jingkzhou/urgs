@@ -155,7 +155,6 @@ const AnnouncementManagement: React.FC = () => {
     const tabs = [
         { key: 'list' as const, label: '公告列表', icon: List, permission: 'announcement:list' },
         { key: 'log' as const, label: '更新日志', icon: FileText, permission: 'announcement:log' },
-        { key: 'publish' as const, label: editId ? '编辑公告' : '发布内容', icon: Plus, permission: 'announcement:publish' },
     ];
 
     return (
