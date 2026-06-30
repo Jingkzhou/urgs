@@ -1,6 +1,7 @@
 package com.example.urgs_api.im.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.example.urgs_api.im.entity.ImGroup;
 import com.example.urgs_api.im.entity.ImGroupMember;
 import com.example.urgs_api.im.mapper.ImGroupMapper;
@@ -69,6 +70,20 @@ public class ImGroupServiceImpl implements ImGroupService {
     private com.example.urgs_api.im.mapper.ImConversationMapper conversationMapper;
 
     private void createGroupConversation(Long userId, Long groupId, String groupName) {
+        Long existingCount = conversationMapper.selectCount(new QueryWrapper<com.example.urgs_api.im.entity.ImConversation>()
+                .eq("user_id", userId)
+                .eq("peer_id", groupId)
+                .eq("chat_type", 2));
+        if (existingCount != null && existingCount > 0) {
+            conversationMapper.update(null, new UpdateWrapper<com.example.urgs_api.im.entity.ImConversation>()
+                    .eq("user_id", userId)
+                    .eq("peer_id", groupId)
+                    .eq("chat_type", 2)
+                    .set("name", groupName)
+                    .set("is_hidden", false));
+            return;
+        }
+
         com.example.urgs_api.im.entity.ImConversation conversation = new com.example.urgs_api.im.entity.ImConversation();
         conversation.setUserId(userId);
         conversation.setPeerId(groupId);

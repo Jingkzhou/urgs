@@ -98,7 +98,8 @@ public class ImUserServiceImpl implements ImUserService {
     private void createConversationIfNotExists(Long userId, Long peerId) {
         Long count = conversationMapper.selectCount(new QueryWrapper<com.example.urgs_api.im.entity.ImConversation>()
                 .eq("user_id", userId)
-                .eq("peer_id", peerId));
+                .eq("peer_id", peerId)
+                .eq("chat_type", 1));
 
         if (count == 0) {
             com.example.urgs_api.im.entity.ImConversation conversation = new com.example.urgs_api.im.entity.ImConversation();

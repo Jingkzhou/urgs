@@ -311,7 +311,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
                                     alt="Avatar"
                                 />
                                 <div className="flex flex-col items-start max-w-[70%]">
-                                    <span className="text-[11px] text-slate-400 mb-1 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">{msg.senderName || `User ${msg.senderId}`} {msg.time && `· ${msg.time}`}</span>
+                                    <span className="text-[11px] text-slate-400 mb-1 ml-1">{msg.senderName || `User ${msg.senderId}`} {msg.time && `· ${msg.time}`}</span>
                                     <div className="relative rounded-2xl rounded-tl-sm border border-slate-200 bg-white px-4 py-2.5 text-[14px] text-slate-800 shadow-sm">
                                         {renderMessageContent(msg, false)}
                                     </div>

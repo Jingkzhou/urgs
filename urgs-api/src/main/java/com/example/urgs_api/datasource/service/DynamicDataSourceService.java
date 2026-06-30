@@ -171,7 +171,8 @@ public class DynamicDataSourceService implements DisposableBean {
             hikariConfig.setPassword(password);
         }
         hikariConfig.setMaximumPoolSize(5);
-        hikariConfig.setMinimumIdle(1);
+        hikariConfig.setMinimumIdle(0);
+        hikariConfig.setInitializationFailTimeout(-1);
         hikariConfig.setIdleTimeout(300_000);     // 5 minutes
         hikariConfig.setMaxLifetime(600_000);     // 10 minutes
         hikariConfig.setConnectionTimeout(10_000); // 10 seconds
