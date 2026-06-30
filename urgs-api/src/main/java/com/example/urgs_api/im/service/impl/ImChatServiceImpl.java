@@ -185,7 +185,7 @@ public class ImChatServiceImpl implements ImChatService {
         message.setGroupId(groupId);
         message.setSenderId(0L); // System Sender ID
         message.setContent(content);
-        message.setMsgType(1000); // System Message Type
+        message.setMsgType(6); // System message, matches im_message.msg_type TINYINT schema.
         message.setSendTime(java.time.LocalDateTime.now());
 
         sendMessage(message);

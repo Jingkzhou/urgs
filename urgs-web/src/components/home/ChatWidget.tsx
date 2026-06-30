@@ -463,6 +463,25 @@ const ChatWidget: React.FC = () => {
         }
     };
 
+    const filterAvailableGroupInviteUsers = (users: ImUser[]) => {
+        const currentUserId = getCurrentUserId();
+        const memberIds = new Set(groupMembers.map(member => Number(member.userId)));
+        return users.filter(user => {
+            const userId = Number(user.userId);
+            return userId !== currentUserId && !memberIds.has(userId);
+        });
+    };
+
+    const handleSearchAddMembers = async (term: string) => {
+        setSearchTerm(term);
+        try {
+            const users = await imService.searchUsers(term);
+            setAvailableUsers(filterAvailableGroupInviteUsers(users));
+        } catch (e) {
+            console.error('Failed to search available group members', e);
+        }
+    };
+
     const closeCreateGroupModal = () => {
         setShowCreateGroup(false);
         setGroupNameInput('');
@@ -562,15 +581,11 @@ const ChatWidget: React.FC = () => {
     const handleOpenAddMember = async () => {
         setSelectedUserIds([]);
         setAvailableUsers([]);
+        setSearchTerm('');
         setShowAddMember(true);
         try {
-            const currentUserId = getCurrentUserId();
-            const memberIds = new Set(groupMembers.map(member => Number(member.userId)));
             const users = await imService.searchUsers('');
-            setAvailableUsers(users.filter(user => {
-                const userId = Number(user.userId);
-                return userId !== currentUserId && !memberIds.has(userId);
-            }));
+            setAvailableUsers(filterAvailableGroupInviteUsers(users));
         } catch (e) {
             console.error('Failed to load available group members', e);
             alert('加载联系人失败');
@@ -1079,6 +1094,15 @@ const ChatWidget: React.FC = () => {
                         className="bg-white p-6 rounded-xl w-full max-w-md shadow-2xl border border-slate-100 flex flex-col"
                     >
                         <h3 className="text-base font-semibold text-slate-900 mb-4">邀请好友</h3>
+                        <div className="mb-4 relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                            <input
+                                className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-md text-[13px] focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                                placeholder="搜索联系人..."
+                                value={searchTerm}
+                                onChange={(e) => handleSearchAddMembers(e.target.value)}
+                            />
+                        </div>
                         <div className="flex-1 overflow-y-auto border border-slate-100 rounded-md p-1 mb-6 max-h-[300px]">
                             <h4 className="text-[11px] font-semibold text-slate-400 mb-2 px-2 uppercase">选择联系人</h4>
                             {availableUsers.map(u => (
