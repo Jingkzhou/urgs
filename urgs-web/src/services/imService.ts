@@ -33,6 +33,13 @@ export interface ImSession {
     lastMsgContent: string;
     lastMsgTime: string;
     unreadCount: number;
+    isTop: boolean;
+    isMuted: boolean;
+}
+
+export interface ImSessionSettings {
+    isTop?: boolean;
+    isMuted?: boolean;
 }
 
 const API_BASE = '/api/im';
@@ -57,10 +64,13 @@ export const imService = {
     searchUsers: (keyword: string) => get<ImUser[]>(`/api/im/users/search?keyword=${keyword}`),
 
     // Chat History
-    getHistory: async (conversationId: string, limit = 20) => {
+    getHistory: async (conversationId: string, peerId: number, chatType: number, limit = 20) => {
         // userId injected by interceptor
         const response = await get<ImMessage[]>(`${API_BASE}/chat/history`, {
-            conversationId, limit: limit.toString()
+            conversationId,
+            peerId: peerId.toString(),
+            chatType: chatType.toString(),
+            limit: limit.toString()
         });
         return response;
     },
@@ -95,6 +105,19 @@ export const imService = {
     clearUnread: async (peerId: number, chatType?: number) => {
         return post<any>(`${API_BASE}/session/${peerId}/read`, {}, {
             params: { chatType }
+        });
+    },
+
+    updateSessionSettings: async (peerId: number, chatType: number, settings: ImSessionSettings) => {
+        return post<string>(`${API_BASE}/session/${peerId}/settings`, settings, {
+            params: { chatType }
+        });
+    },
+
+    clearHistory: async (peerId: number, chatType: number) => {
+        return axios.delete(`${API_BASE}/session/${peerId}/history`, {
+            params: { chatType },
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
         });
     },
 

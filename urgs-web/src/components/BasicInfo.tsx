@@ -2,6 +2,11 @@ import React, { useRef, useState } from 'react';
 import { User, Mail, Phone, Building, Briefcase, Camera, Shield, RefreshCw } from 'lucide-react';
 import { userService } from '../services/userService';
 
+const DEFAULT_AVATARS = Array.from(
+    { length: 10 },
+    (_, index) => `/avatars/default/avatar-${String(index + 1).padStart(2, '0')}.png`
+);
+
 interface UserInfo {
     name?: string;
     empId?: string;
@@ -23,6 +28,7 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
         phone: userInfo?.phone || '13800138000',
         department: userInfo?.department || '总行/信息科技部/软件开发中心',
     });
+    const [isSavingAvatar, setIsSavingAvatar] = useState(false);
 
     // Auto-fix missing ID
     React.useEffect(() => {
@@ -94,32 +100,46 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleAvatarClick = () => {
+        if (isSavingAvatar) return;
         fileInputRef.current?.click();
+    };
+
+    const saveAvatar = async (avatarUrl: string, successMessage: string) => {
+        setIsSavingAvatar(true);
+        try {
+            await userService.updateProfile({ avatarUrl });
+            setDisplayInfo(prev => ({ ...prev, avatarUrl }));
+
+            const storedUser = JSON.parse(localStorage.getItem('auth_user') || '{}');
+            localStorage.setItem('auth_user', JSON.stringify({ ...storedUser, avatarUrl }));
+            alert(successMessage);
+        } catch (error) {
+            console.error('Update avatar failed', error);
+            alert('头像设置失败');
+        } finally {
+            setIsSavingAvatar(false);
+        }
     };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
+        setIsSavingAvatar(true);
         try {
-            // 1. Upload File
             const url = await userService.uploadFile(file);
-            console.log('Uploaded Avatar:', url);
+            await userService.updateProfile({ avatarUrl: url });
+            setDisplayInfo(prev => ({ ...prev, avatarUrl: url }));
 
-            // 2. Update User Profile
-            const userId = displayInfo.userId || displayInfo.id;
-            if (userId) {
-                await userService.updateProfile({
-                    avatarUrl: url
-                });
-
-                // 3. Update Local State
-                setDisplayInfo(prev => ({ ...prev, avatarUrl: url }));
-                alert('头像更新成功');
-            }
+            const storedUser = JSON.parse(localStorage.getItem('auth_user') || '{}');
+            localStorage.setItem('auth_user', JSON.stringify({ ...storedUser, avatarUrl: url }));
+            alert('头像上传成功');
         } catch (error) {
             console.error('Update avatar failed', error);
             alert('头像上传失败');
+        } finally {
+            setIsSavingAvatar(false);
+            e.target.value = '';
         }
     };
 
@@ -151,7 +171,7 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-end -mt-16 mb-10 gap-6">
                         <div className="relative group/avatar">
                             <div
-                                className="w-32 h-32 rounded-[2.5rem] bg-white p-1.5 shadow-2xl cursor-pointer relative z-10 overflow-hidden group-hover/avatar:scale-105 transition-transform duration-500"
+                                className={`w-32 h-32 rounded-[2.5rem] bg-white p-1.5 shadow-2xl relative z-10 overflow-hidden transition-transform duration-500 ${isSavingAvatar ? 'cursor-wait opacity-70' : 'cursor-pointer group-hover/avatar:scale-105'}`}
                                 onClick={handleAvatarClick}
                             >
                                 <div className="w-full h-full rounded-[2rem] bg-slate-100 flex items-center justify-center overflow-hidden relative shadow-inner">
@@ -191,8 +211,49 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                                 </span>
                             </div>
                         </div>
+                    </div>
 
-                      
+                    <div className="mb-10 rounded-[1.75rem] border border-slate-100 bg-slate-50/70 p-5">
+                        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <h3 className="text-sm font-black text-slate-700">选择默认头像</h3>
+                                <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">点击头像即可保存</p>
+                            </div>
+                            <button
+                                type="button"
+                                disabled={isSavingAvatar}
+                                onClick={handleAvatarClick}
+                                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-600 shadow-sm transition-all hover:border-red-200 hover:text-red-500 disabled:cursor-wait disabled:opacity-50"
+                            >
+                                <Camera size={15} />
+                                上传本地图片
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-5 gap-3 md:grid-cols-10">
+                            {DEFAULT_AVATARS.map((avatarUrl, index) => {
+                                const isSelected = displayInfo.avatarUrl === avatarUrl;
+                                return (
+                                    <button
+                                        key={avatarUrl}
+                                        type="button"
+                                        disabled={isSavingAvatar}
+                                        onClick={() => saveAvatar(avatarUrl, '默认头像设置成功')}
+                                        aria-label={`选择默认头像 ${index + 1}`}
+                                        className={`aspect-square overflow-hidden rounded-xl border-2 bg-white p-0.5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-wait disabled:opacity-50 ${
+                                            isSelected
+                                                ? 'border-red-500 ring-2 ring-red-500/15'
+                                                : 'border-white hover:border-red-200'
+                                        }`}
+                                    >
+                                        <img
+                                            src={avatarUrl}
+                                            alt={`默认头像 ${index + 1}`}
+                                            className="h-full w-full rounded-[0.55rem] object-cover"
+                                        />
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </div>
 
                     {/* Information Grid */}

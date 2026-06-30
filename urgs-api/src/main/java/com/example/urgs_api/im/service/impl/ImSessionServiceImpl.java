@@ -5,9 +5,11 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.example.urgs_api.im.entity.ImConversation;
 import com.example.urgs_api.im.entity.ImGroup;
 import com.example.urgs_api.im.entity.ImGroupMember;
+import com.example.urgs_api.im.entity.ImMessage;
 import com.example.urgs_api.im.mapper.ImConversationMapper;
 import com.example.urgs_api.im.mapper.ImGroupMapper;
 import com.example.urgs_api.im.mapper.ImGroupMemberMapper;
+import com.example.urgs_api.im.mapper.ImMessageMapper;
 import com.example.urgs_api.im.service.ImSessionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -36,10 +38,14 @@ public class ImSessionServiceImpl implements ImSessionService {
     @Autowired
     private ImGroupMemberMapper groupMemberMapper;
 
+    @Autowired
+    private ImMessageMapper messageMapper;
+
     @Override
     public List<ImConversation> getSessionList(Long userId) {
         List<ImConversation> rawList = conversationMapper.selectList(new QueryWrapper<ImConversation>()
                 .eq("user_id", userId)
+                .orderByDesc("is_top")
                 .orderByDesc("last_msg_time")
                 .orderByDesc("id"));
 
@@ -100,6 +106,53 @@ public class ImSessionServiceImpl implements ImSessionService {
                 .eq("user_id", userId)
                 .eq("peer_id", peerId)
                 .eq(chatType != null, "chat_type", chatType));
+    }
+
+    @Override
+    public void updateSettings(Long userId, Long peerId, Integer chatType, Boolean isTop, Boolean isMuted) {
+        if (isTop == null && isMuted == null) {
+            return;
+        }
+        UpdateWrapper<ImConversation> update = new UpdateWrapper<ImConversation>()
+                .eq("user_id", userId)
+                .eq("peer_id", peerId)
+                .eq(chatType != null, "chat_type", chatType)
+                .set(isTop != null, "is_top", isTop)
+                .set(isMuted != null, "is_muted", isMuted);
+        conversationMapper.update(null, update);
+    }
+
+    @Override
+    public void clearHistory(Long userId, Long peerId, Integer chatType) {
+        String conversationId = chatType != null && chatType == 2
+                ? "GROUP_" + peerId
+                : Math.min(userId, peerId) + "_" + Math.max(userId, peerId);
+        ImMessage latestMessage = messageMapper.selectOne(new QueryWrapper<ImMessage>()
+                .eq("conversation_id", conversationId)
+                .orderByDesc("id")
+                .last("LIMIT 1"));
+        Long clearedBeforeMsgId = latestMessage == null ? 0L : latestMessage.getId();
+
+        conversationMapper.update(null, new UpdateWrapper<ImConversation>()
+                .eq("user_id", userId)
+                .eq("peer_id", peerId)
+                .eq(chatType != null, "chat_type", chatType)
+                .set("cleared_before_msg_id", clearedBeforeMsgId)
+                .set("last_msg_id", null)
+                .set("last_msg_content", "")
+                .set("last_msg_time", null)
+                .set("unread_count", 0));
+    }
+
+    @Override
+    public Long getClearedBeforeMsgId(Long userId, Long peerId, Integer chatType) {
+        ImConversation conversation = conversationMapper.selectOne(new QueryWrapper<ImConversation>()
+                .eq("user_id", userId)
+                .eq("peer_id", peerId)
+                .eq(chatType != null, "chat_type", chatType)
+                .orderByDesc("id")
+                .last("LIMIT 1"));
+        return conversation == null ? null : conversation.getClearedBeforeMsgId();
     }
 
     private boolean isDefaultGroupName(String name) {

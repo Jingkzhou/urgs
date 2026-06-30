@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { getAvatarUrl } from '../../utils/avatarUtils';
-import { MessageCircle, X, Search, Plus, Minus, MoreHorizontal } from 'lucide-react';
+import { BellOff, MessageCircle, X, Search, Plus, Minus, MoreHorizontal, Pin, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SessionList from '../im/SessionList';
 import ChatWindow from '../im/ChatWindow';
-import { imService } from '../../services/imService';
+import { imService, type ImUser } from '../../services/imService';
 import { userService } from '../../services/userService';
 import { WS_URL } from '../../config';
 type ImMessageType = 'text' | 'image' | 'file';
@@ -21,6 +21,9 @@ interface ChatSession {
     time: string;
     unread: number;
     type: ChatSessionType;
+    members?: ImUser[];
+    isTop: boolean;
+    isMuted: boolean;
 }
 
 const ChatWidget: React.FC = () => {
@@ -31,6 +34,21 @@ const ChatWidget: React.FC = () => {
 
     const [currentUser, setCurrentUser] = useState<any>(null);
     const activeSession = activeSessionKey ? sessions.find(s => s.key === activeSessionKey) || null : null;
+    const totalUnread = sessions.reduce(
+        (sum, session) => sum + (session.isMuted ? 0 : (session.unread || 0)),
+        0
+    );
+    const baseDocumentTitleRef = useRef(document.title);
+
+    useEffect(() => {
+        document.title = totalUnread > 0
+            ? `(${totalUnread}) ${baseDocumentTitleRef.current}`
+            : baseDocumentTitleRef.current;
+    }, [totalUnread]);
+
+    useEffect(() => () => {
+        document.title = baseDocumentTitleRef.current;
+    }, []);
 
     // Sync user info from storage (including avatar)
     const syncUserFromStorage = () => {
@@ -79,19 +97,19 @@ const ChatWidget: React.FC = () => {
     const [showMenu, setShowMenu] = useState(false);
     const [showAddFriend, setShowAddFriend] = useState(false);
     const [showCreateGroup, setShowCreateGroup] = useState(false);
-    const [showGroupDetails, setShowGroupDetails] = useState(false);
+    const [showConversationSettings, setShowConversationSettings] = useState(false);
     const [showAddMember, setShowAddMember] = useState(false);
     const [isDeleteMode, setIsDeleteMode] = useState(false);
     const [groupMembers, setGroupMembers] = useState<any[]>([]);
     const [groupNameDraft, setGroupNameDraft] = useState('');
     const [isRenamingGroup, setIsRenamingGroup] = useState(false);
 
-    const handleShowGroupDetails = async () => {
-        if (!activeSession || activeSession.type !== 'group') return; // Only groups
-
-        setShowGroupDetails(true);
-        setIsDeleteMode(false); // Reset delete mode
+    const handleShowConversationSettings = async () => {
+        if (!activeSession) return;
+        setShowConversationSettings(true);
+        setIsDeleteMode(false);
         setGroupNameDraft(activeSession.name || '');
+        if (activeSession.type !== 'group') return;
         try {
             const members = await imService.getGroupMembers(activeSession.id);
             setGroupMembers(members);
@@ -205,7 +223,7 @@ const ChatWidget: React.FC = () => {
                     }
                 }
 
-                const history = await imService.getHistory(convId);
+                const history = await imService.getHistory(convId, sid, activeSession.chatType);
                 // Transform to UI format with Member Name resolution
                 const uiMessages = history.reverse().map(m => ({
                     id: m.id,
@@ -232,6 +250,17 @@ const ChatWidget: React.FC = () => {
         if (!currentUser || currentUser.userId === -1) return;
         try {
             const data = await imService.getSessions();
+            const groupMembersById = new Map<number, ImUser[]>();
+            await Promise.all(data
+                .filter(session => session.chatType === 2)
+                .map(async session => {
+                    try {
+                        const members = await imService.getGroupMembers(session.peerId);
+                        groupMembersById.set(session.peerId, members.slice(0, 9));
+                    } catch (e) {
+                        console.error(`Failed to load members for group ${session.peerId}`, e);
+                    }
+                }));
 
             // Helper to enrich data (Only for Avatar fallback or Group name if needed)
             const getMeta = (id: number, type: number) => {
@@ -253,7 +282,10 @@ const ChatWidget: React.FC = () => {
                     message: s.lastMsgContent || '',
                     time: s.lastMsgTime ? new Date(s.lastMsgTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
                     unread: s.unreadCount,
-                    type: (s.chatType === 1 ? (s.peerId === 103 ? 'bot' : 'person') : 'group') as ChatSessionType
+                    type: (s.chatType === 1 ? (s.peerId === 103 ? 'bot' : 'person') : 'group') as ChatSessionType,
+                    members: groupMembersById.get(s.peerId),
+                    isTop: Boolean(s.isTop),
+                    isMuted: Boolean(s.isMuted)
                 };
             });
 
@@ -449,33 +481,7 @@ const ChatWidget: React.FC = () => {
             setShowAddFriend(false);
             setSelectedUserIds([]);
 
-            // Refresh sessions
-            const newSessions = await imService.getSessions();
-            // Re-map (duplicated logic, should refactor)
-            const getMeta = (id: number, type: number) => {
-                if (type === 2) return { name: '群聊', avatar: null };
-                if (id === 102) return { name: 'Li Manager', avatar: null };
-                if (id === 103) return { name: 'Smart Assistant', avatar: null };
-                const u = availableUsers.find(u => u.userId === id) || { wxId: 'User ' + id };
-                return { name: u.wxId || ('User ' + id), avatar: getAvatarUrl(u.avatarUrl, u.userId) };
-            };
-
-            const uiSessions: ChatSession[] = newSessions.map(s => {
-                const meta = getMeta(s.peerId, s.chatType);
-                return {
-                    key: getSessionKey(s.peerId, s.chatType),
-                    id: s.peerId,
-                    peerId: s.peerId,
-                    chatType: s.chatType,
-                    name: s.name || meta.name,
-                    avatar: s.avatar || meta.avatar,
-                    message: s.lastMsgContent || '',
-                    time: s.lastMsgTime ? new Date(s.lastMsgTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
-                    unread: s.unreadCount,
-                    type: (s.chatType === 1 ? (s.peerId === 103 ? 'bot' : 'person') : 'group') as ChatSessionType
-                };
-            });
-            setSessions(uiSessions);
+            await fetchSessions();
 
         } catch (e) {
             alert('添加好友失败');
@@ -553,6 +559,24 @@ const ChatWidget: React.FC = () => {
         }
     }
 
+    const handleOpenAddMember = async () => {
+        setSelectedUserIds([]);
+        setAvailableUsers([]);
+        setShowAddMember(true);
+        try {
+            const currentUserId = getCurrentUserId();
+            const memberIds = new Set(groupMembers.map(member => Number(member.userId)));
+            const users = await imService.searchUsers('');
+            setAvailableUsers(users.filter(user => {
+                const userId = Number(user.userId);
+                return userId !== currentUserId && !memberIds.has(userId);
+            }));
+        } catch (e) {
+            console.error('Failed to load available group members', e);
+            alert('加载联系人失败');
+        }
+    };
+
 
 
 
@@ -603,7 +627,39 @@ const ChatWidget: React.FC = () => {
         }
     };
 
-    const totalUnread = sessions.reduce((sum, s) => sum + (s.unread || 0), 0);
+    const handleUpdateSessionSetting = async (setting: 'isTop' | 'isMuted', value: boolean) => {
+        if (!activeSession) return;
+        const sessionKey = activeSession.key;
+        const previousValue = activeSession[setting];
+        setSessions(prev => prev
+            .map(session => session.key === sessionKey ? { ...session, [setting]: value } : session)
+            .sort((a, b) => Number(b.isTop) - Number(a.isTop)));
+        try {
+            await imService.updateSessionSettings(activeSession.id, activeSession.chatType, { [setting]: value });
+        } catch (e) {
+            console.error('Failed to update session setting', e);
+            setSessions(prev => prev
+                .map(session => session.key === sessionKey ? { ...session, [setting]: previousValue } : session)
+                .sort((a, b) => Number(b.isTop) - Number(a.isTop)));
+            alert('聊天设置保存失败');
+        }
+    };
+
+    const handleClearHistory = async () => {
+        if (!activeSession || !activeSessionKey) return;
+        if (!window.confirm('确定清空当前聊天记录吗？该操作只影响你看到的历史记录。')) return;
+        try {
+            await imService.clearHistory(activeSession.id, activeSession.chatType);
+            setMessages(prev => ({ ...prev, [activeSessionKey]: [] }));
+            setSessions(prev => prev.map(session => session.key === activeSessionKey
+                ? { ...session, message: '', time: '', unread: 0 }
+                : session));
+            setShowConversationSettings(false);
+        } catch (e) {
+            console.error('Failed to clear chat history', e);
+            alert('清空聊天记录失败');
+        }
+    };
 
     return (
         <div className="fixed bottom-8 right-8 z-50 flex flex-col items-end print:hidden font-sans antialiased">
@@ -734,7 +790,7 @@ const ChatWidget: React.FC = () => {
                                     messages={messages[activeSessionKey] || []}
                                     onSendMessage={handleSendMessage}
                                     onFileUpload={userService.uploadFile}
-                                    onShowDetails={handleShowGroupDetails}
+                                    onShowDetails={handleShowConversationSettings}
                                 />
                             ) : (
                                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-slate-50">
@@ -879,41 +935,79 @@ const ChatWidget: React.FC = () => {
                 </div>
             )}
 
-            {showGroupDetails && (
+            {showConversationSettings && activeSession && (
                 <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center">
                     <div className="bg-white p-6 rounded-lg w-96 shadow-xl max-h-[80vh] flex flex-col">
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold">群聊详情</h3>
-                            <button onClick={() => setShowGroupDetails(false)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
+                            <h3 className="font-bold">聊天设置</h3>
+                            <button onClick={() => setShowConversationSettings(false)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
                         </div>
-                        <div className="mb-4">
-                            <div className="text-xs font-semibold text-slate-400 mb-2">群名称</div>
-                            <div className="flex gap-2">
-                                <input
-                                    value={groupNameDraft}
-                                    maxLength={32}
-                                    title={groupNameDraft}
-                                    onChange={(e) => setGroupNameDraft(e.target.value)}
-                                    className="min-w-0 flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                                />
+                        <div className="mb-4 overflow-hidden rounded-lg border border-slate-200">
+                            <div className="flex items-center justify-between px-3 py-3">
+                                <div className="flex items-center gap-2.5">
+                                    <BellOff size={17} className="text-slate-400" />
+                                    <div>
+                                        <div className="text-sm font-medium text-slate-800">消息免打扰</div>
+                                        <div className="text-[11px] text-slate-400">不计入全局未读提醒</div>
+                                    </div>
+                                </div>
                                 <button
-                                    onClick={handleRenameGroup}
-                                    disabled={!groupNameDraft.trim() || isRenamingGroup}
-                                    className={`px-3 py-2 text-sm rounded-lg text-white transition-colors ${groupNameDraft.trim() && !isRenamingGroup ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-slate-300 cursor-not-allowed'}`}
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={activeSession.isMuted}
+                                    onClick={() => handleUpdateSessionSetting('isMuted', !activeSession.isMuted)}
+                                    className={`relative h-5 w-9 rounded-full transition-colors ${activeSession.isMuted ? 'bg-indigo-600' : 'bg-slate-300'}`}
                                 >
-                                    保存
+                                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${activeSession.isMuted ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                                </button>
+                            </div>
+                            <div className="mx-3 border-t border-slate-100" />
+                            <div className="flex items-center justify-between px-3 py-3">
+                                <div className="flex items-center gap-2.5">
+                                    <Pin size={17} className="text-slate-400" />
+                                    <div>
+                                        <div className="text-sm font-medium text-slate-800">置顶聊天</div>
+                                        <div className="text-[11px] text-slate-400">始终显示在会话列表顶部</div>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={activeSession.isTop}
+                                    onClick={() => handleUpdateSessionSetting('isTop', !activeSession.isTop)}
+                                    className={`relative h-5 w-9 rounded-full transition-colors ${activeSession.isTop ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                                >
+                                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${activeSession.isTop ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
                                 </button>
                             </div>
                         </div>
-                        <div className="flex-1 overflow-y-auto">
-                            <h4 className="text-xs font-semibold text-slate-400 mb-3">成员 ({groupMembers.length})</h4>
-                            <div className="grid grid-cols-5 gap-2">
+                        {activeSession.type === 'group' && (
+                            <>
+                                <div className="mb-4">
+                                    <div className="text-xs font-semibold text-slate-400 mb-2">群名称</div>
+                                    <div className="flex gap-2">
+                                        <input
+                                            value={groupNameDraft}
+                                            maxLength={32}
+                                            title={groupNameDraft}
+                                            onChange={(e) => setGroupNameDraft(e.target.value)}
+                                            className="min-w-0 flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                                        />
+                                        <button
+                                            onClick={handleRenameGroup}
+                                            disabled={!groupNameDraft.trim() || isRenamingGroup}
+                                            className={`px-3 py-2 text-sm rounded-lg text-white transition-colors ${groupNameDraft.trim() && !isRenamingGroup ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-slate-300 cursor-not-allowed'}`}
+                                        >
+                                            保存
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex-1 overflow-y-auto">
+                                    <h4 className="text-xs font-semibold text-slate-400 mb-3">成员 ({groupMembers.length})</h4>
+                                    <div className="grid grid-cols-5 gap-2">
                                 <div
                                     className="flex flex-col items-center gap-1 cursor-pointer hover:bg-slate-50 p-1 rounded"
-                                    onClick={() => {
-                                        setShowAddMember(true);
-                                        setSelectedUserIds([]);
-                                    }}
+                                    onClick={handleOpenAddMember}
                                 >
                                     <div className="w-10 h-10 border-2 border-dashed border-slate-300 rounded-lg flex items-center justify-center text-slate-400">
                                         <Plus size={20} />
@@ -933,31 +1027,45 @@ const ChatWidget: React.FC = () => {
                                     </span>
                                 </div>
 
-                                {groupMembers.map(m => (
-                                    <div key={m.userId} className="relative flex flex-col items-center gap-1 group/member">
-                                        {isDeleteMode && m.userId !== currentUser.userId && (
-                                            <button
-                                                className="absolute -top-1 -right-1 z-10 bg-red-500 text-white rounded-full p-0.5 shadow-sm hover:bg-red-600"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleRemoveMemberSingle(m.userId);
-                                                }}
-                                            >
-                                                <Minus size={12} strokeWidth={3} />
-                                            </button>
-                                        )}
-                                        <img
-                                            src={getAvatarUrl(m.avatarUrl, m.userId)}
-                                            className={`w-10 h-10 rounded-lg object-cover ${isDeleteMode ? 'opacity-90' : ''}`}
-                                            alt={m.wxId}
-                                        />
+                                {groupMembers.map(m => {
+                                    const memberName = m.name || m.wxId || m.empId || `用户 ${m.userId}`;
+                                    return (
+                                        <div key={m.userId} className="relative flex min-w-0 flex-col items-center gap-1 group/member">
+                                            {isDeleteMode && m.userId !== currentUser.userId && (
+                                                <button
+                                                    className="absolute -top-1 -right-1 z-10 bg-red-500 text-white rounded-full p-0.5 shadow-sm hover:bg-red-600"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleRemoveMemberSingle(m.userId);
+                                                    }}
+                                                >
+                                                    <Minus size={12} strokeWidth={3} />
+                                                </button>
+                                            )}
+                                            <img
+                                                src={getAvatarUrl(m.avatarUrl, memberName)}
+                                                className={`w-10 h-10 rounded-lg object-cover ${isDeleteMode ? 'opacity-90' : ''}`}
+                                                alt={memberName}
+                                            />
+                                            <span className="w-full truncate text-center text-[10px] text-slate-600" title={memberName}>
+                                                {memberName}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
                                     </div>
-                                ))}
-                            </div>
-                        </div>
+                                </div>
+                            </>
+                        )}
 
-                        <div className="flex justify-between items-center bg-slate-50 p-2 rounded-2xl border border-slate-100 mt-4">
-                            <button onClick={() => { setShowGroupDetails(false); setSelectedUserIds([]); }} className="px-6 py-2.5 text-[11px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors">关闭</button>
+                        <div className="mt-4 border-t border-slate-100 pt-4">
+                            <button
+                                onClick={handleClearHistory}
+                                className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                            >
+                                <Trash2 size={16} />
+                                清空聊天记录
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -987,10 +1095,20 @@ const ChatWidget: React.FC = () => {
                                         readOnly
                                         className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
                                     />
-                                    <img src={getAvatarUrl(u.avatarUrl, u.userId)} className="w-8 h-8 rounded-full object-cover" alt={u.wxId} />
-                                    <span className="text-[13px] text-slate-700">{u.wxId || ('用户 ' + u.userId)} (ID: {u.userId})</span>
+                                    <img
+                                        src={getAvatarUrl(u.avatarUrl, u.name || u.wxId || u.empId || '用户')}
+                                        className="w-8 h-8 rounded-full object-cover"
+                                        alt={u.name || u.wxId || '用户'}
+                                    />
+                                    <span className="text-[13px] text-slate-700">
+                                        {u.name || u.wxId || '用户'}
+                                        {u.empId ? ` (${u.empId})` : ''}
+                                    </span>
                                 </div>
                             ))}
+                            {availableUsers.length === 0 && (
+                                <div className="p-4 text-center text-sm text-slate-400">暂无可邀请联系人</div>
+                            )}
                         </div>
                         <div className="flex justify-end gap-3 font-medium">
                             <button onClick={() => { setShowAddMember(false); setSelectedUserIds([]); }} className="px-4 py-1.5 text-sm text-slate-600 hover:bg-slate-50 rounded border border-transparent">取消</button>

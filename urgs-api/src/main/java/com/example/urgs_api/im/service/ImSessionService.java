@@ -11,4 +11,10 @@ public interface ImSessionService {
     void clearUnread(Long userId, Long peerId, Integer chatType);
 
     void deleteSession(Long userId, Long peerId, Integer chatType);
+
+    void updateSettings(Long userId, Long peerId, Integer chatType, Boolean isTop, Boolean isMuted);
+
+    void clearHistory(Long userId, Long peerId, Integer chatType);
+
+    Long getClearedBeforeMsgId(Long userId, Long peerId, Integer chatType);
 }

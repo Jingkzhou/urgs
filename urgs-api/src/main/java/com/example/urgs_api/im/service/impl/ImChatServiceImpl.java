@@ -114,6 +114,7 @@ public class ImChatServiceImpl implements ImChatService {
             conversation.setChatType(chatType);
             conversation.setUnreadCount(incrementUnread ? 1 : 0);
             conversation.setIsTop(false);
+            conversation.setIsMuted(false);
             conversation.setIsHidden(false);
         } else {
             if (incrementUnread) {
@@ -145,10 +146,11 @@ public class ImChatServiceImpl implements ImChatService {
     }
 
     @Override
-    public List<ImMessageVO> getHistory(String conversationId, Long lastMsgId, int limit) {
+    public List<ImMessageVO> getHistory(String conversationId, Long lastMsgId, Long clearedBeforeMsgId, int limit) {
         QueryWrapper<ImMessage> query = new QueryWrapper<>();
         query.eq("conversation_id", conversationId)
                 .lt(lastMsgId != null, "id", lastMsgId)
+                .gt(clearedBeforeMsgId != null && clearedBeforeMsgId > 0, "id", clearedBeforeMsgId)
                 .orderByDesc("id")
                 .last("LIMIT " + limit);
         List<ImMessage> messages = messageMapper.selectList(query);

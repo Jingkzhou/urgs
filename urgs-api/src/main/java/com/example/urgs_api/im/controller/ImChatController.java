@@ -16,6 +16,9 @@ public class ImChatController {
     @Autowired
     private ImChatService chatService;
 
+    @Autowired
+    private com.example.urgs_api.im.service.ImSessionService sessionService;
+
     @PostMapping("/send")
     public String sendMessage(@RequestAttribute("userId") Long userId, @RequestBody ImMessage message) {
         // Force sender to be the authenticated user
@@ -28,6 +31,8 @@ public class ImChatController {
     @GetMapping("/history")
     public List<ImMessageVO> getHistory(@RequestAttribute("userId") Long userId,
             @RequestParam String conversationId,
+            @RequestParam Long peerId,
+            @RequestParam Integer chatType,
             @RequestParam(required = false) Long lastMsgId,
             @RequestParam(defaultValue = "20") int limit) {
 
@@ -50,6 +55,7 @@ public class ImChatController {
             }
         }
 
-        return chatService.getHistory(conversationId, lastMsgId, limit);
+        Long clearedBeforeMsgId = sessionService.getClearedBeforeMsgId(userId, peerId, chatType);
+        return chatService.getHistory(conversationId, lastMsgId, clearedBeforeMsgId, limit);
     }
 }

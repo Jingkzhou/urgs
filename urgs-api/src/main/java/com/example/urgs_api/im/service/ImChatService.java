@@ -7,7 +7,7 @@ import java.util.List;
 public interface ImChatService {
     void sendMessage(ImMessage message);
 
-    List<ImMessageVO> getHistory(String conversationId, Long lastMsgId, int limit);
+    List<ImMessageVO> getHistory(String conversationId, Long lastMsgId, Long clearedBeforeMsgId, int limit);
 
     void sendSystemMessage(Long groupId, String content);
 }

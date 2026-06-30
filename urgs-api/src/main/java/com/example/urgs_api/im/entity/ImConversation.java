@@ -29,7 +29,11 @@ public class ImConversation {
 
     private Boolean isTop;
 
+    private Boolean isMuted;
+
     private Boolean isHidden;
+
+    private Long clearedBeforeMsgId;
 
     private String name;
 
