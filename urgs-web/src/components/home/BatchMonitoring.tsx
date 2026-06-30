@@ -201,6 +201,10 @@ const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default' }
                             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Workflow Execution</span>
                         </div>
                         <div className="flex flex-wrap items-center gap-2.5">
+                            <div className="flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50/80 px-2.5 py-1">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.35)]" />
+                                <span className="text-[11px] font-bold text-slate-500">完成</span>
+                            </div>
                             <div className="flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50/80 px-2.5 py-1">
                                 <span className="h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.35)]" />
                                 <span className="text-[11px] font-bold text-slate-500">正在运行</span>
@@ -230,6 +234,10 @@ const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default' }
                                             margin={{ top: 8, right: 38, left: 4, bottom: 4 }}
                                         >
                                             <defs>
+                                                <linearGradient id="barCompletedGrad" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="0%" stopColor="#6EE7B7" />
+                                                    <stop offset="100%" stopColor="#059669" />
+                                                </linearGradient>
                                                 <linearGradient id="barRunningGrad" x1="0" y1="0" x2="0" y2="1">
                                                     <stop offset="0%" stopColor="#60A5FA" />
                                                     <stop offset="100%" stopColor="#2563EB" />
@@ -268,7 +276,10 @@ const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default' }
                                                 tickFormatter={(value: string) => value.length > (isCompact ? 10 : 14) ? `${value.slice(0, isCompact ? 10 : 14)}...` : value}
                                             />
                                             <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(241, 245, 249, 0.5)', radius: 10 }} />
-                                            <Bar dataKey="running" name="正在运行" stackId="a" fill="url(#barRunningGrad)" radius={[8, 0, 0, 8]} animationDuration={800} barSize={isCompact ? 14 : 16}>
+                                            <Bar dataKey="completed" name="完成" stackId="a" fill="url(#barCompletedGrad)" radius={[8, 0, 0, 8]} animationDuration={800} barSize={isCompact ? 14 : 16}>
+                                                <LabelList dataKey="completed" content={renderWorkflowBarValue} />
+                                            </Bar>
+                                            <Bar dataKey="running" name="正在运行" stackId="a" fill="url(#barRunningGrad)" animationDuration={800} barSize={isCompact ? 14 : 16}>
                                                 <LabelList dataKey="running" content={renderWorkflowBarValue} />
                                             </Bar>
                                             <Bar dataKey="waiting" name="等待中" stackId="a" fill="url(#barWaitingGrad)" animationDuration={800} barSize={isCompact ? 14 : 16}>

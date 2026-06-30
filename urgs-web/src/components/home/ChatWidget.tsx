@@ -41,14 +41,47 @@ const ChatWidget: React.FC = () => {
     const baseDocumentTitleRef = useRef(document.title);
 
     useEffect(() => {
-        document.title = totalUnread > 0
-            ? `(${totalUnread}) ${baseDocumentTitleRef.current}`
-            : baseDocumentTitleRef.current;
-    }, [totalUnread]);
+        const baseTitle = baseDocumentTitleRef.current;
+        const unreadTitle = `【${totalUnread > 99 ? '99+' : totalUnread}条新消息】${baseTitle}`;
+        let titleInterval: ReturnType<typeof setInterval> | null = null;
+        let showUnreadTitle = true;
 
-    useEffect(() => () => {
-        document.title = baseDocumentTitleRef.current;
-    }, []);
+        const stopTitleBlink = () => {
+            if (titleInterval) {
+                clearInterval(titleInterval);
+                titleInterval = null;
+            }
+        };
+
+        const updateTitle = () => {
+            stopTitleBlink();
+
+            if (totalUnread <= 0) {
+                document.title = baseTitle;
+                return;
+            }
+
+            document.title = unreadTitle;
+            if (!document.hidden) {
+                return;
+            }
+
+            showUnreadTitle = true;
+            titleInterval = setInterval(() => {
+                showUnreadTitle = !showUnreadTitle;
+                document.title = showUnreadTitle ? unreadTitle : baseTitle;
+            }, 1000);
+        };
+
+        updateTitle();
+        document.addEventListener('visibilitychange', updateTitle);
+
+        return () => {
+            stopTitleBlink();
+            document.removeEventListener('visibilitychange', updateTitle);
+            document.title = baseTitle;
+        };
+    }, [totalUnread]);
 
     // Sync user info from storage (including avatar)
     const syncUserFromStorage = () => {

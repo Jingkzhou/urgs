@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Select, InputNumber } from 'antd';
+import { Input, Select, InputNumber } from 'antd';
 import { Clock, Calendar, Repeat, ArrowRightLeft } from 'lucide-react';
 
 interface CronPickerProps {
@@ -161,7 +161,19 @@ const CronPicker: React.FC<CronPickerProps> = ({ value, onChange, offset, onOffs
                 </div>
             </div>
 
-            <div className="bg-slate-50 px-3 py-2 border-t border-slate-100 flex items-center justify-between">
+            <div className="bg-slate-50 px-3 py-2 border-t border-slate-100 space-y-2">
+                <div className="flex items-center gap-2">
+                    <Repeat size={12} className="text-slate-400" />
+                    <span className="shrink-0 text-[10px] text-slate-500 font-medium">Cron 表达式:</span>
+                    <Input
+                        size="small"
+                        value={value ?? parts.join(' ')}
+                        onChange={(event) => onChange(event.target.value)}
+                        placeholder="例如：0 0 2 * * ?"
+                        className="font-mono text-xs"
+                    />
+                </div>
+
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
                         <Repeat size={12} className="text-slate-400" />

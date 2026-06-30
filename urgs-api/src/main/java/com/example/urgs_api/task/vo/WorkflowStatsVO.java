@@ -6,6 +6,8 @@ import lombok.Data;
 public class WorkflowStatsVO {
     private String workflowName;
     private long total;
-    private long success;
+    private long completed;
+    private long running;
+    private long waiting;
     private long failed;
 }

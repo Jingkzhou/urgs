@@ -632,7 +632,11 @@ public class TaskService {
 
             vo.setTotal(vo.getTotal() + 1);
             if (instance.getStatus() == 3) {
-                vo.setSuccess(vo.getSuccess() + 1);
+                vo.setCompleted(vo.getCompleted() + 1);
+            } else if (instance.getStatus() == 2) {
+                vo.setRunning(vo.getRunning() + 1);
+            } else if (instance.getStatus() == 1) {
+                vo.setWaiting(vo.getWaiting() + 1);
             } else if (instance.getStatus() == 4) {
                 vo.setFailed(vo.getFailed() + 1);
             }

@@ -56,6 +56,8 @@ const App: React.FC = () => {
         roleId?: number; 
         avatarUrl?: string;
         system?: string;
+        orgName?: string;
+        phone?: string;
     } | null>(initialUser);
     const [layoutMode, setLayoutMode] = useState<'sidebar' | 'topbar'>(() => {
         if (typeof window !== 'undefined') {
@@ -126,6 +128,9 @@ const App: React.FC = () => {
                         roleName: data.roleName,
                         roleId: data.roleId,
                         system: data.system,
+                        orgName: data.orgName,
+                        phone: data.phone,
+                        avatarUrl: data.avatarUrl,
                     };
                     localStorage.setItem('auth_token', data.token);
                     localStorage.setItem('auth_user', JSON.stringify(user));

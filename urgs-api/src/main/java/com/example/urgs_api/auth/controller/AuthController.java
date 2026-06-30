@@ -129,7 +129,8 @@ public class AuthController {
         }
 
         return new AuthResponse(token, String.valueOf(user.getId()), user.getEmpId(), user.getName(),
-                user.getRoleName(), roleId, user.getSystem());
+                user.getRoleName(), roleId, user.getSystem(), user.getOrgName(), user.getPhone(),
+                user.getAvatarUrl());
     }
 
     private String extractToken(String authorization, String tokenParam) {

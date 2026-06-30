@@ -94,7 +94,9 @@ export const fetchHourlyThroughput = async (date?: string): Promise<any[]> => {
 export interface WorkflowStatsVO {
     workflowName: string;
     total: number;
-    success: number;
+    completed: number;
+    running: number;
+    waiting: number;
     failed: number;
 }
 

@@ -115,6 +115,9 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
           roleName: data.roleName,
           roleId: data.roleId,
           system: data.system,
+          orgName: data.orgName,
+          phone: data.phone,
+          avatarUrl: data.avatarUrl,
         })
       );
 
@@ -160,6 +163,9 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
         roleName: data.roleName,
         roleId: data.roleId,
         system: data.system,
+        orgName: data.orgName,
+        phone: data.phone,
+        avatarUrl: data.avatarUrl,
       });
     } catch (err: any) {
       console.error("Login error:", err);

@@ -8,6 +8,9 @@ public class AuthResponse {
     private String roleName;
     private Long roleId;
     private String system;
+    private String orgName;
+    private String phone;
+    private String avatarUrl;
 
     public AuthResponse() {
     }
@@ -22,7 +25,7 @@ public class AuthResponse {
     }
 
     public AuthResponse(String token, String id, String empId, String name, String roleName, Long roleId,
-            String system) {
+            String system, String orgName, String phone, String avatarUrl) {
         this.token = token;
         this.id = id;
         this.empId = empId;
@@ -30,6 +33,9 @@ public class AuthResponse {
         this.roleName = roleName;
         this.roleId = roleId;
         this.system = system;
+        this.orgName = orgName;
+        this.phone = phone;
+        this.avatarUrl = avatarUrl;
     }
 
     public Long getRoleId() {
@@ -86,5 +92,29 @@ public class AuthResponse {
 
     public void setSystem(String system) {
         this.system = system;
+    }
+
+    public String getOrgName() {
+        return orgName;
+    }
+
+    public void setOrgName(String orgName) {
+        this.orgName = orgName;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
+    }
+
+    public String getAvatarUrl() {
+        return avatarUrl;
+    }
+
+    public void setAvatarUrl(String avatarUrl) {
+        this.avatarUrl = avatarUrl;
     }
 }

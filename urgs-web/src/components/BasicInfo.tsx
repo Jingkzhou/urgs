@@ -1,19 +1,21 @@
 import React, { useRef, useState } from 'react';
-import { User, Mail, Phone, Building, Briefcase, Camera, Shield, RefreshCw } from 'lucide-react';
+import { User, Phone, Building, Briefcase, Camera, Shield } from 'lucide-react';
 import { userService } from '../services/userService';
 
-const DEFAULT_AVATARS = Array.from(
-    { length: 10 },
-    (_, index) => `/avatars/default/avatar-${String(index + 1).padStart(2, '0')}.png`
+const DEFAULT_AVATARS = ['avatar', 'animal-avatar'].flatMap(prefix =>
+    Array.from(
+        { length: 10 },
+        (_, index) => `/avatars/default/${prefix}-${String(index + 1).padStart(2, '0')}.png`
+    )
 );
 
 interface UserInfo {
     name?: string;
     empId?: string;
     roleName?: string;
-    email?: string;
     phone?: string;
     department?: string;
+    orgName?: string;
     avatarUrl?: string; // Should come from SysUser now
     userId?: number;
     id?: string; // SysUser uses string ID in DTO usually, check
@@ -24,9 +26,8 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
     // Mock extended info if not present
     const [displayInfo, setDisplayInfo] = useState({
         ...userInfo,
-        email: userInfo?.email || 'zhangsan@jilinbank.com.cn',
-        phone: userInfo?.phone || '13800138000',
-        department: userInfo?.department || '总行/信息科技部/软件开发中心',
+        phone: userInfo?.phone || '暂无联系电话',
+        department: userInfo?.orgName || userInfo?.department || '暂无机构信息',
     });
     const [isSavingAvatar, setIsSavingAvatar] = useState(false);
 
@@ -36,7 +37,7 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
             const storedUser = JSON.parse(localStorage.getItem('auth_user') || '{}');
             const currentId = displayInfo.userId || displayInfo.id || storedUser.id || storedUser.userId;
 
-            if (!currentId) {
+            if (!currentId || !userInfo?.orgName || !userInfo?.phone || !userInfo?.avatarUrl) {
                 console.log('Detected missing User ID, fetching profile...');
                 try {
                     const profile = await userService.getProfile();
@@ -50,7 +51,10 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                             id: profile.id,
                             name: profile.name,
                             empId: profile.empId,
-                            roleId: profile.roleId // Added roleId
+                            roleId: profile.roleId,
+                            department: profile.orgName || '暂无机构信息',
+                            phone: profile.phone || '暂无联系电话',
+                            avatarUrl: profile.avatarUrl
                         }));
 
                         // Update Local Storage
@@ -60,7 +64,10 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                             userId: Number(profile.id), // Store number userId for compatibility
                             name: profile.name,
                             empId: profile.empId,
-                            roleId: profile.roleId // Added roleId
+                            roleId: profile.roleId,
+                            orgName: profile.orgName,
+                            phone: profile.phone,
+                            avatarUrl: profile.avatarUrl
                         }));
                     } else if (displayInfo.empId) {
                         // Fallback: Try searching by EmpID
@@ -289,22 +296,6 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
 
                         {/* Section Right */}
                         <div className="space-y-4">
-                            <div className="group/field">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.25em] mb-2 px-1 block">电子邮箱 / Email Address</label>
-                                <div className="flex items-center gap-4 p-5 bg-slate-50/50 hover:bg-white rounded-[1.5rem] border border-slate-100 group-hover/field:border-red-500/30 group-hover/field:shadow-xl group-hover/field:shadow-black/[0.03] transition-all duration-500">
-                                    <div className="p-3 bg-white rounded-xl shadow-sm text-slate-400 group-hover/field:text-red-500 transition-colors">
-                                        <Mail size={20} strokeWidth={2.5} />
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">Work Email</span>
-                                        <span className="text-sm font-black text-slate-700">{displayInfo.email}</span>
-                                    </div>
-                                    <button className="ml-auto p-2 opacity-0 group-hover/field:opacity-100 bg-slate-50 rounded-lg text-slate-400 hover:text-red-500 transition-all">
-                                        <RefreshCw size={14} />
-                                    </button>
-                                </div>
-                            </div>
-
                             <div className="group/field">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.25em] mb-2 px-1 block">联系电话 / Contact Number</label>
                                 <div className="flex items-center gap-4 p-5 bg-slate-50/50 hover:bg-white rounded-[1.5rem] border border-slate-100 group-hover/field:border-red-500/30 group-hover/field:shadow-xl group-hover/field:shadow-black/[0.03] transition-all duration-500">
