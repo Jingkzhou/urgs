@@ -103,18 +103,18 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         if (work == null || !work.getPublisherId().equals(userId)) {
             throw new IllegalArgumentException("工作不存在或无权操作");
         }
-        long mainCount = workTaskService.lambdaQuery()
+        WorkTask mainTask = workTaskService.lambdaQuery()
                 .eq(WorkTask::getWorkId, workId)
                 .eq(WorkTask::getTaskRole, TASK_ROLE_MAIN)
-                .count();
-        if (mainCount != 1) {
+                .one();
+        if (mainTask == null) {
             throw new IllegalStateException("工作必须包含且仅包含一个主任务");
         }
         if (!WorkStatus.DRAFT.name().equals(work.getStatus())) {
             throw new IllegalStateException("只能发布草稿状态的工作");
         }
 
-        work.setStatus(WorkStatus.PUBLISHED.name());
+        work.setStatus(mainTask.getStatus());
         return this.updateById(work);
     }
 

@@ -220,6 +220,9 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 && !TaskStatus.ASSIGNED.name().equals(task.getStatus())) {
             throw new IllegalStateException("当前状态不可提交验收");
         }
+        if (!STAGE_LAUNCH.equals(resolveStage(task))) {
+            throw new IllegalStateException("请先完成需求、开发、测试并进入上线阶段后再提交验收");
+        }
         if (TASK_ROLE_MAIN.equals(task.getTaskRole()) && !areAllSubTasksClosed(task.getWorkId())) {
             throw new IllegalStateException("请先完成所有子任务后再提交主任务验收");
         }
