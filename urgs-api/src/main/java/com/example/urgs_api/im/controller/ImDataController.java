@@ -69,8 +69,8 @@ public class ImDataController {
     }
 
     @PostMapping("/group/addMembers")
-    public String addMembers(@RequestBody AddMembersRequest request) {
-        groupService.addMembers(request.getGroupId(), request.getMemberIds());
+    public String addMembers(@RequestAttribute("userId") Long userId, @RequestBody AddMembersRequest request) {
+        groupService.addMembers(userId, request.getGroupId(), request.getMemberIds());
         return "success";
     }
 

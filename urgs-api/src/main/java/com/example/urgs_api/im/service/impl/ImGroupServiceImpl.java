@@ -209,12 +209,13 @@ public class ImGroupServiceImpl implements ImGroupService {
 
     @Override
     @Transactional
-    public void addMembers(Long groupId, List<Long> memberIds) {
+    public void addMembers(Long requesterId, Long groupId, List<Long> memberIds) {
         ImGroup group = groupMapper.selectById(groupId);
         if (group == null) {
             throw new RuntimeException("Group not found");
         }
 
+        String requesterName = resolveUserDisplayName(requesterId);
         for (Long memberId : memberIds) {
             QueryWrapper<ImGroupMember> query = new QueryWrapper<>();
             query.eq("group_id", groupId).eq("user_id", memberId);
@@ -230,7 +231,9 @@ public class ImGroupServiceImpl implements ImGroupService {
             groupMemberMapper.insert(member);
 
             createGroupConversation(memberId, groupId, group.getName());
-            chatService.sendSystemMessage(groupId, "用户 " + memberId + " 加入群聊");
+            String memberName = resolveUserDisplayName(memberId);
+            chatService.sendSystemMessage(groupId,
+                    "\"" + requesterName + "\" 邀请 \"" + memberName + "\" 加入了群聊");
         }
     }
 

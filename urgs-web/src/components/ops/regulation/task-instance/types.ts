@@ -15,6 +15,8 @@ export interface DependencyRelationItem {
 
 export interface BlockingDependencyItem extends DependencyRelationItem {
     level: number;
+    pathCount: number;
+    paths: DependencyRelationItem[][];
 }
 
 export interface DownstreamImpactMeta extends DependencyRelationItem {
@@ -34,6 +36,8 @@ export interface RerunImpactItem extends DownstreamImpactMeta {
 export interface DependencyInsightData {
     selectedTask?: QuartzTask;
     blockingUpstream: BlockingDependencyItem[];
+    blockingNodeCount: number;
+    maxBlockingLevel: number;
     downstreamRootTaskIds: number[];
     downstreamMetaMap: Map<number, DownstreamImpactMeta>;
     allDownstreamRootTaskIds: number[];

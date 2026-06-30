@@ -7,7 +7,7 @@ import ChatWindow from '../im/ChatWindow';
 import { imService, type ImUser } from '../../services/imService';
 import { userService } from '../../services/userService';
 import { WS_URL } from '../../config';
-type ImMessageType = 'text' | 'image' | 'file';
+type ImMessageType = 'text' | 'image' | 'file' | 'system';
 type ChatSessionType = 'person' | 'group' | 'bot';
 
 interface ChatSession {
@@ -203,6 +203,7 @@ const ChatWidget: React.FC = () => {
 
     const getUiMessageType = (msgType?: number): ImMessageType => {
         if (msgType === 2) return 'image';
+        if (msgType === 6) return 'system';
         if (msgType === 7) return 'file';
         return 'text';
     };

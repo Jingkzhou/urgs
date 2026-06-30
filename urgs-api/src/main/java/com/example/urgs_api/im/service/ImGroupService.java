@@ -12,7 +12,7 @@ public interface ImGroupService {
 
     void renameGroup(Long requesterId, Long groupId, String name);
 
-    void addMembers(Long groupId, List<Long> memberIds);
+    void addMembers(Long requesterId, Long groupId, List<Long> memberIds);
 
     void removeMembers(Long requesterId, Long groupId, List<Long> memberIds);
 }

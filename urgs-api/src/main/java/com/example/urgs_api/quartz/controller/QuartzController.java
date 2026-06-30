@@ -90,6 +90,18 @@ public class QuartzController {
         return quartzTaskService.queryDependencyImpact(queryDTO);
     }
 
+    @PostMapping("/quartz/task/status/blockingRoots")
+    @ApiOperation(value = "分页查询任务实例调度阻塞根因")
+    public ResponseDTO<QuartzBlockingRootPageVO> queryBlockingRoots(@RequestBody @Valid QuartzBlockingRootQueryDTO queryDTO) {
+        return quartzTaskService.queryBlockingRoots(queryDTO);
+    }
+
+    @PostMapping("/quartz/task/status/blockingPaths")
+    @ApiOperation(value = "分页查询任务实例指定阻塞根因的完整路径")
+    public ResponseDTO<QuartzBlockingPathPageVO> queryBlockingPaths(@RequestBody @Valid QuartzBlockingPathQueryDTO queryDTO) {
+        return quartzTaskService.queryBlockingPaths(queryDTO);
+    }
+
     @GetMapping("/quartz/executor/pool/stats")
     @ApiOperation(value = "查询执行器线程池实时统计")
     public ResponseDTO<ExecutorPoolStatsVO> getExecutorPoolStats() {

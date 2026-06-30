@@ -563,6 +563,51 @@ export interface QuartzDependencyImpactPageApiModel {
     impactedCount?: number | null;
 }
 
+export interface QuartzBlockingRootQueryParams {
+    statusId?: number;
+    planId: number;
+    dataDate: string;
+    status?: string;
+    pageNum?: number;
+    pageSize?: number;
+}
+
+export interface QuartzBlockingPathQueryParams {
+    statusId?: number;
+    planId: number;
+    dataDate: string;
+    rootTaskId: number;
+    pageNum?: number;
+    pageSize?: number;
+}
+
+export interface QuartzBlockingRootCauseApiModel {
+    root: QuartzDependencyImpactItemApiModel;
+    pathCount: number;
+    level: number;
+    representativePath: QuartzDependencyImpactItemApiModel[];
+}
+
+export interface QuartzBlockingRootPageApiModel {
+    pageNum: number;
+    pageSize: number;
+    total: number;
+    pages: number;
+    list: QuartzBlockingRootCauseApiModel[];
+    blockingNodeCount: number;
+    maxLevel: number;
+    failedRootCount: number;
+    truncated?: boolean | null;
+}
+
+export interface QuartzBlockingPathPageApiModel {
+    pageNum: number;
+    pageSize: number;
+    total: number;
+    pages: number;
+    list: QuartzDependencyImpactItemApiModel[][];
+}
+
 export interface QuartzTaskLogApiModel {
     id: number;
     taskId: number;
@@ -584,6 +629,12 @@ export const queryQuartzTaskStatusStats = (params: QuartzTaskStatusQueryParams) 
 
 export const queryQuartzDependencyImpact = (params: QuartzDependencyImpactQueryParams) =>
     post<ApiResponse<QuartzDependencyImpactPageApiModel>>('/api/quartz/task/status/dependencyImpact', params);
+
+export const queryQuartzBlockingRoots = (params: QuartzBlockingRootQueryParams) =>
+    post<ApiResponse<QuartzBlockingRootPageApiModel>>('/api/quartz/task/status/blockingRoots', params);
+
+export const queryQuartzBlockingPaths = (params: QuartzBlockingPathQueryParams) =>
+    post<ApiResponse<QuartzBlockingPathPageApiModel>>('/api/quartz/task/status/blockingPaths', params);
 
 export interface ExecutorPoolStats {
     activeCount: number;

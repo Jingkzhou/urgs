@@ -8,7 +8,7 @@ interface Message {
     id: number;
     senderId: number;
     content: string;
-    type: 'text' | 'image' | 'file';
+    type: 'text' | 'image' | 'file' | 'system';
     time: string;
     isSelf: boolean;
     senderName?: string;
@@ -297,6 +297,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-[#f3f5f8]" onContextMenu={handleOpenContextMenu}>
                 {messages.map((msg) => (
+                    msg.type === 'system' ? (
+                        <div
+                            key={msg.id}
+                            className="flex w-full justify-center px-4 py-1 text-center text-[13px] text-slate-400"
+                        >
+                            {msg.content}
+                        </div>
+                    ) : (
                     <div
                         key={msg.id}
                         className={`flex w-full ${msg.isSelf ? 'justify-end' : 'justify-start'} group animate-in fade-in slide-in-from-bottom-2 duration-300`}
@@ -337,6 +345,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
                             </>
                         )}
                     </div>
+                    )
                 ))}
                 <div ref={messagesEndRef} />
             </div>

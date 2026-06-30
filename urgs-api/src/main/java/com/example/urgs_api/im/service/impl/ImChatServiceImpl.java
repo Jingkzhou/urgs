@@ -71,11 +71,15 @@ public class ImChatServiceImpl implements ImChatService {
         query.eq("group_id", groupId);
         List<com.example.urgs_api.im.entity.ImGroupMember> members = groupMemberMapper.selectList(query);
 
-        // Fetch Sender Name for Preview
-        com.example.urgs_api.im.entity.ImUser sender = userMapper.selectById(message.getSenderId());
-        String senderName = sender != null ? sender.getWxId() : "User " + message.getSenderId();
         String content = buildMessagePreview(message);
-        String preview = senderName + ": " + content;
+        String preview;
+        if (message.getMsgType() != null && message.getMsgType() == 6) {
+            preview = content;
+        } else {
+            com.example.urgs_api.im.entity.ImUser sender = userMapper.selectById(message.getSenderId());
+            String senderName = sender != null ? sender.getWxId() : "User " + message.getSenderId();
+            preview = senderName + ": " + content;
+        }
 
         // Convert to VO for push
         ImMessageVO vo = convertToVO(message);

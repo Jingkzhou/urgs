@@ -18,6 +18,7 @@ import {
 import {
     QuartzDependencyImpactItemApiModel,
     QuartzDependencyImpactPageApiModel,
+    queryQuartzBlockingPaths,
     queryQuartzDependencyImpact,
 } from '@/api/ops';
 import { QuartzTaskStatus } from '../mockData';
@@ -27,7 +28,13 @@ import {
     detailSectionHeaderClass,
     instanceStatusMap,
 } from './constants';
-import { BlockingDependencyItem, DependencyInsightData, DependencyRelationType, DownstreamImpactMeta } from './types';
+import {
+    BlockingDependencyItem,
+    DependencyInsightData,
+    DependencyRelationItem,
+    DependencyRelationType,
+    DownstreamImpactMeta,
+} from './types';
 
 interface TaskInstanceDependencyPanelProps {
     selectedInstance: QuartzTaskStatus;
@@ -38,11 +45,20 @@ interface TaskInstanceDependencyPanelProps {
 }
 
 type ImpactStatusFilter = 'all' | '1' | '2' | '3' | '4' | 'missing';
+type BlockingStatusFilter = 'all' | '1' | '2' | '4' | 'missing';
 
 interface ImpactTraversalRow {
     item: DownstreamImpactMeta;
     level: number;
     routeKey: string;
+}
+
+interface LoadedBlockingPaths {
+    paths: DependencyRelationItem[][];
+    pageNum: number;
+    pages: number;
+    total: number;
+    loading: boolean;
 }
 
 const impactPageSizeOptions = [20, 50, 100];
@@ -70,6 +86,14 @@ const statusFilterOptions: Array<{ value: ImpactStatusFilter; label: string }> =
     { value: 'missing', label: '暂无实例' },
 ];
 
+const blockingStatusFilterOptions: Array<{ value: BlockingStatusFilter; label: string }> = [
+    { value: 'all', label: '全部' },
+    { value: '4', label: '失败' },
+    { value: '2', label: '执行中' },
+    { value: '1', label: '等待中' },
+    { value: 'missing', label: '暂无实例' },
+];
+
 const taskMetaPillClass = 'rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-500';
 
 const dependencyTypeMeta: Record<DependencyRelationType, { label: string; className: string }> = {
@@ -92,11 +116,17 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
     const [impactPageData, setImpactPageData] = useState<QuartzDependencyImpactPageApiModel>(emptyImpactPage);
     const [showBlockingDetail, setShowBlockingDetail] = useState(false);
     const [showImpactDetail, setShowImpactDetail] = useState(false);
+    const [blockingStatusFilter, setBlockingStatusFilter] = useState<BlockingStatusFilter>('all');
+    const [expandedBlockingRootIds, setExpandedBlockingRootIds] = useState<Set<number>>(new Set());
+    const [loadedBlockingPaths, setLoadedBlockingPaths] = useState<Record<number, LoadedBlockingPaths>>({});
     const normalizedImpactKeyword = impactKeyword.trim().toLowerCase();
 
     useEffect(() => {
         setShowBlockingDetail(false);
         setShowImpactDetail(false);
+        setBlockingStatusFilter('all');
+        setExpandedBlockingRootIds(new Set());
+        setLoadedBlockingPaths({});
         setImpactPage(1);
     }, [selectedInstance.id]);
 
@@ -256,6 +286,85 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
     const selectedStatusLabel = instanceStatusMap[selectedInstance.status ?? -1]?.label || '未知状态';
     const isWaitingInstance = selectedInstance.status === 1;
 
+    const normalizeBlockingPathNode = (item: QuartzDependencyImpactItemApiModel): DependencyRelationItem => {
+        const relatedInstance = item.statusId
+            ? {
+                id: Number(item.statusId),
+                plan_id: Number(item.taskId),
+                data_date: item.dataDate || selectedInstance.data_date,
+                status: item.status ?? null,
+                begin_time: item.beginTime || null,
+                update_time: item.updateTime || null,
+                end_time: item.endTime || null,
+                msg: item.msg || null,
+                create_time: item.createTime || '',
+                create_date: (item.createTime || selectedInstance.data_date || '').slice(0, 10).replaceAll('-', ''),
+            }
+            : undefined;
+        return {
+            taskId: Number(item.taskId),
+            taskName: item.taskName || `任务 #${item.taskId}`,
+            taskSystem: item.taskSystem || '-',
+            theme: item.theme || '-',
+            relatedInstance,
+            missingTask: !!item.missingTask,
+            dependencyTypes: (item.dependencyTypes || [])
+                .filter((type): type is DependencyRelationType => type === 'DATA' || type === 'CONTROL'),
+        };
+    };
+
+    const loadBlockingPathPage = async (item: BlockingDependencyItem, pageNum: number) => {
+        setLoadedBlockingPaths(previous => ({
+            ...previous,
+            [item.taskId]: {
+                paths: previous[item.taskId]?.paths || item.paths,
+                pageNum: previous[item.taskId]?.pageNum || 0,
+                pages: previous[item.taskId]?.pages || 1,
+                total: previous[item.taskId]?.total || item.pathCount,
+                loading: true,
+            },
+        }));
+        try {
+            const response = await queryQuartzBlockingPaths({
+                statusId: selectedInstance.id,
+                planId: selectedInstance.plan_id,
+                dataDate: selectedInstance.data_date,
+                rootTaskId: item.taskId,
+                pageNum,
+                pageSize: 20,
+            });
+            if (!response?.success) {
+                throw new Error(response?.msg || '加载阻塞路径失败');
+            }
+            const data = response.data;
+            const incomingPaths = (data?.list || []).map(path => path.map(normalizeBlockingPathNode));
+            setLoadedBlockingPaths(previous => ({
+                ...previous,
+                [item.taskId]: {
+                    paths: pageNum === 1
+                        ? incomingPaths
+                        : [...(previous[item.taskId]?.paths || []), ...incomingPaths],
+                    pageNum: Number(data?.pageNum || pageNum),
+                    pages: Math.max(1, Number(data?.pages || 1)),
+                    total: Number(data?.total || item.pathCount),
+                    loading: false,
+                },
+            }));
+        } catch (error) {
+            console.warn(error);
+            setLoadedBlockingPaths(previous => ({
+                ...previous,
+                [item.taskId]: {
+                    paths: previous[item.taskId]?.paths || item.paths,
+                    pageNum: previous[item.taskId]?.pageNum || 0,
+                    pages: previous[item.taskId]?.pages || 1,
+                    total: previous[item.taskId]?.total || item.pathCount,
+                    loading: false,
+                },
+            }));
+        }
+    };
+
     const renderBlockingDependencyList = (items: BlockingDependencyItem[]) => {
         if (!isWaitingInstance) {
             return (
@@ -279,60 +388,157 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
             );
         }
 
+        const filteredItems = items.filter(item => {
+            if (blockingStatusFilter === 'all') return true;
+            if (blockingStatusFilter === 'missing') return !item.relatedInstance;
+            return String(item.relatedInstance?.status) === blockingStatusFilter;
+        });
+
         return (
-            <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-200 bg-white">
-                {items.map((item, index) => (
-                    <div
-                        key={item.taskId}
-                        className={`flex gap-3 border-slate-100 px-4 py-3 ${index > 0 ? 'border-t' : ''}`}
-                    >
-                        <div className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
-                            item.relatedInstance?.status === 4
-                                ? 'bg-red-500'
-                                : item.relatedInstance?.status === 2
-                                  ? 'bg-blue-500'
-                                  : 'bg-amber-500'
-                        }`} />
-                        <div className="min-w-0 flex-1">
-                            <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                <div className="min-w-0 truncate text-sm font-semibold text-slate-800" title={item.taskName}>
-                                    {item.taskName}
-                                </div>
-                                <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-500">
-                                    #{item.taskId}
-                                </span>
-                                {item.missingTask && (
-                                    <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                                        未纳入清单
-                                    </span>
-                                )}
-                                {renderDependencyTypeTags(item.dependencyTypes)}
-                            </div>
-                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                <span className={taskMetaPillClass}>L{item.level}</span>
-                                <span className={taskMetaPillClass}>{item.taskSystem}</span>
-                                <span className={taskMetaPillClass}>{item.theme}</span>
-                                <span className={taskMetaPillClass}>{item.relatedInstance?.data_date || selectedInstance.data_date || '-'}</span>
-                            </div>
-                            {item.relatedInstance?.msg && (
-                                <div className="mt-2 truncate text-xs text-slate-500" title={item.relatedInstance.msg || ''}>
-                                    {item.relatedInstance.msg}
-                                </div>
-                            )}
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-2">
-                            {renderRelationStatus(item.relatedInstance)}
-                            <button
-                                type="button"
-                                onClick={() => item.relatedInstance && onLocateInstanceFromDependency(item.relatedInstance)}
-                                disabled={!item.relatedInstance}
-                                className="rounded border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                            >
-                                查看实例
-                            </button>
-                        </div>
+            <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                    {blockingStatusFilterOptions.map(option => (
+                        <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setBlockingStatusFilter(option.value)}
+                            className={`rounded border px-2.5 py-1 text-xs font-semibold transition ${
+                                blockingStatusFilter === option.value
+                                    ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                    : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                            }`}
+                        >
+                            {option.label}
+                        </button>
+                    ))}
+                </div>
+
+                {filteredItems.length === 0 ? (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-5 text-center text-xs text-slate-500">
+                        当前筛选条件下没有根因
                     </div>
-                ))}
+                ) : (
+                    <div className="max-h-[480px] space-y-2 overflow-y-auto pr-1">
+                        {filteredItems.map(item => {
+                            const expanded = expandedBlockingRootIds.has(item.taskId);
+                            const loadedPaths = loadedBlockingPaths[item.taskId];
+                            const visiblePaths = expanded
+                                ? loadedPaths?.paths || item.paths
+                                : item.paths.slice(0, 1);
+                            return (
+                                <div key={item.taskId} className="rounded-lg border border-slate-200 bg-white">
+                                    <div className="flex gap-3 px-4 py-3">
+                                        <div className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+                                            item.relatedInstance?.status === 4
+                                                ? 'bg-red-500'
+                                                : item.relatedInstance?.status === 2
+                                                  ? 'bg-blue-500'
+                                                  : 'bg-amber-500'
+                                        }`} />
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                                <div className="min-w-0 truncate text-sm font-semibold text-slate-800" title={item.taskName}>
+                                                    {item.taskName}
+                                                </div>
+                                                <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-500">
+                                                    #{item.taskId}
+                                                </span>
+                                                <span className={taskMetaPillClass}>最深 L{item.level}</span>
+                                                <span className={taskMetaPillClass}>{item.pathCount} 条阻塞路径</span>
+                                                {item.missingTask && (
+                                                    <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                                                        未纳入清单
+                                                    </span>
+                                                )}
+                                                {renderDependencyTypeTags(item.dependencyTypes)}
+                                            </div>
+                                            {item.relatedInstance?.msg && (
+                                                <div className="mt-2 truncate text-xs text-slate-500" title={item.relatedInstance.msg || ''}>
+                                                    {item.relatedInstance.msg}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex shrink-0 flex-col items-end gap-2">
+                                            {renderRelationStatus(item.relatedInstance)}
+                                            <button
+                                                type="button"
+                                                onClick={() => item.relatedInstance && onLocateInstanceFromDependency(item.relatedInstance)}
+                                                disabled={!item.relatedInstance}
+                                                className="rounded border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                                            >
+                                                查看实例
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2 border-t border-slate-100 bg-slate-50/70 px-4 py-3">
+                                        {visiblePaths.map((path, pathIndex) => (
+                                            <div key={path.map(node => node.taskId).join('>')} className="flex flex-wrap items-center gap-1.5">
+                                                <span className="text-[11px] font-semibold text-slate-400">路径 {pathIndex + 1}</span>
+                                                <span className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700">
+                                                    当前任务
+                                                </span>
+                                                {path.map(node => (
+                                                    <React.Fragment key={node.taskId}>
+                                                        <ChevronLeft size={13} className="shrink-0 text-slate-300" />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => node.relatedInstance && onLocateInstanceFromDependency(node.relatedInstance)}
+                                                            disabled={!node.relatedInstance}
+                                                            className={`max-w-[220px] truncate rounded border px-2 py-1 text-xs font-medium transition ${
+                                                                node.taskId === item.taskId
+                                                                    ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                                                    : 'border-slate-200 bg-white text-slate-600 hover:border-amber-200 hover:text-amber-700'
+                                                            } disabled:cursor-default`}
+                                                            title={`${node.taskName} #${node.taskId}`}
+                                                        >
+                                                            {node.taskName}
+                                                        </button>
+                                                    </React.Fragment>
+                                                ))}
+                                            </div>
+                                        ))}
+                                        {item.pathCount > 1 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setExpandedBlockingRootIds(previous => {
+                                                        const next = new Set(previous);
+                                                        if (next.has(item.taskId)) {
+                                                            next.delete(item.taskId);
+                                                        } else {
+                                                            next.add(item.taskId);
+                                                        }
+                                                        return next;
+                                                    });
+                                                    if (!expanded && !loadedPaths) {
+                                                        void loadBlockingPathPage(item, 1);
+                                                    }
+                                                }}
+                                                className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-800"
+                                            >
+                                                {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                                                {expanded ? '收起其他路径' : `查看全部 ${item.pathCount} 条路径`}
+                                            </button>
+                                        )}
+                                        {expanded && loadedPaths?.loading && (
+                                            <div className="text-xs text-slate-400">正在加载路径...</div>
+                                        )}
+                                        {expanded && loadedPaths && !loadedPaths.loading && loadedPaths.pageNum < loadedPaths.pages && (
+                                            <button
+                                                type="button"
+                                                onClick={() => void loadBlockingPathPage(item, loadedPaths.pageNum + 1)}
+                                                className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:border-amber-200 hover:text-amber-700"
+                                            >
+                                                加载更多（已显示 {loadedPaths.paths.length}/{loadedPaths.total}）
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
         );
     };
@@ -435,14 +641,14 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                         <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
                             <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-700">
                                 <ArrowUpCircle size={13} />
-                                调度阻塞
+                                阻塞根因
                             </div>
                             <div className="mt-1 text-xl font-bold text-amber-700">{dependencyPanelData.blockingUpstream.length}</div>
                         </div>
                         <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2">
                             <div className="flex items-center gap-1.5 text-[11px] font-semibold text-red-700">
                                 <AlertCircle size={13} />
-                                失败
+                                失败根因
                             </div>
                             <div className="mt-1 text-xl font-bold text-red-700">{dependencyPanelData.failedUpstreamCount}</div>
                         </div>
@@ -477,7 +683,7 @@ const TaskInstanceDependencyPanel: React.FC<TaskInstanceDependencyPanelProps> = 
                             {!isWaitingInstance
                                 ? `当前实例已是${selectedStatusLabel}`
                                 : dependencyPanelData.blockingUpstream.length > 0
-                                ? `${dependencyPanelData.blockingUpstream.length} 个上游节点需要处理`
+                                ? `${dependencyPanelData.blockingUpstream.length} 个根因 · ${dependencyPanelData.blockingNodeCount} 个阻塞节点 · 最深 L${dependencyPanelData.maxBlockingLevel}`
                                 : '上游依赖正常'}
                         </div>
                     </div>

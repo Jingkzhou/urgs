@@ -39,6 +39,7 @@ public class QuartzTaskService {
 
     private static final String DATA_DEPENDENCY_TYPE = "DATA";
     private static final String CONTROL_DEPENDENCY_TYPE = "CONTROL";
+    private static final int MAX_BLOCKING_GRAPH_NODES = 800;
 
     @Autowired
     private QuartzTaskDao quartzTaskDao;
@@ -287,6 +288,105 @@ public class QuartzTaskService {
         result.setTotal((long) total);
         result.setPages((long) ((total + pageSize - 1) / pageSize));
         result.setList(filteredRows.subList(fromIndex, toIndex));
+        return ResponseDTO.succData(result);
+    }
+
+    public ResponseDTO<QuartzBlockingRootPageVO> queryBlockingRoots(QuartzBlockingRootQueryDTO queryDTO) {
+        BlockingQueryTarget target = resolveBlockingQueryTarget(
+                queryDTO.getStatusId(),
+                queryDTO.getPlanId(),
+                queryDTO.getDataDate()
+        );
+        if (target == null) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "计划ID和数据日期不能为空");
+        }
+
+        BlockingAnalysis analysis = buildBlockingAnalysis(target);
+        List<QuartzBlockingRootCauseVO> allRoots = analysis.getRootAggregates().values().stream()
+                .map(aggregate -> buildBlockingRootCause(aggregate, analysis))
+                .sorted(Comparator
+                        .comparing((QuartzBlockingRootCauseVO item) -> blockingStatusRank(item.getRoot().getStatus()))
+                        .thenComparing(QuartzBlockingRootCauseVO::getLevel)
+                        .thenComparing(item -> item.getRoot().getTaskId()))
+                .collect(Collectors.toList());
+
+        int failedRootCount = (int) allRoots.stream()
+                .filter(item -> Integer.valueOf(TaskExeStatusEnum.FAILED.getCode()).equals(item.getRoot().getStatus()))
+                .count();
+        List<QuartzBlockingRootCauseVO> filteredRoots = allRoots.stream()
+                .filter(item -> matchesBlockingStatus(item.getRoot(), queryDTO.getStatus()))
+                .collect(Collectors.toList());
+        int pageNum = Math.max(1, Optional.ofNullable(queryDTO.getPageNum()).orElse(1));
+        int pageSize = Math.min(200, Math.max(1, Optional.ofNullable(queryDTO.getPageSize()).orElse(50)));
+        int total = filteredRoots.size();
+        int fromIndex = Math.min((pageNum - 1) * pageSize, total);
+        int toIndex = Math.min(fromIndex + pageSize, total);
+
+        QuartzBlockingRootPageVO result = new QuartzBlockingRootPageVO();
+        result.setPageNum((long) pageNum);
+        result.setPageSize((long) pageSize);
+        result.setTotal((long) total);
+        result.setPages((long) ((total + pageSize - 1) / pageSize));
+        result.setList(filteredRoots.subList(fromIndex, toIndex));
+        result.setBlockingNodeCount(analysis.getBlockingNodeIds().size());
+        result.setMaxLevel(allRoots.stream().map(QuartzBlockingRootCauseVO::getLevel).max(Integer::compareTo).orElse(0));
+        result.setFailedRootCount(failedRootCount);
+        result.setTruncated(analysis.isTruncated());
+        return ResponseDTO.succData(result);
+    }
+
+    public ResponseDTO<QuartzBlockingPathPageVO> queryBlockingPaths(QuartzBlockingPathQueryDTO queryDTO) {
+        if (queryDTO.getRootTaskId() == null) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "阻塞根因任务ID不能为空");
+        }
+        BlockingQueryTarget target = resolveBlockingQueryTarget(
+                queryDTO.getStatusId(),
+                queryDTO.getPlanId(),
+                queryDTO.getDataDate()
+        );
+        if (target == null) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "计划ID和数据日期不能为空");
+        }
+
+        BlockingAnalysis analysis = buildBlockingAnalysis(target);
+        BlockingRootAggregate rootAggregate = analysis.getRootAggregates().get(queryDTO.getRootTaskId());
+        if (rootAggregate == null) {
+            return ResponseDTO.wrap(ResponseCodeConst.ERROR_PARAM, "指定任务不是当前实例的阻塞根因");
+        }
+
+        int pageNum = Math.max(1, Optional.ofNullable(queryDTO.getPageNum()).orElse(1));
+        int pageSize = Math.min(100, Math.max(1, Optional.ofNullable(queryDTO.getPageSize()).orElse(20)));
+        long offset = (long) (pageNum - 1) * pageSize;
+        List<List<BlockingPathStep>> paths = new ArrayList<>();
+        long[] skipped = {0L};
+        for (UpstreamDependencyEdge edge : analysis.getUpstreamMap()
+                .getOrDefault(target.getPlanId(), Collections.emptyList())) {
+            collectBlockingPaths(
+                    edge.getTaskId(),
+                    edge.getDependencyTypes(),
+                    queryDTO.getRootTaskId(),
+                    analysis,
+                    new ArrayList<>(),
+                    new HashSet<>(Collections.singleton(target.getPlanId())),
+                    offset,
+                    pageSize,
+                    skipped,
+                    paths
+            );
+            if (paths.size() >= pageSize) {
+                break;
+            }
+        }
+
+        QuartzBlockingPathPageVO result = new QuartzBlockingPathPageVO();
+        result.setPageNum((long) pageNum);
+        result.setPageSize((long) pageSize);
+        result.setTotal(rootAggregate.getPathCount());
+        result.setPages(rootAggregate.getPathCount() / pageSize
+                + (rootAggregate.getPathCount() % pageSize == 0 ? 0 : 1));
+        result.setList(paths.stream()
+                .map(path -> buildBlockingPathItems(path, analysis))
+                .collect(Collectors.toList()));
         return ResponseDTO.succData(result);
     }
 
@@ -715,6 +815,319 @@ public class QuartzTaskService {
         }
     }
 
+    private BlockingQueryTarget resolveBlockingQueryTarget(Long statusId, Long planId, String dataDate) {
+        if ((planId == null || dataDate == null || dataDate.trim().isEmpty()) && statusId != null) {
+            QuartzTaskStatusEntity statusEntity = quartzTaskStatusDao.selectById(statusId);
+            if (statusEntity != null) {
+                planId = statusEntity.getPlanId();
+                dataDate = statusEntity.getDataDate();
+            }
+        }
+        if (planId == null || dataDate == null || dataDate.trim().isEmpty()) {
+            return null;
+        }
+        return new BlockingQueryTarget(planId, dataDate);
+    }
+
+    private BlockingAnalysis buildBlockingAnalysis(BlockingQueryTarget target) {
+        List<QuartzTaskEntity> allTasks = quartzTaskDao.queryAllList();
+        Map<Long, QuartzTaskEntity> taskMap = allTasks.stream()
+                .filter(task -> task.getId() != null)
+                .collect(Collectors.toMap(QuartzTaskEntity::getId, task -> task, (left, right) -> left, LinkedHashMap::new));
+        Map<Long, List<UpstreamDependencyEdge>> upstreamMap = buildUpstreamDependencyMap(allTasks);
+        Set<Long> reachableTaskIds = collectUpstreamTaskIds(target.getPlanId(), upstreamMap);
+        List<Long> statusPlanIds = new ArrayList<>(reachableTaskIds);
+        statusPlanIds.add(target.getPlanId());
+        Map<Long, QuartzTaskStatusEntity> statusMap = new HashMap<>();
+        if (!statusPlanIds.isEmpty()) {
+            for (QuartzTaskStatusEntity status : quartzTaskStatusDao.getStatusBatch(
+                    statusPlanIds.stream().distinct().collect(Collectors.toList()),
+                    target.getDataDate(),
+                    target.getDataDate()
+            )) {
+                statusMap.put(status.getPlanId(), status);
+            }
+        }
+
+        BlockingAnalysis analysis = new BlockingAnalysis(taskMap, upstreamMap, statusMap);
+        analysis.setTruncated(reachableTaskIds.size() >= MAX_BLOCKING_GRAPH_NODES);
+        QuartzTaskStatusEntity selectedStatus = statusMap.get(target.getPlanId());
+        if (selectedStatus == null || !Integer.valueOf(TaskExeStatusEnum.WAITING.getCode()).equals(selectedStatus.getStatus())) {
+            return analysis;
+        }
+
+        Map<Long, BlockingRootAggregate> roots = new LinkedHashMap<>();
+        for (UpstreamDependencyEdge edge : upstreamMap.getOrDefault(target.getPlanId(), Collections.emptyList())) {
+            Map<Long, BlockingRootAggregate> childRoots = resolveBlockingRoots(
+                    edge.getTaskId(),
+                    analysis,
+                    new HashSet<>(Collections.singleton(target.getPlanId()))
+            );
+            mergeRootAggregates(roots, childRoots, edge.getDependencyTypes(), false);
+        }
+        analysis.setRootAggregates(roots);
+        return analysis;
+    }
+
+    private Map<Long, List<UpstreamDependencyEdge>> buildUpstreamDependencyMap(List<QuartzTaskEntity> taskList) {
+        Map<Long, List<UpstreamDependencyEdge>> result = new HashMap<>();
+        for (QuartzTaskEntity task : taskList) {
+            if (task.getId() == null) {
+                continue;
+            }
+            Map<Long, Set<String>> dependencyTypeMap = new LinkedHashMap<>();
+            for (Long taskId : parseDependIds(firstNotBlank(task.getDataDependId(), task.getDependId()))) {
+                dependencyTypeMap.computeIfAbsent(taskId, key -> new LinkedHashSet<>()).add(DATA_DEPENDENCY_TYPE);
+            }
+            for (Long taskId : parseDependIds(task.getControlDependId())) {
+                dependencyTypeMap.computeIfAbsent(taskId, key -> new LinkedHashSet<>()).add(CONTROL_DEPENDENCY_TYPE);
+            }
+            List<UpstreamDependencyEdge> edges = dependencyTypeMap.entrySet().stream()
+                    .map(entry -> new UpstreamDependencyEdge(entry.getKey(), new ArrayList<>(entry.getValue())))
+                    .sorted(Comparator.comparing(UpstreamDependencyEdge::getTaskId))
+                    .collect(Collectors.toList());
+            result.put(task.getId(), edges);
+        }
+        return result;
+    }
+
+    private Set<Long> collectUpstreamTaskIds(Long rootTaskId, Map<Long, List<UpstreamDependencyEdge>> upstreamMap) {
+        Set<Long> result = new LinkedHashSet<>();
+        Deque<Long> queue = upstreamMap.getOrDefault(rootTaskId, Collections.emptyList()).stream()
+                .map(UpstreamDependencyEdge::getTaskId)
+                .collect(Collectors.toCollection(ArrayDeque::new));
+        while (!queue.isEmpty() && result.size() < MAX_BLOCKING_GRAPH_NODES) {
+            Long taskId = queue.poll();
+            if (taskId == null || taskId.equals(rootTaskId) || !result.add(taskId)) {
+                continue;
+            }
+            upstreamMap.getOrDefault(taskId, Collections.emptyList()).stream()
+                    .map(UpstreamDependencyEdge::getTaskId)
+                    .filter(id -> !result.contains(id))
+                    .forEach(queue::add);
+        }
+        return result;
+    }
+
+    private Map<Long, BlockingRootAggregate> resolveBlockingRoots(
+            Long taskId,
+            BlockingAnalysis analysis,
+            Set<Long> ancestors
+    ) {
+        Map<Long, BlockingRootAggregate> cached = analysis.getRootMemo().get(taskId);
+        if (cached != null) {
+            return cached;
+        }
+        if (taskId == null || ancestors.contains(taskId)) {
+            return Collections.emptyMap();
+        }
+        QuartzTaskStatusEntity status = analysis.getStatusMap().get(taskId);
+        if (status != null && Integer.valueOf(TaskExeStatusEnum.SUCCESS.getCode()).equals(status.getStatus())) {
+            return Collections.emptyMap();
+        }
+
+        analysis.getBlockingNodeIds().add(taskId);
+        List<UpstreamDependencyEdge> upstreamEdges = analysis.getUpstreamMap()
+                .getOrDefault(taskId, Collections.emptyList());
+        boolean waiting = status != null && Integer.valueOf(TaskExeStatusEnum.WAITING.getCode()).equals(status.getStatus());
+        if (!waiting || upstreamEdges.isEmpty()) {
+            Map<Long, BlockingRootAggregate> terminal = singletonBlockingRoot(taskId);
+            analysis.getRootMemo().put(taskId, terminal);
+            return terminal;
+        }
+
+        Set<Long> nextAncestors = new HashSet<>(ancestors);
+        nextAncestors.add(taskId);
+        Map<Long, BlockingRootAggregate> roots = new LinkedHashMap<>();
+        for (UpstreamDependencyEdge edge : upstreamEdges) {
+            Map<Long, BlockingRootAggregate> childRoots = resolveBlockingRoots(
+                    edge.getTaskId(),
+                    analysis,
+                    nextAncestors
+            );
+            mergeRootAggregates(roots, childRoots, edge.getDependencyTypes(), true, taskId);
+        }
+        if (roots.isEmpty()) {
+            roots = singletonBlockingRoot(taskId);
+        }
+        analysis.getRootMemo().put(taskId, roots);
+        return roots;
+    }
+
+    private Map<Long, BlockingRootAggregate> singletonBlockingRoot(Long taskId) {
+        BlockingRootAggregate aggregate = new BlockingRootAggregate();
+        aggregate.setRootTaskId(taskId);
+        aggregate.setPathCount(1L);
+        aggregate.setRepresentativePath(Collections.singletonList(
+                new BlockingPathStep(taskId, Collections.emptyList())
+        ));
+        Map<Long, BlockingRootAggregate> result = new LinkedHashMap<>();
+        result.put(taskId, aggregate);
+        return result;
+    }
+
+    private void mergeRootAggregates(
+            Map<Long, BlockingRootAggregate> target,
+            Map<Long, BlockingRootAggregate> source,
+            List<String> dependencyTypes,
+            boolean prependCurrent
+    ) {
+        mergeRootAggregates(target, source, dependencyTypes, prependCurrent, null);
+    }
+
+    private void mergeRootAggregates(
+            Map<Long, BlockingRootAggregate> target,
+            Map<Long, BlockingRootAggregate> source,
+            List<String> dependencyTypes,
+            boolean prependCurrent,
+            Long currentTaskId
+    ) {
+        source.forEach((rootTaskId, incoming) -> {
+            List<BlockingPathStep> representativePath = incoming.getRepresentativePath().stream()
+                    .map(step -> new BlockingPathStep(step.getTaskId(), step.getDependencyTypes()))
+                    .collect(Collectors.toList());
+            if (!representativePath.isEmpty()) {
+                BlockingPathStep first = representativePath.get(0);
+                representativePath.set(0, new BlockingPathStep(first.getTaskId(), dependencyTypes));
+            }
+            if (prependCurrent && currentTaskId != null) {
+                representativePath.add(0, new BlockingPathStep(currentTaskId, Collections.emptyList()));
+            }
+
+            BlockingRootAggregate existing = target.get(rootTaskId);
+            if (existing == null) {
+                existing = new BlockingRootAggregate();
+                existing.setRootTaskId(rootTaskId);
+                existing.setPathCount(0L);
+                existing.setRepresentativePath(representativePath);
+                target.put(rootTaskId, existing);
+            } else if (representativePath.size() < existing.getRepresentativePath().size()) {
+                existing.setRepresentativePath(representativePath);
+            }
+            existing.setPathCount(saturatedAdd(existing.getPathCount(), incoming.getPathCount()));
+        });
+    }
+
+    private long saturatedAdd(long left, long right) {
+        if (Long.MAX_VALUE - left < right) {
+            return Long.MAX_VALUE;
+        }
+        return left + right;
+    }
+
+    private QuartzBlockingRootCauseVO buildBlockingRootCause(
+            BlockingRootAggregate aggregate,
+            BlockingAnalysis analysis
+    ) {
+        QuartzBlockingRootCauseVO result = new QuartzBlockingRootCauseVO();
+        List<QuartzDependencyImpactItemVO> path = buildBlockingPathItems(
+                aggregate.getRepresentativePath(),
+                analysis
+        );
+        result.setRoot(path.get(path.size() - 1));
+        result.setPathCount(aggregate.getPathCount());
+        result.setLevel(path.size());
+        result.setRepresentativePath(path);
+        return result;
+    }
+
+    private List<QuartzDependencyImpactItemVO> buildBlockingPathItems(
+            List<BlockingPathStep> path,
+            BlockingAnalysis analysis
+    ) {
+        List<QuartzDependencyImpactItemVO> result = new ArrayList<>();
+        for (int index = 0; index < path.size(); index++) {
+            BlockingPathStep step = path.get(index);
+            DependencyImpactNode node = new DependencyImpactNode(step.getTaskId(), index + 1);
+            QuartzDependencyImpactItemVO item = buildDependencyImpactItem(
+                    node,
+                    analysis.getTaskMap().get(step.getTaskId()),
+                    analysis.getStatusMap().get(step.getTaskId()),
+                    Collections.emptyMap()
+            );
+            item.setDependencyTypes(step.getDependencyTypes());
+            result.add(item);
+        }
+        return result;
+    }
+
+    private boolean matchesBlockingStatus(QuartzDependencyImpactItemVO item, String status) {
+        if (status == null || status.trim().isEmpty() || "all".equalsIgnoreCase(status)) {
+            return true;
+        }
+        if ("missing".equalsIgnoreCase(status)) {
+            return item.getStatusId() == null;
+        }
+        return status.equals(String.valueOf(item.getStatus()));
+    }
+
+    private int blockingStatusRank(Integer status) {
+        if (Integer.valueOf(TaskExeStatusEnum.FAILED.getCode()).equals(status)) {
+            return 0;
+        }
+        if (Integer.valueOf(TaskExeStatusEnum.RUNNING.getCode()).equals(status)) {
+            return 1;
+        }
+        if (Integer.valueOf(TaskExeStatusEnum.WAITING.getCode()).equals(status)) {
+            return 2;
+        }
+        return 3;
+    }
+
+    private void collectBlockingPaths(
+            Long taskId,
+            List<String> dependencyTypes,
+            Long rootTaskId,
+            BlockingAnalysis analysis,
+            List<BlockingPathStep> path,
+            Set<Long> ancestors,
+            long offset,
+            int limit,
+            long[] skipped,
+            List<List<BlockingPathStep>> result
+    ) {
+        if (result.size() >= limit || taskId == null || ancestors.contains(taskId)) {
+            return;
+        }
+        QuartzTaskStatusEntity status = analysis.getStatusMap().get(taskId);
+        if (status != null && Integer.valueOf(TaskExeStatusEnum.SUCCESS.getCode()).equals(status.getStatus())) {
+            return;
+        }
+        List<BlockingPathStep> nextPath = new ArrayList<>(path);
+        nextPath.add(new BlockingPathStep(taskId, dependencyTypes));
+        if (taskId.equals(rootTaskId)) {
+            if (skipped[0] < offset) {
+                skipped[0]++;
+            } else {
+                result.add(nextPath);
+            }
+            return;
+        }
+        boolean waiting = status != null && Integer.valueOf(TaskExeStatusEnum.WAITING.getCode()).equals(status.getStatus());
+        if (!waiting) {
+            return;
+        }
+        Set<Long> nextAncestors = new HashSet<>(ancestors);
+        nextAncestors.add(taskId);
+        for (UpstreamDependencyEdge edge : analysis.getUpstreamMap().getOrDefault(taskId, Collections.emptyList())) {
+            collectBlockingPaths(
+                    edge.getTaskId(),
+                    edge.getDependencyTypes(),
+                    rootTaskId,
+                    analysis,
+                    nextPath,
+                    nextAncestors,
+                    offset,
+                    limit,
+                    skipped,
+                    result
+            );
+            if (result.size() >= limit) {
+                return;
+            }
+        }
+    }
+
     private List<Long> parseDependIds(String dependIdStr) {
         List<Long> result = new ArrayList<>();
         if (dependIdStr == null || dependIdStr.trim().isEmpty()) {
@@ -853,6 +1266,148 @@ public class QuartzTaskService {
             return item.getStatusId() == null;
         }
         return item.getStatus() != null && normalizedStatus.equals(String.valueOf(item.getStatus()));
+    }
+
+    private static class BlockingQueryTarget {
+        private final Long planId;
+        private final String dataDate;
+
+        private BlockingQueryTarget(Long planId, String dataDate) {
+            this.planId = planId;
+            this.dataDate = dataDate;
+        }
+
+        private Long getPlanId() {
+            return planId;
+        }
+
+        private String getDataDate() {
+            return dataDate;
+        }
+    }
+
+    private static class UpstreamDependencyEdge {
+        private final Long taskId;
+        private final List<String> dependencyTypes;
+
+        private UpstreamDependencyEdge(Long taskId, List<String> dependencyTypes) {
+            this.taskId = taskId;
+            this.dependencyTypes = dependencyTypes;
+        }
+
+        private Long getTaskId() {
+            return taskId;
+        }
+
+        private List<String> getDependencyTypes() {
+            return dependencyTypes;
+        }
+    }
+
+    private static class BlockingPathStep {
+        private final Long taskId;
+        private final List<String> dependencyTypes;
+
+        private BlockingPathStep(Long taskId, List<String> dependencyTypes) {
+            this.taskId = taskId;
+            this.dependencyTypes = dependencyTypes == null
+                    ? Collections.emptyList()
+                    : new ArrayList<>(dependencyTypes);
+        }
+
+        private Long getTaskId() {
+            return taskId;
+        }
+
+        private List<String> getDependencyTypes() {
+            return dependencyTypes;
+        }
+    }
+
+    private static class BlockingRootAggregate {
+        private Long rootTaskId;
+        private Long pathCount;
+        private List<BlockingPathStep> representativePath;
+
+        private Long getRootTaskId() {
+            return rootTaskId;
+        }
+
+        private void setRootTaskId(Long rootTaskId) {
+            this.rootTaskId = rootTaskId;
+        }
+
+        private Long getPathCount() {
+            return pathCount;
+        }
+
+        private void setPathCount(Long pathCount) {
+            this.pathCount = pathCount;
+        }
+
+        private List<BlockingPathStep> getRepresentativePath() {
+            return representativePath;
+        }
+
+        private void setRepresentativePath(List<BlockingPathStep> representativePath) {
+            this.representativePath = representativePath;
+        }
+    }
+
+    private static class BlockingAnalysis {
+        private final Map<Long, QuartzTaskEntity> taskMap;
+        private final Map<Long, List<UpstreamDependencyEdge>> upstreamMap;
+        private final Map<Long, QuartzTaskStatusEntity> statusMap;
+        private final Map<Long, Map<Long, BlockingRootAggregate>> rootMemo = new HashMap<>();
+        private final Set<Long> blockingNodeIds = new LinkedHashSet<>();
+        private Map<Long, BlockingRootAggregate> rootAggregates = new LinkedHashMap<>();
+        private boolean truncated;
+
+        private BlockingAnalysis(
+                Map<Long, QuartzTaskEntity> taskMap,
+                Map<Long, List<UpstreamDependencyEdge>> upstreamMap,
+                Map<Long, QuartzTaskStatusEntity> statusMap
+        ) {
+            this.taskMap = taskMap;
+            this.upstreamMap = upstreamMap;
+            this.statusMap = statusMap;
+        }
+
+        private Map<Long, QuartzTaskEntity> getTaskMap() {
+            return taskMap;
+        }
+
+        private Map<Long, List<UpstreamDependencyEdge>> getUpstreamMap() {
+            return upstreamMap;
+        }
+
+        private Map<Long, QuartzTaskStatusEntity> getStatusMap() {
+            return statusMap;
+        }
+
+        private Map<Long, Map<Long, BlockingRootAggregate>> getRootMemo() {
+            return rootMemo;
+        }
+
+        private Set<Long> getBlockingNodeIds() {
+            return blockingNodeIds;
+        }
+
+        private Map<Long, BlockingRootAggregate> getRootAggregates() {
+            return rootAggregates;
+        }
+
+        private void setRootAggregates(Map<Long, BlockingRootAggregate> rootAggregates) {
+            this.rootAggregates = rootAggregates;
+        }
+
+        private boolean isTruncated() {
+            return truncated;
+        }
+
+        private void setTruncated(boolean truncated) {
+            this.truncated = truncated;
+        }
     }
 
     private static class DependencyImpactNode {
