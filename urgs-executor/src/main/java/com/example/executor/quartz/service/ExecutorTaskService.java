@@ -152,18 +152,18 @@ public class ExecutorTaskService {
      * 将任务提交到线程池异步执行。
      * 若同一 planId+dataDate 已在运行，则跳过（幂等）。
      */
-    public void submitTaskToPool(QuartzTaskEntity task, String dataDate) {
-        submitTaskToPool(task, dataDate, "schedule");
+    public boolean submitTaskToPool(QuartzTaskEntity task, String dataDate) {
+        return submitTaskToPool(task, dataDate, "schedule");
     }
 
     /**
      * 将任务提交到线程池异步执行。
-     * 若同一 planId+dataDate 已在运行，则跳过（幂等）。
+     * 调度触发遇到同一 planId+dataDate 时跳过；重跑触发会在当前任务收尾后执行一次。
      */
-    public void submitTaskToPool(QuartzTaskEntity task, String dataDate, String triggerType) {
+    public boolean submitTaskToPool(QuartzTaskEntity task, String dataDate, String triggerType) {
         String taskKey = buildTaskKey(task.getId(), dataDate);
         String normalizedTriggerType = normalizeTriggerType(triggerType);
-        taskExecutorPool.submitTask(taskKey, () -> {
+        Runnable taskExecution = () -> {
             TaskDataSourceSelection dataSourceSelection = null;
             try {
                 if (!checkPredecessors(task, dataDate)) {
@@ -205,7 +205,10 @@ public class ExecutorTaskService {
             } finally {
                 taskDataSourceSelector.release(dataSourceSelection);
             }
-        });
+        };
+        return "rerun".equals(normalizedTriggerType)
+                ? taskExecutorPool.submitTaskAfterCurrent(taskKey, taskExecution)
+                : taskExecutorPool.submitTask(taskKey, taskExecution);
     }
 
     private void keepWaitingForPredecessors(QuartzTaskEntity task, String dataDate) {

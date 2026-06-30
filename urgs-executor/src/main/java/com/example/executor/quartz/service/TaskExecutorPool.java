@@ -20,7 +20,9 @@ public class TaskExecutorPool {
     private final int queueCapacity;
     private final ThreadPoolExecutor executor;
     private final ConcurrentHashMap<String, TrackingFutureTask> submittedTasks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Runnable> pendingTasks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap.KeySetView<String, Boolean> activeTaskKeys = ConcurrentHashMap.newKeySet();
+    private final Object taskRegistryLock = new Object();
 
     private final ConcurrentHashMap<String, List<Closeable>> taskResources = new ConcurrentHashMap<>();
 
@@ -56,15 +58,39 @@ public class TaskExecutorPool {
 
     public boolean submitTask(String taskKey, Runnable task) {
         TrackingFutureTask futureTask = new TrackingFutureTask(taskKey, task);
-        if (submittedTasks.putIfAbsent(taskKey, futureTask) != null) {
-            log.info("Task {} is already running, skip duplicate submit", taskKey);
-            return false;
+        synchronized (taskRegistryLock) {
+            if (submittedTasks.putIfAbsent(taskKey, futureTask) != null) {
+                log.info("Task {} is already running, skip duplicate submit", taskKey);
+                return false;
+            }
         }
+        executeRegisteredTask(futureTask);
+        return true;
+    }
+
+    public boolean submitTaskAfterCurrent(String taskKey, Runnable task) {
+        TrackingFutureTask futureTask;
+        synchronized (taskRegistryLock) {
+            if (submittedTasks.containsKey(taskKey)) {
+                if (pendingTasks.putIfAbsent(taskKey, task) == null) {
+                    log.info("Task {} is still finishing, queue one rerun after current task", taskKey);
+                } else {
+                    log.info("Task {} already has a pending rerun, coalesce duplicate request", taskKey);
+                }
+                return true;
+            }
+            futureTask = new TrackingFutureTask(taskKey, task);
+            submittedTasks.put(taskKey, futureTask);
+        }
+        executeRegisteredTask(futureTask);
+        return true;
+    }
+
+    private void executeRegisteredTask(TrackingFutureTask futureTask) {
         try {
             executor.execute(futureTask);
-            return true;
         } catch (RejectedExecutionException e) {
-            submittedTasks.remove(taskKey, futureTask);
+            cleanupTask(futureTask.getTaskKey(), futureTask);
             throw e;
         }
     }
@@ -91,6 +117,7 @@ public class TaskExecutorPool {
     }
 
     public boolean cancelTask(String taskKey) {
+        pendingTasks.remove(taskKey);
         TrackingFutureTask futureTask = submittedTasks.get(taskKey);
         if (futureTask == null) {
             return false;
@@ -157,9 +184,21 @@ public class TaskExecutorPool {
     }
 
     private void cleanupTask(String taskKey, TrackingFutureTask task) {
+        TrackingFutureTask pendingFutureTask = null;
         synchronized (task) {
             taskResources.remove(taskKey);
-            submittedTasks.remove(taskKey, task);
+            synchronized (taskRegistryLock) {
+                if (submittedTasks.remove(taskKey, task)) {
+                    Runnable pendingTask = pendingTasks.remove(taskKey);
+                    if (pendingTask != null) {
+                        pendingFutureTask = new TrackingFutureTask(taskKey, pendingTask);
+                        submittedTasks.put(taskKey, pendingFutureTask);
+                    }
+                }
+            }
+        }
+        if (pendingFutureTask != null) {
+            executeRegisteredTask(pendingFutureTask);
         }
     }
 

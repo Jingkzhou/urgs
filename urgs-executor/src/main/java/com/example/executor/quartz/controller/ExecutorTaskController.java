@@ -58,14 +58,22 @@ public class ExecutorTaskController {
         if (task == null) {
             return ResponseDTO.wrap(404, "任务不存在: planId=" + triggerNowDTO.getPlanId());
         }
-        if (executorTaskService.isTaskRunning(triggerNowDTO.getPlanId(), triggerNowDTO.getDataDate())) {
+        boolean rerun = "rerun".equals(triggerNowDTO.getTriggerType());
+        if (!rerun && executorTaskService.isTaskRunning(triggerNowDTO.getPlanId(), triggerNowDTO.getDataDate())) {
             return ResponseDTO.wrap(409, "任务已在执行中: " + triggerNowDTO.getPlanId() + "_" + triggerNowDTO.getDataDate());
         }
         String validationError = executorTaskService.validateTaskReadyForSubmit(task);
         if (validationError != null) {
             return ResponseDTO.wrap(400, validationError);
         }
-        executorTaskService.submitTaskToPool(task, triggerNowDTO.getDataDate(), triggerNowDTO.getTriggerType());
+        boolean accepted = executorTaskService.submitTaskToPool(
+                task,
+                triggerNowDTO.getDataDate(),
+                triggerNowDTO.getTriggerType()
+        );
+        if (!accepted) {
+            return ResponseDTO.wrap(409, "任务已在执行中: " + triggerNowDTO.getPlanId() + "_" + triggerNowDTO.getDataDate());
+        }
         return ResponseDTO.succ();
     }
 }

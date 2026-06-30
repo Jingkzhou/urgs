@@ -80,6 +80,27 @@ class TaskExecutorPoolTest {
     }
 
     @Test
+    void queuesOneRerunUntilCurrentTaskCompletes() throws Exception {
+        pool = new TaskExecutorPool(1, 1);
+        CountDownLatch activeStarted = new CountDownLatch(1);
+        CountDownLatch releaseActive = new CountDownLatch(1);
+        CountDownLatch rerunCompleted = new CountDownLatch(1);
+
+        assertTrue(pool.submitTask("same-task", () -> await(activeStarted, releaseActive)));
+        assertTrue(activeStarted.await(2, TimeUnit.SECONDS));
+        assertTrue(pool.submitTaskAfterCurrent("same-task", rerunCompleted::countDown));
+        assertTrue(pool.submitTaskAfterCurrent("same-task", () -> {
+            throw new AssertionError("duplicate rerun should be coalesced");
+        }));
+        assertEquals(1, rerunCompleted.getCount());
+
+        releaseActive.countDown();
+
+        assertTrue(rerunCompleted.await(2, TimeUnit.SECONDS));
+        awaitStats(stats -> !pool.hasTask("same-task"));
+    }
+
+    @Test
     void closesResourceRegisteredAfterTaskCompletion() throws Exception {
         pool = new TaskExecutorPool(1, 1);
         AtomicBoolean closed = new AtomicBoolean(false);
