@@ -248,6 +248,7 @@ public class ImGroupServiceImpl implements ImGroupService {
             throw new RuntimeException("Only owner can remove members");
         }
 
+        String requesterName = resolveUserDisplayName(requesterId);
         for (Long uid : memberIds) {
             // Cannot remove owner
             if (uid.equals(group.getOwnerId()))
@@ -257,9 +258,9 @@ public class ImGroupServiceImpl implements ImGroupService {
             query.eq("group_id", groupId).eq("user_id", uid);
             groupMemberMapper.delete(query);
 
-            // Send System Notification
-            // Ideally fetch user name, for now use ID or simple message
-            chatService.sendSystemMessage(groupId, "用户 " + uid + " 被移出群聊");
+            String memberName = resolveUserDisplayName(uid);
+            chatService.sendSystemMessage(groupId,
+                    "\"" + requesterName + "\" 将 \"" + memberName + "\" 移出了群聊");
 
             // Also delete conversation for the removed user
             com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.example.urgs_api.im.entity.ImConversation> convQuery = new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<>();
