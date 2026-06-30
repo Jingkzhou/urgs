@@ -8,14 +8,29 @@ import { imService } from '../../services/imService';
 import { userService } from '../../services/userService';
 import { WS_URL } from '../../config';
 type ImMessageType = 'text' | 'image' | 'file';
+type ChatSessionType = 'person' | 'group' | 'bot';
+
+interface ChatSession {
+    key: string;
+    id: number;
+    peerId: number;
+    chatType: number;
+    name: string;
+    avatar: string | null;
+    message: string;
+    time: string;
+    unread: number;
+    type: ChatSessionType;
+}
 
 const ChatWidget: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
-    const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
-    const [sessions, setSessions] = useState<any[]>([]); // Should use Session interface
-    const [messages, setMessages] = useState<Record<string, any[]>>({}); // keyed by conversationId
+    const [activeSessionKey, setActiveSessionKey] = useState<string | null>(null);
+    const [sessions, setSessions] = useState<ChatSession[]>([]);
+    const [messages, setMessages] = useState<Record<string, any[]>>({});
 
     const [currentUser, setCurrentUser] = useState<any>(null);
+    const activeSession = activeSessionKey ? sessions.find(s => s.key === activeSessionKey) || null : null;
 
     // Sync user info from storage (including avatar)
     const syncUserFromStorage = () => {
@@ -72,15 +87,13 @@ const ChatWidget: React.FC = () => {
     const [isRenamingGroup, setIsRenamingGroup] = useState(false);
 
     const handleShowGroupDetails = async () => {
-        if (!activeSessionId) return;
-        const session = sessions.find(s => s.id === activeSessionId);
-        if (!session || session.type !== 'group') return; // Only groups
+        if (!activeSession || activeSession.type !== 'group') return; // Only groups
 
         setShowGroupDetails(true);
         setIsDeleteMode(false); // Reset delete mode
-        setGroupNameDraft(session.name || '');
+        setGroupNameDraft(activeSession.name || '');
         try {
-            const members = await imService.getGroupMembers(activeSessionId);
+            const members = await imService.getGroupMembers(activeSession.id);
             setGroupMembers(members);
         } catch (e) {
             console.error("Failed to load group members", e);
@@ -100,27 +113,27 @@ const ChatWidget: React.FC = () => {
     const sessionsRef = useRef(sessions);
     const groupMembersRef = useRef(groupMembers);
     const availableUsersRef = useRef(availableUsers);
-    const activeSessionIdRef = useRef(activeSessionId);
+    const activeSessionKeyRef = useRef(activeSessionKey);
     const isOpenRef = useRef(isOpen);
 
     useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
     useEffect(() => { groupMembersRef.current = groupMembers; }, [groupMembers]);
     useEffect(() => { availableUsersRef.current = availableUsers; }, [availableUsers]);
-    useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
+    useEffect(() => { activeSessionKeyRef.current = activeSessionKey; }, [activeSessionKey]);
     useEffect(() => { isOpenRef.current = isOpen; }, [isOpen]);
 
     // Clear unread when opening widget if active session exists
     useEffect(() => {
-        if (isOpen && activeSessionId) {
+        if (isOpen && activeSession) {
             setSessions(prev => prev.map(s => {
-                if (s.id === activeSessionId) {
+                if (s.key === activeSession.key) {
                     return { ...s, unread: 0 };
                 }
                 return s;
             }));
-            imService.clearUnread(activeSessionId).catch(e => console.error("Failed to clear unread", e));
+            imService.clearUnread(activeSession.id, activeSession.chatType).catch(e => console.error("Failed to clear unread", e));
         }
-    }, [isOpen, activeSessionId]);
+    }, [isOpen, activeSessionKey, activeSession?.id, activeSession?.chatType]);
 
     // WebSocket Ref
     const ws = useRef<WebSocket | null>(null);
@@ -128,6 +141,8 @@ const ChatWidget: React.FC = () => {
     const getConversationId = (uid1: number, uid2: number) => {
         return uid1 < uid2 ? uid1 + '_' + uid2 : uid2 + '_' + uid1;
     };
+
+    const getSessionKey = (peerId: number, chatType: number) => `${chatType}:${peerId}`;
 
     const getCurrentUserId = () => {
         const id = currentUser?.userId ?? currentUser?.id;
@@ -165,27 +180,26 @@ const ChatWidget: React.FC = () => {
     };
 
     useEffect(() => {
-        if (!activeSessionId) return;
+        if (!activeSessionKey || !activeSession) return;
         const loadHistory = async () => {
-            if (!currentUser || !currentUser.userId || !activeSessionId) return;
+            if (!currentUser || !currentUser.userId) return;
             const uid = Number(currentUser.userId);
-            const sid = Number(activeSessionId);
+            const sid = Number(activeSession.id);
             if (isNaN(uid) || isNaN(sid)) {
                 console.error("Invalid IDs for history:", uid, sid);
                 return;
             }
 
-            const isGroup = sessions.find(s => s.id === sid)?.type === 'group';
+            const isGroup = activeSession.type === 'group';
             const convId = isGroup
                 ? 'GROUP_' + sid
                 : getConversationId(uid, sid);
             try {
                 // Pre-fetch group members if it's a group
-                let currentMembers: any[] = [];
                 if (isGroup) {
                     try {
-                        currentMembers = await imService.getGroupMembers(sid);
-                        setGroupMembers(currentMembers);
+                        const members = await imService.getGroupMembers(sid);
+                        setGroupMembers(members);
                     } catch (e) {
                         console.error("Failed to load group members", e);
                     }
@@ -205,14 +219,14 @@ const ChatWidget: React.FC = () => {
                 }));
                 setMessages(prev => ({
                     ...prev,
-                    [activeSessionId]: uiMessages
+                    [activeSessionKey]: uiMessages
                 }));
             } catch (e) {
                 console.error("Failed to load history", e);
             }
         }
         loadHistory();
-    }, [activeSessionId]);
+    }, [activeSessionKey, activeSession?.id, activeSession?.type, currentUser?.userId]);
 
     const fetchSessions = async () => {
         if (!currentUser || currentUser.userId === -1) return;
@@ -225,32 +239,33 @@ const ChatWidget: React.FC = () => {
                 return { name: '', avatar: null }; // No hardcoding
             };
 
-            const uiSessions = data.map(s => {
+            const uiSessions: ChatSession[] = data.map(s => {
                 const meta = getMeta(s.peerId, s.chatType);
                 // Fallback to "User {ID}" to avoid "1" avatar, ensuring "U" or consistent letter
                 const finalName = s.name || meta.name || ('User ' + s.peerId);
                 return {
+                    key: getSessionKey(s.peerId, s.chatType),
                     id: s.peerId,
+                    peerId: s.peerId,
+                    chatType: s.chatType,
                     name: finalName,
                     avatar: getAvatarUrl(s.avatar || meta.avatar, finalName),
                     message: s.lastMsgContent || '',
                     time: s.lastMsgTime ? new Date(s.lastMsgTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
                     unread: s.unreadCount,
-                    type: (s.chatType === 1 ? (s.peerId === 103 ? 'bot' : 'person') : 'group') as any
+                    type: (s.chatType === 1 ? (s.peerId === 103 ? 'bot' : 'person') : 'group') as ChatSessionType
                 };
             });
 
-            if (uiSessions.length > 0) {
-                // Fix: Ensure active session is marked as read in the fetched list to avoid race condition
-                // where fetchSessions overwrites the local clearUnread effect.
-                if (activeSessionIdRef.current) {
-                    const activeDetails = uiSessions.find(s => s.id === activeSessionIdRef.current);
-                    if (activeDetails) {
-                        activeDetails.unread = 0;
-                    }
+            // Fix: Ensure active session is marked as read in the fetched list to avoid race condition
+            // where fetchSessions overwrites the local clearUnread effect.
+            if (activeSessionKeyRef.current) {
+                const activeDetails = uiSessions.find(s => s.key === activeSessionKeyRef.current);
+                if (activeDetails) {
+                    activeDetails.unread = 0;
                 }
-                setSessions(uiSessions);
             }
+            setSessions(uiSessions);
         } catch (e) {
             console.error("Failed to fetch sessions", e);
         }
@@ -281,32 +296,27 @@ const ChatWidget: React.FC = () => {
                     senderAvatar: msg.senderAvatar || (msg.senderId === currentUser.userId ? currentUser.avatarUrl : null)
                 };
 
-                const conversationId = msg.conversationId || getConversationId(currentUser.userId, msg.senderId === currentUser.userId ? msg.receiverId : msg.senderId);
-
                 // Determine peerId (Session ID)
-                let peerId = isGroup ? msg.groupId : (msg.senderId === currentUser.userId ? msg.receiverId : msg.senderId);
-
-                setMessages(prev => ({
-                    ...prev,
-                    [activeSessionId && getConversationId(currentUser.userId, activeSessionId) === conversationId ? activeSessionId : peerId]:
-                        [...(prev[peerId] || []), incomingMsg]
-                }));
+                const peerId = isGroup ? msg.groupId : (msg.senderId === currentUser.userId ? msg.receiverId : msg.senderId);
+                if (!peerId) return;
+                const chatType = isGroup ? 2 : 1;
+                const sessionKey = getSessionKey(peerId, chatType);
 
                 // Handle Session List Update
                 setMessages((prev) => {
-                    const currentList = prev[peerId] || [];
+                    const currentList = prev[sessionKey] || [];
                     // Avoid duplicates if echoed
                     if (currentList.some((m: any) => m.id === incomingMsg.id)) return prev;
                     return {
                         ...prev,
-                        [peerId]: [...currentList, incomingMsg]
+                        [sessionKey]: [...currentList, incomingMsg]
                     };
                 });
 
                 // 2. Update Sessions List (Last Message & Unread)
                 setSessions(prev => {
                     // Check if session exists
-                    const existingSessionIndex = prev.findIndex(s => s.id === peerId);
+                    const existingSessionIndex = prev.findIndex(s => s.key === sessionKey);
 
                     if (existingSessionIndex === -1) {
                         // Session doesn't exist, reload sessions to fetch metadata (name, avatar)
@@ -320,13 +330,13 @@ const ChatWidget: React.FC = () => {
                     }
 
                     return prev.map(session => {
-                        if (session.id === peerId) {
+                        if (session.key === sessionKey) {
                             return {
                                 ...session,
                                 message: getMessagePreview(incomingMsg.content, incomingMsg.type),
                                 time: incomingMsg.time,
                                 // Use Refs to check current state safely within closure
-                                unread: (isOpenRef.current && activeSessionIdRef.current === peerId) ? 0 : ((session.unread || 0) + 1)
+                                unread: (isOpenRef.current && activeSessionKeyRef.current === sessionKey) ? 0 : ((session.unread || 0) + 1)
                             };
                         }
                         return session;
@@ -342,19 +352,18 @@ const ChatWidget: React.FC = () => {
     }, [currentUser]);
 
     const handleSendMessage = async (content: string, type: ImMessageType = 'text') => {
-        if (!activeSessionId) return;
-
-        // Construct Message Object
-        const session = sessions.find(s => s.id === activeSessionId);
-        if (!session) return;
+        if (!activeSession || !activeSessionKey) return;
+        const conversationId = activeSession.type === 'group'
+            ? `GROUP_${activeSession.id}`
+            : getConversationId(currentUser.userId, activeSession.id);
 
         const newMessage = {
             senderId: currentUser.userId,
-            receiverId: session.id, // session.id is peerId from mapping
-            groupId: session.type === 'group' ? session.id : undefined,
+            receiverId: activeSession.id, // session.id is peerId from mapping
+            groupId: activeSession.type === 'group' ? activeSession.id : undefined,
             content,
             msgType: getBackendMsgType(type),
-            conversationId: getConversationId(currentUser.userId, session.id),
+            conversationId,
             type: type, // Frontend prop
             isSelf: true,
             time: new Date().toLocaleTimeString(),
@@ -365,12 +374,12 @@ const ChatWidget: React.FC = () => {
         // UI Optimistic Update
         setMessages(prev => ({
             ...prev,
-            [activeSessionId]: [...(prev[activeSessionId] || []), { ...newMessage, id: Date.now() }]
+            [activeSessionKey]: [...(prev[activeSessionKey] || []), { ...newMessage, id: Date.now() }]
         }));
 
         // Update Session List Preview locally
         setSessions(prev => prev.map(s => {
-            if (s.id === activeSessionId) {
+            if (s.key === activeSessionKey) {
                 return {
                     ...s,
                     message: getMessagePreview(content, type),
@@ -382,11 +391,11 @@ const ChatWidget: React.FC = () => {
 
         // Send to Backend (Sanitized Payload)
         const payload = {
-            receiverId: session.id,
-            groupId: session.type === 'group' ? session.id : undefined,
+            receiverId: activeSession.id,
+            groupId: activeSession.type === 'group' ? activeSession.id : undefined,
             content,
             msgType: getBackendMsgType(type),
-            conversationId: getConversationId(currentUser.userId, session.id)
+            conversationId
         };
 
         try {
@@ -444,27 +453,28 @@ const ChatWidget: React.FC = () => {
             const newSessions = await imService.getSessions();
             // Re-map (duplicated logic, should refactor)
             const getMeta = (id: number, type: number) => {
-                if (type === 2) return { name: 'Risk Dept Group', avatar: null };
+                if (type === 2) return { name: '群聊', avatar: null };
                 if (id === 102) return { name: 'Li Manager', avatar: null };
                 if (id === 103) return { name: 'Smart Assistant', avatar: null };
                 const u = availableUsers.find(u => u.userId === id) || { wxId: 'User ' + id };
                 return { name: u.wxId || ('User ' + id), avatar: getAvatarUrl(u.avatarUrl, u.userId) };
             };
 
-            const uiSessions = newSessions.map(s => {
+            const uiSessions: ChatSession[] = newSessions.map(s => {
                 const meta = getMeta(s.peerId, s.chatType);
                 return {
+                    key: getSessionKey(s.peerId, s.chatType),
                     id: s.peerId,
+                    peerId: s.peerId,
+                    chatType: s.chatType,
                     name: s.name || meta.name,
                     avatar: s.avatar || meta.avatar,
                     message: s.lastMsgContent || '',
                     time: s.lastMsgTime ? new Date(s.lastMsgTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
                     unread: s.unreadCount,
-                    type: (s.chatType === 1 ? (s.peerId === 103 ? 'bot' : 'person') : 'group') as any
+                    type: (s.chatType === 1 ? (s.peerId === 103 ? 'bot' : 'person') : 'group') as ChatSessionType
                 };
             });
-            setSessions(uiSessions);
-
             setSessions(uiSessions);
 
         } catch (e) {
@@ -501,7 +511,7 @@ const ChatWidget: React.FC = () => {
             closeCreateGroupModal();
             await fetchSessions(); // Refresh list
             if (group?.id) {
-                setActiveSessionId(group.id);
+                setActiveSessionKey(getSessionKey(group.id, 2));
             }
         } catch (e) {
             console.error(e);
@@ -510,13 +520,13 @@ const ChatWidget: React.FC = () => {
     };
 
     const handleRenameGroup = async () => {
-        if (!activeSessionId) return;
+        if (!activeSession || activeSession.type !== 'group') return;
         const name = groupNameDraft.trim();
         if (!name) return;
         try {
             setIsRenamingGroup(true);
-            await imService.renameGroup(activeSessionId, name);
-            setSessions(prev => prev.map(session => session.id === activeSessionId ? { ...session, name } : session));
+            await imService.renameGroup(activeSession.id, name);
+            setSessions(prev => prev.map(session => session.key === activeSession.key ? { ...session, name } : session));
             await fetchSessions();
         } catch (e) {
             console.error(e);
@@ -527,13 +537,13 @@ const ChatWidget: React.FC = () => {
     };
 
     const handleAddMembers = async () => {
-        if (!activeSessionId || selectedUserIds.length === 0) return;
+        if (!activeSession || activeSession.type !== 'group' || selectedUserIds.length === 0) return;
         try {
-            await imService.addGroupMembers(activeSessionId, selectedUserIds);
+            await imService.addGroupMembers(activeSession.id, selectedUserIds);
             alert('邀请成功');
             setShowAddMember(false);
             // Refresh members
-            const members = await imService.getGroupMembers(activeSessionId);
+            const members = await imService.getGroupMembers(activeSession.id);
             setGroupMembers(members);
             // Update ref
             groupMembersRef.current = members;
@@ -546,26 +556,26 @@ const ChatWidget: React.FC = () => {
 
 
 
-    const handleSelectSession = (sessionId: number) => {
-        setActiveSessionId(sessionId);
+    const handleSelectSession = (sessionKey: string) => {
+        const session = sessions.find(s => s.key === sessionKey);
+        if (!session) return;
+        setActiveSessionKey(sessionKey);
         // Clear unread count locally
         setSessions(prev => prev.map(s => {
-            if (s.id === sessionId) {
+            if (s.key === sessionKey) {
                 return { ...s, unread: 0 };
             }
             return s;
         }));
         // Clear unread count on server
-        imService.clearUnread(sessionId).catch(e => console.error("Failed to clear unread", e));
+        imService.clearUnread(session.id, session.chatType).catch(e => console.error("Failed to clear unread", e));
     };
 
-    const activeSession = sessions.find(s => s.id === activeSessionId);
-
     const handleRemoveMemberSingle = async (memberId: number) => {
-        if (!activeSessionId) return;
+        if (!activeSession || activeSession.type !== 'group') return;
         if (!window.confirm('确定要移除该成员吗？')) return;
         try {
-            await imService.removeGroupMembers(activeSessionId, [memberId]);
+            await imService.removeGroupMembers(activeSession.id, [memberId]);
             // Optimistic update
             setGroupMembers(prev => prev.filter(m => m.userId !== memberId));
             groupMembersRef.current = groupMembersRef.current.filter(m => m.userId !== memberId);
@@ -575,15 +585,17 @@ const ChatWidget: React.FC = () => {
         }
     };
 
-    const handleDeleteSession = async (sessionId: number) => {
+    const handleDeleteSession = async (sessionKey: string) => {
+        const session = sessions.find(s => s.key === sessionKey);
+        if (!session) return;
         if (!window.confirm('确定要删除会话吗？')) return;
 
         try {
-            await imService.deleteSession(sessionId);
+            await imService.deleteSession(session.id, session.chatType);
             // Optimistic Remove
-            setSessions(prev => prev.filter(s => s.id !== sessionId));
-            if (activeSessionId === sessionId) {
-                setActiveSessionId(null);
+            setSessions(prev => prev.filter(s => s.key !== sessionKey));
+            if (activeSessionKey === sessionKey) {
+                setActiveSessionKey(null);
             }
         } catch (e) {
             console.error("Failed to delete session", e);
@@ -692,7 +704,7 @@ const ChatWidget: React.FC = () => {
 
                             <SessionList
                                 sessions={sessions}
-                                activeSessionId={activeSessionId || undefined}
+                                activeSessionKey={activeSessionKey || undefined}
                                 onSelectSession={handleSelectSession}
                                 onDeleteSession={handleDeleteSession}
                             />
@@ -706,7 +718,7 @@ const ChatWidget: React.FC = () => {
                                     <button
                                         onClick={() => {
                                             setIsOpen(false);
-                                            setActiveSessionId(null);
+                                            setActiveSessionKey(null);
                                         }}
                                         className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-600 transition-colors"
                                         title="关闭"
@@ -715,11 +727,11 @@ const ChatWidget: React.FC = () => {
                                     </button>
                                 </div>
 
-                            {activeSessionId && activeSession ? (
+                            {activeSessionKey && activeSession ? (
                                 <ChatWindow
-                                    key={activeSessionId}
+                                    key={activeSessionKey}
                                     sessionName={activeSession.name}
-                                    messages={messages[activeSessionId] || []}
+                                    messages={messages[activeSessionKey] || []}
                                     onSendMessage={handleSendMessage}
                                     onFileUpload={userService.uploadFile}
                                     onShowDetails={handleShowGroupDetails}
@@ -1002,7 +1014,7 @@ const ChatWidget: React.FC = () => {
                 onClick={() => {
                     const newState = !isOpen;
                     setIsOpen(newState);
-                    if (!newState) setActiveSessionId(null);
+                    if (!newState) setActiveSessionKey(null);
                 }}
                 className={`
                     ${isOpen

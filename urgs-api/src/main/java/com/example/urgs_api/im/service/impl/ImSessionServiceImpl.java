@@ -1,6 +1,7 @@
 package com.example.urgs_api.im.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.example.urgs_api.im.entity.ImConversation;
 import com.example.urgs_api.im.entity.ImGroup;
 import com.example.urgs_api.im.entity.ImGroupMember;
@@ -12,7 +13,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -35,9 +38,19 @@ public class ImSessionServiceImpl implements ImSessionService {
 
     @Override
     public List<ImConversation> getSessionList(Long userId) {
-        List<ImConversation> list = conversationMapper.selectList(new QueryWrapper<ImConversation>()
+        List<ImConversation> rawList = conversationMapper.selectList(new QueryWrapper<ImConversation>()
                 .eq("user_id", userId)
-                .orderByDesc("last_msg_time"));
+                .orderByDesc("last_msg_time")
+                .orderByDesc("id"));
+
+        List<ImConversation> list = new ArrayList<>();
+        Set<String> seenSessionKeys = new HashSet<>();
+        for (ImConversation conv : rawList) {
+            String sessionKey = conv.getChatType() + ":" + conv.getPeerId();
+            if (seenSessionKeys.add(sessionKey)) {
+                list.add(conv);
+            }
+        }
 
         for (ImConversation conv : list) {
             if (conv.getChatType() == 1) { // Private
@@ -72,23 +85,21 @@ public class ImSessionServiceImpl implements ImSessionService {
     }
 
     @Override
-    public void clearUnread(Long userId, Long peerId) {
-        com.example.urgs_api.im.entity.ImConversation conversation = conversationMapper
-                .selectOne(new QueryWrapper<ImConversation>()
-                        .eq("user_id", userId)
-                        .eq("peer_id", peerId));
-
-        if (conversation != null) {
-            conversation.setUnreadCount(0);
-            conversationMapper.updateById(conversation);
-        }
+    public void clearUnread(Long userId, Long peerId, Integer chatType) {
+        UpdateWrapper<ImConversation> update = new UpdateWrapper<ImConversation>()
+                .eq("user_id", userId)
+                .eq("peer_id", peerId)
+                .eq(chatType != null, "chat_type", chatType)
+                .set("unread_count", 0);
+        conversationMapper.update(null, update);
     }
 
     @Override
-    public void deleteSession(Long userId, Long peerId) {
+    public void deleteSession(Long userId, Long peerId, Integer chatType) {
         conversationMapper.delete(new QueryWrapper<ImConversation>()
                 .eq("user_id", userId)
-                .eq("peer_id", peerId));
+                .eq("peer_id", peerId)
+                .eq(chatType != null, "chat_type", chatType));
     }
 
     private boolean isDefaultGroupName(String name) {

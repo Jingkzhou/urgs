@@ -12,14 +12,16 @@ public class ImSessionController {
     private ImSessionService sessionService;
 
     @PostMapping("/{peerId}/read")
-    public String markRead(@RequestAttribute("userId") Long userId, @PathVariable Long peerId) {
-        sessionService.clearUnread(userId, peerId);
+    public String markRead(@RequestAttribute("userId") Long userId, @PathVariable Long peerId,
+            @RequestParam(required = false) Integer chatType) {
+        sessionService.clearUnread(userId, peerId, chatType);
         return "success";
     }
 
     @DeleteMapping("/{peerId}")
-    public String deleteSession(@RequestAttribute("userId") Long userId, @PathVariable Long peerId) {
-        sessionService.deleteSession(userId, peerId);
+    public String deleteSession(@RequestAttribute("userId") Long userId, @PathVariable Long peerId,
+            @RequestParam(required = false) Integer chatType) {
+        sessionService.deleteSession(userId, peerId, chatType);
         return "success";
     }
 }

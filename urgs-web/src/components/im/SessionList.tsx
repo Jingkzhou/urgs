@@ -4,7 +4,10 @@ import { MoreHorizontal, Trash2 } from 'lucide-react';
 import { getAvatarUrl } from '../../utils/avatarUtils';
 
 interface Session {
+    key: string;
     id: number;
+    peerId: number;
+    chatType: number;
     name: string;
     avatar: string | null;
     message: string;
@@ -15,27 +18,27 @@ interface Session {
 
 interface SessionListProps {
     sessions: Session[];
-    activeSessionId?: number;
-    onSelectSession: (id: number) => void;
-    onDeleteSession: (id: number) => void;
+    activeSessionKey?: string;
+    onSelectSession: (key: string) => void;
+    onDeleteSession: (key: string) => void;
 }
 
-const SessionList: React.FC<SessionListProps> = ({ sessions, activeSessionId, onSelectSession, onDeleteSession }) => {
-    const [contextMenu, setContextMenu] = useState<{ x: number, y: number, sessionId: number } | null>(null);
+const SessionList: React.FC<SessionListProps> = ({ sessions, activeSessionKey, onSelectSession, onDeleteSession }) => {
+    const [contextMenu, setContextMenu] = useState<{ x: number, y: number, sessionKey: string } | null>(null);
     const contextMenuRef = useRef<HTMLDivElement>(null);
 
-    const handleContextMenu = (e: React.MouseEvent, sessionId: number) => {
+    const handleContextMenu = (e: React.MouseEvent, sessionKey: string) => {
         e.preventDefault();
         setContextMenu({
             x: e.clientX,
             y: e.clientY,
-            sessionId
+            sessionKey
         });
     };
 
     const handleDelete = () => {
         if (contextMenu) {
-            onDeleteSession(contextMenu.sessionId);
+            onDeleteSession(contextMenu.sessionKey);
             setContextMenu(null);
         }
     };
@@ -55,14 +58,14 @@ const SessionList: React.FC<SessionListProps> = ({ sessions, activeSessionId, on
         <div className="flex-1 overflow-y-auto relative">
             {sessions.map(session => (
                 <div
-                    key={session.id}
-                    onClick={() => onSelectSession(session.id)}
-                    onContextMenu={(e) => handleContextMenu(e, session.id)}
-                    className={`px-4 py-3 cursor-pointer transition-colors flex gap-3 group border-l-2 ${activeSessionId === session.id ? 'bg-white border-indigo-600' : 'border-transparent hover:bg-slate-100/50'}`}
+                    key={session.key}
+                    onClick={() => onSelectSession(session.key)}
+                    onContextMenu={(e) => handleContextMenu(e, session.key)}
+                    className={`px-4 py-3 cursor-pointer transition-colors flex gap-3 group border-l-2 ${activeSessionKey === session.key ? 'bg-white border-indigo-600' : 'border-transparent hover:bg-slate-100/50'}`}
                 >
                     <div className="relative">
                         {session.avatar ? (
-                            <img src={getAvatarUrl(session.avatar, session.id)} className="w-10 h-10 rounded-lg object-cover" alt={session.name} />
+                            <img src={getAvatarUrl(session.avatar, session.name || session.key)} className="w-10 h-10 rounded-lg object-cover" alt={session.name} />
                         ) : (
                             <div className="w-10 h-10 rounded-lg bg-slate-200 flex items-center justify-center text-slate-500">
                                 <MoreHorizontal size={20} />
@@ -76,7 +79,7 @@ const SessionList: React.FC<SessionListProps> = ({ sessions, activeSessionId, on
                     </div>
                     <div className="flex-1 min-w-0 flex flex-col justify-center">
                         <div className="flex justify-between items-baseline mb-0.5">
-                            <h4 className={`font-medium text-[13px] truncate ${activeSessionId === session.id ? 'text-indigo-600 font-semibold' : 'text-slate-800'}`} title={session.name}>{session.name}</h4>
+                            <h4 className={`font-medium text-[13px] truncate ${activeSessionKey === session.key ? 'text-indigo-600 font-semibold' : 'text-slate-800'}`} title={session.name}>{session.name}</h4>
                             <span className="text-[11px] text-slate-400 whitespace-nowrap ml-2">{session.time}</span>
                         </div>
                         <div className="flex justify-between items-center">

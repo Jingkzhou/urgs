@@ -92,13 +92,16 @@ export const imService = {
     },
 
     // Session
-    clearUnread: async (peerId: number) => {
-        return post<any>(`${API_BASE}/session/${peerId}/read`, {});
+    clearUnread: async (peerId: number, chatType?: number) => {
+        return post<any>(`${API_BASE}/session/${peerId}/read`, {}, {
+            params: { chatType }
+        });
     },
 
-    deleteSession: async (peerId: number) => {
+    deleteSession: async (peerId: number, chatType?: number) => {
         // DELETE request
         return axios.delete(`${API_BASE}/session/${peerId}`, {
+            params: { chatType },
             headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
         });
     },

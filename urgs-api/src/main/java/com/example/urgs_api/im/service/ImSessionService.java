@@ -8,7 +8,7 @@ public interface ImSessionService {
 
     void updateSession(Long userId, Long peerId, String content);
 
-    void clearUnread(Long userId, Long peerId);
+    void clearUnread(Long userId, Long peerId, Integer chatType);
 
-    void deleteSession(Long userId, Long peerId);
+    void deleteSession(Long userId, Long peerId, Integer chatType);
 }

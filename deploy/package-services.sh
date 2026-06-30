@@ -420,7 +420,13 @@ prepare_work_dir() {
 
 create_archive() {
     log "Creating package archive."
-    (cd "$OUT_DIR" && tar -czf "${PACKAGE_BASENAME}.tar.gz" "$PACKAGE_BASENAME")
+    (
+        cd "$OUT_DIR"
+        COPYFILE_DISABLE=1 COPY_EXTENDED_ATTRIBUTES_DISABLE=1 tar --no-xattrs \
+            --exclude '._*' \
+            --exclude '__MACOSX' \
+            -czf "${PACKAGE_BASENAME}.tar.gz" "$PACKAGE_BASENAME"
+    )
     if [ "${KEEP_WORK_DIR:-0}" != "1" ]; then
         rm -rf "$WORK_DIR"
     fi

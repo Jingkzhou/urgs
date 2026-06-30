@@ -101,7 +101,10 @@ public class ImChatServiceImpl implements ImChatService {
     private void updateConversation(Long userId, Long peerId, String lastMsgContent, boolean incrementUnread,
             int chatType) {
         QueryWrapper<com.example.urgs_api.im.entity.ImConversation> query = new QueryWrapper<>();
-        query.eq("user_id", userId).eq("peer_id", peerId);
+        query.eq("user_id", userId).eq("peer_id", peerId).eq("chat_type", chatType)
+                .orderByDesc("last_msg_time")
+                .orderByDesc("id")
+                .last("LIMIT 1");
         com.example.urgs_api.im.entity.ImConversation conversation = conversationMapper.selectOne(query);
 
         if (conversation == null) {
