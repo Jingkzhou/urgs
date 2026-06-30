@@ -1,8 +1,11 @@
 export const workStatusLabelMap: Record<string, string> = {
     DRAFT: '草稿',
     PUBLISHED: '已发布',
+    ASSIGNED: '已承接',
     IN_PROGRESS: '进行中',
+    REVIEW: '待验收',
     COMPLETED: '已完成',
+    REJECTED: '退回修改',
     CANCELLED: '已取消',
 };
 
@@ -26,4 +29,16 @@ export const getWorkStatusLabel = (status?: string) => {
 export const getTaskStatusLabel = (status?: string) => {
     if (!status) return '-';
     return taskStatusLabelMap[status] || status;
+};
+
+export const taskStageLabelMap: Record<string, string> = {
+    REQUIREMENT: '需求',
+    DEVELOPMENT: '开发',
+    TESTING: '测试',
+    LAUNCH: '上线',
+};
+
+export const getTaskStageLabel = (stage?: string) => {
+    if (!stage) return '需求';
+    return taskStageLabelMap[stage] || stage;
 };

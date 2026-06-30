@@ -40,7 +40,7 @@ const WorkList: React.FC = () => {
 
     const buildTaskSummary = (tasks: WorkTask[]): WorkTaskSummary => {
         return {
-            taskCount: tasks.length,
+            taskCount: tasks.filter(task => task.taskRole !== 'MAIN').length,
         };
     };
 
@@ -128,6 +128,21 @@ const WorkList: React.FC = () => {
                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-50 border border-slate-100">
                                         <ListTodo size={13} /> 子任务 {taskSummaries[work.id]?.taskCount ?? 0} 个
                                     </span>
+                                    {work.applicationDepartment && (
+                                        <span className="inline-flex items-center px-2.5 py-1 rounded bg-slate-50 border border-slate-100">
+                                            申请部门: {work.applicationDepartment}
+                                        </span>
+                                    )}
+                                    {work.owningSystem && (
+                                        <span className="inline-flex items-center px-2.5 py-1 rounded bg-slate-50 border border-slate-100">
+                                            归属系统: {work.owningSystem}
+                                        </span>
+                                    )}
+                                    {work.projectType && (
+                                        <span className="inline-flex items-center px-2.5 py-1 rounded bg-blue-50 border border-blue-100 text-blue-700">
+                                            {work.projectType}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
 

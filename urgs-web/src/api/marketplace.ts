@@ -10,6 +10,13 @@ export interface WorkCreateDTO {
     priority?: string;
     deadline?: string;
     requirementNumber?: string;
+    applicationDepartment?: string;
+    applicantName?: string;
+    owningSystem?: string;
+    primarySystem?: boolean;
+    primarySystemName?: string;
+    projectType?: '变更类' | '仅配合';
+    mainTask: WorkTaskCreateDTO;
     attachments?: any[];
     tasks?: WorkTaskCreateDTO[];
 }
@@ -26,7 +33,15 @@ export interface WorkTaskCreateDTO {
     assigneeId?: string;
     maxApplicants?: number;
     deadline?: string;
+    taskRole?: 'MAIN' | 'SUB';
+    parentTaskId?: string;
+    currentStage?: TaskStage;
+    stageRiskReported?: boolean;
+    stageRiskNote?: string;
+    stageUpdatedAt?: string;
 }
+
+export type TaskStage = 'REQUIREMENT' | 'DEVELOPMENT' | 'TESTING' | 'LAUNCH';
 
 export interface Work {
     id: string;
@@ -41,6 +56,12 @@ export interface Work {
     publisherId: string;
     deadline: string;
     requirementNumber?: string;
+    applicationDepartment?: string;
+    applicantName?: string;
+    owningSystem?: string;
+    primarySystem?: boolean;
+    primarySystemName?: string;
+    projectType?: string;
     attachments?: string;
     createTime: string;
     updateTime: string;
@@ -49,6 +70,12 @@ export interface Work {
 export interface WorkTask {
     id: string;
     workId: string;
+    taskRole?: 'MAIN' | 'SUB';
+    parentTaskId?: string;
+    currentStage?: TaskStage;
+    stageRiskReported?: boolean;
+    stageRiskNote?: string;
+    stageUpdatedAt?: string;
     title: string;
     description: string;
     taskType?: string;
@@ -236,6 +263,8 @@ export const claimTask = (id: string) => post(`/api/marketplace/tasks/${id}/clai
 export const releaseTask = (id: string) => put(`/api/marketplace/tasks/${id}/release`);
 export const assignTask = (id: string, assigneeId: string) => put(`/api/marketplace/tasks/${id}/assign`, { assigneeId });
 export const updateTaskStatus = (id: string, status: string) => put(`/api/marketplace/tasks/${id}/status`, { status });
+export const advanceTaskStage = (id: string) => put(`/api/marketplace/tasks/${id}/stage/advance`);
+export const reportTaskStageRisk = (id: string, data: { riskNote: string }) => put(`/api/marketplace/tasks/${id}/stage/risk`, data);
 export const submitTaskForReview = (id: string, data: TaskSubmissionDTO) => put(`/api/marketplace/tasks/${id}/submit`, data);
 export const reviewTask = (id: string, data: TaskReviewDTO) => put(`/api/marketplace/tasks/${id}/review`, data);
 

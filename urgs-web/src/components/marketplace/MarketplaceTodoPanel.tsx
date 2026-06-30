@@ -46,7 +46,7 @@ const MarketplaceTodoPanel: React.FC<MarketplaceTodoPanelProps> = ({ onSelectTab
                 <CheckCircle2 size={18} className="text-green-600" />
                 <div>
                     <div className="text-sm font-bold text-green-700">当前没有待处理事项</div>
-                    <div className="text-xs text-green-600 mt-0.5">工作市场流程暂时是清爽的，可以继续领取或发布任务。</div>
+                    <div className="text-xs text-green-600 mt-0.5">任务中心流程暂时是清爽的，可以继续领取或发布任务。</div>
                 </div>
             </div>
         );

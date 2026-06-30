@@ -24,7 +24,7 @@ const NAV_ITEMS = [
     { id: 'ark', label: 'Ark (方舟)', icon: Sparkles, permission: 'ark' },
     { id: 'announcement', label: '公告', icon: Megaphone, permission: 'announcement' },
     { id: 'version', label: '版本', icon: GitBranch, permission: 'version' },
-    { id: 'marketplace', label: '工作市场', icon: Award, permission: 'marketplace' },
+    { id: 'marketplace', label: '任务中心', icon: Award, permission: 'marketplace' },
     { id: 'tools', label: '工具', icon: Wrench, permission: 'tools' },
     { id: 'metadata', label: '数据', icon: Database, permission: 'metadata' },
     { id: 'ops', label: '运维', icon: Activity, permission: 'ops' },

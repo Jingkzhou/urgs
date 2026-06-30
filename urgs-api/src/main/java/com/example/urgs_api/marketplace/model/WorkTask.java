@@ -14,6 +14,12 @@ public class WorkTask {
     private String id;
 
     private String workId;
+    private String taskRole;
+    private String parentTaskId;
+    private String currentStage;
+    private Boolean stageRiskReported;
+    private String stageRiskNote;
+    private LocalDateTime stageUpdatedAt;
     private String title;
     private String description;
     private String taskType;

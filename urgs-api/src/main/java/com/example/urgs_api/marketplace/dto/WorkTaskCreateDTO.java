@@ -17,4 +17,7 @@ public class WorkTaskCreateDTO {
     private String assigneeId; // If ASSIGN mode
     private Integer maxApplicants; // If COMPETE mode
     private LocalDateTime deadline;
+    private String taskRole; // MAIN/SUB
+    private String parentTaskId;
+    private String currentStage; // REQUIREMENT/DEVELOPMENT/TESTING/LAUNCH
 }

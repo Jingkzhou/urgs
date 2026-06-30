@@ -14,7 +14,7 @@ import {
     WorkTask,
 } from '../../api/marketplace';
 import { Award, CheckCircle2, Clock, Paperclip, Plus, Users, XCircle } from 'lucide-react';
-import { getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
+import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -227,6 +227,9 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         return 'default';
     };
 
+    const mainTask = tasks.find(task => task.taskRole === 'MAIN');
+    const subTasks = tasks.filter(task => task.taskRole !== 'MAIN');
+
     return (
         <Drawer
             title="工作详情"
@@ -258,6 +261,17 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                 需求编号: {work.requirementNumber}
                             </Text>
                         )}
+                        <div className="flex flex-wrap gap-2 mt-3">
+                            {work.applicationDepartment && <Tag>申请部门: {work.applicationDepartment}</Tag>}
+                            {work.applicantName && <Tag>申请人: {work.applicantName}</Tag>}
+                            {work.owningSystem && <Tag>归属系统: {work.owningSystem}</Tag>}
+                            {work.projectType && <Tag color="blue">{work.projectType}</Tag>}
+                            {work.primarySystem !== undefined && (
+                                <Tag color={work.primarySystem ? 'green' : 'orange'}>
+                                    {work.primarySystem ? '主系统' : `非主系统${work.primarySystemName ? ` / 主系统: ${work.primarySystemName}` : ''}`}
+                                </Tag>
+                            )}
+                        </div>
                     </header>
 
                     <div className="bg-slate-50 p-4 rounded-xl flex items-center justify-around">
@@ -267,8 +281,8 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                         </div>
                         <Divider orientation="vertical" className="h-10 border-slate-200" />
                         <div className="text-center">
-                            <div className="text-xs text-slate-400 mb-1">任务数</div>
-                            <div className="font-bold text-slate-800">{tasks.length}</div>
+                            <div className="text-xs text-slate-400 mb-1">子任务数</div>
+                            <div className="font-bold text-slate-800">{subTasks.length}</div>
                         </div>
                         <Divider orientation="vertical" className="h-10 border-slate-200" />
                         <div className="text-center">
@@ -293,9 +307,46 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
 
                     <Divider className="my-0" />
 
+                    {mainTask && (
+                        <section>
+                            <Title level={5}>主任务</Title>
+                            <div className="bg-red-50/40 rounded-xl border border-red-100 shadow-sm relative overflow-hidden">
+                                <div className="absolute top-0 left-0 w-1 h-full bg-red-400" />
+                                <div className="p-4 pl-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                <Tag color="red" className="text-xs">主任务</Tag>
+                                                <span className="text-sm font-bold text-slate-800 truncate">{mainTask.title}</span>
+                                                <Tag color={getAssignModeColor(mainTask.assignMode)} className="text-xs">{getAssignModeLabel(mainTask.assignMode)}</Tag>
+                                                <Tag color={getStatusColor(mainTask.status)} className="text-xs">{getTaskStatusLabel(mainTask.status)}</Tag>
+                                                <Tag color="blue" className="text-xs">{getTaskStageLabel(mainTask.currentStage)}</Tag>
+                                                {mainTask.stageRiskReported && <Tag color="warning" className="text-xs">已报备风险</Tag>}
+                                            </div>
+                                            <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
+                                                <span className="flex items-center gap-1">
+                                                    <Award size={12} /> {mainTask.points} 积分
+                                                </span>
+                                                {mainTask.assigneeId && <span>负责人: {mainTask.assigneeId}</span>}
+                                                {mainTask.deadline && (
+                                                    <span className="flex items-center gap-1">
+                                                        <Clock size={12} /> {new Date(mainTask.deadline).toLocaleDateString()}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {mainTask.description && (
+                                                <p className="text-xs text-slate-500 mt-2 line-clamp-2">{mainTask.description}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    )}
+
                     <section>
                         <div className="flex items-center justify-between mb-4">
-                            <Title level={5} className="!mb-0">包含任务 ({tasks.length})</Title>
+                            <Title level={5} className="!mb-0">子任务 ({subTasks.length})</Title>
                             {work.status !== 'COMPLETED' && work.status !== 'CANCELLED' && (
                                 <button
                                     onClick={() => setAddingTask(true)}
@@ -306,13 +357,13 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                             )}
                         </div>
 
-                        {tasks.length === 0 && !addingTask ? (
+                        {subTasks.length === 0 && !addingTask ? (
                             <div className="text-center py-8 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                                暂无任务，点击右上角添加第一个任务吧。
+                                暂无子任务，点击右上角添加第一个子任务吧。
                             </div>
                         ) : (
                             <div className="space-y-3">
-                                {tasks.map((task, index) => (
+                                {subTasks.map((task, index) => (
                                     task && (
                                         <div key={task.id} className="bg-white rounded-xl border border-slate-200 shadow-sm relative group overflow-hidden">
                                             <div className="absolute top-0 left-0 w-1 h-full bg-slate-200 group-hover:bg-red-400 transition-colors" />
@@ -327,6 +378,8 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                                 <span className="text-sm font-bold text-slate-800 truncate">{task.title}</span>
                                                                 <Tag color={getAssignModeColor(task.assignMode)} className="text-xs">{getAssignModeLabel(task.assignMode)}</Tag>
                                                                 <Tag color={getStatusColor(task.status)} className="text-xs">{getTaskStatusLabel(task.status)}</Tag>
+                                                                <Tag color="blue" className="text-xs">{getTaskStageLabel(task.currentStage)}</Tag>
+                                                                {task.stageRiskReported && <Tag color="warning" className="text-xs">已报备风险</Tag>}
                                                             </div>
                                                             <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
                                                                 <span className="flex items-center gap-1">

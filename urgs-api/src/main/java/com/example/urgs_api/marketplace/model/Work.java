@@ -24,6 +24,12 @@ public class Work {
     private String publisherId;
     private LocalDateTime deadline;
     private String requirementNumber;
+    private String applicationDepartment;
+    private String applicantName;
+    private String owningSystem;
+    private Boolean primarySystem;
+    private String primarySystemName;
+    private String projectType;
     private String attachments;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;

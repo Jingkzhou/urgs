@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Drawer, Button, Tag, Space, Divider, Typography, Descriptions, Spin, Empty } from 'antd';
 import { getTaskDetail, TaskMarketDTO, claimTask } from '../../api/marketplace';
 import { Award, Clock, Users, Building2, User } from 'lucide-react';
-import { getTaskStatusLabel } from './marketplaceLabels';
+import { getTaskStageLabel, getTaskStatusLabel } from './marketplaceLabels';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -89,6 +89,8 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                             }>
                                 {getTaskStatusLabel(task.status)}
                             </Tag>
+                            <Tag color="blue">{getTaskStageLabel(task.currentStage)}</Tag>
+                            {task.stageRiskReported && <Tag color="warning">已报备风险</Tag>}
                         </Space>
                         <Title level={3} className="!mb-0">{task.title}</Title>
                     </header>
@@ -142,14 +144,19 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                                         <span className="break-all whitespace-pre-wrap">{task.deliverables}</span>
                                     </Descriptions.Item>
                                 )}
-                                {task.impactScope && (
-                                    <Descriptions.Item label="影响范围">
-                                        <span className="whitespace-pre-wrap">{task.impactScope}</span>
-                                    </Descriptions.Item>
-                                )}
-                                {(task.delayReported || task.delayReason) && (
-                                    <Descriptions.Item label="延期说明">
-                                        {task.delayReported ? '已提前报备' : '未报备'}{task.delayReason ? `：${task.delayReason}` : ''}
+                        {task.impactScope && (
+                            <Descriptions.Item label="影响范围">
+                                <span className="whitespace-pre-wrap">{task.impactScope}</span>
+                            </Descriptions.Item>
+                        )}
+                        {(task.stageRiskReported || task.stageRiskNote) && (
+                            <Descriptions.Item label="阶段风险">
+                                {task.stageRiskReported ? '已报备' : '未报备'}{task.stageRiskNote ? `：${task.stageRiskNote}` : ''}
+                            </Descriptions.Item>
+                        )}
+                        {(task.delayReported || task.delayReason) && (
+                            <Descriptions.Item label="延期说明">
+                                {task.delayReported ? '已提前报备' : '未报备'}{task.delayReason ? `：${task.delayReason}` : ''}
                                     </Descriptions.Item>
                                 )}
                             </Descriptions>

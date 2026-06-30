@@ -173,7 +173,7 @@ graph LR
         Know["knowledge / ai<br/>知识库/AI"]
         Ver["version<br/>版本管理"]
         Ops["ops<br/>运维"]
-        Mkt["marketplace<br/>工作市场"]
+        Mkt["marketplace<br/>任务中心"]
     end
 
     Frontend -->|"REST / SSE"| Core

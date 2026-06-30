@@ -15,6 +15,13 @@ public class WorkCreateDTO {
     private String priority;
     private LocalDateTime deadline;
     private String requirementNumber;
+    private String applicationDepartment;
+    private String applicantName;
+    private String owningSystem;
+    private Boolean primarySystem;
+    private String primarySystemName;
+    private String projectType;
+    private WorkTaskCreateDTO mainTask;
     private List<AttachmentDTO> attachments;
     private List<WorkTaskCreateDTO> tasks;
 

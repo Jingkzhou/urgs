@@ -18,7 +18,7 @@
 8. [task — 任务管理](#8-task--任务管理)
 9. [version — 版本管理](#9-version--版本管理)
 10. [ops — 运维管理](#10-ops--运维管理)
-11. [marketplace — 工作市场](#11-marketplace--工作市场)
+11. [marketplace — 任务中心](#11-marketplace--任务中心)
 12. [metric — 指标管理](#12-metric--指标管理)
 13. [workflow — 工作流](#13-workflow--工作流)
 14. [system — 系统管理](#14-system--系统管理)
@@ -217,7 +217,7 @@
 
 ---
 
-## 11. marketplace — 工作市场
+## 11. marketplace — 任务中心
 
 ### 现状
 - 工作/需求创建与管理

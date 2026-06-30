@@ -18,6 +18,10 @@ public interface WorkTaskService extends IService<WorkTask> {
 
     boolean updateTaskStatus(String taskId, String status, String userId);
 
+    boolean advanceTaskStage(String taskId, String userId);
+
+    boolean reportTaskStageRisk(String taskId, String riskNote, String userId);
+
     boolean submitForReview(String taskId, TaskSubmissionDTO dto, String userId);
 
     boolean reviewTask(String taskId, TaskReviewDTO dto, String reviewerId);

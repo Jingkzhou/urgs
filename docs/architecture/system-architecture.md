@@ -105,7 +105,7 @@ urgs-api/src/main/java/com/example/urgs_api/
 ├── im/              # 即时通讯（站内信）
 ├── knowledge/       # 知识库：文档上传、向量检索
 ├── metadata/        # 元数据：监管表注册、血缘分析
-├── marketplace/     # 工作市场：需求、工单、KPI
+├── marketplace/     # 任务中心：需求、工单、KPI
 ├── metric/          # 指标管理：数据采集、图表配置
 ├── ops/             # 运维：Docker 管理、基础设施资产
 ├── org/             # 组织架构：部门、人员

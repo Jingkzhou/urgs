@@ -32,6 +32,12 @@ import java.util.stream.Collectors;
 
 @Service
 public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> implements WorkTaskService {
+    private static final String TASK_ROLE_MAIN = "MAIN";
+    private static final String TASK_ROLE_SUB = "SUB";
+    private static final String STAGE_REQUIREMENT = "REQUIREMENT";
+    private static final String STAGE_DEVELOPMENT = "DEVELOPMENT";
+    private static final String STAGE_TESTING = "TESTING";
+    private static final String STAGE_LAUNCH = "LAUNCH";
 
     @Autowired
     @org.springframework.context.annotation.Lazy
@@ -59,6 +65,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         } else {
             queryWrapper.in(WorkTask::getStatus, TaskStatus.OPEN.name(), TaskStatus.APPLIED.name());
         }
+        queryWrapper.eq(WorkTask::getTaskRole, TASK_ROLE_SUB);
 
         if (StringUtils.hasText(keyword)) {
             queryWrapper.like(WorkTask::getTitle, keyword);
@@ -120,6 +127,9 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (!AssignMode.OPEN.name().equals(task.getAssignMode())) {
             throw new IllegalStateException("该任务不支持直接领取");
         }
+        if (TASK_ROLE_MAIN.equals(task.getTaskRole())) {
+            throw new IllegalStateException("主任务不支持直接领取");
+        }
 
         task.setStatus(TaskStatus.ASSIGNED.name());
         task.setAssigneeId(userId);
@@ -148,6 +158,9 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         }
         if (!TaskStatus.ASSIGNED.name().equals(task.getStatus())) {
             throw new IllegalStateException("只有已承接且未开始的任务可以解除承接");
+        }
+        if (TASK_ROLE_MAIN.equals(task.getTaskRole())) {
+            throw new IllegalStateException("主任务不支持解除承接");
         }
 
         boolean success = this.lambdaUpdate()
@@ -207,6 +220,9 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 && !TaskStatus.ASSIGNED.name().equals(task.getStatus())) {
             throw new IllegalStateException("当前状态不可提交验收");
         }
+        if (TASK_ROLE_MAIN.equals(task.getTaskRole()) && !areAllSubTasksClosed(task.getWorkId())) {
+            throw new IllegalStateException("请先完成所有子任务后再提交主任务验收");
+        }
 
         task.setCompletionDescription(dto.getCompletionDescription());
         task.setDeliverables(dto.getDeliverables());
@@ -238,6 +254,9 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
         ReviewDecision decision = ReviewDecision.valueOf(dto.getDecision());
         if (ReviewDecision.APPROVE.equals(decision)) {
+            if (TASK_ROLE_MAIN.equals(task.getTaskRole()) && !areAllSubTasksClosed(task.getWorkId())) {
+                throw new IllegalStateException("请先完成所有子任务后再通过主任务验收");
+            }
             if (dto.getQualityScore() == null || dto.getQualityScore() < 1 || dto.getQualityScore() > 5) {
                 throw new IllegalArgumentException("通过验收时质量评分必须在 1-5 分之间");
             }
@@ -314,12 +333,93 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             throw new IllegalArgumentException("任务不存在");
         }
         // Simplified authorization check
+        if (TASK_ROLE_MAIN.equals(task.getTaskRole())
+                && (TaskStatus.REVIEW.name().equals(status) || TaskStatus.COMPLETED.name().equals(status))
+                && !areAllSubTasksClosed(task.getWorkId())) {
+            throw new IllegalStateException("请先完成所有子任务后再完成主任务");
+        }
         String oldStatus = task.getStatus();
         task.setStatus(status);
         boolean success = this.updateById(task);
 
         if (success) {
             logTaskAction(taskId, userId, "STATUS_UPDATE", "更新状态: " + oldStatus + " -> " + status);
+            updateWorkStatusIfNecessary(task.getWorkId());
+        }
+        return success;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean advanceTaskStage(String taskId, String userId) {
+        WorkTask task = this.getById(taskId);
+        if (task == null) {
+            throw new IllegalArgumentException("任务不存在");
+        }
+        if (!userId.equals(task.getAssigneeId())) {
+            throw new IllegalStateException("只能推进自己承接的任务阶段");
+        }
+        if (TaskStatus.COMPLETED.name().equals(task.getStatus())
+                || TaskStatus.CANCELLED.name().equals(task.getStatus())
+                || TaskStatus.REVIEW.name().equals(task.getStatus())) {
+            throw new IllegalStateException("当前状态不可推进阶段");
+        }
+        if (TASK_ROLE_MAIN.equals(task.getTaskRole()) && STAGE_LAUNCH.equals(resolveStage(task))
+                && !areAllSubTasksClosed(task.getWorkId())) {
+            throw new IllegalStateException("请先完成所有子任务后再提交主任务验收");
+        }
+
+        String currentStage = resolveStage(task);
+        String nextStage = nextStage(currentStage);
+        LocalDateTime now = LocalDateTime.now();
+
+        task.setStageRiskReported(false);
+        task.setStageRiskNote(null);
+        task.setStageUpdatedAt(now);
+        if (TaskStatus.ASSIGNED.name().equals(task.getStatus()) || TaskStatus.REJECTED.name().equals(task.getStatus())) {
+            task.setStatus(TaskStatus.IN_PROGRESS.name());
+        }
+
+        if (nextStage == null) {
+            task.setSubmittedAt(now);
+            task.setStatus(TaskStatus.REVIEW.name());
+            logTaskAction(taskId, userId, "STAGE_TO_REVIEW", "上线完成，进入验收阶段");
+        } else {
+            task.setCurrentStage(nextStage);
+            logTaskAction(taskId, userId, "STAGE_ADVANCE", "阶段推进: " + currentStage + " -> " + nextStage);
+        }
+
+        boolean success = this.updateById(task);
+        if (success) {
+            updateWorkStatusIfNecessary(task.getWorkId());
+        }
+        return success;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean reportTaskStageRisk(String taskId, String riskNote, String userId) {
+        WorkTask task = this.getById(taskId);
+        if (task == null) {
+            throw new IllegalArgumentException("任务不存在");
+        }
+        if (!userId.equals(task.getAssigneeId())) {
+            throw new IllegalStateException("只能报备自己承接的任务风险");
+        }
+        if (!StringUtils.hasText(riskNote)) {
+            throw new IllegalArgumentException("风险说明不能为空");
+        }
+        if (TaskStatus.COMPLETED.name().equals(task.getStatus()) || TaskStatus.CANCELLED.name().equals(task.getStatus())) {
+            throw new IllegalStateException("当前状态不可报备风险");
+        }
+
+        task.setCurrentStage(resolveStage(task));
+        task.setStageRiskReported(true);
+        task.setStageRiskNote(riskNote);
+        task.setStageUpdatedAt(LocalDateTime.now());
+        boolean success = this.updateById(task);
+        if (success) {
+            logTaskAction(taskId, userId, "STAGE_RISK", "阶段风险报备: " + task.getCurrentStage() + " - " + riskNote);
             updateWorkStatusIfNecessary(task.getWorkId());
         }
         return success;
@@ -341,21 +441,30 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (work == null)
             return;
 
-        if (WorkStatus.PUBLISHED.name().equals(work.getStatus())) {
-            // Once a task goes beyond OPEN, consider work IN_PROGRESS
-            work.setStatus(WorkStatus.IN_PROGRESS.name());
-            workService.updateById(work);
-        } else if (WorkStatus.IN_PROGRESS.name().equals(work.getStatus())) {
-            // Check if all tasks are completed
-            long totalCount = this.lambdaQuery().eq(WorkTask::getWorkId, workId).count();
-            long compCount = this.lambdaQuery().eq(WorkTask::getWorkId, workId)
-                    .in(WorkTask::getStatus, TaskStatus.COMPLETED.name(), TaskStatus.CANCELLED.name())
-                    .count();
-            if (totalCount > 0 && totalCount == compCount) {
-                work.setStatus(WorkStatus.COMPLETED.name());
-                workService.updateById(work);
-            }
+        if (WorkStatus.DRAFT.name().equals(work.getStatus()) || WorkStatus.CANCELLED.name().equals(work.getStatus())) {
+            return;
         }
+
+        WorkTask mainTask = this.lambdaQuery()
+                .eq(WorkTask::getWorkId, workId)
+                .eq(WorkTask::getTaskRole, TASK_ROLE_MAIN)
+                .one();
+        if (mainTask == null) {
+            throw new IllegalStateException("工作缺少主任务，无法聚合状态");
+        }
+        if (!mainTask.getStatus().equals(work.getStatus())) {
+            work.setStatus(mainTask.getStatus());
+            workService.updateById(work);
+        }
+    }
+
+    private boolean areAllSubTasksClosed(String workId) {
+        long unfinishedSubTaskCount = this.lambdaQuery()
+                .eq(WorkTask::getWorkId, workId)
+                .eq(WorkTask::getTaskRole, TASK_ROLE_SUB)
+                .notIn(WorkTask::getStatus, TaskStatus.COMPLETED.name(), TaskStatus.CANCELLED.name())
+                .count();
+        return unfinishedSubTaskCount == 0;
     }
 
     @Override
@@ -427,6 +536,19 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
     private int defaultInt(Integer value) {
         return value == null ? 0 : value;
+    }
+
+    private String resolveStage(WorkTask task) {
+        return StringUtils.hasText(task.getCurrentStage()) ? task.getCurrentStage() : STAGE_REQUIREMENT;
+    }
+
+    private String nextStage(String currentStage) {
+        return switch (currentStage) {
+            case STAGE_REQUIREMENT -> STAGE_DEVELOPMENT;
+            case STAGE_DEVELOPMENT -> STAGE_TESTING;
+            case STAGE_TESTING -> STAGE_LAUNCH;
+            default -> null;
+        };
     }
 
     private String nullToEmpty(String value) {

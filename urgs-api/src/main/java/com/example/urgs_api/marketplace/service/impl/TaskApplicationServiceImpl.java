@@ -29,6 +29,7 @@ import java.util.Objects;
 @Service
 public class TaskApplicationServiceImpl extends ServiceImpl<TaskApplicationMapper, TaskApplication>
         implements TaskApplicationService {
+    private static final String TASK_ROLE_MAIN = "MAIN";
 
     @Autowired
     private WorkTaskService workTaskService;
@@ -59,6 +60,9 @@ public class TaskApplicationServiceImpl extends ServiceImpl<TaskApplicationMappe
         }
         if (!AssignMode.COMPETE.name().equals(task.getAssignMode())) {
             throw new IllegalStateException("该任务不支持竞标申请");
+        }
+        if (TASK_ROLE_MAIN.equals(task.getTaskRole())) {
+            throw new IllegalStateException("主任务不支持竞标申请");
         }
         if (task.getDeadline() != null && LocalDateTime.now().isAfter(task.getDeadline())) {
             throw new IllegalStateException("任务已超过截止时间，不能继续竞标");

@@ -3,6 +3,7 @@ package com.example.urgs_api.marketplace.controller;
 import com.example.urgs_api.common.PageResult;
 import com.example.urgs_api.marketplace.dto.TaskMarketDTO;
 import com.example.urgs_api.marketplace.dto.TaskReviewDTO;
+import com.example.urgs_api.marketplace.dto.TaskStageRiskDTO;
 import com.example.urgs_api.marketplace.dto.TaskSubmissionDTO;
 import com.example.urgs_api.marketplace.dto.WorkTaskCreateDTO;
 import com.example.urgs_api.marketplace.enums.TaskStatus;
@@ -21,6 +22,9 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/marketplace/tasks")
 public class WorkTaskController {
+    private static final String TASK_ROLE_MAIN = "MAIN";
+    private static final String TASK_ROLE_SUB = "SUB";
+    private static final String STAGE_REQUIREMENT = "REQUIREMENT";
 
     @Autowired
     private WorkTaskService workTaskService;
@@ -46,6 +50,10 @@ public class WorkTaskController {
 
         WorkTask task = new WorkTask();
         task.setWorkId(workId);
+        task.setTaskRole(TASK_ROLE_SUB);
+        task.setParentTaskId(findMainTaskId(workId));
+        task.setCurrentStage(dto.getCurrentStage() != null ? dto.getCurrentStage() : STAGE_REQUIREMENT);
+        task.setStageRiskReported(false);
         task.setTitle(dto.getTitle());
         task.setDescription(dto.getDescription());
         task.setTaskType(dto.getTaskType());
@@ -206,6 +214,27 @@ public class WorkTaskController {
         return ResponseEntity.ok().build();
     }
 
+    @PutMapping("/{id}/stage/advance")
+    public ResponseEntity<Void> advanceTaskStage(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @PathVariable String id) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        workTaskService.advanceTaskStage(id, userId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/{id}/stage/risk")
+    public ResponseEntity<Void> reportTaskStageRisk(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @PathVariable String id,
+            @RequestBody TaskStageRiskDTO dto) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        workTaskService.reportTaskStageRisk(id, dto.getRiskNote(), userId);
+        return ResponseEntity.ok().build();
+    }
+
     @PutMapping("/{id}/submit")
     public ResponseEntity<Void> submitForReview(
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
@@ -247,5 +276,16 @@ public class WorkTaskController {
             return String.valueOf(attrUserId);
         }
         throw new IllegalArgumentException("Missing user identifier");
+    }
+
+    private String findMainTaskId(String workId) {
+        WorkTask mainTask = workTaskService.lambdaQuery()
+                .eq(WorkTask::getWorkId, workId)
+                .eq(WorkTask::getTaskRole, TASK_ROLE_MAIN)
+                .one();
+        if (mainTask == null) {
+            throw new IllegalStateException("工作缺少主任务，不能添加子任务");
+        }
+        return mainTask.getId();
     }
 }

@@ -110,7 +110,7 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '3-8-2-3', name: '重启', code: 'sys:docker:container:restart', type: 'button', path: '-', level: 3, parentId: '3-8-2' },
 
     { id: '4', name: '版本管理', code: 'version', type: 'menu', path: '/version', level: 0, parentId: 'root' },
-    { id: '9', name: '工作市场', code: 'marketplace', type: 'menu', path: '/marketplace', level: 0, parentId: 'root' },
+    { id: '9', name: '任务中心', code: 'marketplace', type: 'menu', path: '/marketplace', level: 0, parentId: 'root' },
     { id: '10', name: '工具', code: 'tools', type: 'menu', path: '/tools', level: 0, parentId: 'root' },
     { id: '10-1', name: '在线文档', code: 'tools:online-docs', type: 'menu', path: '/tools/online-docs', level: 1, parentId: '10' },
 

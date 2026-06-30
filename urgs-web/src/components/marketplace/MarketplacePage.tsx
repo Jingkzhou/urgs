@@ -22,7 +22,7 @@ const MarketplacePage: React.FC = () => {
         <div className="h-full flex flex-col gap-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-black text-slate-800 tracking-tight">工作市场</h1>
+                    <h1 className="text-2xl font-black text-slate-800 tracking-tight">任务中心</h1>
                     <p className="text-sm text-slate-500 mt-1">认领感兴趣的任务或发布您的工作需求</p>
                 </div>
 
