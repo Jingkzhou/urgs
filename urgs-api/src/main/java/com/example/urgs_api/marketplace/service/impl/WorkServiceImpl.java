@@ -2,6 +2,7 @@ package com.example.urgs_api.marketplace.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.urgs_api.marketplace.dto.WorkCreateDTO;
+import com.example.urgs_api.marketplace.dto.WorkImportDTO;
 import com.example.urgs_api.marketplace.dto.WorkTaskCreateDTO;
 import com.example.urgs_api.marketplace.enums.AssignMode;
 import com.example.urgs_api.marketplace.enums.TaskStatus;
@@ -45,9 +46,6 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         Work work = new Work();
         work.setTitle(dto.getTitle());
         work.setDescription(dto.getDescription());
-        work.setBackground(dto.getBackground());
-        work.setBusinessValue(dto.getBusinessValue());
-        work.setCategory(dto.getCategory());
         work.setPriority(dto.getPriority() != null ? dto.getPriority() : "P2");
         work.setStatus(WorkStatus.DRAFT.name());
         work.setPublisherId(userId);
@@ -94,6 +92,53 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
             workTaskService.saveBatch(taskList);
         }
         return work;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int importWorks(List<WorkImportDTO> works, String userId) {
+        if (works == null || works.isEmpty()) {
+            throw new IllegalArgumentException("导入数据不能为空");
+        }
+        if (works.size() > 500) {
+            throw new IllegalArgumentException("单次最多导入500条工作");
+        }
+
+        for (int index = 0; index < works.size(); index++) {
+            WorkImportDTO importDTO = works.get(index);
+            if (Boolean.FALSE.equals(importDTO.getPrimarySystem())
+                    && isBlank(importDTO.getPrimarySystemName())) {
+                throw new IllegalArgumentException("第" + (index + 2) + "行：非主系统必须填写主系统名称");
+            }
+
+            WorkCreateDTO createDTO = new WorkCreateDTO();
+            createDTO.setTitle(trim(importDTO.getTitle()));
+            createDTO.setDescription(trim(importDTO.getDescription()));
+            createDTO.setPriority(trim(importDTO.getPriority()));
+            createDTO.setDeadline(importDTO.getDeadline());
+            createDTO.setRequirementNumber(trimToNull(importDTO.getRequirementNumber()));
+            createDTO.setApplicationDepartment(trim(importDTO.getApplicationDepartment()));
+            createDTO.setApplicantName(trim(importDTO.getApplicantName()));
+            createDTO.setOwningSystem(trim(importDTO.getOwningSystem()));
+            createDTO.setPrimarySystem(importDTO.getPrimarySystem());
+            createDTO.setPrimarySystemName(Boolean.TRUE.equals(importDTO.getPrimarySystem())
+                    ? null
+                    : trimToNull(importDTO.getPrimarySystemName()));
+            createDTO.setProjectType(trim(importDTO.getProjectType()));
+
+            WorkTaskCreateDTO mainTask = new WorkTaskCreateDTO();
+            mainTask.setTitle(createDTO.getTitle());
+            mainTask.setDescription(createDTO.getDescription());
+            mainTask.setTaskType("主任务");
+            mainTask.setPoints(0);
+            mainTask.setAssignMode(AssignMode.ASSIGN.name());
+            mainTask.setAssigneeId(userId);
+            mainTask.setDeadline(createDTO.getDeadline());
+            createDTO.setMainTask(mainTask);
+
+            createWork(createDTO, userId);
+        }
+        return works.size();
     }
 
     @Override
@@ -211,5 +256,18 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
 
     private int defaultPoints(WorkTaskCreateDTO taskDto) {
         return taskDto != null && taskDto.getPoints() != null ? taskDto.getPoints() : 0;
+    }
+
+    private String trim(String value) {
+        return value == null ? null : value.trim();
+    }
+
+    private String trimToNull(String value) {
+        String trimmed = trim(value);
+        return isBlank(trimmed) ? null : trimmed;
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 }

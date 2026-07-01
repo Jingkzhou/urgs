@@ -9,9 +9,6 @@ import java.util.List;
 public class WorkCreateDTO {
     private String title;
     private String description;
-    private String background;
-    private String businessValue;
-    private String category;
     private String priority;
     private LocalDateTime deadline;
     private String requirementNumber;

@@ -54,7 +54,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
     private UserMapper userMapper;
 
     @Override
-    public Page<TaskMarketDTO> getMarketTasks(Page<WorkTask> page, String category, String keyword, String status) {
+    public Page<TaskMarketDTO> getMarketTasks(Page<WorkTask> page, String keyword, String status) {
         // Query tasks that are part of PUBLISHED works
         LambdaQueryWrapper<WorkTask> queryWrapper = new LambdaQueryWrapper<>();
 
@@ -89,10 +89,6 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             TaskMarketDTO dto = new TaskMarketDTO();
             BeanUtils.copyProperties(task, dto);
             dto.setWorkTitle(work.getTitle());
-
-            if (StringUtils.hasText(category) && !category.equals(work.getCategory())) {
-                return null;
-            }
 
             User publisher = userMapper.selectById(work.getPublisherId());
             if (publisher != null) {

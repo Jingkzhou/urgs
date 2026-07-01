@@ -4,9 +4,6 @@ import { get, post, put, del } from '../utils/request';
 export interface WorkCreateDTO {
     title: string;
     description?: string;
-    background?: string;
-    businessValue?: string;
-    category?: string;
     priority?: string;
     deadline?: string;
     requirementNumber?: string;
@@ -19,6 +16,24 @@ export interface WorkCreateDTO {
     mainTask: WorkTaskCreateDTO;
     attachments?: any[];
     tasks?: WorkTaskCreateDTO[];
+}
+
+export interface WorkImportDTO {
+    title: string;
+    description: string;
+    priority: 'P0' | 'P1' | 'P2' | 'P3';
+    deadline?: string;
+    requirementNumber?: string;
+    applicationDepartment: string;
+    applicantName: string;
+    owningSystem: string;
+    primarySystem: boolean;
+    primarySystemName?: string;
+    projectType: '变更类' | '仅配合';
+}
+
+export interface WorkImportResult {
+    importedCount: number;
 }
 
 export interface WorkTaskCreateDTO {
@@ -47,9 +62,6 @@ export interface Work {
     id: string;
     title: string;
     description: string;
-    background?: string;
-    businessValue?: string;
-    category: string;
     priority: string;
     totalPoints: number;
     status: string;
@@ -247,6 +259,8 @@ export interface MarketplaceTodo {
 
 // APIs
 export const createWork = (data: WorkCreateDTO) => post('/api/marketplace/works', data);
+export const importWorks = (works: WorkImportDTO[]) =>
+    post<WorkImportResult>('/api/marketplace/works/import', works);
 export const listWorks = (params: any) => get('/api/marketplace/works', params);
 export const getWorkDetail = (id: string) => get(`/api/marketplace/works/${id}`);
 export const getWorkTasks = (workId: string) => get(`/api/marketplace/tasks/work/${workId}`);

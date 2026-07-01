@@ -29,7 +29,6 @@ const mainTaskSchema = taskSchema.extend({
 const workSchema = z.object({
     title: z.string().min(2, '工作标题至少2个字符'),
     description: z.string().min(10, '工作描述至少10个字符'),
-    category: z.string().min(2, '请输入分类'),
     priority: z.enum(['P0', 'P1', 'P2', 'P3', 'P4']),
     deadline: z.string().optional().or(z.literal('')).refine((val) => !val || new Date(val) > new Date(), {
         message: '截止日期必须在将来',
@@ -199,32 +198,19 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                 {errors.title && <p className="text-red-500 text-xs mt-1">{errors.title.message}</p>}
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                                        分类目录 <span className="text-red-500">*</span>
-                                    </label>
-                                    <input
-                                        {...register("category")}
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all"
-                                        placeholder="如：研发、设计、市场"
-                                    />
-                                    {errors.category && <p className="text-red-500 text-xs mt-1">{errors.category.message}</p>}
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                                        优先级 <span className="text-red-500">*</span>
-                                    </label>
-                                    <select
-                                        {...register("priority")}
-                                        className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all bg-white"
-                                    >
-                                        <option value="P0">P0 (最高/紧急)</option>
-                                        <option value="P1">P1 (高/重要)</option>
-                                        <option value="P2">P2 (中等/常规)</option>
-                                        <option value="P3">P3 (低/计划内)</option>
-                                    </select>
-                                </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">
+                                    优先级 <span className="text-red-500">*</span>
+                                </label>
+                                <select
+                                    {...register("priority")}
+                                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all bg-white"
+                                >
+                                    <option value="P0">P0 (最高/紧急)</option>
+                                    <option value="P1">P1 (高/重要)</option>
+                                    <option value="P2">P2 (中等/常规)</option>
+                                    <option value="P3">P3 (低/计划内)</option>
+                                </select>
                             </div>
 
                             <div>

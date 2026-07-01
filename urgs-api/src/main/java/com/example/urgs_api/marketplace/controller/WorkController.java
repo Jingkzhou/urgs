@@ -1,17 +1,24 @@
 package com.example.urgs_api.marketplace.controller;
 
-import com.example.urgs_api.common.PageRequest;
 import com.example.urgs_api.common.PageResult;
 import com.example.urgs_api.marketplace.dto.WorkCreateDTO;
+import com.example.urgs_api.marketplace.dto.WorkImportDTO;
 import com.example.urgs_api.marketplace.model.Work;
 import com.example.urgs_api.marketplace.service.WorkService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+import java.util.Map;
+
 @RestController
+@Validated
 @RequestMapping("/api/marketplace/works")
 public class WorkController {
 
@@ -25,6 +32,16 @@ public class WorkController {
             @RequestBody WorkCreateDTO workCreateDTO) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
         return workService.createWork(workCreateDTO, userId);
+    }
+
+    @PostMapping("/import")
+    public Map<String, Integer> importWorks(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @Valid @Size(min = 1, max = 500, message = "单次导入数量必须在1到500条之间")
+            @RequestBody List<@Valid WorkImportDTO> works) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        return Map.of("importedCount", workService.importWorks(works, userId));
     }
 
     @GetMapping("/{id}")

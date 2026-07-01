@@ -1,14 +1,59 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { listWorks, publishWork, cancelWork, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
-import { ChevronDown, ChevronRight, Download, ListTodo, Plus, Play, XCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, ListTodo, Plus, Play, Upload, XCircle } from 'lucide-react';
 import CreateWorkDrawer from './CreateWorkDrawer';
+import ImportWorkModal from './ImportWorkModal';
 import WorkDetailDrawer from './WorkDetailDrawer';
 import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
 
 interface WorkTaskSummary {
     taskCount: number;
 }
+
+const downloadCollapsedOutlineWorkbook = (
+    workbook: XLSX.WorkBook,
+    collapsedRowNumbers: number[],
+    fileName: string
+) => {
+    const workbookData = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const archive = XLSX.CFB.read(new Uint8Array(workbookData), { type: 'buffer' });
+    const sheetIndex = archive.FullPaths.findIndex((path: string) =>
+        path.endsWith('xl/worksheets/sheet1.xml')
+    );
+
+    if (sheetIndex < 0) {
+        throw new Error('未找到导出工作表');
+    }
+
+    const sheetFile = archive.FileIndex[sheetIndex];
+    let sheetXml = new TextDecoder().decode(sheetFile.content);
+
+    collapsedRowNumbers.forEach(rowNumber => {
+        const rowPattern = new RegExp(`(<row\\b(?=[^>]*\\br="${rowNumber}"(?:\\s|>))[^>]*)(>)`);
+        sheetXml = sheetXml.replace(rowPattern, '$1 collapsed="1"$2');
+    });
+
+    sheetFile.content = new TextEncoder().encode(sheetXml);
+    sheetFile.size = sheetFile.content.length;
+
+    const output = XLSX.CFB.write(archive, {
+        fileType: 'zip',
+        type: 'array',
+        compression: true,
+    });
+    const blob = new Blob([output], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+};
 
 const WorkList: React.FC = () => {
     const [works, setWorks] = useState<Work[]>([]);
@@ -17,6 +62,7 @@ const WorkList: React.FC = () => {
     const [expandedWorkIds, setExpandedWorkIds] = useState<Record<string, boolean>>({});
     const [loading, setLoading] = useState(false);
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+    const [isImportOpen, setIsImportOpen] = useState(false);
     const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
 
@@ -112,6 +158,8 @@ const WorkList: React.FC = () => {
 
     const exportWorks = () => {
         const rows: Record<string, string | number>[] = [];
+        const outlineRows: XLSX.RowInfo[] = [{ hpt: 24 }];
+        const collapsedRowNumbers: number[] = [];
 
         works.forEach(work => {
             const baseInfo = {
@@ -125,7 +173,6 @@ const WorkList: React.FC = () => {
                 截止日期: formatDateTime(work.deadline),
                 创建时间: formatDateTime(work.createTime),
                 '主系统/是否主系统': getPrimarySystemText(work),
-                分类目录: work.category || '',
             };
 
             rows.push({
@@ -144,10 +191,15 @@ const WorkList: React.FC = () => {
                 风险报备: '',
                 任务描述: '',
             });
+            outlineRows.push({ level: 0, hpt: 22 });
 
-            getOrderedTasks(work.id).forEach(task => {
+            const orderedTasks = getOrderedTasks(work.id);
+            if (orderedTasks.length > 0) {
+                collapsedRowNumbers.push(rows.length + 1);
+            }
+            orderedTasks.forEach((task, index) => {
                 rows.push({
-                    层级: task.taskRole === 'MAIN' ? '二级-主任务' : '二级-子任务',
+                    层级: `${index === orderedTasks.length - 1 ? '└─' : '├─'} ${task.taskRole === 'MAIN' ? '主任务' : '子任务'}`,
                     ...baseInfo,
                     工作状态: getWorkStatusLabel(work.status),
                     工作积分: work.totalPoints ?? 0,
@@ -162,10 +214,13 @@ const WorkList: React.FC = () => {
                     风险报备: task.stageRiskReported ? (task.stageRiskNote || '已报备') : '',
                     任务描述: task.description || '',
                 });
+                outlineRows.push({ level: 1, hidden: true });
             });
         });
 
         const worksheet = XLSX.utils.json_to_sheet(rows);
+        worksheet['!rows'] = outlineRows;
+        worksheet['!outline'] = { above: true };
         worksheet['!cols'] = [
             { wch: 12 },
             { wch: 28 },
@@ -178,7 +233,7 @@ const WorkList: React.FC = () => {
             { wch: 20 },
             { wch: 20 },
             { wch: 18 },
-            { wch: 14 },
+            { wch: 12 },
             { wch: 12 },
             { wch: 30 },
             { wch: 12 },
@@ -193,7 +248,11 @@ const WorkList: React.FC = () => {
         ];
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, '我发布的工作');
-        XLSX.writeFile(workbook, `我发布的工作_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        downloadCollapsedOutlineWorkbook(
+            workbook,
+            collapsedRowNumbers,
+            `我发布的工作_${new Date().toISOString().slice(0, 10)}.xlsx`
+        );
     };
 
     return (
@@ -201,6 +260,12 @@ const WorkList: React.FC = () => {
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold text-slate-800">我发布的工作</h2>
                 <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setIsImportOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-sm font-bold"
+                    >
+                        <Upload size={16} />导入
+                    </button>
                     <button
                         onClick={exportWorks}
                         disabled={works.length === 0}
@@ -226,11 +291,20 @@ const WorkList: React.FC = () => {
                 }}
             />
 
+            <ImportWorkModal
+                isOpen={isImportOpen}
+                onClose={() => setIsImportOpen(false)}
+                onSuccess={() => {
+                    setIsImportOpen(false);
+                    fetchWorks();
+                }}
+            />
+
             {loading ? (
                 <div className="text-center py-10 text-slate-400">加载中...</div>
             ) : works.length === 0 ? (
                 <div className="text-center py-10 text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                    您还没有发布过工作，点击右上角新建一个吧。
+                    暂无工作，可通过右上角新建或导入。
                 </div>
             ) : (
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-x-auto">
@@ -272,7 +346,6 @@ const WorkList: React.FC = () => {
                                         {work.title}
                                     </button>
                                     <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-400">
-                                        {work.category && <span>分类: {work.category}</span>}
                                         <span>积分: {work.totalPoints ?? 0}</span>
                                     </div>
                                 </div>
@@ -318,7 +391,6 @@ const WorkList: React.FC = () => {
                                     <div className="bg-white border border-slate-100 rounded-lg px-4 py-3 mb-3">
                                         <div className="text-xs font-bold text-slate-500 mb-3">新建工作内容</div>
                                         <div className="grid grid-cols-2 xl:grid-cols-4 gap-x-6 gap-y-2 text-xs">
-                                            <div><span className="text-slate-400">分类目录：</span><span className="font-medium text-slate-700">{renderValue(work.category)}</span></div>
                                             <div><span className="text-slate-400">优先级：</span><span className="font-medium text-slate-700">{renderValue(work.priority)}</span></div>
                                             <div><span className="text-slate-400">需求编号：</span><span className="font-medium text-slate-700">{renderValue(work.requirementNumber)}</span></div>
                                             <div><span className="text-slate-400">截止日期：</span><span className="font-medium text-slate-700">{renderValue(formatDateTime(work.deadline))}</span></div>

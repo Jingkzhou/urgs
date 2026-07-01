@@ -15,9 +15,6 @@ public class Work {
 
     private String title;
     private String description;
-    private String background;
-    private String businessValue;
-    private String category;
     private String priority;
     private Integer totalPoints;
     private String status;

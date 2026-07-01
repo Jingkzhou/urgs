@@ -253,7 +253,6 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                 {getWorkStatusLabel(work.status)}
                             </Tag>
                             <Tag color="error">{work.priority}</Tag>
-                            <Tag>{work.category}</Tag>
                         </Space>
                         <Title level={3} className="!mb-0">{work.title}</Title>
                         {work.requirementNumber && (

@@ -107,8 +107,7 @@ public class WorkTaskController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String status) {
         Page<WorkTask> page = new Page<>(current, size);
-        // FIXME: category is missing in RequestParam, passing null for now
-        Page<TaskMarketDTO> resultPage = workTaskService.getMarketTasks(page, null, keyword, status);
+        Page<TaskMarketDTO> resultPage = workTaskService.getMarketTasks(page, keyword, status);
         return PageResult.of(resultPage);
     }
 
