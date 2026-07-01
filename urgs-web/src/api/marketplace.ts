@@ -37,6 +37,7 @@ export interface WorkImportResult {
 }
 
 export interface WorkTaskCreateDTO {
+    id?: string;
     title: string;
     description?: string;
     taskType?: string;
@@ -259,6 +260,7 @@ export interface MarketplaceTodo {
 
 // APIs
 export const createWork = (data: WorkCreateDTO) => post('/api/marketplace/works', data);
+export const updateWork = (id: string, data: WorkCreateDTO) => put(`/api/marketplace/works/${id}`, data);
 export const importWorks = (works: WorkImportDTO[]) =>
     post<WorkImportResult>('/api/marketplace/works/import', works);
 export const listWorks = (params: any) => get('/api/marketplace/works', params);

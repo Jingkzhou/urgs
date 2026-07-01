@@ -8,6 +8,7 @@ import com.example.urgs_api.marketplace.dto.WorkTaskCreateDTO;
 import com.example.urgs_api.marketplace.enums.AssignMode;
 import com.example.urgs_api.marketplace.enums.TaskStatus;
 import com.example.urgs_api.marketplace.enums.WorkStatus;
+import com.example.urgs_api.marketplace.mapper.TaskApplicationMapper;
 import com.example.urgs_api.marketplace.mapper.TaskCommentMapper;
 import com.example.urgs_api.marketplace.mapper.TaskLogMapper;
 import com.example.urgs_api.marketplace.mapper.WorkMapper;
@@ -18,7 +19,6 @@ import com.example.urgs_api.marketplace.model.TaskLog;
 import com.example.urgs_api.marketplace.model.Work;
 import com.example.urgs_api.marketplace.model.WorkTask;
 import com.example.urgs_api.marketplace.service.TaskAppealService;
-import com.example.urgs_api.marketplace.service.TaskApplicationService;
 import com.example.urgs_api.marketplace.service.WorkService;
 import com.example.urgs_api.marketplace.service.WorkTaskService;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -30,6 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -47,7 +49,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
     private ObjectMapper objectMapper;
 
     @Autowired
-    private TaskApplicationService taskApplicationService;
+    private TaskApplicationMapper taskApplicationMapper;
 
     @Autowired
     private TaskAppealService taskAppealService;
@@ -114,6 +116,79 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
             workTaskService.saveBatch(taskList);
         }
         return work;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Work updateWork(String workId, WorkCreateDTO dto, String userId) {
+        if (dto.getMainTask() == null) {
+            throw new IllegalArgumentException("工作必须包含一个主任务");
+        }
+        Work work = this.getById(workId);
+        if (work == null || !userId.equals(work.getPublisherId())) {
+            throw new IllegalArgumentException("工作不存在或无权操作");
+        }
+
+        work.setTitle(dto.getTitle());
+        work.setDescription(dto.getDescription());
+        work.setPriority(dto.getPriority() != null ? dto.getPriority() : "P2");
+        work.setDeadline(dto.getDeadline());
+        work.setRequirementNumber(dto.getRequirementNumber());
+        work.setApplicationDepartment(dto.getApplicationDepartment());
+        work.setApplicantName(dto.getApplicantName());
+        work.setOwningSystem(dto.getOwningSystem());
+        work.setPrimarySystem(dto.getPrimarySystem() != null ? dto.getPrimarySystem() : true);
+        work.setPrimarySystemName(dto.getPrimarySystemName());
+        work.setProjectType(dto.getProjectType());
+        work.setAttachments(serializeAttachments(dto));
+        this.updateById(work);
+
+        List<WorkTask> existingTasks = workTaskService.lambdaQuery()
+                .eq(WorkTask::getWorkId, workId)
+                .list();
+        Map<String, WorkTask> existingTaskMap = existingTasks.stream()
+                .collect(Collectors.toMap(WorkTask::getId, task -> task));
+
+        WorkTask mainTask = existingTasks.stream()
+                .filter(task -> TASK_ROLE_MAIN.equals(task.getTaskRole()))
+                .findFirst()
+                .orElse(null);
+        if (mainTask == null) {
+            mainTask = buildTask(workId, dto.getMainTask(), TASK_ROLE_MAIN, null, 0, userId);
+        } else {
+            applyTaskUpdates(mainTask, dto.getMainTask(), TASK_ROLE_MAIN, null, 0, userId);
+        }
+        workTaskService.saveOrUpdate(mainTask);
+
+        List<WorkTaskCreateDTO> subTaskDtos = dto.getTasks() == null ? List.of() : dto.getTasks();
+        Set<String> submittedSubTaskIds = subTaskDtos.stream()
+                .map(WorkTaskCreateDTO::getId)
+                .filter(id -> id != null && !id.isBlank())
+                .collect(Collectors.toSet());
+        List<String> removedSubTaskIds = existingTasks.stream()
+                .filter(task -> !TASK_ROLE_MAIN.equals(task.getTaskRole()))
+                .map(WorkTask::getId)
+                .filter(id -> !submittedSubTaskIds.contains(id))
+                .collect(Collectors.toList());
+        if (!removedSubTaskIds.isEmpty()) {
+            deleteTaskRelations(removedSubTaskIds);
+            workTaskService.remove(new LambdaQueryWrapper<WorkTask>().in(WorkTask::getId, removedSubTaskIds));
+        }
+
+        int order = 1;
+        for (WorkTaskCreateDTO taskDto : subTaskDtos) {
+            WorkTask task = taskDto.getId() == null ? null : existingTaskMap.get(taskDto.getId());
+            if (task == null) {
+                task = buildTask(workId, taskDto, TASK_ROLE_SUB, mainTask.getId(), order, userId);
+            } else {
+                applyTaskUpdates(task, taskDto, TASK_ROLE_SUB, mainTask.getId(), order, userId);
+            }
+            workTaskService.saveOrUpdate(task);
+            order++;
+        }
+
+        recomputeTotalPoints(workId);
+        return this.getById(workId);
     }
 
     @Override
@@ -247,14 +322,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
                 .collect(Collectors.toList());
 
         if (!taskIds.isEmpty()) {
-            taskApplicationService.remove(new LambdaQueryWrapper<TaskApplication>()
-                    .in(TaskApplication::getTaskId, taskIds));
-            taskAppealService.remove(new LambdaQueryWrapper<TaskAppeal>()
-                    .in(TaskAppeal::getTaskId, taskIds));
-            taskCommentMapper.delete(new LambdaQueryWrapper<TaskComment>()
-                    .in(TaskComment::getTaskId, taskIds));
-            taskLogMapper.delete(new LambdaQueryWrapper<TaskLog>()
-                    .in(TaskLog::getTaskId, taskIds));
+            deleteTaskRelations(taskIds);
             workTaskService.remove(new LambdaQueryWrapper<WorkTask>()
                     .in(WorkTask::getId, taskIds));
         }
@@ -321,6 +389,67 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
             task.setStatus(TaskStatus.OPEN.name());
         }
         return task;
+    }
+
+    private void applyTaskUpdates(WorkTask task, WorkTaskCreateDTO taskDto, String taskRole, String parentTaskId,
+            int sortOrder, String userId) {
+        task.setTaskRole(taskRole);
+        task.setParentTaskId(parentTaskId);
+        task.setTitle(taskDto.getTitle());
+        task.setDescription(taskDto.getDescription());
+        task.setTaskType(taskDto.getTaskType());
+        task.setDifficulty(taskDto.getDifficulty());
+        task.setRequiredSkills(taskDto.getRequiredSkills());
+        task.setAcceptanceCriteria(taskDto.getAcceptanceCriteria());
+        task.setPoints(defaultPoints(taskDto));
+        task.setEstimatedHours(taskDto.getEstimatedHours());
+        task.setDeadline(taskDto.getDeadline());
+        task.setSortOrder(sortOrder);
+
+        if (task.getCurrentStage() == null || task.getCurrentStage().isBlank()) {
+            task.setCurrentStage(taskDto.getCurrentStage() != null ? taskDto.getCurrentStage() : STAGE_REQUIREMENT);
+        }
+        if (task.getStageRiskReported() == null) {
+            task.setStageRiskReported(false);
+        }
+
+        if (TASK_ROLE_MAIN.equals(taskRole)) {
+            task.setAssignMode(AssignMode.ASSIGN.name());
+            task.setAssigneeId(taskDto.getAssigneeId() != null && !taskDto.getAssigneeId().isBlank()
+                    ? taskDto.getAssigneeId()
+                    : userId);
+            task.setMaxApplicants(0);
+            return;
+        }
+
+        task.setAssignMode(taskDto.getAssignMode());
+        task.setAssigneeId(taskDto.getAssigneeId() != null && !taskDto.getAssigneeId().isBlank()
+                ? taskDto.getAssigneeId()
+                : null);
+        task.setMaxApplicants(taskDto.getMaxApplicants() != null ? taskDto.getMaxApplicants() : 0);
+    }
+
+    private void deleteTaskRelations(List<String> taskIds) {
+        taskApplicationMapper.delete(new LambdaQueryWrapper<TaskApplication>()
+                .in(TaskApplication::getTaskId, taskIds));
+        taskAppealService.remove(new LambdaQueryWrapper<TaskAppeal>()
+                .in(TaskAppeal::getTaskId, taskIds));
+        taskCommentMapper.delete(new LambdaQueryWrapper<TaskComment>()
+                .in(TaskComment::getTaskId, taskIds));
+        taskLogMapper.delete(new LambdaQueryWrapper<TaskLog>()
+                .in(TaskLog::getTaskId, taskIds));
+    }
+
+    private String serializeAttachments(WorkCreateDTO dto) {
+        if (dto.getAttachments() == null || dto.getAttachments().isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(dto.getAttachments());
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize attachments for work: {}", dto.getTitle(), e);
+            return null;
+        }
     }
 
     private int defaultPoints(WorkTaskCreateDTO taskDto) {

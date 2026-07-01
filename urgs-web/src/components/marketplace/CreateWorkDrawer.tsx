@@ -3,11 +3,12 @@ import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { X, Plus, Trash2, Paperclip, Upload as UploadIcon } from 'lucide-react';
-import { Upload, message } from 'antd';
-import { createWork, listPointRules, MarketplacePointRule } from '../../api/marketplace';
+import { Spin, Upload } from 'antd';
+import { createWork, getWorkDetail, getWorkTasks, listPointRules, MarketplacePointRule, updateWork, Work, WorkTask } from '../../api/marketplace';
 import UserSelect from './UserSelect';
 
 const taskSchema = z.object({
+    id: z.string().optional(),
     title: z.string().min(2, '任务标题至少2个字符'),
     description: z.string().min(10, '任务描述至少10个字符'),
     taskType: z.string().optional().or(z.literal('')),
@@ -17,9 +18,7 @@ const taskSchema = z.object({
     assignMode: z.enum(['OPEN', 'ASSIGN', 'COMPETE']),
     assigneeId: z.string().optional().or(z.literal('')),
     maxApplicants: z.number().optional().or(z.literal('')),
-    deadline: z.string().optional().or(z.literal('')).refine((val) => !val || new Date(val) > new Date(), {
-        message: '截止日期必须在将来',
-    }),
+    deadline: z.string().optional().or(z.literal('')),
 });
 
 const mainTaskSchema = taskSchema.extend({
@@ -30,9 +29,7 @@ const workSchema = z.object({
     title: z.string().min(2, '工作标题至少2个字符'),
     description: z.string().min(10, '工作描述至少10个字符'),
     priority: z.enum(['P0', 'P1', 'P2', 'P3', 'P4']),
-    deadline: z.string().optional().or(z.literal('')).refine((val) => !val || new Date(val) > new Date(), {
-        message: '截止日期必须在将来',
-    }),
+    deadline: z.string().optional().or(z.literal('')),
     requirementNumber: z.string().optional().or(z.literal('')),
     applicationDepartment: z.string().min(1, '请输入申请部门'),
     applicantName: z.string().min(1, '请输入申请人'),
@@ -54,10 +51,88 @@ interface CreateWorkDrawerProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess: () => void;
+    editWorkId?: string | null;
 }
 
-const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, onSuccess }) => {
+const defaultValues: WorkFormValues = {
+    title: '',
+    description: '',
+    priority: 'P2',
+    deadline: '',
+    requirementNumber: '',
+    applicationDepartment: '',
+    applicantName: '',
+    owningSystem: '',
+    primarySystem: true,
+    primarySystemName: '',
+    projectType: '变更类',
+    mainTask: { title: '', description: '', assignMode: 'ASSIGN', assigneeId: '', points: 10, taskType: '主任务', difficulty: '中等' },
+    attachments: [],
+    tasks: [{ assignMode: 'OPEN', points: 10, taskType: '开发', difficulty: '中等', title: '', description: '' }]
+};
+
+const toInputDateTime = (value?: string) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
+
+const parseAttachments = (attachments?: string) => {
+    if (!attachments) return [];
+    try {
+        const files = JSON.parse(attachments);
+        if (!Array.isArray(files)) return [];
+        return files.map((file, index) => ({
+            uid: file.uid || file.url || String(index),
+            name: file.name || `附件${index + 1}`,
+            status: 'done',
+            url: file.url || '',
+        }));
+    } catch (error) {
+        return [];
+    }
+};
+
+const buildTaskFormValue = (task?: WorkTask, fallback?: Partial<WorkFormValues['mainTask']>) => ({
+    id: task?.id,
+    title: task?.title || fallback?.title || '',
+    description: task?.description || fallback?.description || '',
+    taskType: task?.taskType || fallback?.taskType || '',
+    difficulty: task?.difficulty || fallback?.difficulty || '',
+    points: task?.points ?? fallback?.points ?? 0,
+    requiredSkills: task?.requiredSkills || fallback?.requiredSkills || '',
+    assignMode: (task?.assignMode || fallback?.assignMode || 'OPEN') as 'OPEN' | 'ASSIGN' | 'COMPETE',
+    assigneeId: task?.assigneeId || fallback?.assigneeId || '',
+    maxApplicants: task?.maxApplicants ?? fallback?.maxApplicants ?? '',
+    deadline: toInputDateTime(task?.deadline),
+});
+
+const buildEditValues = (work: Work, tasks: WorkTask[]): WorkFormValues => {
+    const mainTask = tasks.find(task => task.taskRole === 'MAIN');
+    const subTasks = tasks.filter(task => task.taskRole !== 'MAIN');
+    return {
+        title: work.title || '',
+        description: work.description || '',
+        priority: (work.priority || 'P2') as WorkFormValues['priority'],
+        deadline: toInputDateTime(work.deadline),
+        requirementNumber: work.requirementNumber || '',
+        applicationDepartment: work.applicationDepartment || '',
+        applicantName: work.applicantName || '',
+        owningSystem: work.owningSystem || '',
+        primarySystem: work.primarySystem !== false,
+        primarySystemName: work.primarySystemName || '',
+        projectType: (work.projectType || '变更类') as WorkFormValues['projectType'],
+        mainTask: buildTaskFormValue(mainTask, defaultValues.mainTask) as WorkFormValues['mainTask'],
+        attachments: parseAttachments(work.attachments),
+        tasks: subTasks.map(task => buildTaskFormValue(task)) as WorkFormValues['tasks'],
+    };
+};
+
+const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, onSuccess, editWorkId }) => {
     const [pointRules, setPointRules] = React.useState<MarketplacePointRule[]>([]);
+    const [loadingDetail, setLoadingDetail] = React.useState(false);
+    const isEdit = Boolean(editWorkId);
     const {
         register,
         control,
@@ -68,13 +143,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
         formState: { errors, isSubmitting }
     } = useForm<WorkFormValues>({
         resolver: zodResolver(workSchema),
-        defaultValues: {
-            priority: 'P2',
-            primarySystem: true,
-            projectType: '变更类',
-            mainTask: { title: '', description: '', assignMode: 'ASSIGN', assigneeId: '', points: 10, taskType: '主任务', difficulty: '中等' },
-            tasks: [{ assignMode: 'OPEN', points: 10, taskType: '开发', difficulty: '中等' }]
-        }
+        defaultValues
     });
 
     const { fields, append, remove } = useFieldArray({
@@ -101,6 +170,29 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
             .then(res => setPointRules(res || []))
             .catch(error => console.error('Failed to fetch point rules', error));
     }, [isOpen]);
+
+    React.useEffect(() => {
+        if (!isOpen) return;
+        if (!editWorkId) {
+            reset(defaultValues);
+            return;
+        }
+
+        setLoadingDetail(true);
+        Promise.all([
+            getWorkDetail(editWorkId),
+            getWorkTasks(editWorkId),
+        ])
+            .then(([work, tasks]) => {
+                reset(buildEditValues(work, tasks || []));
+            })
+            .catch(error => {
+                console.error('Load work edit detail failed:', error);
+                alert('加载工作信息失败');
+                onClose();
+            })
+            .finally(() => setLoadingDetail(false));
+    }, [isOpen, editWorkId, reset, onClose]);
 
     // Close drawer on escape key
     React.useEffect(() => {
@@ -144,12 +236,16 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                     deadline: t.deadline || undefined,
                 }))
             };
-            await createWork(payload as any);
-            reset();
+            if (editWorkId) {
+                await updateWork(editWorkId, payload as any);
+            } else {
+                await createWork(payload as any);
+                reset(defaultValues);
+            }
             onSuccess();
         } catch (error) {
-            console.error('Create work failed:', error);
-            alert('创建工作失败，请重试');
+            console.error(`${isEdit ? 'Update' : 'Create'} work failed:`, error);
+            alert(isEdit ? '修改工作失败，请重试' : '创建工作失败，请重试');
         }
     };
 
@@ -169,8 +265,10 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
             <div className={`fixed inset-y-0 right-0 w-full max-w-2xl bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-white">
                     <div>
-                        <h2 className="text-xl font-bold text-slate-800">发布新工作</h2>
-                        <p className="text-sm text-slate-500 mt-1">创建一个包含多个子任务的工作集市包</p>
+                        <h2 className="text-xl font-bold text-slate-800">{isEdit ? '编辑工作' : '发布新工作'}</h2>
+                        <p className="text-sm text-slate-500 mt-1">
+                            {isEdit ? '修改工作、主任务与子任务信息' : '创建一个包含多个子任务的工作集市包'}
+                        </p>
                     </div>
                     <button
                         onClick={onClose}
@@ -181,6 +279,11 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
+                    {loadingDetail ? (
+                        <div className="flex justify-center items-center h-64">
+                            <Spin size="large" />
+                        </div>
+                    ) : (
                     <form id="create-work-form" onSubmit={handleSubmit(onSubmit, onError)} className="space-y-8">
                         {/* 基础信息 */}
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
@@ -540,7 +643,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                             {/* 根据所选模式显示不同字段 */}
                                             {assignMode === 'ASSIGN' && (
                                                 <div>
-                                                    <label className="block text-xs font-medium text-slate-500 mb-1">被指派人 ID *</label>
+                                                    <label className="block text-xs font-medium text-slate-500 mb-1">被指派人 *</label>
                                                     <Controller
                                                         name={`tasks.${index}.assigneeId` as const}
                                                         control={control}
@@ -590,6 +693,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                             })}
                         </div>
                     </form>
+                    )}
                 </div>
 
                 {/* 底部操作区 */}
@@ -607,7 +711,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                         disabled={isSubmitting}
                         className="px-6 py-2.5 text-sm font-bold text-white bg-slate-800 hover:bg-slate-900 rounded-lg transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
                     >
-                        {isSubmitting ? '正在保存...' : '创建并保存为草稿'}
+                        {isSubmitting ? '正在保存...' : (isEdit ? '保存修改' : '创建并保存为草稿')}
                     </button>
                 </div>
             </div>

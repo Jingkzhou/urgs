@@ -34,6 +34,16 @@ public class WorkController {
         return workService.createWork(workCreateDTO, userId);
     }
 
+    @PutMapping("/{id}")
+    public Work updateWork(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @PathVariable String id,
+            @RequestBody WorkCreateDTO workCreateDTO) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        return workService.updateWork(id, workCreateDTO, userId);
+    }
+
     @PostMapping("/import")
     public Map<String, Integer> importWorks(
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,

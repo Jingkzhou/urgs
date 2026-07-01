@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
+import { Pagination } from 'antd';
 import { listWorks, publishWork, cancelWork, batchDeleteWorks, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
-import { ChevronDown, ChevronRight, Download, ListTodo, Plus, Play, Trash2, Upload, XCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Edit3, ListTodo, Plus, Play, Trash2, Upload, XCircle } from 'lucide-react';
 import CreateWorkDrawer from './CreateWorkDrawer';
 import ImportWorkModal from './ImportWorkModal';
 import WorkDetailDrawer from './WorkDetailDrawer';
@@ -62,17 +63,28 @@ const WorkList: React.FC = () => {
     const [expandedWorkIds, setExpandedWorkIds] = useState<Record<string, boolean>>({});
     const [loading, setLoading] = useState(false);
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+    const [editingWorkId, setEditingWorkId] = useState<string | null>(null);
     const [isImportOpen, setIsImportOpen] = useState(false);
     const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [selectedWorkIds, setSelectedWorkIds] = useState<string[]>([]);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(20);
+    const [total, setTotal] = useState(0);
 
-    const fetchWorks = async () => {
+    const fetchWorks = async (page = currentPage, size = pageSize) => {
         setLoading(true);
         try {
-            const res = await listWorks({ current: 1, size: 20 });
+            const res = await listWorks({ current: page, size });
             if (res?.records) {
+                if (res.records.length === 0 && page > 1 && res.total > 0) {
+                    const prevPage = page - 1;
+                    setCurrentPage(prevPage);
+                    await fetchWorks(prevPage, size);
+                    return;
+                }
                 setWorks(res.records);
+                setTotal(res.total || 0);
                 const currentWorkIds = new Set(res.records.map((work: Work) => work.id));
                 setSelectedWorkIds(prev => prev.filter(id => currentWorkIds.has(id)));
                 const entries = await Promise.all(
@@ -99,15 +111,15 @@ const WorkList: React.FC = () => {
     };
 
     useEffect(() => {
-        fetchWorks();
-    }, []);
+        fetchWorks(currentPage, pageSize);
+    }, [currentPage, pageSize]);
 
     const handlePublish = async (id: string) => {
         if (!window.confirm("确认要发布该工作到市场吗？发布后不能撤回。")) return;
         try {
             await publishWork(id);
             alert("发布成功");
-            fetchWorks();
+            fetchWorks(currentPage, pageSize);
         } catch (error) {
             alert("发布失败");
         }
@@ -118,7 +130,7 @@ const WorkList: React.FC = () => {
         try {
             await cancelWork(id);
             alert("取消成功");
-            fetchWorks();
+            fetchWorks(currentPage, pageSize);
         } catch (error) {
             alert("取消失败");
         }
@@ -136,7 +148,7 @@ const WorkList: React.FC = () => {
             await batchDeleteWorks(selectedWorkIds);
             alert("删除成功");
             setSelectedWorkIds([]);
-            fetchWorks();
+            fetchWorks(currentPage, pageSize);
         } catch (error) {
             alert("删除失败");
         }
@@ -299,13 +311,14 @@ const WorkList: React.FC = () => {
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold text-slate-800">我发布的工作</h2>
                 <div className="flex items-center gap-2">
-                    <button
-                        onClick={handleBatchDelete}
-                        disabled={selectedWorkIds.length === 0}
-                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 transition-colors text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        <Trash2 size={16} />批量删除{selectedWorkIds.length > 0 ? `(${selectedWorkIds.length})` : ''}
-                    </button>
+                    {selectedWorkIds.length > 0 && (
+                        <button
+                            onClick={handleBatchDelete}
+                            className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 transition-colors text-sm font-bold"
+                        >
+                            <Trash2 size={16} />批量删除({selectedWorkIds.length})
+                        </button>
+                    )}
                     <button
                         onClick={() => setIsImportOpen(true)}
                         className="flex items-center gap-2 px-4 py-2 bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-sm font-bold"
@@ -320,7 +333,10 @@ const WorkList: React.FC = () => {
                         <Download size={16} />导出
                     </button>
                     <button
-                        onClick={() => setIsDrawerOpen(true)}
+                        onClick={() => {
+                            setEditingWorkId(null);
+                            setIsDrawerOpen(true);
+                        }}
                         className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors text-sm font-bold"
                     >
                         <Plus size={16} />新建工作
@@ -330,10 +346,17 @@ const WorkList: React.FC = () => {
 
             <CreateWorkDrawer
                 isOpen={isDrawerOpen}
-                onClose={() => setIsDrawerOpen(false)}
-                onSuccess={() => {
+                editWorkId={editingWorkId}
+                onClose={() => {
                     setIsDrawerOpen(false);
-                    fetchWorks();
+                    setEditingWorkId(null);
+                }}
+                onSuccess={() => {
+                    const targetPage = editingWorkId ? currentPage : 1;
+                    setIsDrawerOpen(false);
+                    setEditingWorkId(null);
+                    setCurrentPage(targetPage);
+                    fetchWorks(targetPage, pageSize);
                 }}
             />
 
@@ -342,7 +365,8 @@ const WorkList: React.FC = () => {
                 onClose={() => setIsImportOpen(false)}
                 onSuccess={() => {
                     setIsImportOpen(false);
-                    fetchWorks();
+                    setCurrentPage(1);
+                    fetchWorks(1, pageSize);
                 }}
             />
 
@@ -425,6 +449,16 @@ const WorkList: React.FC = () => {
                                     <ListTodo size={13} /> {taskSummaries[work.id]?.taskCount ?? 0}
                                 </span>
                                 <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => {
+                                            setEditingWorkId(work.id);
+                                            setIsDrawerOpen(true);
+                                        }}
+                                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                        title="修改工作"
+                                    >
+                                        <Edit3 size={18} />
+                                    </button>
                                     {work.status === 'DRAFT' && (
                                         <button
                                             onClick={() => handlePublish(work.id)}
@@ -505,6 +539,19 @@ const WorkList: React.FC = () => {
                             )}
                         </div>
                     ))}
+                    </div>
+                    <div className="border-t border-slate-100 bg-white px-4 py-3 flex justify-end">
+                        <Pagination
+                            current={currentPage}
+                            pageSize={pageSize}
+                            total={total}
+                            showSizeChanger
+                            showTotal={(count) => `共 ${count} 个工作`}
+                            onChange={(page, size) => {
+                                setCurrentPage(page);
+                                setPageSize(size);
+                            }}
+                        />
                     </div>
                 </div>
             )}

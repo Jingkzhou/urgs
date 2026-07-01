@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 
 @Data
 public class WorkTaskCreateDTO {
+    private String id;
     private String title;
     private String description;
     private String taskType;

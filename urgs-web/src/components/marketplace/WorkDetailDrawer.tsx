@@ -15,6 +15,7 @@ import {
 } from '../../api/marketplace';
 import { Award, CheckCircle2, Clock, Paperclip, Plus, Users, XCircle } from 'lucide-react';
 import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
+import { searchUsers, UserDTO } from '../../api/user';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -48,6 +49,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
     const [bidTask, setBidTask] = useState<WorkTask | null>(null);
     const [applications, setApplications] = useState<TaskApplication[]>([]);
     const [applicationLoading, setApplicationLoading] = useState(false);
+    const [assigneeLabels, setAssigneeLabels] = useState<Record<string, string>>({});
 
     // New task form fields
     const [newTask, setNewTask] = useState({
@@ -91,12 +93,44 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                 getWorkTasks(id),
             ]);
             setWork(workRes);
-            setTasks(tasksRes || []);
+            const nextTasks = tasksRes || [];
+            setTasks(nextTasks);
+            resolveAssigneeLabels(nextTasks);
         } catch (error) {
             console.error('Failed to fetch work detail', error);
         } finally {
             setLoading(false);
         }
+    };
+
+    const formatUserLabel = (user: UserDTO) => `${user.empId || '无工号'} - ${user.name}`;
+
+    const resolveAssigneeLabels = async (nextTasks: WorkTask[]) => {
+        const assigneeIds = Array.from(new Set(
+            nextTasks
+                .map(task => task.assigneeId)
+                .filter((id): id is string => Boolean(id))
+        ));
+        if (assigneeIds.length === 0) {
+            setAssigneeLabels({});
+            return;
+        }
+
+        const entries = await Promise.all(assigneeIds.map(async (assigneeId) => {
+            try {
+                const users = await searchUsers(assigneeId);
+                const matchedUser = users.find(user => user.id.toString() === assigneeId) || users[0];
+                return [assigneeId, matchedUser ? formatUserLabel(matchedUser) : assigneeId] as const;
+            } catch (error) {
+                return [assigneeId, assigneeId] as const;
+            }
+        }));
+        setAssigneeLabels(Object.fromEntries(entries));
+    };
+
+    const renderAssignee = (assigneeId?: string) => {
+        if (!assigneeId) return '';
+        return assigneeLabels[assigneeId] || assigneeId;
     };
 
     const handleAddTask = async () => {
@@ -326,7 +360,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                 <span className="flex items-center gap-1">
                                                     <Award size={12} /> {mainTask.points} 积分
                                                 </span>
-                                                {mainTask.assigneeId && <span>负责人: {mainTask.assigneeId}</span>}
+                                                {mainTask.assigneeId && <span>负责人: {renderAssignee(mainTask.assigneeId)}</span>}
                                                 {mainTask.deadline && (
                                                     <span className="flex items-center gap-1">
                                                         <Clock size={12} /> {new Date(mainTask.deadline).toLocaleDateString()}
