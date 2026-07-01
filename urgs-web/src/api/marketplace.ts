@@ -267,6 +267,7 @@ export const getWorkTasks = (workId: string) => get(`/api/marketplace/tasks/work
 export const addTaskToWork = (workId: string, data: WorkTaskCreateDTO) => post(`/api/marketplace/tasks/work/${workId}`, data);
 export const publishWork = (id: string) => put(`/api/marketplace/works/${id}/publish`);
 export const cancelWork = (id: string) => put(`/api/marketplace/works/${id}/cancel`);
+export const batchDeleteWorks = (ids: string[]) => post<{ deletedCount: number }>('/api/marketplace/works/batch-delete', { ids });
 
 export const getMarketTasks = (params: any) => get('/api/marketplace/tasks', params);
 export const getTaskDetail = (id: string) => get(`/api/marketplace/tasks/${id}`);

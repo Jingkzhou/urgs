@@ -1,15 +1,24 @@
 package com.example.urgs_api.marketplace.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.urgs_api.marketplace.dto.WorkCreateDTO;
 import com.example.urgs_api.marketplace.dto.WorkImportDTO;
 import com.example.urgs_api.marketplace.dto.WorkTaskCreateDTO;
 import com.example.urgs_api.marketplace.enums.AssignMode;
 import com.example.urgs_api.marketplace.enums.TaskStatus;
 import com.example.urgs_api.marketplace.enums.WorkStatus;
+import com.example.urgs_api.marketplace.mapper.TaskCommentMapper;
+import com.example.urgs_api.marketplace.mapper.TaskLogMapper;
 import com.example.urgs_api.marketplace.mapper.WorkMapper;
+import com.example.urgs_api.marketplace.model.TaskAppeal;
+import com.example.urgs_api.marketplace.model.TaskApplication;
+import com.example.urgs_api.marketplace.model.TaskComment;
+import com.example.urgs_api.marketplace.model.TaskLog;
 import com.example.urgs_api.marketplace.model.Work;
 import com.example.urgs_api.marketplace.model.WorkTask;
+import com.example.urgs_api.marketplace.service.TaskAppealService;
+import com.example.urgs_api.marketplace.service.TaskApplicationService;
 import com.example.urgs_api.marketplace.service.WorkService;
 import com.example.urgs_api.marketplace.service.WorkTaskService;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -21,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -35,6 +45,18 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private TaskApplicationService taskApplicationService;
+
+    @Autowired
+    private TaskAppealService taskAppealService;
+
+    @Autowired
+    private TaskCommentMapper taskCommentMapper;
+
+    @Autowired
+    private TaskLogMapper taskLogMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -192,6 +214,53 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
             }
         }
         return success;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int batchDeleteWorks(List<String> workIds, String userId) {
+        if (workIds == null || workIds.isEmpty()) {
+            throw new IllegalArgumentException("请选择要删除的工作");
+        }
+
+        List<String> distinctWorkIds = workIds.stream()
+                .filter(id -> id != null && !id.isBlank())
+                .distinct()
+                .collect(Collectors.toList());
+        if (distinctWorkIds.isEmpty()) {
+            throw new IllegalArgumentException("请选择要删除的工作");
+        }
+
+        List<Work> works = this.lambdaQuery()
+                .in(Work::getId, distinctWorkIds)
+                .list();
+        if (works.size() != distinctWorkIds.size()
+                || works.stream().anyMatch(work -> !userId.equals(work.getPublisherId()))) {
+            throw new IllegalArgumentException("工作不存在或无权操作");
+        }
+
+        List<WorkTask> tasks = workTaskService.lambdaQuery()
+                .in(WorkTask::getWorkId, distinctWorkIds)
+                .list();
+        List<String> taskIds = tasks.stream()
+                .map(WorkTask::getId)
+                .collect(Collectors.toList());
+
+        if (!taskIds.isEmpty()) {
+            taskApplicationService.remove(new LambdaQueryWrapper<TaskApplication>()
+                    .in(TaskApplication::getTaskId, taskIds));
+            taskAppealService.remove(new LambdaQueryWrapper<TaskAppeal>()
+                    .in(TaskAppeal::getTaskId, taskIds));
+            taskCommentMapper.delete(new LambdaQueryWrapper<TaskComment>()
+                    .in(TaskComment::getTaskId, taskIds));
+            taskLogMapper.delete(new LambdaQueryWrapper<TaskLog>()
+                    .in(TaskLog::getTaskId, taskIds));
+            workTaskService.remove(new LambdaQueryWrapper<WorkTask>()
+                    .in(WorkTask::getId, taskIds));
+        }
+
+        this.removeByIds(distinctWorkIds);
+        return distinctWorkIds.size();
     }
 
     @Override

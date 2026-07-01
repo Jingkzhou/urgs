@@ -84,6 +84,15 @@ public class WorkController {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("/batch-delete")
+    public Map<String, Integer> batchDeleteWorks(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @RequestBody BatchDeleteRequest request) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        return Map.of("deletedCount", workService.batchDeleteWorks(request.getIds(), userId));
+    }
+
     private String getEffectiveUserId(String headerUserId, Long attrUserId) {
         if (headerUserId != null && !headerUserId.isEmpty()) {
             return headerUserId;
@@ -92,5 +101,17 @@ public class WorkController {
             return String.valueOf(attrUserId);
         }
         throw new IllegalArgumentException("Missing user identifier");
+    }
+
+    public static class BatchDeleteRequest {
+        private List<String> ids;
+
+        public List<String> getIds() {
+            return ids;
+        }
+
+        public void setIds(List<String> ids) {
+            this.ids = ids;
+        }
     }
 }

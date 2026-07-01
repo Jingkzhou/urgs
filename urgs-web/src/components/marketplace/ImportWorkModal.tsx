@@ -54,60 +54,42 @@ const toText = (value: unknown) => {
 
 const pad = (value: number) => String(value).padStart(2, '0');
 
-const formatLocalDateTime = (
-    year: number,
-    month: number,
-    day: number,
-    hour = 0,
-    minute = 0,
-    second = 0
-) => {
-    const date = new Date(year, month - 1, day, hour, minute, second);
+const formatLocalDate = (year: number, month: number, day: number) => {
+    const date = new Date(year, month - 1, day);
     if (
         date.getFullYear() !== year
         || date.getMonth() !== month - 1
         || date.getDate() !== day
-        || date.getHours() !== hour
-        || date.getMinutes() !== minute
-        || date.getSeconds() !== second
     ) {
         return null;
     }
-    return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}:${pad(second)}`;
+    return `${year}-${pad(month)}-${pad(day)}T00:00:00`;
 };
 
 const parseDeadline = (value: unknown) => {
     if (value === null || value === undefined || value === '') return undefined;
 
     if (value instanceof Date && !Number.isNaN(value.getTime())) {
-        return formatLocalDateTime(
+        return formatLocalDate(
             value.getFullYear(),
             value.getMonth() + 1,
-            value.getDate(),
-            value.getHours(),
-            value.getMinutes(),
-            value.getSeconds()
+            value.getDate()
         );
     }
 
     if (typeof value === 'number') {
         const parsed = XLSX.SSF.parse_date_code(value);
         if (!parsed) return null;
-        return formatLocalDateTime(parsed.y, parsed.m, parsed.d, parsed.H, parsed.M, Math.floor(parsed.S));
+        return formatLocalDate(parsed.y, parsed.m, parsed.d);
     }
 
     const text = toText(value);
-    const match = text.match(
-        /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2})(?::(\d{1,2}))?(?::(\d{1,2}))?)?$/
-    );
+    const match = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
     if (!match) return null;
-    return formatLocalDateTime(
+    return formatLocalDate(
         Number(match[1]),
         Number(match[2]),
-        Number(match[3]),
-        Number(match[4] || 0),
-        Number(match[5] || 0),
-        Number(match[6] || 0)
+        Number(match[3])
     );
 };
 
@@ -139,8 +121,7 @@ const validateRow = (row: TemplateRow, rowNumber: number): ParsedWorkRow => {
     if (title.length < 2 || title.length > 200) errors.push('工作名称需为2到200个字符');
     if (description.length < 10) errors.push('详细描述至少10个字符');
     if (!PRIORITIES.includes(priority as typeof PRIORITIES[number])) errors.push('优先级只能是P0、P1、P2、P3');
-    if (deadline === null) errors.push('截止日期格式应为yyyy-MM-dd HH:mm');
-    if (deadline && new Date(deadline).getTime() <= Date.now()) errors.push('截止日期必须晚于当前时间');
+    if (deadline === null) errors.push('截止日期格式应为yyyy-MM-dd');
     if (requirementNumber.length > 100) errors.push('需求编号不能超过100个字符');
     if (!applicationDepartment || applicationDepartment.length > 100) errors.push('申请部门必填且不能超过100个字符');
     if (!applicantName || applicantName.length > 100) errors.push('申请人必填且不能超过100个字符');
@@ -184,7 +165,7 @@ const downloadTemplate = () => {
         ['工作名称', '是', '2到200个字符', '监管报送需求优化'],
         ['详细描述', '是', '至少10个字符', '完成监管报送需求的分析、开发与上线'],
         ['优先级', '是', '仅支持P0、P1、P2、P3', 'P2'],
-        ['截止日期', '否', '必须晚于当前时间，格式：yyyy-MM-dd HH:mm', '2099-12-31 18:00'],
+        ['截止日期', '否', '格式：yyyy-MM-dd，可填写任意有效日期', '2026-07-01'],
         ['需求编号', '否', '不超过100个字符', 'REQ-2099-001'],
         ['申请部门', '是', '不超过100个字符', '科技开发部'],
         ['申请人', '是', '不超过100个字符', '张三'],

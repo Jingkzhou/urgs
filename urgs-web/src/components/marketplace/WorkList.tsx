@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { listWorks, publishWork, cancelWork, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
-import { ChevronDown, ChevronRight, Download, ListTodo, Plus, Play, Upload, XCircle } from 'lucide-react';
+import { listWorks, publishWork, cancelWork, batchDeleteWorks, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
+import { ChevronDown, ChevronRight, Download, ListTodo, Plus, Play, Trash2, Upload, XCircle } from 'lucide-react';
 import CreateWorkDrawer from './CreateWorkDrawer';
 import ImportWorkModal from './ImportWorkModal';
 import WorkDetailDrawer from './WorkDetailDrawer';
@@ -65,6 +65,7 @@ const WorkList: React.FC = () => {
     const [isImportOpen, setIsImportOpen] = useState(false);
     const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
+    const [selectedWorkIds, setSelectedWorkIds] = useState<string[]>([]);
 
     const fetchWorks = async () => {
         setLoading(true);
@@ -72,6 +73,8 @@ const WorkList: React.FC = () => {
             const res = await listWorks({ current: 1, size: 20 });
             if (res?.records) {
                 setWorks(res.records);
+                const currentWorkIds = new Set(res.records.map((work: Work) => work.id));
+                setSelectedWorkIds(prev => prev.filter(id => currentWorkIds.has(id)));
                 const entries = await Promise.all(
                     res.records.map(async (work: Work) => {
                         const tasks = await getWorkTasks(work.id);
@@ -121,8 +124,40 @@ const WorkList: React.FC = () => {
         }
     };
 
+    const handleBatchDelete = async () => {
+        if (selectedWorkIds.length === 0) return;
+        const selectedWorks = works.filter(work => selectedWorkIds.includes(work.id));
+        const selectedTaskCount = selectedWorks.reduce(
+            (total, work) => total + (workTasks[work.id]?.length ?? 0),
+            0
+        );
+        if (!window.confirm(`确定要删除选中的 ${selectedWorkIds.length} 个工作吗？将同时删除其下 ${selectedTaskCount} 个主/子任务。`)) return;
+        try {
+            await batchDeleteWorks(selectedWorkIds);
+            alert("删除成功");
+            setSelectedWorkIds([]);
+            fetchWorks();
+        } catch (error) {
+            alert("删除失败");
+        }
+    };
+
     const toggleExpanded = (workId: string) => {
         setExpandedWorkIds(prev => ({ ...prev, [workId]: !prev[workId] }));
+    };
+
+    const toggleSelected = (workId: string) => {
+        setSelectedWorkIds(prev => prev.includes(workId)
+            ? prev.filter(id => id !== workId)
+            : [...prev, workId]);
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedWorkIds.length === works.length) {
+            setSelectedWorkIds([]);
+            return;
+        }
+        setSelectedWorkIds(works.map(work => work.id));
     };
 
     const statusClass = (status?: string) => {
@@ -135,6 +170,10 @@ const WorkList: React.FC = () => {
 
     const formatDateTime = (value?: string) => {
         return value ? new Date(value).toLocaleString() : '';
+    };
+
+    const formatDate = (value?: string) => {
+        return value ? new Date(value).toLocaleDateString() : '';
     };
 
     const renderValue = (value?: string | number | boolean | null) => {
@@ -170,7 +209,7 @@ const WorkList: React.FC = () => {
                 归属系统: work.owningSystem || '',
                 项目类型: work.projectType || '',
                 优先级: work.priority || '',
-                截止日期: formatDateTime(work.deadline),
+                截止日期: formatDate(work.deadline),
                 创建时间: formatDateTime(work.createTime),
                 '主系统/是否主系统': getPrimarySystemText(work),
             };
@@ -209,7 +248,7 @@ const WorkList: React.FC = () => {
                     任务状态: getTaskStatusLabel(task.status),
                     任务阶段: getTaskStageLabel(task.currentStage),
                     任务积分: task.points ?? 0,
-                    任务截止日期: formatDateTime(task.deadline),
+                    任务截止日期: formatDate(task.deadline),
                     任务创建时间: formatDateTime(task.createTime),
                     风险报备: task.stageRiskReported ? (task.stageRiskNote || '已报备') : '',
                     任务描述: task.description || '',
@@ -261,6 +300,13 @@ const WorkList: React.FC = () => {
                 <h2 className="text-xl font-bold text-slate-800">我发布的工作</h2>
                 <div className="flex items-center gap-2">
                     <button
+                        onClick={handleBatchDelete}
+                        disabled={selectedWorkIds.length === 0}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 transition-colors text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <Trash2 size={16} />批量删除{selectedWorkIds.length > 0 ? `(${selectedWorkIds.length})` : ''}
+                    </button>
+                    <button
                         onClick={() => setIsImportOpen(true)}
                         className="flex items-center gap-2 px-4 py-2 bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-sm font-bold"
                     >
@@ -308,8 +354,15 @@ const WorkList: React.FC = () => {
                 </div>
             ) : (
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-x-auto">
-                    <div className="min-w-[1760px]">
-                        <div className="grid grid-cols-[44px_minmax(220px,1.4fr)_130px_120px_110px_140px_110px_90px_150px_150px_150px_100px_90px_100px] gap-3 px-4 py-3 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500">
+                    <div className="min-w-[1810px]">
+                        <div className="grid grid-cols-[44px_44px_minmax(220px,1.4fr)_130px_120px_110px_140px_110px_90px_150px_150px_150px_100px_90px_100px] gap-3 px-4 py-3 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500">
+                            <input
+                                type="checkbox"
+                                checked={works.length > 0 && selectedWorkIds.length === works.length}
+                                onChange={toggleSelectAll}
+                                className="h-4 w-4 rounded border-slate-300"
+                                aria-label="全选工作"
+                            />
                             <span></span>
                             <span>工作名称</span>
                             <span>需求编号</span>
@@ -327,7 +380,14 @@ const WorkList: React.FC = () => {
                         </div>
                     {works.map(work => (
                         <div key={work.id} className="border-b border-slate-100 last:border-b-0">
-                            <div className="grid grid-cols-[44px_minmax(220px,1.4fr)_130px_120px_110px_140px_110px_90px_150px_150px_150px_100px_90px_100px] gap-3 px-4 py-4 items-center text-sm">
+                            <div className="grid grid-cols-[44px_44px_minmax(220px,1.4fr)_130px_120px_110px_140px_110px_90px_150px_150px_150px_100px_90px_100px] gap-3 px-4 py-4 items-center text-sm">
+                                <input
+                                    type="checkbox"
+                                    checked={selectedWorkIds.includes(work.id)}
+                                    onChange={() => toggleSelected(work.id)}
+                                    className="h-4 w-4 rounded border-slate-300"
+                                    aria-label={`选择工作 ${work.title}`}
+                                />
                                 <button
                                     onClick={() => toggleExpanded(work.id)}
                                     className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
@@ -355,7 +415,7 @@ const WorkList: React.FC = () => {
                                 <span className="text-slate-600 truncate">{renderValue(work.owningSystem)}</span>
                                 <span className="text-blue-700 truncate">{renderValue(work.projectType)}</span>
                                 <span className="font-bold text-red-500">{renderValue(work.priority)}</span>
-                                <span className="text-slate-500 truncate">{renderValue(formatDateTime(work.deadline))}</span>
+                                <span className="text-slate-500 truncate">{renderValue(formatDate(work.deadline))}</span>
                                 <span className="text-slate-500 truncate">{renderValue(formatDateTime(work.createTime))}</span>
                                 <span className="text-slate-600 truncate">{getPrimarySystemText(work)}</span>
                                 <span className={`w-fit px-2 py-0.5 rounded text-xs font-bold ${statusClass(work.status)}`}>
@@ -387,13 +447,13 @@ const WorkList: React.FC = () => {
                             </div>
 
                             {expandedWorkIds[work.id] && (
-                                <div className="ml-11 bg-slate-50/70 border-t border-l-2 border-slate-200 px-4 py-3">
+                                <div className="ml-[88px] bg-slate-50/70 border-t border-l-2 border-slate-200 px-4 py-3">
                                     <div className="bg-white border border-slate-100 rounded-lg px-4 py-3 mb-3">
                                         <div className="text-xs font-bold text-slate-500 mb-3">新建工作内容</div>
                                         <div className="grid grid-cols-2 xl:grid-cols-4 gap-x-6 gap-y-2 text-xs">
                                             <div><span className="text-slate-400">优先级：</span><span className="font-medium text-slate-700">{renderValue(work.priority)}</span></div>
                                             <div><span className="text-slate-400">需求编号：</span><span className="font-medium text-slate-700">{renderValue(work.requirementNumber)}</span></div>
-                                            <div><span className="text-slate-400">截止日期：</span><span className="font-medium text-slate-700">{renderValue(formatDateTime(work.deadline))}</span></div>
+                                            <div><span className="text-slate-400">截止日期：</span><span className="font-medium text-slate-700">{renderValue(formatDate(work.deadline))}</span></div>
                                             <div><span className="text-slate-400">申请部门：</span><span className="font-medium text-slate-700">{renderValue(work.applicationDepartment)}</span></div>
                                             <div><span className="text-slate-400">申请人：</span><span className="font-medium text-slate-700">{renderValue(work.applicantName)}</span></div>
                                             <div><span className="text-slate-400">归属系统：</span><span className="font-medium text-slate-700">{renderValue(work.owningSystem)}</span></div>

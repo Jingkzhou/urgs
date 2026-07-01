@@ -1,6 +1,5 @@
 package com.example.urgs_api.marketplace.dto;
 
-import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -22,7 +21,6 @@ public class WorkImportDTO {
     @Pattern(regexp = "P[0-3]", message = "优先级只能是P0、P1、P2、P3")
     private String priority;
 
-    @Future(message = "截止日期必须晚于当前时间")
     private LocalDateTime deadline;
 
     @Size(max = 100, message = "需求编号不能超过100个字符")
