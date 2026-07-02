@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Pagination, Tooltip } from 'antd';
-import { listWorks, publishWork, cancelWork, batchDeleteWorks, updateTaskStatus, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
+import { Modal, Pagination, Tooltip } from 'antd';
+import { appendTaskRiskTracking, AssetMaintenanceRecord, listWorks, publishWork, cancelWork, batchDeleteWorks, updateTaskStatus, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
 import { ChevronDown, ChevronRight, Download, Edit3, ListTodo, PauseCircle, Plus, Play, PlayCircle, Trash2, Upload, XCircle } from 'lucide-react';
 import CreateWorkDrawer from './CreateWorkDrawer';
 import ImportWorkModal from './ImportWorkModal';
@@ -20,6 +20,11 @@ interface WorkRiskEntry {
     reporter: string;
     reportedAt: string;
     content: string;
+}
+
+interface TaskAssetChange {
+    task: WorkTask;
+    record: AssetMaintenanceRecord;
 }
 
 const downloadCollapsedOutlineWorkbook = (
@@ -82,6 +87,12 @@ const WorkList: React.FC = () => {
     const [pageSize, setPageSize] = useState(20);
     const [total, setTotal] = useState(0);
     const [assigneeLabels, setAssigneeLabels] = useState<Record<string, string>>({});
+    const [assetChangeTitle, setAssetChangeTitle] = useState('');
+    const [assetChangeDetails, setAssetChangeDetails] = useState<TaskAssetChange[]>([]);
+    const [trackingWorkId, setTrackingWorkId] = useState<string | null>(null);
+    const [trackingTaskId, setTrackingTaskId] = useState('');
+    const [trackingNote, setTrackingNote] = useState('');
+    const [trackingSubmitting, setTrackingSubmitting] = useState(false);
 
     const fetchWorks = async (page = currentPage, size = pageSize) => {
         setLoading(true);
@@ -122,7 +133,7 @@ const WorkList: React.FC = () => {
         };
     };
 
-    const formatUserLabel = (user: UserDTO) => `${user.empId || '无工号'} - ${user.name}`;
+    const formatUserLabel = (user: UserDTO) => user.name;
 
     const resolveAssigneeLabels = async (tasks: WorkTask[]) => {
         const assigneeIds = Array.from(new Set(
@@ -265,6 +276,11 @@ const WorkList: React.FC = () => {
         return '已报备';
     };
 
+    const isIssueTrackingTask = (task: WorkTask) => {
+        const taskType = (task.taskType || '').trim();
+        return taskType === '问题跟踪' || taskType === '问题追踪';
+    };
+
     const renderRiskSummary = (task: WorkTask) => {
         const summary = getRiskSummary(task);
         if (!task.stageRiskNote) {
@@ -294,9 +310,73 @@ const WorkList: React.FC = () => {
         return (workTasks[workId] || []).find(task => task.taskRole === 'MAIN');
     };
 
+    const getTaskAssetChanges = (task: WorkTask): AssetMaintenanceRecord[] => {
+        if (!task.assetMaintenanceSnapshot) return [];
+        try {
+            const records = JSON.parse(task.assetMaintenanceSnapshot);
+            return Array.isArray(records) ? records : [];
+        } catch {
+            return [];
+        }
+    };
+
+    const renderAssetChanges = (tasks: WorkTask[], showTaskName: boolean) => {
+        const changes = tasks.flatMap(task =>
+            getTaskAssetChanges(task).map(record => ({ task, record }))
+        );
+
+        return (
+            <div className="mt-3 border-t border-slate-100 pt-3">
+                <button
+                    type="button"
+                    disabled={changes.length === 0}
+                    onClick={() => {
+                        setAssetChangeTitle(showTaskName ? '工作资产变更记录' : `${tasks[0]?.title || '任务'} · 资产变更记录`);
+                        setAssetChangeDetails(changes);
+                    }}
+                    className="inline-flex items-center gap-2 text-xs font-bold text-slate-600 transition-colors enabled:hover:text-cyan-700 disabled:cursor-default disabled:text-slate-400"
+                >
+                    <span>对应资产变更记录</span>
+                    <span className="rounded bg-cyan-50 px-1.5 py-0.5 text-cyan-700">{changes.length} 条</span>
+                    {changes.length > 0 && <span className="font-normal text-slate-400">点击查看</span>}
+                </button>
+            </div>
+        );
+    };
+
     const renderAssignee = (assigneeId?: string) => {
         if (!assigneeId) return '-';
         return assigneeLabels[assigneeId] || assigneeId;
+    };
+
+    const renderWorkAssignees = (workId: string) => {
+        const tasks = workTasks[workId] || [];
+        const mainTask = tasks.find(task => task.taskRole === 'MAIN');
+        const subAssigneeIds = Array.from(new Set(
+            tasks
+                .filter(task =>
+                    task.taskRole !== 'MAIN'
+                    && task.assigneeId
+                    && task.assigneeId !== mainTask?.assigneeId
+                )
+                .map(task => task.assigneeId)
+        ));
+
+        return (
+            <div className="flex flex-wrap items-center gap-1.5">
+                <span className="inline-flex items-center rounded bg-red-50 px-2 py-0.5 text-xs font-bold text-red-600">
+                    {renderAssignee(mainTask?.assigneeId)}
+                </span>
+                {subAssigneeIds.map(assigneeId => (
+                    <span
+                        key={assigneeId}
+                        className="inline-flex items-center rounded bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700"
+                    >
+                        {renderAssignee(assigneeId)}
+                    </span>
+                ))}
+            </div>
+        );
     };
 
     const parseRiskEntry = (line: string, task: WorkTask): WorkRiskEntry => {
@@ -352,17 +432,31 @@ const WorkList: React.FC = () => {
 
     const renderWorkRiskSummary = (workId: string) => {
         const riskEntries = getWorkRiskEntries(workId);
-        if (riskEntries.length === 0) return null;
 
         return (
             <div className="bg-amber-50/60 border border-amber-100 rounded-lg px-4 py-3 mb-3">
-                <div className="flex items-center justify-between mb-2">
-                    <div className="text-xs font-bold text-amber-800">任务风险汇总</div>
+                <div className="flex items-center gap-2 mb-2">
+                    <div className="text-xs font-bold text-amber-800">任务风险及跟踪记录</div>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const firstTask = getOrderedTasks(workId)[0];
+                            setTrackingWorkId(workId);
+                            setTrackingTaskId(firstTask?.id || '');
+                            setTrackingNote('');
+                        }}
+                        className="inline-flex items-center gap-1 rounded bg-amber-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-amber-700"
+                    >
+                        <Plus size={12} /> 追加
+                    </button>
                     <span className="text-[11px] font-bold text-amber-700 bg-white/70 border border-amber-100 rounded px-2 py-0.5">
                         {riskEntries.length} 条
                     </span>
                 </div>
-                <div className="space-y-2">
+                {riskEntries.length === 0 ? (
+                    <div className="text-xs text-amber-700/70">暂无风险及跟踪记录</div>
+                ) : (
+                    <div className="space-y-2">
                     {riskEntries.map((entry, index) => (
                         <div key={`${entry.taskId}-${index}`} className="bg-white/80 border border-amber-100 rounded px-3 py-2 text-xs">
                             <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -381,9 +475,30 @@ const WorkList: React.FC = () => {
                             <div className="text-slate-700 whitespace-pre-wrap break-words">{entry.content || '-'}</div>
                         </div>
                     ))}
-                </div>
+                    </div>
+                )}
             </div>
         );
+    };
+
+    const closeTrackingModal = () => {
+        setTrackingWorkId(null);
+        setTrackingTaskId('');
+        setTrackingNote('');
+        setTrackingSubmitting(false);
+    };
+
+    const submitTrackingNote = async () => {
+        if (!trackingTaskId || !trackingNote.trim()) return;
+        setTrackingSubmitting(true);
+        try {
+            await appendTaskRiskTracking(trackingTaskId, { trackingNote: trackingNote.trim() });
+            closeTrackingModal();
+            await fetchWorks(currentPage, pageSize);
+        } catch (error) {
+            alert('追加跟踪记录失败');
+            setTrackingSubmitting(false);
+        }
     };
 
     const exportWorks = () => {
@@ -438,7 +553,7 @@ const WorkList: React.FC = () => {
                     任务角色: task.taskRole === 'MAIN' ? '主任务' : '子任务',
                     任务名称: task.title,
                     任务状态: getTaskStatusLabel(task.status),
-                    任务阶段: getTaskStageLabel(task.currentStage),
+                    任务阶段: isIssueTrackingTask(task) ? '不适用' : getTaskStageLabel(task.currentStage),
                     任务积分: task.points ?? 0,
                     任务截止日期: formatDate(task.deadline),
                     任务创建时间: formatDateTime(task.createTime),
@@ -559,7 +674,7 @@ const WorkList: React.FC = () => {
             ) : (
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-x-auto">
                     <div className="min-w-[1940px]">
-                        <div className="grid grid-cols-[44px_44px_minmax(220px,1.4fr)_130px_120px_110px_130px_140px_110px_90px_150px_150px_150px_100px_90px_100px] gap-3 px-4 py-3 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500">
+                        <div className="grid grid-cols-[44px_44px_minmax(220px,1.4fr)_190px_120px_110px_220px_140px_110px_90px_150px_150px_150px_100px_90px_100px] gap-3 px-4 py-3 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500">
                             <input
                                 type="checkbox"
                                 checked={works.length > 0 && selectedWorkIds.length === works.length}
@@ -585,7 +700,7 @@ const WorkList: React.FC = () => {
                         </div>
                     {works.map(work => (
                         <div key={work.id} className="border-b border-slate-100 last:border-b-0">
-                            <div className="grid grid-cols-[44px_44px_minmax(220px,1.4fr)_130px_120px_110px_130px_140px_110px_90px_150px_150px_150px_100px_90px_100px] gap-3 px-4 py-4 items-center text-sm">
+                            <div className="grid grid-cols-[44px_44px_minmax(220px,1.4fr)_190px_120px_110px_220px_140px_110px_90px_150px_150px_150px_100px_90px_100px] gap-3 px-4 py-4 items-center text-sm">
                                 <input
                                     type="checkbox"
                                     checked={selectedWorkIds.includes(work.id)}
@@ -614,10 +729,10 @@ const WorkList: React.FC = () => {
                                         <span>积分: {work.totalPoints ?? 0}</span>
                                     </div>
                                 </div>
-                                <span className="text-slate-600 truncate">{renderValue(work.requirementNumber)}</span>
+                                <span className="text-slate-600 whitespace-normal break-all">{renderValue(work.requirementNumber)}</span>
                                 <span className="text-slate-600 truncate">{renderValue(work.applicationDepartment)}</span>
                                 <span className="text-slate-600 truncate">{renderValue(work.applicantName)}</span>
-                                <span className="text-slate-700 truncate">{renderAssignee(getMainTask(work.id)?.assigneeId)}</span>
+                                {renderWorkAssignees(work.id)}
                                 <span className="text-slate-600 truncate">{renderValue(work.owningSystem)}</span>
                                 <span className="text-blue-700 truncate">{renderValue(work.projectType)}</span>
                                 <span className="font-bold text-red-500">{renderValue(work.priority)}</span>
@@ -665,7 +780,7 @@ const WorkList: React.FC = () => {
                             {expandedWorkIds[work.id] && (
                                 <div className="ml-[88px] bg-slate-50/70 border-t border-l-2 border-slate-200 px-4 py-3">
                                     <div className="bg-white border border-slate-100 rounded-lg px-4 py-3 mb-3">
-                                        <div className="text-xs font-bold text-slate-500 mb-3">新建工作内容</div>
+                                        <div className="text-xs font-bold text-slate-500 mb-3">工作内容</div>
                                         <div className="grid grid-cols-2 xl:grid-cols-4 gap-x-6 gap-y-2 text-xs">
                                             <div><span className="text-slate-400">优先级：</span><span className="font-medium text-slate-700">{renderValue(work.priority)}</span></div>
                                             <div><span className="text-slate-400">需求编号：</span><span className="font-medium text-slate-700">{renderValue(work.requirementNumber)}</span></div>
@@ -682,6 +797,7 @@ const WorkList: React.FC = () => {
                                                 <span className="font-medium text-slate-700 whitespace-pre-wrap">{renderValue(work.description)}</span>
                                             </div>
                                         </div>
+                                        {renderAssetChanges(getOrderedTasks(work.id), true)}
                                     </div>
                                     {renderWorkRiskSummary(work.id)}
                                     <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-500">
@@ -698,37 +814,42 @@ const WorkList: React.FC = () => {
                                         <span>操作</span>
                                     </div>
                                     {getOrderedTasks(work.id).map(task => (
-                                        <div key={task.id} className="relative grid grid-cols-[88px_minmax(220px,1.5fr)_100px_100px_90px_120px_90px] gap-3 px-3 py-2 items-center text-xs bg-white border border-slate-100 rounded-lg mb-2 last:mb-0">
-                                            <span className="absolute -left-[17px] top-1/2 h-px w-4 bg-slate-200"></span>
-                                            <span className={`w-fit px-2 py-0.5 rounded font-bold ${task.taskRole === 'MAIN' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-600'}`}>
-                                                {task.taskRole === 'MAIN' ? '主任务' : '子任务'}
-                                            </span>
-                                            <div className="min-w-0">
-                                                <div className="font-bold text-slate-700 truncate">{task.title}</div>
-                                                {task.description && <div className="text-slate-400 truncate mt-0.5">{task.description}</div>}
+                                        <div key={task.id} className="relative bg-white border border-slate-100 rounded-lg mb-2 last:mb-0 px-3 py-2">
+                                            <div className="grid grid-cols-[88px_minmax(220px,1.5fr)_100px_100px_90px_120px_90px] gap-3 items-center text-xs">
+                                                <span className="absolute -left-[17px] top-5 h-px w-4 bg-slate-200"></span>
+                                                <span className={`w-fit px-2 py-0.5 rounded font-bold ${task.taskRole === 'MAIN' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-600'}`}>
+                                                    {task.taskRole === 'MAIN' ? '主任务' : '子任务'}
+                                                </span>
+                                                <div className="min-w-0">
+                                                    <div className="font-bold text-slate-700 truncate">{task.title}</div>
+                                                    {task.description && <div className="text-slate-400 truncate mt-0.5">{task.description}</div>}
+                                                </div>
+                                                <span className={`w-fit px-2 py-0.5 rounded font-bold ${statusClass(task.status)}`}>
+                                                    {getTaskStatusLabel(task.status)}
+                                                </span>
+                                                <span className="text-blue-700 font-bold">
+                                                    {isIssueTrackingTask(task) ? '不适用' : getTaskStageLabel(task.currentStage)}
+                                                </span>
+                                                <span className="font-bold text-orange-600">{task.points ?? 0}</span>
+                                                {renderRiskSummary(task)}
+                                                {isClosedTaskStatus(task.status) ? (
+                                                    <span className="text-slate-300">-</span>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => handleToggleTaskPaused(task)}
+                                                        className={`inline-flex w-fit items-center gap-1 rounded px-2 py-1 font-bold transition-colors ${
+                                                            isPausedTask(task)
+                                                                ? 'bg-green-50 text-green-700 hover:bg-green-100'
+                                                                : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                                        }`}
+                                                        title={isPausedTask(task) ? '继续任务' : '暂停任务'}
+                                                    >
+                                                        {isPausedTask(task) ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
+                                                        {isPausedTask(task) ? '继续' : '暂停'}
+                                                    </button>
+                                                )}
                                             </div>
-                                            <span className={`w-fit px-2 py-0.5 rounded font-bold ${statusClass(task.status)}`}>
-                                                {getTaskStatusLabel(task.status)}
-                                            </span>
-                                            <span className="text-blue-700 font-bold">{getTaskStageLabel(task.currentStage)}</span>
-                                            <span className="font-bold text-orange-600">{task.points ?? 0}</span>
-                                            {renderRiskSummary(task)}
-                                            {isClosedTaskStatus(task.status) ? (
-                                                <span className="text-slate-300">-</span>
-                                            ) : (
-                                                <button
-                                                    onClick={() => handleToggleTaskPaused(task)}
-                                                    className={`inline-flex w-fit items-center gap-1 rounded px-2 py-1 font-bold transition-colors ${
-                                                        isPausedTask(task)
-                                                            ? 'bg-green-50 text-green-700 hover:bg-green-100'
-                                                            : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-                                                    }`}
-                                                    title={isPausedTask(task) ? '继续任务' : '暂停任务'}
-                                                >
-                                                    {isPausedTask(task) ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
-                                                    {isPausedTask(task) ? '继续' : '暂停'}
-                                                </button>
-                                            )}
+                                            {renderAssetChanges([task], false)}
                                         </div>
                                     ))}
                                     {(workTasks[work.id] || []).length === 0 && (
@@ -760,6 +881,93 @@ const WorkList: React.FC = () => {
                 isOpen={isDetailOpen}
                 onClose={() => setIsDetailOpen(false)}
             />
+
+            <Modal
+                title={assetChangeTitle || '资产变更记录'}
+                open={assetChangeDetails.length > 0}
+                onCancel={() => {
+                    setAssetChangeTitle('');
+                    setAssetChangeDetails([]);
+                }}
+                footer={null}
+                width={920}
+                destroyOnHidden
+            >
+                <div className="max-h-[65vh] overflow-auto rounded-md border border-slate-200">
+                    <table className="w-full min-w-[820px] text-xs">
+                        <thead className="sticky top-0 bg-slate-50 text-slate-500">
+                            <tr>
+                                <th className="px-3 py-2 text-left">所属任务</th>
+                                <th className="px-3 py-2 text-left">变更类型</th>
+                                <th className="px-3 py-2 text-left">表/字段</th>
+                                <th className="px-3 py-2 text-left">操作人</th>
+                                <th className="px-3 py-2 text-left">时间</th>
+                                <th className="px-3 py-2 text-left">说明</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {assetChangeDetails.map(({ task, record }, index) => (
+                                <tr key={`${task.id}-${record.id || index}`} className="border-t border-slate-100 align-top">
+                                    <td className="px-3 py-2 min-w-[150px]">
+                                        <div className="font-bold text-slate-700">{task.title}</div>
+                                        <div className="mt-1 text-slate-400">{task.taskRole === 'MAIN' ? '主任务' : '子任务'}</div>
+                                    </td>
+                                    <td className="px-3 py-2 font-bold text-cyan-700">{record.modType || '-'}</td>
+                                    <td className="px-3 py-2 min-w-[160px]">
+                                        <div>{record.tableCnName || record.tableName || '-'}</div>
+                                        {(record.fieldCnName || record.fieldName) && (
+                                            <div className="mt-1 text-slate-400">{record.fieldCnName || record.fieldName}</div>
+                                        )}
+                                    </td>
+                                    <td className="px-3 py-2">{record.operator || '-'}</td>
+                                    <td className="px-3 py-2 min-w-[150px]">{record.time ? formatDateTime(record.time) : '-'}</td>
+                                    <td className="px-3 py-2 min-w-[200px] whitespace-pre-wrap">{record.description || '-'}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </Modal>
+
+            <Modal
+                title="追加任务风险跟踪记录"
+                open={!!trackingWorkId}
+                onCancel={closeTrackingModal}
+                onOk={submitTrackingNote}
+                okText="追加"
+                cancelText="取消"
+                confirmLoading={trackingSubmitting}
+                okButtonProps={{ disabled: !trackingTaskId || !trackingNote.trim() }}
+                destroyOnHidden
+            >
+                <div className="space-y-4 pt-2">
+                    <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-slate-600">对应任务</span>
+                        <select
+                            value={trackingTaskId}
+                            onChange={event => setTrackingTaskId(event.target.value)}
+                            className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500"
+                        >
+                            {(trackingWorkId ? getOrderedTasks(trackingWorkId) : []).map(task => (
+                                <option key={task.id} value={task.id}>
+                                    {task.taskRole === 'MAIN' ? '主任务' : '子任务'} · {task.title}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-slate-600">跟踪内容</span>
+                        <textarea
+                            value={trackingNote}
+                            onChange={event => setTrackingNote(event.target.value)}
+                            rows={4}
+                            maxLength={1000}
+                            placeholder="填写风险处理进展、协调结果或后续安排"
+                            className="w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-500"
+                        />
+                    </label>
+                </div>
+            </Modal>
         </div>
     );
 };

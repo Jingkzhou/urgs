@@ -111,6 +111,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 .eq(WorkTask::getAssigneeId, userId);
         if (archived) {
             query.eq(WorkTask::getStatus, TaskStatus.COMPLETED.name())
+                    .orderByDesc(WorkTask::getStageUpdatedAt)
                     .orderByDesc(WorkTask::getReviewedAt);
         } else {
             query.ne(WorkTask::getStatus, TaskStatus.COMPLETED.name())
@@ -434,6 +435,23 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 || TaskStatus.REVIEW.name().equals(task.getStatus())) {
             throw new IllegalStateException("当前状态不可推进阶段");
         }
+        if (isIssueTrackingTask(task)) {
+            if (TASK_ROLE_MAIN.equals(task.getTaskRole()) && !areAllSubTasksClosed(task.getWorkId())) {
+                throw new IllegalStateException("请先完成所有子任务后再完成主任务");
+            }
+            LocalDateTime now = LocalDateTime.now();
+            task.setStatus(TaskStatus.COMPLETED.name());
+            task.setStageUpdatedAt(now);
+            task.setSubmittedAt(now);
+            task.setFinalPoints(defaultInt(task.getPoints()));
+            task.setKpiPeriod(YearMonth.from(now).toString());
+            boolean success = this.updateById(task);
+            if (success) {
+                logTaskAction(taskId, userId, "ISSUE_TRACKING_COMPLETE", "问题跟踪任务直接完成");
+                updateWorkStatusIfNecessary(task.getWorkId());
+            }
+            return success;
+        }
         if (TASK_ROLE_MAIN.equals(task.getTaskRole()) && STAGE_LAUNCH.equals(resolveStage(task))
                 && !areAllSubTasksClosed(task.getWorkId())) {
             throw new IllegalStateException("请先完成所有子任务后再提交主任务验收");
@@ -514,6 +532,42 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (success) {
             logTaskAction(taskId, userId, "STAGE_RISK", "阶段风险报备: " + task.getCurrentStage() + " - " + trimmedRiskNote);
             updateWorkStatusIfNecessary(task.getWorkId());
+        }
+        return success;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean appendTaskRiskTracking(String taskId, String trackingNote, String userId) {
+        WorkTask task = this.getById(taskId);
+        if (task == null) {
+            throw new IllegalArgumentException("任务不存在");
+        }
+        Work work = workService.getById(task.getWorkId());
+        if (work == null || !userId.equals(work.getPublisherId())) {
+            throw new IllegalStateException("只有工作发布人可以追加风险跟踪记录");
+        }
+        if (!StringUtils.hasText(trackingNote)) {
+            throw new IllegalArgumentException("跟踪内容不能为空");
+        }
+        if (TaskStatus.CANCELLED.name().equals(task.getStatus())) {
+            throw new IllegalStateException("已取消任务不可追加风险跟踪记录");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        String trimmedNote = trackingNote.trim();
+        String trackerName = resolveUserName(userId);
+        String trackingEntry = "[" + now.format(RISK_NOTE_TIME_FORMATTER) + "][跟踪] "
+                + trackerName + "：" + trimmedNote;
+        task.setStageRiskReported(true);
+        if (StringUtils.hasText(task.getStageRiskNote())) {
+            task.setStageRiskNote(task.getStageRiskNote().trim() + "\n" + trackingEntry);
+        } else {
+            task.setStageRiskNote(trackingEntry);
+        }
+        boolean success = this.updateById(task);
+        if (success) {
+            logTaskAction(taskId, userId, "RISK_TRACKING_APPEND", "追加风险跟踪记录: " + trimmedNote);
         }
         return success;
     }
@@ -676,6 +730,14 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         return task != null
                 && STAGE_ASSET_REVIEW.equals(resolveStage(task))
                 && TaskStatus.ASSET_REVIEW.name().equals(task.getStatus());
+    }
+
+    private boolean isIssueTrackingTask(WorkTask task) {
+        if (task == null || !StringUtils.hasText(task.getTaskType())) {
+            return false;
+        }
+        String taskType = task.getTaskType().trim();
+        return "问题跟踪".equals(taskType) || "问题追踪".equals(taskType);
     }
 
     private List<MaintenanceRecord> getAssetMaintenanceRecords(Work work) {

@@ -361,6 +361,8 @@ export const updateTaskStatus = (id: string, status: string) => put(`/api/market
 export const advanceTaskStage = (id: string, data?: { assetReviewNote?: string }) =>
     put(`/api/marketplace/tasks/${id}/stage/advance`, data);
 export const reportTaskStageRisk = (id: string, data: { riskNote: string }) => put(`/api/marketplace/tasks/${id}/stage/risk`, data);
+export const appendTaskRiskTracking = (id: string, data: { trackingNote: string }) =>
+    put(`/api/marketplace/tasks/${id}/stage/risk/tracking`, data);
 export const submitTaskForReview = (id: string, data: TaskSubmissionDTO) => put(`/api/marketplace/tasks/${id}/submit`, data);
 export const reviewTask = (id: string, data: TaskReviewDTO) => put(`/api/marketplace/tasks/${id}/review`, data);
 

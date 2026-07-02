@@ -108,6 +108,11 @@ const MyTasks: React.FC = () => {
         return task.currentStage === 'TESTING' || task.currentStage === 'ASSET_REVIEW';
     };
 
+    const isIssueTrackingTask = (task: TaskMarketDTO) => {
+        const taskType = (task.taskType || '').trim();
+        return taskType === '问题跟踪' || taskType === '问题追踪';
+    };
+
     const resetAssetReviewDialog = () => {
         setAssetReviewTask(null);
         setAssetReviewRecords([]);
@@ -331,7 +336,10 @@ const MyTasks: React.FC = () => {
     };
 
     const handleAdvanceStage = async (task: TaskMarketDTO) => {
-        if (isAssetReviewAdvance(task)) {
+        if (isIssueTrackingTask(task) && !window.confirm(`确定完成问题任务「${task.title}」吗？完成后将直接进入归档。`)) {
+            return;
+        }
+        if (!isIssueTrackingTask(task) && isAssetReviewAdvance(task)) {
             await openAssetReviewConfirm(task);
             return;
         }
@@ -340,6 +348,10 @@ const MyTasks: React.FC = () => {
             await advanceTaskStage(task.id);
             fetchTasks();
         } catch (error) {
+            if (isIssueTrackingTask(task)) {
+                alert('完成任务失败，请确认其子任务已全部完成');
+                return;
+            }
             if (task.currentStage === 'LAUNCH') {
                 alert('进入验收失败，请确认子任务已完成');
                 return;
@@ -383,6 +395,7 @@ const MyTasks: React.FC = () => {
     };
 
     const getAdvanceButtonText = (task: TaskMarketDTO) => {
+        if (isIssueTrackingTask(task)) return '完成任务';
         if (task.currentStage === 'TESTING') return '完成测试，提交资产审核';
         if (task.currentStage === 'ASSET_REVIEW') return '重新提交资产审核';
         if (task.currentStage === 'LAUNCH') return '上线完成，进入验收';
@@ -555,9 +568,11 @@ const MyTasks: React.FC = () => {
                             </div>
                             <p className="text-sm text-slate-500 mb-4 line-clamp-2">{task.description}</p>
                             <div className="flex flex-wrap items-center gap-2 mb-3 text-xs">
-                                <span className="px-2 py-1 rounded bg-blue-50 text-blue-700 font-bold">
-                                    当前阶段：{getTaskStageLabel(task.currentStage)}
-                                </span>
+                                {!isIssueTrackingTask(task) && (
+                                    <span className="px-2 py-1 rounded bg-blue-50 text-blue-700 font-bold">
+                                        当前阶段：{getTaskStageLabel(task.currentStage)}
+                                    </span>
+                                )}
                                 {task.stageRiskReported && (
                                     <span className="px-2 py-1 rounded bg-amber-50 text-amber-700 font-bold">
                                         已报备风险
@@ -589,12 +604,14 @@ const MyTasks: React.FC = () => {
                                                     解除承接
                                                 </button>
                                             )}
-                                            <button
-                                                onClick={() => setRiskTask(task)}
-                                                className="px-3 py-1 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded text-xs font-bold transition-colors"
-                                            >
-                                                报备风险
-                                            </button>
+                                            {!isIssueTrackingTask(task) && (
+                                                <button
+                                                    onClick={() => setRiskTask(task)}
+                                                    className="px-3 py-1 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded text-xs font-bold transition-colors"
+                                                >
+                                                    报备风险
+                                                </button>
+                                            )}
                                             <button
                                                 onClick={() => handleAdvanceStage(task)}
                                                 className="px-3 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-xs font-bold transition-colors"

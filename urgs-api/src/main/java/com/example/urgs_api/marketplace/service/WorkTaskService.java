@@ -26,6 +26,8 @@ public interface WorkTaskService extends IService<WorkTask> {
 
     boolean reportTaskStageRisk(String taskId, String riskNote, String userId);
 
+    boolean appendTaskRiskTracking(String taskId, String trackingNote, String userId);
+
     boolean submitForReview(String taskId, TaskSubmissionDTO dto, String userId);
 
     boolean reviewTask(String taskId, TaskReviewDTO dto, String reviewerId);

@@ -15,6 +15,10 @@ interface TaskDetailDrawerProps {
 
 const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onClose, onClaimSuccess }) => {
     const [task, setTask] = useState<TaskMarketDTO | null>(null);
+    const isIssueTrackingTask = (taskValue?: TaskMarketDTO | null) => {
+        const taskType = (taskValue?.taskType || '').trim();
+        return taskType === '问题跟踪' || taskType === '问题追踪';
+    };
     const [loading, setLoading] = useState(false);
     const [claiming, setClaiming] = useState(false);
 
@@ -101,7 +105,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                             }>
                                 {getTaskStatusLabel(task.status)}
                             </Tag>
-                            <Tag color="blue">{getTaskStageLabel(task.currentStage)}</Tag>
+                            {!isIssueTrackingTask(task) && <Tag color="blue">{getTaskStageLabel(task.currentStage)}</Tag>}
                             {task.stageRiskReported && <Tag color="warning">已报备风险</Tag>}
                         </Space>
                         <Title level={3} className="!mb-0">{task.title}</Title>

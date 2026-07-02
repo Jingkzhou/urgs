@@ -206,6 +206,17 @@ public class WorkTaskController {
         return ResponseEntity.ok().build();
     }
 
+    @PutMapping("/{id}/stage/risk/tracking")
+    public ResponseEntity<Void> appendTaskRiskTracking(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @PathVariable String id,
+            @RequestBody Map<String, String> body) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        workTaskService.appendTaskRiskTracking(id, body.get("trackingNote"), userId);
+        return ResponseEntity.ok().build();
+    }
+
     @PutMapping("/{id}/submit")
     public ResponseEntity<Void> submitForReview(
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
