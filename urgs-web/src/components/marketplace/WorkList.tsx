@@ -1,15 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Pagination } from 'antd';
+import { Pagination, Tooltip } from 'antd';
 import { listWorks, publishWork, cancelWork, batchDeleteWorks, updateTaskStatus, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
 import { ChevronDown, ChevronRight, Download, Edit3, ListTodo, PauseCircle, Plus, Play, PlayCircle, Trash2, Upload, XCircle } from 'lucide-react';
 import CreateWorkDrawer from './CreateWorkDrawer';
 import ImportWorkModal from './ImportWorkModal';
 import WorkDetailDrawer from './WorkDetailDrawer';
 import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
+import { searchUsers, UserDTO } from '../../api/user';
 
 interface WorkTaskSummary {
     taskCount: number;
+}
+
+interface WorkRiskEntry {
+    taskId: string;
+    taskTitle: string;
+    stage?: string;
+    reporter: string;
+    reportedAt: string;
+    content: string;
 }
 
 const downloadCollapsedOutlineWorkbook = (
@@ -71,6 +81,7 @@ const WorkList: React.FC = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
     const [total, setTotal] = useState(0);
+    const [assigneeLabels, setAssigneeLabels] = useState<Record<string, string>>({});
 
     const fetchWorks = async (page = currentPage, size = pageSize) => {
         setLoading(true);
@@ -96,6 +107,7 @@ const WorkList: React.FC = () => {
                 const taskMap = Object.fromEntries(entries);
                 setWorkTasks(taskMap);
                 setTaskSummaries(Object.fromEntries(entries.map(([workId, tasks]) => [workId, buildTaskSummary(tasks)])));
+                await resolveAssigneeLabels(entries.flatMap(([, tasks]) => tasks));
             }
         } catch (error) {
             console.error('Failed to fetch works', error);
@@ -108,6 +120,31 @@ const WorkList: React.FC = () => {
         return {
             taskCount: tasks.filter(task => task.taskRole !== 'MAIN').length,
         };
+    };
+
+    const formatUserLabel = (user: UserDTO) => `${user.empId || '无工号'} - ${user.name}`;
+
+    const resolveAssigneeLabels = async (tasks: WorkTask[]) => {
+        const assigneeIds = Array.from(new Set(
+            tasks
+                .map(task => task.assigneeId)
+                .filter((id): id is string => Boolean(id))
+        ));
+        if (assigneeIds.length === 0) {
+            setAssigneeLabels({});
+            return;
+        }
+
+        const entries = await Promise.all(assigneeIds.map(async (assigneeId) => {
+            try {
+                const users = await searchUsers(assigneeId);
+                const matchedUser = users.find(user => user.id.toString() === assigneeId) || users[0];
+                return [assigneeId, matchedUser ? formatUserLabel(matchedUser) : assigneeId] as const;
+            } catch (error) {
+                return [assigneeId, assigneeId] as const;
+            }
+        }));
+        setAssigneeLabels(Object.fromEntries(entries));
     };
 
     useEffect(() => {
@@ -213,11 +250,130 @@ const WorkList: React.FC = () => {
         return work.primarySystemName ? `否 / ${work.primarySystemName}` : '否';
     };
 
+    const getRiskSummary = (task: WorkTask) => {
+        if (!task.stageRiskReported && !task.stageRiskNote) return '-';
+        return '已报备';
+    };
+
+    const renderRiskSummary = (task: WorkTask) => {
+        const summary = getRiskSummary(task);
+        if (!task.stageRiskNote) {
+            return <span className={task.stageRiskReported ? 'text-amber-700 font-bold truncate' : 'text-slate-400'}>{summary}</span>;
+        }
+
+        return (
+            <Tooltip
+                title={<span className="whitespace-pre-wrap">{task.stageRiskNote}</span>}
+                placement="topLeft"
+                overlayStyle={{ maxWidth: 520 }}
+                destroyTooltipOnHide
+            >
+                <span className="text-amber-700 font-bold truncate cursor-help">{summary}</span>
+            </Tooltip>
+        );
+    };
+
     const getOrderedTasks = (workId: string) => {
         return [...(workTasks[workId] || [])].sort((a, b) => {
             if (a.taskRole === b.taskRole) return 0;
             return a.taskRole === 'MAIN' ? -1 : 1;
         });
+    };
+
+    const getMainTask = (workId: string) => {
+        return (workTasks[workId] || []).find(task => task.taskRole === 'MAIN');
+    };
+
+    const renderAssignee = (assigneeId?: string) => {
+        if (!assigneeId) return '-';
+        return assigneeLabels[assigneeId] || assigneeId;
+    };
+
+    const parseRiskEntry = (line: string, task: WorkTask): WorkRiskEntry => {
+        const trimmedLine = line.trim();
+        const timeMatch = trimmedLine.match(/^\[([^\]]+)\]\s*(.*)$/);
+        const fallbackReporter = renderAssignee(task.assigneeId);
+        if (!timeMatch) {
+            return {
+                taskId: task.id,
+                taskTitle: task.title,
+                stage: task.currentStage,
+                reporter: fallbackReporter,
+                reportedAt: task.stageUpdatedAt ? formatDateTime(task.stageUpdatedAt) : '-',
+                content: trimmedLine,
+            };
+        }
+
+        const [, reportedAt, rawRest] = timeMatch;
+        const stageMatch = rawRest.match(/^\[([^\]]+)\]\s*(.*)$/);
+        const stage = stageMatch ? stageMatch[1] : task.currentStage;
+        const rest = stageMatch ? stageMatch[2] : rawRest;
+        const reporterMatch = rest.match(/^([^:：]{1,40})[:：]\s*(.*)$/);
+        return {
+            taskId: task.id,
+            taskTitle: task.title,
+            stage,
+            reporter: reporterMatch ? reporterMatch[1] : fallbackReporter,
+            reportedAt,
+            content: reporterMatch ? reporterMatch[2] : rest,
+        };
+    };
+
+    const getWorkRiskEntries = (workId: string): WorkRiskEntry[] => {
+        return getOrderedTasks(workId).flatMap(task => {
+            if (!task.stageRiskReported && !task.stageRiskNote) return [];
+            if (!task.stageRiskNote) {
+                return [{
+                    taskId: task.id,
+                    taskTitle: task.title,
+                    stage: task.currentStage,
+                    reporter: renderAssignee(task.assigneeId),
+                    reportedAt: task.stageUpdatedAt ? formatDateTime(task.stageUpdatedAt) : '-',
+                    content: '已报备',
+                }];
+            }
+            return task.stageRiskNote
+                .split(/\n+/)
+                .map(line => line.trim())
+                .filter(Boolean)
+                .map(line => parseRiskEntry(line, task));
+        });
+    };
+
+    const renderWorkRiskSummary = (workId: string) => {
+        const riskEntries = getWorkRiskEntries(workId);
+        if (riskEntries.length === 0) return null;
+
+        return (
+            <div className="bg-amber-50/60 border border-amber-100 rounded-lg px-4 py-3 mb-3">
+                <div className="flex items-center justify-between mb-2">
+                    <div className="text-xs font-bold text-amber-800">任务风险汇总</div>
+                    <span className="text-[11px] font-bold text-amber-700 bg-white/70 border border-amber-100 rounded px-2 py-0.5">
+                        {riskEntries.length} 条
+                    </span>
+                </div>
+                <div className="space-y-2">
+                    {riskEntries.map((entry, index) => (
+                        <div key={`${entry.taskId}-${index}`} className="bg-white/80 border border-amber-100 rounded px-3 py-2 text-xs">
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                                <span className="font-bold text-slate-800 truncate max-w-[360px]">{entry.taskTitle}</span>
+                                {entry.stage && (
+                                    <>
+                                        <span className="text-slate-400">|</span>
+                                        <span className="text-blue-700">阶段：{getTaskStageLabel(entry.stage as WorkTask['currentStage'])}</span>
+                                    </>
+                                )}
+                                <span className="text-slate-400">|</span>
+                                <span className="text-slate-600">报备人：{entry.reporter}</span>
+                                <span className="text-slate-400">|</span>
+                                <span className="text-slate-500">时间：{entry.reportedAt}</span>
+                            </div>
+                            <div className="text-slate-700 whitespace-pre-wrap break-words">{entry.content || '-'}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
     };
 
     const exportWorks = () => {
@@ -231,6 +387,7 @@ const WorkList: React.FC = () => {
                 需求编号: work.requirementNumber || '',
                 申请部门: work.applicationDepartment || '',
                 申请人: work.applicantName || '',
+                主任务负责人: renderAssignee(getMainTask(work.id)?.assigneeId),
                 归属系统: work.owningSystem || '',
                 项目类型: work.projectType || '',
                 优先级: work.priority || '',
@@ -391,8 +548,8 @@ const WorkList: React.FC = () => {
                 </div>
             ) : (
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-x-auto">
-                    <div className="min-w-[1810px]">
-                        <div className="grid grid-cols-[44px_44px_minmax(220px,1.4fr)_130px_120px_110px_140px_110px_90px_150px_150px_150px_100px_90px_100px] gap-3 px-4 py-3 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500">
+                    <div className="min-w-[1940px]">
+                        <div className="grid grid-cols-[44px_44px_minmax(220px,1.4fr)_130px_120px_110px_130px_140px_110px_90px_150px_150px_150px_100px_90px_100px] gap-3 px-4 py-3 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500">
                             <input
                                 type="checkbox"
                                 checked={works.length > 0 && selectedWorkIds.length === works.length}
@@ -405,6 +562,7 @@ const WorkList: React.FC = () => {
                             <span>需求编号</span>
                             <span>申请部门</span>
                             <span>申请人</span>
+                            <span>负责人</span>
                             <span>归属系统</span>
                             <span>项目类型</span>
                             <span>优先级</span>
@@ -417,7 +575,7 @@ const WorkList: React.FC = () => {
                         </div>
                     {works.map(work => (
                         <div key={work.id} className="border-b border-slate-100 last:border-b-0">
-                            <div className="grid grid-cols-[44px_44px_minmax(220px,1.4fr)_130px_120px_110px_140px_110px_90px_150px_150px_150px_100px_90px_100px] gap-3 px-4 py-4 items-center text-sm">
+                            <div className="grid grid-cols-[44px_44px_minmax(220px,1.4fr)_130px_120px_110px_130px_140px_110px_90px_150px_150px_150px_100px_90px_100px] gap-3 px-4 py-4 items-center text-sm">
                                 <input
                                     type="checkbox"
                                     checked={selectedWorkIds.includes(work.id)}
@@ -449,6 +607,7 @@ const WorkList: React.FC = () => {
                                 <span className="text-slate-600 truncate">{renderValue(work.requirementNumber)}</span>
                                 <span className="text-slate-600 truncate">{renderValue(work.applicationDepartment)}</span>
                                 <span className="text-slate-600 truncate">{renderValue(work.applicantName)}</span>
+                                <span className="text-slate-700 truncate">{renderAssignee(getMainTask(work.id)?.assigneeId)}</span>
                                 <span className="text-slate-600 truncate">{renderValue(work.owningSystem)}</span>
                                 <span className="text-blue-700 truncate">{renderValue(work.projectType)}</span>
                                 <span className="font-bold text-red-500">{renderValue(work.priority)}</span>
@@ -503,6 +662,7 @@ const WorkList: React.FC = () => {
                                             <div><span className="text-slate-400">截止日期：</span><span className="font-medium text-slate-700">{renderValue(formatDate(work.deadline))}</span></div>
                                             <div><span className="text-slate-400">申请部门：</span><span className="font-medium text-slate-700">{renderValue(work.applicationDepartment)}</span></div>
                                             <div><span className="text-slate-400">申请人：</span><span className="font-medium text-slate-700">{renderValue(work.applicantName)}</span></div>
+                                            <div><span className="text-slate-400">主任务负责人：</span><span className="font-medium text-slate-700">{renderAssignee(getMainTask(work.id)?.assigneeId)}</span></div>
                                             <div><span className="text-slate-400">归属系统：</span><span className="font-medium text-slate-700">{renderValue(work.owningSystem)}</span></div>
                                             <div><span className="text-slate-400">主系统：</span><span className="font-medium text-slate-700">{getPrimarySystemText(work)}</span></div>
                                             <div><span className="text-slate-400">项目类型：</span><span className="font-medium text-slate-700">{renderValue(work.projectType)}</span></div>
@@ -513,6 +673,7 @@ const WorkList: React.FC = () => {
                                             </div>
                                         </div>
                                     </div>
+                                    {renderWorkRiskSummary(work.id)}
                                     <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-500">
                                         <span className="h-2 w-2 rounded-full bg-slate-400"></span>
                                         <span>二级任务菜单</span>
@@ -541,9 +702,7 @@ const WorkList: React.FC = () => {
                                             </span>
                                             <span className="text-blue-700 font-bold">{getTaskStageLabel(task.currentStage)}</span>
                                             <span className="font-bold text-orange-600">{task.points ?? 0}</span>
-                                            <span className={task.stageRiskReported ? 'text-amber-700 font-bold truncate' : 'text-slate-400'}>
-                                                {task.stageRiskReported ? (task.stageRiskNote || '已报备') : '-'}
-                                            </span>
+                                            {renderRiskSummary(task)}
                                             {['COMPLETED', 'CANCELLED', 'REJECTED'].includes(task.status) ? (
                                                 <span className="text-slate-300">-</span>
                                             ) : (

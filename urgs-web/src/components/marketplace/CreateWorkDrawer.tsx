@@ -68,7 +68,7 @@ const defaultValues: WorkFormValues = {
     projectType: '变更类',
     mainTask: { title: '', description: '', assignMode: 'ASSIGN', assigneeId: '', points: 10, taskType: '主任务', difficulty: '中等' },
     attachments: [],
-    tasks: [{ assignMode: 'OPEN', points: 10, taskType: '开发', difficulty: '中等', title: '', description: '' }]
+    tasks: [{ assignMode: 'ASSIGN', points: 10, taskType: '开发', difficulty: '中等', title: '', description: '' }]
 };
 
 const toInputDateTime = (value?: string) => {
@@ -154,7 +154,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
     const attachments = watch('attachments') || [];
     const primarySystem = watch('primarySystem');
     const taskTypes = React.useMemo(() => {
-        return Array.from(new Set(['开发', '测试', '数据', '文档', ...pointRules.map(rule => rule.taskType).filter(Boolean)]));
+        return Array.from(new Set(['开发', '测试', '数据', '文档', '问题跟踪', ...pointRules.map(rule => rule.taskType).filter(Boolean)]));
     }, [pointRules]);
     const difficulties = React.useMemo(() => {
         return Array.from(new Set(['简单', '中等', '复杂', ...pointRules.map(rule => rule.difficulty).filter(Boolean)]));
@@ -535,7 +535,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                 <h3 className="text-base font-bold text-slate-800">子任务拆分</h3>
                                 <button
                                     type="button"
-                                    onClick={() => append({ title: '', description: '', points: 5, taskType: '开发', difficulty: '简单', assignMode: 'OPEN', deadline: '' })}
+                                    onClick={() => append({ title: '', description: '', points: 5, taskType: '开发', difficulty: '简单', assignMode: 'ASSIGN', deadline: '' })}
                                     className="flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-md transition-colors"
                                 >
                                     <Plus size={16} /> 添加子任务
@@ -612,9 +612,9 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                                         {...register(`tasks.${index}.assignMode` as const)}
                                                         className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none bg-white"
                                                     >
+                                                        <option value="ASSIGN">直接分派</option>
                                                         <option value="OPEN">公开认领 (抢单)</option>
                                                         <option value="COMPETE">竞争上岗 (需审批)</option>
-                                                        <option value="ASSIGN">指定委派 (直接分派)</option>
                                                     </select>
                                                 </div>
                                                 <div>

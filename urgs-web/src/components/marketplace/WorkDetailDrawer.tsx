@@ -58,7 +58,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         taskType: '开发',
         difficulty: '简单',
         points: 5,
-        assignMode: 'OPEN' as string,
+        assignMode: 'ASSIGN' as string,
         requiredSkills: '',
         deadline: '',
     });
@@ -79,7 +79,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             .catch(error => console.error('Failed to fetch point rules', error));
     }, [isOpen]);
 
-    const taskTypes = Array.from(new Set(['开发', '测试', '数据', '文档', ...pointRules.map(rule => rule.taskType).filter(Boolean)]));
+    const taskTypes = Array.from(new Set(['开发', '测试', '数据', '文档', '问题跟踪', ...pointRules.map(rule => rule.taskType).filter(Boolean)]));
     const difficulties = Array.from(new Set(['简单', '中等', '复杂', ...pointRules.map(rule => rule.difficulty).filter(Boolean)]));
     const suggestedRule = pointRules.find(rule =>
         rule.enabled !== false && rule.taskType === newTask.taskType && rule.difficulty === newTask.difficulty
@@ -140,7 +140,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             await addTaskToWork(workId!, newTask as any);
             setTasks(prev => [...prev, null!] as any); // Will be refreshed by fetchDetail
             await fetchDetail(workId!);
-            setNewTask({ title: '', description: '', taskType: '开发', difficulty: '简单', points: 5, assignMode: 'OPEN', requiredSkills: '', deadline: '' });
+            setNewTask({ title: '', description: '', taskType: '开发', difficulty: '简单', points: 5, assignMode: 'ASSIGN', requiredSkills: '', deadline: '' });
             setAddingTask(false);
         } catch (error) {
             console.error('Failed to add task', error);
@@ -237,7 +237,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
     const getAssignModeLabel = (mode: string) => {
         const map: Record<string, string> = {
             OPEN: '公开认领',
-            ASSIGN: '指定委派',
+            ASSIGN: '直接分派',
             COMPETE: '竞争上岗',
         };
         return map[mode] || mode;
@@ -481,9 +481,9 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                     onChange={e => setNewTask(prev => ({ ...prev, assignMode: e.target.value }))}
                                                     className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 outline-none bg-white"
                                                 >
+                                                    <option value="ASSIGN">直接分派</option>
                                                     <option value="OPEN">公开认领</option>
                                                     <option value="COMPETE">竞争上岗</option>
-                                                    <option value="ASSIGN">指定委派</option>
                                                 </select>
                                                 <input
                                                     type="number"
@@ -517,16 +517,19 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                 className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 outline-none"
                                                 placeholder="技能要求（可选）"
                                             />
-                                            <input
-                                                type="date"
-                                                value={newTask.deadline}
-                                                onChange={e => setNewTask(prev => ({ ...prev, deadline: e.target.value }))}
-                                                className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 outline-none"
-                                            />
+                                            <label className="block">
+                                                <span className="block text-[11px] font-bold text-slate-500 mb-1">截止日期</span>
+                                                <input
+                                                    type="datetime-local"
+                                                    value={newTask.deadline}
+                                                    onChange={e => setNewTask(prev => ({ ...prev, deadline: e.target.value }))}
+                                                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 outline-none"
+                                                />
+                                            </label>
                                         </div>
                                         <div className="flex justify-end gap-2">
                                             <button
-                                                onClick={() => { setAddingTask(false); setNewTask({ title: '', description: '', taskType: '开发', difficulty: '简单', points: 5, assignMode: 'OPEN', requiredSkills: '', deadline: '' }); }}
+                                                onClick={() => { setAddingTask(false); setNewTask({ title: '', description: '', taskType: '开发', difficulty: '简单', points: 5, assignMode: 'ASSIGN', requiredSkills: '', deadline: '' }); }}
                                                 className="px-4 py-1.5 text-sm font-medium text-slate-600 bg-white hover:bg-slate-100 rounded-lg transition-colors"
                                             >
                                                 取消

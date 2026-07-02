@@ -337,7 +337,9 @@ public class DynamicDataSourceService implements DisposableBean {
             int port = getInt(params, "port", 3306);
             String jdbcParams = getString(params, "jdbcParams");
             if (jdbcParams == null || jdbcParams.isBlank()) {
-                jdbcParams = "useSSL=false&serverTimezone=UTC";
+                jdbcParams = "useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true";
+            } else {
+                jdbcParams = ensureJdbcParam(jdbcParams, "allowPublicKeyRetrieval", "true");
             }
             return String.format("jdbc:mysql://%s:%d/%s?%s", host, port, database, jdbcParams);
         } else if ("postgresql".equalsIgnoreCase(type)) {
@@ -402,6 +404,16 @@ public class DynamicDataSourceService implements DisposableBean {
             return normalizedUrl;
         }
         return normalizedUrl + (normalizedUrl.endsWith(";") ? "" : ";") + normalizedParams;
+    }
+
+    private String ensureJdbcParam(String jdbcParams, String name, String value) {
+        String trimmedParams = jdbcParams.trim();
+        for (String param : trimmedParams.split("&")) {
+            if (param.trim().toLowerCase().startsWith(name.toLowerCase() + "=")) {
+                return trimmedParams;
+            }
+        }
+        return trimmedParams + "&" + name + "=" + value;
     }
 
     private boolean hasText(String value) {

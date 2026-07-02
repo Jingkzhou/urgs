@@ -151,7 +151,12 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                         )}
                         {(task.stageRiskReported || task.stageRiskNote) && (
                             <Descriptions.Item label="阶段风险">
-                                {task.stageRiskReported ? '已报备' : '未报备'}{task.stageRiskNote ? `：${task.stageRiskNote}` : ''}
+                                <div className="space-y-1">
+                                    <div>{task.stageRiskReported ? '已报备' : '未报备'}</div>
+                                    {task.stageRiskNote && (
+                                        <div className="whitespace-pre-wrap text-amber-700">{task.stageRiskNote}</div>
+                                    )}
+                                </div>
                             </Descriptions.Item>
                         )}
                         {(task.delayReported || task.delayReason) && (

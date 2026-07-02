@@ -28,6 +28,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.stream.Collectors;
 
 @Service
@@ -38,6 +39,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
     private static final String STAGE_DEVELOPMENT = "DEVELOPMENT";
     private static final String STAGE_TESTING = "TESTING";
     private static final String STAGE_LAUNCH = "LAUNCH";
+    private static final DateTimeFormatter RISK_NOTE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     @Autowired
     @org.springframework.context.annotation.Lazy
@@ -372,8 +374,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         String nextStage = nextStage(currentStage);
         LocalDateTime now = LocalDateTime.now();
 
-        task.setStageRiskReported(false);
-        task.setStageRiskNote(null);
+        task.setStageRiskReported(StringUtils.hasText(task.getStageRiskNote()));
         task.setStageUpdatedAt(now);
         if (TaskStatus.ASSIGNED.name().equals(task.getStatus()) || TaskStatus.REJECTED.name().equals(task.getStatus())) {
             task.setStatus(TaskStatus.IN_PROGRESS.name());
@@ -412,13 +413,23 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             throw new IllegalStateException("当前状态不可报备风险");
         }
 
-        task.setCurrentStage(resolveStage(task));
+        LocalDateTime now = LocalDateTime.now();
+        String trimmedRiskNote = riskNote.trim();
+        String currentStage = resolveStage(task);
+        String reporterName = resolveUserName(userId);
+        String riskEntry = "[" + now.format(RISK_NOTE_TIME_FORMATTER) + "][" + currentStage + "] " + reporterName + "：" + trimmedRiskNote;
+
+        task.setCurrentStage(currentStage);
         task.setStageRiskReported(true);
-        task.setStageRiskNote(riskNote);
-        task.setStageUpdatedAt(LocalDateTime.now());
+        if (StringUtils.hasText(task.getStageRiskNote())) {
+            task.setStageRiskNote(task.getStageRiskNote().trim() + "\n" + riskEntry);
+        } else {
+            task.setStageRiskNote(riskEntry);
+        }
+        task.setStageUpdatedAt(now);
         boolean success = this.updateById(task);
         if (success) {
-            logTaskAction(taskId, userId, "STAGE_RISK", "阶段风险报备: " + task.getCurrentStage() + " - " + riskNote);
+            logTaskAction(taskId, userId, "STAGE_RISK", "阶段风险报备: " + task.getCurrentStage() + " - " + trimmedRiskNote);
             updateWorkStatusIfNecessary(task.getWorkId());
         }
         return success;
@@ -535,6 +546,14 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
     private int defaultInt(Integer value) {
         return value == null ? 0 : value;
+    }
+
+    private String resolveUserName(String userId) {
+        User user = userMapper.selectById(userId);
+        if (user != null && StringUtils.hasText(user.getName())) {
+            return user.getName();
+        }
+        return userId;
     }
 
     private String resolveStage(WorkTask task) {

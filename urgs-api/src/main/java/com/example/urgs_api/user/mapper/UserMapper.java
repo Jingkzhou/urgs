@@ -16,7 +16,7 @@ public interface UserMapper extends BaseMapper<User> {
             "LEFT JOIN sys_role r ON u.role_id = r.id " +
             "WHERE 1=1 " +
             "<if test='keyword != null and keyword != \"\"'>" +
-            "AND (u.name LIKE CONCAT('%', #{keyword}, '%') OR u.emp_id LIKE CONCAT('%', #{keyword}, '%') OR r.name LIKE CONCAT('%', #{keyword}, '%')) "
+            "AND (CAST(u.id AS CHAR) = #{keyword} OR u.name LIKE CONCAT('%', #{keyword}, '%') OR u.emp_id LIKE CONCAT('%', #{keyword}, '%') OR r.name LIKE CONCAT('%', #{keyword}, '%')) "
             +
             "</if>" +
             "ORDER BY u.id DESC" +
