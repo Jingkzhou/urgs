@@ -121,10 +121,11 @@ public class WorkTaskController {
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @RequestParam(defaultValue = "1") int current,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "false") boolean archived) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
         Page<WorkTask> page = new Page<>(current, size);
-        Page<TaskMarketDTO> resultPage = workTaskService.getMyTasks(page, userId);
+        Page<TaskMarketDTO> resultPage = workTaskService.getMyTasks(page, userId, archived);
         return PageResult.of(resultPage);
     }
 

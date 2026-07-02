@@ -41,6 +41,7 @@ public class WorkTask {
     private String delayReason;
     private Integer qualityScore;
     private String reviewComment;
+    private String assetMaintenanceSnapshot;
     private String reviewerId;
     private LocalDateTime submittedAt;
     private LocalDateTime reviewedAt;

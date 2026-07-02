@@ -22,6 +22,8 @@ import com.example.urgs_api.metadata.model.MaintenanceRecord;
 import com.example.urgs_api.metadata.service.MaintenanceRecordService;
 import com.example.urgs_api.user.mapper.UserMapper;
 import com.example.urgs_api.user.model.User;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -62,6 +64,9 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
     @Autowired
     private MaintenanceRecordService maintenanceRecordService;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @Override
     public Page<TaskMarketDTO> getMarketTasks(Page<WorkTask> page, String keyword, String status) {
         // Query tasks that are part of PUBLISHED works
@@ -101,11 +106,18 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
     }
 
     @Override
-    public Page<TaskMarketDTO> getMyTasks(Page<WorkTask> page, String userId) {
-        Page<WorkTask> taskPage = this.page(page,
-                new LambdaQueryWrapper<WorkTask>()
-                        .eq(WorkTask::getAssigneeId, userId)
-                        .orderByDesc(WorkTask::getCreateTime));
+    public Page<TaskMarketDTO> getMyTasks(Page<WorkTask> page, String userId, boolean archived) {
+        LambdaQueryWrapper<WorkTask> query = new LambdaQueryWrapper<WorkTask>()
+                .eq(WorkTask::getAssigneeId, userId);
+        if (archived) {
+            query.eq(WorkTask::getStatus, TaskStatus.COMPLETED.name())
+                    .orderByDesc(WorkTask::getReviewedAt);
+        } else {
+            query.ne(WorkTask::getStatus, TaskStatus.COMPLETED.name())
+                    .orderByDesc(WorkTask::getStageUpdatedAt)
+                    .orderByDesc(WorkTask::getCreateTime);
+        }
+        Page<WorkTask> taskPage = this.page(page, query);
 
         Page<TaskMarketDTO> dtoPage = new Page<>();
         BeanUtils.copyProperties(taskPage, dtoPage, "records");
@@ -288,12 +300,13 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         ReviewDecision decision = ReviewDecision.valueOf(dto.getDecision());
         if (ReviewDecision.APPROVE.equals(decision)) {
             if (isAssetReview(task)) {
-                assertAssetMaintenanceSynced(task, work);
+                List<MaintenanceRecord> maintenanceRecords = getAssetMaintenanceRecords(work);
                 LocalDateTime now = LocalDateTime.now();
                 task.setCurrentStage(STAGE_LAUNCH);
                 task.setStageUpdatedAt(now);
                 task.setStatus(TaskStatus.IN_PROGRESS.name());
                 task.setReviewComment(buildAssetReviewComment(task.getReviewComment(), dto.getReviewComment()));
+                task.setAssetMaintenanceSnapshot(serializeAssetMaintenanceRecords(maintenanceRecords));
                 task.setReviewerId(reviewerId);
                 task.setReviewedAt(now);
                 boolean success = this.updateById(task);
@@ -665,14 +678,19 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 && TaskStatus.ASSET_REVIEW.name().equals(task.getStatus());
     }
 
-    private void assertAssetMaintenanceSynced(WorkTask task, Work work) {
+    private List<MaintenanceRecord> getAssetMaintenanceRecords(Work work) {
         if (work == null || !StringUtils.hasText(work.getRequirementNumber())) {
             throw new IllegalStateException("工作缺少需求编号，无法校验资产管理维护记录");
         }
-        long maintenanceCount = maintenanceRecordService.count(new LambdaQueryWrapper<MaintenanceRecord>()
+        return maintenanceRecordService.list(new LambdaQueryWrapper<MaintenanceRecord>()
                 .like(MaintenanceRecord::getReqId, work.getRequirementNumber()));
-        if (maintenanceCount <= 0 && !StringUtils.hasText(task.getReviewComment())) {
-            throw new IllegalStateException("资产管理维护记录中未找到该需求编号，请填写同步说明后再提交审核");
+    }
+
+    private String serializeAssetMaintenanceRecords(List<MaintenanceRecord> records) {
+        try {
+            return objectMapper.writeValueAsString(records);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("资产管理维护记录快照保存失败", e);
         }
     }
 

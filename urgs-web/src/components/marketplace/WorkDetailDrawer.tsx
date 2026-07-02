@@ -10,6 +10,7 @@ import {
     MarketplacePointRule,
     rejectApplication,
     TaskApplication,
+    AssetMaintenanceRecord,
     Work,
     WorkTask,
 } from '../../api/marketplace';
@@ -50,6 +51,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
     const [applications, setApplications] = useState<TaskApplication[]>([]);
     const [applicationLoading, setApplicationLoading] = useState(false);
     const [assigneeLabels, setAssigneeLabels] = useState<Record<string, string>>({});
+    const [detailTask, setDetailTask] = useState<WorkTask | null>(null);
 
     // New task form fields
     const [newTask, setNewTask] = useState({
@@ -263,6 +265,20 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         return 'default';
     };
 
+    const parseMaintenanceSnapshot = (task: WorkTask | null): AssetMaintenanceRecord[] => {
+        if (!task?.assetMaintenanceSnapshot) return [];
+        try {
+            const records = JSON.parse(task.assetMaintenanceSnapshot);
+            return Array.isArray(records) ? records : [];
+        } catch {
+            return [];
+        }
+    };
+
+    const formatDateTime = (value?: string) => value ? new Date(value).toLocaleString() : '-';
+    const renderDetailValue = (value?: string | number | null) => value === undefined || value === null || value === '' ? '-' : value;
+    const maintenanceSnapshot = parseMaintenanceSnapshot(detailTask);
+
     const mainTask = tasks.find(task => task.taskRole === 'MAIN');
     const subTasks = tasks.filter(task => task.taskRole !== 'MAIN');
 
@@ -352,7 +368,13 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                         <div className="min-w-0">
                                             <div className="flex items-center gap-2 mb-1 flex-wrap">
                                                 <Tag color="red" className="text-xs">主任务</Tag>
-                                                <span className="text-sm font-bold text-slate-800 truncate">{mainTask.title}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setDetailTask(mainTask)}
+                                                    className="text-sm font-bold text-slate-800 hover:text-red-600 truncate text-left"
+                                                >
+                                                    {mainTask.title}
+                                                </button>
                                                 <Tag color={getAssignModeColor(mainTask.assignMode)} className="text-xs">{getAssignModeLabel(mainTask.assignMode)}</Tag>
                                                 <Tag color={getStatusColor(mainTask.status)} className="text-xs">{getTaskStatusLabel(mainTask.status)}</Tag>
                                                 <Tag color="blue" className="text-xs">{getTaskStageLabel(mainTask.currentStage)}</Tag>
@@ -410,7 +432,13 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                         </span>
                                                         <div className="flex-1 min-w-0">
                                                             <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                                                <span className="text-sm font-bold text-slate-800 truncate">{task.title}</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setDetailTask(task)}
+                                                                    className="text-sm font-bold text-slate-800 hover:text-red-600 truncate text-left"
+                                                                >
+                                                                    {task.title}
+                                                                </button>
                                                                 <Tag color={getAssignModeColor(task.assignMode)} className="text-xs">{getAssignModeLabel(task.assignMode)}</Tag>
                                                                 <Tag color={getStatusColor(task.status)} className="text-xs">{getTaskStatusLabel(task.status)}</Tag>
                                                                 <Tag color="blue" className="text-xs">{getTaskStageLabel(task.currentStage)}</Tag>
@@ -552,6 +580,106 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             ) : (
                 <Empty description="无法加载详情" />
             )}
+
+            <Drawer
+                title={detailTask ? `任务信息：${detailTask.title}` : '任务信息'}
+                placement="right"
+                onClose={() => setDetailTask(null)}
+                open={!!detailTask}
+                width={760}
+                destroyOnHidden
+            >
+                {detailTask && (
+                    <div className="space-y-5">
+                        <section className="grid grid-cols-2 gap-3 text-sm">
+                            {[
+                                ['任务名称', detailTask.title],
+                                ['任务层级', detailTask.taskRole === 'MAIN' ? '主任务' : '子任务'],
+                                ['任务状态', getTaskStatusLabel(detailTask.status)],
+                                ['当前阶段', getTaskStageLabel(detailTask.currentStage)],
+                                ['任务类型', detailTask.taskType],
+                                ['难度', detailTask.difficulty],
+                                ['分派方式', getAssignModeLabel(detailTask.assignMode)],
+                                ['负责人', renderAssignee(detailTask.assigneeId)],
+                                ['积分', detailTask.points],
+                                ['最终积分', detailTask.finalPoints],
+                                ['预计工时', detailTask.estimatedHours],
+                                ['实际工时', detailTask.actualHours],
+                                ['截止时间', formatDateTime(detailTask.deadline)],
+                                ['提交时间', formatDateTime(detailTask.submittedAt)],
+                                ['审核时间', formatDateTime(detailTask.reviewedAt)],
+                                ['质量评分', detailTask.qualityScore],
+                                ['返工次数', detailTask.reworkCount],
+                                ['奖励积分', detailTask.bonusPoints],
+                                ['扣减积分', detailTask.penaltyPoints],
+                                ['创建时间', formatDateTime(detailTask.createTime)],
+                                ['更新时间', formatDateTime(detailTask.updateTime)],
+                            ].map(([label, value]) => (
+                                <div key={label as string} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
+                                    <div className="text-xs text-slate-400">{label}</div>
+                                    <div className="mt-1 text-slate-700 break-words">{renderDetailValue(value)}</div>
+                                </div>
+                            ))}
+                        </section>
+
+                        {[
+                            ['任务描述', detailTask.description],
+                            ['所需技能', detailTask.requiredSkills],
+                            ['验收标准', detailTask.acceptanceCriteria],
+                            ['完成说明', detailTask.completionDescription],
+                            ['交付物', detailTask.deliverables],
+                            ['影响范围', detailTask.impactScope],
+                            ['延迟原因', detailTask.delayReason],
+                            ['阶段风险记录', detailTask.stageRiskNote],
+                            ['审核意见', detailTask.reviewComment],
+                        ].map(([label, value]) => (
+                            <section key={label} className="rounded-md border border-slate-200">
+                                <div className="border-b border-slate-100 px-4 py-2 text-sm font-bold text-slate-700">{label}</div>
+                                <div className="px-4 py-3 text-sm text-slate-600 whitespace-pre-wrap">{renderDetailValue(value)}</div>
+                            </section>
+                        ))}
+
+                        <section>
+                            <div className="mb-3 text-sm font-bold text-slate-800">
+                                资产维护记录 ({maintenanceSnapshot.length})
+                            </div>
+                            {maintenanceSnapshot.length === 0 ? (
+                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该任务暂无已固化的资产维护记录" />
+                            ) : (
+                                <div className="overflow-x-auto rounded-md border border-slate-200">
+                                    <table className="w-full min-w-[680px] text-xs">
+                                        <thead className="bg-slate-50 text-slate-500">
+                                            <tr>
+                                                <th className="px-3 py-2 text-left">变更类型</th>
+                                                <th className="px-3 py-2 text-left">表/字段</th>
+                                                <th className="px-3 py-2 text-left">操作人</th>
+                                                <th className="px-3 py-2 text-left">维护时间</th>
+                                                <th className="px-3 py-2 text-left">说明</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {maintenanceSnapshot.map((record, index) => (
+                                                <tr key={record.id || index} className="border-t border-slate-100 align-top">
+                                                    <td className="px-3 py-2">{renderDetailValue(record.modType)}</td>
+                                                    <td className="px-3 py-2">
+                                                        <div>{renderDetailValue(record.tableCnName || record.tableName)}</div>
+                                                        {(record.fieldCnName || record.fieldName) && (
+                                                            <div className="mt-1 text-slate-400">{record.fieldCnName || record.fieldName}</div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-2">{renderDetailValue(record.operator)}</td>
+                                                    <td className="px-3 py-2">{formatDateTime(record.time)}</td>
+                                                    <td className="px-3 py-2 whitespace-pre-wrap">{renderDetailValue(record.description)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </section>
+                    </div>
+                )}
+            </Drawer>
 
             <Drawer
                 title={bidTask ? `竞标审批：${bidTask.title}` : '竞标审批'}

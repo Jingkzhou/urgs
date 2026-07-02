@@ -10,7 +10,7 @@ import com.example.urgs_api.marketplace.model.WorkTask;
 public interface WorkTaskService extends IService<WorkTask> {
     Page<TaskMarketDTO> getMarketTasks(Page<WorkTask> page, String keyword, String status);
 
-    Page<TaskMarketDTO> getMyTasks(Page<WorkTask> page, String userId);
+    Page<TaskMarketDTO> getMyTasks(Page<WorkTask> page, String userId, boolean archived);
 
     Page<TaskMarketDTO> getReviewTasks(Page<WorkTask> page, String publisherId, boolean history);
 

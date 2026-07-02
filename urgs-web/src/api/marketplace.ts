@@ -96,6 +96,7 @@ export interface WorkTask {
     requiredSkills: string;
     acceptanceCriteria?: string;
     points: number;
+    estimatedHours?: number;
     assignMode: string;
     status: string;
     assigneeId: string;
@@ -103,11 +104,13 @@ export interface WorkTask {
     deadline: string;
     completionDescription?: string;
     deliverables?: string;
+    actualHours?: number;
     impactScope?: string;
     delayReported?: boolean;
     delayReason?: string;
     qualityScore?: number;
     reviewComment?: string;
+    assetMaintenanceSnapshot?: string;
     reviewerId?: string;
     submittedAt?: string;
     reviewedAt?: string;
@@ -347,7 +350,8 @@ export const batchDeleteWorks = (ids: string[]) => post<{ deletedCount: number }
 
 export const getMarketTasks = (params: any) => get('/api/marketplace/tasks', params);
 export const getTaskDetail = (id: string) => get<TaskMarketDTO>(`/api/marketplace/tasks/${id}`);
-export const getMyTasks = (params: any) => get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/my', params);
+export const getMyTasks = (params: { current: number; size: number; archived?: boolean }) =>
+    get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/my', params);
 export const getPendingReviewTasks = (params: any) => get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/review/pending', params);
 export const getReviewHistoryTasks = (params: any) => get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/review/history', params);
 export const claimTask = (id: string) => post(`/api/marketplace/tasks/${id}/claim`);

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Pagination } from 'antd';
 import {
     getKpiSummary,
     getMyTasks,
@@ -19,7 +20,7 @@ import {
     TaskMarketDTO,
     KpiSummaryDTO,
 } from '../../api/marketplace';
-import { Award, Clock, Gauge, ListTodo, Star, TrendingUp, X } from 'lucide-react';
+import { Archive, Award, Clock, Gauge, ListTodo, Star, TrendingUp, X } from 'lucide-react';
 import TaskDetailDrawer from './TaskDetailDrawer';
 import { getTaskStageLabel, getTaskStatusLabel } from './marketplaceLabels';
 import { RegElement, RegTable } from '../metadata/reg-asset/types';
@@ -44,6 +45,10 @@ const MyTasks: React.FC = () => {
     const [kpiSummary, setKpiSummary] = useState<KpiSummaryDTO | null>(null);
     const [dateRange, setDateRange] = useState(getCurrentMonthRange);
     const [loading, setLoading] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
+    const [total, setTotal] = useState(0);
+    const [taskView, setTaskView] = useState<'active' | 'archive'>('active');
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [appealTask, setAppealTask] = useState<TaskMarketDTO | null>(null);
@@ -67,14 +72,19 @@ const MyTasks: React.FC = () => {
     const fetchTasks = async () => {
         setLoading(true);
         try {
-            const [taskRes, kpiRes] = await Promise.all([
-                getMyTasks({ current: 1, size: 20 }),
-                getKpiSummary(dateRange),
-            ]);
+            const taskRes = await getMyTasks({
+                current: currentPage,
+                size: pageSize,
+                archived: taskView === 'archive',
+            });
+            if ((taskRes?.records || []).length === 0 && currentPage > 1 && (taskRes?.total || 0) > 0) {
+                setCurrentPage(currentPage - 1);
+                return;
+            }
             setTasks(taskRes?.records || []);
-            setKpiSummary(kpiRes || null);
+            setTotal(taskRes?.total || 0);
         } catch (error) {
-            console.error('Failed to fetch personal dashboard', error);
+            console.error('Failed to fetch personal tasks', error);
         } finally {
             setLoading(false);
         }
@@ -82,6 +92,12 @@ const MyTasks: React.FC = () => {
 
     useEffect(() => {
         fetchTasks();
+    }, [currentPage, pageSize, taskView]);
+
+    useEffect(() => {
+        getKpiSummary(dateRange)
+            .then(res => setKpiSummary(res || null))
+            .catch(error => console.error('Failed to fetch KPI summary', error));
     }, [dateRange.startDate, dateRange.endDate]);
 
     const resetToCurrentMonth = () => {
@@ -460,20 +476,47 @@ const MyTasks: React.FC = () => {
                 </div>
             </div>
 
-            <div className="flex items-center gap-2 mb-4">
-                <TrendingUp size={18} className="text-slate-500" />
-                <h3 className="font-bold text-slate-800">我的任务</h3>
+            <div className="flex items-center gap-2 mb-4 border-b border-slate-100">
+                <button
+                    type="button"
+                    onClick={() => {
+                        setTaskView('active');
+                        setCurrentPage(1);
+                    }}
+                    className={`inline-flex items-center gap-2 px-3 py-3 border-b-2 text-sm font-bold transition-colors ${
+                        taskView === 'active'
+                            ? 'border-red-600 text-red-600'
+                            : 'border-transparent text-slate-500 hover:text-slate-800'
+                    }`}
+                >
+                    <TrendingUp size={17} /> 进行中任务
+                </button>
+                <button
+                    type="button"
+                    onClick={() => {
+                        setTaskView('archive');
+                        setCurrentPage(1);
+                    }}
+                    className={`inline-flex items-center gap-2 px-3 py-3 border-b-2 text-sm font-bold transition-colors ${
+                        taskView === 'archive'
+                            ? 'border-red-600 text-red-600'
+                            : 'border-transparent text-slate-500 hover:text-slate-800'
+                    }`}
+                >
+                    <Archive size={17} /> 已归档
+                </button>
             </div>
 
             {loading ? (
                 <div className="text-center py-10 text-slate-400">加载中...</div>
             ) : tasks.length === 0 ? (
                 <div className="text-center py-10 text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                    您还没有领取的任务，去大厅逛逛吧。
+                    {taskView === 'archive' ? '暂无已完成的归档任务。' : '您还没有领取的任务，去大厅逛逛吧。'}
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {tasks.map(task => (
+                <div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {tasks.map(task => (
                         <div key={task.id} className="bg-white border text-left border-slate-200 rounded-xl p-5 shadow-sm">
                             <div className="flex items-center justify-between mb-2">
                                 <h3
@@ -574,7 +617,22 @@ const MyTasks: React.FC = () => {
                                 </div>
                             </div>
                         </div>
-                    ))}
+                        ))}
+                    </div>
+                    <div className="mt-5 flex justify-end">
+                        <Pagination
+                            current={currentPage}
+                            pageSize={pageSize}
+                            total={total}
+                            showSizeChanger
+                            pageSizeOptions={[10, 20, 50]}
+                            showTotal={count => `共 ${count} 个任务`}
+                            onChange={(page, size) => {
+                                setCurrentPage(size !== pageSize ? 1 : page);
+                                setPageSize(size);
+                            }}
+                        />
+                    </div>
                 </div>
             )}
 
