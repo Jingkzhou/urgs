@@ -6,6 +6,7 @@ public enum WorkStatus {
     ASSIGNED("已承接"),
     IN_PROGRESS("进行中"),
     PAUSED("已暂停"),
+    ASSET_REVIEW("资产同步审核"),
     REVIEW("待验收"),
     COMPLETED("已完成"),
     REJECTED("退回修改"),

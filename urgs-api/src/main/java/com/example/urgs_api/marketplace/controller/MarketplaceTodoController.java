@@ -58,7 +58,8 @@ public class MarketplaceTodoController {
 
         long overdueCount = workTaskService.lambdaQuery()
                 .eq(WorkTask::getAssigneeId, userId)
-                .in(WorkTask::getStatus, TaskStatus.ASSIGNED.name(), TaskStatus.IN_PROGRESS.name())
+                .in(WorkTask::getStatus, TaskStatus.ASSIGNED.name(), TaskStatus.IN_PROGRESS.name(),
+                        TaskStatus.ASSET_REVIEW.name())
                 .lt(WorkTask::getDeadline, LocalDateTime.now())
                 .count();
         addTodo(todos, "OVERDUE", "我的逾期任务", "已超过截止时间的承接任务", overdueCount, "mine", "danger");
@@ -73,9 +74,9 @@ public class MarketplaceTodoController {
         if (!myWorkIds.isEmpty()) {
             long reviewCount = workTaskService.lambdaQuery()
                     .in(WorkTask::getWorkId, myWorkIds)
-                    .eq(WorkTask::getStatus, TaskStatus.REVIEW.name())
+                    .in(WorkTask::getStatus, TaskStatus.ASSET_REVIEW.name(), TaskStatus.REVIEW.name())
                     .count();
-            addTodo(todos, "REVIEW", "待验收任务", "成员已提交，等待项目经理验收评分", reviewCount, "review", "warning");
+            addTodo(todos, "REVIEW", "待审核任务", "成员已提交，等待项目经理审核处理", reviewCount, "review", "warning");
 
             List<String> myTaskIds = workTaskService.lambdaQuery()
                     .in(WorkTask::getWorkId, myWorkIds)

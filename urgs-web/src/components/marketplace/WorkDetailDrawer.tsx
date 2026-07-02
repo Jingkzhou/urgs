@@ -257,6 +257,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         if (status === 'APPLIED') return 'orange';
         if (status === 'ASSIGNED' || status === 'IN_PROGRESS') return 'blue';
         if (status === 'PAUSED') return 'warning';
+        if (status === 'ASSET_REVIEW') return 'cyan';
         if (status === 'COMPLETED') return 'cyan';
         if (status === 'REJECTED' || status === 'CANCELLED') return 'red';
         return 'default';

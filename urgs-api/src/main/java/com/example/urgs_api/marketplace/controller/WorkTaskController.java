@@ -152,7 +152,7 @@ public class WorkTaskController {
         Page<WorkTask> resultPage = workTaskService.page(page,
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<WorkTask>()
                         .in(WorkTask::getWorkId, workIds)
-                        .eq(WorkTask::getStatus, TaskStatus.REVIEW.name())
+                        .in(WorkTask::getStatus, TaskStatus.ASSET_REVIEW.name(), TaskStatus.REVIEW.name())
                         .orderByDesc(WorkTask::getSubmittedAt));
         return PageResult.of(resultPage);
     }

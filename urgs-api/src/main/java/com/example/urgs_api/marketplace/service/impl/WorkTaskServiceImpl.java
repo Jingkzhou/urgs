@@ -18,6 +18,8 @@ import com.example.urgs_api.marketplace.service.TaskApplicationService;
 import com.example.urgs_api.marketplace.service.WorkService;
 import com.example.urgs_api.marketplace.service.WorkTaskService;
 import com.example.urgs_api.marketplace.mapper.TaskLogMapper;
+import com.example.urgs_api.metadata.model.MaintenanceRecord;
+import com.example.urgs_api.metadata.service.MaintenanceRecordService;
 import com.example.urgs_api.user.mapper.UserMapper;
 import com.example.urgs_api.user.model.User;
 import org.springframework.beans.BeanUtils;
@@ -38,6 +40,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
     private static final String STAGE_REQUIREMENT = "REQUIREMENT";
     private static final String STAGE_DEVELOPMENT = "DEVELOPMENT";
     private static final String STAGE_TESTING = "TESTING";
+    private static final String STAGE_ASSET_REVIEW = "ASSET_REVIEW";
     private static final String STAGE_LAUNCH = "LAUNCH";
     private static final DateTimeFormatter RISK_NOTE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
@@ -54,6 +57,9 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
     @Autowired
     private UserMapper userMapper;
+
+    @Autowired
+    private MaintenanceRecordService maintenanceRecordService;
 
     @Override
     public Page<TaskMarketDTO> getMarketTasks(Page<WorkTask> page, String keyword, String status) {
@@ -219,7 +225,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             throw new IllegalStateException("当前状态不可提交验收");
         }
         if (!STAGE_LAUNCH.equals(resolveStage(task))) {
-            throw new IllegalStateException("请先完成需求、开发、测试并进入上线阶段后再提交验收");
+            throw new IllegalStateException("请先完成需求、开发、测试、资产同步审核并进入上线阶段后再提交验收");
         }
         if (TASK_ROLE_MAIN.equals(task.getTaskRole()) && !areAllSubTasksClosed(task.getWorkId())) {
             throw new IllegalStateException("请先完成所有子任务后再提交主任务验收");
@@ -255,6 +261,23 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
         ReviewDecision decision = ReviewDecision.valueOf(dto.getDecision());
         if (ReviewDecision.APPROVE.equals(decision)) {
+            if (isAssetReview(task)) {
+                assertAssetMaintenanceSynced(work);
+                LocalDateTime now = LocalDateTime.now();
+                task.setCurrentStage(STAGE_LAUNCH);
+                task.setStageUpdatedAt(now);
+                task.setStatus(TaskStatus.IN_PROGRESS.name());
+                task.setReviewComment(dto.getReviewComment());
+                task.setReviewerId(reviewerId);
+                task.setReviewedAt(now);
+                boolean success = this.updateById(task);
+                if (success) {
+                    logTaskAction(taskId, reviewerId, "ASSET_REVIEW_APPROVE",
+                            "资产同步审核通过，进入上线阶段");
+                    updateWorkStatusIfNecessary(task.getWorkId());
+                }
+                return success;
+            }
             if (TASK_ROLE_MAIN.equals(task.getTaskRole()) && !areAllSubTasksClosed(task.getWorkId())) {
                 throw new IllegalStateException("请先完成所有子任务后再通过主任务验收");
             }
@@ -280,6 +303,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         }
 
         if (ReviewDecision.REJECT.equals(decision)) {
+            boolean assetReview = isAssetReview(task);
             task.setReviewComment(dto.getReviewComment());
             task.setReviewerId(reviewerId);
             task.setReviewedAt(LocalDateTime.now());
@@ -287,19 +311,24 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             task.setStatus(TaskStatus.REJECTED.name());
             boolean success = this.updateById(task);
             if (success) {
-                logTaskAction(taskId, reviewerId, "REVIEW_REJECT", "验收退回: " + nullToEmpty(dto.getReviewComment()));
+                String action = assetReview ? "ASSET_REVIEW_REJECT" : "REVIEW_REJECT";
+                String detailPrefix = assetReview ? "资产同步审核退回: " : "验收退回: ";
+                logTaskAction(taskId, reviewerId, action, detailPrefix + nullToEmpty(dto.getReviewComment()));
             }
             return success;
         }
 
         if (ReviewDecision.CANCEL.equals(decision)) {
+            boolean assetReview = isAssetReview(task);
             task.setReviewComment(dto.getReviewComment());
             task.setReviewerId(reviewerId);
             task.setReviewedAt(LocalDateTime.now());
             task.setStatus(TaskStatus.CANCELLED.name());
             boolean success = this.updateById(task);
             if (success) {
-                logTaskAction(taskId, reviewerId, "REVIEW_CANCEL", "验收取消: " + nullToEmpty(dto.getReviewComment()));
+                String action = assetReview ? "ASSET_REVIEW_CANCEL" : "REVIEW_CANCEL";
+                String detailPrefix = assetReview ? "资产同步审核取消: " : "验收取消: ";
+                logTaskAction(taskId, reviewerId, action, detailPrefix + nullToEmpty(dto.getReviewComment()));
                 updateWorkStatusIfNecessary(task.getWorkId());
             }
             return success;
@@ -362,6 +391,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         }
         if (TaskStatus.COMPLETED.name().equals(task.getStatus())
                 || TaskStatus.CANCELLED.name().equals(task.getStatus())
+                || TaskStatus.ASSET_REVIEW.name().equals(task.getStatus())
                 || TaskStatus.REVIEW.name().equals(task.getStatus())) {
             throw new IllegalStateException("当前状态不可推进阶段");
         }
@@ -371,7 +401,6 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         }
 
         String currentStage = resolveStage(task);
-        String nextStage = nextStage(currentStage);
         LocalDateTime now = LocalDateTime.now();
 
         task.setStageRiskReported(StringUtils.hasText(task.getStageRiskNote()));
@@ -380,13 +409,25 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             task.setStatus(TaskStatus.IN_PROGRESS.name());
         }
 
-        if (nextStage == null) {
+        if (STAGE_ASSET_REVIEW.equals(currentStage)) {
             task.setSubmittedAt(now);
-            task.setStatus(TaskStatus.REVIEW.name());
-            logTaskAction(taskId, userId, "STAGE_TO_REVIEW", "上线完成，进入验收阶段");
+            task.setStatus(TaskStatus.ASSET_REVIEW.name());
+            logTaskAction(taskId, userId, "ASSET_REVIEW_RESUBMIT", "重新提交资产同步审核");
         } else {
-            task.setCurrentStage(nextStage);
-            logTaskAction(taskId, userId, "STAGE_ADVANCE", "阶段推进: " + currentStage + " -> " + nextStage);
+            String nextStage = nextStage(currentStage);
+            if (STAGE_ASSET_REVIEW.equals(nextStage)) {
+                task.setCurrentStage(nextStage);
+                task.setSubmittedAt(now);
+                task.setStatus(TaskStatus.ASSET_REVIEW.name());
+                logTaskAction(taskId, userId, "STAGE_TO_ASSET_REVIEW", "测试完成，进入资产同步审核");
+            } else if (nextStage == null) {
+                task.setSubmittedAt(now);
+                task.setStatus(TaskStatus.REVIEW.name());
+                logTaskAction(taskId, userId, "STAGE_TO_REVIEW", "上线完成，进入验收阶段");
+            } else {
+                task.setCurrentStage(nextStage);
+                logTaskAction(taskId, userId, "STAGE_ADVANCE", "阶段推进: " + currentStage + " -> " + nextStage);
+            }
         }
 
         boolean success = this.updateById(task);
@@ -564,9 +605,26 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         return switch (currentStage) {
             case STAGE_REQUIREMENT -> STAGE_DEVELOPMENT;
             case STAGE_DEVELOPMENT -> STAGE_TESTING;
-            case STAGE_TESTING -> STAGE_LAUNCH;
+            case STAGE_TESTING -> STAGE_ASSET_REVIEW;
             default -> null;
         };
+    }
+
+    private boolean isAssetReview(WorkTask task) {
+        return task != null
+                && STAGE_ASSET_REVIEW.equals(resolveStage(task))
+                && TaskStatus.ASSET_REVIEW.name().equals(task.getStatus());
+    }
+
+    private void assertAssetMaintenanceSynced(Work work) {
+        if (work == null || !StringUtils.hasText(work.getRequirementNumber())) {
+            throw new IllegalStateException("工作缺少需求编号，无法校验资产管理维护记录");
+        }
+        long maintenanceCount = maintenanceRecordService.count(new LambdaQueryWrapper<MaintenanceRecord>()
+                .eq(MaintenanceRecord::getReqId, work.getRequirementNumber()));
+        if (maintenanceCount <= 0) {
+            throw new IllegalStateException("资产管理维护记录中未找到该需求编号，请先完成同步维护");
+        }
     }
 
     private String nullToEmpty(String value) {

@@ -57,7 +57,7 @@ export interface WorkTaskCreateDTO {
     stageUpdatedAt?: string;
 }
 
-export type TaskStage = 'REQUIREMENT' | 'DEVELOPMENT' | 'TESTING' | 'LAUNCH';
+export type TaskStage = 'REQUIREMENT' | 'DEVELOPMENT' | 'TESTING' | 'ASSET_REVIEW' | 'LAUNCH';
 
 export interface Work {
     id: string;
@@ -258,13 +258,38 @@ export interface MarketplaceTodo {
     severity: 'info' | 'warning' | 'danger';
 }
 
+export interface AssetMaintenanceRecord {
+    id?: string;
+    tableName?: string;
+    tableCnName?: string;
+    modType?: string;
+    fieldName?: string;
+    fieldCnName?: string;
+    time?: string;
+    plannedDate?: string;
+    operator?: string;
+    reqId?: string;
+    reqName?: string;
+    description?: string;
+    script?: string;
+    systemCode?: string;
+    assetType?: string;
+}
+
+export interface PageResponse<T> {
+    records: T[];
+    total?: number;
+    current?: number;
+    size?: number;
+}
+
 // APIs
 export const createWork = (data: WorkCreateDTO) => post('/api/marketplace/works', data);
 export const updateWork = (id: string, data: WorkCreateDTO) => put(`/api/marketplace/works/${id}`, data);
 export const importWorks = (works: WorkImportDTO[]) =>
     post<WorkImportResult>('/api/marketplace/works/import', works);
 export const listWorks = (params: any) => get('/api/marketplace/works', params);
-export const getWorkDetail = (id: string) => get(`/api/marketplace/works/${id}`);
+export const getWorkDetail = (id: string) => get<Work>(`/api/marketplace/works/${id}`);
 export const getWorkTasks = (workId: string) => get(`/api/marketplace/tasks/work/${workId}`);
 export const addTaskToWork = (workId: string, data: WorkTaskCreateDTO) => post(`/api/marketplace/tasks/work/${workId}`, data);
 export const publishWork = (id: string) => put(`/api/marketplace/works/${id}/publish`);
@@ -308,3 +333,8 @@ export const createPointRule = (data: MarketplacePointRule) => post('/api/market
 export const updatePointRule = (id: string, data: MarketplacePointRule) => put(`/api/marketplace/point-rules/${id}`, data);
 export const deletePointRule = (id: string) => del(`/api/marketplace/point-rules/${id}`);
 export const getMarketplaceTodos = () => get('/api/marketplace/todos');
+export const listAssetMaintenanceRecords = (params: {
+    reqId?: string;
+    page?: number;
+    size?: number;
+}) => get<PageResponse<AssetMaintenanceRecord>>('/api/metadata/maintenance-record', params);

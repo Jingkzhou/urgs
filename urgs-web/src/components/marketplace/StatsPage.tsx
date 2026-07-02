@@ -90,10 +90,12 @@ const StatsPage: React.FC = () => {
     const totalWorks = works.length;
     const publishedWorks = works.filter(w => w.status === 'PUBLISHED').length;
     const draftWorks = works.filter(w => w.status === 'DRAFT').length;
-    const inProgressWorks = works.filter(w => w.status === 'IN_PROGRESS').length;
+    const inProgressWorks = works.filter(w => w.status === 'IN_PROGRESS' || w.status === 'ASSET_REVIEW').length;
 
     const openTasks = marketTasks.filter(t => t.status === 'OPEN').length;
-    const assignedTasks = marketTasks.filter(t => t.status === 'ASSIGNED' || t.status === 'IN_PROGRESS').length;
+    const assignedTasks = marketTasks.filter(t =>
+        t.status === 'ASSIGNED' || t.status === 'IN_PROGRESS' || t.status === 'ASSET_REVIEW'
+    ).length;
     const completedTasks = marketTasks.filter(t => t.status === 'COMPLETED').length;
 
     const totalPoints = works.reduce((sum, w) => sum + (w.totalPoints || 0), 0);
@@ -232,7 +234,7 @@ const StatsPage: React.FC = () => {
                     ))}
                     {snapshots.length === 0 && (
                         <div className="md:col-span-3 text-center py-6 text-slate-400 bg-slate-50 rounded-lg">
-                            当前周期暂无快照，点击“生成快照”后用于绩效复盘
+                            当前周期暂无快照，点击"生成快照"后用于绩效复盘
                         </div>
                     )}
                 </div>

@@ -191,9 +191,18 @@ const WorkList: React.FC = () => {
         }
     };
 
+    const normalizeTaskStatus = (status?: string) => status?.trim().toUpperCase();
+
+    const isPausedTask = (task: WorkTask) => normalizeTaskStatus(task.status) === 'PAUSED';
+
+    const isClosedTaskStatus = (status?: string) => {
+        return ['COMPLETED', 'CANCELLED', 'REJECTED', 'ASSET_REVIEW', 'REVIEW'].includes(normalizeTaskStatus(status) || '');
+    };
+
     const handleToggleTaskPaused = async (task: WorkTask) => {
-        const nextStatus = task.status === 'PAUSED' ? 'IN_PROGRESS' : 'PAUSED';
-        const actionText = task.status === 'PAUSED' ? '继续' : '暂停';
+        const paused = isPausedTask(task);
+        const nextStatus = paused ? 'IN_PROGRESS' : 'PAUSED';
+        const actionText = paused ? '继续' : '暂停';
         if (!window.confirm(`确定要${actionText}任务「${task.title}」吗？`)) return;
         try {
             await updateTaskStatus(task.id, nextStatus);
@@ -225,6 +234,7 @@ const WorkList: React.FC = () => {
         if (status === 'COMPLETED') return 'bg-green-100 text-green-700';
         if (status === 'IN_PROGRESS' || status === 'ASSIGNED') return 'bg-blue-100 text-blue-700';
         if (status === 'PAUSED') return 'bg-amber-100 text-amber-700';
+        if (status === 'ASSET_REVIEW') return 'bg-cyan-100 text-cyan-700';
         if (status === 'REVIEW') return 'bg-orange-100 text-orange-700';
         if (status === 'DRAFT' || status === 'PUBLISHED') return 'bg-slate-100 text-slate-600';
         return 'bg-red-100 text-red-600';
@@ -703,20 +713,20 @@ const WorkList: React.FC = () => {
                                             <span className="text-blue-700 font-bold">{getTaskStageLabel(task.currentStage)}</span>
                                             <span className="font-bold text-orange-600">{task.points ?? 0}</span>
                                             {renderRiskSummary(task)}
-                                            {['COMPLETED', 'CANCELLED', 'REJECTED'].includes(task.status) ? (
+                                            {isClosedTaskStatus(task.status) ? (
                                                 <span className="text-slate-300">-</span>
                                             ) : (
                                                 <button
                                                     onClick={() => handleToggleTaskPaused(task)}
                                                     className={`inline-flex w-fit items-center gap-1 rounded px-2 py-1 font-bold transition-colors ${
-                                                        task.status === 'PAUSED'
+                                                        isPausedTask(task)
                                                             ? 'bg-green-50 text-green-700 hover:bg-green-100'
                                                             : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
                                                     }`}
-                                                    title={task.status === 'PAUSED' ? '继续任务' : '暂停任务'}
+                                                    title={isPausedTask(task) ? '继续任务' : '暂停任务'}
                                                 >
-                                                    {task.status === 'PAUSED' ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
-                                                    {task.status === 'PAUSED' ? '继续' : '暂停'}
+                                                    {isPausedTask(task) ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
+                                                    {isPausedTask(task) ? '继续' : '暂停'}
                                                 </button>
                                             )}
                                         </div>

@@ -324,7 +324,8 @@ public class TaskApplicationServiceImpl extends ServiceImpl<TaskApplicationMappe
                 .count() * 100D / completedTasks.size()));
         dto.setCurrentLoad(Math.toIntExact(workTaskService.lambdaQuery()
                 .eq(WorkTask::getAssigneeId, applicantId)
-                .in(WorkTask::getStatus, TaskStatus.ASSIGNED.name(), TaskStatus.IN_PROGRESS.name(), TaskStatus.REVIEW.name())
+                .in(WorkTask::getStatus, TaskStatus.ASSIGNED.name(), TaskStatus.IN_PROGRESS.name(),
+                        TaskStatus.ASSET_REVIEW.name(), TaskStatus.REVIEW.name())
                 .count()));
     }
 
