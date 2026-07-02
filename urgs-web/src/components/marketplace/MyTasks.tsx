@@ -8,13 +8,21 @@ import {
     createTaskAppeal,
     getWorkDetail,
     listAssetMaintenanceRecords,
+    listRegAssetTables,
+    getRegAssetTable,
+    listRegAssetElements,
+    listModelAssetTables,
+    listModelAssetFields,
     AssetMaintenanceRecord,
+    ModelTableAsset,
+    ModelFieldAsset,
     TaskMarketDTO,
     KpiSummaryDTO,
 } from '../../api/marketplace';
 import { Award, Clock, Gauge, ListTodo, Star, TrendingUp, X } from 'lucide-react';
 import TaskDetailDrawer from './TaskDetailDrawer';
 import { getTaskStageLabel, getTaskStatusLabel } from './marketplaceLabels';
+import { RegElement, RegTable } from '../metadata/reg-asset/types';
 
 const formatDateInput = (date: Date) => {
     const year = date.getFullYear();
@@ -50,6 +58,11 @@ const MyTasks: React.FC = () => {
     const [assetReviewLoading, setAssetReviewLoading] = useState(false);
     const [assetReviewSubmitting, setAssetReviewSubmitting] = useState(false);
     const [assetReviewError, setAssetReviewError] = useState('');
+    const [assetDetailOpen, setAssetDetailOpen] = useState(false);
+    const [assetDetailLoading, setAssetDetailLoading] = useState(false);
+    const [assetDetailError, setAssetDetailError] = useState('');
+    const [regAssetDetail, setRegAssetDetail] = useState<{ type: 'TABLE' | 'ELEMENT'; data: RegTable | RegElement } | null>(null);
+    const [modelAssetDetail, setModelAssetDetail] = useState<{ table: ModelTableAsset; field?: ModelFieldAsset } | null>(null);
 
     const fetchTasks = async () => {
         setLoading(true);
@@ -88,6 +101,11 @@ const MyTasks: React.FC = () => {
         setAssetReviewLoading(false);
         setAssetReviewSubmitting(false);
         setAssetReviewError('');
+        setAssetDetailOpen(false);
+        setAssetDetailLoading(false);
+        setAssetDetailError('');
+        setRegAssetDetail(null);
+        setModelAssetDetail(null);
     };
 
     const formatRecordTime = (value?: string) => {
@@ -102,6 +120,162 @@ const MyTasks: React.FC = () => {
         if (modType === 'UPDATE') return '修改调整';
         if (modType === 'DELETE') return '删除资产';
         return modType;
+    };
+
+    const normalizeAssetName = (value?: string) => (value || '').trim().toLowerCase();
+
+    const unqualifiedAssetName = (value?: string) => {
+        const normalized = (value || '').trim();
+        const parts = normalized.split('.');
+        return parts[parts.length - 1] || normalized;
+    };
+
+    const getAssetNameCandidates = (record: AssetMaintenanceRecord) => {
+        return [record.tableName, unqualifiedAssetName(record.tableName), record.tableCnName]
+            .map(normalizeAssetName)
+            .filter(Boolean);
+    };
+
+    const isRecordFieldAsset = (record: AssetMaintenanceRecord) => {
+        return Boolean((record.fieldName || '').trim() || (record.fieldCnName || '').trim());
+    };
+
+    const findMatchedRegTable = async (record: AssetMaintenanceRecord) => {
+        const keywords = [record.tableName, unqualifiedAssetName(record.tableName), record.tableCnName]
+            .map(value => (value || '').trim())
+            .filter(Boolean);
+        const targets = getAssetNameCandidates(record);
+
+        for (const keyword of keywords) {
+            const res = await listRegAssetTables({
+                keyword,
+                systemCode: record.systemCode,
+                page: 1,
+                size: 20,
+            });
+            const records = res?.records || [];
+            const exact = records.find(table => {
+                const names = [table.name, unqualifiedAssetName(table.name), table.cnName].map(normalizeAssetName);
+                return names.some(name => targets.includes(name));
+            });
+            if (exact) {
+                return exact as RegTable;
+            }
+            if (records.length > 0) {
+                return records[0] as RegTable;
+            }
+        }
+        return null;
+    };
+
+    const findMatchedRegElement = async (tableId: number | string, record: AssetMaintenanceRecord) => {
+        const keywords = [record.fieldName, record.fieldCnName]
+            .map(value => (value || '').trim())
+            .filter(Boolean);
+        const targets = keywords.map(normalizeAssetName);
+
+        for (const keyword of keywords) {
+            const res = await listRegAssetElements({ tableId, keyword, page: 1, size: 50 });
+            const records = res?.records || [];
+            const exact = records.find(element => {
+                const names = [element.name, element.cnName].map(normalizeAssetName);
+                return names.some(name => targets.includes(name));
+            });
+            if (exact) {
+                return exact as RegElement;
+            }
+            if (records.length > 0) {
+                return records[0] as RegElement;
+            }
+        }
+        return null;
+    };
+
+    const findMatchedModelTable = async (record: AssetMaintenanceRecord) => {
+        const keyword = (record.tableName || record.tableCnName || '').trim();
+        if (!keyword) return null;
+
+        const res = await listModelAssetTables({ keyword: unqualifiedAssetName(keyword), page: 1, size: 50 });
+        const records = res?.records || [];
+        const targets = getAssetNameCandidates(record);
+        return records.find(table => {
+            const names = [table.name, unqualifiedAssetName(table.name), table.cnName].map(normalizeAssetName);
+            return names.some(name => targets.includes(name));
+        }) || records[0] || null;
+    };
+
+    const findMatchedModelField = async (tableId: string, record: AssetMaintenanceRecord) => {
+        const targets = [record.fieldName, record.fieldCnName].map(normalizeAssetName).filter(Boolean);
+        if (targets.length === 0) return null;
+
+        const fields = await listModelAssetFields(tableId);
+        return (fields || []).find(field => {
+            const names = [field.name, field.cnName].map(normalizeAssetName);
+            return names.some(name => targets.includes(name));
+        }) || null;
+    };
+
+    const openAssetDetail = async (record: AssetMaintenanceRecord) => {
+        const hasField = isRecordFieldAsset(record);
+        setAssetDetailOpen(true);
+        setAssetDetailLoading(true);
+        setAssetDetailError('');
+        setRegAssetDetail(null);
+        setModelAssetDetail(null);
+
+        try {
+            let fallbackRegTable: RegTable | null = null;
+            const regTable = await findMatchedRegTable(record);
+            if (regTable?.id) {
+                const tableDetail = await getRegAssetTable(regTable.id) as RegTable;
+                if (hasField) {
+                    const element = await findMatchedRegElement(tableDetail.id!, record);
+                    if (element) {
+                        setRegAssetDetail({ type: 'ELEMENT', data: element });
+                        return;
+                    }
+                    fallbackRegTable = tableDetail;
+                } else {
+                    setRegAssetDetail({ type: 'TABLE', data: tableDetail });
+                    return;
+                }
+            }
+
+            const modelTable = await findMatchedModelTable(record);
+            if (modelTable) {
+                if (hasField) {
+                    const field = await findMatchedModelField(modelTable.id, record);
+                    setModelAssetDetail({ table: modelTable, field: field || undefined });
+                    if (!field) {
+                        setAssetDetailError('未找到对应字段资产，已显示所属表资产信息');
+                    }
+                    return;
+                }
+                setModelAssetDetail({ table: modelTable });
+                return;
+            }
+
+            if (fallbackRegTable) {
+                setRegAssetDetail({ type: 'TABLE', data: fallbackRegTable });
+                setAssetDetailError('未找到对应字段资产，已显示所属表资产信息');
+                return;
+            }
+
+            setAssetDetailError('未找到对应的资产信息');
+        } catch (error) {
+            console.error('Failed to load asset detail', error);
+            setAssetDetailError('资产信息加载失败');
+        } finally {
+            setAssetDetailLoading(false);
+        }
+    };
+
+    const closeAssetDetail = () => {
+        setAssetDetailOpen(false);
+        setAssetDetailLoading(false);
+        setAssetDetailError('');
+        setRegAssetDetail(null);
+        setModelAssetDetail(null);
     };
 
     const openAssetReviewConfirm = async (task: TaskMarketDTO) => {
@@ -475,6 +649,7 @@ const MyTasks: React.FC = () => {
                                         <div className="border border-slate-200 rounded-lg overflow-hidden">
                                             <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600">
                                                 资产管理维护记录
+                                                <span className="ml-2 font-medium text-slate-400">单击记录查看维护资产信息</span>
                                             </div>
                                             <div className="overflow-x-auto">
                                                 <table className="min-w-full text-xs">
@@ -493,7 +668,12 @@ const MyTasks: React.FC = () => {
                                                     </thead>
                                                     <tbody>
                                                         {assetReviewRecords.map((record, index) => (
-                                                            <tr key={record.id || `${record.reqId}-${index}`} className="border-b border-slate-100 last:border-b-0 align-top">
+                                                            <tr
+                                                                key={record.id || `${record.reqId}-${index}`}
+                                                                onClick={() => openAssetDetail(record)}
+                                                                title="单击查看维护的资产信息"
+                                                                className="border-b border-slate-100 last:border-b-0 align-top cursor-pointer hover:bg-cyan-50/60"
+                                                            >
                                                                 <td className="px-3 py-2 font-bold text-cyan-700 whitespace-nowrap">
                                                                     {getModTypeLabel(record.modType)}
                                                                 </td>
@@ -545,6 +725,273 @@ const MyTasks: React.FC = () => {
                                 className="px-4 py-2 text-sm font-bold text-white bg-cyan-600 hover:bg-cyan-700 rounded-lg disabled:opacity-50 disabled:hover:bg-cyan-600"
                             >
                                 {assetReviewSubmitting ? '提交中...' : '确认进入审核'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {assetDetailOpen && regAssetDetail && (
+                <div className="fixed inset-0 bg-black/30 z-[10000] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-3xl max-h-[82vh] flex flex-col">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                            <div>
+                                <h3 className="font-bold text-slate-800">维护资产信息</h3>
+                                <p className="text-xs text-slate-500 mt-1">
+                                    {regAssetDetail.type === 'TABLE' ? '监管表资产' : '监管字段资产'}
+                                </p>
+                            </div>
+                            <button onClick={closeAssetDetail} className="p-1.5 hover:bg-slate-100 rounded">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="p-5 overflow-y-auto space-y-4">
+                            {assetDetailError && (
+                                <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                                    {assetDetailError}
+                                </div>
+                            )}
+                            <div className="rounded-lg border border-slate-200 overflow-hidden">
+                                <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
+                                    <div className="text-sm font-bold text-slate-800">
+                                        {regAssetDetail.data.cnName || regAssetDetail.data.name}
+                                    </div>
+                                    <div className="text-xs text-slate-500 font-mono mt-1">{regAssetDetail.data.name}</div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 text-sm">
+                                    <div>
+                                        <div className="text-xs text-slate-400 mb-1">中文名</div>
+                                        <div className="font-medium text-slate-700">{regAssetDetail.data.cnName || '-'}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-xs text-slate-400 mb-1">英文名</div>
+                                        <div className="font-medium text-slate-700 font-mono">{regAssetDetail.data.name || '-'}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-xs text-slate-400 mb-1">状态</div>
+                                        <div className="font-medium text-slate-700">{regAssetDetail.data.status === 1 ? '启用' : '停用'}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-xs text-slate-400 mb-1">自动取数</div>
+                                        <div className="font-medium text-slate-700">{regAssetDetail.data.autoFetchStatus || '-'}</div>
+                                    </div>
+
+                                    {regAssetDetail.type === 'TABLE' ? (
+                                        <>
+                                            <div>
+                                                <div className="text-xs text-slate-400 mb-1">所属系统</div>
+                                                <div className="font-medium text-slate-700">{(regAssetDetail.data as RegTable).systemCode || '-'}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-slate-400 mb-1">报送频度</div>
+                                                <div className="font-medium text-slate-700">{(regAssetDetail.data as RegTable).frequency || '-'}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-slate-400 mb-1">监管主题</div>
+                                                <div className="font-medium text-slate-700">{(regAssetDetail.data as RegTable).theme || '-'}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-slate-400 mb-1">取数来源</div>
+                                                <div className="font-medium text-slate-700">{(regAssetDetail.data as RegTable).sourceType || '-'}</div>
+                                            </div>
+                                            <div className="md:col-span-2">
+                                                <div className="text-xs text-slate-400 mb-1">绑定物理表</div>
+                                                <div className="space-y-1">
+                                                    {((regAssetDetail.data as RegTable).physicalTables || []).length > 0
+                                                        ? (regAssetDetail.data as RegTable).physicalTables?.map(item => (
+                                                            <div key={item.modelTableId} className="font-mono text-xs bg-slate-100 px-2 py-1 rounded">
+                                                                {[item.owner, item.tableName].filter(Boolean).join('.')}
+                                                                {item.tableCnName ? <span className="ml-2 text-slate-500 font-sans">{item.tableCnName}</span> : null}
+                                                            </div>
+                                                        ))
+                                                        : <span className="text-slate-400">-</span>}
+                                                </div>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div>
+                                                <div className="text-xs text-slate-400 mb-1">资产类型</div>
+                                                <div className="font-medium text-slate-700">{(regAssetDetail.data as RegElement).type === 'INDICATOR' ? '指标' : '字段'}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-slate-400 mb-1">数据类型</div>
+                                                <div className="font-medium text-slate-700">{(regAssetDetail.data as RegElement).dataType || '-'}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-slate-400 mb-1">长度</div>
+                                                <div className="font-medium text-slate-700">{(regAssetDetail.data as RegElement).length || '-'}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-slate-400 mb-1">允许为空</div>
+                                                <div className="font-medium text-slate-700">{(regAssetDetail.data as RegElement).nullable ? '是' : '否'}</div>
+                                            </div>
+                                            <div className="md:col-span-2">
+                                                <div className="text-xs text-slate-400 mb-1">绑定字段</div>
+                                                <div className="space-y-1">
+                                                    {((regAssetDetail.data as RegElement).physicalFields || []).length > 0
+                                                        ? (regAssetDetail.data as RegElement).physicalFields?.map(item => (
+                                                            <div key={item.modelFieldId} className="font-mono text-xs bg-slate-100 px-2 py-1 rounded">
+                                                                {item.fieldName}
+                                                                <span className="ml-2 text-slate-500 font-sans">
+                                                                    {[item.fieldCnName, item.fieldType].filter(Boolean).join(' / ')}
+                                                                </span>
+                                                                <div className="mt-0.5 text-[10px] text-slate-400">
+                                                                    {[item.owner, item.tableName].filter(Boolean).join('.')}
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                        : <span className="text-slate-400">-</span>}
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    <div className="md:col-span-2">
+                                        <div className="text-xs text-slate-400 mb-1">业务口径</div>
+                                        <div className="font-medium text-slate-700 whitespace-pre-wrap">{regAssetDetail.data.businessCaliber || '-'}</div>
+                                    </div>
+                                    <div className="md:col-span-2">
+                                        <div className="text-xs text-slate-400 mb-1">填报说明</div>
+                                        <div className="font-medium text-slate-700 whitespace-pre-wrap">{regAssetDetail.data.fillInstruction || '-'}</div>
+                                    </div>
+                                    <div className="md:col-span-2">
+                                        <div className="text-xs text-slate-400 mb-1">开发备注</div>
+                                        <div className="font-medium text-slate-700 whitespace-pre-wrap">{regAssetDetail.data.devNotes || '-'}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="px-5 py-4 border-t border-slate-100 flex justify-end">
+                            <button
+                                onClick={closeAssetDetail}
+                                className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-lg"
+                            >
+                                关闭
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {assetDetailOpen && !regAssetDetail && (
+                <div className="fixed inset-0 bg-black/30 z-[10000] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-2xl max-h-[82vh] flex flex-col">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                            <div>
+                                <h3 className="font-bold text-slate-800">维护资产信息</h3>
+                                <p className="text-xs text-slate-500 mt-1">
+                                    {modelAssetDetail?.field ? '字段资产' : '表资产'}
+                                </p>
+                            </div>
+                            <button onClick={closeAssetDetail} className="p-1.5 hover:bg-slate-100 rounded">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="p-5 overflow-y-auto">
+                            {assetDetailLoading ? (
+                                <div className="text-center py-10 text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                                    正在加载资产信息...
+                                </div>
+                            ) : modelAssetDetail ? (
+                                <div className="space-y-4">
+                                    {assetDetailError && (
+                                        <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                                            {assetDetailError}
+                                        </div>
+                                    )}
+                                    <div className="rounded-lg border border-slate-200 overflow-hidden">
+                                        <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
+                                            <div className="text-sm font-bold text-slate-800">
+                                                {modelAssetDetail.table.cnName || modelAssetDetail.table.name}
+                                            </div>
+                                            <div className="text-xs text-slate-500 font-mono mt-1">{modelAssetDetail.table.name}</div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 text-sm">
+                                            <div>
+                                                <div className="text-xs text-slate-400 mb-1">表中文名</div>
+                                                <div className="font-medium text-slate-700">{modelAssetDetail.table.cnName || '-'}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-slate-400 mb-1">表名</div>
+                                                <div className="font-medium text-slate-700 font-mono">{modelAssetDetail.table.name || '-'}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-slate-400 mb-1">Schema / Owner</div>
+                                                <div className="font-medium text-slate-700">{modelAssetDetail.table.owner || '-'}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-slate-400 mb-1">数据源</div>
+                                                <div className="font-medium text-slate-700">{modelAssetDetail.table.dataSourceId || '-'}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-slate-400 mb-1">主题</div>
+                                                <div className="font-medium text-slate-700">{modelAssetDetail.table.theme || '-'}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-slate-400 mb-1">频度</div>
+                                                <div className="font-medium text-slate-700">{modelAssetDetail.table.freq || '-'}</div>
+                                            </div>
+                                            <div className="md:col-span-2">
+                                                <div className="text-xs text-slate-400 mb-1">备注</div>
+                                                <div className="font-medium text-slate-700 whitespace-pre-wrap">{modelAssetDetail.table.remark || '-'}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {modelAssetDetail.field && (
+                                        <div className="rounded-lg border border-slate-200 overflow-hidden">
+                                            <div className="px-4 py-3 bg-cyan-50 border-b border-cyan-100">
+                                                <div className="text-sm font-bold text-slate-800">
+                                                    {modelAssetDetail.field.cnName || modelAssetDetail.field.name}
+                                                </div>
+                                                <div className="text-xs text-slate-500 font-mono mt-1">{modelAssetDetail.field.name}</div>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 text-sm">
+                                                <div>
+                                                    <div className="text-xs text-slate-400 mb-1">字段中文名</div>
+                                                    <div className="font-medium text-slate-700">{modelAssetDetail.field.cnName || '-'}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-xs text-slate-400 mb-1">字段名</div>
+                                                    <div className="font-medium text-slate-700 font-mono">{modelAssetDetail.field.name || '-'}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-xs text-slate-400 mb-1">字段类型</div>
+                                                    <div className="font-medium text-slate-700">{modelAssetDetail.field.type || '-'}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-xs text-slate-400 mb-1">排序</div>
+                                                    <div className="font-medium text-slate-700">{modelAssetDetail.field.sortOrder ?? '-'}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-xs text-slate-400 mb-1">主键</div>
+                                                    <div className="font-medium text-slate-700">{modelAssetDetail.field.isPk ? '是' : '否'}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-xs text-slate-400 mb-1">允许为空</div>
+                                                    <div className="font-medium text-slate-700">{modelAssetDetail.field.nullable ? '是' : '否'}</div>
+                                                </div>
+                                                <div className="md:col-span-2">
+                                                    <div className="text-xs text-slate-400 mb-1">备注</div>
+                                                    <div className="font-medium text-slate-700 whitespace-pre-wrap">{modelAssetDetail.field.remark || '-'}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-8 text-center text-sm font-medium text-amber-700">
+                                    {assetDetailError || '未找到对应的资产信息'}
+                                </div>
+                            )}
+                        </div>
+                        <div className="px-5 py-4 border-t border-slate-100 flex justify-end">
+                            <button
+                                onClick={closeAssetDetail}
+                                className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-lg"
+                            >
+                                关闭
                             </button>
                         </div>
                     </div>

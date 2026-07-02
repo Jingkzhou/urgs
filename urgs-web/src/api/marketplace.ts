@@ -292,6 +292,39 @@ export interface AssetMaintenanceRecord {
     assetType?: string;
 }
 
+export interface ModelTableAsset {
+    id: string;
+    name: string;
+    cnName?: string;
+    owner?: string;
+    dataSourceId?: number;
+    subjectCode?: string;
+    subjectName?: string;
+    theme?: string;
+    businessScope?: string;
+    freq?: string;
+    version?: string;
+    retentionTime?: string;
+    remark?: string;
+    createTime?: string;
+    updateTime?: string;
+}
+
+export interface ModelFieldAsset {
+    id: string;
+    tableId: string;
+    name: string;
+    cnName?: string;
+    type?: string;
+    isPk?: boolean;
+    nullable?: boolean;
+    domain?: string;
+    remark?: string;
+    sortOrder?: number;
+    createTime?: string;
+    updateTime?: string;
+}
+
 export interface PageResponse<T> {
     records: T[];
     total?: number;
@@ -315,8 +348,8 @@ export const batchDeleteWorks = (ids: string[]) => post<{ deletedCount: number }
 export const getMarketTasks = (params: any) => get('/api/marketplace/tasks', params);
 export const getTaskDetail = (id: string) => get<TaskMarketDTO>(`/api/marketplace/tasks/${id}`);
 export const getMyTasks = (params: any) => get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/my', params);
-export const getPendingReviewTasks = (params: any) => get('/api/marketplace/tasks/review/pending', params);
-export const getReviewHistoryTasks = (params: any) => get('/api/marketplace/tasks/review/history', params);
+export const getPendingReviewTasks = (params: any) => get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/review/pending', params);
+export const getReviewHistoryTasks = (params: any) => get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/review/history', params);
 export const claimTask = (id: string) => post(`/api/marketplace/tasks/${id}/claim`);
 export const releaseTask = (id: string) => put(`/api/marketplace/tasks/${id}/release`);
 export const assignTask = (id: string, assigneeId: string) => put(`/api/marketplace/tasks/${id}/assign`, { assigneeId });
@@ -355,3 +388,28 @@ export const listAssetMaintenanceRecords = (params: {
     page?: number;
     size?: number;
 }) => get<PageResponse<AssetMaintenanceRecord>>('/api/metadata/maintenance-record', params);
+
+export const listRegAssetTables = (params: {
+    keyword?: string;
+    systemCode?: string;
+    page?: number;
+    size?: number;
+}) => get<PageResponse<any>>('/api/reg/table/list', params);
+
+export const getRegAssetTable = (id: number | string) => get<any>(`/api/reg/table/${id}`);
+
+export const listRegAssetElements = (params: {
+    tableId: number | string;
+    keyword?: string;
+    page?: number;
+    size?: number;
+}) => get<PageResponse<any>>('/api/reg/element/list', params);
+
+export const listModelAssetTables = (params: {
+    keyword?: string;
+    page?: number;
+    size?: number;
+}) => get<PageResponse<ModelTableAsset>>('/api/metadata/model-table', params);
+
+export const listModelAssetFields = (tableId: string) =>
+    get<ModelFieldAsset[]>('/api/metadata/model-field', { tableId });

@@ -7,7 +7,6 @@ import com.example.urgs_api.marketplace.dto.TaskStageRiskDTO;
 import com.example.urgs_api.marketplace.dto.TaskSubmissionDTO;
 import com.example.urgs_api.marketplace.dto.WorkTaskCreateDTO;
 import com.example.urgs_api.marketplace.enums.TaskStatus;
-import com.example.urgs_api.marketplace.model.Work;
 import com.example.urgs_api.marketplace.model.WorkTask;
 import com.example.urgs_api.marketplace.service.WorkService;
 import com.example.urgs_api.marketplace.service.WorkTaskService;
@@ -130,52 +129,26 @@ public class WorkTaskController {
     }
 
     @GetMapping("/review/pending")
-    public PageResult<WorkTask> getPendingReviewTasks(
+    public PageResult<TaskMarketDTO> getPendingReviewTasks(
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "10") int size) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        List<String> workIds = workService.lambdaQuery()
-                .eq(Work::getPublisherId, userId)
-                .list()
-                .stream()
-                .map(Work::getId)
-                .toList();
         Page<WorkTask> page = new Page<>(current, size);
-        if (workIds.isEmpty()) {
-            return PageResult.of(page);
-        }
-        Page<WorkTask> resultPage = workTaskService.page(page,
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<WorkTask>()
-                        .in(WorkTask::getWorkId, workIds)
-                        .in(WorkTask::getStatus, TaskStatus.ASSET_REVIEW.name(), TaskStatus.REVIEW.name())
-                        .orderByDesc(WorkTask::getSubmittedAt));
+        Page<TaskMarketDTO> resultPage = workTaskService.getReviewTasks(page, userId, false);
         return PageResult.of(resultPage);
     }
 
     @GetMapping("/review/history")
-    public PageResult<WorkTask> getReviewHistoryTasks(
+    public PageResult<TaskMarketDTO> getReviewHistoryTasks(
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "20") int size) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        List<String> workIds = workService.lambdaQuery()
-                .eq(Work::getPublisherId, userId)
-                .list()
-                .stream()
-                .map(Work::getId)
-                .toList();
         Page<WorkTask> page = new Page<>(current, size);
-        if (workIds.isEmpty()) {
-            return PageResult.of(page);
-        }
-        Page<WorkTask> resultPage = workTaskService.page(page,
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<WorkTask>()
-                        .in(WorkTask::getWorkId, workIds)
-                        .isNotNull(WorkTask::getReviewedAt)
-                        .orderByDesc(WorkTask::getReviewedAt));
+        Page<TaskMarketDTO> resultPage = workTaskService.getReviewTasks(page, userId, true);
         return PageResult.of(resultPage);
     }
 

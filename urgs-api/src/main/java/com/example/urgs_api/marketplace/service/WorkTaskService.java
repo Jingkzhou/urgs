@@ -12,6 +12,8 @@ public interface WorkTaskService extends IService<WorkTask> {
 
     Page<TaskMarketDTO> getMyTasks(Page<WorkTask> page, String userId);
 
+    Page<TaskMarketDTO> getReviewTasks(Page<WorkTask> page, String publisherId, boolean history);
+
     boolean claimTask(String taskId, String userId);
 
     boolean releaseTask(String taskId, String userId);

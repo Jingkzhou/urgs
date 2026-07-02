@@ -1,5 +1,7 @@
 package com.example.urgs_api.metadata.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.urgs_api.metadata.dto.ModelSyncRequest;
 import com.example.urgs_api.metadata.dto.ModelSyncResult;
 import com.example.urgs_api.metadata.dto.ModelDdlImportRequest;
@@ -43,6 +45,15 @@ public class ModelTableController {
         if (dataSourceId != null) {
             return com.example.urgs_api.common.PageResult
                     .of(modelTableService.listBySource(dataSourceId, owner, keyword, page, size));
+        }
+        if (keyword != null && !keyword.isBlank()) {
+            String lowerKeyword = keyword.toLowerCase();
+            LambdaQueryWrapper<ModelTable> wrapper = new LambdaQueryWrapper<ModelTable>()
+                    .apply("LOWER(name) LIKE {0}", "%" + lowerKeyword + "%")
+                    .or()
+                    .apply("LOWER(cn_name) LIKE {0}", "%" + lowerKeyword + "%")
+                    .orderByAsc(ModelTable::getName);
+            return com.example.urgs_api.common.PageResult.of(modelTableService.page(new Page<>(page, size), wrapper));
         }
         return com.example.urgs_api.common.PageResult.of(modelTableService.listByDirectory(directoryId, page, size));
     }

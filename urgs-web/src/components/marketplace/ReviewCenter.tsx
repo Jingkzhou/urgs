@@ -1,18 +1,29 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle2, Clock3, Eye, RotateCcw, XCircle } from 'lucide-react';
-import { getPendingReviewTasks, getReviewHistoryTasks, reviewTask, WorkTask, TaskReviewDTO } from '../../api/marketplace';
+import {
+    AssetMaintenanceRecord,
+    getPendingReviewTasks,
+    getReviewHistoryTasks,
+    listAssetMaintenanceRecords,
+    reviewTask,
+    TaskMarketDTO,
+    TaskReviewDTO,
+} from '../../api/marketplace';
 import TaskDetailDrawer from './TaskDetailDrawer';
 import { getTaskStageLabel, getTaskStatusLabel } from './marketplaceLabels';
 
 const ReviewCenter: React.FC = () => {
-    const [tasks, setTasks] = useState<WorkTask[]>([]);
-    const [historyTasks, setHistoryTasks] = useState<WorkTask[]>([]);
+    const [tasks, setTasks] = useState<TaskMarketDTO[]>([]);
+    const [historyTasks, setHistoryTasks] = useState<TaskMarketDTO[]>([]);
     const [loading, setLoading] = useState(false);
-    const [activeTask, setActiveTask] = useState<WorkTask | null>(null);
+    const [activeTask, setActiveTask] = useState<TaskMarketDTO | null>(null);
     const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<'pending' | 'history'>('pending');
     const [form, setForm] = useState<TaskReviewDTO>({ decision: 'APPROVE', qualityScore: 4, bonusPoints: 0, penaltyPoints: 0 });
+    const [assetReviewRecords, setAssetReviewRecords] = useState<AssetMaintenanceRecord[]>([]);
+    const [assetReviewLoading, setAssetReviewLoading] = useState(false);
+    const [assetReviewError, setAssetReviewError] = useState('');
 
     const fetchTasks = async () => {
         setLoading(true);
@@ -34,9 +45,55 @@ const ReviewCenter: React.FC = () => {
         fetchTasks();
     }, []);
 
-    const isAssetReviewTask = (task?: WorkTask | null) => task?.status === 'ASSET_REVIEW';
+    const isAssetReviewTask = (task?: TaskMarketDTO | null) => task?.status === 'ASSET_REVIEW';
 
-    const openReview = (task: WorkTask, decision: TaskReviewDTO['decision']) => {
+    const formatRecordTime = (value?: string) => {
+        if (!value) return '-';
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+    };
+
+    const getModTypeLabel = (modType?: string) => {
+        if (!modType) return '-';
+        if (modType === 'CREATE') return '新增资产';
+        if (modType === 'UPDATE') return '修改调整';
+        if (modType === 'DELETE') return '删除资产';
+        return modType;
+    };
+
+    const loadAssetReviewRecords = async (task: TaskMarketDTO) => {
+        setAssetReviewRecords([]);
+        setAssetReviewError('');
+        setAssetReviewLoading(false);
+        if (!isAssetReviewTask(task)) return;
+
+        const reqId = (task.requirementNumber || '').trim();
+        if (!reqId) {
+            setAssetReviewError('当前任务缺少需求编号，无法匹配资产管理维护记录');
+            return;
+        }
+
+        setAssetReviewLoading(true);
+        try {
+            let res = await listAssetMaintenanceRecords({ reqId, page: 1, size: 100 });
+            let records = res?.records || [];
+            if ((res?.total || 0) > records.length) {
+                res = await listAssetMaintenanceRecords({ reqId, page: 1, size: res.total });
+                records = res?.records || [];
+            }
+            setAssetReviewRecords(records);
+            if (records.length === 0) {
+                setAssetReviewError(`未找到需求编号 ${reqId} 的资产管理维护记录`);
+            }
+        } catch (error) {
+            console.error('Failed to load asset maintenance records', error);
+            setAssetReviewError('资产管理维护记录加载失败');
+        } finally {
+            setAssetReviewLoading(false);
+        }
+    };
+
+    const openReview = (task: TaskMarketDTO, decision: TaskReviewDTO['decision']) => {
         setActiveTask(task);
         setForm({
             decision,
@@ -44,11 +101,19 @@ const ReviewCenter: React.FC = () => {
             bonusPoints: 0,
             penaltyPoints: 0,
         });
+        loadAssetReviewRecords(task);
     };
 
     const openDetail = (taskId: string) => {
         setDetailTaskId(taskId);
         setIsDetailOpen(true);
+    };
+
+    const closeReview = () => {
+        setActiveTask(null);
+        setAssetReviewRecords([]);
+        setAssetReviewLoading(false);
+        setAssetReviewError('');
     };
 
     const submitReview = async () => {
@@ -59,7 +124,7 @@ const ReviewCenter: React.FC = () => {
         }
         try {
             await reviewTask(activeTask.id, form);
-            setActiveTask(null);
+            closeReview();
             fetchTasks();
         } catch (error) {
             alert('验收处理失败');
@@ -107,10 +172,16 @@ const ReviewCenter: React.FC = () => {
                                         <div>{task.reworkCount || 0} 次 / {task.delayReported ? '已报备' : '未报备'}</div>
                                     </div>
                                     <div className="bg-slate-50 rounded-lg p-3">
-                                        <div className="font-bold text-slate-700 mb-1">{isAssetReviewTask(task) ? '维护记录' : '任务积分'}</div>
-                                        <div>{isAssetReviewTask(task) ? '资产管理' : `${task.points || 0} 基础积分`}</div>
+                                        <div className="font-bold text-slate-700 mb-1">{isAssetReviewTask(task) ? '需求编号' : '任务积分'}</div>
+                                        <div>{isAssetReviewTask(task) ? (task.requirementNumber || '-') : `${task.points || 0} 基础积分`}</div>
                                     </div>
                                 </div>
+                                {isAssetReviewTask(task) && task.reviewComment && (
+                                    <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                                        <span className="font-bold text-slate-700">提交说明：</span>
+                                        <span className="whitespace-pre-wrap break-words">{task.reviewComment}</span>
+                                    </div>
+                                )}
                             </div>
                             <div className="flex flex-col gap-2 shrink-0">
                                 <button onClick={() => openDetail(task.id)} className="px-3 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-bold flex items-center gap-1">
@@ -225,21 +296,117 @@ const ReviewCenter: React.FC = () => {
 
             {activeTask && (
                 <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-xl">
+                    <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-5xl max-h-[86vh] flex flex-col">
                         <div className="px-5 py-4 border-b border-slate-100">
                             <h3 className="font-bold text-slate-800">{isAssetReviewTask(activeTask) ? '资产同步审核' : '验收处理'}</h3>
                             <p className="text-xs text-slate-500 mt-1">{activeTask.title}</p>
                         </div>
-                        <div className="p-5 space-y-4">
+                        <div className="p-5 space-y-4 overflow-y-auto">
                             {isAssetReviewTask(activeTask) && (
-                                <div className="rounded-lg border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs font-medium text-cyan-700">
-                                    审核内容：资产管理维护记录同步情况
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                                        <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                                            <div className="text-slate-400 mb-1">需求编号</div>
+                                            <div className="font-bold text-slate-800">{activeTask.requirementNumber || '-'}</div>
+                                        </div>
+                                        <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                                            <div className="text-slate-400 mb-1">工作名称</div>
+                                            <div className="font-bold text-slate-800">{activeTask.workTitle || activeTask.title}</div>
+                                        </div>
+                                        <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-3">
+                                            <div className="text-cyan-500 mb-1">维护记录</div>
+                                            <div className="font-bold text-cyan-700">
+                                                {assetReviewLoading ? '加载中...' : `${assetReviewRecords.length} 条`}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="rounded-lg border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs text-cyan-700">
+                                        <div className="font-bold mb-2">本次待审核资产变更</div>
+                                        {assetReviewLoading ? (
+                                            <div>正在加载资产管理维护记录...</div>
+                                        ) : assetReviewRecords.length > 0 ? (
+                                            <div className="space-y-2">
+                                                {assetReviewRecords.map((record, index) => (
+                                                    <div key={record.id || `${record.reqId}-${index}`} className="rounded-md bg-white/70 border border-cyan-100 px-2 py-1.5">
+                                                        <div className="font-bold text-cyan-800">
+                                                            {getModTypeLabel(record.modType)} · {record.tableCnName || record.tableName || '-'}
+                                                            {record.fieldName || record.fieldCnName ? ` / ${record.fieldCnName || record.fieldName}` : ''}
+                                                        </div>
+                                                        <div className="mt-1 text-cyan-700">
+                                                            维护需求编号：{record.reqId || '-'}；表名：{record.tableName || '-'}；表中文名：{record.tableCnName || '-'}；字段名：{record.fieldName || '-'}；字段中文名：{record.fieldCnName || '-'}
+                                                        </div>
+                                                        {record.description && (
+                                                            <div className="mt-1 text-slate-600 whitespace-pre-wrap break-words">
+                                                                {record.description}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="text-amber-700">
+                                                未查到资产管理维护记录；当前可审核内容为提交说明：{activeTask.reviewComment || '-'}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
                             {isAssetReviewTask(activeTask) && activeTask.reviewComment && (
                                 <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-700">
                                     <div className="font-bold text-slate-600 mb-1">提交说明</div>
                                     <div className="whitespace-pre-wrap break-words">{activeTask.reviewComment}</div>
+                                </div>
+                            )}
+                            {isAssetReviewTask(activeTask) && (
+                                <div className="rounded-lg border border-slate-200 overflow-hidden">
+                                    <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600">
+                                        资产管理维护记录
+                                    </div>
+                                    {assetReviewLoading ? (
+                                        <div className="text-center py-8 text-slate-400 bg-slate-50">
+                                            正在加载资产管理维护记录...
+                                        </div>
+                                    ) : assetReviewRecords.length > 0 ? (
+                                        <div className="overflow-x-auto">
+                                            <table className="min-w-full text-xs">
+                                                <thead className="bg-white text-slate-400">
+                                                    <tr className="border-b border-slate-100">
+                                                        <th className="text-left px-3 py-2 font-bold">变更类型</th>
+                                                        <th className="text-left px-3 py-2 font-bold">维护需求编号</th>
+                                                        <th className="text-left px-3 py-2 font-bold">表名</th>
+                                                        <th className="text-left px-3 py-2 font-bold">表中文名</th>
+                                                        <th className="text-left px-3 py-2 font-bold">字段名</th>
+                                                        <th className="text-left px-3 py-2 font-bold">字段中文名</th>
+                                                        <th className="text-left px-3 py-2 font-bold">操作人</th>
+                                                        <th className="text-left px-3 py-2 font-bold">时间</th>
+                                                        <th className="text-left px-3 py-2 font-bold">变更说明</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {assetReviewRecords.map((record, index) => (
+                                                        <tr key={record.id || `${record.reqId}-${index}`} className="border-b border-slate-100 last:border-b-0 align-top">
+                                                            <td className="px-3 py-2 font-bold text-cyan-700 whitespace-nowrap">{getModTypeLabel(record.modType)}</td>
+                                                            <td className="px-3 py-2 text-slate-700 min-w-[160px]">{record.reqId || '-'}</td>
+                                                            <td className="px-3 py-2 text-slate-700 min-w-[140px]">{record.tableName || '-'}</td>
+                                                            <td className="px-3 py-2 text-slate-700 min-w-[140px]">{record.tableCnName || '-'}</td>
+                                                            <td className="px-3 py-2 text-slate-700 min-w-[120px]">{record.fieldName || '-'}</td>
+                                                            <td className="px-3 py-2 text-slate-700 min-w-[140px]">{record.fieldCnName || '-'}</td>
+                                                            <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{record.operator || '-'}</td>
+                                                            <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{formatRecordTime(record.time)}</td>
+                                                            <td className="px-3 py-2 text-slate-700 min-w-[260px]">
+                                                                <div className="whitespace-pre-wrap break-words">{record.description || '-'}</div>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        <div className="px-3 py-4 text-xs text-amber-700 bg-amber-50">
+                                            <div>{assetReviewError || '未找到资产管理维护记录'}</div>
+                                            <div className="mt-1 whitespace-pre-wrap break-words">提交说明：{activeTask.reviewComment || '-'}</div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                             <select
@@ -286,7 +453,7 @@ const ReviewCenter: React.FC = () => {
                             />
                         </div>
                         <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-2">
-                            <button onClick={() => setActiveTask(null)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-lg">取消</button>
+                            <button onClick={closeReview} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-lg">取消</button>
                             <button onClick={submitReview} className="px-4 py-2 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg">确认处理</button>
                         </div>
                     </div>

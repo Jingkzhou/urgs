@@ -31,6 +31,7 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
@@ -107,6 +108,38 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                         .orderByDesc(WorkTask::getCreateTime));
 
         Page<TaskMarketDTO> dtoPage = new Page<>();
+        BeanUtils.copyProperties(taskPage, dtoPage, "records");
+        dtoPage.setRecords(taskPage.getRecords().stream()
+                .map(task -> buildTaskMarketDTO(task, workService.getById(task.getWorkId())))
+                .collect(Collectors.toList()));
+        return dtoPage;
+    }
+
+    @Override
+    public Page<TaskMarketDTO> getReviewTasks(Page<WorkTask> page, String publisherId, boolean history) {
+        List<String> workIds = workService.lambdaQuery()
+                .eq(Work::getPublisherId, publisherId)
+                .list()
+                .stream()
+                .map(Work::getId)
+                .toList();
+
+        Page<TaskMarketDTO> dtoPage = new Page<>(page.getCurrent(), page.getSize());
+        if (workIds.isEmpty()) {
+            return dtoPage;
+        }
+
+        LambdaQueryWrapper<WorkTask> query = new LambdaQueryWrapper<WorkTask>()
+                .in(WorkTask::getWorkId, workIds);
+        if (history) {
+            query.isNotNull(WorkTask::getReviewedAt)
+                    .orderByDesc(WorkTask::getReviewedAt);
+        } else {
+            query.in(WorkTask::getStatus, TaskStatus.ASSET_REVIEW.name(), TaskStatus.REVIEW.name())
+                    .orderByDesc(WorkTask::getSubmittedAt);
+        }
+
+        Page<WorkTask> taskPage = this.page(page, query);
         BeanUtils.copyProperties(taskPage, dtoPage, "records");
         dtoPage.setRecords(taskPage.getRecords().stream()
                 .map(task -> buildTaskMarketDTO(task, workService.getById(task.getWorkId())))
