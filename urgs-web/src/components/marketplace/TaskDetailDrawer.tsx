@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Drawer, Button, Tag, Space, Divider, Typography, Descriptions, Spin, Empty } from 'antd';
 import { getTaskDetail, TaskMarketDTO, claimTask } from '../../api/marketplace';
 import { Award, Clock, Users, Building2, User } from 'lucide-react';
-import { getTaskStageLabel, getTaskStatusLabel } from './marketplaceLabels';
+import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -52,6 +52,18 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
         } finally {
             setClaiming(false);
         }
+    };
+
+    const formatDateTime = (value?: string) => {
+        if (!value) return '-';
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+    };
+
+    const getPrimarySystemText = (value?: boolean, name?: string) => {
+        if (value === undefined || value === null) return '-';
+        if (value) return '是';
+        return name ? `否 / ${name}` : '否';
     };
 
     return (
@@ -115,6 +127,41 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                             </div>
                         </div>
                     </div>
+
+                    <Divider className="my-0" />
+
+                    <section>
+                        <Title level={5}>工作信息</Title>
+                        <Descriptions column={1} size="small" className="bg-slate-50 p-4 rounded-xl">
+                            <Descriptions.Item label="工作名称">
+                                <span className="font-medium">{task.workTitle || '-'}</span>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="需求编号">
+                                <span className="font-medium text-cyan-700">{task.requirementNumber || '-'}</span>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="工作状态">
+                                {getWorkStatusLabel(task.workStatus)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="申请部门 / 申请人">
+                                {(task.applicationDepartment || '-') + ' / ' + (task.applicantName || '-')}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="归属系统">
+                                {task.owningSystem || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="主系统">
+                                {getPrimarySystemText(task.primarySystem, task.primarySystemName)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="项目类型 / 优先级">
+                                {(task.projectType || '-') + ' / ' + (task.workPriority || '-')}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="工作截止 / 创建时间">
+                                {formatDateTime(task.workDeadline)} / {formatDateTime(task.workCreateTime)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="工作描述">
+                                <span className="whitespace-pre-wrap">{task.workDescription || '-'}</span>
+                            </Descriptions.Item>
+                        </Descriptions>
+                    </section>
 
                     <Divider className="my-0" />
 

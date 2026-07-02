@@ -118,17 +118,14 @@ public class WorkTaskController {
     }
 
     @GetMapping("/my")
-    public PageResult<WorkTask> getMyTasks(
+    public PageResult<TaskMarketDTO> getMyTasks(
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "10") int size) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
         Page<WorkTask> page = new Page<>(current, size);
-        Page<WorkTask> resultPage = workTaskService.page(page,
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<WorkTask>()
-                        .eq(WorkTask::getAssigneeId, userId)
-                        .orderByDesc(WorkTask::getCreateTime));
+        Page<TaskMarketDTO> resultPage = workTaskService.getMyTasks(page, userId);
         return PageResult.of(resultPage);
     }
 
@@ -217,9 +214,10 @@ public class WorkTaskController {
     public ResponseEntity<Void> advanceTaskStage(
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
-            @PathVariable String id) {
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, String> body) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        workTaskService.advanceTaskStage(id, userId);
+        workTaskService.advanceTaskStage(id, userId, body != null ? body.get("assetReviewNote") : null);
         return ResponseEntity.ok().build();
     }
 

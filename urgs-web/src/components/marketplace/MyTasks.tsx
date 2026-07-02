@@ -9,7 +9,7 @@ import {
     getWorkDetail,
     listAssetMaintenanceRecords,
     AssetMaintenanceRecord,
-    WorkTask,
+    TaskMarketDTO,
     KpiSummaryDTO,
 } from '../../api/marketplace';
 import { Award, Clock, Gauge, ListTodo, Star, TrendingUp, X } from 'lucide-react';
@@ -32,20 +32,21 @@ const getCurrentMonthRange = () => {
 };
 
 const MyTasks: React.FC = () => {
-    const [tasks, setTasks] = useState<WorkTask[]>([]);
+    const [tasks, setTasks] = useState<TaskMarketDTO[]>([]);
     const [kpiSummary, setKpiSummary] = useState<KpiSummaryDTO | null>(null);
     const [dateRange, setDateRange] = useState(getCurrentMonthRange);
     const [loading, setLoading] = useState(false);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
-    const [appealTask, setAppealTask] = useState<WorkTask | null>(null);
+    const [appealTask, setAppealTask] = useState<TaskMarketDTO | null>(null);
     const [appealForm, setAppealForm] = useState({ reason: '', expectedResult: '' });
-    const [riskTask, setRiskTask] = useState<WorkTask | null>(null);
+    const [riskTask, setRiskTask] = useState<TaskMarketDTO | null>(null);
     const [riskNote, setRiskNote] = useState('');
-    const [assetReviewTask, setAssetReviewTask] = useState<WorkTask | null>(null);
+    const [assetReviewTask, setAssetReviewTask] = useState<TaskMarketDTO | null>(null);
     const [assetReviewRecords, setAssetReviewRecords] = useState<AssetMaintenanceRecord[]>([]);
     const [assetReviewReqId, setAssetReviewReqId] = useState('');
     const [assetReviewWorkTitle, setAssetReviewWorkTitle] = useState('');
+    const [assetReviewNote, setAssetReviewNote] = useState('');
     const [assetReviewLoading, setAssetReviewLoading] = useState(false);
     const [assetReviewSubmitting, setAssetReviewSubmitting] = useState(false);
     const [assetReviewError, setAssetReviewError] = useState('');
@@ -74,7 +75,7 @@ const MyTasks: React.FC = () => {
         setDateRange(getCurrentMonthRange());
     };
 
-    const isAssetReviewAdvance = (task: WorkTask) => {
+    const isAssetReviewAdvance = (task: TaskMarketDTO) => {
         return task.currentStage === 'TESTING' || task.currentStage === 'ASSET_REVIEW';
     };
 
@@ -83,6 +84,7 @@ const MyTasks: React.FC = () => {
         setAssetReviewRecords([]);
         setAssetReviewReqId('');
         setAssetReviewWorkTitle('');
+        setAssetReviewNote('');
         setAssetReviewLoading(false);
         setAssetReviewSubmitting(false);
         setAssetReviewError('');
@@ -102,11 +104,12 @@ const MyTasks: React.FC = () => {
         return modType;
     };
 
-    const openAssetReviewConfirm = async (task: WorkTask) => {
+    const openAssetReviewConfirm = async (task: TaskMarketDTO) => {
         setAssetReviewTask(task);
         setAssetReviewRecords([]);
         setAssetReviewReqId('');
         setAssetReviewWorkTitle('');
+        setAssetReviewNote('');
         setAssetReviewError('');
         setAssetReviewLoading(true);
         try {
@@ -137,7 +140,7 @@ const MyTasks: React.FC = () => {
         }
     };
 
-    const handleAdvanceStage = async (task: WorkTask) => {
+    const handleAdvanceStage = async (task: TaskMarketDTO) => {
         if (isAssetReviewAdvance(task)) {
             await openAssetReviewConfirm(task);
             return;
@@ -156,10 +159,15 @@ const MyTasks: React.FC = () => {
     };
 
     const confirmAssetReviewAdvance = async () => {
-        if (!assetReviewTask || assetReviewRecords.length === 0) return;
+        if (!assetReviewTask) return;
+        const trimmedNote = assetReviewNote.trim();
+        if (assetReviewRecords.length === 0 && !trimmedNote) {
+            setAssetReviewError('未找到资产维护记录时，请先填写提交说明');
+            return;
+        }
         setAssetReviewSubmitting(true);
         try {
-            await advanceTaskStage(assetReviewTask.id);
+            await advanceTaskStage(assetReviewTask.id, { assetReviewNote: trimmedNote || undefined });
             resetAssetReviewDialog();
             fetchTasks();
         } catch (error) {
@@ -184,14 +192,14 @@ const MyTasks: React.FC = () => {
         }
     };
 
-    const getAdvanceButtonText = (task: WorkTask) => {
+    const getAdvanceButtonText = (task: TaskMarketDTO) => {
         if (task.currentStage === 'TESTING') return '完成测试，提交资产审核';
         if (task.currentStage === 'ASSET_REVIEW') return '重新提交资产审核';
         if (task.currentStage === 'LAUNCH') return '上线完成，进入验收';
         return `完成${getTaskStageLabel(task.currentStage)}阶段`;
     };
 
-    const handleReleaseTask = async (task: WorkTask) => {
+    const handleReleaseTask = async (task: TaskMarketDTO) => {
         if (!window.confirm(`确定要解除承接「${task.title}」吗？解除后任务将返回任务大厅。`)) return;
         try {
             await releaseTask(task.id);
@@ -310,6 +318,23 @@ const MyTasks: React.FC = () => {
                                     }`}>
                                     {getTaskStatusLabel(task.status)}
                                 </span>
+                            </div>
+                            <div className="mb-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs">
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                    <span className="font-bold text-slate-700 truncate max-w-full">
+                                        工作：{task.workTitle || '-'}
+                                    </span>
+                                    <span className="text-slate-400">|</span>
+                                    <span className="font-bold text-cyan-700">
+                                        需求编号：{task.requirementNumber || '-'}
+                                    </span>
+                                </div>
+                                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-500">
+                                    <span>申请部门：{task.applicationDepartment || '-'}</span>
+                                    <span>申请人：{task.applicantName || '-'}</span>
+                                    <span>归属系统：{task.owningSystem || '-'}</span>
+                                    <span>项目类型：{task.projectType || '-'}</span>
+                                </div>
                             </div>
                             <p className="text-sm text-slate-500 mb-4 line-clamp-2">{task.description}</p>
                             <div className="flex flex-wrap items-center gap-2 mb-3 text-xs">
@@ -432,6 +457,20 @@ const MyTasks: React.FC = () => {
                                         </div>
                                     )}
 
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1">
+                                            提交说明{assetReviewRecords.length === 0 ? ' *' : ''}
+                                        </label>
+                                        <textarea
+                                            value={assetReviewNote}
+                                            onChange={e => setAssetReviewNote(e.target.value)}
+                                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm min-h-[84px]"
+                                            placeholder={assetReviewRecords.length === 0
+                                                ? '未找到维护记录，请说明本次资产是否无需同步、已通过其他方式维护，或待补充的原因'
+                                                : '可补充本次资产同步范围、注意事项或特殊说明'}
+                                        />
+                                    </div>
+
                                     {assetReviewRecords.length > 0 && (
                                         <div className="border border-slate-200 rounded-lg overflow-hidden">
                                             <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600">
@@ -442,7 +481,10 @@ const MyTasks: React.FC = () => {
                                                     <thead className="bg-white text-slate-400">
                                                         <tr className="border-b border-slate-100">
                                                             <th className="text-left px-3 py-2 font-bold">变更类型</th>
-                                                            <th className="text-left px-3 py-2 font-bold">表/字段</th>
+                                                            <th className="text-left px-3 py-2 font-bold">表名</th>
+                                                            <th className="text-left px-3 py-2 font-bold">表中文名</th>
+                                                            <th className="text-left px-3 py-2 font-bold">字段名</th>
+                                                            <th className="text-left px-3 py-2 font-bold">字段中文名</th>
                                                             <th className="text-left px-3 py-2 font-bold">系统</th>
                                                             <th className="text-left px-3 py-2 font-bold">操作人</th>
                                                             <th className="text-left px-3 py-2 font-bold">时间</th>
@@ -455,11 +497,17 @@ const MyTasks: React.FC = () => {
                                                                 <td className="px-3 py-2 font-bold text-cyan-700 whitespace-nowrap">
                                                                     {getModTypeLabel(record.modType)}
                                                                 </td>
-                                                                <td className="px-3 py-2 min-w-[180px]">
-                                                                    <div className="font-bold text-slate-700">{record.tableCnName || record.tableName || '-'}</div>
-                                                                    <div className="text-slate-400">
-                                                                        {[record.fieldCnName || record.fieldName, record.tableName].filter(Boolean).join(' / ') || '-'}
-                                                                    </div>
+                                                                <td className="px-3 py-2 text-slate-700 min-w-[140px]">
+                                                                    {record.tableName || '-'}
+                                                                </td>
+                                                                <td className="px-3 py-2 text-slate-700 min-w-[140px]">
+                                                                    {record.tableCnName || '-'}
+                                                                </td>
+                                                                <td className="px-3 py-2 text-slate-700 min-w-[120px]">
+                                                                    {record.fieldName || '-'}
+                                                                </td>
+                                                                <td className="px-3 py-2 text-slate-700 min-w-[140px]">
+                                                                    {record.fieldCnName || '-'}
                                                                 </td>
                                                                 <td className="px-3 py-2 text-slate-600 whitespace-nowrap">
                                                                     {record.systemCode || record.assetType || '-'}
@@ -493,7 +541,7 @@ const MyTasks: React.FC = () => {
                             </button>
                             <button
                                 onClick={confirmAssetReviewAdvance}
-                                disabled={assetReviewLoading || assetReviewSubmitting || assetReviewRecords.length === 0}
+                                disabled={assetReviewLoading || assetReviewSubmitting || (assetReviewRecords.length === 0 && !assetReviewNote.trim())}
                                 className="px-4 py-2 text-sm font-bold text-white bg-cyan-600 hover:bg-cyan-700 rounded-lg disabled:opacity-50 disabled:hover:bg-cyan-600"
                             >
                                 {assetReviewSubmitting ? '提交中...' : '确认进入审核'}

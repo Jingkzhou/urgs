@@ -236,6 +236,12 @@ const ReviewCenter: React.FC = () => {
                                     审核内容：资产管理维护记录同步情况
                                 </div>
                             )}
+                            {isAssetReviewTask(activeTask) && activeTask.reviewComment && (
+                                <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                                    <div className="font-bold text-slate-600 mb-1">提交说明</div>
+                                    <div className="whitespace-pre-wrap break-words">{activeTask.reviewComment}</div>
+                                </div>
+                            )}
                             <select
                                 value={form.decision}
                                 onChange={e => setForm({ ...form, decision: e.target.value as TaskReviewDTO['decision'] })}

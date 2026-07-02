@@ -85,7 +85,6 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         Page<TaskMarketDTO> dtoPage = new Page<>();
         BeanUtils.copyProperties(taskPage, dtoPage, "records");
 
-        // Map to DTO and enrich with Work and User info
         dtoPage.setRecords(taskPage.getRecords().stream().map(task -> {
             Work work = workService.getById(task.getWorkId());
             // Show tasks from PUBLISHED or IN_PROGRESS works. Reject DRAFT/CANCELLED.
@@ -94,30 +93,24 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 return null;
             }
 
-            TaskMarketDTO dto = new TaskMarketDTO();
-            BeanUtils.copyProperties(task, dto);
-            dto.setWorkTitle(work.getTitle());
-
-            User publisher = userMapper.selectById(work.getPublisherId());
-            if (publisher != null) {
-                dto.setPublisherName(publisher.getName());
-                dto.setPublisherAvatar(publisher.getAvatarUrl());
-            }
-
-            // Get application count if COMPETE mode
-            if (AssignMode.COMPETE.name().equals(task.getAssignMode())) {
-                long count = taskApplicationService.lambdaQuery()
-                        .eq(com.example.urgs_api.marketplace.model.TaskApplication::getTaskId, task.getId())
-                        .eq(com.example.urgs_api.marketplace.model.TaskApplication::getStatus, "PENDING")
-                        .count();
-                dto.setApplicationCount((int) count);
-            } else {
-                dto.setApplicationCount(0);
-            }
-
-            return dto;
+            return buildTaskMarketDTO(task, work);
         }).filter(java.util.Objects::nonNull).collect(Collectors.toList()));
 
+        return dtoPage;
+    }
+
+    @Override
+    public Page<TaskMarketDTO> getMyTasks(Page<WorkTask> page, String userId) {
+        Page<WorkTask> taskPage = this.page(page,
+                new LambdaQueryWrapper<WorkTask>()
+                        .eq(WorkTask::getAssigneeId, userId)
+                        .orderByDesc(WorkTask::getCreateTime));
+
+        Page<TaskMarketDTO> dtoPage = new Page<>();
+        BeanUtils.copyProperties(taskPage, dtoPage, "records");
+        dtoPage.setRecords(taskPage.getRecords().stream()
+                .map(task -> buildTaskMarketDTO(task, workService.getById(task.getWorkId())))
+                .collect(Collectors.toList()));
         return dtoPage;
     }
 
@@ -262,12 +255,12 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         ReviewDecision decision = ReviewDecision.valueOf(dto.getDecision());
         if (ReviewDecision.APPROVE.equals(decision)) {
             if (isAssetReview(task)) {
-                assertAssetMaintenanceSynced(work);
+                assertAssetMaintenanceSynced(task, work);
                 LocalDateTime now = LocalDateTime.now();
                 task.setCurrentStage(STAGE_LAUNCH);
                 task.setStageUpdatedAt(now);
                 task.setStatus(TaskStatus.IN_PROGRESS.name());
-                task.setReviewComment(dto.getReviewComment());
+                task.setReviewComment(buildAssetReviewComment(task.getReviewComment(), dto.getReviewComment()));
                 task.setReviewerId(reviewerId);
                 task.setReviewedAt(now);
                 boolean success = this.updateById(task);
@@ -381,7 +374,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public boolean advanceTaskStage(String taskId, String userId) {
+    public boolean advanceTaskStage(String taskId, String userId, String assetReviewNote) {
         WorkTask task = this.getById(taskId);
         if (task == null) {
             throw new IllegalArgumentException("任务不存在");
@@ -402,6 +395,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
         String currentStage = resolveStage(task);
         LocalDateTime now = LocalDateTime.now();
+        String trimmedAssetReviewNote = StringUtils.hasText(assetReviewNote) ? assetReviewNote.trim() : null;
 
         task.setStageRiskReported(StringUtils.hasText(task.getStageRiskNote()));
         task.setStageUpdatedAt(now);
@@ -412,6 +406,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (STAGE_ASSET_REVIEW.equals(currentStage)) {
             task.setSubmittedAt(now);
             task.setStatus(TaskStatus.ASSET_REVIEW.name());
+            task.setReviewComment(trimmedAssetReviewNote);
             logTaskAction(taskId, userId, "ASSET_REVIEW_RESUBMIT", "重新提交资产同步审核");
         } else {
             String nextStage = nextStage(currentStage);
@@ -419,6 +414,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 task.setCurrentStage(nextStage);
                 task.setSubmittedAt(now);
                 task.setStatus(TaskStatus.ASSET_REVIEW.name());
+                task.setReviewComment(trimmedAssetReviewNote);
                 logTaskAction(taskId, userId, "STAGE_TO_ASSET_REVIEW", "测试完成，进入资产同步审核");
             } else if (nextStage == null) {
                 task.setSubmittedAt(now);
@@ -525,12 +521,33 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             throw new IllegalArgumentException("任务不存在");
         }
 
+        Work work = workService.getById(task.getWorkId());
+        return buildTaskMarketDTO(task, work);
+    }
+
+    private TaskMarketDTO buildTaskMarketDTO(WorkTask task, Work work) {
         TaskMarketDTO dto = new TaskMarketDTO();
         BeanUtils.copyProperties(task, dto);
 
-        Work work = workService.getById(task.getWorkId());
         if (work != null) {
             dto.setWorkTitle(work.getTitle());
+            dto.setWorkDescription(work.getDescription());
+            dto.setWorkPriority(work.getPriority());
+            dto.setWorkTotalPoints(work.getTotalPoints());
+            dto.setWorkStatus(work.getStatus());
+            dto.setWorkPublisherId(work.getPublisherId());
+            dto.setWorkDeadline(work.getDeadline());
+            dto.setRequirementNumber(work.getRequirementNumber());
+            dto.setApplicationDepartment(work.getApplicationDepartment());
+            dto.setApplicantName(work.getApplicantName());
+            dto.setOwningSystem(work.getOwningSystem());
+            dto.setPrimarySystem(work.getPrimarySystem());
+            dto.setPrimarySystemName(work.getPrimarySystemName());
+            dto.setProjectType(work.getProjectType());
+            dto.setAttachments(work.getAttachments());
+            dto.setWorkCreateTime(work.getCreateTime());
+            dto.setWorkUpdateTime(work.getUpdateTime());
+
             User publisher = userMapper.selectById(work.getPublisherId());
             if (publisher != null) {
                 dto.setPublisherName(publisher.getName());
@@ -538,11 +555,10 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             }
         }
 
-        // Get application count if COMPETE mode
         if (AssignMode.COMPETE.name().equals(task.getAssignMode())) {
             long count = taskApplicationService.lambdaQuery()
                     .eq(com.example.urgs_api.marketplace.model.TaskApplication::getTaskId, task.getId())
-                        .eq(com.example.urgs_api.marketplace.model.TaskApplication::getStatus, "PENDING")
+                    .eq(com.example.urgs_api.marketplace.model.TaskApplication::getStatus, "PENDING")
                     .count();
             dto.setApplicationCount((int) count);
         } else {
@@ -616,15 +632,27 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 && TaskStatus.ASSET_REVIEW.name().equals(task.getStatus());
     }
 
-    private void assertAssetMaintenanceSynced(Work work) {
+    private void assertAssetMaintenanceSynced(WorkTask task, Work work) {
         if (work == null || !StringUtils.hasText(work.getRequirementNumber())) {
             throw new IllegalStateException("工作缺少需求编号，无法校验资产管理维护记录");
         }
         long maintenanceCount = maintenanceRecordService.count(new LambdaQueryWrapper<MaintenanceRecord>()
-                .eq(MaintenanceRecord::getReqId, work.getRequirementNumber()));
-        if (maintenanceCount <= 0) {
-            throw new IllegalStateException("资产管理维护记录中未找到该需求编号，请先完成同步维护");
+                .like(MaintenanceRecord::getReqId, work.getRequirementNumber()));
+        if (maintenanceCount <= 0 && !StringUtils.hasText(task.getReviewComment())) {
+            throw new IllegalStateException("资产管理维护记录中未找到该需求编号，请填写同步说明后再提交审核");
         }
+    }
+
+    private String buildAssetReviewComment(String submitterNote, String reviewerComment) {
+        String trimmedSubmitterNote = StringUtils.hasText(submitterNote) ? submitterNote.trim() : null;
+        String trimmedReviewerComment = StringUtils.hasText(reviewerComment) ? reviewerComment.trim() : null;
+        if (trimmedSubmitterNote == null) {
+            return trimmedReviewerComment;
+        }
+        if (trimmedReviewerComment == null) {
+            return "提交说明: " + trimmedSubmitterNote;
+        }
+        return "提交说明: " + trimmedSubmitterNote + "\n审核意见: " + trimmedReviewerComment;
     }
 
     private String nullToEmpty(String value) {
