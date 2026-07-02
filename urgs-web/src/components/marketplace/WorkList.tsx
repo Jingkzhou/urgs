@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { Pagination } from 'antd';
-import { listWorks, publishWork, cancelWork, batchDeleteWorks, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
-import { ChevronDown, ChevronRight, Download, Edit3, ListTodo, Plus, Play, Trash2, Upload, XCircle } from 'lucide-react';
+import { listWorks, publishWork, cancelWork, batchDeleteWorks, updateTaskStatus, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
+import { ChevronDown, ChevronRight, Download, Edit3, ListTodo, PauseCircle, Plus, Play, PlayCircle, Trash2, Upload, XCircle } from 'lucide-react';
 import CreateWorkDrawer from './CreateWorkDrawer';
 import ImportWorkModal from './ImportWorkModal';
 import WorkDetailDrawer from './WorkDetailDrawer';
@@ -154,6 +154,18 @@ const WorkList: React.FC = () => {
         }
     };
 
+    const handleToggleTaskPaused = async (task: WorkTask) => {
+        const nextStatus = task.status === 'PAUSED' ? 'IN_PROGRESS' : 'PAUSED';
+        const actionText = task.status === 'PAUSED' ? '继续' : '暂停';
+        if (!window.confirm(`确定要${actionText}任务「${task.title}」吗？`)) return;
+        try {
+            await updateTaskStatus(task.id, nextStatus);
+            await fetchWorks(currentPage, pageSize);
+        } catch (error) {
+            alert(`${actionText}任务失败`);
+        }
+    };
+
     const toggleExpanded = (workId: string) => {
         setExpandedWorkIds(prev => ({ ...prev, [workId]: !prev[workId] }));
     };
@@ -175,6 +187,7 @@ const WorkList: React.FC = () => {
     const statusClass = (status?: string) => {
         if (status === 'COMPLETED') return 'bg-green-100 text-green-700';
         if (status === 'IN_PROGRESS' || status === 'ASSIGNED') return 'bg-blue-100 text-blue-700';
+        if (status === 'PAUSED') return 'bg-amber-100 text-amber-700';
         if (status === 'REVIEW') return 'bg-orange-100 text-orange-700';
         if (status === 'DRAFT' || status === 'PUBLISHED') return 'bg-slate-100 text-slate-600';
         return 'bg-red-100 text-red-600';
@@ -504,16 +517,17 @@ const WorkList: React.FC = () => {
                                         <span className="h-2 w-2 rounded-full bg-slate-400"></span>
                                         <span>二级任务菜单</span>
                                     </div>
-                                    <div className="grid grid-cols-[88px_minmax(220px,1.5fr)_100px_100px_90px_120px] gap-3 px-3 py-2 text-xs font-bold text-slate-400">
+                                    <div className="grid grid-cols-[88px_minmax(220px,1.5fr)_100px_100px_90px_120px_90px] gap-3 px-3 py-2 text-xs font-bold text-slate-400">
                                         <span>层级</span>
                                         <span>任务名称</span>
                                         <span>状态</span>
                                         <span>阶段</span>
                                         <span>积分</span>
                                         <span>风险</span>
+                                        <span>操作</span>
                                     </div>
                                     {getOrderedTasks(work.id).map(task => (
-                                        <div key={task.id} className="relative grid grid-cols-[88px_minmax(220px,1.5fr)_100px_100px_90px_120px] gap-3 px-3 py-2 items-center text-xs bg-white border border-slate-100 rounded-lg mb-2 last:mb-0">
+                                        <div key={task.id} className="relative grid grid-cols-[88px_minmax(220px,1.5fr)_100px_100px_90px_120px_90px] gap-3 px-3 py-2 items-center text-xs bg-white border border-slate-100 rounded-lg mb-2 last:mb-0">
                                             <span className="absolute -left-[17px] top-1/2 h-px w-4 bg-slate-200"></span>
                                             <span className={`w-fit px-2 py-0.5 rounded font-bold ${task.taskRole === 'MAIN' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-600'}`}>
                                                 {task.taskRole === 'MAIN' ? '主任务' : '子任务'}
@@ -530,6 +544,22 @@ const WorkList: React.FC = () => {
                                             <span className={task.stageRiskReported ? 'text-amber-700 font-bold truncate' : 'text-slate-400'}>
                                                 {task.stageRiskReported ? (task.stageRiskNote || '已报备') : '-'}
                                             </span>
+                                            {['COMPLETED', 'CANCELLED', 'REJECTED'].includes(task.status) ? (
+                                                <span className="text-slate-300">-</span>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleToggleTaskPaused(task)}
+                                                    className={`inline-flex w-fit items-center gap-1 rounded px-2 py-1 font-bold transition-colors ${
+                                                        task.status === 'PAUSED'
+                                                            ? 'bg-green-50 text-green-700 hover:bg-green-100'
+                                                            : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                                    }`}
+                                                    title={task.status === 'PAUSED' ? '继续任务' : '暂停任务'}
+                                                >
+                                                    {task.status === 'PAUSED' ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
+                                                    {task.status === 'PAUSED' ? '继续' : '暂停'}
+                                                </button>
+                                            )}
                                         </div>
                                     ))}
                                     {(workTasks[work.id] || []).length === 0 && (

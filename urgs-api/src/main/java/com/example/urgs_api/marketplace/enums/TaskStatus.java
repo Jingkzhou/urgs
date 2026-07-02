@@ -5,6 +5,7 @@ public enum TaskStatus {
     APPLIED("已申请竞标"),
     ASSIGNED("已指派/已领取"),
     IN_PROGRESS("开发/处理中"),
+    PAUSED("已暂停"),
     REVIEW("待审核"),
     COMPLETED("已完成"),
     REJECTED("退回修改"),

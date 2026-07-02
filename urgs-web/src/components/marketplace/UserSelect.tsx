@@ -12,10 +12,24 @@ const UserSelect: React.FC<UserSelectProps> = ({ value, onChange }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
+    const selectedValueRef = useRef<string | null>(null);
 
     const formatUserLabel = (user: UserDTO) => {
         const empId = user.empId || '无工号';
         return `${empId} - ${user.name}`;
+    };
+
+    const getUserValue = (user: UserDTO) => {
+        return user.id?.toString() || user.empId || '';
+    };
+
+    const handleSelectUser = (user: UserDTO) => {
+        const nextValue = getUserValue(user);
+        if (!nextValue) return;
+        setKeyword(formatUserLabel(user));
+        selectedValueRef.current = nextValue;
+        onChange(nextValue);
+        setIsOpen(false);
     };
 
     useEffect(() => {
@@ -23,12 +37,16 @@ const UserSelect: React.FC<UserSelectProps> = ({ value, onChange }) => {
         const resolveSelectedUser = async () => {
             if (!value) {
                 setKeyword('');
+                selectedValueRef.current = null;
+                return;
+            }
+            if (selectedValueRef.current === value.toString()) {
                 return;
             }
             try {
                 const results = await searchUsers(value.toString());
                 if (!active) return;
-                const matchedUser = results.find(user => user.id.toString() === value.toString()) || results[0];
+                const matchedUser = results.find(user => getUserValue(user) === value.toString());
                 setKeyword(matchedUser ? formatUserLabel(matchedUser) : value.toString());
             } catch (error) {
                 if (active) {
@@ -110,12 +128,11 @@ const UserSelect: React.FC<UserSelectProps> = ({ value, onChange }) => {
                         <ul className="py-1">
                             {users.map((user) => (
                                 <li
-                                    key={user.id}
+                                    key={getUserValue(user)}
                                     className="px-3 py-2 hover:bg-slate-50 cursor-pointer text-sm flex items-center justify-between"
-                                    onClick={() => {
-                                        setKeyword(formatUserLabel(user));
-                                        onChange(user.id.toString());
-                                        setIsOpen(false);
+                                    onMouseDown={(event) => {
+                                        event.preventDefault();
+                                        handleSelectUser(user);
                                     }}
                                 >
                                     <div className="flex flex-col">

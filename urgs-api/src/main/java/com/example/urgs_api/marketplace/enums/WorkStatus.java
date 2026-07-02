@@ -5,6 +5,7 @@ public enum WorkStatus {
     PUBLISHED("已发布"),
     ASSIGNED("已承接"),
     IN_PROGRESS("进行中"),
+    PAUSED("已暂停"),
     REVIEW("待验收"),
     COMPLETED("已完成"),
     REJECTED("退回修改"),
