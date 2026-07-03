@@ -299,152 +299,163 @@ const ReviewCenter: React.FC = () => {
                     <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-5xl max-h-[86vh] flex flex-col">
                         <div className="px-5 py-4 border-b border-slate-100">
                             <h3 className="font-bold text-slate-800">{isAssetReviewTask(activeTask) ? '资产同步审核' : '验收处理'}</h3>
-                            <p className="text-xs text-slate-500 mt-1">{activeTask.title}</p>
+                            {!isAssetReviewTask(activeTask) && (
+                                <p className="text-xs text-slate-500 mt-1">{activeTask.title}</p>
+                            )}
                         </div>
                         <div className="p-5 space-y-4 overflow-y-auto">
                             {isAssetReviewTask(activeTask) && (
-                                <div className="space-y-3">
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                                        <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                                            <div className="text-slate-400 mb-1">需求编号</div>
-                                            <div className="font-bold text-slate-800">{activeTask.requirementNumber || '-'}</div>
-                                        </div>
-                                        <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                                            <div className="text-slate-400 mb-1">工作名称</div>
-                                            <div className="font-bold text-slate-800">{activeTask.workTitle || activeTask.title}</div>
-                                        </div>
-                                        <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-3">
-                                            <div className="text-cyan-500 mb-1">维护记录</div>
-                                            <div className="font-bold text-cyan-700">
-                                                {assetReviewLoading ? '加载中...' : `${assetReviewRecords.length} 条`}
+                                <div className="space-y-4">
+                                    <section className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                                        <div className="text-xs font-bold text-slate-500">任务信息</div>
+                                        <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-[200px_1fr]">
+                                            <div>
+                                                <div className="text-xs text-slate-400">需求编号</div>
+                                                <div className="mt-1 break-all font-mono text-sm font-bold text-slate-800">
+                                                    {activeTask.requirementNumber || '-'}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-slate-400">工作名称</div>
+                                                <div className="mt-1 text-sm font-bold text-slate-800">
+                                                    {activeTask.workTitle || activeTask.title}
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                    <div className="rounded-lg border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs text-cyan-700">
-                                        <div className="font-bold mb-2">本次待审核资产变更</div>
+                                    </section>
+
+                                    <section>
+                                        <div className="mb-2 flex items-center justify-between">
+                                            <div>
+                                                <div className="text-sm font-bold text-slate-800">审核依据</div>
+                                                <div className="mt-0.5 text-xs text-slate-400">核对本次资产变更与任务提交说明</div>
+                                            </div>
+                                            {!assetReviewLoading && (
+                                                <span className={`rounded px-2 py-1 text-xs font-bold ${
+                                                    assetReviewRecords.length > 0
+                                                        ? 'bg-cyan-50 text-cyan-700'
+                                                        : 'bg-slate-100 text-slate-600'
+                                                }`}>
+                                                    {assetReviewRecords.length > 0 ? `${assetReviewRecords.length} 条资产变更` : '无资产变更'}
+                                                </span>
+                                            )}
+                                        </div>
+
                                         {assetReviewLoading ? (
-                                            <div>正在加载资产管理维护记录...</div>
-                                        ) : assetReviewRecords.length > 0 ? (
-                                            <div className="space-y-2">
-                                                {assetReviewRecords.map((record, index) => (
-                                                    <div key={record.id || `${record.reqId}-${index}`} className="rounded-md bg-white/70 border border-cyan-100 px-2 py-1.5">
-                                                        <div className="font-bold text-cyan-800">
-                                                            {getModTypeLabel(record.modType)} · {record.tableCnName || record.tableName || '-'}
-                                                            {record.fieldName || record.fieldCnName ? ` / ${record.fieldCnName || record.fieldName}` : ''}
-                                                        </div>
-                                                        <div className="mt-1 text-cyan-700">
-                                                            维护需求编号：{record.reqId || '-'}；表名：{record.tableName || '-'}；表中文名：{record.tableCnName || '-'}；字段名：{record.fieldName || '-'}；字段中文名：{record.fieldCnName || '-'}
-                                                        </div>
-                                                        {record.description && (
-                                                            <div className="mt-1 text-slate-600 whitespace-pre-wrap break-words">
-                                                                {record.description}
-                                                            </div>
-                                                        )}
+                                            <div className="rounded-lg border border-slate-200 bg-slate-50 py-10 text-center text-sm text-slate-400">
+                                                正在加载审核依据...
+                                            </div>
+                                        ) : assetReviewRecords.length === 0 ? (
+                                            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4">
+                                                <div className="text-sm font-bold text-amber-800">
+                                                    {assetReviewError === '资产管理维护记录加载失败'
+                                                        ? '资产变更记录加载失败'
+                                                        : '本次未关联资产变更记录'}
+                                                </div>
+                                                <div className="mt-1 text-xs text-amber-700">
+                                                    {assetReviewError === '资产管理维护记录加载失败'
+                                                        ? '请稍后重试，或退回任务后重新提交。'
+                                                        : '请依据任务提交说明判断本次是否确实无需资产同步。'}
+                                                </div>
+                                                <div className="mt-3 border-t border-amber-200 pt-3">
+                                                    <div className="text-xs font-bold text-amber-700">提交说明</div>
+                                                    <div className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-800">
+                                                        {activeTask.reviewComment || '未填写提交说明'}
                                                     </div>
-                                                ))}
+                                                </div>
                                             </div>
                                         ) : (
-                                            <div className="text-amber-700">
-                                                未查到资产管理维护记录；当前可审核内容为提交说明：{activeTask.reviewComment || '-'}
+                                            <div className="overflow-hidden rounded-lg border border-slate-200">
+                                                <div className="overflow-x-auto">
+                                                    <table className="min-w-full text-xs">
+                                                        <thead className="bg-slate-50 text-slate-500">
+                                                            <tr className="border-b border-slate-200">
+                                                                <th className="px-3 py-2 text-left font-bold">变更类型</th>
+                                                                <th className="px-3 py-2 text-left font-bold">资产对象</th>
+                                                                <th className="px-3 py-2 text-left font-bold">操作信息</th>
+                                                                <th className="px-3 py-2 text-left font-bold">变更说明</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {assetReviewRecords.map((record, index) => (
+                                                                <tr key={record.id || `${record.reqId}-${index}`} className="border-b border-slate-100 last:border-b-0 align-top">
+                                                                    <td className="whitespace-nowrap px-3 py-3 font-bold text-cyan-700">
+                                                                        {getModTypeLabel(record.modType)}
+                                                                    </td>
+                                                                    <td className="min-w-[220px] px-3 py-3 text-slate-700">
+                                                                        <div className="font-bold">{record.tableCnName || record.tableName || '-'}</div>
+                                                                        <div className="mt-1 font-mono text-slate-400">{record.tableName || '-'}</div>
+                                                                        {(record.fieldName || record.fieldCnName) && (
+                                                                            <div className="mt-1 text-slate-500">
+                                                                                字段：{record.fieldCnName || record.fieldName}
+                                                                                {record.fieldName && record.fieldCnName ? ` (${record.fieldName})` : ''}
+                                                                            </div>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="min-w-[150px] px-3 py-3 text-slate-600">
+                                                                        <div>{record.operator || '-'}</div>
+                                                                        <div className="mt-1 text-slate-400">{formatRecordTime(record.time)}</div>
+                                                                    </td>
+                                                                    <td className="min-w-[260px] px-3 py-3 text-slate-700">
+                                                                        <div className="whitespace-pre-wrap break-words">{record.description || '-'}</div>
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                                {activeTask.reviewComment && (
+                                                    <div className="border-t border-slate-200 bg-slate-50 px-4 py-3">
+                                                        <div className="text-xs font-bold text-slate-500">提交说明</div>
+                                                        <div className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-700">
+                                                            {activeTask.reviewComment}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
+                                    </section>
+                                </div>
+                            )}
+                            <div className="border-t border-slate-100 pt-4">
+                                <div className="mb-2 text-sm font-bold text-slate-800">审核处理</div>
+                                <select
+                                    value={form.decision}
+                                    onChange={e => setForm({ ...form, decision: e.target.value as TaskReviewDTO['decision'] })}
+                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                                >
+                                    <option value="APPROVE">{isAssetReviewTask(activeTask) ? '通过并进入上线' : '通过并结算积分'}</option>
+                                    <option value="REJECT">{isAssetReviewTask(activeTask) ? '退回补充维护记录' : '退回修改'}</option>
+                                    <option value="CANCEL">取消任务</option>
+                                </select>
+                                {form.decision === 'APPROVE' && !isAssetReviewTask(activeTask) && (
+                                    <div className="mt-3 grid grid-cols-3 gap-3">
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            max={5}
+                                            value={form.qualityScore || ''}
+                                            onChange={e => setForm({ ...form, qualityScore: Number(e.target.value) || undefined })}
+                                            className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                                            placeholder="质量评分1-5"
+                                        />
+                                        <input
+                                            type="number"
+                                            value={form.bonusPoints || ''}
+                                            onChange={e => setForm({ ...form, bonusPoints: Number(e.target.value) || 0 })}
+                                            className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                                            placeholder="奖励积分"
+                                        />
+                                        <input
+                                            type="number"
+                                            value={form.penaltyPoints || ''}
+                                            onChange={e => setForm({ ...form, penaltyPoints: Number(e.target.value) || 0 })}
+                                            className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                                            placeholder="惩罚积分"
+                                        />
                                     </div>
-                                </div>
-                            )}
-                            {isAssetReviewTask(activeTask) && activeTask.reviewComment && (
-                                <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                                    <div className="font-bold text-slate-600 mb-1">提交说明</div>
-                                    <div className="whitespace-pre-wrap break-words">{activeTask.reviewComment}</div>
-                                </div>
-                            )}
-                            {isAssetReviewTask(activeTask) && (
-                                <div className="rounded-lg border border-slate-200 overflow-hidden">
-                                    <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600">
-                                        资产管理维护记录
-                                    </div>
-                                    {assetReviewLoading ? (
-                                        <div className="text-center py-8 text-slate-400 bg-slate-50">
-                                            正在加载资产管理维护记录...
-                                        </div>
-                                    ) : assetReviewRecords.length > 0 ? (
-                                        <div className="overflow-x-auto">
-                                            <table className="min-w-full text-xs">
-                                                <thead className="bg-white text-slate-400">
-                                                    <tr className="border-b border-slate-100">
-                                                        <th className="text-left px-3 py-2 font-bold">变更类型</th>
-                                                        <th className="text-left px-3 py-2 font-bold">维护需求编号</th>
-                                                        <th className="text-left px-3 py-2 font-bold">表名</th>
-                                                        <th className="text-left px-3 py-2 font-bold">表中文名</th>
-                                                        <th className="text-left px-3 py-2 font-bold">字段名</th>
-                                                        <th className="text-left px-3 py-2 font-bold">字段中文名</th>
-                                                        <th className="text-left px-3 py-2 font-bold">操作人</th>
-                                                        <th className="text-left px-3 py-2 font-bold">时间</th>
-                                                        <th className="text-left px-3 py-2 font-bold">变更说明</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {assetReviewRecords.map((record, index) => (
-                                                        <tr key={record.id || `${record.reqId}-${index}`} className="border-b border-slate-100 last:border-b-0 align-top">
-                                                            <td className="px-3 py-2 font-bold text-cyan-700 whitespace-nowrap">{getModTypeLabel(record.modType)}</td>
-                                                            <td className="px-3 py-2 text-slate-700 min-w-[160px]">{record.reqId || '-'}</td>
-                                                            <td className="px-3 py-2 text-slate-700 min-w-[140px]">{record.tableName || '-'}</td>
-                                                            <td className="px-3 py-2 text-slate-700 min-w-[140px]">{record.tableCnName || '-'}</td>
-                                                            <td className="px-3 py-2 text-slate-700 min-w-[120px]">{record.fieldName || '-'}</td>
-                                                            <td className="px-3 py-2 text-slate-700 min-w-[140px]">{record.fieldCnName || '-'}</td>
-                                                            <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{record.operator || '-'}</td>
-                                                            <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{formatRecordTime(record.time)}</td>
-                                                            <td className="px-3 py-2 text-slate-700 min-w-[260px]">
-                                                                <div className="whitespace-pre-wrap break-words">{record.description || '-'}</div>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    ) : (
-                                        <div className="px-3 py-4 text-xs text-amber-700 bg-amber-50">
-                                            <div>{assetReviewError || '未找到资产管理维护记录'}</div>
-                                            <div className="mt-1 whitespace-pre-wrap break-words">提交说明：{activeTask.reviewComment || '-'}</div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                            <select
-                                value={form.decision}
-                                onChange={e => setForm({ ...form, decision: e.target.value as TaskReviewDTO['decision'] })}
-                                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                            >
-                                <option value="APPROVE">{isAssetReviewTask(activeTask) ? '通过并进入上线' : '通过并结算积分'}</option>
-                                <option value="REJECT">{isAssetReviewTask(activeTask) ? '退回补充维护记录' : '退回修改'}</option>
-                                <option value="CANCEL">取消任务</option>
-                            </select>
-                            {form.decision === 'APPROVE' && !isAssetReviewTask(activeTask) && (
-                                <div className="grid grid-cols-3 gap-3">
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        max={5}
-                                        value={form.qualityScore || ''}
-                                        onChange={e => setForm({ ...form, qualityScore: Number(e.target.value) || undefined })}
-                                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                                        placeholder="质量评分1-5"
-                                    />
-                                    <input
-                                        type="number"
-                                        value={form.bonusPoints || ''}
-                                        onChange={e => setForm({ ...form, bonusPoints: Number(e.target.value) || 0 })}
-                                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                                        placeholder="奖励积分"
-                                    />
-                                    <input
-                                        type="number"
-                                        value={form.penaltyPoints || ''}
-                                        onChange={e => setForm({ ...form, penaltyPoints: Number(e.target.value) || 0 })}
-                                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                                        placeholder="惩罚积分"
-                                    />
-                                </div>
-                            )}
+                                )}
+                            </div>
                             <textarea
                                 value={form.reviewComment || ''}
                                 onChange={e => setForm({ ...form, reviewComment: e.target.value })}

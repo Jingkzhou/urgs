@@ -340,7 +340,8 @@ export const createWork = (data: WorkCreateDTO) => post('/api/marketplace/works'
 export const updateWork = (id: string, data: WorkCreateDTO) => put(`/api/marketplace/works/${id}`, data);
 export const importWorks = (works: WorkImportDTO[]) =>
     post<WorkImportResult>('/api/marketplace/works/import', works);
-export const listWorks = (params: any) => get('/api/marketplace/works', params);
+export const listWorks = (params: { current: number; size: number; keyword?: string }) =>
+    get('/api/marketplace/works', params);
 export const getWorkDetail = (id: string) => get<Work>(`/api/marketplace/works/${id}`);
 export const getWorkTasks = (workId: string) => get(`/api/marketplace/tasks/work/${workId}`);
 export const addTaskToWork = (workId: string, data: WorkTaskCreateDTO) => post(`/api/marketplace/tasks/work/${workId}`, data);

@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -65,12 +66,23 @@ public class WorkController {
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @RequestParam(defaultValue = "1") int current,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String keyword) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
         Page<Work> page = new Page<>(current, size);
-        Page<Work> resultPage = workService.page(page, new LambdaQueryWrapper<Work>()
-                .eq(Work::getPublisherId, userId)
-                .orderByDesc(Work::getCreateTime));
+        LambdaQueryWrapper<Work> query = new LambdaQueryWrapper<Work>()
+                .eq(Work::getPublisherId, userId);
+        if (StringUtils.hasText(keyword)) {
+            String trimmedKeyword = keyword.trim();
+            query.and(wrapper -> wrapper
+                    .like(Work::getTitle, trimmedKeyword)
+                    .or().like(Work::getRequirementNumber, trimmedKeyword)
+                    .or().like(Work::getApplicationDepartment, trimmedKeyword)
+                    .or().like(Work::getApplicantName, trimmedKeyword)
+                    .or().like(Work::getOwningSystem, trimmedKeyword));
+        }
+        query.orderByDesc(Work::getCreateTime);
+        Page<Work> resultPage = workService.page(page, query);
         return PageResult.of(resultPage);
     }
 

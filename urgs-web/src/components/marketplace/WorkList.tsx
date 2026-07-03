@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Modal, Pagination, Tooltip } from 'antd';
+import { Modal, Pagination } from 'antd';
 import { appendTaskRiskTracking, AssetMaintenanceRecord, listWorks, publishWork, cancelWork, batchDeleteWorks, updateTaskStatus, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
-import { ChevronDown, ChevronRight, Download, Edit3, ListTodo, PauseCircle, Plus, Play, PlayCircle, Trash2, Upload, XCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Edit3, ListTodo, PauseCircle, Plus, Play, PlayCircle, Search, Trash2, Upload, XCircle } from 'lucide-react';
 import CreateWorkDrawer from './CreateWorkDrawer';
 import ImportWorkModal from './ImportWorkModal';
 import WorkDetailDrawer from './WorkDetailDrawer';
@@ -93,11 +93,17 @@ const WorkList: React.FC = () => {
     const [trackingTaskId, setTrackingTaskId] = useState('');
     const [trackingNote, setTrackingNote] = useState('');
     const [trackingSubmitting, setTrackingSubmitting] = useState(false);
+    const [keyword, setKeyword] = useState('');
+    const [queryKeyword, setQueryKeyword] = useState('');
 
     const fetchWorks = async (page = currentPage, size = pageSize) => {
         setLoading(true);
         try {
-            const res = await listWorks({ current: page, size });
+            const res = await listWorks({
+                current: page,
+                size,
+                keyword: queryKeyword || undefined,
+            });
             if (res?.records) {
                 if (res.records.length === 0 && page > 1 && res.total > 0) {
                     const prevPage = page - 1;
@@ -160,7 +166,16 @@ const WorkList: React.FC = () => {
 
     useEffect(() => {
         fetchWorks(currentPage, pageSize);
-    }, [currentPage, pageSize]);
+    }, [currentPage, pageSize, queryKeyword]);
+
+    const handleSearch = () => {
+        const nextKeyword = keyword.trim();
+        setCurrentPage(1);
+        setQueryKeyword(nextKeyword);
+        if (currentPage === 1 && nextKeyword === queryKeyword) {
+            fetchWorks(1, pageSize);
+        }
+    };
 
     const handlePublish = async (id: string) => {
         if (!window.confirm("确认要发布该工作到市场吗？发布后不能撤回。")) return;
@@ -271,32 +286,9 @@ const WorkList: React.FC = () => {
         return work.primarySystemName ? `否 / ${work.primarySystemName}` : '否';
     };
 
-    const getRiskSummary = (task: WorkTask) => {
-        if (!task.stageRiskReported && !task.stageRiskNote) return '-';
-        return '已报备';
-    };
-
     const isIssueTrackingTask = (task: WorkTask) => {
         const taskType = (task.taskType || '').trim();
         return taskType === '问题跟踪' || taskType === '问题追踪';
-    };
-
-    const renderRiskSummary = (task: WorkTask) => {
-        const summary = getRiskSummary(task);
-        if (!task.stageRiskNote) {
-            return <span className={task.stageRiskReported ? 'text-amber-700 font-bold truncate' : 'text-slate-400'}>{summary}</span>;
-        }
-
-        return (
-            <Tooltip
-                title={<span className="whitespace-pre-wrap">{task.stageRiskNote}</span>}
-                placement="topLeft"
-                overlayStyle={{ maxWidth: 520 }}
-                destroyTooltipOnHide
-            >
-                <span className="text-amber-700 font-bold truncate cursor-help">{summary}</span>
-            </Tooltip>
-        );
     };
 
     const getOrderedTasks = (workId: string) => {
@@ -606,6 +598,39 @@ const WorkList: React.FC = () => {
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold text-slate-800">我发布的工作</h2>
                 <div className="flex items-center gap-2">
+                    <div className="flex items-center overflow-hidden rounded-lg border border-slate-200 bg-white focus-within:border-slate-400">
+                        <input
+                            value={keyword}
+                            onChange={event => setKeyword(event.target.value)}
+                            onKeyDown={event => {
+                                if (event.key === 'Enter') handleSearch();
+                            }}
+                            placeholder="名称、需求编号、部门、申请人、系统"
+                            className="w-72 border-0 px-3 py-2 text-sm outline-none"
+                        />
+                        {queryKeyword && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setKeyword('');
+                                    setCurrentPage(1);
+                                    setQueryKeyword('');
+                                }}
+                                className="p-2 text-slate-400 hover:text-slate-700"
+                                title="清空查询"
+                            >
+                                <XCircle size={16} />
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            onClick={handleSearch}
+                            className="border-l border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
+                            title="查询"
+                        >
+                            <Search size={17} />
+                        </button>
+                    </div>
                     {selectedWorkIds.length > 0 && (
                         <button
                             onClick={handleBatchDelete}
@@ -804,18 +829,17 @@ const WorkList: React.FC = () => {
                                         <span className="h-2 w-2 rounded-full bg-slate-400"></span>
                                         <span>二级任务菜单</span>
                                     </div>
-                                    <div className="grid grid-cols-[88px_minmax(220px,1.5fr)_100px_100px_90px_120px_90px] gap-3 px-3 py-2 text-xs font-bold text-slate-400">
+                                    <div className="grid grid-cols-[88px_minmax(220px,1.5fr)_100px_100px_90px_90px] gap-3 px-3 py-2 text-xs font-bold text-slate-400">
                                         <span>层级</span>
                                         <span>任务名称</span>
                                         <span>状态</span>
                                         <span>阶段</span>
                                         <span>积分</span>
-                                        <span>风险</span>
                                         <span>操作</span>
                                     </div>
                                     {getOrderedTasks(work.id).map(task => (
                                         <div key={task.id} className="relative bg-white border border-slate-100 rounded-lg mb-2 last:mb-0 px-3 py-2">
-                                            <div className="grid grid-cols-[88px_minmax(220px,1.5fr)_100px_100px_90px_120px_90px] gap-3 items-center text-xs">
+                                            <div className="grid grid-cols-[88px_minmax(220px,1.5fr)_100px_100px_90px_90px] gap-3 items-center text-xs">
                                                 <span className="absolute -left-[17px] top-5 h-px w-4 bg-slate-200"></span>
                                                 <span className={`w-fit px-2 py-0.5 rounded font-bold ${task.taskRole === 'MAIN' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-600'}`}>
                                                     {task.taskRole === 'MAIN' ? '主任务' : '子任务'}
@@ -831,7 +855,6 @@ const WorkList: React.FC = () => {
                                                     {isIssueTrackingTask(task) ? '不适用' : getTaskStageLabel(task.currentStage)}
                                                 </span>
                                                 <span className="font-bold text-orange-600">{task.points ?? 0}</span>
-                                                {renderRiskSummary(task)}
                                                 {isClosedTaskStatus(task.status) ? (
                                                     <span className="text-slate-300">-</span>
                                                 ) : (
