@@ -54,8 +54,7 @@ public class TaskApplicationServiceImpl extends ServiceImpl<TaskApplicationMappe
         }
 
         WorkTask task = workTaskService.getById(dto.getTaskId());
-        if (task == null || (!TaskStatus.OPEN.name().equals(task.getStatus())
-                && !TaskStatus.APPLIED.name().equals(task.getStatus()))) {
+        if (task == null || !TaskStatus.OPEN.name().equals(task.getStatus())) {
             throw new IllegalStateException("任务目前不可申请");
         }
         if (!AssignMode.COMPETE.name().equals(task.getAssignMode())) {
@@ -106,11 +105,6 @@ public class TaskApplicationServiceImpl extends ServiceImpl<TaskApplicationMappe
         application.setStatus("PENDING");
         boolean success = this.save(application);
 
-        if (success && TaskStatus.OPEN.name().equals(task.getStatus())) {
-            task.setStatus(TaskStatus.APPLIED.name());
-            workTaskService.updateById(task);
-        }
-
         if (success) {
             workTaskService.logTaskAction(task.getId(), applicantId, "APPLY",
                     "提交竞标申请: " + dto.getMessage());
@@ -125,7 +119,7 @@ public class TaskApplicationServiceImpl extends ServiceImpl<TaskApplicationMappe
         WorkTask task = getApplicationTask(application);
         Work work = getAuthorizedWork(task, currentUserId);
 
-        if (!TaskStatus.OPEN.name().equals(task.getStatus()) && !TaskStatus.APPLIED.name().equals(task.getStatus())) {
+        if (!TaskStatus.OPEN.name().equals(task.getStatus())) {
             throw new IllegalStateException("任务已进入承接或交付流程，不能再审批竞标");
         }
 
@@ -152,18 +146,13 @@ public class TaskApplicationServiceImpl extends ServiceImpl<TaskApplicationMappe
                 this.updateById(other);
             }
 
-            task.setStatus(TaskStatus.ASSIGNED.name());
+            task.setStatus(TaskStatus.READY.name());
             task.setAssigneeId(application.getApplicantId());
             task.setReworkCount(defaultInt(task.getReworkCount()));
             task.setBonusPoints(defaultInt(task.getBonusPoints()));
             task.setPenaltyPoints(defaultInt(task.getPenaltyPoints()));
             task.setFinalPoints(defaultInt(task.getFinalPoints()));
             workTaskService.updateById(task);
-
-            if (WorkStatus.PUBLISHED.name().equals(work.getStatus())) {
-                work.setStatus(WorkStatus.IN_PROGRESS.name());
-                workService.updateById(work);
-            }
 
             workTaskService.logTaskAction(task.getId(), currentUserId, "APPROVE_APP",
                     "竞标中标, 承接人: " + application.getApplicantId());
@@ -187,7 +176,6 @@ public class TaskApplicationServiceImpl extends ServiceImpl<TaskApplicationMappe
         boolean success = this.updateById(application);
 
         if (success) {
-            reopenTaskIfNoPendingApplication(task);
             workTaskService.logTaskAction(task.getId(), currentUserId, "REJECT_APP",
                     "驳回竞标申请: " + application.getApplicantId());
         }
@@ -215,7 +203,6 @@ public class TaskApplicationServiceImpl extends ServiceImpl<TaskApplicationMappe
         application.setUpdateTime(now);
         boolean success = this.updateById(application);
         if (success) {
-            reopenTaskIfNoPendingApplication(task);
             workTaskService.logTaskAction(task.getId(), applicantId, "WITHDRAW_APP", "撤回竞标申请");
         }
         return success;
@@ -267,17 +254,6 @@ public class TaskApplicationServiceImpl extends ServiceImpl<TaskApplicationMappe
         return work;
     }
 
-    private void reopenTaskIfNoPendingApplication(WorkTask task) {
-        long pendingCount = this.lambdaQuery()
-                .eq(TaskApplication::getTaskId, task.getId())
-                .eq(TaskApplication::getStatus, "PENDING")
-                .count();
-        if (pendingCount == 0 && TaskStatus.APPLIED.name().equals(task.getStatus())) {
-            task.setStatus(TaskStatus.OPEN.name());
-            workTaskService.updateById(task);
-        }
-    }
-
     private Page<TaskApplicationDTO> toDtoPage(Page<TaskApplication> applicationPage) {
         Page<TaskApplicationDTO> dtoPage = new Page<>();
         BeanUtils.copyProperties(applicationPage, dtoPage, "records");
@@ -324,8 +300,8 @@ public class TaskApplicationServiceImpl extends ServiceImpl<TaskApplicationMappe
                 .count() * 100D / completedTasks.size()));
         dto.setCurrentLoad(Math.toIntExact(workTaskService.lambdaQuery()
                 .eq(WorkTask::getAssigneeId, applicantId)
-                .in(WorkTask::getStatus, TaskStatus.ASSIGNED.name(), TaskStatus.IN_PROGRESS.name(),
-                        TaskStatus.ASSET_REVIEW.name(), TaskStatus.REVIEW.name())
+                .in(WorkTask::getStatus, TaskStatus.READY.name(), TaskStatus.IN_PROGRESS.name(),
+                        TaskStatus.WAITING_REVIEW.name(), TaskStatus.REWORK.name(), TaskStatus.PAUSED.name())
                 .count()));
     }
 

@@ -12,9 +12,11 @@ import com.example.urgs_api.marketplace.service.WorkService;
 import com.example.urgs_api.marketplace.service.WorkTaskService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -77,7 +79,7 @@ public class WorkTaskController {
 
         // Set initial status based on assign mode
         if ("ASSIGN".equals(dto.getAssignMode()) && dto.getAssigneeId() != null) {
-            task.setStatus(TaskStatus.ASSIGNED.name());
+            task.setStatus(TaskStatus.READY.name());
         } else {
             task.setMaxApplicants(dto.getMaxApplicants() != null ? dto.getMaxApplicants() : 0);
             task.setStatus(TaskStatus.OPEN.name());
@@ -122,10 +124,16 @@ public class WorkTaskController {
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(defaultValue = "false") boolean archived) {
+            @RequestParam(defaultValue = "false") boolean archived,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime deadlineStart,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime deadlineEnd) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
         Page<WorkTask> page = new Page<>(current, size);
-        Page<TaskMarketDTO> resultPage = workTaskService.getMyTasks(page, userId, archived);
+        Page<TaskMarketDTO> resultPage = workTaskService.getMyTasks(
+                page, userId, archived, status, deadlineStart, deadlineEnd);
         return PageResult.of(resultPage);
     }
 
@@ -181,6 +189,16 @@ public class WorkTaskController {
             @RequestBody Map<String, String> body) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
         workTaskService.updateTaskStatus(id, body.get("status"), userId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/{id}/reopen")
+    public ResponseEntity<Void> reopenTask(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @PathVariable String id) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        workTaskService.reopenTask(id, userId);
         return ResponseEntity.ok().build();
     }
 

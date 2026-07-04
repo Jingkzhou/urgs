@@ -104,7 +104,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         if (mainTask.getAssigneeId() == null || mainTask.getAssigneeId().isEmpty()) {
             mainTask.setAssigneeId(userId);
         }
-        mainTask.setStatus(TaskStatus.ASSIGNED.name());
+        mainTask.setStatus(TaskStatus.READY.name());
         workTaskService.save(mainTask);
 
         if (dto.getTasks() != null && !dto.getTasks().isEmpty()) {
@@ -256,7 +256,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
             throw new IllegalStateException("只能发布草稿状态的工作");
         }
 
-        work.setStatus(mainTask.getStatus());
+        work.setStatus(WorkStatus.PUBLISHED.name());
         return this.updateById(work);
     }
 
@@ -279,12 +279,12 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
             // Cancel all related open/assigned tasks
             List<WorkTask> tasks = workTaskService.lambdaQuery()
                     .eq(WorkTask::getWorkId, workId)
-                    .in(WorkTask::getStatus, TaskStatus.OPEN.name(), TaskStatus.APPLIED.name(),
-                            TaskStatus.ASSIGNED.name())
+                    .in(WorkTask::getStatus, TaskStatus.OPEN.name(), TaskStatus.READY.name(),
+                            TaskStatus.IN_PROGRESS.name(), TaskStatus.PAUSED.name(),
+                            TaskStatus.WAITING_REVIEW.name(), TaskStatus.REWORK.name())
                     .list();
             for (WorkTask task : tasks) {
-                task.setStatus(TaskStatus.REJECTED.name()); // Or create a CANCELLED status, reuse REJECTED/new
-                                                            // CANCELLED
+                task.setStatus(TaskStatus.CANCELLED.name());
                 workTaskService.updateById(task);
             }
         }
@@ -378,12 +378,12 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
             task.setAssignMode(AssignMode.ASSIGN.name());
             task.setAssigneeId(task.getAssigneeId() != null ? task.getAssigneeId() : userId);
             task.setMaxApplicants(0);
-            task.setStatus(TaskStatus.ASSIGNED.name());
+            task.setStatus(TaskStatus.READY.name());
             return task;
         }
 
         if (AssignMode.ASSIGN.name().equals(task.getAssignMode()) && task.getAssigneeId() != null) {
-            task.setStatus(TaskStatus.ASSIGNED.name());
+            task.setStatus(TaskStatus.READY.name());
         } else {
             task.setMaxApplicants(taskDto.getMaxApplicants() != null ? taskDto.getMaxApplicants() : 0);
             task.setStatus(TaskStatus.OPEN.name());

@@ -90,11 +90,11 @@ const StatsPage: React.FC = () => {
     const totalWorks = works.length;
     const publishedWorks = works.filter(w => w.status === 'PUBLISHED').length;
     const draftWorks = works.filter(w => w.status === 'DRAFT').length;
-    const inProgressWorks = works.filter(w => w.status === 'IN_PROGRESS' || w.status === 'ASSET_REVIEW').length;
+    const inProgressWorks = works.filter(w => w.status === 'ACTIVE').length;
 
     const openTasks = marketTasks.filter(t => t.status === 'OPEN').length;
     const assignedTasks = marketTasks.filter(t =>
-        t.status === 'ASSIGNED' || t.status === 'IN_PROGRESS' || t.status === 'ASSET_REVIEW'
+        ['READY', 'IN_PROGRESS', 'WAITING_REVIEW', 'REWORK', 'PAUSED'].includes(t.status)
     ).length;
     const completedTasks = marketTasks.filter(t => t.status === 'COMPLETED').length;
 

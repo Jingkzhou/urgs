@@ -73,11 +73,11 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         LambdaQueryWrapper<WorkTask> queryWrapper = new LambdaQueryWrapper<>();
 
         if ("OPEN".equals(status) || "AVAILABLE".equals(status)) {
-            queryWrapper.in(WorkTask::getStatus, TaskStatus.OPEN.name(), TaskStatus.APPLIED.name());
+            queryWrapper.eq(WorkTask::getStatus, TaskStatus.OPEN.name());
         } else if (StringUtils.hasText(status)) {
             queryWrapper.eq(WorkTask::getStatus, status);
         } else {
-            queryWrapper.in(WorkTask::getStatus, TaskStatus.OPEN.name(), TaskStatus.APPLIED.name());
+            queryWrapper.eq(WorkTask::getStatus, TaskStatus.OPEN.name());
         }
         queryWrapper.eq(WorkTask::getTaskRole, TASK_ROLE_SUB);
 
@@ -93,7 +93,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
         dtoPage.setRecords(taskPage.getRecords().stream().map(task -> {
             Work work = workService.getById(task.getWorkId());
-            // Show tasks from PUBLISHED or IN_PROGRESS works. Reject DRAFT/CANCELLED.
+            // 已发布或进行中的工作可以进入任务市场；草稿和已取消工作不可见。
             if (work == null || WorkStatus.DRAFT.name().equals(work.getStatus())
                     || WorkStatus.CANCELLED.name().equals(work.getStatus())) {
                 return null;
@@ -106,16 +106,34 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
     }
 
     @Override
-    public Page<TaskMarketDTO> getMyTasks(Page<WorkTask> page, String userId, boolean archived) {
+    public Page<TaskMarketDTO> getMyTasks(
+            Page<WorkTask> page,
+            String userId,
+            boolean archived,
+            String status,
+            LocalDateTime deadlineStart,
+            LocalDateTime deadlineEnd) {
         LambdaQueryWrapper<WorkTask> query = new LambdaQueryWrapper<WorkTask>()
                 .eq(WorkTask::getAssigneeId, userId);
         if (archived) {
-            query.eq(WorkTask::getStatus, TaskStatus.COMPLETED.name())
-                    .orderByDesc(WorkTask::getStageUpdatedAt)
+            query.eq(WorkTask::getStatus, TaskStatus.COMPLETED.name());
+        } else {
+            query.ne(WorkTask::getStatus, TaskStatus.COMPLETED.name());
+        }
+        if (StringUtils.hasText(status)) {
+            query.eq(WorkTask::getStatus, status.trim().toUpperCase());
+        }
+        if (deadlineStart != null) {
+            query.ge(WorkTask::getDeadline, deadlineStart);
+        }
+        if (deadlineEnd != null) {
+            query.le(WorkTask::getDeadline, deadlineEnd);
+        }
+        if (archived) {
+            query.orderByDesc(WorkTask::getStageUpdatedAt)
                     .orderByDesc(WorkTask::getReviewedAt);
         } else {
-            query.ne(WorkTask::getStatus, TaskStatus.COMPLETED.name())
-                    .orderByDesc(WorkTask::getStageUpdatedAt)
+            query.orderByDesc(WorkTask::getStageUpdatedAt)
                     .orderByDesc(WorkTask::getCreateTime);
         }
         Page<WorkTask> taskPage = this.page(page, query);
@@ -148,7 +166,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             query.isNotNull(WorkTask::getReviewedAt)
                     .orderByDesc(WorkTask::getReviewedAt);
         } else {
-            query.in(WorkTask::getStatus, TaskStatus.ASSET_REVIEW.name(), TaskStatus.REVIEW.name())
+            query.eq(WorkTask::getStatus, TaskStatus.WAITING_REVIEW.name())
                     .orderByDesc(WorkTask::getSubmittedAt);
         }
 
@@ -174,7 +192,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             throw new IllegalStateException("主任务不支持直接领取");
         }
 
-        task.setStatus(TaskStatus.ASSIGNED.name());
+        task.setStatus(TaskStatus.READY.name());
         task.setAssigneeId(userId);
         task.setReworkCount(defaultInt(task.getReworkCount()));
         task.setBonusPoints(defaultInt(task.getBonusPoints()));
@@ -199,7 +217,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (!userId.equals(task.getAssigneeId())) {
             throw new IllegalStateException("只能解除自己承接的任务");
         }
-        if (!TaskStatus.ASSIGNED.name().equals(task.getStatus())) {
+        if (!TaskStatus.READY.name().equals(task.getStatus())) {
             throw new IllegalStateException("只有已承接且未开始的任务可以解除承接");
         }
         if (TASK_ROLE_MAIN.equals(task.getTaskRole())) {
@@ -231,7 +249,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             throw new IllegalStateException("无权指派此任务");
         }
 
-        task.setStatus(TaskStatus.ASSIGNED.name());
+        task.setStatus(TaskStatus.READY.name());
         task.setAssigneeId(assigneeId);
         task.setReworkCount(defaultInt(task.getReworkCount()));
         task.setBonusPoints(defaultInt(task.getBonusPoints()));
@@ -259,8 +277,8 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             throw new IllegalStateException("只能提交自己承接的任务");
         }
         if (!TaskStatus.IN_PROGRESS.name().equals(task.getStatus())
-                && !TaskStatus.REJECTED.name().equals(task.getStatus())
-                && !TaskStatus.ASSIGNED.name().equals(task.getStatus())) {
+                && !TaskStatus.REWORK.name().equals(task.getStatus())
+                && !TaskStatus.READY.name().equals(task.getStatus())) {
             throw new IllegalStateException("当前状态不可提交验收");
         }
         if (!STAGE_LAUNCH.equals(resolveStage(task))) {
@@ -277,7 +295,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         task.setDelayReported(Boolean.TRUE.equals(dto.getDelayReported()));
         task.setDelayReason(dto.getDelayReason());
         task.setSubmittedAt(LocalDateTime.now());
-        task.setStatus(TaskStatus.REVIEW.name());
+        task.setStatus(TaskStatus.WAITING_REVIEW.name());
         boolean success = this.updateById(task);
         if (success) {
             logTaskAction(taskId, userId, "SUBMIT_REVIEW", "提交验收: " + nullToEmpty(dto.getCompletionDescription()));
@@ -348,12 +366,13 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             task.setReviewerId(reviewerId);
             task.setReviewedAt(LocalDateTime.now());
             task.setReworkCount(defaultInt(task.getReworkCount()) + 1);
-            task.setStatus(TaskStatus.REJECTED.name());
+            task.setStatus(TaskStatus.REWORK.name());
             boolean success = this.updateById(task);
             if (success) {
                 String action = assetReview ? "ASSET_REVIEW_REJECT" : "REVIEW_REJECT";
                 String detailPrefix = assetReview ? "资产同步审核退回: " : "验收退回: ";
                 logTaskAction(taskId, reviewerId, action, detailPrefix + nullToEmpty(dto.getReviewComment()));
+                updateWorkStatusIfNecessary(task.getWorkId());
             }
             return success;
         }
@@ -380,7 +399,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             }
             String oldAssignee = task.getAssigneeId();
             task.setAssigneeId(dto.getTransferAssigneeId());
-            task.setStatus(TaskStatus.ASSIGNED.name());
+            task.setStatus(TaskStatus.READY.name());
             task.setReviewComment(dto.getReviewComment());
             task.setReviewerId(reviewerId);
             task.setReviewedAt(LocalDateTime.now());
@@ -388,6 +407,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             if (success) {
                 logTaskAction(taskId, reviewerId, "REVIEW_TRANSFER",
                         "任务转派: " + oldAssignee + " -> " + dto.getTransferAssigneeId());
+                updateWorkStatusIfNecessary(task.getWorkId());
             }
             return success;
         }
@@ -402,18 +422,58 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (task == null) {
             throw new IllegalArgumentException("任务不存在");
         }
+        TaskStatus targetStatus;
+        try {
+            targetStatus = TaskStatus.valueOf(status);
+        } catch (IllegalArgumentException | NullPointerException exception) {
+            throw new IllegalArgumentException("不支持的任务状态: " + status);
+        }
         // Simplified authorization check
         if (TASK_ROLE_MAIN.equals(task.getTaskRole())
-                && (TaskStatus.REVIEW.name().equals(status) || TaskStatus.COMPLETED.name().equals(status))
+                && (TaskStatus.WAITING_REVIEW.equals(targetStatus) || TaskStatus.COMPLETED.equals(targetStatus))
                 && !areAllSubTasksClosed(task.getWorkId())) {
             throw new IllegalStateException("请先完成所有子任务后再完成主任务");
         }
         String oldStatus = task.getStatus();
-        task.setStatus(status);
+        task.setStatus(targetStatus.name());
         boolean success = this.updateById(task);
 
         if (success) {
-            logTaskAction(taskId, userId, "STATUS_UPDATE", "更新状态: " + oldStatus + " -> " + status);
+            logTaskAction(taskId, userId, "STATUS_UPDATE", "更新状态: " + oldStatus + " -> " + targetStatus.name());
+            updateWorkStatusIfNecessary(task.getWorkId());
+        }
+        return success;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean reopenTask(String taskId, String userId) {
+        WorkTask task = this.getById(taskId);
+        if (task == null) {
+            throw new IllegalArgumentException("任务不存在");
+        }
+        if (!TaskStatus.CANCELLED.name().equals(task.getStatus())) {
+            throw new IllegalStateException("只有已取消的任务可以重新开启");
+        }
+
+        Work work = workService.getById(task.getWorkId());
+        if (work == null) {
+            throw new IllegalStateException("所属工作不存在");
+        }
+        if (WorkStatus.CANCELLED.name().equals(work.getStatus())) {
+            throw new IllegalStateException("所属工作已取消，不能单独重新开启任务");
+        }
+        if (!userId.equals(task.getAssigneeId()) && !userId.equals(work.getPublisherId())) {
+            throw new IllegalStateException("只有任务负责人或工作发布人可以重新开启任务");
+        }
+
+        TaskStatus targetStatus = StringUtils.hasText(task.getAssigneeId())
+                ? TaskStatus.READY
+                : TaskStatus.OPEN;
+        task.setStatus(targetStatus.name());
+        boolean success = this.updateById(task);
+        if (success) {
+            logTaskAction(taskId, userId, "REOPEN", "重新开启任务: CANCELLED -> " + targetStatus.name());
             updateWorkStatusIfNecessary(task.getWorkId());
         }
         return success;
@@ -431,8 +491,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         }
         if (TaskStatus.COMPLETED.name().equals(task.getStatus())
                 || TaskStatus.CANCELLED.name().equals(task.getStatus())
-                || TaskStatus.ASSET_REVIEW.name().equals(task.getStatus())
-                || TaskStatus.REVIEW.name().equals(task.getStatus())) {
+                || TaskStatus.WAITING_REVIEW.name().equals(task.getStatus())) {
             throw new IllegalStateException("当前状态不可推进阶段");
         }
         if (isIssueTrackingTask(task)) {
@@ -463,13 +522,13 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
         task.setStageRiskReported(StringUtils.hasText(task.getStageRiskNote()));
         task.setStageUpdatedAt(now);
-        if (TaskStatus.ASSIGNED.name().equals(task.getStatus()) || TaskStatus.REJECTED.name().equals(task.getStatus())) {
+        if (TaskStatus.READY.name().equals(task.getStatus()) || TaskStatus.REWORK.name().equals(task.getStatus())) {
             task.setStatus(TaskStatus.IN_PROGRESS.name());
         }
 
         if (STAGE_ASSET_REVIEW.equals(currentStage)) {
             task.setSubmittedAt(now);
-            task.setStatus(TaskStatus.ASSET_REVIEW.name());
+            task.setStatus(TaskStatus.WAITING_REVIEW.name());
             task.setReviewComment(trimmedAssetReviewNote);
             logTaskAction(taskId, userId, "ASSET_REVIEW_RESUBMIT", "重新提交资产同步审核");
         } else {
@@ -477,12 +536,12 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             if (STAGE_ASSET_REVIEW.equals(nextStage)) {
                 task.setCurrentStage(nextStage);
                 task.setSubmittedAt(now);
-                task.setStatus(TaskStatus.ASSET_REVIEW.name());
+                task.setStatus(TaskStatus.WAITING_REVIEW.name());
                 task.setReviewComment(trimmedAssetReviewNote);
                 logTaskAction(taskId, userId, "STAGE_TO_ASSET_REVIEW", "测试完成，进入资产同步审核");
             } else if (nextStage == null) {
                 task.setSubmittedAt(now);
-                task.setStatus(TaskStatus.REVIEW.name());
+                task.setStatus(TaskStatus.WAITING_REVIEW.name());
                 logTaskAction(taskId, userId, "STAGE_TO_REVIEW", "上线完成，进入验收阶段");
             } else {
                 task.setCurrentStage(nextStage);
@@ -592,15 +651,42 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             return;
         }
 
-        WorkTask mainTask = this.lambdaQuery()
+        List<WorkTask> tasks = this.lambdaQuery()
                 .eq(WorkTask::getWorkId, workId)
-                .eq(WorkTask::getTaskRole, TASK_ROLE_MAIN)
-                .one();
+                .list();
+        WorkTask mainTask = tasks.stream()
+                .filter(task -> TASK_ROLE_MAIN.equals(task.getTaskRole()))
+                .findFirst()
+                .orElse(null);
         if (mainTask == null) {
             throw new IllegalStateException("工作缺少主任务，无法聚合状态");
         }
-        if (!mainTask.getStatus().equals(work.getStatus())) {
-            work.setStatus(mainTask.getStatus());
+        List<WorkTask> unfinishedTasks = tasks.stream()
+                .filter(task -> !TaskStatus.COMPLETED.name().equals(task.getStatus())
+                        && !TaskStatus.CANCELLED.name().equals(task.getStatus()))
+                .toList();
+
+        String aggregatedStatus;
+        if (TaskStatus.COMPLETED.name().equals(mainTask.getStatus()) && areAllSubTasksClosed(workId)) {
+            aggregatedStatus = WorkStatus.COMPLETED.name();
+        } else if (TaskStatus.WAITING_REVIEW.name().equals(mainTask.getStatus())
+                && STAGE_LAUNCH.equals(resolveStage(mainTask))) {
+            aggregatedStatus = WorkStatus.ACCEPTANCE.name();
+        } else if (!unfinishedTasks.isEmpty()
+                && unfinishedTasks.stream().allMatch(task -> TaskStatus.PAUSED.name().equals(task.getStatus()))) {
+            aggregatedStatus = WorkStatus.PAUSED.name();
+        } else {
+            boolean hasStartedTask = tasks.stream().anyMatch(task ->
+                    TaskStatus.IN_PROGRESS.name().equals(task.getStatus())
+                            || TaskStatus.WAITING_REVIEW.name().equals(task.getStatus())
+                            || TaskStatus.REWORK.name().equals(task.getStatus())
+                            || TaskStatus.PAUSED.name().equals(task.getStatus())
+                            || TaskStatus.COMPLETED.name().equals(task.getStatus()));
+            aggregatedStatus = hasStartedTask ? WorkStatus.ACTIVE.name() : WorkStatus.PUBLISHED.name();
+        }
+
+        if (!aggregatedStatus.equals(work.getStatus())) {
+            work.setStatus(aggregatedStatus);
             workService.updateById(work);
         }
     }
@@ -729,7 +815,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
     private boolean isAssetReview(WorkTask task) {
         return task != null
                 && STAGE_ASSET_REVIEW.equals(resolveStage(task))
-                && TaskStatus.ASSET_REVIEW.name().equals(task.getStatus());
+                && TaskStatus.WAITING_REVIEW.name().equals(task.getStatus());
     }
 
     private boolean isIssueTrackingTask(WorkTask task) {

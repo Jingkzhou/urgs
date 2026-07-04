@@ -10,11 +10,13 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -67,7 +69,12 @@ public class WorkController {
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false) String keyword) {
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime deadlineStart,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime deadlineEnd) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
         Page<Work> page = new Page<>(current, size);
         LambdaQueryWrapper<Work> query = new LambdaQueryWrapper<Work>()
@@ -80,6 +87,15 @@ public class WorkController {
                     .or().like(Work::getApplicationDepartment, trimmedKeyword)
                     .or().like(Work::getApplicantName, trimmedKeyword)
                     .or().like(Work::getOwningSystem, trimmedKeyword));
+        }
+        if (StringUtils.hasText(status)) {
+            query.eq(Work::getStatus, status.trim().toUpperCase());
+        }
+        if (deadlineStart != null) {
+            query.ge(Work::getDeadline, deadlineStart);
+        }
+        if (deadlineEnd != null) {
+            query.le(Work::getDeadline, deadlineEnd);
         }
         query.last("ORDER BY "
                 + "CASE WHEN status IN ('COMPLETED', 'CANCELLED') THEN 1 ELSE 0 END ASC, "

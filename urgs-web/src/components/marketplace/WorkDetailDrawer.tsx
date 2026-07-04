@@ -17,6 +17,7 @@ import {
 import { Award, CheckCircle2, Clock, Paperclip, Plus, Users, XCircle } from 'lucide-react';
 import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
 import { searchUsers, UserDTO } from '../../api/user';
+import UserSelect from './UserSelect';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -61,6 +62,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         difficulty: '简单',
         points: 5,
         assignMode: 'ASSIGN' as string,
+        assigneeId: '',
         requiredSkills: '',
         deadline: '',
     });
@@ -86,6 +88,12 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
     const suggestedRule = pointRules.find(rule =>
         rule.enabled !== false && rule.taskType === newTask.taskType && rule.difficulty === newTask.difficulty
     );
+
+    useEffect(() => {
+        if (suggestedRule) {
+            setNewTask(prev => ({ ...prev, points: suggestedRule.suggestedPoints }));
+        }
+    }, [newTask.taskType, newTask.difficulty, suggestedRule?.suggestedPoints]);
 
     const fetchDetail = async (id: string) => {
         setLoading(true);
@@ -137,12 +145,13 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
 
     const handleAddTask = async () => {
         if (!newTask.title.trim() || !newTask.description.trim()) return;
+        if (newTask.assignMode === 'ASSIGN' && !newTask.assigneeId) return;
         setSubmitting(true);
         try {
             await addTaskToWork(workId!, newTask as any);
             setTasks(prev => [...prev, null!] as any); // Will be refreshed by fetchDetail
             await fetchDetail(workId!);
-            setNewTask({ title: '', description: '', taskType: '开发', difficulty: '简单', points: 5, assignMode: 'ASSIGN', requiredSkills: '', deadline: '' });
+            setNewTask({ title: '', description: '', taskType: '开发', difficulty: '简单', points: 5, assignMode: 'ASSIGN', assigneeId: '', requiredSkills: '', deadline: '' });
             setAddingTask(false);
         } catch (error) {
             console.error('Failed to add task', error);
@@ -256,12 +265,21 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
 
     const getStatusColor = (status: string) => {
         if (status === 'OPEN') return 'green';
-        if (status === 'APPLIED') return 'orange';
-        if (status === 'ASSIGNED' || status === 'IN_PROGRESS') return 'blue';
+        if (status === 'READY' || status === 'IN_PROGRESS') return 'blue';
         if (status === 'PAUSED') return 'warning';
-        if (status === 'ASSET_REVIEW') return 'cyan';
+        if (status === 'WAITING_REVIEW') return 'orange';
         if (status === 'COMPLETED') return 'cyan';
-        if (status === 'REJECTED' || status === 'CANCELLED') return 'red';
+        if (status === 'REWORK' || status === 'CANCELLED') return 'red';
+        return 'default';
+    };
+
+    const getWorkStatusColor = (status: string) => {
+        if (status === 'COMPLETED') return 'green';
+        if (status === 'ACTIVE') return 'blue';
+        if (status === 'ACCEPTANCE') return 'orange';
+        if (status === 'PAUSED') return 'warning';
+        if (status === 'CANCELLED') return 'red';
+        if (status === 'PUBLISHED') return 'cyan';
         return 'default';
     };
 
@@ -288,10 +306,10 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
     const subTasks = tasks.filter(task => task.taskRole !== 'MAIN');
     const completedTaskCount = tasks.filter(task => task.status === 'COMPLETED').length;
     const activeTaskCount = tasks.filter(task =>
-        ['ASSIGNED', 'IN_PROGRESS', 'ASSET_REVIEW', 'REVIEW'].includes(task.status)
+        ['IN_PROGRESS', 'WAITING_REVIEW', 'REWORK'].includes(task.status)
     ).length;
     const pausedTaskCount = tasks.filter(task => task.status === 'PAUSED').length;
-    const closedTaskCount = tasks.filter(task => ['CANCELLED', 'REJECTED'].includes(task.status)).length;
+    const closedTaskCount = tasks.filter(task => task.status === 'CANCELLED').length;
     const pendingTaskCount = Math.max(tasks.length - completedTaskCount - activeTaskCount - pausedTaskCount - closedTaskCount, 0);
     const progressBase = Math.max(tasks.length - closedTaskCount, 0);
     const taskProgress = progressBase === 0 ? 0 : Math.round((completedTaskCount / progressBase) * 100);
@@ -324,10 +342,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                 <div className="mx-auto flex max-w-[1500px] flex-col gap-6">
                     <header>
                         <Space className="mb-2">
-                            <Tag color={
-                                work.status === 'PUBLISHED' ? 'green' :
-                                    work.status === 'DRAFT' ? 'default' : 'red'
-                            }>
+                            <Tag color={getWorkStatusColor(work.status)}>
                                 {getWorkStatusLabel(work.status)}
                             </Tag>
                             <Tag color="error">{work.priority}</Tag>
@@ -584,7 +599,11 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                 </select>
                                                 <select
                                                     value={newTask.assignMode}
-                                                    onChange={e => setNewTask(prev => ({ ...prev, assignMode: e.target.value }))}
+                                                    onChange={e => setNewTask(prev => ({
+                                                        ...prev,
+                                                        assignMode: e.target.value,
+                                                        assigneeId: e.target.value === 'ASSIGN' ? prev.assigneeId : '',
+                                                    }))}
                                                     className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 outline-none bg-white"
                                                 >
                                                     <option value="ASSIGN">直接分派</option>
@@ -599,16 +618,16 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                     placeholder={suggestedRule ? `建议 ${suggestedRule.suggestedPoints}` : '积分'}
                                                 />
                                             </div>
-                                            {suggestedRule && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setNewTask(prev => ({ ...prev, points: suggestedRule.suggestedPoints }))}
-                                                    className="text-xs font-bold text-red-600 hover:text-red-700"
-                                                >
-                                                    套用 {newTask.taskType}/{newTask.difficulty} 建议积分 {suggestedRule.suggestedPoints}
-                                                </button>
-                                            )}
                                         </div>
+                                        {newTask.assignMode === 'ASSIGN' && (
+                                            <label className="block">
+                                                <span className="mb-1 block text-[11px] font-bold text-slate-500">负责人 *</span>
+                                                <UserSelect
+                                                    value={newTask.assigneeId}
+                                                    onChange={assigneeId => setNewTask(prev => ({ ...prev, assigneeId }))}
+                                                />
+                                            </label>
+                                        )}
                                         <textarea
                                             value={newTask.description}
                                             onChange={e => setNewTask(prev => ({ ...prev, description: e.target.value }))}
@@ -635,14 +654,19 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                         </div>
                                         <div className="flex justify-end gap-2">
                                             <button
-                                                onClick={() => { setAddingTask(false); setNewTask({ title: '', description: '', taskType: '开发', difficulty: '简单', points: 5, assignMode: 'ASSIGN', requiredSkills: '', deadline: '' }); }}
+                                                onClick={() => { setAddingTask(false); setNewTask({ title: '', description: '', taskType: '开发', difficulty: '简单', points: 5, assignMode: 'ASSIGN', assigneeId: '', requiredSkills: '', deadline: '' }); }}
                                                 className="px-4 py-1.5 text-sm font-medium text-slate-600 bg-white hover:bg-slate-100 rounded-lg transition-colors"
                                             >
                                                 取消
                                             </button>
                                             <button
                                                 onClick={handleAddTask}
-                                                disabled={submitting || !newTask.title.trim() || !newTask.description.trim()}
+                                                disabled={
+                                                    submitting
+                                                    || !newTask.title.trim()
+                                                    || !newTask.description.trim()
+                                                    || (newTask.assignMode === 'ASSIGN' && !newTask.assigneeId)
+                                                }
                                                 className="px-4 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
                                                 {submitting ? '添加中...' : '确认添加'}

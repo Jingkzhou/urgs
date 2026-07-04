@@ -340,7 +340,14 @@ export const createWork = (data: WorkCreateDTO) => post('/api/marketplace/works'
 export const updateWork = (id: string, data: WorkCreateDTO) => put(`/api/marketplace/works/${id}`, data);
 export const importWorks = (works: WorkImportDTO[]) =>
     post<WorkImportResult>('/api/marketplace/works/import', works);
-export const listWorks = (params: { current: number; size: number; keyword?: string }) =>
+export const listWorks = (params: {
+    current: number;
+    size: number;
+    keyword?: string;
+    status?: string;
+    deadlineStart?: string;
+    deadlineEnd?: string;
+}) =>
     get('/api/marketplace/works', params);
 export const getWorkDetail = (id: string) => get<Work>(`/api/marketplace/works/${id}`);
 export const getWorkTasks = (workId: string) => get(`/api/marketplace/tasks/work/${workId}`);
@@ -351,7 +358,14 @@ export const batchDeleteWorks = (ids: string[]) => post<{ deletedCount: number }
 
 export const getMarketTasks = (params: any) => get('/api/marketplace/tasks', params);
 export const getTaskDetail = (id: string) => get<TaskMarketDTO>(`/api/marketplace/tasks/${id}`);
-export const getMyTasks = (params: { current: number; size: number; archived?: boolean }) =>
+export const getMyTasks = (params: {
+    current: number;
+    size: number;
+    archived?: boolean;
+    status?: string;
+    deadlineStart?: string;
+    deadlineEnd?: string;
+}) =>
     get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/my', params);
 export const getPendingReviewTasks = (params: any) => get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/review/pending', params);
 export const getReviewHistoryTasks = (params: any) => get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/review/history', params);
@@ -359,6 +373,7 @@ export const claimTask = (id: string) => post(`/api/marketplace/tasks/${id}/clai
 export const releaseTask = (id: string) => put(`/api/marketplace/tasks/${id}/release`);
 export const assignTask = (id: string, assigneeId: string) => put(`/api/marketplace/tasks/${id}/assign`, { assigneeId });
 export const updateTaskStatus = (id: string, status: string) => put(`/api/marketplace/tasks/${id}/status`, { status });
+export const reopenTask = (id: string) => put(`/api/marketplace/tasks/${id}/reopen`);
 export const advanceTaskStage = (id: string, data?: { assetReviewNote?: string }) =>
     put(`/api/marketplace/tasks/${id}/stage/advance`, data);
 export const reportTaskStageRisk = (id: string, data: { riskNote: string }) => put(`/api/marketplace/tasks/${id}/stage/risk`, data);

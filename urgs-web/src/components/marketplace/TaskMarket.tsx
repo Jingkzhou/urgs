@@ -12,7 +12,7 @@ import { Award, ChevronRight, Clock, FileText, Search, Users, X } from 'lucide-r
 import TaskDetailDrawer from './TaskDetailDrawer';
 import { getTaskStatusLabel } from './marketplaceLabels';
 
-type MarketTab = 'AVAILABLE' | 'ASSIGNED' | 'APPLICATIONS';
+type MarketTab = 'AVAILABLE' | 'READY' | 'APPLICATIONS';
 
 const applicationStatusLabel: Record<string, string> = {
     PENDING: '待审批',
@@ -59,7 +59,7 @@ const TaskMarket: React.FC = () => {
                 current: 1,
                 size: 20,
                 keyword: keyword || undefined,
-                status: activeTab === 'AVAILABLE' ? 'AVAILABLE' : 'ASSIGNED',
+                status: activeTab === 'AVAILABLE' ? 'AVAILABLE' : 'READY',
             });
             setTasks(res?.records || []);
         } catch (error) {
@@ -147,7 +147,7 @@ const TaskMarket: React.FC = () => {
             <div className="flex bg-white px-6 pt-4 gap-8">
                 {[
                     ['AVAILABLE', '可承接/竞标'],
-                    ['ASSIGNED', '已被领取'],
+                    ['READY', '已被领取'],
                     ['APPLICATIONS', '我的竞标'],
                 ].map(([key, label]) => (
                     <button
@@ -196,7 +196,7 @@ const TaskMarket: React.FC = () => {
                                         <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${task.assignMode === 'OPEN' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-700'}`}>
                                             {task.assignMode === 'OPEN' ? '直接领取' : '竞争竞标'}
                                         </span>
-                                        {task.status === 'APPLIED' && (
+                                        {(task.applicationCount || 0) > 0 && (
                                             <span className="px-2 py-1 rounded-lg text-xs font-bold bg-orange-50 text-orange-600">
                                                 竞标中
                                             </span>

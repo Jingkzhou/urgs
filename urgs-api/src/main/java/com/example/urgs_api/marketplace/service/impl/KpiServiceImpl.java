@@ -67,8 +67,8 @@ public class KpiServiceImpl implements KpiService {
         dto.setTotalWorks(Math.toIntExact(workService.count()));
         dto.setCompletedWorks(Math.toIntExact(workService.lambdaQuery().eq(Work::getStatus, WorkStatus.COMPLETED.name()).count()));
         dto.setInProgressTasks(Math.toIntExact(workTaskService.lambdaQuery()
-                .in(WorkTask::getStatus, TaskStatus.ASSIGNED.name(), TaskStatus.IN_PROGRESS.name(),
-                        TaskStatus.ASSET_REVIEW.name(), TaskStatus.REVIEW.name())
+                .in(WorkTask::getStatus, TaskStatus.READY.name(), TaskStatus.IN_PROGRESS.name(),
+                        TaskStatus.WAITING_REVIEW.name(), TaskStatus.REWORK.name(), TaskStatus.PAUSED.name())
                 .count()));
         dto.setOverdueTasks(Math.toIntExact(workTaskService.lambdaQuery()
                 .ne(WorkTask::getStatus, TaskStatus.COMPLETED.name())
@@ -183,8 +183,8 @@ public class KpiServiceImpl implements KpiService {
         dto.setHighPriorityTaskCount((int) tasks.stream().filter(this::isHighPriority).count());
         dto.setActiveTaskCount(Math.toIntExact(workTaskService.lambdaQuery()
                 .eq(WorkTask::getAssigneeId, userId)
-                .in(WorkTask::getStatus, TaskStatus.ASSIGNED.name(), TaskStatus.IN_PROGRESS.name(),
-                        TaskStatus.ASSET_REVIEW.name(), TaskStatus.REVIEW.name())
+                .in(WorkTask::getStatus, TaskStatus.READY.name(), TaskStatus.IN_PROGRESS.name(),
+                        TaskStatus.WAITING_REVIEW.name(), TaskStatus.REWORK.name(), TaskStatus.PAUSED.name())
                 .count()));
         return dto;
     }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { Modal, Pagination, Progress } from 'antd';
-import { appendTaskRiskTracking, AssetMaintenanceRecord, listWorks, publishWork, cancelWork, batchDeleteWorks, updateTaskStatus, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
+import { appendTaskRiskTracking, AssetMaintenanceRecord, listWorks, publishWork, cancelWork, batchDeleteWorks, reopenTask, updateTaskStatus, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
 import { CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Circle, Clock3, Download, Edit3, ListTodo, PauseCircle, Plus, Play, PlayCircle, Search, Trash2, Upload, Users, XCircle } from 'lucide-react';
 import CreateWorkDrawer from './CreateWorkDrawer';
 import ImportWorkModal from './ImportWorkModal';
@@ -95,6 +95,8 @@ const WorkList: React.FC = () => {
     const [trackingSubmitting, setTrackingSubmitting] = useState(false);
     const [keyword, setKeyword] = useState('');
     const [queryKeyword, setQueryKeyword] = useState('');
+    const [statusFilter, setStatusFilter] = useState('');
+    const [deadlineRange, setDeadlineRange] = useState({ startDate: '', endDate: '' });
 
     const fetchWorks = async (page = currentPage, size = pageSize) => {
         setLoading(true);
@@ -103,6 +105,9 @@ const WorkList: React.FC = () => {
                 current: page,
                 size,
                 keyword: queryKeyword || undefined,
+                status: statusFilter || undefined,
+                deadlineStart: deadlineRange.startDate ? `${deadlineRange.startDate}T00:00:00` : undefined,
+                deadlineEnd: deadlineRange.endDate ? `${deadlineRange.endDate}T23:59:59` : undefined,
             });
             if (res?.records) {
                 if (res.records.length === 0 && page > 1 && res.total > 0) {
@@ -166,7 +171,7 @@ const WorkList: React.FC = () => {
 
     useEffect(() => {
         fetchWorks(currentPage, pageSize);
-    }, [currentPage, pageSize, queryKeyword]);
+    }, [currentPage, pageSize, queryKeyword, statusFilter, deadlineRange.startDate, deadlineRange.endDate]);
 
     const handleSearch = () => {
         const nextKeyword = keyword.trim();
@@ -222,7 +227,7 @@ const WorkList: React.FC = () => {
     const isPausedTask = (task: WorkTask) => normalizeTaskStatus(task.status) === 'PAUSED';
 
     const isClosedTaskStatus = (status?: string) => {
-        return ['COMPLETED', 'CANCELLED', 'REJECTED', 'ASSET_REVIEW', 'REVIEW'].includes(normalizeTaskStatus(status) || '');
+        return ['COMPLETED', 'CANCELLED', 'WAITING_REVIEW'].includes(normalizeTaskStatus(status) || '');
     };
 
     const handleToggleTaskPaused = async (task: WorkTask) => {
@@ -235,6 +240,16 @@ const WorkList: React.FC = () => {
             await fetchWorks(currentPage, pageSize);
         } catch (error) {
             alert(`${actionText}任务失败`);
+        }
+    };
+
+    const handleReopenTask = async (task: WorkTask) => {
+        if (!window.confirm(`确定要重新开启任务「${task.title}」吗？`)) return;
+        try {
+            await reopenTask(task.id);
+            await fetchWorks(currentPage, pageSize);
+        } catch (error) {
+            alert('重新开启任务失败，所属工作可能已取消');
         }
     };
 
@@ -258,10 +273,10 @@ const WorkList: React.FC = () => {
 
     const statusClass = (status?: string) => {
         if (status === 'COMPLETED') return 'bg-green-100 text-green-700';
-        if (status === 'IN_PROGRESS' || status === 'ASSIGNED') return 'bg-blue-100 text-blue-700';
+        if (status === 'ACTIVE' || status === 'IN_PROGRESS' || status === 'READY') return 'bg-blue-100 text-blue-700';
         if (status === 'PAUSED') return 'bg-amber-100 text-amber-700';
-        if (status === 'ASSET_REVIEW') return 'bg-cyan-100 text-cyan-700';
-        if (status === 'REVIEW') return 'bg-orange-100 text-orange-700';
+        if (status === 'ACCEPTANCE' || status === 'WAITING_REVIEW') return 'bg-orange-100 text-orange-700';
+        if (status === 'REWORK') return 'bg-red-100 text-red-700';
         if (status === 'DRAFT' || status === 'PUBLISHED') return 'bg-slate-100 text-slate-600';
         return 'bg-red-100 text-red-600';
     };
@@ -306,11 +321,11 @@ const WorkList: React.FC = () => {
         const tasks = workTasks[workId] || [];
         const completedCount = tasks.filter(task => normalizeTaskStatus(task.status) === 'COMPLETED').length;
         const activeCount = tasks.filter(task =>
-            ['ASSIGNED', 'IN_PROGRESS', 'ASSET_REVIEW', 'REVIEW'].includes(normalizeTaskStatus(task.status) || '')
+            ['IN_PROGRESS', 'WAITING_REVIEW', 'REWORK'].includes(normalizeTaskStatus(task.status) || '')
         ).length;
         const pausedCount = tasks.filter(task => normalizeTaskStatus(task.status) === 'PAUSED').length;
         const closedCount = tasks.filter(task =>
-            ['CANCELLED', 'REJECTED'].includes(normalizeTaskStatus(task.status) || '')
+            normalizeTaskStatus(task.status) === 'CANCELLED'
         ).length;
         const pendingCount = Math.max(tasks.length - completedCount - activeCount - pausedCount - closedCount, 0);
         const progressBase = Math.max(tasks.length - closedCount, 0);
@@ -671,7 +686,14 @@ const WorkList: React.FC = () => {
                                         <span className="truncate text-slate-600">{renderAssignee(task.assigneeId)}</span>
                                         <span className="text-slate-500">{renderValue(formatDate(task.deadline))}</span>
                                         <span className="font-bold text-orange-600">{task.points ?? 0}</span>
-                                        {isClosedTaskStatus(task.status) ? (
+                                        {normalizeTaskStatus(task.status) === 'CANCELLED' ? (
+                                            <button
+                                                onClick={() => handleReopenTask(task)}
+                                                className="inline-flex w-fit items-center rounded bg-green-50 px-2 py-1 font-bold text-green-700 transition-colors hover:bg-green-100"
+                                            >
+                                                重新开启
+                                            </button>
+                                        ) : isClosedTaskStatus(task.status) ? (
                                             <span className="text-slate-300">-</span>
                                         ) : (
                                             <button
@@ -769,6 +791,62 @@ const WorkList: React.FC = () => {
                         <Plus size={16} />新建工作
                     </button>
                 </div>
+            </div>
+
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                <span className="text-sm font-bold text-slate-700">工作筛选</span>
+                <select
+                    value={statusFilter}
+                    onChange={event => {
+                        setStatusFilter(event.target.value);
+                        setCurrentPage(1);
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-blue-400"
+                >
+                    <option value="">全部状态</option>
+                    <option value="DRAFT">草稿</option>
+                    <option value="PUBLISHED">已发布</option>
+                    <option value="ACTIVE">进行中</option>
+                    <option value="PAUSED">已暂停</option>
+                    <option value="ACCEPTANCE">待验收</option>
+                    <option value="COMPLETED">已完成</option>
+                    <option value="CANCELLED">已取消</option>
+                </select>
+                <span className="text-sm text-slate-500">截止日期</span>
+                <input
+                    type="date"
+                    value={deadlineRange.startDate}
+                    max={deadlineRange.endDate || undefined}
+                    onChange={event => {
+                        setDeadlineRange(prev => ({ ...prev, startDate: event.target.value }));
+                        setCurrentPage(1);
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700"
+                />
+                <span className="text-sm text-slate-400">至</span>
+                <input
+                    type="date"
+                    value={deadlineRange.endDate}
+                    min={deadlineRange.startDate || undefined}
+                    onChange={event => {
+                        setDeadlineRange(prev => ({ ...prev, endDate: event.target.value }));
+                        setCurrentPage(1);
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700"
+                />
+                {(statusFilter || deadlineRange.startDate || deadlineRange.endDate) && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setStatusFilter('');
+                            setDeadlineRange({ startDate: '', endDate: '' });
+                            setCurrentPage(1);
+                        }}
+                        className="rounded-lg px-3 py-1.5 text-sm font-bold text-blue-600 transition-colors hover:bg-blue-50"
+                    >
+                        清除筛选
+                    </button>
+                )}
             </div>
 
             <CreateWorkDrawer

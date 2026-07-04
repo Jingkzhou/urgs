@@ -1,28 +1,22 @@
 export const workStatusLabelMap: Record<string, string> = {
     DRAFT: '草稿',
     PUBLISHED: '已发布',
-    ASSIGNED: '已承接',
-    IN_PROGRESS: '进行中',
+    ACTIVE: '进行中',
     PAUSED: '已暂停',
-    ASSET_REVIEW: '资产同步审核',
-    REVIEW: '待验收',
+    ACCEPTANCE: '待验收',
     COMPLETED: '已完成',
-    REJECTED: '退回修改',
     CANCELLED: '已取消',
 };
 
 export const taskStatusLabelMap: Record<string, string> = {
-    OPEN: '可领取',
-    APPLIED: '竞标中',
-    ASSIGNED: '已承接',
-    IN_PROGRESS: '进行中',
+    OPEN: '待承接',
+    READY: '待开始',
+    IN_PROGRESS: '处理中',
     PAUSED: '已暂停',
-    ASSET_REVIEW: '资产同步审核',
-    REVIEW: '待验收',
+    WAITING_REVIEW: '待审核',
     COMPLETED: '已完成',
-    REJECTED: '退回修改',
+    REWORK: '退回修改',
     CANCELLED: '已取消',
-    OVERDUE: '已逾期',
 };
 
 export const getWorkStatusLabel = (status?: string) => {

@@ -45,7 +45,8 @@ const ReviewCenter: React.FC = () => {
         fetchTasks();
     }, []);
 
-    const isAssetReviewTask = (task?: TaskMarketDTO | null) => task?.status === 'ASSET_REVIEW';
+    const isAssetReviewTask = (task?: TaskMarketDTO | null) =>
+        task?.status === 'WAITING_REVIEW' && task.currentStage === 'ASSET_REVIEW';
 
     const formatRecordTime = (value?: string) => {
         if (!value) return '-';

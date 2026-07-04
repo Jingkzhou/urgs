@@ -3,6 +3,7 @@ import { Pagination } from 'antd';
 import {
     getKpiSummary,
     getMyTasks,
+    reopenTask,
     releaseTask,
     advanceTaskStage,
     reportTaskStageRisk,
@@ -49,6 +50,8 @@ const MyTasks: React.FC = () => {
     const [pageSize, setPageSize] = useState(10);
     const [total, setTotal] = useState(0);
     const [taskView, setTaskView] = useState<'active' | 'archive'>('active');
+    const [statusFilter, setStatusFilter] = useState('');
+    const [deadlineRange, setDeadlineRange] = useState({ startDate: '', endDate: '' });
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [appealTask, setAppealTask] = useState<TaskMarketDTO | null>(null);
@@ -76,6 +79,9 @@ const MyTasks: React.FC = () => {
                 current: currentPage,
                 size: pageSize,
                 archived: taskView === 'archive',
+                status: statusFilter || undefined,
+                deadlineStart: deadlineRange.startDate ? `${deadlineRange.startDate}T00:00:00` : undefined,
+                deadlineEnd: deadlineRange.endDate ? `${deadlineRange.endDate}T23:59:59` : undefined,
             });
             if ((taskRes?.records || []).length === 0 && currentPage > 1 && (taskRes?.total || 0) > 0) {
                 setCurrentPage(currentPage - 1);
@@ -92,7 +98,7 @@ const MyTasks: React.FC = () => {
 
     useEffect(() => {
         fetchTasks();
-    }, [currentPage, pageSize, taskView]);
+    }, [currentPage, pageSize, taskView, statusFilter, deadlineRange.startDate, deadlineRange.endDate]);
 
     useEffect(() => {
         getKpiSummary(dateRange)
@@ -412,6 +418,16 @@ const MyTasks: React.FC = () => {
         }
     };
 
+    const handleReopenTask = async (task: TaskMarketDTO) => {
+        if (!window.confirm(`确定要重新开启任务「${task.title}」吗？`)) return;
+        try {
+            await reopenTask(task.id);
+            await fetchTasks();
+        } catch (error) {
+            alert('重新开启任务失败，所属工作可能已取消');
+        }
+    };
+
     const handleAppeal = async () => {
         if (!appealTask) return;
         if (!appealForm.reason) {
@@ -494,6 +510,7 @@ const MyTasks: React.FC = () => {
                     type="button"
                     onClick={() => {
                         setTaskView('active');
+                        setStatusFilter('');
                         setCurrentPage(1);
                     }}
                     className={`inline-flex items-center gap-2 px-3 py-3 border-b-2 text-sm font-bold transition-colors ${
@@ -508,6 +525,7 @@ const MyTasks: React.FC = () => {
                     type="button"
                     onClick={() => {
                         setTaskView('archive');
+                        setStatusFilter('');
                         setCurrentPage(1);
                     }}
                     className={`inline-flex items-center gap-2 px-3 py-3 border-b-2 text-sm font-bold transition-colors ${
@@ -518,6 +536,67 @@ const MyTasks: React.FC = () => {
                 >
                     <Archive size={17} /> 已归档
                 </button>
+            </div>
+
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                <span className="text-sm font-bold text-slate-700">任务筛选</span>
+                <select
+                    value={statusFilter}
+                    onChange={event => {
+                        setStatusFilter(event.target.value);
+                        setCurrentPage(1);
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-red-400"
+                >
+                    <option value="">全部状态</option>
+                    {taskView === 'archive' ? (
+                        <option value="COMPLETED">已完成</option>
+                    ) : (
+                        <>
+                            <option value="READY">待开始</option>
+                            <option value="IN_PROGRESS">处理中</option>
+                            <option value="PAUSED">已暂停</option>
+                            <option value="WAITING_REVIEW">待审核</option>
+                            <option value="REWORK">退回修改</option>
+                            <option value="CANCELLED">已取消</option>
+                        </>
+                    )}
+                </select>
+                <span className="text-sm text-slate-500">截止日期</span>
+                <input
+                    type="date"
+                    value={deadlineRange.startDate}
+                    max={deadlineRange.endDate || undefined}
+                    onChange={event => {
+                        setDeadlineRange(prev => ({ ...prev, startDate: event.target.value }));
+                        setCurrentPage(1);
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700"
+                />
+                <span className="text-sm text-slate-400">至</span>
+                <input
+                    type="date"
+                    value={deadlineRange.endDate}
+                    min={deadlineRange.startDate || undefined}
+                    onChange={event => {
+                        setDeadlineRange(prev => ({ ...prev, endDate: event.target.value }));
+                        setCurrentPage(1);
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700"
+                />
+                {(statusFilter || deadlineRange.startDate || deadlineRange.endDate) && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setStatusFilter('');
+                            setDeadlineRange({ startDate: '', endDate: '' });
+                            setCurrentPage(1);
+                        }}
+                        className="rounded-lg px-3 py-1.5 text-sm font-bold text-red-600 transition-colors hover:bg-red-50"
+                    >
+                        清除筛选
+                    </button>
+                )}
             </div>
 
             {loading ? (
@@ -543,8 +622,8 @@ const MyTasks: React.FC = () => {
                                 </h3>
                                 <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${task.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
                                     task.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
-                                        task.status === 'ASSET_REVIEW' ? 'bg-cyan-100 text-cyan-700' :
-                                        task.status === 'REVIEW' ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-600'
+                                        task.status === 'WAITING_REVIEW' ? 'bg-orange-100 text-orange-700' :
+                                            task.status === 'REWORK' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
                                     }`}>
                                     {getTaskStatusLabel(task.status)}
                                 </span>
@@ -594,9 +673,9 @@ const MyTasks: React.FC = () => {
                                 </div>
 
                                 <div className="flex gap-2">
-                                    {(task.status === 'ASSIGNED' || task.status === 'IN_PROGRESS' || task.status === 'REJECTED') && (
+                                    {(task.status === 'READY' || task.status === 'IN_PROGRESS' || task.status === 'REWORK') && (
                                         <>
-                                            {task.status === 'ASSIGNED' && task.taskRole !== 'MAIN' && (
+                                            {task.status === 'READY' && task.taskRole !== 'MAIN' && (
                                                 <button
                                                     onClick={() => handleReleaseTask(task)}
                                                     className="px-3 py-1 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded text-xs font-bold transition-colors"
@@ -620,7 +699,7 @@ const MyTasks: React.FC = () => {
                                             </button>
                                         </>
                                     )}
-                                    {task.status === 'REJECTED' && (
+                                    {task.status === 'REWORK' && (
                                         <button
                                             onClick={() => setAppealTask(task)}
                                             className="px-3 py-1 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded text-xs font-bold transition-colors"
@@ -628,8 +707,16 @@ const MyTasks: React.FC = () => {
                                             申诉
                                         </button>
                                     )}
-                                    {(task.status === 'ASSET_REVIEW' || task.status === 'REVIEW') && (
+                                    {task.status === 'WAITING_REVIEW' && (
                                         <span className="text-xs text-orange-500 font-medium px-2 py-1 bg-orange-50 rounded">审核中...</span>
+                                    )}
+                                    {task.status === 'CANCELLED' && (
+                                        <button
+                                            onClick={() => handleReopenTask(task)}
+                                            className="rounded bg-green-50 px-3 py-1 text-xs font-bold text-green-700 transition-colors hover:bg-green-100"
+                                        >
+                                            重新开启
+                                        </button>
                                     )}
                                 </div>
                             </div>

@@ -46,20 +46,20 @@ public class MarketplaceTodoController {
 
         long assignedCount = workTaskService.lambdaQuery()
                 .eq(WorkTask::getAssigneeId, userId)
-                .eq(WorkTask::getStatus, TaskStatus.ASSIGNED.name())
+                .eq(WorkTask::getStatus, TaskStatus.READY.name())
                 .count();
-        addTodo(todos, "ASSIGNED", "待开始任务", "已承接但尚未进入进行中", assignedCount, "mine", "info");
+        addTodo(todos, "READY", "待开始任务", "已确定负责人但尚未开始", assignedCount, "mine", "info");
 
         long rejectedCount = workTaskService.lambdaQuery()
                 .eq(WorkTask::getAssigneeId, userId)
-                .eq(WorkTask::getStatus, TaskStatus.REJECTED.name())
+                .eq(WorkTask::getStatus, TaskStatus.REWORK.name())
                 .count();
-        addTodo(todos, "REJECTED", "退回修改", "验收退回后需要补充交付", rejectedCount, "mine", "warning");
+        addTodo(todos, "REWORK", "退回修改", "审核退回后需要补充交付", rejectedCount, "mine", "warning");
 
         long overdueCount = workTaskService.lambdaQuery()
                 .eq(WorkTask::getAssigneeId, userId)
-                .in(WorkTask::getStatus, TaskStatus.ASSIGNED.name(), TaskStatus.IN_PROGRESS.name(),
-                        TaskStatus.ASSET_REVIEW.name())
+                .in(WorkTask::getStatus, TaskStatus.READY.name(), TaskStatus.IN_PROGRESS.name(),
+                        TaskStatus.WAITING_REVIEW.name(), TaskStatus.REWORK.name(), TaskStatus.PAUSED.name())
                 .lt(WorkTask::getDeadline, LocalDateTime.now())
                 .count();
         addTodo(todos, "OVERDUE", "我的逾期任务", "已超过截止时间的承接任务", overdueCount, "mine", "danger");
@@ -74,9 +74,9 @@ public class MarketplaceTodoController {
         if (!myWorkIds.isEmpty()) {
             long reviewCount = workTaskService.lambdaQuery()
                     .in(WorkTask::getWorkId, myWorkIds)
-                    .in(WorkTask::getStatus, TaskStatus.ASSET_REVIEW.name(), TaskStatus.REVIEW.name())
+                    .eq(WorkTask::getStatus, TaskStatus.WAITING_REVIEW.name())
                     .count();
-            addTodo(todos, "REVIEW", "待审核任务", "成员已提交，等待项目经理审核处理", reviewCount, "review", "warning");
+            addTodo(todos, "WAITING_REVIEW", "待审核任务", "成员已提交，等待项目经理审核处理", reviewCount, "review", "warning");
 
             List<String> myTaskIds = workTaskService.lambdaQuery()
                     .in(WorkTask::getWorkId, myWorkIds)
