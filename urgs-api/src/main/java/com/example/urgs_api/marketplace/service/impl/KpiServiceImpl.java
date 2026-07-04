@@ -24,13 +24,28 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.YearMonth;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
 public class KpiServiceImpl implements KpiService {
+
+    private static final List<String> ACTIVE_TASK_STATUSES = List.of(
+            TaskStatus.READY.name(),
+            TaskStatus.IN_PROGRESS.name(),
+            TaskStatus.WAITING_REVIEW.name(),
+            TaskStatus.REWORK.name());
+
+    private static final List<String> ASSIGNEE_TRACKING_STATUSES = List.of(
+            TaskStatus.READY.name(),
+            TaskStatus.IN_PROGRESS.name(),
+            TaskStatus.WAITING_REVIEW.name(),
+            TaskStatus.REWORK.name(),
+            TaskStatus.PAUSED.name());
 
     @Autowired
     private WorkTaskService workTaskService;
@@ -67,8 +82,10 @@ public class KpiServiceImpl implements KpiService {
         dto.setTotalWorks(Math.toIntExact(workService.count()));
         dto.setCompletedWorks(Math.toIntExact(workService.lambdaQuery().eq(Work::getStatus, WorkStatus.COMPLETED.name()).count()));
         dto.setInProgressTasks(Math.toIntExact(workTaskService.lambdaQuery()
-                .in(WorkTask::getStatus, TaskStatus.READY.name(), TaskStatus.IN_PROGRESS.name(),
-                        TaskStatus.WAITING_REVIEW.name(), TaskStatus.REWORK.name(), TaskStatus.PAUSED.name())
+                .in(WorkTask::getStatus, ACTIVE_TASK_STATUSES)
+                .count()));
+        dto.setPausedTasks(Math.toIntExact(workTaskService.lambdaQuery()
+                .eq(WorkTask::getStatus, TaskStatus.PAUSED.name())
                 .count()));
         dto.setOverdueTasks(Math.toIntExact(workTaskService.lambdaQuery()
                 .ne(WorkTask::getStatus, TaskStatus.COMPLETED.name())
@@ -85,17 +102,12 @@ public class KpiServiceImpl implements KpiService {
         Map<String, List<WorkTask>> byUser = completedTasks(startDate, endDate).stream()
                 .filter(task -> StringUtils.hasText(task.getAssigneeId()))
                 .collect(Collectors.groupingBy(WorkTask::getAssigneeId));
+        Set<String> userIds = new LinkedHashSet<>(byUser.keySet());
+        activeAssigneeIds().forEach(userIds::add);
 
-        Comparator<KpiSummaryDTO> comparator = switch (dimension == null ? "overall" : dimension) {
-            case "quality" -> Comparator.comparing(KpiSummaryDTO::getAverageQualityScore, Comparator.nullsLast(Double::compareTo));
-            case "ontime" -> Comparator.comparing(KpiSummaryDTO::getOnTimeRate, Comparator.nullsLast(Double::compareTo));
-            case "rework" -> Comparator.comparing(KpiSummaryDTO::getReworkCount);
-            default -> Comparator.comparing(KpiSummaryDTO::getFinalPoints, Comparator.nullsLast(Integer::compareTo));
-        };
-
-        return byUser.entrySet().stream()
-                .map(entry -> buildSummary(entry.getKey(), entry.getValue()))
-                .sorted(comparator.reversed())
+        return userIds.stream()
+                .map(userId -> buildSummary(userId, byUser.getOrDefault(userId, List.of())))
+                .sorted(leaderboardComparator(dimension))
                 .collect(Collectors.toList());
     }
 
@@ -183,10 +195,68 @@ public class KpiServiceImpl implements KpiService {
         dto.setHighPriorityTaskCount((int) tasks.stream().filter(this::isHighPriority).count());
         dto.setActiveTaskCount(Math.toIntExact(workTaskService.lambdaQuery()
                 .eq(WorkTask::getAssigneeId, userId)
-                .in(WorkTask::getStatus, TaskStatus.READY.name(), TaskStatus.IN_PROGRESS.name(),
-                        TaskStatus.WAITING_REVIEW.name(), TaskStatus.REWORK.name(), TaskStatus.PAUSED.name())
+                .in(WorkTask::getStatus, ACTIVE_TASK_STATUSES)
+                .count()));
+        dto.setPausedTaskCount(Math.toIntExact(workTaskService.lambdaQuery()
+                .eq(WorkTask::getAssigneeId, userId)
+                .eq(WorkTask::getStatus, TaskStatus.PAUSED.name())
                 .count()));
         return dto;
+    }
+
+    private List<String> activeAssigneeIds() {
+        return workTaskService.list(new LambdaQueryWrapper<WorkTask>()
+                        .select(WorkTask::getAssigneeId)
+                        .isNotNull(WorkTask::getAssigneeId)
+                        .in(WorkTask::getStatus, ASSIGNEE_TRACKING_STATUSES))
+                .stream()
+                .map(WorkTask::getAssigneeId)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+    }
+
+    private Comparator<KpiSummaryDTO> leaderboardComparator(String dimension) {
+        Comparator<KpiSummaryDTO> byName = Comparator.comparing(
+                KpiSummaryDTO::getUserName,
+                Comparator.nullsLast(String::compareTo));
+        Comparator<KpiSummaryDTO> byFinalPointsDesc = Comparator.comparing(
+                KpiSummaryDTO::getFinalPoints,
+                Comparator.nullsLast(Integer::compareTo)).reversed();
+
+        return switch (dimension == null ? "overall" : dimension) {
+            case "quality" -> Comparator.comparing(
+                            KpiSummaryDTO::getAverageQualityScore,
+                            Comparator.nullsLast(Double::compareTo))
+                    .reversed()
+                    .thenComparing(byFinalPointsDesc)
+                    .thenComparing(byName);
+            case "ontime" -> Comparator.comparing(
+                            KpiSummaryDTO::getOnTimeRate,
+                            Comparator.nullsLast(Double::compareTo))
+                    .reversed()
+                    .thenComparing(KpiSummaryDTO::getOverdueCount)
+                    .thenComparing(byFinalPointsDesc)
+                    .thenComparing(byName);
+            case "volume" -> Comparator.comparing(KpiSummaryDTO::getCompletedTaskCount)
+                    .reversed()
+                    .thenComparing(Comparator.comparing(KpiSummaryDTO::getActiveTaskCount).reversed())
+                    .thenComparing(byFinalPointsDesc)
+                    .thenComparing(byName);
+            case "active" -> Comparator.comparing(KpiSummaryDTO::getActiveTaskCount)
+                    .reversed()
+                    .thenComparing(Comparator.comparing(KpiSummaryDTO::getPausedTaskCount).reversed())
+                    .thenComparing(Comparator.comparing(KpiSummaryDTO::getOverdueCount).reversed())
+                    .thenComparing(byFinalPointsDesc)
+                    .thenComparing(byName);
+            case "rework" -> Comparator.comparing(KpiSummaryDTO::getReworkCount)
+                    .thenComparing(KpiSummaryDTO::getOverdueCount)
+                    .thenComparing(byFinalPointsDesc)
+                    .thenComparing(byName);
+            default -> byFinalPointsDesc
+                    .thenComparing(Comparator.comparing(KpiSummaryDTO::getCompletedTaskCount).reversed())
+                    .thenComparing(byName);
+        };
     }
 
     private KpiDetailDTO buildDetail(WorkTask task) {

@@ -147,6 +147,40 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
     }
 
     @Override
+    public Page<TaskMarketDTO> getAssigneeTasks(
+            Page<WorkTask> page,
+            String userId,
+            String status,
+            LocalDateTime deadlineStart,
+            LocalDateTime deadlineEnd) {
+        LambdaQueryWrapper<WorkTask> query = new LambdaQueryWrapper<WorkTask>()
+                .eq(WorkTask::getAssigneeId, userId);
+        if (StringUtils.hasText(status)) {
+            query.eq(WorkTask::getStatus, status.trim().toUpperCase());
+        }
+        if (deadlineStart != null) {
+            query.ge(WorkTask::getDeadline, deadlineStart);
+        }
+        if (deadlineEnd != null) {
+            query.le(WorkTask::getDeadline, deadlineEnd);
+        }
+        query.last("ORDER BY "
+                + "CASE WHEN status IN ('COMPLETED', 'CANCELLED') THEN 1 ELSE 0 END ASC, "
+                + "CASE WHEN status NOT IN ('COMPLETED', 'CANCELLED') AND deadline < NOW() THEN 0 ELSE 1 END ASC, "
+                + "CASE WHEN status NOT IN ('COMPLETED', 'CANCELLED') AND deadline IS NULL THEN 1 ELSE 0 END ASC, "
+                + "CASE WHEN status NOT IN ('COMPLETED', 'CANCELLED') THEN deadline END ASC, "
+                + "update_time DESC, create_time DESC");
+
+        Page<WorkTask> taskPage = this.page(page, query);
+        Page<TaskMarketDTO> dtoPage = new Page<>();
+        BeanUtils.copyProperties(taskPage, dtoPage, "records");
+        dtoPage.setRecords(taskPage.getRecords().stream()
+                .map(task -> buildTaskMarketDTO(task, workService.getById(task.getWorkId())))
+                .collect(Collectors.toList()));
+        return dtoPage;
+    }
+
+    @Override
     public Page<TaskMarketDTO> getReviewTasks(Page<WorkTask> page, String publisherId, boolean history) {
         List<String> workIds = workService.lambdaQuery()
                 .eq(Work::getPublisherId, publisherId)

@@ -111,6 +111,12 @@ export const permissionManifest: FunctionPoint[] = [
 
     { id: '4', name: '版本管理', code: 'version', type: 'menu', path: '/version', level: 0, parentId: 'root' },
     { id: '9', name: '任务中心', code: 'marketplace', type: 'menu', path: '/marketplace', level: 0, parentId: 'root' },
+    { id: '9-1', name: '任务大厅', code: 'marketplace:market', type: 'menu', path: '/marketplace/market', level: 1, parentId: '9' },
+    { id: '9-2', name: '发布工作', code: 'marketplace:publish', type: 'menu', path: '/marketplace/publish', level: 1, parentId: '9' },
+    { id: '9-3', name: '个人看板', code: 'marketplace:mine', type: 'menu', path: '/marketplace/mine', level: 1, parentId: '9' },
+    { id: '9-4', name: 'KPI 看板', code: 'marketplace:stats', type: 'menu', path: '/marketplace/stats', level: 1, parentId: '9' },
+    { id: '9-5', name: '验收中心', code: 'marketplace:review', type: 'menu', path: '/marketplace/review', level: 1, parentId: '9' },
+    { id: '9-6', name: '规则配置', code: 'marketplace:rules', type: 'menu', path: '/marketplace/rules', level: 1, parentId: '9' },
     { id: '10', name: '工具', code: 'tools', type: 'menu', path: '/tools', level: 0, parentId: 'root' },
     { id: '10-1', name: '在线文档', code: 'tools:online-docs', type: 'menu', path: '/tools/online-docs', level: 1, parentId: '10' },
 

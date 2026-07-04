@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Modal, Pagination, Progress } from 'antd';
+import { Modal, Tooltip, Pagination, Progress } from 'antd';
 import { appendTaskRiskTracking, AssetMaintenanceRecord, listWorks, publishWork, cancelWork, batchDeleteWorks, reopenTask, updateTaskStatus, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
 import { BarChart3, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Circle, Clock3, Download, Edit3, LayoutList, ListTodo, PauseCircle, Plus, Play, PlayCircle, Search, Trash2, Upload, Users, XCircle } from 'lucide-react';
 import CreateWorkDrawer from './CreateWorkDrawer';
@@ -230,6 +230,33 @@ const WorkList: React.FC = () => {
 
     const isClosedTaskStatus = (status?: string) => {
         return ['COMPLETED', 'CANCELLED', 'WAITING_REVIEW'].includes(normalizeTaskStatus(status) || '');
+    };
+
+    const getWorkToggleTasks = (work: Work) => {
+        const targetStatus = work.status === 'PAUSED' ? 'IN_PROGRESS' : 'PAUSED';
+        return (workTasks[work.id] || []).filter(task => {
+            const status = normalizeTaskStatus(task.status);
+            if (!status || isClosedTaskStatus(status) || status === targetStatus) return false;
+            return work.status === 'PAUSED' ? status === 'PAUSED' : true;
+        });
+    };
+
+    const handleToggleWorkPaused = async (work: Work) => {
+        const paused = work.status === 'PAUSED';
+        const nextStatus = paused ? 'IN_PROGRESS' : 'PAUSED';
+        const actionText = paused ? '继续' : '暂停';
+        const targetTasks = getWorkToggleTasks(work);
+        if (targetTasks.length === 0) {
+            alert(`没有可${actionText}的任务`);
+            return;
+        }
+        if (!window.confirm(`确定要${actionText}工作「${work.title}」下 ${targetTasks.length} 个任务吗？`)) return;
+        try {
+            await Promise.all(targetTasks.map(task => updateTaskStatus(task.id, nextStatus)));
+            await fetchWorks(currentPage, pageSize);
+        } catch (error) {
+            alert(`${actionText}工作失败`);
+        }
     };
 
     const handleToggleTaskPaused = async (task: WorkTask) => {
@@ -921,7 +948,7 @@ const WorkList: React.FC = () => {
             ) : (
                 <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
                     <div className="min-w-[1170px]">
-                        <div className="grid grid-cols-[72px_minmax(220px,1.5fr)_minmax(130px,.85fr)_minmax(150px,1fr)_minmax(140px,1fr)_104px_112px_128px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-bold text-slate-500">
+                        <div className="grid grid-cols-[72px_minmax(220px,1.5fr)_minmax(130px,.85fr)_minmax(150px,1fr)_minmax(140px,1fr)_104px_112px_160px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-bold text-slate-500">
                             <div className="flex items-center gap-2">
                                 <input
                                     type="checkbox"
@@ -947,10 +974,13 @@ const WorkList: React.FC = () => {
                             const subTasks = orderedTasks.filter(task => task.taskRole !== 'MAIN');
 
                             return (
-                                <div key={work.id} className="border-b border-slate-100 last:border-b-0">
-                                    <div className={`grid grid-cols-[72px_minmax(220px,1.5fr)_minmax(130px,.85fr)_minmax(150px,1fr)_minmax(140px,1fr)_104px_112px_128px] items-center gap-3 px-4 py-3.5 text-sm transition-colors ${
-                                        expandedWorkIds[work.id] ? 'bg-blue-50/30' : 'hover:bg-slate-50/70'
+                                <div key={work.id} className="group/work border-b border-slate-100 last:border-b-0">
+                                    <div className={`relative grid grid-cols-[72px_minmax(220px,1.5fr)_minmax(130px,.85fr)_minmax(150px,1fr)_minmax(140px,1fr)_104px_112px_160px] items-center gap-3 px-4 py-3.5 text-sm transition-all duration-200 ${
+                                        expandedWorkIds[work.id]
+                                            ? 'bg-blue-50/40 shadow-[inset_3px_0_0_#2563eb]'
+                                            : 'hover:bg-white hover:shadow-[inset_3px_0_0_#60a5fa,0_8px_18px_rgba(15,23,42,0.06)]'
                                     }`}>
+                                        <span className="pointer-events-none absolute inset-x-4 bottom-0 h-px bg-gradient-to-r from-transparent via-slate-100 to-transparent opacity-0 transition-opacity group-hover/work:opacity-100" />
                                         <div className="flex items-center gap-2">
                                             <input
                                                 type="checkbox"
@@ -967,22 +997,37 @@ const WorkList: React.FC = () => {
                                                 {expandedWorkIds[work.id] ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
                                             </button>
                                         </div>
-                                        <div className="min-w-0">
-                                            <button
-                                                onClick={() => {
-                                                    setSelectedWorkId(work.id);
-                                                    setIsDetailOpen(true);
-                                                }}
-                                                className="block max-w-full truncate text-left font-bold text-slate-900 transition-colors hover:text-red-600"
-                                            >
-                                                {work.title}
-                                            </button>
-                                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
-                                                <span className="font-medium text-slate-500">{renderValue(work.requirementNumber)}</span>
-                                                <span>积分 {work.totalPoints ?? 0}</span>
-                                                <span>{formatDateTime(work.createTime)}</span>
+                                        <Tooltip title={
+                                            <div className="max-w-[420px] space-y-2 text-xs leading-5 text-slate-600">
+                                                <div>
+                                                    <div className="text-sm font-bold leading-6 text-slate-900">{work.title}</div>
+                                                    <div className="mt-0.5 text-[11px] font-medium text-slate-400">需求编号：{renderValue(work.requirementNumber)}</div>
+                                                </div>
+                                                {work.description && (
+                                                    <div className="border-t border-slate-100 pt-2">
+                                                        <div className="mb-1 text-[11px] font-bold text-slate-400">工作描述</div>
+                                                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-slate-50 px-2.5 py-2 text-left text-xs leading-5 text-slate-700">{work.description}</pre>
+                                                    </div>
+                                                )}
                                             </div>
-                                        </div>
+                                        } placement="rightTop" color="#ffffff" mouseEnterDelay={0.25} overlayInnerStyle={{ boxShadow: '0 14px 34px rgba(15, 23, 42, 0.16)', border: '1px solid #e2e8f0' }}>
+                                            <div className="min-w-0">
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedWorkId(work.id);
+                                                        setIsDetailOpen(true);
+                                                    }}
+                                                    className="block max-w-full truncate text-left font-bold text-slate-900 transition-colors hover:text-red-600"
+                                                >
+                                                    {work.title}
+                                                </button>
+                                                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
+                                                    <span className="font-medium text-slate-500">{renderValue(work.requirementNumber)}</span>
+                                                    <span>积分 {work.totalPoints ?? 0}</span>
+                                                    <span>{formatDateTime(work.createTime)}</span>
+                                                </div>
+                                            </div>
+                                        </Tooltip>
                                         <div className="min-w-0">
                                             <div className="truncate font-medium text-slate-700">{renderValue(work.applicationDepartment)}</div>
                                             <div className="mt-1 truncate text-xs text-slate-400">{renderValue(work.applicantName)}</div>
@@ -1011,35 +1056,55 @@ const WorkList: React.FC = () => {
                                                 {taskSummaries[work.id]?.taskCount ?? 0} 个子任务
                                             </div>
                                         </div>
-                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                            <button
-                                                onClick={() => {
-                                                    setEditingWorkId(work.id);
-                                                    setIsDrawerOpen(true);
-                                                }}
-                                                className="inline-flex items-center gap-1 py-1 text-xs font-bold text-blue-600 transition-colors hover:text-blue-800"
-                                                title="修改工作"
-                                            >
-                                                <Edit3 size={14} />编辑
-                                            </button>
-                                            {work.status === 'DRAFT' && (
+                                        <div className="flex justify-end">
+                                            <div className={`inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white/95 px-2 py-1 shadow-sm backdrop-blur transition-all duration-200 ${
+                                                expandedWorkIds[work.id]
+                                                    ? 'opacity-100'
+                                                    : 'opacity-100 lg:translate-x-2 lg:opacity-0 lg:group-hover/work:translate-x-0 lg:group-hover/work:opacity-100 lg:group-focus-within/work:translate-x-0 lg:group-focus-within/work:opacity-100'
+                                            }`}>
+                                                <button
+                                                    onClick={() => {
+                                                        setEditingWorkId(work.id);
+                                                        setIsDrawerOpen(true);
+                                                    }}
+                                                    className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-800"
+                                                    title="修改工作"
+                                                >
+                                                    <Edit3 size={13} />编辑
+                                                </button>
+                                                {work.status === 'DRAFT' && (
                                                 <button
                                                     onClick={() => handlePublish(work.id)}
-                                                    className="inline-flex items-center gap-1 py-1 text-xs font-bold text-green-600 transition-colors hover:text-green-800"
+                                                    className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-green-600 transition-colors hover:bg-green-50 hover:text-green-800"
                                                     title="发布到市场"
                                                 >
-                                                    <Play size={14} />发布
+                                                    <Play size={13} />发布
                                                 </button>
-                                            )}
-                                            {(work.status === 'DRAFT' || work.status === 'PUBLISHED') && (
+                                                )}
+                                                {(work.status === 'DRAFT' || work.status === 'PUBLISHED') && (
                                                 <button
                                                     onClick={() => handleCancel(work.id)}
-                                                    className="inline-flex items-center gap-1 py-1 text-xs font-bold text-red-500 transition-colors hover:text-red-700"
+                                                    className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-red-500 transition-colors hover:bg-red-50 hover:text-red-700"
                                                     title="取消工作"
                                                 >
-                                                    <XCircle size={14} />取消
+                                                    <XCircle size={13} />取消
                                                 </button>
-                                            )}
+                                                )}
+                                                {['ACTIVE', 'PAUSED'].includes(work.status) && (
+                                                <button
+                                                    onClick={() => handleToggleWorkPaused(work)}
+                                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold transition-colors ${
+                                                        work.status === 'PAUSED'
+                                                            ? 'text-green-600 hover:bg-green-50 hover:text-green-800'
+                                                            : 'text-amber-600 hover:bg-amber-50 hover:text-amber-800'
+                                                    }`}
+                                                    title={work.status === 'PAUSED' ? '继续工作' : '暂停工作'}
+                                                >
+                                                    {work.status === 'PAUSED' ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
+                                                    {work.status === 'PAUSED' ? '继续' : '暂停'}
+                                                </button>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
 

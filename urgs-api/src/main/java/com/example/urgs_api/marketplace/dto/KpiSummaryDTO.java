@@ -15,4 +15,5 @@ public class KpiSummaryDTO {
     private Integer overdueCount;
     private Integer highPriorityTaskCount;
     private Integer activeTaskCount;
+    private Integer pausedTaskCount;
 }

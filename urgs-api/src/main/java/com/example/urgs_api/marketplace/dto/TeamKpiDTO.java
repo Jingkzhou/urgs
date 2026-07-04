@@ -9,6 +9,7 @@ public class TeamKpiDTO {
     private Integer totalWorks;
     private Integer completedWorks;
     private Integer inProgressTasks;
+    private Integer pausedTasks;
     private Integer overdueTasks;
     private Integer totalPointPool;
     private Integer settledPoints;

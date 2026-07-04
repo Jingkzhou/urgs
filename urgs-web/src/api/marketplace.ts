@@ -208,6 +208,7 @@ export interface KpiSummaryDTO {
     overdueCount: number;
     highPriorityTaskCount: number;
     activeTaskCount: number;
+    pausedTaskCount: number;
 }
 
 export interface KpiDetailDTO {
@@ -232,6 +233,7 @@ export interface TeamKpiDTO {
     totalWorks: number;
     completedWorks: number;
     inProgressTasks: number;
+    pausedTasks: number;
     overdueTasks: number;
     totalPointPool: number;
     settledPoints: number;
@@ -418,6 +420,14 @@ export const getMyTasks = (params: {
     deadlineEnd?: string;
 }) =>
     get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/my', params);
+export const getAssigneeTasks = (userId: string, params: {
+    current: number;
+    size: number;
+    status?: string;
+    deadlineStart?: string;
+    deadlineEnd?: string;
+}) =>
+    get<PageResponse<TaskMarketDTO>>(`/api/marketplace/tasks/assignee/${encodeURIComponent(userId)}`, params);
 export const getPendingReviewTasks = (params: any) => get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/review/pending', params);
 export const getReviewHistoryTasks = (params: any) => get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/review/history', params);
 export const claimTask = (id: string) => post(`/api/marketplace/tasks/${id}/claim`);
@@ -440,12 +450,18 @@ export const withdrawApplication = (id: string) => put(`/api/marketplace/applica
 export const getTaskApplications = (taskId: string, params: any) => get(`/api/marketplace/applications/task/${taskId}`, params);
 export const getMyTaskApplications = (params: any) => get('/api/marketplace/applications/my', params);
 
-export const getKpiSummary = (params: any) => get('/api/marketplace/kpi/summary', params);
-export const getKpiDetails = (params: any) => get('/api/marketplace/kpi/details', params);
-export const getTeamKpi = (params: any) => get('/api/marketplace/kpi/team', params);
-export const getKpiLeaderboard = (params: any) => get('/api/marketplace/kpi/leaderboard', params);
-export const getKpiSnapshots = (params: any) => get('/api/marketplace/kpi/snapshots', params);
-export const generateKpiSnapshot = (period: string) => post('/api/marketplace/kpi/snapshots/generate', undefined, { params: { period } });
+export const getKpiSummary = (params: { userId?: string; startDate?: string; endDate?: string }) =>
+    get<KpiSummaryDTO>('/api/marketplace/kpi/summary', params);
+export const getKpiDetails = (params: { userId?: string; startDate?: string; endDate?: string }) =>
+    get<KpiDetailDTO[]>('/api/marketplace/kpi/details', params);
+export const getTeamKpi = (params: { startDate?: string; endDate?: string }) =>
+    get<TeamKpiDTO>('/api/marketplace/kpi/team', params);
+export const getKpiLeaderboard = (params: { dimension?: string; startDate?: string; endDate?: string }) =>
+    get<KpiSummaryDTO[]>('/api/marketplace/kpi/leaderboard', params);
+export const getKpiSnapshots = (params: { period?: string }) =>
+    get<KpiSnapshot[]>('/api/marketplace/kpi/snapshots', params);
+export const generateKpiSnapshot = (period: string) =>
+    post<KpiSnapshot[]>('/api/marketplace/kpi/snapshots/generate', undefined, { params: { period } });
 export const createTaskAppeal = (taskId: string, data: { reason?: string; expectedResult?: string }) => post(`/api/marketplace/appeals/task/${taskId}`, data);
 export const resolveTaskAppeal = (id: string, data: { resolution?: string }) => put(`/api/marketplace/appeals/${id}/resolve`, data);
 export const listTaskAppeals = (params: any) => get('/api/marketplace/appeals', params);

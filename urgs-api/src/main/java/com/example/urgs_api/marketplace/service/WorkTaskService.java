@@ -20,6 +20,13 @@ public interface WorkTaskService extends IService<WorkTask> {
             LocalDateTime deadlineStart,
             LocalDateTime deadlineEnd);
 
+    Page<TaskMarketDTO> getAssigneeTasks(
+            Page<WorkTask> page,
+            String userId,
+            String status,
+            LocalDateTime deadlineStart,
+            LocalDateTime deadlineEnd);
+
     Page<TaskMarketDTO> getReviewTasks(Page<WorkTask> page, String publisherId, boolean history);
 
     boolean claimTask(String taskId, String userId);

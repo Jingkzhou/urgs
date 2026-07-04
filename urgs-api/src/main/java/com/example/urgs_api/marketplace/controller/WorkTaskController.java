@@ -112,6 +112,22 @@ public class WorkTaskController {
         return PageResult.of(resultPage);
     }
 
+    @GetMapping("/assignee/{userId}")
+    public PageResult<TaskMarketDTO> getAssigneeTasks(
+            @PathVariable String userId,
+            @RequestParam(defaultValue = "1") int current,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime deadlineStart,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime deadlineEnd) {
+        Page<WorkTask> page = new Page<>(current, size);
+        Page<TaskMarketDTO> resultPage = workTaskService.getAssigneeTasks(
+                page, userId, status, deadlineStart, deadlineEnd);
+        return PageResult.of(resultPage);
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<TaskMarketDTO> getTaskById(@PathVariable String id) {
         TaskMarketDTO dto = workTaskService.getTaskDetail(id);
