@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Modal, Pagination } from 'antd';
+import { Modal, Pagination, Progress } from 'antd';
 import { appendTaskRiskTracking, AssetMaintenanceRecord, listWorks, publishWork, cancelWork, batchDeleteWorks, updateTaskStatus, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
-import { ChevronDown, ChevronRight, Download, Edit3, ListTodo, PauseCircle, Plus, Play, PlayCircle, Search, Trash2, Upload, XCircle } from 'lucide-react';
+import { CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Circle, Clock3, Download, Edit3, ListTodo, PauseCircle, Plus, Play, PlayCircle, Search, Trash2, Upload, Users, XCircle } from 'lucide-react';
 import CreateWorkDrawer from './CreateWorkDrawer';
 import ImportWorkModal from './ImportWorkModal';
 import WorkDetailDrawer from './WorkDetailDrawer';
@@ -302,6 +302,30 @@ const WorkList: React.FC = () => {
         return (workTasks[workId] || []).find(task => task.taskRole === 'MAIN');
     };
 
+    const getTaskProgressSummary = (workId: string) => {
+        const tasks = workTasks[workId] || [];
+        const completedCount = tasks.filter(task => normalizeTaskStatus(task.status) === 'COMPLETED').length;
+        const activeCount = tasks.filter(task =>
+            ['ASSIGNED', 'IN_PROGRESS', 'ASSET_REVIEW', 'REVIEW'].includes(normalizeTaskStatus(task.status) || '')
+        ).length;
+        const pausedCount = tasks.filter(task => normalizeTaskStatus(task.status) === 'PAUSED').length;
+        const closedCount = tasks.filter(task =>
+            ['CANCELLED', 'REJECTED'].includes(normalizeTaskStatus(task.status) || '')
+        ).length;
+        const pendingCount = Math.max(tasks.length - completedCount - activeCount - pausedCount - closedCount, 0);
+        const progressBase = Math.max(tasks.length - closedCount, 0);
+
+        return {
+            totalCount: tasks.length,
+            completedCount,
+            activeCount,
+            pausedCount,
+            closedCount,
+            pendingCount,
+            percent: progressBase === 0 ? 0 : Math.round((completedCount / progressBase) * 100),
+        };
+    };
+
     const getTaskAssetChanges = (task: WorkTask): AssetMaintenanceRecord[] => {
         if (!task.assetMaintenanceSnapshot) return [];
         try {
@@ -426,9 +450,12 @@ const WorkList: React.FC = () => {
         const riskEntries = getWorkRiskEntries(workId);
 
         return (
-            <div className="bg-amber-50/60 border border-amber-100 rounded-lg px-4 py-3 mb-3">
-                <div className="flex items-center gap-2 mb-2">
-                    <div className="text-xs font-bold text-amber-800">任务风险及跟踪记录</div>
+            <div className="border-t border-slate-200 pt-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                        <div className="text-sm font-bold text-slate-800">任务风险及跟踪记录</div>
+                        <span className="text-xs text-slate-400">{riskEntries.length} 条</span>
+                    </div>
                     <button
                         type="button"
                         onClick={() => {
@@ -437,21 +464,18 @@ const WorkList: React.FC = () => {
                             setTrackingTaskId(firstTask?.id || '');
                             setTrackingNote('');
                         }}
-                        className="inline-flex items-center gap-1 rounded bg-amber-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-amber-700"
+                        className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-100"
                     >
                         <Plus size={12} /> 追加
                     </button>
-                    <span className="text-[11px] font-bold text-amber-700 bg-white/70 border border-amber-100 rounded px-2 py-0.5">
-                        {riskEntries.length} 条
-                    </span>
                 </div>
                 {riskEntries.length === 0 ? (
-                    <div className="text-xs text-amber-700/70">暂无风险及跟踪记录</div>
+                    <div className="rounded-md bg-slate-50 px-3 py-2.5 text-xs text-slate-400">暂无风险及跟踪记录</div>
                 ) : (
-                    <div className="space-y-2">
+                    <div className="divide-y divide-slate-100 rounded-md border border-slate-200 bg-white">
                     {riskEntries.map((entry, index) => (
-                        <div key={`${entry.taskId}-${index}`} className="bg-white/80 border border-amber-100 rounded px-3 py-2 text-xs">
-                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <div key={`${entry.taskId}-${index}`} className="px-3 py-2.5 text-xs">
+                            <div className="mb-1 flex flex-wrap items-center gap-2">
                                 <span className="font-bold text-slate-800 truncate max-w-[360px]">{entry.taskTitle}</span>
                                 {entry.stage && (
                                     <>
@@ -593,12 +617,95 @@ const WorkList: React.FC = () => {
         );
     };
 
+    const renderTaskSection = (title: string, tasks: WorkTask[]) => (
+        <section>
+            <div className="mb-2 flex items-center gap-2">
+                {title === '主任务' ? (
+                    <CheckCircle2 size={15} className="text-red-500" />
+                ) : (
+                    <Circle size={14} className="text-slate-400" />
+                )}
+                <h4 className="text-sm font-bold text-slate-800">{title}</h4>
+                <span className="text-xs text-slate-400">{tasks.length}</span>
+            </div>
+            {tasks.length === 0 ? (
+                <div className="rounded-md bg-slate-50 px-3 py-3 text-center text-xs text-slate-400">暂无{title}</div>
+            ) : (
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                    <div className="min-w-[900px]">
+                        <div className="grid grid-cols-[minmax(280px,1.7fr)_100px_110px_130px_120px_70px_90px] gap-3 bg-slate-50 px-4 py-2 text-xs font-bold text-slate-500">
+                            <span>任务名称</span>
+                            <span>状态</span>
+                            <span>当前阶段</span>
+                            <span>负责人</span>
+                            <span>截止日期</span>
+                            <span>积分</span>
+                            <span>操作</span>
+                        </div>
+                        <div className="divide-y divide-slate-100 bg-white">
+                            {tasks.map(task => (
+                                <div key={task.id} className="px-4 py-3">
+                                    <div className="grid grid-cols-[minmax(280px,1.7fr)_100px_110px_130px_120px_70px_90px] items-start gap-3 text-xs">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold ${
+                                                    task.taskRole === 'MAIN'
+                                                        ? 'bg-red-50 text-red-600'
+                                                        : 'bg-slate-100 text-slate-600'
+                                                }`}>
+                                                    {task.taskRole === 'MAIN' ? '主任务' : '子任务'}
+                                                </span>
+                                                <span className="truncate font-bold text-slate-800">{task.title}</span>
+                                            </div>
+                                            {task.description && (
+                                                <div className="mt-1 line-clamp-2 leading-5 text-slate-500">{task.description}</div>
+                                            )}
+                                            {renderAssetChanges([task], false)}
+                                        </div>
+                                        <span className={`w-fit rounded px-2 py-0.5 font-bold ${statusClass(task.status)}`}>
+                                            {getTaskStatusLabel(task.status)}
+                                        </span>
+                                        <span className="font-bold text-blue-700">
+                                            {isIssueTrackingTask(task) ? '不适用' : getTaskStageLabel(task.currentStage)}
+                                        </span>
+                                        <span className="truncate text-slate-600">{renderAssignee(task.assigneeId)}</span>
+                                        <span className="text-slate-500">{renderValue(formatDate(task.deadline))}</span>
+                                        <span className="font-bold text-orange-600">{task.points ?? 0}</span>
+                                        {isClosedTaskStatus(task.status) ? (
+                                            <span className="text-slate-300">-</span>
+                                        ) : (
+                                            <button
+                                                onClick={() => handleToggleTaskPaused(task)}
+                                                className={`inline-flex w-fit items-center gap-1 rounded px-2 py-1 font-bold transition-colors ${
+                                                    isPausedTask(task)
+                                                        ? 'bg-green-50 text-green-700 hover:bg-green-100'
+                                                        : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                                }`}
+                                                title={isPausedTask(task) ? '继续任务' : '暂停任务'}
+                                            >
+                                                {isPausedTask(task) ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
+                                                {isPausedTask(task) ? '继续' : '暂停'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </section>
+    );
+
     return (
-        <div className="h-full flex flex-col p-6 overflow-y-auto relative">
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold text-slate-800">我发布的工作</h2>
-                <div className="flex items-center gap-2">
-                    <div className="flex items-center overflow-hidden rounded-lg border border-slate-200 bg-white focus-within:border-slate-400">
+        <div className="relative flex h-full flex-col overflow-y-auto p-6">
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+                <div>
+                    <h2 className="text-xl font-bold text-slate-900">我发布的工作</h2>
+                    <p className="mt-1 text-sm text-slate-500">统一查看工作信息、任务进度和风险记录</p>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                    <div className="flex items-center overflow-hidden rounded-lg border border-slate-200 bg-white transition-colors focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-50">
                         <input
                             value={keyword}
                             onChange={event => setKeyword(event.target.value)}
@@ -606,7 +713,7 @@ const WorkList: React.FC = () => {
                                 if (event.key === 'Enter') handleSearch();
                             }}
                             placeholder="名称、需求编号、部门、申请人、系统"
-                            className="w-72 border-0 px-3 py-2 text-sm outline-none"
+                            className="w-80 border-0 px-3 py-2 text-sm outline-none"
                         />
                         {queryKeyword && (
                             <button
@@ -634,21 +741,21 @@ const WorkList: React.FC = () => {
                     {selectedWorkIds.length > 0 && (
                         <button
                             onClick={handleBatchDelete}
-                            className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 transition-colors text-sm font-bold"
+                            className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-bold text-white transition-colors hover:bg-red-500"
                         >
                             <Trash2 size={16} />批量删除({selectedWorkIds.length})
                         </button>
                     )}
                     <button
                         onClick={() => setIsImportOpen(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-sm font-bold"
+                        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
                     >
                         <Upload size={16} />导入
                     </button>
                     <button
                         onClick={exportWorks}
                         disabled={works.length === 0}
-                        className="flex items-center gap-2 px-4 py-2 bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         <Download size={16} />导出
                     </button>
@@ -657,7 +764,7 @@ const WorkList: React.FC = () => {
                             setEditingWorkId(null);
                             setIsDrawerOpen(true);
                         }}
-                        className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors text-sm font-bold"
+                        className="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-slate-800"
                     >
                         <Plus size={16} />新建工作
                     </button>
@@ -691,199 +798,241 @@ const WorkList: React.FC = () => {
             />
 
             {loading ? (
-                <div className="text-center py-10 text-slate-400">加载中...</div>
+                <div className="rounded-xl border border-slate-200 py-16 text-center text-sm text-slate-400">加载中...</div>
             ) : works.length === 0 ? (
-                <div className="text-center py-10 text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 py-16 text-center text-sm text-slate-400">
                     暂无工作，可通过右上角新建或导入。
                 </div>
             ) : (
-                <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-x-auto">
-                    <div className="min-w-[1940px]">
-                        <div className="grid grid-cols-[44px_44px_minmax(220px,1.4fr)_190px_120px_110px_220px_140px_110px_90px_150px_150px_150px_100px_90px_100px] gap-3 px-4 py-3 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500">
-                            <input
-                                type="checkbox"
-                                checked={works.length > 0 && selectedWorkIds.length === works.length}
-                                onChange={toggleSelectAll}
-                                className="h-4 w-4 rounded border-slate-300"
-                                aria-label="全选工作"
-                            />
-                            <span></span>
-                            <span>工作名称</span>
-                            <span>需求编号</span>
-                            <span>申请部门</span>
-                            <span>申请人</span>
-                            <span>负责人</span>
-                            <span>归属系统</span>
-                            <span>项目类型</span>
-                            <span>优先级</span>
-                            <span>截止日期</span>
-                            <span>创建时间</span>
-                            <span>主系统</span>
-                            <span>状态</span>
-                            <span>子任务</span>
-                            <span>操作</span>
-                        </div>
-                    {works.map(work => (
-                        <div key={work.id} className="border-b border-slate-100 last:border-b-0">
-                            <div className="grid grid-cols-[44px_44px_minmax(220px,1.4fr)_190px_120px_110px_220px_140px_110px_90px_150px_150px_150px_100px_90px_100px] gap-3 px-4 py-4 items-center text-sm">
+                <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <div className="min-w-[1170px]">
+                        <div className="grid grid-cols-[72px_minmax(220px,1.5fr)_minmax(130px,.85fr)_minmax(150px,1fr)_minmax(140px,1fr)_104px_112px_128px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-bold text-slate-500">
+                            <div className="flex items-center gap-2">
                                 <input
                                     type="checkbox"
-                                    checked={selectedWorkIds.includes(work.id)}
-                                    onChange={() => toggleSelected(work.id)}
+                                    checked={works.length > 0 && selectedWorkIds.length === works.length}
+                                    onChange={toggleSelectAll}
                                     className="h-4 w-4 rounded border-slate-300"
-                                    aria-label={`选择工作 ${work.title}`}
+                                    aria-label="全选工作"
                                 />
-                                <button
-                                    onClick={() => toggleExpanded(work.id)}
-                                    className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
-                                    title={expandedWorkIds[work.id] ? '收起任务' : '展开任务'}
-                                >
-                                    {expandedWorkIds[work.id] ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
-                                </button>
-                                <div className="min-w-0">
-                                    <button
-                                        onClick={() => {
-                                            setSelectedWorkId(work.id);
-                                            setIsDetailOpen(true);
-                                        }}
-                                        className="font-bold text-slate-800 hover:text-red-600 transition-colors truncate block max-w-full text-left"
-                                    >
-                                        {work.title}
-                                    </button>
-                                    <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-400">
-                                        <span>积分: {work.totalPoints ?? 0}</span>
-                                    </div>
-                                </div>
-                                <span className="text-slate-600 whitespace-normal break-all">{renderValue(work.requirementNumber)}</span>
-                                <span className="text-slate-600 truncate">{renderValue(work.applicationDepartment)}</span>
-                                <span className="text-slate-600 truncate">{renderValue(work.applicantName)}</span>
-                                {renderWorkAssignees(work.id)}
-                                <span className="text-slate-600 truncate">{renderValue(work.owningSystem)}</span>
-                                <span className="text-blue-700 truncate">{renderValue(work.projectType)}</span>
-                                <span className="font-bold text-red-500">{renderValue(work.priority)}</span>
-                                <span className="text-slate-500 truncate">{renderValue(formatDate(work.deadline))}</span>
-                                <span className="text-slate-500 truncate">{renderValue(formatDateTime(work.createTime))}</span>
-                                <span className="text-slate-600 truncate">{getPrimarySystemText(work)}</span>
-                                <span className={`w-fit px-2 py-0.5 rounded text-xs font-bold ${statusClass(work.status)}`}>
-                                    {getWorkStatusLabel(work.status)}
-                                </span>
-                                <span className="inline-flex items-center gap-1.5 text-slate-600">
-                                    <ListTodo size={13} /> {taskSummaries[work.id]?.taskCount ?? 0}
-                                </span>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => {
-                                            setEditingWorkId(work.id);
-                                            setIsDrawerOpen(true);
-                                        }}
-                                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                        title="修改工作"
-                                    >
-                                        <Edit3 size={18} />
-                                    </button>
-                                    {work.status === 'DRAFT' && (
-                                        <button
-                                            onClick={() => handlePublish(work.id)}
-                                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                            title="发布到市场"
-                                        >
-                                            <Play size={18} />
-                                        </button>
-                                    )}
-                                    {(work.status === 'DRAFT' || work.status === 'PUBLISHED') && (
-                                        <button
-                                            onClick={() => handleCancel(work.id)}
-                                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                            title="取消工作"
-                                        >
-                                            <XCircle size={18} />
-                                        </button>
-                                    )}
-                                </div>
+                                <span>{selectedWorkIds.length || ''}</span>
                             </div>
+                            <span>工作 / 需求编号</span>
+                            <span>申请信息</span>
+                            <span>执行人</span>
+                            <span>系统 / 项目</span>
+                            <span>优先级 / 状态</span>
+                            <span>截止 / 任务</span>
+                            <span>操作</span>
+                        </div>
+                        {works.map(work => {
+                            const taskProgress = getTaskProgressSummary(work.id);
+                            const orderedTasks = getOrderedTasks(work.id);
+                            const mainTasks = orderedTasks.filter(task => task.taskRole === 'MAIN');
+                            const subTasks = orderedTasks.filter(task => task.taskRole !== 'MAIN');
 
-                            {expandedWorkIds[work.id] && (
-                                <div className="ml-[88px] bg-slate-50/70 border-t border-l-2 border-slate-200 px-4 py-3">
-                                    <div className="bg-white border border-slate-100 rounded-lg px-4 py-3 mb-3">
-                                        <div className="text-xs font-bold text-slate-500 mb-3">工作内容</div>
-                                        <div className="grid grid-cols-2 xl:grid-cols-4 gap-x-6 gap-y-2 text-xs">
-                                            <div><span className="text-slate-400">优先级：</span><span className="font-medium text-slate-700">{renderValue(work.priority)}</span></div>
-                                            <div><span className="text-slate-400">需求编号：</span><span className="font-medium text-slate-700">{renderValue(work.requirementNumber)}</span></div>
-                                            <div><span className="text-slate-400">截止日期：</span><span className="font-medium text-slate-700">{renderValue(formatDate(work.deadline))}</span></div>
-                                            <div><span className="text-slate-400">申请部门：</span><span className="font-medium text-slate-700">{renderValue(work.applicationDepartment)}</span></div>
-                                            <div><span className="text-slate-400">申请人：</span><span className="font-medium text-slate-700">{renderValue(work.applicantName)}</span></div>
-                                            <div><span className="text-slate-400">主任务负责人：</span><span className="font-medium text-slate-700">{renderAssignee(getMainTask(work.id)?.assigneeId)}</span></div>
-                                            <div><span className="text-slate-400">归属系统：</span><span className="font-medium text-slate-700">{renderValue(work.owningSystem)}</span></div>
-                                            <div><span className="text-slate-400">主系统：</span><span className="font-medium text-slate-700">{getPrimarySystemText(work)}</span></div>
-                                            <div><span className="text-slate-400">项目类型：</span><span className="font-medium text-slate-700">{renderValue(work.projectType)}</span></div>
-                                            <div><span className="text-slate-400">创建时间：</span><span className="font-medium text-slate-700">{renderValue(formatDateTime(work.createTime))}</span></div>
-                                            <div className="col-span-2 xl:col-span-4">
-                                                <span className="text-slate-400">详细描述：</span>
-                                                <span className="font-medium text-slate-700 whitespace-pre-wrap">{renderValue(work.description)}</span>
+                            return (
+                                <div key={work.id} className="border-b border-slate-100 last:border-b-0">
+                                    <div className={`grid grid-cols-[72px_minmax(220px,1.5fr)_minmax(130px,.85fr)_minmax(150px,1fr)_minmax(140px,1fr)_104px_112px_128px] items-center gap-3 px-4 py-3.5 text-sm transition-colors ${
+                                        expandedWorkIds[work.id] ? 'bg-blue-50/30' : 'hover:bg-slate-50/70'
+                                    }`}>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedWorkIds.includes(work.id)}
+                                                onChange={() => toggleSelected(work.id)}
+                                                className="h-4 w-4 rounded border-slate-300"
+                                                aria-label={`选择工作 ${work.title}`}
+                                            />
+                                            <button
+                                                onClick={() => toggleExpanded(work.id)}
+                                                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-white hover:text-slate-800"
+                                                title={expandedWorkIds[work.id] ? '收起任务' : '展开任务'}
+                                            >
+                                                {expandedWorkIds[work.id] ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
+                                            </button>
+                                        </div>
+                                        <div className="min-w-0">
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedWorkId(work.id);
+                                                    setIsDetailOpen(true);
+                                                }}
+                                                className="block max-w-full truncate text-left font-bold text-slate-900 transition-colors hover:text-red-600"
+                                            >
+                                                {work.title}
+                                            </button>
+                                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
+                                                <span className="font-medium text-slate-500">{renderValue(work.requirementNumber)}</span>
+                                                <span>积分 {work.totalPoints ?? 0}</span>
+                                                <span>{formatDateTime(work.createTime)}</span>
                                             </div>
                                         </div>
-                                        {renderAssetChanges(getOrderedTasks(work.id), true)}
-                                    </div>
-                                    {renderWorkRiskSummary(work.id)}
-                                    <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-500">
-                                        <span className="h-2 w-2 rounded-full bg-slate-400"></span>
-                                        <span>二级任务菜单</span>
-                                    </div>
-                                    <div className="grid grid-cols-[88px_minmax(220px,1.5fr)_100px_100px_90px_90px] gap-3 px-3 py-2 text-xs font-bold text-slate-400">
-                                        <span>层级</span>
-                                        <span>任务名称</span>
-                                        <span>状态</span>
-                                        <span>阶段</span>
-                                        <span>积分</span>
-                                        <span>操作</span>
-                                    </div>
-                                    {getOrderedTasks(work.id).map(task => (
-                                        <div key={task.id} className="relative bg-white border border-slate-100 rounded-lg mb-2 last:mb-0 px-3 py-2">
-                                            <div className="grid grid-cols-[88px_minmax(220px,1.5fr)_100px_100px_90px_90px] gap-3 items-center text-xs">
-                                                <span className="absolute -left-[17px] top-5 h-px w-4 bg-slate-200"></span>
-                                                <span className={`w-fit px-2 py-0.5 rounded font-bold ${task.taskRole === 'MAIN' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-600'}`}>
-                                                    {task.taskRole === 'MAIN' ? '主任务' : '子任务'}
-                                                </span>
-                                                <div className="min-w-0">
-                                                    <div className="font-bold text-slate-700 truncate">{task.title}</div>
-                                                    {task.description && <div className="text-slate-400 truncate mt-0.5">{task.description}</div>}
-                                                </div>
-                                                <span className={`w-fit px-2 py-0.5 rounded font-bold ${statusClass(task.status)}`}>
-                                                    {getTaskStatusLabel(task.status)}
-                                                </span>
-                                                <span className="text-blue-700 font-bold">
-                                                    {isIssueTrackingTask(task) ? '不适用' : getTaskStageLabel(task.currentStage)}
-                                                </span>
-                                                <span className="font-bold text-orange-600">{task.points ?? 0}</span>
-                                                {isClosedTaskStatus(task.status) ? (
-                                                    <span className="text-slate-300">-</span>
-                                                ) : (
-                                                    <button
-                                                        onClick={() => handleToggleTaskPaused(task)}
-                                                        className={`inline-flex w-fit items-center gap-1 rounded px-2 py-1 font-bold transition-colors ${
-                                                            isPausedTask(task)
-                                                                ? 'bg-green-50 text-green-700 hover:bg-green-100'
-                                                                : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-                                                        }`}
-                                                        title={isPausedTask(task) ? '继续任务' : '暂停任务'}
-                                                    >
-                                                        {isPausedTask(task) ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
-                                                        {isPausedTask(task) ? '继续' : '暂停'}
-                                                    </button>
-                                                )}
-                                            </div>
-                                            {renderAssetChanges([task], false)}
+                                        <div className="min-w-0">
+                                            <div className="truncate font-medium text-slate-700">{renderValue(work.applicationDepartment)}</div>
+                                            <div className="mt-1 truncate text-xs text-slate-400">{renderValue(work.applicantName)}</div>
                                         </div>
-                                    ))}
-                                    {(workTasks[work.id] || []).length === 0 && (
-                                        <div className="text-center py-4 text-xs text-slate-400">暂无任务</div>
+                                        <div className="min-w-0">{renderWorkAssignees(work.id)}</div>
+                                        <div className="min-w-0">
+                                            <div className="truncate font-medium text-slate-700">{renderValue(work.owningSystem)}</div>
+                                            <div className="mt-1 flex items-center gap-2 text-xs">
+                                                <span className="truncate text-blue-700">{renderValue(work.projectType)}</span>
+                                                <span className="text-slate-400">主系统 {getPrimarySystemText(work)}</span>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <div className="font-bold text-red-500">{renderValue(work.priority)}</div>
+                                            <span className={`inline-flex w-fit rounded px-2 py-0.5 text-xs font-bold ${statusClass(work.status)}`}>
+                                                {getWorkStatusLabel(work.status)}
+                                            </span>
+                                        </div>
+                                        <div className="space-y-1.5 text-xs">
+                                            <div className="flex items-center gap-1.5 text-slate-600">
+                                                <CalendarDays size={13} className="text-slate-400" />
+                                                {renderValue(formatDate(work.deadline))}
+                                            </div>
+                                            <div className="flex items-center gap-1.5 text-slate-500">
+                                                <ListTodo size={13} />
+                                                {taskSummaries[work.id]?.taskCount ?? 0} 个子任务
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                            <button
+                                                onClick={() => {
+                                                    setEditingWorkId(work.id);
+                                                    setIsDrawerOpen(true);
+                                                }}
+                                                className="inline-flex items-center gap-1 py-1 text-xs font-bold text-blue-600 transition-colors hover:text-blue-800"
+                                                title="修改工作"
+                                            >
+                                                <Edit3 size={14} />编辑
+                                            </button>
+                                            {work.status === 'DRAFT' && (
+                                                <button
+                                                    onClick={() => handlePublish(work.id)}
+                                                    className="inline-flex items-center gap-1 py-1 text-xs font-bold text-green-600 transition-colors hover:text-green-800"
+                                                    title="发布到市场"
+                                                >
+                                                    <Play size={14} />发布
+                                                </button>
+                                            )}
+                                            {(work.status === 'DRAFT' || work.status === 'PUBLISHED') && (
+                                                <button
+                                                    onClick={() => handleCancel(work.id)}
+                                                    className="inline-flex items-center gap-1 py-1 text-xs font-bold text-red-500 transition-colors hover:text-red-700"
+                                                    title="取消工作"
+                                                >
+                                                    <XCircle size={14} />取消
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {expandedWorkIds[work.id] && (
+                                        <div className="border-t border-slate-200 bg-slate-50/60 px-5 py-5">
+                                            <div className="mb-5 grid grid-cols-[minmax(0,1.45fr)_minmax(360px,.9fr)] overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                                <section className="p-5">
+                                                    <h3 className="text-sm font-bold text-slate-900">工作内容</h3>
+                                                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                                                        {renderValue(work.description)}
+                                                    </p>
+                                                    <dl className="mt-4 grid grid-cols-2 gap-x-8 gap-y-3 border-t border-slate-100 pt-4 text-xs xl:grid-cols-3">
+                                                        <div>
+                                                            <dt className="text-slate-400">申请部门</dt>
+                                                            <dd className="mt-1 font-medium text-slate-700">{renderValue(work.applicationDepartment)}</dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className="text-slate-400">申请人</dt>
+                                                            <dd className="mt-1 font-medium text-slate-700">{renderValue(work.applicantName)}</dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className="text-slate-400">主任务负责人</dt>
+                                                            <dd className="mt-1 font-medium text-slate-700">{renderAssignee(getMainTask(work.id)?.assigneeId)}</dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className="text-slate-400">归属系统</dt>
+                                                            <dd className="mt-1 font-medium text-slate-700">{renderValue(work.owningSystem)}</dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className="text-slate-400">项目类型</dt>
+                                                            <dd className="mt-1 font-medium text-slate-700">{renderValue(work.projectType)}</dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className="text-slate-400">主系统</dt>
+                                                            <dd className="mt-1 font-medium text-slate-700">{getPrimarySystemText(work)}</dd>
+                                                        </div>
+                                                    </dl>
+                                                    {renderAssetChanges(orderedTasks, true)}
+                                                </section>
+                                                <section className="border-l border-slate-200 bg-slate-50/40 p-5">
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <h3 className="text-sm font-bold text-slate-900">任务进度</h3>
+                                                        <span className="text-xs text-slate-400">{taskProgress.totalCount} 个任务</span>
+                                                    </div>
+                                                    <div className="mt-4 flex items-center gap-3">
+                                                        <Progress
+                                                            percent={taskProgress.percent}
+                                                            size="small"
+                                                            strokeColor="#2563eb"
+                                                            trailColor="#e2e8f0"
+                                                        />
+                                                    </div>
+                                                    <div className="mt-4 grid grid-cols-4 gap-3 text-center">
+                                                        <div>
+                                                            <div className="text-lg font-bold text-green-600">{taskProgress.completedCount}</div>
+                                                            <div className="mt-0.5 text-[11px] text-slate-400">已完成</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-lg font-bold text-blue-600">{taskProgress.activeCount}</div>
+                                                            <div className="mt-0.5 text-[11px] text-slate-400">进行中</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-lg font-bold text-slate-600">{taskProgress.pendingCount}</div>
+                                                            <div className="mt-0.5 text-[11px] text-slate-400">待开始</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-lg font-bold text-amber-600">{taskProgress.pausedCount}</div>
+                                                            <div className="mt-0.5 text-[11px] text-slate-400">暂停中</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="mt-5 space-y-3 border-t border-slate-200 pt-4 text-xs">
+                                                        <div className="flex items-center justify-between gap-4">
+                                                            <span className="inline-flex items-center gap-1.5 text-slate-400"><Clock3 size={13} />创建时间</span>
+                                                            <span className="font-medium text-slate-700">{renderValue(formatDateTime(work.createTime))}</span>
+                                                        </div>
+                                                        <div className="flex items-center justify-between gap-4">
+                                                            <span className="inline-flex items-center gap-1.5 text-slate-400"><CalendarDays size={13} />截止日期</span>
+                                                            <span className="font-medium text-slate-700">{renderValue(formatDate(work.deadline))}</span>
+                                                        </div>
+                                                        <div className="flex items-center justify-between gap-4">
+                                                            <span className="inline-flex items-center gap-1.5 text-slate-400"><Users size={13} />执行人</span>
+                                                            <span className="font-medium text-slate-700">{orderedTasks.filter(task => task.assigneeId).length} 个任务已分配</span>
+                                                        </div>
+                                                        {taskProgress.closedCount > 0 && (
+                                                            <div className="flex items-center justify-between gap-4">
+                                                                <span className="text-slate-400">已关闭任务</span>
+                                                                <span className="font-medium text-slate-700">{taskProgress.closedCount}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </section>
+                                            </div>
+
+                                            <div className="space-y-5">
+                                                {renderWorkRiskSummary(work.id)}
+                                                {renderTaskSection('主任务', mainTasks)}
+                                                {renderTaskSection('子任务', subTasks)}
+                                            </div>
+                                        </div>
                                     )}
                                 </div>
-                            )}
-                        </div>
-                    ))}
+                            );
+                        })}
                     </div>
-                    <div className="border-t border-slate-100 bg-white px-4 py-3 flex justify-end">
+                    <div className="flex items-center justify-between border-t border-slate-100 bg-white px-4 py-3">
+                        <span className="text-xs text-slate-400">
+                            当前页 {works.length} 个工作{selectedWorkIds.length > 0 ? `，已选择 ${selectedWorkIds.length} 个` : ''}
+                        </span>
                         <Pagination
                             current={currentPage}
                             pageSize={pageSize}
@@ -913,38 +1062,45 @@ const WorkList: React.FC = () => {
                     setAssetChangeDetails([]);
                 }}
                 footer={null}
-                width={920}
+                width={1040}
                 destroyOnHidden
             >
+                <div className="mb-3 flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-xs">
+                    <span className="text-slate-500">共 {assetChangeDetails.length} 条变更记录</span>
+                    <span className="text-slate-400">按任务汇总展示</span>
+                </div>
                 <div className="max-h-[65vh] overflow-auto rounded-md border border-slate-200">
-                    <table className="w-full min-w-[820px] text-xs">
-                        <thead className="sticky top-0 bg-slate-50 text-slate-500">
+                    <table className="w-full min-w-[900px] table-fixed text-xs">
+                        <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500 shadow-[0_1px_0_0_#e2e8f0]">
                             <tr>
-                                <th className="px-3 py-2 text-left">所属任务</th>
-                                <th className="px-3 py-2 text-left">变更类型</th>
-                                <th className="px-3 py-2 text-left">表/字段</th>
-                                <th className="px-3 py-2 text-left">操作人</th>
-                                <th className="px-3 py-2 text-left">时间</th>
-                                <th className="px-3 py-2 text-left">说明</th>
+                                <th className="w-[18%] px-3 py-2.5 text-left">所属任务</th>
+                                <th className="w-[11%] px-3 py-2.5 text-left">所属系统</th>
+                                <th className="w-[10%] px-3 py-2.5 text-left">变更类型</th>
+                                <th className="w-[20%] px-3 py-2.5 text-left">表 / 字段</th>
+                                <th className="w-[17%] px-3 py-2.5 text-left">变更信息</th>
+                                <th className="w-[24%] px-3 py-2.5 text-left">说明</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-slate-100">
                             {assetChangeDetails.map(({ task, record }, index) => (
-                                <tr key={`${task.id}-${record.id || index}`} className="border-t border-slate-100 align-top">
-                                    <td className="px-3 py-2 min-w-[150px]">
-                                        <div className="font-bold text-slate-700">{task.title}</div>
+                                <tr key={`${task.id}-${record.id || index}`} className="align-top transition-colors hover:bg-cyan-50/30">
+                                    <td className="px-3 py-2.5">
+                                        <div className="break-words font-bold text-slate-700">{task.title}</div>
                                         <div className="mt-1 text-slate-400">{task.taskRole === 'MAIN' ? '主任务' : '子任务'}</div>
                                     </td>
-                                    <td className="px-3 py-2 font-bold text-cyan-700">{record.modType || '-'}</td>
-                                    <td className="px-3 py-2 min-w-[160px]">
-                                        <div>{record.tableCnName || record.tableName || '-'}</div>
+                                    <td className="break-words px-3 py-2.5 text-slate-600">{record.systemCode || '-'}</td>
+                                    <td className="px-3 py-2.5 font-bold text-cyan-700">{record.modType || '-'}</td>
+                                    <td className="px-3 py-2.5">
+                                        <div className="break-words text-slate-700">{record.tableCnName || record.tableName || '-'}</div>
                                         {(record.fieldCnName || record.fieldName) && (
-                                            <div className="mt-1 text-slate-400">{record.fieldCnName || record.fieldName}</div>
+                                            <div className="mt-1 break-words text-slate-400">{record.fieldCnName || record.fieldName}</div>
                                         )}
                                     </td>
-                                    <td className="px-3 py-2">{record.operator || '-'}</td>
-                                    <td className="px-3 py-2 min-w-[150px]">{record.time ? formatDateTime(record.time) : '-'}</td>
-                                    <td className="px-3 py-2 min-w-[200px] whitespace-pre-wrap">{record.description || '-'}</td>
+                                    <td className="px-3 py-2.5">
+                                        <div className="text-slate-700">{record.operator || '-'}</div>
+                                        <div className="mt-1 text-slate-400">{record.time ? formatDateTime(record.time) : '-'}</div>
+                                    </td>
+                                    <td className="whitespace-pre-wrap break-words px-3 py-2.5 leading-5 text-slate-600">{record.description || '-'}</td>
                                 </tr>
                             ))}
                         </tbody>

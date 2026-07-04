@@ -81,7 +81,11 @@ public class WorkController {
                     .or().like(Work::getApplicantName, trimmedKeyword)
                     .or().like(Work::getOwningSystem, trimmedKeyword));
         }
-        query.orderByDesc(Work::getCreateTime);
+        query.last("ORDER BY "
+                + "CASE WHEN status IN ('COMPLETED', 'CANCELLED') THEN 1 ELSE 0 END ASC, "
+                + "CASE WHEN status NOT IN ('COMPLETED', 'CANCELLED') AND deadline IS NULL THEN 1 ELSE 0 END ASC, "
+                + "CASE WHEN status NOT IN ('COMPLETED', 'CANCELLED') THEN deadline END ASC, "
+                + "create_time DESC");
         Page<Work> resultPage = workService.page(page, query);
         return PageResult.of(resultPage);
     }

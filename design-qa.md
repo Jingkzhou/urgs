@@ -1,39 +1,50 @@
-# 群聊九宫格头像设计 QA
+# 我发布的工作列表设计 QA
 
-- Source visual truth: `/var/folders/34/nv2447mj5ns38jjkskrqbb680000gn/T/codex-clipboard-7a4f6f3d-6686-400c-ac81-8eb2a4f4ccf4.png`
-- Implementation screenshot: `/tmp/urgs-group-avatar-preview-full.png`
-- Focused implementation screenshot: `/tmp/urgs-group-avatar-implementation-focused.png`
-- Side-by-side comparison: `/tmp/urgs-group-avatar-comparison.png`
-- Viewport: `1280x720`
-- State: 群会话列表，9 位成员，浅色主题，无未读消息
+- Source visual truth: `/Users/zhoujingkun/.codex/generated_images/019f2564-149b-7cf3-b364-eed574302490/call_xjiwouZ9oxblGmTo1yZ93iEY.png`
+- Implementation screenshot: unavailable
+- Viewport: intended `1440x1024`
+- State: “我发布的工作”列表，首条工作展开，展示工作内容、任务进度、主任务、子任务和风险记录
 
 ## Full-view comparison evidence
 
-群头像保持现有会话列表的 `40x40` 尺寸，没有改变列表行高、名称、时间和消息摘要布局。九张成员头像在浅灰背景中清晰可辨，整体密度与参考图一致。
+未完成。项目要求所有网页操作必须使用 gstack `/browse`，但当前仓库未包含该技能；按项目说明尝试从 GitHub 初始化 gstack 时，环境无法连接 `github.com:443`。
 
 ## Focused region comparison evidence
 
-参考图和实现图已放入同一对照画面检查。实现采用 `3x3` 排列、1px 间距、轻微圆角和浅灰底色；成员头像完整填充各缩略格，没有拉伸、溢出或遮挡。
+未完成。由于无法取得实现截图，不能将参考图与实现图放入同一比较输入，也不能可靠判断密集列表、展开区和任务表的实际渲染差异。
 
 ## Fidelity surfaces
 
-- Fonts and typography: 群头像不包含文字；会话名称和摘要沿用现有字号、字重与截断规则。
-- Spacing and layout rhythm: 外框 `40x40`，九宫格单元 `10x10`，间距 1px，布局稳定。
-- Colors and visual tokens: 使用现有 `slate` 边框和背景色，与聊天列表保持一致。
-- Image quality and asset fidelity: 使用真实成员头像 URL；缺失头像时沿用现有默认头像生成逻辑。
-- Copy and content: 未增加新的可见文案。
+- Fonts and typography: 源码沿用现有项目字体体系和 `text-xs` / `text-sm` 层级，未完成像素级检查。
+- Spacing and layout rhythm: 主列表由 16 列压缩为 8 个信息组，展开区使用左右摘要和分层任务表，未完成浏览器尺寸检查。
+- Colors and visual tokens: 沿用现有 `slate`、`red`、`blue`、`green`、`amber` 语义色，未完成截图采样核对。
+- Image quality and asset fidelity: 本页面没有新增位图资产，图标继续使用项目现有 Lucide 图标库。
+- Copy and content: 保留现有工作字段、任务字段和操作，并新增页面说明与任务进度汇总文案。
 
 ## Findings
 
-无剩余 P0、P1、P2 问题。
+- [P1] 缺少实现截图和同屏视觉比较
+  - Location: `urgs-web/src/components/marketplace/WorkList.tsx`
+  - Evidence: 参考图可读取，但 `/browse` 不可用，无法捕获实现状态。
+  - Impact: 不能确认常用视口下是否存在横向溢出、文字截断或展开区间距偏差。
+  - Fix: gstack `/browse` 可用后，以 `1440x1024` 打开任务中心，展开首条工作，截图并与参考图同屏比较。
 
-## Patches made
+## Patches made since previous QA pass
 
-- 初版 `11px` 单元在扣除边框和内边距后只能排列两列。
-- 将 5 至 9 人单元调整为 `10px`，2 至 4 人单元调整为 `16px`，复测后 9 人稳定呈现 `3x3`。
+- 将工作主列表从 16 个独立字段列重组为 8 个信息组。
+- 将展开内容重组为工作内容、任务进度、主任务、子任务和风险记录。
+- 增加任务完成率及状态数量汇总。
+- 保留搜索、批量删除、导入、导出、新建、编辑、发布、取消、暂停/继续、资产记录和风险追加操作。
+
+## Implementation checklist
+
+- 恢复 gstack `/browse`。
+- 捕获 `1440x1024` 的列表和展开状态。
+- 修复截图对比中发现的 P0/P1/P2 问题。
+- 将 `final result` 更新为 `passed`。
 
 ## Follow-up polish
 
-无阻塞项。
+待视觉对比后确认。
 
-final result: passed
+final result: blocked

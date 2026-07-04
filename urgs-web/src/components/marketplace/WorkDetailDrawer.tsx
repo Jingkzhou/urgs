@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Drawer, Tag, Space, Divider, Typography, Spin, Empty } from 'antd';
+import { Drawer, Tag, Space, Divider, Typography, Spin, Empty, Modal, Progress } from 'antd';
 import {
     addTaskToWork,
     approveApplication,
@@ -286,21 +286,42 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
 
     const mainTask = tasks.find(task => task.taskRole === 'MAIN');
     const subTasks = tasks.filter(task => task.taskRole !== 'MAIN');
+    const completedTaskCount = tasks.filter(task => task.status === 'COMPLETED').length;
+    const activeTaskCount = tasks.filter(task =>
+        ['ASSIGNED', 'IN_PROGRESS', 'ASSET_REVIEW', 'REVIEW'].includes(task.status)
+    ).length;
+    const pausedTaskCount = tasks.filter(task => task.status === 'PAUSED').length;
+    const closedTaskCount = tasks.filter(task => ['CANCELLED', 'REJECTED'].includes(task.status)).length;
+    const pendingTaskCount = Math.max(tasks.length - completedTaskCount - activeTaskCount - pausedTaskCount - closedTaskCount, 0);
+    const progressBase = Math.max(tasks.length - closedTaskCount, 0);
+    const taskProgress = progressBase === 0 ? 0 : Math.round((completedTaskCount / progressBase) * 100);
+    const riskTasks = tasks.filter(task => task.stageRiskReported || task.stageRiskNote);
+    const participantNames = Array.from(new Set(
+        tasks
+            .map(task => renderAssignee(task.assigneeId))
+            .filter(Boolean)
+    ));
 
     return (
-        <Drawer
+        <Modal
             title="工作详情"
-            placement="right"
-            onClose={onClose}
             open={isOpen}
-            size="large"
+            onCancel={onClose}
+            footer={null}
+            width="100vw"
+            style={{ top: 0, paddingBottom: 0 }}
+            className="!max-w-none [&_.ant-modal-content]:h-screen [&_.ant-modal-content]:rounded-none"
+            styles={{
+                body: { height: 'calc(100vh - 55px)', overflowY: 'auto', padding: 24 },
+            }}
+            destroyOnHidden
         >
             {loading ? (
                 <div className="flex justify-center items-center h-64">
                     <Spin size="large" description="加载中..." />
                 </div>
             ) : work ? (
-                <div className="flex flex-col gap-6">
+                <div className="mx-auto flex max-w-[1500px] flex-col gap-6">
                     <header>
                         <Space className="mb-2">
                             <Tag color={
@@ -327,23 +348,43 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                     {work.primarySystem ? '主系统' : `非主系统${work.primarySystemName ? ` / 主系统: ${work.primarySystemName}` : ''}`}
                                 </Tag>
                             )}
+                            {participantNames.length > 0 && (
+                                <Tag color="purple">参与人: {participantNames.join('、')}</Tag>
+                            )}
                         </div>
                     </header>
 
-                    <div className="bg-slate-50 p-4 rounded-xl flex items-center justify-around">
-                        <div className="text-center">
-                            <div className="text-xs text-slate-400 mb-1">总积分</div>
-                            <div className="font-black text-xl text-slate-800">{work.totalPoints}</div>
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_460px]">
+                        <div className="flex items-center justify-around rounded-xl bg-slate-50 p-4">
+                            <div className="text-center">
+                                <div className="mb-1 text-xs text-slate-400">总积分</div>
+                                <div className="text-xl font-black text-slate-800">{work.totalPoints}</div>
+                            </div>
+                            <Divider orientation="vertical" className="h-10 border-slate-200" />
+                            <div className="text-center">
+                                <div className="mb-1 text-xs text-slate-400">任务总数</div>
+                                <div className="font-bold text-slate-800">{tasks.length}</div>
+                            </div>
+                            <Divider orientation="vertical" className="h-10 border-slate-200" />
+                            <div className="text-center">
+                                <div className="mb-1 text-xs text-slate-400">截止日期</div>
+                                <div className="font-bold text-slate-800">{work.deadline ? new Date(work.deadline).toLocaleDateString() : '无期限'}</div>
+                            </div>
                         </div>
-                        <Divider orientation="vertical" className="h-10 border-slate-200" />
-                        <div className="text-center">
-                            <div className="text-xs text-slate-400 mb-1">子任务数</div>
-                            <div className="font-bold text-slate-800">{subTasks.length}</div>
-                        </div>
-                        <Divider orientation="vertical" className="h-10 border-slate-200" />
-                        <div className="text-center">
-                            <div className="text-xs text-slate-400 mb-1">截止日期</div>
-                            <div className="font-bold text-slate-800">{work.deadline ? new Date(work.deadline).toLocaleDateString() : '无期限'}</div>
+                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                            <div className="mb-2 flex items-center justify-between">
+                                <span className="text-sm font-bold text-slate-800">任务进度</span>
+                                <span className="text-xs text-slate-400">
+                                    已完成 {completedTaskCount} / {progressBase}
+                                </span>
+                            </div>
+                            <Progress percent={taskProgress} size="small" strokeColor="#2563eb" trailColor="#e2e8f0" />
+                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                                <span>进行中 {activeTaskCount}</span>
+                                <span>待开始 {pendingTaskCount}</span>
+                                <span>暂停中 {pausedTaskCount}</span>
+                                {closedTaskCount > 0 && <span>已关闭 {closedTaskCount}</span>}
+                            </div>
                         </div>
                     </div>
 
@@ -362,6 +403,33 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                     )}
 
                     <Divider className="my-0" />
+
+                    <section>
+                        <div className="mb-3 flex items-center gap-2">
+                            <Title level={5} className="!mb-0">任务风险及跟踪记录</Title>
+                            <span className="text-xs text-slate-400">{riskTasks.length} 条</span>
+                        </div>
+                        {riskTasks.length === 0 ? (
+                            <div className="rounded-md bg-slate-50 px-3 py-3 text-xs text-slate-400">暂无风险及跟踪记录</div>
+                        ) : (
+                            <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+                                {riskTasks.map(task => (
+                                    <div key={task.id} className="px-4 py-3 text-xs">
+                                        <div className="mb-1 flex flex-wrap items-center gap-2">
+                                            <span className="font-bold text-slate-800">{task.title}</span>
+                                            {!isIssueTrackingTask(task) && (
+                                                <Tag color="blue" className="text-xs">{getTaskStageLabel(task.currentStage)}</Tag>
+                                            )}
+                                            <span className="text-slate-500">负责人：{renderAssignee(task.assigneeId) || '-'}</span>
+                                        </div>
+                                        <div className="whitespace-pre-wrap break-words leading-5 text-slate-600">
+                                            {task.stageRiskNote || '已报备'}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </section>
 
                     {mainTask && (
                         <section>
@@ -765,7 +833,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                     </div>
                 )}
             </Drawer>
-        </Drawer>
+        </Modal>
     );
 };
 
