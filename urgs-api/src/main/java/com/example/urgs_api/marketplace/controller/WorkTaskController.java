@@ -142,6 +142,7 @@ public class WorkTaskController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "false") boolean archived,
             @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "false") boolean overdue,
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime deadlineStart,
             @RequestParam(required = false)
@@ -149,7 +150,7 @@ public class WorkTaskController {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
         Page<WorkTask> page = new Page<>(current, size);
         Page<TaskMarketDTO> resultPage = workTaskService.getMyTasks(
-                page, userId, archived, status, deadlineStart, deadlineEnd);
+                page, userId, archived, status, overdue, deadlineStart, deadlineEnd);
         return PageResult.of(resultPage);
     }
 

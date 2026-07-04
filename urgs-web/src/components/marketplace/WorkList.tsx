@@ -9,6 +9,7 @@ import WorkDetailDrawer from './WorkDetailDrawer';
 import WorkStatistics from './WorkStatistics';
 import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
 import { searchUsers, UserDTO } from '../../api/user';
+import { MarketplaceTodoFocus } from './marketplaceTodoFocus';
 
 interface WorkTaskSummary {
     taskCount: number;
@@ -72,7 +73,17 @@ const downloadCollapsedOutlineWorkbook = (
     setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
 };
 
-const WorkList: React.FC = () => {
+interface WorkListProps {
+    todoFocus?: MarketplaceTodoFocus | null;
+}
+
+interface WorkDetailFocus {
+    taskId?: string;
+    mode?: 'applications';
+    key?: number;
+}
+
+const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
     const [works, setWorks] = useState<Work[]>([]);
     const [taskSummaries, setTaskSummaries] = useState<Record<string, WorkTaskSummary>>({});
     const [workTasks, setWorkTasks] = useState<Record<string, WorkTask[]>>({});
@@ -82,6 +93,7 @@ const WorkList: React.FC = () => {
     const [editingWorkId, setEditingWorkId] = useState<string | null>(null);
     const [isImportOpen, setIsImportOpen] = useState(false);
     const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
+    const [workDetailFocus, setWorkDetailFocus] = useState<WorkDetailFocus | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [selectedWorkIds, setSelectedWorkIds] = useState<string[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
@@ -174,6 +186,25 @@ const WorkList: React.FC = () => {
     useEffect(() => {
         fetchWorks(currentPage, pageSize);
     }, [currentPage, pageSize, queryKeyword, statusFilter, deadlineRange.startDate, deadlineRange.endDate]);
+
+    useEffect(() => {
+        if (!todoFocus || todoFocus.targetTab !== 'publish') return;
+
+        setActiveView('list');
+        setStatusFilter('');
+        setDeadlineRange({ startDate: '', endDate: '' });
+        setCurrentPage(1);
+
+        if (todoFocus.targetWorkId) {
+            setWorkDetailFocus({
+                taskId: todoFocus.targetTaskId,
+                mode: todoFocus.type === 'APPLICATION' ? 'applications' : undefined,
+                key: todoFocus.sequence,
+            });
+            setSelectedWorkId(todoFocus.targetWorkId);
+            setIsDetailOpen(true);
+        }
+    }, [todoFocus?.sequence]);
 
     const handleSearch = () => {
         const nextKeyword = keyword.trim();
@@ -1014,6 +1045,7 @@ const WorkList: React.FC = () => {
                                             <div className="min-w-0">
                                                 <button
                                                     onClick={() => {
+                                                        setWorkDetailFocus(null);
                                                         setSelectedWorkId(work.id);
                                                         setIsDetailOpen(true);
                                                     }}
@@ -1233,7 +1265,13 @@ const WorkList: React.FC = () => {
             <WorkDetailDrawer
                 workId={selectedWorkId}
                 isOpen={isDetailOpen}
-                onClose={() => setIsDetailOpen(false)}
+                onClose={() => {
+                    setIsDetailOpen(false);
+                    setWorkDetailFocus(null);
+                }}
+                focusTaskId={workDetailFocus?.taskId}
+                focusMode={workDetailFocus?.mode}
+                focusKey={workDetailFocus?.key}
             />
 
             <Modal

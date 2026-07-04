@@ -277,6 +277,8 @@ export interface MarketplaceTodo {
     count: number;
     targetTab: string;
     severity: 'info' | 'warning' | 'danger';
+    targetTaskId?: string;
+    targetWorkId?: string;
 }
 
 export interface WorkStatisticsGroupCount {
@@ -416,6 +418,7 @@ export const getMyTasks = (params: {
     size: number;
     archived?: boolean;
     status?: string;
+    overdue?: boolean;
     deadlineStart?: string;
     deadlineEnd?: string;
 }) =>

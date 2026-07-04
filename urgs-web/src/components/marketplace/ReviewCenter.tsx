@@ -11,8 +11,13 @@ import {
 } from '../../api/marketplace';
 import TaskDetailDrawer from './TaskDetailDrawer';
 import { getTaskStageLabel, getTaskStatusLabel } from './marketplaceLabels';
+import { MarketplaceTodoFocus } from './marketplaceTodoFocus';
 
-const ReviewCenter: React.FC = () => {
+interface ReviewCenterProps {
+    todoFocus?: MarketplaceTodoFocus | null;
+}
+
+const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
     const [tasks, setTasks] = useState<TaskMarketDTO[]>([]);
     const [historyTasks, setHistoryTasks] = useState<TaskMarketDTO[]>([]);
     const [loading, setLoading] = useState(false);
@@ -44,6 +49,16 @@ const ReviewCenter: React.FC = () => {
     useEffect(() => {
         fetchTasks();
     }, []);
+
+    useEffect(() => {
+        if (!todoFocus || todoFocus.targetTab !== 'review') return;
+
+        setActiveTab('pending');
+        if (todoFocus.targetTaskId) {
+            setDetailTaskId(todoFocus.targetTaskId);
+            setIsDetailOpen(true);
+        }
+    }, [todoFocus?.sequence]);
 
     const isAssetReviewTask = (task?: TaskMarketDTO | null) =>
         task?.status === 'WAITING_REVIEW' && task.currentStage === 'ASSET_REVIEW';

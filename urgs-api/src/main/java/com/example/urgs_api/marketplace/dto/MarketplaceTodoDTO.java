@@ -10,4 +10,6 @@ public class MarketplaceTodoDTO {
     private Integer count;
     private String targetTab;
     private String severity;
+    private String targetTaskId;
+    private String targetWorkId;
 }

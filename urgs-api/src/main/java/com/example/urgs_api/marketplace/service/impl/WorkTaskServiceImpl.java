@@ -111,6 +111,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             String userId,
             boolean archived,
             String status,
+            boolean overdue,
             LocalDateTime deadlineStart,
             LocalDateTime deadlineEnd) {
         LambdaQueryWrapper<WorkTask> query = new LambdaQueryWrapper<WorkTask>()
@@ -122,6 +123,15 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         }
         if (StringUtils.hasText(status)) {
             query.eq(WorkTask::getStatus, status.trim().toUpperCase());
+        }
+        if (overdue) {
+            query.in(WorkTask::getStatus,
+                    TaskStatus.READY.name(),
+                    TaskStatus.IN_PROGRESS.name(),
+                    TaskStatus.WAITING_REVIEW.name(),
+                    TaskStatus.REWORK.name(),
+                    TaskStatus.PAUSED.name())
+                    .lt(WorkTask::getDeadline, LocalDateTime.now());
         }
         if (deadlineStart != null) {
             query.ge(WorkTask::getDeadline, deadlineStart);

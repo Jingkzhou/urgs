@@ -17,6 +17,7 @@ public interface WorkTaskService extends IService<WorkTask> {
             String userId,
             boolean archived,
             String status,
+            boolean overdue,
             LocalDateTime deadlineStart,
             LocalDateTime deadlineEnd);
 

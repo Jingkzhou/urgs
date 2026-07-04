@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Drawer, Tag, Space, Divider, Typography, Spin, Empty, Modal, Progress } from 'antd';
 import {
     addTaskToWork,
@@ -39,9 +39,12 @@ interface WorkDetailDrawerProps {
     workId: string | null;
     isOpen: boolean;
     onClose: () => void;
+    focusTaskId?: string;
+    focusMode?: 'applications';
+    focusKey?: number;
 }
 
-const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onClose }) => {
+const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onClose, focusTaskId, focusMode, focusKey }) => {
     const [work, setWork] = useState<Work | null>(null);
     const [tasks, setTasks] = useState<WorkTask[]>([]);
     const [loading, setLoading] = useState(false);
@@ -53,6 +56,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
     const [applicationLoading, setApplicationLoading] = useState(false);
     const [assigneeLabels, setAssigneeLabels] = useState<Record<string, string>>({});
     const [detailTask, setDetailTask] = useState<WorkTask | null>(null);
+    const appliedFocusKeyRef = useRef<number | undefined>(undefined);
 
     // New task form fields
     const [newTask, setNewTask] = useState({
@@ -190,6 +194,21 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             setApplicationLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (!isOpen) {
+            appliedFocusKeyRef.current = undefined;
+            return;
+        }
+        if (!focusKey || appliedFocusKeyRef.current === focusKey) return;
+        if (focusMode !== 'applications' || !focusTaskId || tasks.length === 0) return;
+
+        const targetTask = tasks.find(task => task.id === focusTaskId);
+        if (!targetTask) return;
+
+        appliedFocusKeyRef.current = focusKey;
+        openBidDrawer(targetTask);
+    }, [focusKey, focusMode, focusTaskId, isOpen, tasks]);
 
     const handleApproveApplication = async (application: TaskApplication) => {
         const comment = window.prompt('审批意见（可选）', '综合匹配度最高，同意承接');

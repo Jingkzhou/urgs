@@ -25,6 +25,7 @@ import { Archive, Award, Clock, Gauge, ListTodo, Star, TrendingUp, X } from 'luc
 import TaskDetailDrawer from './TaskDetailDrawer';
 import { getTaskStageLabel, getTaskStatusLabel } from './marketplaceLabels';
 import { RegElement, RegTable } from '../metadata/reg-asset/types';
+import { MarketplaceTodoFocus } from './marketplaceTodoFocus';
 
 const formatDateInput = (date: Date) => {
     const year = date.getFullYear();
@@ -41,7 +42,11 @@ const getCurrentMonthRange = () => {
     };
 };
 
-const MyTasks: React.FC = () => {
+interface MyTasksProps {
+    todoFocus?: MarketplaceTodoFocus | null;
+}
+
+const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
     const [tasks, setTasks] = useState<TaskMarketDTO[]>([]);
     const [kpiSummary, setKpiSummary] = useState<KpiSummaryDTO | null>(null);
     const [dateRange, setDateRange] = useState(getCurrentMonthRange);
@@ -51,6 +56,7 @@ const MyTasks: React.FC = () => {
     const [total, setTotal] = useState(0);
     const [taskView, setTaskView] = useState<'active' | 'archive'>('active');
     const [statusFilter, setStatusFilter] = useState('');
+    const [overdueOnly, setOverdueOnly] = useState(false);
     const [deadlineRange, setDeadlineRange] = useState({ startDate: '', endDate: '' });
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -80,6 +86,7 @@ const MyTasks: React.FC = () => {
                 size: pageSize,
                 archived: taskView === 'archive',
                 status: statusFilter || undefined,
+                overdue: overdueOnly || undefined,
                 deadlineStart: deadlineRange.startDate ? `${deadlineRange.startDate}T00:00:00` : undefined,
                 deadlineEnd: deadlineRange.endDate ? `${deadlineRange.endDate}T23:59:59` : undefined,
             });
@@ -98,7 +105,28 @@ const MyTasks: React.FC = () => {
 
     useEffect(() => {
         fetchTasks();
-    }, [currentPage, pageSize, taskView, statusFilter, deadlineRange.startDate, deadlineRange.endDate]);
+    }, [currentPage, pageSize, taskView, statusFilter, overdueOnly, deadlineRange.startDate, deadlineRange.endDate]);
+
+    useEffect(() => {
+        if (!todoFocus || todoFocus.targetTab !== 'mine') return;
+
+        setTaskView('active');
+        setCurrentPage(1);
+        setDeadlineRange({ startDate: '', endDate: '' });
+
+        if (todoFocus.type === 'OVERDUE') {
+            setStatusFilter('');
+            setOverdueOnly(true);
+        } else {
+            setOverdueOnly(false);
+            setStatusFilter(['READY', 'REWORK', 'WAITING_REVIEW'].includes(todoFocus.type) ? todoFocus.type : '');
+        }
+
+        if (todoFocus.targetTaskId) {
+            setSelectedTaskId(todoFocus.targetTaskId);
+            setIsDetailOpen(true);
+        }
+    }, [todoFocus?.sequence]);
 
     useEffect(() => {
         getKpiSummary(dateRange)
@@ -511,6 +539,7 @@ const MyTasks: React.FC = () => {
                     onClick={() => {
                         setTaskView('active');
                         setStatusFilter('');
+                        setOverdueOnly(false);
                         setCurrentPage(1);
                     }}
                     className={`inline-flex items-center gap-2 px-3 py-3 border-b-2 text-sm font-bold transition-colors ${
@@ -526,6 +555,7 @@ const MyTasks: React.FC = () => {
                     onClick={() => {
                         setTaskView('archive');
                         setStatusFilter('');
+                        setOverdueOnly(false);
                         setCurrentPage(1);
                     }}
                     className={`inline-flex items-center gap-2 px-3 py-3 border-b-2 text-sm font-bold transition-colors ${
@@ -544,6 +574,7 @@ const MyTasks: React.FC = () => {
                     value={statusFilter}
                     onChange={event => {
                         setStatusFilter(event.target.value);
+                        setOverdueOnly(false);
                         setCurrentPage(1);
                     }}
                     className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-red-400"
@@ -568,6 +599,7 @@ const MyTasks: React.FC = () => {
                     value={deadlineRange.startDate}
                     max={deadlineRange.endDate || undefined}
                     onChange={event => {
+                        setOverdueOnly(false);
                         setDeadlineRange(prev => ({ ...prev, startDate: event.target.value }));
                         setCurrentPage(1);
                     }}
@@ -579,16 +611,23 @@ const MyTasks: React.FC = () => {
                     value={deadlineRange.endDate}
                     min={deadlineRange.startDate || undefined}
                     onChange={event => {
+                        setOverdueOnly(false);
                         setDeadlineRange(prev => ({ ...prev, endDate: event.target.value }));
                         setCurrentPage(1);
                     }}
                     className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700"
                 />
-                {(statusFilter || deadlineRange.startDate || deadlineRange.endDate) && (
+                {overdueOnly && (
+                    <span className="rounded-lg border border-red-100 bg-red-50 px-3 py-1.5 text-sm font-bold text-red-600">
+                        仅看逾期
+                    </span>
+                )}
+                {(statusFilter || overdueOnly || deadlineRange.startDate || deadlineRange.endDate) && (
                     <button
                         type="button"
                         onClick={() => {
                             setStatusFilter('');
+                            setOverdueOnly(false);
                             setDeadlineRange({ startDate: '', endDate: '' });
                             setCurrentPage(1);
                         }}
