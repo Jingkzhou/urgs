@@ -277,6 +277,55 @@ export interface MarketplaceTodo {
     severity: 'info' | 'warning' | 'danger';
 }
 
+export interface WorkStatisticsGroupCount {
+    name: string;
+    value: number;
+}
+
+export interface WorkStatisticsTrendItem {
+    date: string;
+    completedCount: number;
+}
+
+export interface WorkStatisticsAssigneeWorkload {
+    assigneeId: string;
+    totalCount: number;
+    completedCount: number;
+    activeCount: number;
+    overdueCount: number;
+}
+
+export interface WorkStatisticsAttentionItem {
+    workId: string;
+    workTitle: string;
+    taskId: string;
+    taskTitle: string;
+    assigneeId?: string;
+    status: string;
+    deadline?: string;
+    overdue: boolean;
+    riskReported: boolean;
+    riskNote?: string;
+}
+
+export interface WorkStatistics {
+    startDate: string;
+    endDate: string;
+    totalWorks: number;
+    completedWorks: number;
+    completedTasks: number;
+    activeTasks: number;
+    overdueTasks: number;
+    riskTasks: number;
+    completionRate: number;
+    workStatusDistribution: WorkStatisticsGroupCount[];
+    taskStatusDistribution: WorkStatisticsGroupCount[];
+    progressDistribution: WorkStatisticsGroupCount[];
+    completionTrend: WorkStatisticsTrendItem[];
+    assigneeWorkloads: WorkStatisticsAssigneeWorkload[];
+    attentionItems: WorkStatisticsAttentionItem[];
+}
+
 export interface AssetMaintenanceRecord {
     id?: string;
     tableName?: string;
@@ -349,6 +398,8 @@ export const listWorks = (params: {
     deadlineEnd?: string;
 }) =>
     get('/api/marketplace/works', params);
+export const getWorkStatistics = (params: { startDate: string; endDate: string }) =>
+    get<WorkStatistics>('/api/marketplace/works/statistics', params);
 export const getWorkDetail = (id: string) => get<Work>(`/api/marketplace/works/${id}`);
 export const getWorkTasks = (workId: string) => get(`/api/marketplace/tasks/work/${workId}`);
 export const addTaskToWork = (workId: string, data: WorkTaskCreateDTO) => post(`/api/marketplace/tasks/work/${workId}`, data);

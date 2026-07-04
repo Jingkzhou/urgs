@@ -34,7 +34,7 @@ const MarketplaceTodoPanel: React.FC<MarketplaceTodoPanelProps> = ({ onSelectTab
 
     if (loading) {
         return (
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-400">
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-400">
                 正在刷新待办...
             </div>
         );
@@ -42,38 +42,38 @@ const MarketplaceTodoPanel: React.FC<MarketplaceTodoPanelProps> = ({ onSelectTab
 
     if (todos.length === 0) {
         return (
-            <div className="rounded-xl border border-green-100 bg-green-50 px-4 py-3 flex items-center gap-3">
-                <CheckCircle2 size={18} className="text-green-600" />
+            <div className="rounded-lg border border-green-100 bg-green-50 px-3 py-2 flex items-center gap-2">
+                <CheckCircle2 size={15} className="text-green-600" />
                 <div>
-                    <div className="text-sm font-bold text-green-700">当前没有待处理事项</div>
-                    <div className="text-xs text-green-600 mt-0.5">任务中心流程暂时是清爽的，可以继续领取或发布任务。</div>
+                    <div className="text-xs font-bold text-green-700">当前没有待处理事项</div>
+                    <div className="text-[11px] text-green-600 mt-0.5">任务中心流程暂时是清爽的，可以继续领取或发布任务。</div>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-            <div className="flex items-center gap-2 mb-3">
-                <Bell size={17} className="text-slate-500" />
-                <span className="text-sm font-bold text-slate-800">我的待办</span>
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+            <div className="mb-2 flex items-center gap-1.5">
+                <Bell size={14} className="text-slate-500" />
+                <span className="text-xs font-bold text-slate-800">我的待办</span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                 {todos.map(todo => (
                     <button
                         key={todo.type}
                         type="button"
                         onClick={() => onSelectTab(todo.targetTab)}
-                        className={`text-left rounded-lg border px-3 py-2 transition-all hover:shadow-sm ${severityClass[todo.severity]}`}
+                        className={`rounded-md border px-2.5 py-1.5 text-left transition-all hover:shadow-sm ${severityClass[todo.severity]}`}
                     >
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2 min-w-0">
-                                <AlertCircle size={15} />
-                                <span className="text-sm font-bold truncate">{todo.title}</span>
+                        <div className="flex items-center justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                                <AlertCircle size={13} />
+                                <span className="truncate text-xs font-bold">{todo.title}</span>
                             </div>
-                            <span className="text-lg font-black">{todo.count}</span>
+                            <span className="text-base font-black leading-none">{todo.count}</span>
                         </div>
-                        <div className="text-xs opacity-80 mt-1 truncate">{todo.description}</div>
+                        <div className="mt-1 truncate text-[11px] leading-4 opacity-80">{todo.description}</div>
                     </button>
                 ))}
             </div>

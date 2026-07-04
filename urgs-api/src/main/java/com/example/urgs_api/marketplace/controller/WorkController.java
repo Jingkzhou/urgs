@@ -3,8 +3,10 @@ package com.example.urgs_api.marketplace.controller;
 import com.example.urgs_api.common.PageResult;
 import com.example.urgs_api.marketplace.dto.WorkCreateDTO;
 import com.example.urgs_api.marketplace.dto.WorkImportDTO;
+import com.example.urgs_api.marketplace.dto.WorkStatisticsDTO;
 import com.example.urgs_api.marketplace.model.Work;
 import com.example.urgs_api.marketplace.service.WorkService;
+import com.example.urgs_api.marketplace.service.WorkStatisticsService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.validation.Valid;
@@ -16,7 +18,9 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +31,9 @@ public class WorkController {
 
     @Autowired
     private WorkService workService;
+
+    @Autowired
+    private WorkStatisticsService workStatisticsService;
 
     @PostMapping
     public Work createWork(
@@ -104,6 +111,24 @@ public class WorkController {
                 + "create_time DESC");
         Page<Work> resultPage = workService.page(page, query);
         return PageResult.of(resultPage);
+    }
+
+    @GetMapping("/statistics")
+    public WorkStatisticsDTO getStatistics(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        if (startDate.isAfter(endDate)) {
+            throw new IllegalArgumentException("开始日期不能晚于结束日期");
+        }
+        if (ChronoUnit.DAYS.between(startDate, endDate) > 366) {
+            throw new IllegalArgumentException("统计时间范围不能超过366天");
+        }
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        return workStatisticsService.getStatistics(userId, startDate, endDate);
     }
 
     @PutMapping("/{id}/publish")

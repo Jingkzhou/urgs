@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { Modal, Pagination, Progress } from 'antd';
 import { appendTaskRiskTracking, AssetMaintenanceRecord, listWorks, publishWork, cancelWork, batchDeleteWorks, reopenTask, updateTaskStatus, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
-import { CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Circle, Clock3, Download, Edit3, ListTodo, PauseCircle, Plus, Play, PlayCircle, Search, Trash2, Upload, Users, XCircle } from 'lucide-react';
+import { BarChart3, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Circle, Clock3, Download, Edit3, LayoutList, ListTodo, PauseCircle, Plus, Play, PlayCircle, Search, Trash2, Upload, Users, XCircle } from 'lucide-react';
 import CreateWorkDrawer from './CreateWorkDrawer';
 import ImportWorkModal from './ImportWorkModal';
 import WorkDetailDrawer from './WorkDetailDrawer';
+import WorkStatistics from './WorkStatistics';
 import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
 import { searchUsers, UserDTO } from '../../api/user';
 
@@ -97,6 +98,7 @@ const WorkList: React.FC = () => {
     const [queryKeyword, setQueryKeyword] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [deadlineRange, setDeadlineRange] = useState({ startDate: '', endDate: '' });
+    const [activeView, setActiveView] = useState<'list' | 'statistics'>('list');
 
     const fetchWorks = async (page = currentPage, size = pageSize) => {
         setLoading(true);
@@ -724,9 +726,14 @@ const WorkList: React.FC = () => {
             <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
                 <div>
                     <h2 className="text-xl font-bold text-slate-900">我发布的工作</h2>
-                    <p className="mt-1 text-sm text-slate-500">统一查看工作信息、任务进度和风险记录</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                        {activeView === 'list'
+                            ? '统一查看工作信息、任务进度和风险记录'
+                            : '汇总指定时间段的工作进展、任务现状和风险'}
+                    </p>
                 </div>
-                <div className="flex flex-wrap items-center justify-end gap-2">
+                {activeView === 'list' && (
+                    <div className="flex flex-wrap items-center justify-end gap-2">
                     <div className="flex items-center overflow-hidden rounded-lg border border-slate-200 bg-white transition-colors focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-50">
                         <input
                             value={keyword}
@@ -790,10 +797,40 @@ const WorkList: React.FC = () => {
                     >
                         <Plus size={16} />新建工作
                     </button>
-                </div>
+                    </div>
+                )}
             </div>
 
-            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+            <div className="mb-4 flex items-center gap-1 border-b border-slate-200">
+                <button
+                    type="button"
+                    onClick={() => setActiveView('list')}
+                    className={`relative inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold transition-colors ${
+                        activeView === 'list' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                >
+                    <LayoutList size={16} />
+                    工作列表
+                    {activeView === 'list' && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-blue-600" />}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setActiveView('statistics')}
+                    className={`relative inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold transition-colors ${
+                        activeView === 'statistics' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                >
+                    <BarChart3 size={16} />
+                    工作统计
+                    {activeView === 'statistics' && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-blue-600" />}
+                </button>
+            </div>
+
+            {activeView === 'statistics' ? (
+                <WorkStatistics />
+            ) : (
+                <>
+                    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
                 <span className="text-sm font-bold text-slate-700">工作筛选</span>
                 <select
                     value={statusFilter}
@@ -847,9 +884,9 @@ const WorkList: React.FC = () => {
                         清除筛选
                     </button>
                 )}
-            </div>
+                    </div>
 
-            <CreateWorkDrawer
+                    <CreateWorkDrawer
                 isOpen={isDrawerOpen}
                 editWorkId={editingWorkId}
                 onClose={() => {
@@ -863,9 +900,9 @@ const WorkList: React.FC = () => {
                     setCurrentPage(targetPage);
                     fetchWorks(targetPage, pageSize);
                 }}
-            />
+                    />
 
-            <ImportWorkModal
+                    <ImportWorkModal
                 isOpen={isImportOpen}
                 onClose={() => setIsImportOpen(false)}
                 onSuccess={() => {
@@ -873,9 +910,9 @@ const WorkList: React.FC = () => {
                     setCurrentPage(1);
                     fetchWorks(1, pageSize);
                 }}
-            />
+                    />
 
-            {loading ? (
+                    {loading ? (
                 <div className="rounded-xl border border-slate-200 py-16 text-center text-sm text-slate-400">加载中...</div>
             ) : works.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 py-16 text-center text-sm text-slate-400">
@@ -1124,6 +1161,8 @@ const WorkList: React.FC = () => {
                         />
                     </div>
                 </div>
+                    )}
+                </>
             )}
 
             <WorkDetailDrawer

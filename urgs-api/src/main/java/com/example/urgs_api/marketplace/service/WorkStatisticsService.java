@@ -1,0 +1,9 @@
+package com.example.urgs_api.marketplace.service;
+
+import com.example.urgs_api.marketplace.dto.WorkStatisticsDTO;
+
+import java.time.LocalDate;
+
+public interface WorkStatisticsService {
+    WorkStatisticsDTO getStatistics(String userId, LocalDate startDate, LocalDate endDate);
+}
