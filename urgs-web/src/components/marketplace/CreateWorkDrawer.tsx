@@ -21,8 +21,14 @@ const taskSchema = z.object({
     deadline: z.string().optional().or(z.literal('')),
 });
 
-const mainTaskSchema = taskSchema.extend({
-    assigneeId: z.string().min(1, '请选择主任务负责人'),
+const mainTaskSchema = taskSchema.superRefine((task, ctx) => {
+    if (task.assignMode === 'ASSIGN' && !task.assigneeId?.trim()) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: '请选择主任务负责人',
+            path: ['assigneeId'],
+        });
+    }
 });
 
 const workSchema = z.object({
@@ -153,6 +159,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
 
     const attachments = watch('attachments') || [];
     const primarySystem = watch('primarySystem');
+    const mainTaskAssignMode = watch('mainTask.assignMode');
     const taskTypes = React.useMemo(() => {
         return Array.from(new Set(['开发', '测试', '数据', '文档', '问题跟踪', ...pointRules.map(rule => rule.taskType).filter(Boolean)]));
     }, [pointRules]);
@@ -217,9 +224,13 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                 primarySystemName: data.primarySystem ? undefined : data.primarySystemName?.trim(),
                 mainTask: {
                     ...data.mainTask,
-                    assignMode: 'ASSIGN',
                     taskRole: 'MAIN',
-                    maxApplicants: 0,
+                    assigneeId: data.mainTask.assignMode === 'ASSIGN'
+                        ? data.mainTask.assigneeId || undefined
+                        : undefined,
+                    maxApplicants: data.mainTask.assignMode === 'COMPETE'
+                        ? data.mainTask.maxApplicants === '' ? undefined : data.mainTask.maxApplicants
+                        : 0,
                     requiredSkills: data.mainTask.requiredSkills || undefined,
                     deadline: data.mainTask.deadline || undefined,
                 },
@@ -467,18 +478,15 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-500 mb-1">主任务负责人 *</label>
-                                    <Controller
-                                        name="mainTask.assigneeId"
-                                        control={control}
-                                        render={({ field }) => (
-                                            <UserSelect
-                                                value={field.value}
-                                                onChange={field.onChange}
-                                            />
-                                        )}
-                                    />
-                                    {errors.mainTask?.assigneeId && <p className="text-red-500 text-xs mt-1">{errors.mainTask.assigneeId.message}</p>}
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">分发模式 *</label>
+                                    <select
+                                        {...register("mainTask.assignMode")}
+                                        className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none bg-white"
+                                    >
+                                        <option value="ASSIGN">直接分派</option>
+                                        <option value="OPEN">公开认领 (抢单)</option>
+                                        <option value="COMPETE">竞争上岗 (需审批)</option>
+                                    </select>
                                 </div>
                                 <div>
                                     <label className="block text-xs font-medium text-slate-500 mb-1">任务积分 *</label>
@@ -508,6 +516,35 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                     {errors.mainTask?.deadline && <p className="text-red-500 text-xs mt-1">{errors.mainTask.deadline.message}</p>}
                                 </div>
                             </div>
+
+                            {mainTaskAssignMode === 'ASSIGN' && (
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">主任务负责人 *</label>
+                                    <Controller
+                                        name="mainTask.assigneeId"
+                                        control={control}
+                                        render={({ field }) => (
+                                            <UserSelect
+                                                value={field.value}
+                                                onChange={field.onChange}
+                                            />
+                                        )}
+                                    />
+                                    {errors.mainTask?.assigneeId && <p className="text-red-500 text-xs mt-1">{errors.mainTask.assigneeId.message}</p>}
+                                </div>
+                            )}
+
+                            {mainTaskAssignMode === 'COMPETE' && (
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">最大申请组数 (0为不限)</label>
+                                    <input
+                                        type="number"
+                                        {...register("mainTask.maxApplicants", { valueAsNumber: true })}
+                                        className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none bg-amber-50/50"
+                                        placeholder="10"
+                                    />
+                                </div>
+                            )}
 
                             <div>
                                 <label className="block text-xs font-medium text-slate-500 mb-1">技能要求补充 (可选)</label>

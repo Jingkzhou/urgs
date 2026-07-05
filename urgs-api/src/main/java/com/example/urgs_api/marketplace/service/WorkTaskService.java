@@ -2,6 +2,7 @@ package com.example.urgs_api.marketplace.service;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.example.urgs_api.marketplace.dto.TaskReviewHistoryDTO;
 import com.example.urgs_api.marketplace.dto.TaskMarketDTO;
 import com.example.urgs_api.marketplace.dto.TaskReviewDTO;
 import com.example.urgs_api.marketplace.dto.TaskSubmissionDTO;
@@ -29,6 +30,8 @@ public interface WorkTaskService extends IService<WorkTask> {
             LocalDateTime deadlineEnd);
 
     Page<TaskMarketDTO> getReviewTasks(Page<WorkTask> page, String publisherId, boolean history);
+
+    Page<TaskReviewHistoryDTO> getReviewHistory(Page<TaskReviewHistoryDTO> page, String publisherId);
 
     boolean claimTask(String taskId, String userId);
 

@@ -3,8 +3,10 @@ package com.example.urgs_api.marketplace.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.example.urgs_api.marketplace.dto.TaskAuditLogDTO;
 import com.example.urgs_api.marketplace.dto.TaskMarketDTO;
 import com.example.urgs_api.marketplace.dto.TaskReviewDTO;
+import com.example.urgs_api.marketplace.dto.TaskReviewHistoryDTO;
 import com.example.urgs_api.marketplace.dto.TaskSubmissionDTO;
 import com.example.urgs_api.marketplace.enums.AssignMode;
 import com.example.urgs_api.marketplace.enums.ReviewDecision;
@@ -33,7 +35,10 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -45,6 +50,15 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
     private static final String STAGE_TESTING = "TESTING";
     private static final String STAGE_ASSET_REVIEW = "ASSET_REVIEW";
     private static final String STAGE_LAUNCH = "LAUNCH";
+    private static final int TASK_LOG_DETAIL_MAX_LENGTH = 500;
+    private static final List<String> REVIEW_ACTIONS = List.of(
+            "ASSET_REVIEW_APPROVE",
+            "ASSET_REVIEW_REJECT",
+            "ASSET_REVIEW_CANCEL",
+            "REVIEW_APPROVE",
+            "REVIEW_REJECT",
+            "REVIEW_CANCEL",
+            "REVIEW_TRANSFER");
     private static final DateTimeFormatter RISK_NOTE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     @Autowired
@@ -223,6 +237,50 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
     }
 
     @Override
+    public Page<TaskReviewHistoryDTO> getReviewHistory(Page<TaskReviewHistoryDTO> page, String publisherId) {
+        List<Work> works = workService.lambdaQuery()
+                .eq(Work::getPublisherId, publisherId)
+                .list();
+        Page<TaskReviewHistoryDTO> resultPage = new Page<>(page.getCurrent(), page.getSize());
+        if (works.isEmpty()) {
+            return resultPage;
+        }
+
+        Map<String, Work> workMap = works.stream()
+                .collect(Collectors.toMap(Work::getId, Function.identity()));
+        List<WorkTask> tasks = this.lambdaQuery()
+                .in(WorkTask::getWorkId, workMap.keySet())
+                .list();
+        if (tasks.isEmpty()) {
+            return resultPage;
+        }
+
+        Map<String, WorkTask> taskMap = tasks.stream()
+                .collect(Collectors.toMap(WorkTask::getId, Function.identity()));
+        Page<TaskLog> logPage = new Page<>(page.getCurrent(), page.getSize());
+        Page<TaskLog> reviewLogPage = taskLogMapper.selectPage(logPage, new LambdaQueryWrapper<TaskLog>()
+                .in(TaskLog::getTaskId, taskMap.keySet())
+                .in(TaskLog::getAction, REVIEW_ACTIONS)
+                .orderByDesc(TaskLog::getCreateTime));
+
+        List<String> reviewerIds = reviewLogPage.getRecords().stream()
+                .map(TaskLog::getOperatorId)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+        Map<String, User> reviewerMap = reviewerIds.isEmpty()
+                ? Collections.emptyMap()
+                : userMapper.selectBatchIds(reviewerIds).stream()
+                        .collect(Collectors.toMap(user -> user.getId().toString(), Function.identity()));
+
+        BeanUtils.copyProperties(reviewLogPage, resultPage, "records");
+        resultPage.setRecords(reviewLogPage.getRecords().stream()
+                .map(log -> buildReviewHistoryDTO(log, taskMap, workMap, reviewerMap))
+                .collect(Collectors.toList()));
+        return resultPage;
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean claimTask(String taskId, String userId) {
         WorkTask task = this.getById(taskId);
@@ -375,7 +433,9 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 boolean success = this.updateById(task);
                 if (success) {
                     logTaskAction(taskId, reviewerId, "ASSET_REVIEW_APPROVE",
-                            "资产同步审核通过，进入上线阶段");
+                            buildReviewLogDetail(
+                                    "资产同步审核通过，进入上线阶段，共固化 " + maintenanceRecords.size() + " 条资产变更",
+                                    dto.getReviewComment()));
                     updateWorkStatusIfNecessary(task.getWorkId());
                 }
                 return success;
@@ -398,7 +458,9 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             boolean success = this.updateById(task);
             if (success) {
                 logTaskAction(taskId, reviewerId, "REVIEW_APPROVE",
-                        "验收通过, 质量分: " + task.getQualityScore() + ", 最终积分: " + task.getFinalPoints());
+                        buildReviewLogDetail(
+                                "验收通过, 质量分: " + task.getQualityScore() + ", 最终积分: " + task.getFinalPoints(),
+                                dto.getReviewComment()));
                 updateWorkStatusIfNecessary(task.getWorkId());
             }
             return success;
@@ -450,7 +512,9 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             boolean success = this.updateById(task);
             if (success) {
                 logTaskAction(taskId, reviewerId, "REVIEW_TRANSFER",
-                        "任务转派: " + oldAssignee + " -> " + dto.getTransferAssigneeId());
+                        buildReviewLogDetail(
+                                "任务转派: " + oldAssignee + " -> " + dto.getTransferAssigneeId(),
+                                dto.getReviewComment()));
                 updateWorkStatusIfNecessary(task.getWorkId());
             }
             return success;
@@ -574,7 +638,8 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             task.setSubmittedAt(now);
             task.setStatus(TaskStatus.WAITING_REVIEW.name());
             task.setReviewComment(trimmedAssetReviewNote);
-            logTaskAction(taskId, userId, "ASSET_REVIEW_RESUBMIT", "重新提交资产同步审核");
+            logTaskAction(taskId, userId, "ASSET_REVIEW_RESUBMIT",
+                    buildSubmitLogDetail("重新提交资产同步审核", trimmedAssetReviewNote));
         } else {
             String nextStage = nextStage(currentStage);
             if (STAGE_ASSET_REVIEW.equals(nextStage)) {
@@ -582,7 +647,8 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 task.setSubmittedAt(now);
                 task.setStatus(TaskStatus.WAITING_REVIEW.name());
                 task.setReviewComment(trimmedAssetReviewNote);
-                logTaskAction(taskId, userId, "STAGE_TO_ASSET_REVIEW", "测试完成，进入资产同步审核");
+                logTaskAction(taskId, userId, "STAGE_TO_ASSET_REVIEW",
+                        buildSubmitLogDetail("测试完成，进入资产同步审核", trimmedAssetReviewNote));
             } else if (nextStage == null) {
                 task.setSubmittedAt(now);
                 task.setStatus(TaskStatus.WAITING_REVIEW.name());
@@ -681,7 +747,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         log.setTaskId(taskId);
         log.setOperatorId(operatorId);
         log.setAction(action);
-        log.setDetail(detail);
+        log.setDetail(truncateTaskLogDetail(detail));
         log.setCreateTime(LocalDateTime.now());
         taskLogMapper.insert(log);
     }
@@ -752,7 +818,14 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         }
 
         Work work = workService.getById(task.getWorkId());
-        return buildTaskMarketDTO(task, work);
+        TaskMarketDTO dto = buildTaskMarketDTO(task, work);
+        dto.setAuditLogs(loadTaskAuditLogs(taskId));
+        boolean snapshotFinalized = StringUtils.hasText(task.getAssetMaintenanceSnapshot());
+        dto.setAssetMaintenanceSnapshotFinalized(snapshotFinalized);
+        if (!snapshotFinalized && work != null && StringUtils.hasText(work.getRequirementNumber())) {
+            dto.setAssetMaintenanceRecords(getAssetMaintenanceRecords(work));
+        }
+        return dto;
     }
 
     private TaskMarketDTO buildTaskMarketDTO(WorkTask task, Work work) {
@@ -796,6 +869,76 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         }
 
         return dto;
+    }
+
+    private List<TaskAuditLogDTO> loadTaskAuditLogs(String taskId) {
+        List<TaskLog> logs = taskLogMapper.selectList(new LambdaQueryWrapper<TaskLog>()
+                .eq(TaskLog::getTaskId, taskId)
+                .orderByDesc(TaskLog::getCreateTime));
+        List<String> operatorIds = logs.stream()
+                .map(TaskLog::getOperatorId)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+        Map<String, User> operatorMap = operatorIds.isEmpty()
+                ? Collections.emptyMap()
+                : userMapper.selectBatchIds(operatorIds).stream()
+                        .collect(Collectors.toMap(user -> user.getId().toString(), Function.identity()));
+
+        return logs.stream().map(log -> {
+            TaskAuditLogDTO dto = new TaskAuditLogDTO();
+            BeanUtils.copyProperties(log, dto);
+            User operator = operatorMap.get(log.getOperatorId());
+            dto.setOperatorName(operator != null && StringUtils.hasText(operator.getName())
+                    ? operator.getName()
+                    : log.getOperatorId());
+            return dto;
+        }).collect(Collectors.toList());
+    }
+
+    private TaskReviewHistoryDTO buildReviewHistoryDTO(
+            TaskLog log,
+            Map<String, WorkTask> taskMap,
+            Map<String, Work> workMap,
+            Map<String, User> reviewerMap) {
+        TaskReviewHistoryDTO dto = new TaskReviewHistoryDTO();
+        WorkTask task = taskMap.get(log.getTaskId());
+        Work work = task == null ? null : workMap.get(task.getWorkId());
+        User reviewer = reviewerMap.get(log.getOperatorId());
+
+        dto.setId(log.getId());
+        dto.setTaskId(log.getTaskId());
+        dto.setTaskTitle(task != null ? task.getTitle() : "任务已删除");
+        dto.setTaskStatus(task != null ? task.getStatus() : null);
+        dto.setWorkId(task != null ? task.getWorkId() : null);
+        dto.setWorkTitle(work != null ? work.getTitle() : null);
+        dto.setRequirementNumber(work != null ? work.getRequirementNumber() : null);
+        dto.setReviewType(log.getAction().startsWith("ASSET_REVIEW_") ? "ASSET_REVIEW" : "ACCEPTANCE");
+        dto.setDecision(resolveReviewDecision(log.getAction()));
+        dto.setAction(log.getAction());
+        dto.setDetail(log.getDetail());
+        dto.setReviewerId(log.getOperatorId());
+        dto.setReviewerName(reviewer != null && StringUtils.hasText(reviewer.getName())
+                ? reviewer.getName()
+                : log.getOperatorId());
+        dto.setReviewedAt(log.getCreateTime());
+        return dto;
+    }
+
+    private String resolveReviewDecision(String action) {
+        if (action.endsWith("_APPROVE")) {
+            return "APPROVE";
+        }
+        if (action.endsWith("_REJECT")) {
+            return "REJECT";
+        }
+        if (action.endsWith("_CANCEL")) {
+            return "CANCEL";
+        }
+        if (action.endsWith("_TRANSFER")) {
+            return "TRANSFER";
+        }
+        return action;
     }
 
     private int calculateFinalPoints(WorkTask task) {
@@ -896,6 +1039,25 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             return "提交说明: " + trimmedSubmitterNote;
         }
         return "提交说明: " + trimmedSubmitterNote + "\n审核意见: " + trimmedReviewerComment;
+    }
+
+    private String buildReviewLogDetail(String summary, String reviewComment) {
+        return StringUtils.hasText(reviewComment)
+                ? summary + "\n审核意见: " + reviewComment.trim()
+                : summary;
+    }
+
+    private String buildSubmitLogDetail(String summary, String submitterNote) {
+        return StringUtils.hasText(submitterNote)
+                ? summary + "\n提交说明: " + submitterNote.trim()
+                : summary;
+    }
+
+    private String truncateTaskLogDetail(String detail) {
+        if (detail == null || detail.length() <= TASK_LOG_DETAIL_MAX_LENGTH) {
+            return detail;
+        }
+        return detail.substring(0, TASK_LOG_DETAIL_MAX_LENGTH - 3) + "...";
     }
 
     private String nullToEmpty(String value) {

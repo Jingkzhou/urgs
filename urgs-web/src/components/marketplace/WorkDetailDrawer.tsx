@@ -3,6 +3,7 @@ import { Drawer, Tag, Space, Divider, Typography, Spin, Empty, Modal, Progress }
 import {
     addTaskToWork,
     approveApplication,
+    getTaskDetail,
     getTaskApplications,
     getWorkDetail,
     getWorkTasks,
@@ -10,7 +11,6 @@ import {
     MarketplacePointRule,
     rejectApplication,
     TaskApplication,
-    AssetMaintenanceRecord,
     Work,
     WorkTask,
 } from '../../api/marketplace';
@@ -18,6 +18,7 @@ import { Award, CheckCircle2, Clock, Paperclip, Plus, Users, XCircle } from 'luc
 import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
 import { searchUsers, UserDTO } from '../../api/user';
 import UserSelect from './UserSelect';
+import TaskAuditTrail from './TaskAuditTrail';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -145,6 +146,16 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
     const renderAssignee = (assigneeId?: string) => {
         if (!assigneeId) return '';
         return assigneeLabels[assigneeId] || assigneeId;
+    };
+
+    const openTaskDetail = async (task: WorkTask) => {
+        setDetailTask(task);
+        try {
+            const detail = await getTaskDetail(task.id);
+            setDetailTask(detail);
+        } catch (error) {
+            console.error('Failed to fetch task audit detail', error);
+        }
     };
 
     const handleAddTask = async () => {
@@ -307,19 +318,8 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         return taskType === '问题跟踪' || taskType === '问题追踪';
     };
 
-    const parseMaintenanceSnapshot = (task: WorkTask | null): AssetMaintenanceRecord[] => {
-        if (!task?.assetMaintenanceSnapshot) return [];
-        try {
-            const records = JSON.parse(task.assetMaintenanceSnapshot);
-            return Array.isArray(records) ? records : [];
-        } catch {
-            return [];
-        }
-    };
-
     const formatDateTime = (value?: string) => value ? new Date(value).toLocaleString() : '-';
     const renderDetailValue = (value?: string | number | null) => value === undefined || value === null || value === '' ? '-' : value;
-    const maintenanceSnapshot = parseMaintenanceSnapshot(detailTask);
 
     const mainTask = tasks.find(task => task.taskRole === 'MAIN');
     const subTasks = tasks.filter(task => task.taskRole !== 'MAIN');
@@ -477,7 +477,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                 <Tag color="red" className="text-xs">主任务</Tag>
                                                 <button
                                                     type="button"
-                                                    onClick={() => setDetailTask(mainTask)}
+                                                    onClick={() => openTaskDetail(mainTask)}
                                                     className="text-sm font-bold text-slate-800 hover:text-red-600 truncate text-left"
                                                 >
                                                     {mainTask.title}
@@ -543,7 +543,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                             <div className="flex items-center gap-2 mb-1 flex-wrap">
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => setDetailTask(task)}
+                                                                    onClick={() => openTaskDetail(task)}
                                                                     className="text-sm font-bold text-slate-800 hover:text-red-600 truncate text-left"
                                                                 >
                                                                     {task.title}
@@ -759,44 +759,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                             </section>
                         ))}
 
-                        <section>
-                            <div className="mb-3 text-sm font-bold text-slate-800">
-                                资产维护记录 ({maintenanceSnapshot.length})
-                            </div>
-                            {maintenanceSnapshot.length === 0 ? (
-                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该任务暂无已固化的资产维护记录" />
-                            ) : (
-                                <div className="overflow-x-auto rounded-md border border-slate-200">
-                                    <table className="w-full min-w-[680px] text-xs">
-                                        <thead className="bg-slate-50 text-slate-500">
-                                            <tr>
-                                                <th className="px-3 py-2 text-left">变更类型</th>
-                                                <th className="px-3 py-2 text-left">表/字段</th>
-                                                <th className="px-3 py-2 text-left">操作人</th>
-                                                <th className="px-3 py-2 text-left">维护时间</th>
-                                                <th className="px-3 py-2 text-left">说明</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {maintenanceSnapshot.map((record, index) => (
-                                                <tr key={record.id || index} className="border-t border-slate-100 align-top">
-                                                    <td className="px-3 py-2">{renderDetailValue(record.modType)}</td>
-                                                    <td className="px-3 py-2">
-                                                        <div>{renderDetailValue(record.tableCnName || record.tableName)}</div>
-                                                        {(record.fieldCnName || record.fieldName) && (
-                                                            <div className="mt-1 text-slate-400">{record.fieldCnName || record.fieldName}</div>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-3 py-2">{renderDetailValue(record.operator)}</td>
-                                                    <td className="px-3 py-2">{formatDateTime(record.time)}</td>
-                                                    <td className="px-3 py-2 whitespace-pre-wrap">{renderDetailValue(record.description)}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                        </section>
+                        <TaskAuditTrail task={detailTask} />
                     </div>
                 )}
             </Drawer>

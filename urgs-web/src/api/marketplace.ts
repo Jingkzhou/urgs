@@ -59,6 +59,16 @@ export interface WorkTaskCreateDTO {
 
 export type TaskStage = 'REQUIREMENT' | 'DEVELOPMENT' | 'TESTING' | 'ASSET_REVIEW' | 'LAUNCH';
 
+export interface TaskAuditLogDTO {
+    id: string;
+    taskId: string;
+    operatorId?: string;
+    operatorName?: string;
+    action: string;
+    detail?: string;
+    createTime: string;
+}
+
 export interface Work {
     id: string;
     title: string;
@@ -122,6 +132,9 @@ export interface WorkTask {
     sortOrder: number;
     createTime: string;
     updateTime: string;
+    auditLogs?: TaskAuditLogDTO[];
+    assetMaintenanceRecords?: AssetMaintenanceRecord[];
+    assetMaintenanceSnapshotFinalized?: boolean;
 }
 
 export interface TaskMarketDTO extends WorkTask {
@@ -194,6 +207,23 @@ export interface TaskReviewDTO {
     bonusPoints?: number;
     penaltyPoints?: number;
     transferAssigneeId?: string;
+}
+
+export interface TaskReviewHistoryDTO {
+    id: string;
+    taskId: string;
+    taskTitle: string;
+    taskStatus?: string;
+    workId?: string;
+    workTitle?: string;
+    requirementNumber?: string;
+    reviewType: 'ASSET_REVIEW' | 'ACCEPTANCE';
+    decision: 'APPROVE' | 'REJECT' | 'CANCEL' | 'TRANSFER' | string;
+    action: string;
+    detail?: string;
+    reviewerId?: string;
+    reviewerName?: string;
+    reviewedAt: string;
 }
 
 export interface KpiSummaryDTO {
@@ -432,7 +462,7 @@ export const getAssigneeTasks = (userId: string, params: {
 }) =>
     get<PageResponse<TaskMarketDTO>>(`/api/marketplace/tasks/assignee/${encodeURIComponent(userId)}`, params);
 export const getPendingReviewTasks = (params: any) => get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/review/pending', params);
-export const getReviewHistoryTasks = (params: any) => get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/review/history', params);
+export const getReviewHistoryTasks = (params: any) => get<PageResponse<TaskReviewHistoryDTO>>('/api/marketplace/tasks/review/history', params);
 export const claimTask = (id: string) => post(`/api/marketplace/tasks/${id}/claim`);
 export const releaseTask = (id: string) => put(`/api/marketplace/tasks/${id}/release`);
 export const assignTask = (id: string, assigneeId: string) => put(`/api/marketplace/tasks/${id}/assign`, { assigneeId });

@@ -3,6 +3,7 @@ package com.example.urgs_api.marketplace.controller;
 import com.example.urgs_api.common.PageResult;
 import com.example.urgs_api.marketplace.dto.TaskMarketDTO;
 import com.example.urgs_api.marketplace.dto.TaskReviewDTO;
+import com.example.urgs_api.marketplace.dto.TaskReviewHistoryDTO;
 import com.example.urgs_api.marketplace.dto.TaskStageRiskDTO;
 import com.example.urgs_api.marketplace.dto.TaskSubmissionDTO;
 import com.example.urgs_api.marketplace.dto.WorkTaskCreateDTO;
@@ -167,14 +168,14 @@ public class WorkTaskController {
     }
 
     @GetMapping("/review/history")
-    public PageResult<TaskMarketDTO> getReviewHistoryTasks(
+    public PageResult<TaskReviewHistoryDTO> getReviewHistoryTasks(
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @RequestParam(defaultValue = "1") int current,
             @RequestParam(defaultValue = "20") int size) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        Page<WorkTask> page = new Page<>(current, size);
-        Page<TaskMarketDTO> resultPage = workTaskService.getReviewTasks(page, userId, true);
+        Page<TaskReviewHistoryDTO> page = new Page<>(current, size);
+        Page<TaskReviewHistoryDTO> resultPage = workTaskService.getReviewHistory(page, userId);
         return PageResult.of(resultPage);
     }
 

@@ -3,6 +3,7 @@ import { Drawer, Button, Tag, Space, Divider, Typography, Descriptions, Spin, Em
 import { getTaskDetail, TaskMarketDTO, claimTask } from '../../api/marketplace';
 import { Award, Clock, Users, Building2, User } from 'lucide-react';
 import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
+import TaskAuditTrail from './TaskAuditTrail';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -218,6 +219,10 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                             </Descriptions>
                         </section>
                     )}
+
+                    <Divider className="my-0" />
+
+                    <TaskAuditTrail task={task} />
 
                     <section>
                         <Title level={5}>技能要求</Title>

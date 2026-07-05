@@ -1,9 +1,11 @@
 package com.example.urgs_api.marketplace.dto;
 
 import com.example.urgs_api.marketplace.model.WorkTask;
+import com.example.urgs_api.metadata.model.MaintenanceRecord;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class TaskMarketDTO extends WorkTask {
@@ -27,4 +29,7 @@ public class TaskMarketDTO extends WorkTask {
     private String publisherName;
     private String publisherAvatar;
     private Integer applicationCount;
+    private List<TaskAuditLogDTO> auditLogs;
+    private List<MaintenanceRecord> assetMaintenanceRecords;
+    private Boolean assetMaintenanceSnapshotFinalized;
 }

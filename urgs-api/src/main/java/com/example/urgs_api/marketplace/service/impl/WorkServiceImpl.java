@@ -100,11 +100,6 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         this.save(work);
 
         WorkTask mainTask = buildTask(work.getId(), dto.getMainTask(), TASK_ROLE_MAIN, null, 0, userId);
-        mainTask.setAssignMode(AssignMode.ASSIGN.name());
-        if (mainTask.getAssigneeId() == null || mainTask.getAssigneeId().isEmpty()) {
-            mainTask.setAssigneeId(userId);
-        }
-        mainTask.setStatus(TaskStatus.READY.name());
         workTaskService.save(mainTask);
 
         if (dto.getTasks() != null && !dto.getTasks().isEmpty()) {
@@ -375,10 +370,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         }
 
         if (TASK_ROLE_MAIN.equals(taskRole)) {
-            task.setAssignMode(AssignMode.ASSIGN.name());
-            task.setAssigneeId(task.getAssigneeId() != null ? task.getAssigneeId() : userId);
-            task.setMaxApplicants(0);
-            task.setStatus(TaskStatus.READY.name());
+            configureMainTaskAssignment(task, taskDto, userId);
             return task;
         }
 
@@ -414,11 +406,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         }
 
         if (TASK_ROLE_MAIN.equals(taskRole)) {
-            task.setAssignMode(AssignMode.ASSIGN.name());
-            task.setAssigneeId(taskDto.getAssigneeId() != null && !taskDto.getAssigneeId().isBlank()
-                    ? taskDto.getAssigneeId()
-                    : userId);
-            task.setMaxApplicants(0);
+            configureMainTaskAssignment(task, taskDto, userId);
             return;
         }
 
@@ -427,6 +415,26 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
                 ? taskDto.getAssigneeId()
                 : null);
         task.setMaxApplicants(taskDto.getMaxApplicants() != null ? taskDto.getMaxApplicants() : 0);
+    }
+
+    private void configureMainTaskAssignment(WorkTask task, WorkTaskCreateDTO taskDto, String userId) {
+        String assignMode = taskDto.getAssignMode() != null && !taskDto.getAssignMode().isBlank()
+                ? taskDto.getAssignMode()
+                : AssignMode.ASSIGN.name();
+        task.setAssignMode(assignMode);
+        if (AssignMode.ASSIGN.name().equals(assignMode)) {
+            task.setAssigneeId(taskDto.getAssigneeId() != null && !taskDto.getAssigneeId().isBlank()
+                    ? taskDto.getAssigneeId()
+                    : userId);
+            task.setMaxApplicants(0);
+            task.setStatus(TaskStatus.READY.name());
+            return;
+        }
+        task.setAssigneeId(null);
+        task.setMaxApplicants(AssignMode.COMPETE.name().equals(assignMode) && taskDto.getMaxApplicants() != null
+                ? taskDto.getMaxApplicants()
+                : 0);
+        task.setStatus(TaskStatus.OPEN.name());
     }
 
     private void deleteTaskRelations(List<String> taskIds) {
