@@ -10,6 +10,7 @@ public class WorkTaskCreateDTO {
     private String description;
     private String taskType;
     private String difficulty;
+    private java.util.List<Long> involvedSystemIds;
     private String requiredSkills;
     private String acceptanceCriteria;
     private Integer points;

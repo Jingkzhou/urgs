@@ -353,6 +353,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         task.setDescription(taskDto.getDescription());
         task.setTaskType(taskDto.getTaskType());
         task.setDifficulty(taskDto.getDifficulty());
+        task.setInvolvedSystemIds(taskDto.getInvolvedSystemIds());
         task.setRequiredSkills(taskDto.getRequiredSkills());
         task.setAcceptanceCriteria(taskDto.getAcceptanceCriteria());
         task.setPoints(defaultPoints(taskDto));
@@ -391,6 +392,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         task.setDescription(taskDto.getDescription());
         task.setTaskType(taskDto.getTaskType());
         task.setDifficulty(taskDto.getDifficulty());
+        task.setInvolvedSystemIds(taskDto.getInvolvedSystemIds());
         task.setRequiredSkills(taskDto.getRequiredSkills());
         task.setAcceptanceCriteria(taskDto.getAcceptanceCriteria());
         task.setPoints(defaultPoints(taskDto));

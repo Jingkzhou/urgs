@@ -159,7 +159,12 @@ const OnlineDocsTool: React.FC = () => {
     };
 
     const handleDownload = useCallback((doc: OnlineDocument) => {
-        window.open(doc.fileUrl, '_blank');
+        const link = document.createElement('a');
+        link.href = doc.fileUrl;
+        link.download = doc.fileName || doc.title;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
     }, []);
 
     const handleDelete = useCallback((doc: OnlineDocument) => {
@@ -198,7 +203,14 @@ const OnlineDocsTool: React.FC = () => {
             message.warning('请输入文档名称');
             return;
         }
-        await updateOnlineDocument(renamingDoc.id, { title: nextTitle });
+        const extension = renamingDoc.fileName.match(/(\.[^.]+)$/)?.[1] || '';
+        const nextFileName = extension && !nextTitle.toLowerCase().endsWith(extension.toLowerCase())
+            ? `${nextTitle}${extension}`
+            : nextTitle;
+        await updateOnlineDocument(renamingDoc.id, {
+            title: nextTitle,
+            fileName: nextFileName,
+        });
         message.success('文档名称已更新');
         setRenamingDoc(null);
         refreshQuickAccess();

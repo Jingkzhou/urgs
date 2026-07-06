@@ -42,6 +42,7 @@ export interface WorkTaskCreateDTO {
     description?: string;
     taskType?: string;
     difficulty?: string;
+    involvedSystemIds?: number[];
     requiredSkills?: string;
     acceptanceCriteria?: string;
     points?: number;
@@ -103,6 +104,7 @@ export interface WorkTask {
     description: string;
     taskType?: string;
     difficulty?: string;
+    involvedSystemIds?: number[];
     requiredSkills: string;
     acceptanceCriteria?: string;
     points: number;

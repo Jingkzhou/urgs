@@ -3,8 +3,9 @@ import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { X, Plus, Trash2, Paperclip, Upload as UploadIcon } from 'lucide-react';
-import { Spin, Upload } from 'antd';
+import { Select, Spin, Upload } from 'antd';
 import { createWork, getWorkDetail, getWorkTasks, listPointRules, MarketplacePointRule, updateWork, Work, WorkTask } from '../../api/marketplace';
+import { getSystemList } from '../../api/ops';
 import UserSelect from './UserSelect';
 
 const taskSchema = z.object({
@@ -13,6 +14,7 @@ const taskSchema = z.object({
     description: z.string().min(10, '任务描述至少10个字符'),
     taskType: z.string().optional().or(z.literal('')),
     difficulty: z.string().optional().or(z.literal('')),
+    involvedSystemIds: z.array(z.number()),
     points: z.number().min(0, '积分不能为负数'),
     requiredSkills: z.string().optional().or(z.literal('')),
     assignMode: z.enum(['OPEN', 'ASSIGN', 'COMPETE']),
@@ -72,9 +74,9 @@ const defaultValues: WorkFormValues = {
     primarySystem: true,
     primarySystemName: '',
     projectType: '变更类',
-    mainTask: { title: '', description: '', assignMode: 'ASSIGN', assigneeId: '', points: 10, taskType: '主任务', difficulty: '中等' },
+    mainTask: { title: '', description: '', assignMode: 'ASSIGN', assigneeId: '', points: 10, taskType: '开发', difficulty: '中等', involvedSystemIds: [] },
     attachments: [],
-    tasks: [{ assignMode: 'ASSIGN', points: 10, taskType: '开发', difficulty: '中等', title: '', description: '' }]
+    tasks: [{ assignMode: 'ASSIGN', points: 10, taskType: '开发', difficulty: '中等', involvedSystemIds: [], title: '', description: '' }]
 };
 
 const toInputDateTime = (value?: string) => {
@@ -106,6 +108,7 @@ const buildTaskFormValue = (task?: WorkTask, fallback?: Partial<WorkFormValues['
     description: task?.description || fallback?.description || '',
     taskType: task?.taskType || fallback?.taskType || '',
     difficulty: task?.difficulty || fallback?.difficulty || '',
+    involvedSystemIds: task?.involvedSystemIds || fallback?.involvedSystemIds || [],
     points: task?.points ?? fallback?.points ?? 0,
     requiredSkills: task?.requiredSkills || fallback?.requiredSkills || '',
     assignMode: (task?.assignMode || fallback?.assignMode || 'OPEN') as 'OPEN' | 'ASSIGN' | 'COMPETE',
@@ -117,6 +120,7 @@ const buildTaskFormValue = (task?: WorkTask, fallback?: Partial<WorkFormValues['
 const buildEditValues = (work: Work, tasks: WorkTask[]): WorkFormValues => {
     const mainTask = tasks.find(task => task.taskRole === 'MAIN');
     const subTasks = tasks.filter(task => task.taskRole !== 'MAIN');
+    const mainTaskValue = buildTaskFormValue(mainTask, defaultValues.mainTask);
     return {
         title: work.title || '',
         description: work.description || '',
@@ -129,7 +133,10 @@ const buildEditValues = (work: Work, tasks: WorkTask[]): WorkFormValues => {
         primarySystem: work.primarySystem !== false,
         primarySystemName: work.primarySystemName || '',
         projectType: (work.projectType || '变更类') as WorkFormValues['projectType'],
-        mainTask: buildTaskFormValue(mainTask, defaultValues.mainTask) as WorkFormValues['mainTask'],
+        mainTask: {
+            ...mainTaskValue,
+            taskType: mainTask?.taskType === '主任务' ? defaultValues.mainTask.taskType : mainTaskValue.taskType,
+        } as WorkFormValues['mainTask'],
         attachments: parseAttachments(work.attachments),
         tasks: subTasks.map(task => buildTaskFormValue(task)) as WorkFormValues['tasks'],
     };
@@ -137,6 +144,7 @@ const buildEditValues = (work: Work, tasks: WorkTask[]): WorkFormValues => {
 
 const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, onSuccess, editWorkId }) => {
     const [pointRules, setPointRules] = React.useState<MarketplacePointRule[]>([]);
+    const [systemOptions, setSystemOptions] = React.useState<{ label: string; value: number }[]>([]);
     const [loadingDetail, setLoadingDetail] = React.useState(false);
     const isEdit = Boolean(editWorkId);
     const {
@@ -160,6 +168,8 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
     const attachments = watch('attachments') || [];
     const primarySystem = watch('primarySystem');
     const mainTaskAssignMode = watch('mainTask.assignMode');
+    const mainTaskType = watch('mainTask.taskType');
+    const mainTaskDifficulty = watch('mainTask.difficulty');
     const taskTypes = React.useMemo(() => {
         return Array.from(new Set(['开发', '测试', '数据', '文档', '问题跟踪', ...pointRules.map(rule => rule.taskType).filter(Boolean)]));
     }, [pointRules]);
@@ -170,12 +180,26 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
     const findRule = (taskType?: string, difficulty?: string) => pointRules.find(rule =>
         rule.enabled !== false && rule.taskType === taskType && rule.difficulty === difficulty
     );
+    const mainTaskSuggestedRule = findRule(mainTaskType, mainTaskDifficulty);
+
+    const applyMainTaskPoints = (taskType?: string, difficulty?: string) => {
+        const rule = findRule(taskType, difficulty);
+        if (rule) {
+            setValue('mainTask.points', rule.suggestedPoints, { shouldDirty: true });
+        }
+    };
 
     React.useEffect(() => {
         if (!isOpen) return;
         listPointRules({ enabled: true })
             .then(res => setPointRules(res || []))
             .catch(error => console.error('Failed to fetch point rules', error));
+        getSystemList({ showAll: true })
+            .then(systems => setSystemOptions((systems || []).map(system => ({
+                label: system.name,
+                value: Number(system.id),
+            }))))
+            .catch(error => console.error('Failed to fetch systems', error));
     }, [isOpen]);
 
     React.useEffect(() => {
@@ -489,7 +513,38 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-500 mb-1">任务积分 *</label>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">任务类型</label>
+                                    <select
+                                        {...register("mainTask.taskType", {
+                                            onChange: event => applyMainTaskPoints(event.target.value, mainTaskDifficulty),
+                                        })}
+                                        className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none bg-white"
+                                    >
+                                        <option value="">未分类</option>
+                                        {taskTypes.map(type => <option value={type} key={type}>{type}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">难度</label>
+                                    <select
+                                        {...register("mainTask.difficulty", {
+                                            onChange: event => applyMainTaskPoints(mainTaskType, event.target.value),
+                                        })}
+                                        className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none bg-white"
+                                    >
+                                        <option value="">未设置</option>
+                                        {difficulties.map(item => <option value={item} key={item}>{item}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="block text-xs font-medium text-slate-500">任务积分 *</label>
+                                        {mainTaskSuggestedRule && (
+                                            <span className="text-[11px] font-bold text-red-600">
+                                                已联动 {mainTaskSuggestedRule.suggestedPoints} 分
+                                            </span>
+                                        )}
+                                    </div>
                                     <input
                                         type="number"
                                         {...register("mainTask.points", { valueAsNumber: true })}
@@ -497,14 +552,6 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                         placeholder="例如: 10"
                                     />
                                     {errors.mainTask?.points && <p className="text-red-500 text-xs mt-1">{errors.mainTask.points.message}</p>}
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-slate-500 mb-1">任务类型</label>
-                                    <input
-                                        {...register("mainTask.taskType")}
-                                        className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none"
-                                        placeholder="主任务"
-                                    />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-medium text-slate-500 mb-1">截止日期</label>
@@ -515,6 +562,27 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                     />
                                     {errors.mainTask?.deadline && <p className="text-red-500 text-xs mt-1">{errors.mainTask.deadline.message}</p>}
                                 </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1">涉及系统</label>
+                                <Controller
+                                    name="mainTask.involvedSystemIds"
+                                    control={control}
+                                    render={({ field }) => (
+                                        <Select
+                                            mode="multiple"
+                                            allowClear
+                                            showSearch
+                                            optionFilterProp="label"
+                                            value={field.value}
+                                            onChange={field.onChange}
+                                            options={systemOptions}
+                                            placeholder="请选择涉及系统（可多选）"
+                                            className="w-full"
+                                        />
+                                    )}
+                                />
                             </div>
 
                             {mainTaskAssignMode === 'ASSIGN' && (
@@ -572,7 +640,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                 <h3 className="text-base font-bold text-slate-800">子任务拆分</h3>
                                 <button
                                     type="button"
-                                    onClick={() => append({ title: '', description: '', points: 5, taskType: '开发', difficulty: '简单', assignMode: 'ASSIGN', deadline: '' })}
+                                    onClick={() => append({ title: '', description: '', points: 5, taskType: '开发', difficulty: '简单', involvedSystemIds: [], assignMode: 'ASSIGN', deadline: '' })}
                                     className="flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-md transition-colors"
                                 >
                                     <Plus size={16} /> 添加子任务
@@ -675,6 +743,27 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                                     />
                                                     {errors.tasks?.[index]?.points && <p className="text-red-500 text-xs mt-1">{errors.tasks[index]?.points?.message}</p>}
                                                 </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-medium text-slate-500 mb-1">涉及系统</label>
+                                                <Controller
+                                                    name={`tasks.${index}.involvedSystemIds` as const}
+                                                    control={control}
+                                                    render={({ field }) => (
+                                                        <Select
+                                                            mode="multiple"
+                                                            allowClear
+                                                            showSearch
+                                                            optionFilterProp="label"
+                                                            value={field.value}
+                                                            onChange={field.onChange}
+                                                            options={systemOptions}
+                                                            placeholder="请选择涉及系统（可多选）"
+                                                            className="w-full"
+                                                        />
+                                                    )}
+                                                />
                                             </div>
 
                                             {/* 根据所选模式显示不同字段 */}

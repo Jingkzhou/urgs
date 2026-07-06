@@ -159,7 +159,8 @@ public class WorkController {
             throw new IllegalArgumentException("统计时间范围不能超过366天");
         }
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        return workStatisticsService.getStatistics(userId, startDate, endDate);
+        String publisherId = isRegTechAdmin(userId) ? null : userId;
+        return workStatisticsService.getStatistics(publisherId, startDate, endDate);
     }
 
     @PutMapping("/{id}/publish")

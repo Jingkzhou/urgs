@@ -38,13 +38,16 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
     private WorkTaskService workTaskService;
 
     @Override
-    public WorkStatisticsDTO getStatistics(String userId, LocalDate startDate, LocalDate endDate) {
+    public WorkStatisticsDTO getStatistics(String publisherId, LocalDate startDate, LocalDate endDate) {
         LocalDateTime startAt = startDate.atStartOfDay();
         LocalDateTime endExclusive = endDate.plusDays(1).atStartOfDay();
         LocalDateTime now = LocalDateTime.now();
 
-        List<Work> works = workService.lambdaQuery()
-                .eq(Work::getPublisherId, userId)
+        var workQuery = workService.lambdaQuery();
+        if (publisherId != null) {
+            workQuery.eq(Work::getPublisherId, publisherId);
+        }
+        List<Work> works = workQuery
                 .ge(Work::getCreateTime, startAt)
                 .lt(Work::getCreateTime, endExclusive)
                 .list();

@@ -60,6 +60,7 @@ public class WorkTaskController {
         task.setDescription(dto.getDescription());
         task.setTaskType(dto.getTaskType());
         task.setDifficulty(dto.getDifficulty());
+        task.setInvolvedSystemIds(dto.getInvolvedSystemIds());
         task.setRequiredSkills(dto.getRequiredSkills());
         task.setAcceptanceCriteria(dto.getAcceptanceCriteria());
         task.setPoints(dto.getPoints() != null ? dto.getPoints() : 0);

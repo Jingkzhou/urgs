@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Drawer, Tag, Space, Divider, Typography, Spin, Empty, Modal, Progress } from 'antd';
+import { Drawer, Tag, Space, Divider, Typography, Spin, Empty, Modal, Progress, Select } from 'antd';
 import {
     addTaskToWork,
     appendTaskRiskTracking,
@@ -20,6 +20,7 @@ import {
 import { Award, CheckCircle2, ChevronDown, ChevronUp, Clock, Eye, Paperclip, Plus, Users, XCircle } from 'lucide-react';
 import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
 import { searchUsers, UserDTO } from '../../api/user';
+import { getSystemList } from '../../api/ops';
 import UserSelect from './UserSelect';
 import TaskAuditTrail from './TaskAuditTrail';
 import AssetObjectDetailLink from './AssetObjectDetailLink';
@@ -56,6 +57,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
     const [addingTask, setAddingTask] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [pointRules, setPointRules] = useState<MarketplacePointRule[]>([]);
+    const [systemOptions, setSystemOptions] = useState<{ label: string; value: number }[]>([]);
     const [bidTask, setBidTask] = useState<WorkTask | null>(null);
     const [applications, setApplications] = useState<TaskApplication[]>([]);
     const [applicationLoading, setApplicationLoading] = useState(false);
@@ -76,6 +78,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         description: '',
         taskType: '开发',
         difficulty: '简单',
+        involvedSystemIds: [] as number[],
         points: 5,
         assignMode: 'ASSIGN' as string,
         assigneeId: '',
@@ -105,6 +108,12 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         listPointRules({ enabled: true })
             .then(res => setPointRules(res || []))
             .catch(error => console.error('Failed to fetch point rules', error));
+        getSystemList({ showAll: true })
+            .then(systems => setSystemOptions((systems || []).map(system => ({
+                label: system.name,
+                value: Number(system.id),
+            }))))
+            .catch(error => console.error('Failed to fetch systems', error));
     }, [isOpen]);
 
     const taskTypes = Array.from(new Set(['开发', '测试', '数据', '文档', '问题跟踪', ...pointRules.map(rule => rule.taskType).filter(Boolean)]));
@@ -261,7 +270,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             await addTaskToWork(workId!, newTask as any);
             setTasks(prev => [...prev, null!] as any); // Will be refreshed by fetchDetail
             await fetchDetail(workId!);
-            setNewTask({ title: '', description: '', taskType: '开发', difficulty: '简单', points: 5, assignMode: 'ASSIGN', assigneeId: '', requiredSkills: '', deadline: '' });
+            setNewTask({ title: '', description: '', taskType: '开发', difficulty: '简单', involvedSystemIds: [], points: 5, assignMode: 'ASSIGN', assigneeId: '', requiredSkills: '', deadline: '' });
             setAddingTask(false);
         } catch (error) {
             console.error('Failed to add task', error);
@@ -952,6 +961,20 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                 />
                                             </label>
                                         )}
+                                        <label className="block">
+                                            <span className="mb-1 block text-[11px] font-bold text-slate-500">涉及系统</span>
+                                            <Select
+                                                mode="multiple"
+                                                allowClear
+                                                showSearch
+                                                optionFilterProp="label"
+                                                value={newTask.involvedSystemIds}
+                                                onChange={involvedSystemIds => setNewTask(prev => ({ ...prev, involvedSystemIds }))}
+                                                options={systemOptions}
+                                                placeholder="请选择涉及系统（可多选）"
+                                                className="w-full"
+                                            />
+                                        </label>
                                         <textarea
                                             value={newTask.description}
                                             onChange={e => setNewTask(prev => ({ ...prev, description: e.target.value }))}
@@ -978,7 +1001,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                         </div>
                                         <div className="flex justify-end gap-2">
                                             <button
-                                                onClick={() => { setAddingTask(false); setNewTask({ title: '', description: '', taskType: '开发', difficulty: '简单', points: 5, assignMode: 'ASSIGN', assigneeId: '', requiredSkills: '', deadline: '' }); }}
+                                                onClick={() => { setAddingTask(false); setNewTask({ title: '', description: '', taskType: '开发', difficulty: '简单', involvedSystemIds: [], points: 5, assignMode: 'ASSIGN', assigneeId: '', requiredSkills: '', deadline: '' }); }}
                                                 className="px-4 py-1.5 text-sm font-medium text-slate-600 bg-white hover:bg-slate-100 rounded-lg transition-colors"
                                             >
                                                 取消
@@ -1066,6 +1089,9 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                 ['当前阶段', isIssueTrackingTask(detailTask) ? '不适用' : getTaskStageLabel(detailTask.currentStage)],
                                 ['任务类型', detailTask.taskType],
                                 ['难度', detailTask.difficulty],
+                                ['涉及系统', (detailTask.involvedSystemIds || [])
+                                    .map(systemId => systemOptions.find(option => option.value === systemId)?.label || systemId)
+                                    .join('、')],
                                 ['分派方式', getAssignModeLabel(detailTask.assignMode)],
                                 ['负责人', renderAssignee(detailTask.assigneeId)],
                                 ['积分', detailTask.points],
