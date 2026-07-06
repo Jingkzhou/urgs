@@ -288,6 +288,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (task == null || !TaskStatus.OPEN.name().equals(task.getStatus())) {
             throw new IllegalStateException("任务不存在或不可领取");
         }
+        ensureWorkOperable(task);
         if (!AssignMode.OPEN.name().equals(task.getAssignMode())) {
             throw new IllegalStateException("该任务不支持直接领取");
         }
@@ -317,6 +318,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (task == null) {
             throw new IllegalArgumentException("任务不存在");
         }
+        ensureWorkOperable(task);
         if (!userId.equals(task.getAssigneeId())) {
             throw new IllegalStateException("只能解除自己承接的任务");
         }
@@ -346,6 +348,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (task == null) {
             throw new IllegalArgumentException("任务不存在");
         }
+        ensureWorkOperable(task);
 
         Work work = workService.getById(task.getWorkId());
         if (!work.getPublisherId().equals(currentUserId)) {
@@ -376,6 +379,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (task == null) {
             throw new IllegalArgumentException("任务不存在");
         }
+        ensureWorkOperable(task);
         if (!userId.equals(task.getAssigneeId())) {
             throw new IllegalStateException("只能提交自己承接的任务");
         }
@@ -414,6 +418,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (task == null) {
             throw new IllegalArgumentException("任务不存在");
         }
+        ensureWorkOperable(task);
         Work work = workService.getById(task.getWorkId());
         if (work == null || !work.getPublisherId().equals(reviewerId)) {
             throw new IllegalStateException("只有需求发布人可以验收任务");
@@ -531,6 +536,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (task == null) {
             throw new IllegalArgumentException("任务不存在");
         }
+        ensureWorkOperable(task);
         TaskStatus targetStatus;
         try {
             targetStatus = TaskStatus.valueOf(status);
@@ -561,6 +567,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (task == null) {
             throw new IllegalArgumentException("任务不存在");
         }
+        ensureWorkOperable(task);
         if (!TaskStatus.CANCELLED.name().equals(task.getStatus())) {
             throw new IllegalStateException("只有已取消的任务可以重新开启");
         }
@@ -595,6 +602,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (task == null) {
             throw new IllegalArgumentException("任务不存在");
         }
+        ensureWorkOperable(task);
         if (!userId.equals(task.getAssigneeId())) {
             throw new IllegalStateException("只能推进自己承接的任务阶段");
         }
@@ -674,6 +682,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (task == null) {
             throw new IllegalArgumentException("任务不存在");
         }
+        ensureWorkOperable(task);
         if (!userId.equals(task.getAssigneeId())) {
             throw new IllegalStateException("只能报备自己承接的任务风险");
         }
@@ -713,6 +722,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (task == null) {
             throw new IllegalArgumentException("任务不存在");
         }
+        ensureWorkOperable(task);
         Work work = workService.getById(task.getWorkId());
         if (work == null || !userId.equals(work.getPublisherId())) {
             throw new IllegalStateException("只有工作发布人可以追加风险跟踪记录");
@@ -799,6 +809,13 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (!aggregatedStatus.equals(work.getStatus())) {
             work.setStatus(aggregatedStatus);
             workService.updateById(work);
+        }
+    }
+
+    private void ensureWorkOperable(WorkTask task) {
+        Work work = workService.getById(task.getWorkId());
+        if (work != null && WorkStatus.PAUSED.name().equals(work.getStatus())) {
+            throw new IllegalStateException("工作已暂停，不允许操作任务");
         }
     }
 

@@ -123,6 +123,9 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         if (work == null || !userId.equals(work.getPublisherId())) {
             throw new IllegalArgumentException("工作不存在或无权操作");
         }
+        if (WorkStatus.PAUSED.name().equals(work.getStatus())) {
+            throw new IllegalStateException("工作已暂停，不允许修改");
+        }
 
         work.setTitle(dto.getTitle());
         work.setDescription(dto.getDescription());
@@ -281,6 +284,31 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
             for (WorkTask task : tasks) {
                 task.setStatus(TaskStatus.CANCELLED.name());
                 workTaskService.updateById(task);
+            }
+        }
+        return success;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean pauseWork(String workId, String userId) {
+        Work work = this.getById(workId);
+        if (work == null || !work.getPublisherId().equals(userId)) {
+            throw new IllegalArgumentException("工作不存在或无权操作");
+        }
+        if (!WorkStatus.ACTIVE.name().equals(work.getStatus())) {
+            throw new IllegalStateException("只有进行中的工作可以暂停");
+        }
+
+        work.setStatus(WorkStatus.PAUSED.name());
+        boolean success = this.updateById(work);
+        if (success) {
+            boolean tasksPaused = workTaskService.lambdaUpdate()
+                    .eq(WorkTask::getWorkId, workId)
+                    .set(WorkTask::getStatus, TaskStatus.PAUSED.name())
+                    .update();
+            if (!tasksPaused) {
+                throw new IllegalStateException("工作任务暂停失败");
             }
         }
         return success;

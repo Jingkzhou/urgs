@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { Tooltip, Pagination } from 'antd';
-import { listWorks, publishWork, cancelWork, batchDeleteWorks, updateTaskStatus, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
-import { BarChart3, CalendarDays, Download, Edit3, LayoutList, ListTodo, PauseCircle, Plus, Play, PlayCircle, Search, Trash2, Upload, XCircle } from 'lucide-react';
+import { listWorks, publishWork, cancelWork, pauseWork, batchDeleteWorks, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
+import { BarChart3, CalendarDays, Download, Edit3, LayoutList, ListTodo, PauseCircle, Plus, Play, Search, Trash2, Upload, XCircle } from 'lucide-react';
 import CreateWorkDrawer from './CreateWorkDrawer';
 import ImportWorkModal from './ImportWorkModal';
 import WorkDetailDrawer from './WorkDetailDrawer';
@@ -252,36 +252,13 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
         }
     };
 
-    const normalizeTaskStatus = (status?: string) => status?.trim().toUpperCase();
-
-    const isClosedTaskStatus = (status?: string) => {
-        return ['COMPLETED', 'CANCELLED', 'WAITING_REVIEW'].includes(normalizeTaskStatus(status) || '');
-    };
-
-    const getWorkToggleTasks = (work: Work) => {
-        const targetStatus = work.status === 'PAUSED' ? 'IN_PROGRESS' : 'PAUSED';
-        return (workTasks[work.id] || []).filter(task => {
-            const status = normalizeTaskStatus(task.status);
-            if (!status || isClosedTaskStatus(status) || status === targetStatus) return false;
-            return work.status === 'PAUSED' ? status === 'PAUSED' : true;
-        });
-    };
-
-    const handleToggleWorkPaused = async (work: Work) => {
-        const paused = work.status === 'PAUSED';
-        const nextStatus = paused ? 'IN_PROGRESS' : 'PAUSED';
-        const actionText = paused ? '继续' : '暂停';
-        const targetTasks = getWorkToggleTasks(work);
-        if (targetTasks.length === 0) {
-            alert(`没有可${actionText}的任务`);
-            return;
-        }
-        if (!window.confirm(`确定要${actionText}工作「${work.title}」下 ${targetTasks.length} 个任务吗？`)) return;
+    const handlePauseWork = async (work: Work) => {
+        if (!window.confirm(`确定要暂停工作「${work.title}」吗？暂停后所有主任务和子任务均不可操作。`)) return;
         try {
-            await Promise.all(targetTasks.map(task => updateTaskStatus(task.id, nextStatus)));
+            await pauseWork(work.id);
             await fetchWorks(currentPage, pageSize);
         } catch (error) {
-            alert(`${actionText}工作失败`);
+            alert('暂停工作失败');
         }
     };
 
@@ -778,6 +755,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                             </div>
                                         </div>
                                         <div className="flex justify-end">
+                                            {work.status !== 'PAUSED' && (
                                             <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white/95 px-2 py-1 opacity-100 shadow-sm backdrop-blur transition-all duration-200 lg:translate-x-2 lg:opacity-0 lg:group-hover/work:translate-x-0 lg:group-hover/work:opacity-100 lg:group-focus-within/work:translate-x-0 lg:group-focus-within/work:opacity-100">
                                                 <button
                                                     onClick={() => {
@@ -807,21 +785,17 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                                     <XCircle size={13} />取消
                                                 </button>
                                                 )}
-                                                {['ACTIVE', 'PAUSED'].includes(work.status) && (
+                                                {work.status === 'ACTIVE' && (
                                                 <button
-                                                    onClick={() => handleToggleWorkPaused(work)}
-                                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold transition-colors ${
-                                                        work.status === 'PAUSED'
-                                                            ? 'text-green-600 hover:bg-green-50 hover:text-green-800'
-                                                            : 'text-amber-600 hover:bg-amber-50 hover:text-amber-800'
-                                                    }`}
-                                                    title={work.status === 'PAUSED' ? '继续工作' : '暂停工作'}
+                                                    onClick={() => handlePauseWork(work)}
+                                                    className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-amber-600 transition-colors hover:bg-amber-50 hover:text-amber-800"
+                                                    title="暂停工作"
                                                 >
-                                                    {work.status === 'PAUSED' ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
-                                                    {work.status === 'PAUSED' ? '继续' : '暂停'}
+                                                    <PauseCircle size={13} />暂停
                                                 </button>
                                                 )}
                                             </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

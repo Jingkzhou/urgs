@@ -183,6 +183,16 @@ public class WorkController {
         return ResponseEntity.ok().build();
     }
 
+    @PutMapping("/{id}/pause")
+    public ResponseEntity<Void> pauseWork(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @PathVariable String id) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        workService.pauseWork(id, userId);
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping("/batch-delete")
     public Map<String, Integer> batchDeleteWorks(
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
