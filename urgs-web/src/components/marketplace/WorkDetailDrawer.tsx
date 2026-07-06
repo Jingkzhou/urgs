@@ -3,10 +3,12 @@ import { Drawer, Tag, Space, Divider, Typography, Spin, Empty, Modal, Progress }
 import {
     addTaskToWork,
     approveApplication,
+    AssetMaintenanceRecord,
     getTaskDetail,
     getTaskApplications,
     getWorkDetail,
     getWorkTasks,
+    listAssetMaintenanceRecords,
     listPointRules,
     MarketplacePointRule,
     rejectApplication,
@@ -14,7 +16,7 @@ import {
     Work,
     WorkTask,
 } from '../../api/marketplace';
-import { Award, CheckCircle2, Clock, Paperclip, Plus, Users, XCircle } from 'lucide-react';
+import { Award, CheckCircle2, ChevronDown, ChevronUp, Clock, Eye, Paperclip, Plus, Users, XCircle } from 'lucide-react';
 import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
 import { searchUsers, UserDTO } from '../../api/user';
 import UserSelect from './UserSelect';
@@ -57,6 +59,8 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
     const [applicationLoading, setApplicationLoading] = useState(false);
     const [assigneeLabels, setAssigneeLabels] = useState<Record<string, string>>({});
     const [detailTask, setDetailTask] = useState<WorkTask | null>(null);
+    const [workAssetRecords, setWorkAssetRecords] = useState<AssetMaintenanceRecord[]>([]);
+    const [assetSummaryExpanded, setAssetSummaryExpanded] = useState(false);
     const appliedFocusKeyRef = useRef<number | undefined>(undefined);
 
     // New task form fields
@@ -74,10 +78,13 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
 
     useEffect(() => {
         if (isOpen && workId) {
+            setAssetSummaryExpanded(false);
             fetchDetail(workId);
         } else if (!isOpen) {
             setWork(null);
             setTasks([]);
+            setWorkAssetRecords([]);
+            setAssetSummaryExpanded(false);
         }
     }, [isOpen, workId]);
 
@@ -111,6 +118,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             const nextTasks = tasksRes || [];
             setTasks(nextTasks);
             resolveAssigneeLabels(nextTasks);
+            loadWorkAssetRecords(workRes.requirementNumber);
         } catch (error) {
             console.error('Failed to fetch work detail', error);
         } finally {
@@ -147,6 +155,40 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         if (!assigneeId) return '';
         return assigneeLabels[assigneeId] || assigneeId;
     };
+
+    const loadWorkAssetRecords = async (requirementNumber?: string) => {
+        const reqId = (requirementNumber || '').trim();
+        if (!reqId) {
+            setWorkAssetRecords([]);
+            return;
+        }
+        try {
+            let response = await listAssetMaintenanceRecords({ reqId, page: 1, size: 100 });
+            let records = response?.records || [];
+            if ((response?.total || 0) > records.length) {
+                response = await listAssetMaintenanceRecords({ reqId, page: 1, size: response.total });
+                records = response?.records || [];
+            }
+            setWorkAssetRecords(records);
+        } catch (error) {
+            console.error('Failed to fetch work asset maintenance records', error);
+            setWorkAssetRecords([]);
+        }
+    };
+
+    const getTaskAssetRecords = (task: WorkTask) => {
+        if (task.assetMaintenanceSnapshot) {
+            try {
+                const records = JSON.parse(task.assetMaintenanceSnapshot);
+                return Array.isArray(records) ? records as AssetMaintenanceRecord[] : [];
+            } catch {
+                return [];
+            }
+        }
+        return workAssetRecords;
+    };
+
+    const getTaskAssetRecordCount = (task: WorkTask) => getTaskAssetRecords(task).length;
 
     const openTaskDetail = async (task: WorkTask) => {
         setDetailTask(task);
@@ -318,6 +360,13 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         return taskType === '问题跟踪' || taskType === '问题追踪';
     };
 
+    const getModTypeLabel = (modType?: string) => {
+        if (modType === 'CREATE') return '新增资产';
+        if (modType === 'UPDATE') return '修改调整';
+        if (modType === 'DELETE') return '删除资产';
+        return modType || '-';
+    };
+
     const formatDateTime = (value?: string) => value ? new Date(value).toLocaleString() : '-';
     const renderDetailValue = (value?: string | number | null) => value === undefined || value === null || value === '' ? '-' : value;
 
@@ -337,6 +386,47 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         tasks
             .map(task => renderAssignee(task.assigneeId))
             .filter(Boolean)
+    ));
+    const snapshotAssetRecords = tasks.flatMap(task => {
+        if (!task.assetMaintenanceSnapshot) return [];
+        try {
+            const records = JSON.parse(task.assetMaintenanceSnapshot);
+            return Array.isArray(records) ? records as AssetMaintenanceRecord[] : [];
+        } catch {
+            return [];
+        }
+    });
+    const workSummaryRecordMap = new Map<string, AssetMaintenanceRecord>();
+    (workAssetRecords.length > 0 ? workAssetRecords : snapshotAssetRecords).forEach((record, index) => {
+        const key = record.id || [
+            record.systemCode || '',
+            record.tableName || record.tableCnName || '',
+            record.fieldName || record.fieldCnName || '',
+            record.modType || '',
+            record.time || '',
+            record.description || '',
+            index,
+        ].join('|');
+        workSummaryRecordMap.set(key, record);
+    });
+    const workSummaryRecords = Array.from(workSummaryRecordMap.values());
+    const associatedAssetCount = new Set(workSummaryRecords.map(record => [
+        record.systemCode || '',
+        record.tableName || record.tableCnName || '',
+        record.fieldName || record.fieldCnName || '',
+    ].join('|'))).size;
+    const createdAssetCount = workSummaryRecords.filter(record => record.modType === 'CREATE').length;
+    const updatedAssetCount = workSummaryRecords.filter(record => record.modType === 'UPDATE').length;
+    const deletedAssetCount = workSummaryRecords.filter(record => record.modType === 'DELETE').length;
+    const involvedSystems = Array.from(new Set(
+        workSummaryRecords
+            .map(record => record.systemCode)
+            .filter((value): value is string => Boolean(value))
+    ));
+    const involvedPeople = Array.from(new Set(
+        workSummaryRecords
+            .map(record => record.operator)
+            .filter((value): value is string => Boolean(value))
     ));
 
     return (
@@ -429,6 +519,140 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                         </Paragraph>
                     </section>
 
+                    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <button
+                            type="button"
+                            onClick={() => setAssetSummaryExpanded(expanded => !expanded)}
+                            className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-slate-50"
+                        >
+                            <div>
+                                <Title level={5} className="!mb-0">工作资产变更汇总</Title>
+                                <div className="mt-1 text-xs text-slate-400">
+                                    {work.requirementNumber ? `需求编号 ${work.requirementNumber}` : '按工作任务汇总'}
+                                </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-3">
+                                <span className="rounded bg-cyan-50 px-2.5 py-1 text-xs font-bold text-cyan-700">
+                                    {workSummaryRecords.length} 条变更
+                                </span>
+                                <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-500">
+                                    {assetSummaryExpanded ? '收起详情' : '展开详情'}
+                                    {assetSummaryExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                                </span>
+                            </div>
+                        </button>
+
+                        <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-3">
+                            <div className="flex flex-wrap gap-2 text-xs">
+                                <span className="rounded bg-blue-50 px-2 py-1 font-bold text-blue-700">关联资产 {associatedAssetCount}</span>
+                                <span className="rounded bg-green-50 px-2 py-1 font-bold text-green-700">新增 {createdAssetCount}</span>
+                                <span className="rounded bg-orange-50 px-2 py-1 font-bold text-orange-700">修改 {updatedAssetCount}</span>
+                                <span className="rounded bg-red-50 px-2 py-1 font-bold text-red-700">删除 {deletedAssetCount}</span>
+                            </div>
+                            <div className="mt-2 grid gap-2 text-xs text-slate-500 md:grid-cols-2">
+                                <div className="truncate">
+                                    <span className="font-bold text-slate-600">涉及系统：</span>
+                                    {involvedSystems.length > 0 ? involvedSystems.join('、') : '暂无'}
+                                </div>
+                                <div className="truncate">
+                                    <span className="font-bold text-slate-600">涉及人员：</span>
+                                    {involvedPeople.length > 0 ? involvedPeople.join('、') : '暂无'}
+                                </div>
+                            </div>
+                        </div>
+
+                        {assetSummaryExpanded && (
+                            <div className="space-y-4 border-t border-slate-200 p-4">
+                                <div className="overflow-hidden rounded-lg border border-slate-200">
+                                    <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm font-bold text-slate-700">
+                                        各任务汇总
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full min-w-[720px] text-xs">
+                                            <thead className="bg-white text-slate-400">
+                                                <tr>
+                                                    <th className="px-4 py-2 text-left">任务</th>
+                                                    <th className="px-4 py-2 text-left">状态 / 阶段</th>
+                                                    <th className="px-4 py-2 text-left">资产变更记录</th>
+                                                    <th className="px-4 py-2 text-left">数据口径</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {tasks.map(task => (
+                                                    <tr key={task.id} className="border-t border-slate-100">
+                                                        <td className="px-4 py-2.5">
+                                                            <div className="font-bold text-slate-700">{task.title}</div>
+                                                            <div className="mt-0.5 text-slate-400">
+                                                                {task.taskRole === 'MAIN' ? '主任务' : '子任务'}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-2.5 text-slate-600">
+                                                            {getTaskStatusLabel(task.status)}
+                                                            {!isIssueTrackingTask(task) ? ` / ${getTaskStageLabel(task.currentStage)}` : ''}
+                                                        </td>
+                                                        <td className="px-4 py-2.5 font-bold text-cyan-700">
+                                                            {getTaskAssetRecordCount(task)} 条
+                                                        </td>
+                                                        <td className="px-4 py-2.5 text-slate-500">
+                                                            {task.assetMaintenanceSnapshot ? '审核固化快照' : '需求编号实时匹配'}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {workSummaryRecords.length === 0 ? (
+                                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前工作暂无资产变更记录" />
+                                ) : (
+                                    <div className="overflow-x-auto rounded-lg border border-slate-200">
+                                        <table className="w-full min-w-[900px] text-xs">
+                                            <thead className="bg-slate-50 text-slate-500">
+                                                <tr>
+                                                    <th className="px-3 py-2 text-left">变更类型</th>
+                                                    <th className="px-3 py-2 text-left">资产对象</th>
+                                                    <th className="px-3 py-2 text-left">系统</th>
+                                                    <th className="px-3 py-2 text-left">操作信息</th>
+                                                    <th className="px-3 py-2 text-left">变更说明</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {workSummaryRecords.map((record, index) => (
+                                                    <tr key={record.id || `${record.reqId || 'asset'}-${index}`} className="border-t border-slate-100 align-top">
+                                                        <td className="whitespace-nowrap px-3 py-3 font-bold text-cyan-700">
+                                                            {getModTypeLabel(record.modType)}
+                                                        </td>
+                                                        <td className="min-w-[220px] px-3 py-3">
+                                                            <div className="font-bold text-slate-700">
+                                                                {record.tableCnName || record.tableName || '-'}
+                                                            </div>
+                                                            <div className="mt-1 font-mono text-slate-400">{record.tableName || '-'}</div>
+                                                            {(record.fieldName || record.fieldCnName) && (
+                                                                <div className="mt-1 text-slate-500">
+                                                                    字段：{record.fieldCnName || record.fieldName}
+                                                                    {record.fieldName && record.fieldCnName ? ` (${record.fieldName})` : ''}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-3 py-3 text-slate-600">{record.systemCode || '-'}</td>
+                                                        <td className="min-w-[150px] px-3 py-3 text-slate-600">
+                                                            <div>{record.operator || '-'}</div>
+                                                            <div className="mt-1 text-slate-400">{formatDateTime(record.time)}</div>
+                                                        </td>
+                                                        <td className="min-w-[260px] whitespace-pre-wrap px-3 py-3 text-slate-600">
+                                                            {record.description || '-'}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </section>
+
                     {work.attachments && (
                         <section>
                             <Title level={5}>附件资料</Title>
@@ -499,6 +723,15 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                         <Clock size={12} /> {new Date(mainTask.deadline).toLocaleDateString()}
                                                     </span>
                                                 )}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => openTaskDetail(mainTask)}
+                                                    className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-1 font-bold text-blue-700 hover:bg-blue-100"
+                                                >
+                                                    <Eye size={12} />
+                                                    对应资产变更记录 {getTaskAssetRecordCount(mainTask)} 条
+                                                    <span className="font-normal text-blue-500">点击查看</span>
+                                                </button>
                                             </div>
                                             {mainTask.description && (
                                                 <p className="text-xs text-slate-500 mt-2 line-clamp-2">{mainTask.description}</p>
@@ -570,6 +803,15 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                                 {task.requiredSkills && (
                                                                     <span className="truncate max-w-[200px]">技能: {task.requiredSkills}</span>
                                                                 )}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => openTaskDetail(task)}
+                                                                    className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-1 font-bold text-blue-700 hover:bg-blue-100"
+                                                                >
+                                                                    <Eye size={12} />
+                                                                    对应资产变更记录 {getTaskAssetRecordCount(task)} 条
+                                                                    <span className="font-normal text-blue-500">点击查看</span>
+                                                                </button>
                                                             </div>
                                                         </div>
                                                     </div>
