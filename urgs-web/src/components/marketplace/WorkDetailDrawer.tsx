@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Drawer, Tag, Space, Divider, Typography, Spin, Empty, Modal, Progress } from 'antd';
 import {
     addTaskToWork,
+    appendTaskRiskTracking,
     approveApplication,
     AssetMaintenanceRecord,
     getTaskDetail,
@@ -21,6 +22,7 @@ import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './mar
 import { searchUsers, UserDTO } from '../../api/user';
 import UserSelect from './UserSelect';
 import TaskAuditTrail from './TaskAuditTrail';
+import AssetObjectDetailLink from './AssetObjectDetailLink';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -58,9 +60,14 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
     const [applications, setApplications] = useState<TaskApplication[]>([]);
     const [applicationLoading, setApplicationLoading] = useState(false);
     const [assigneeLabels, setAssigneeLabels] = useState<Record<string, string>>({});
+    const [assigneeNames, setAssigneeNames] = useState<Record<string, string>>({});
     const [detailTask, setDetailTask] = useState<WorkTask | null>(null);
     const [workAssetRecords, setWorkAssetRecords] = useState<AssetMaintenanceRecord[]>([]);
     const [assetSummaryExpanded, setAssetSummaryExpanded] = useState(false);
+    const [trackingOpen, setTrackingOpen] = useState(false);
+    const [trackingTaskId, setTrackingTaskId] = useState('');
+    const [trackingNote, setTrackingNote] = useState('');
+    const [trackingSubmitting, setTrackingSubmitting] = useState(false);
     const appliedFocusKeyRef = useRef<number | undefined>(undefined);
 
     // New task form fields
@@ -84,7 +91,12 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             setWork(null);
             setTasks([]);
             setWorkAssetRecords([]);
+            setAssigneeNames({});
             setAssetSummaryExpanded(false);
+            setTrackingOpen(false);
+            setTrackingTaskId('');
+            setTrackingNote('');
+            setTrackingSubmitting(false);
         }
     }, [isOpen, workId]);
 
@@ -136,6 +148,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
         ));
         if (assigneeIds.length === 0) {
             setAssigneeLabels({});
+            setAssigneeNames({});
             return;
         }
 
@@ -143,12 +156,17 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             try {
                 const users = await searchUsers(assigneeId);
                 const matchedUser = users.find(user => user.id.toString() === assigneeId) || users[0];
-                return [assigneeId, matchedUser ? formatUserLabel(matchedUser) : assigneeId] as const;
+                return {
+                    assigneeId,
+                    label: matchedUser ? formatUserLabel(matchedUser) : assigneeId,
+                    name: matchedUser?.name || '',
+                };
             } catch (error) {
-                return [assigneeId, assigneeId] as const;
+                return { assigneeId, label: assigneeId, name: '' };
             }
         }));
-        setAssigneeLabels(Object.fromEntries(entries));
+        setAssigneeLabels(Object.fromEntries(entries.map(entry => [entry.assigneeId, entry.label])));
+        setAssigneeNames(Object.fromEntries(entries.map(entry => [entry.assigneeId, entry.name])));
     };
 
     const renderAssignee = (assigneeId?: string) => {
@@ -169,7 +187,10 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                 response = await listAssetMaintenanceRecords({ reqId, page: 1, size: response.total });
                 records = response?.records || [];
             }
-            setWorkAssetRecords(records);
+            setWorkAssetRecords(records.filter(record => {
+                const recordReqId = (record.reqId || '').trim();
+                return recordReqId.includes(reqId);
+            }));
         } catch (error) {
             console.error('Failed to fetch work asset maintenance records', error);
             setWorkAssetRecords([]);
@@ -177,18 +198,50 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
     };
 
     const getTaskAssetRecords = (task: WorkTask) => {
+        let records: AssetMaintenanceRecord[];
         if (task.assetMaintenanceSnapshot) {
             try {
-                const records = JSON.parse(task.assetMaintenanceSnapshot);
-                return Array.isArray(records) ? records as AssetMaintenanceRecord[] : [];
+                const snapshotRecords = JSON.parse(task.assetMaintenanceSnapshot);
+                records = Array.isArray(snapshotRecords) ? snapshotRecords as AssetMaintenanceRecord[] : [];
             } catch {
                 return [];
             }
+        } else {
+            records = workAssetRecords;
         }
-        return workAssetRecords;
+        const assigneeName = assigneeNames[task.assigneeId]?.trim().toLowerCase();
+        if (!assigneeName) return [];
+        return records.filter(record => record.operator?.trim().toLowerCase() === assigneeName);
     };
 
     const getTaskAssetRecordCount = (task: WorkTask) => getTaskAssetRecords(task).length;
+
+    const openTrackingModal = () => {
+        const firstTask = tasks.find(task => task.status !== 'CANCELLED');
+        setTrackingTaskId(firstTask?.id || '');
+        setTrackingNote('');
+        setTrackingOpen(true);
+    };
+
+    const closeTrackingModal = () => {
+        setTrackingOpen(false);
+        setTrackingTaskId('');
+        setTrackingNote('');
+        setTrackingSubmitting(false);
+    };
+
+    const submitTrackingNote = async () => {
+        if (!trackingTaskId || !trackingNote.trim() || !workId) return;
+        setTrackingSubmitting(true);
+        try {
+            await appendTaskRiskTracking(trackingTaskId, { trackingNote: trackingNote.trim() });
+            closeTrackingModal();
+            await fetchDetail(workId);
+        } catch (error) {
+            alert('追加跟踪记录失败');
+            setTrackingSubmitting(false);
+        }
+    };
 
     const openTaskDetail = async (task: WorkTask) => {
         setDetailTask(task);
@@ -387,17 +440,15 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             .map(task => renderAssignee(task.assigneeId))
             .filter(Boolean)
     ));
-    const snapshotAssetRecords = tasks.flatMap(task => {
-        if (!task.assetMaintenanceSnapshot) return [];
-        try {
-            const records = JSON.parse(task.assetMaintenanceSnapshot);
-            return Array.isArray(records) ? records as AssetMaintenanceRecord[] : [];
-        } catch {
-            return [];
-        }
-    });
+    const snapshotAssetRecords = tasks.flatMap(task => task.assetMaintenanceSnapshot
+        ? getTaskAssetRecords(task)
+        : []);
+    const matchedWorkAssetRecords = workAssetRecords.filter(record => tasks.some(task => {
+        const assigneeName = assigneeNames[task.assigneeId]?.trim().toLowerCase();
+        return assigneeName && record.operator?.trim().toLowerCase() === assigneeName;
+    }));
     const workSummaryRecordMap = new Map<string, AssetMaintenanceRecord>();
-    (workAssetRecords.length > 0 ? workAssetRecords : snapshotAssetRecords).forEach((record, index) => {
+    (matchedWorkAssetRecords.length > 0 ? matchedWorkAssetRecords : snapshotAssetRecords).forEach((record, index) => {
         const key = record.id || [
             record.systemCode || '',
             record.tableName || record.tableCnName || '',
@@ -528,7 +579,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                             <div>
                                 <Title level={5} className="!mb-0">工作资产变更汇总</Title>
                                 <div className="mt-1 text-xs text-slate-400">
-                                    {work.requirementNumber ? `需求编号 ${work.requirementNumber}` : '按工作任务汇总'}
+                                    {work.requirementNumber ? `需求编号 ${work.requirementNumber} + 任务承接人` : '按工作任务汇总'}
                                 </div>
                             </div>
                             <div className="flex shrink-0 items-center gap-3">
@@ -594,7 +645,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                             {getTaskAssetRecordCount(task)} 条
                                                         </td>
                                                         <td className="px-4 py-2.5 text-slate-500">
-                                                            {task.assetMaintenanceSnapshot ? '审核固化快照' : '需求编号实时匹配'}
+                                                            {task.assetMaintenanceSnapshot ? '审核固化快照' : '需求编号 + 承接人实时匹配'}
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -624,16 +675,18 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                             {getModTypeLabel(record.modType)}
                                                         </td>
                                                         <td className="min-w-[220px] px-3 py-3">
-                                                            <div className="font-bold text-slate-700">
-                                                                {record.tableCnName || record.tableName || '-'}
-                                                            </div>
-                                                            <div className="mt-1 font-mono text-slate-400">{record.tableName || '-'}</div>
-                                                            {(record.fieldName || record.fieldCnName) && (
-                                                                <div className="mt-1 text-slate-500">
-                                                                    字段：{record.fieldCnName || record.fieldName}
-                                                                    {record.fieldName && record.fieldCnName ? ` (${record.fieldName})` : ''}
+                                                            <AssetObjectDetailLink record={record} className="hover:bg-blue-50/60">
+                                                                <div className="font-bold text-slate-700">
+                                                                    {record.tableCnName || record.tableName || '-'}
                                                                 </div>
-                                                            )}
+                                                                <div className="mt-1 font-mono text-slate-400">{record.tableName || '-'}</div>
+                                                                {(record.fieldName || record.fieldCnName) && (
+                                                                    <div className="mt-1 text-slate-500">
+                                                                        字段：{record.fieldCnName || record.fieldName}
+                                                                        {record.fieldName && record.fieldCnName ? ` (${record.fieldName})` : ''}
+                                                                    </div>
+                                                                )}
+                                                            </AssetObjectDetailLink>
                                                         </td>
                                                         <td className="px-3 py-3 text-slate-600">{record.systemCode || '-'}</td>
                                                         <td className="min-w-[150px] px-3 py-3 text-slate-600">
@@ -663,9 +716,19 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                     <Divider className="my-0" />
 
                     <section>
-                        <div className="mb-3 flex items-center gap-2">
-                            <Title level={5} className="!mb-0">任务风险及跟踪记录</Title>
-                            <span className="text-xs text-slate-400">{riskTasks.length} 条</span>
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                                <Title level={5} className="!mb-0">任务风险及跟踪记录</Title>
+                                <span className="text-xs text-slate-400">{riskTasks.length} 条</span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={openTrackingModal}
+                                disabled={!tasks.some(task => task.status !== 'CANCELLED')}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                <Plus size={12} /> 追加
+                            </button>
                         </div>
                         {riskTasks.length === 0 ? (
                             <div className="rounded-md bg-slate-50 px-3 py-3 text-xs text-slate-400">暂无风险及跟踪记录</div>
@@ -942,6 +1005,48 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             ) : (
                 <Empty description="无法加载详情" />
             )}
+
+            <Modal
+                title="追加任务风险跟踪记录"
+                open={trackingOpen}
+                onCancel={closeTrackingModal}
+                onOk={submitTrackingNote}
+                okText="追加"
+                cancelText="取消"
+                confirmLoading={trackingSubmitting}
+                okButtonProps={{ disabled: !trackingTaskId || !trackingNote.trim() }}
+                destroyOnHidden
+            >
+                <div className="space-y-4 pt-2">
+                    <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-slate-600">对应任务</span>
+                        <select
+                            value={trackingTaskId}
+                            onChange={event => setTrackingTaskId(event.target.value)}
+                            className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500"
+                        >
+                            {tasks
+                                .filter(task => task.status !== 'CANCELLED')
+                                .map(task => (
+                                    <option key={task.id} value={task.id}>
+                                        {task.taskRole === 'MAIN' ? '主任务' : '子任务'} · {task.title}
+                                    </option>
+                                ))}
+                        </select>
+                    </label>
+                    <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-slate-600">跟踪内容</span>
+                        <textarea
+                            value={trackingNote}
+                            onChange={event => setTrackingNote(event.target.value)}
+                            rows={4}
+                            maxLength={1000}
+                            placeholder="填写风险处理进展、协调结果或后续安排"
+                            className="w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-500"
+                        />
+                    </label>
+                </div>
+            </Modal>
 
             <Drawer
                 title={detailTask ? `任务信息：${detailTask.title}` : '任务信息'}

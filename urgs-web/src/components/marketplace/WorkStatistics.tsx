@@ -133,6 +133,7 @@ const WorkStatistics: React.FC = () => {
     const workloadData = useMemo(() => (statistics?.assigneeWorkloads || []).map(item => ({
         ...item,
         name: renderAssignee(item.assigneeId),
+        pendingCount: Math.max(item.activeCount - item.overdueCount, 0),
     })), [statistics, assigneeLabels]);
 
     const buildAiPrompt = (data: WorkStatisticsData) => {
@@ -404,7 +405,8 @@ ${attentionItems}
                                 <Tooltip content={<WorkloadTooltip />} />
                                 <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
                                 <Bar dataKey="completedCount" name="已完成" stackId="workload" fill="#22c55e" />
-                                <Bar dataKey="activeCount" name="待推进" stackId="workload" fill="#60a5fa" radius={[0, 5, 5, 0]} />
+                                <Bar dataKey="pendingCount" name="待推进" stackId="workload" fill="#60a5fa" />
+                                <Bar dataKey="overdueCount" name="逾期" stackId="workload" fill="#f43f5e" radius={[0, 5, 5, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
                     ) : <EmptyChart text="暂无人员任务负载数据" />}
@@ -579,7 +581,7 @@ const WorkloadTooltip: React.FC<{
             <div className="space-y-1 text-slate-600">
                 <div>总任务：{data.totalCount}</div>
                 <div>已完成：{data.completedCount}</div>
-                <div>待推进：{data.activeCount}</div>
+                <div>待推进：{Math.max(data.activeCount - data.overdueCount, 0)}</div>
                 <div className={data.overdueCount > 0 ? 'font-bold text-rose-600' : ''}>逾期：{data.overdueCount}</div>
             </div>
         </div>

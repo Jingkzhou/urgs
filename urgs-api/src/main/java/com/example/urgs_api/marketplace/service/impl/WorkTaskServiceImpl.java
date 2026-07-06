@@ -25,6 +25,7 @@ import com.example.urgs_api.metadata.service.MaintenanceRecordService;
 import com.example.urgs_api.user.mapper.UserMapper;
 import com.example.urgs_api.user.model.User;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -421,7 +422,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         ReviewDecision decision = ReviewDecision.valueOf(dto.getDecision());
         if (ReviewDecision.APPROVE.equals(decision)) {
             if (isAssetReview(task)) {
-                List<MaintenanceRecord> maintenanceRecords = getAssetMaintenanceRecords(work);
+                List<MaintenanceRecord> maintenanceRecords = getAssetMaintenanceRecords(work, task, true);
                 LocalDateTime now = LocalDateTime.now();
                 task.setCurrentStage(STAGE_LAUNCH);
                 task.setStageUpdatedAt(now);
@@ -822,8 +823,12 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         dto.setAuditLogs(loadTaskAuditLogs(taskId));
         boolean snapshotFinalized = StringUtils.hasText(task.getAssetMaintenanceSnapshot());
         dto.setAssetMaintenanceSnapshotFinalized(snapshotFinalized);
-        if (!snapshotFinalized && work != null && StringUtils.hasText(work.getRequirementNumber())) {
-            dto.setAssetMaintenanceRecords(getAssetMaintenanceRecords(work));
+        if (snapshotFinalized) {
+            List<MaintenanceRecord> filteredSnapshotRecords = filterAssetMaintenanceSnapshot(task);
+            dto.setAssetMaintenanceSnapshot(serializeAssetMaintenanceRecords(filteredSnapshotRecords));
+            dto.setAssetMaintenanceRecords(filteredSnapshotRecords);
+        } else if (work != null && StringUtils.hasText(work.getRequirementNumber())) {
+            dto.setAssetMaintenanceRecords(getAssetMaintenanceRecords(work, task, false));
         }
         return dto;
     }
@@ -1013,12 +1018,55 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         return "问题跟踪".equals(taskType) || "问题追踪".equals(taskType);
     }
 
-    private List<MaintenanceRecord> getAssetMaintenanceRecords(Work work) {
+    private List<MaintenanceRecord> getAssetMaintenanceRecords(Work work, WorkTask task, boolean assigneeRequired) {
         if (work == null || !StringUtils.hasText(work.getRequirementNumber())) {
             throw new IllegalStateException("工作缺少需求编号，无法校验资产管理维护记录");
         }
+        String assigneeName = getTaskAssigneeName(task, assigneeRequired);
+        if (!StringUtils.hasText(assigneeName)) {
+            return Collections.emptyList();
+        }
+        String requirementNumber = work.getRequirementNumber().trim();
         return maintenanceRecordService.list(new LambdaQueryWrapper<MaintenanceRecord>()
-                .like(MaintenanceRecord::getReqId, work.getRequirementNumber()));
+                .like(MaintenanceRecord::getReqId, requirementNumber)
+                .eq(MaintenanceRecord::getOperator, assigneeName));
+    }
+
+    private List<MaintenanceRecord> filterAssetMaintenanceSnapshot(WorkTask task) {
+        String assigneeName = getTaskAssigneeName(task, false);
+        if (!StringUtils.hasText(assigneeName)) {
+            return Collections.emptyList();
+        }
+        try {
+            List<MaintenanceRecord> records = objectMapper.readValue(
+                    task.getAssetMaintenanceSnapshot(),
+                    new TypeReference<List<MaintenanceRecord>>() {
+                    });
+            return records.stream()
+                    .filter(record -> assigneeName.equals(record.getOperator() == null
+                            ? null
+                            : record.getOperator().trim()))
+                    .collect(Collectors.toList());
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("资产管理维护记录快照读取失败", e);
+        }
+    }
+
+    private String getTaskAssigneeName(WorkTask task, boolean required) {
+        if (task == null || !StringUtils.hasText(task.getAssigneeId())) {
+            if (required) {
+                throw new IllegalStateException("任务未分配承接人，无法匹配资产管理维护记录");
+            }
+            return null;
+        }
+        User assignee = userMapper.selectById(task.getAssigneeId());
+        if (assignee == null || !StringUtils.hasText(assignee.getName())) {
+            if (required) {
+                throw new IllegalStateException("未找到任务承接人，无法匹配资产管理维护记录");
+            }
+            return null;
+        }
+        return assignee.getName().trim();
     }
 
     private String serializeAssetMaintenanceRecords(List<MaintenanceRecord> records) {

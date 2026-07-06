@@ -8,8 +8,7 @@ import {
     advanceTaskStage,
     reportTaskStageRisk,
     createTaskAppeal,
-    getWorkDetail,
-    listAssetMaintenanceRecords,
+    getTaskDetail,
     listRegAssetTables,
     getRegAssetTable,
     listRegAssetElements,
@@ -337,24 +336,19 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
         setAssetReviewError('');
         setAssetReviewLoading(true);
         try {
-            const work = await getWorkDetail(task.workId);
-            const reqId = (work?.requirementNumber || '').trim();
+            const taskDetail = await getTaskDetail(task.id);
+            const reqId = (taskDetail?.requirementNumber || '').trim();
             setAssetReviewReqId(reqId);
-            setAssetReviewWorkTitle(work?.title || task.title);
+            setAssetReviewWorkTitle(taskDetail?.workTitle || task.title);
             if (!reqId) {
                 setAssetReviewError('当前工作没有需求编号，无法匹配资产管理维护记录');
                 return;
             }
 
-            let res = await listAssetMaintenanceRecords({ reqId, page: 1, size: 100 });
-            let records = res?.records || [];
-            if ((res?.total || 0) > records.length) {
-                res = await listAssetMaintenanceRecords({ reqId, page: 1, size: res.total });
-                records = res?.records || [];
-            }
+            const records = taskDetail?.assetMaintenanceRecords || [];
             setAssetReviewRecords(records);
             if (records.length === 0) {
-                setAssetReviewError(`未找到需求编号 ${reqId} 的资产管理维护记录`);
+                setAssetReviewError(`未找到需求编号 ${reqId} 下由当前任务承接人操作的资产维护记录`);
             }
         } catch (error) {
             console.error('Failed to load asset maintenance records', error);

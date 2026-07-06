@@ -4,7 +4,7 @@ import {
     AssetMaintenanceRecord,
     getPendingReviewTasks,
     getReviewHistoryTasks,
-    listAssetMaintenanceRecords,
+    getTaskDetail,
     reviewTask,
     TaskMarketDTO,
     TaskReviewDTO,
@@ -13,6 +13,7 @@ import {
 import TaskDetailDrawer from './TaskDetailDrawer';
 import { getTaskStageLabel, getTaskStatusLabel } from './marketplaceLabels';
 import { MarketplaceTodoFocus } from './marketplaceTodoFocus';
+import AssetObjectDetailLink from './AssetObjectDetailLink';
 
 interface ReviewCenterProps {
     todoFocus?: MarketplaceTodoFocus | null;
@@ -107,15 +108,11 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
 
         setAssetReviewLoading(true);
         try {
-            let res = await listAssetMaintenanceRecords({ reqId, page: 1, size: 100 });
-            let records = res?.records || [];
-            if ((res?.total || 0) > records.length) {
-                res = await listAssetMaintenanceRecords({ reqId, page: 1, size: res.total });
-                records = res?.records || [];
-            }
+            const taskDetail = await getTaskDetail(task.id);
+            const records = taskDetail?.assetMaintenanceRecords || [];
             setAssetReviewRecords(records);
             if (records.length === 0) {
-                setAssetReviewError(`未找到需求编号 ${reqId} 的资产管理维护记录`);
+                setAssetReviewError(`未找到需求编号 ${reqId} 下由当前任务承接人操作的资产维护记录`);
             }
         } catch (error) {
             console.error('Failed to load asset maintenance records', error);
@@ -459,14 +456,16 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
                                                                         {getModTypeLabel(record.modType)}
                                                                     </td>
                                                                     <td className="min-w-[220px] px-3 py-3 text-slate-700">
-                                                                        <div className="font-bold">{record.tableCnName || record.tableName || '-'}</div>
-                                                                        <div className="mt-1 font-mono text-slate-400">{record.tableName || '-'}</div>
-                                                                        {(record.fieldName || record.fieldCnName) && (
-                                                                            <div className="mt-1 text-slate-500">
-                                                                                字段：{record.fieldCnName || record.fieldName}
-                                                                                {record.fieldName && record.fieldCnName ? ` (${record.fieldName})` : ''}
-                                                                            </div>
-                                                                        )}
+                                                                        <AssetObjectDetailLink record={record} className="hover:bg-blue-50/60">
+                                                                            <div className="font-bold">{record.tableCnName || record.tableName || '-'}</div>
+                                                                            <div className="mt-1 font-mono text-slate-400">{record.tableName || '-'}</div>
+                                                                            {(record.fieldName || record.fieldCnName) && (
+                                                                                <div className="mt-1 text-slate-500">
+                                                                                    字段：{record.fieldCnName || record.fieldName}
+                                                                                    {record.fieldName && record.fieldCnName ? ` (${record.fieldName})` : ''}
+                                                                                </div>
+                                                                            )}
+                                                                        </AssetObjectDetailLink>
                                                                     </td>
                                                                     <td className="min-w-[150px] px-3 py-3 text-slate-600">
                                                                         <div>{record.operator || '-'}</div>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Empty } from 'antd';
 import { AssetMaintenanceRecord, WorkTask } from '../../api/marketplace';
+import AssetObjectDetailLink from './AssetObjectDetailLink';
 
 interface TaskAuditTrailProps {
     task: WorkTask;
@@ -116,14 +117,16 @@ const TaskAuditTrail: React.FC<TaskAuditTrailProps> = ({ task }) => {
                                             {getModTypeLabel(record.modType)}
                                         </td>
                                         <td className="min-w-[180px] px-3 py-2">
-                                            <div className="font-bold text-slate-700">{record.tableCnName || record.tableName || '-'}</div>
-                                            <div className="mt-1 font-mono text-slate-400">{record.tableName || '-'}</div>
-                                            {(record.fieldCnName || record.fieldName) && (
-                                                <div className="mt-1 text-slate-500">
-                                                    字段：{record.fieldCnName || record.fieldName}
-                                                    {record.fieldCnName && record.fieldName ? ` (${record.fieldName})` : ''}
-                                                </div>
-                                            )}
+                                            <AssetObjectDetailLink record={record} className="hover:bg-blue-50/60">
+                                                <div className="font-bold text-slate-700">{record.tableCnName || record.tableName || '-'}</div>
+                                                <div className="mt-1 font-mono text-slate-400">{record.tableName || '-'}</div>
+                                                {(record.fieldCnName || record.fieldName) && (
+                                                    <div className="mt-1 text-slate-500">
+                                                        字段：{record.fieldCnName || record.fieldName}
+                                                        {record.fieldCnName && record.fieldName ? ` (${record.fieldName})` : ''}
+                                                    </div>
+                                                )}
+                                            </AssetObjectDetailLink>
                                         </td>
                                         <td className="px-3 py-2 text-slate-600">{record.operator || '-'}</td>
                                         <td className="whitespace-nowrap px-3 py-2 text-slate-500">{formatDateTime(record.time)}</td>
