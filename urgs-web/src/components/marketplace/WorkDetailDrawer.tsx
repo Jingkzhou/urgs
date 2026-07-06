@@ -1090,7 +1090,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                 ['任务类型', detailTask.taskType],
                                 ['难度', detailTask.difficulty],
                                 ['涉及系统', (detailTask.involvedSystemIds || [])
-                                    .map(systemId => systemOptions.find(option => option.value === systemId)?.label || systemId)
+                                    .map(systemId => systemOptions.find(option => option.value === Number(systemId))?.label || systemId)
                                     .join('、')],
                                 ['分派方式', getAssignModeLabel(detailTask.assignMode)],
                                 ['负责人', renderAssignee(detailTask.assigneeId)],

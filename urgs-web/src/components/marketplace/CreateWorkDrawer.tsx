@@ -108,7 +108,7 @@ const buildTaskFormValue = (task?: WorkTask, fallback?: Partial<WorkFormValues['
     description: task?.description || fallback?.description || '',
     taskType: task?.taskType || fallback?.taskType || '',
     difficulty: task?.difficulty || fallback?.difficulty || '',
-    involvedSystemIds: task?.involvedSystemIds || fallback?.involvedSystemIds || [],
+    involvedSystemIds: (task?.involvedSystemIds || fallback?.involvedSystemIds || []).map(Number),
     points: task?.points ?? fallback?.points ?? 0,
     requiredSkills: task?.requiredSkills || fallback?.requiredSkills || '',
     assignMode: (task?.assignMode || fallback?.assignMode || 'OPEN') as 'OPEN' | 'ASSIGN' | 'COMPETE',
