@@ -12,11 +12,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import lombok.extern.slf4j.Slf4j;
 
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -44,16 +46,21 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest req) {
         if (!StringUtils.hasText(req.getUsername()) || !StringUtils.hasText(req.getPassword())) {
+            log.warn("[AUTH-LOGIN] rejected reason=missing_credentials, username={}", req.getUsername());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         }
+        log.info("[AUTH-LOGIN] attempt username={}", req.getUsername());
         User user = userService.getOne(new LambdaQueryWrapper<User>().eq(User::getEmpId, req.getUsername()));
 
         if (user == null || user.getPassword() == null
                 || !passwordEncoder.matches(req.getPassword(), user.getPassword())) {
+            log.warn("[AUTH-LOGIN] rejected reason=invalid_credentials, username={}", req.getUsername());
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         String token = authTokenService.issue(user.getId());
 
+        log.info("[AUTH-LOGIN] success username={}, userId={}, tokenRef={}",
+                req.getUsername(), user.getId(), ref(token));
         return ResponseEntity.ok(buildAuthResponse(token, user));
     }
 
@@ -97,21 +104,27 @@ public class AuthController {
 
     private AuthResponse authenticateByRsaSsoToken(String ssoToken) {
         String empId;
+        log.info("[AUTH-RSA-SSO] attempt tokenRef={}", ref(ssoToken));
         try {
             empId = RsaSsoTokenUtil.decryptFromBase64(ssoToken, inboundSsoRsaPrivateKey);
         } catch (IllegalArgumentException e) {
             HttpStatus status = StringUtils.hasText(inboundSsoRsaPrivateKey) ? HttpStatus.BAD_REQUEST
                     : HttpStatus.SERVICE_UNAVAILABLE;
+            log.warn("[AUTH-RSA-SSO] rejected reason=decrypt_failed, tokenRef={}, status={}",
+                    ref(ssoToken), status.value());
             throw new org.springframework.web.server.ResponseStatusException(status, e.getMessage(), e);
         }
         User user = userService.getOne(new LambdaQueryWrapper<User>().eq(User::getEmpId, empId));
         if (user == null) {
+            log.warn("[AUTH-RSA-SSO] rejected reason=user_not_found, empId={}", empId);
             throw new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED, "SSO 用户不存在");
         }
         if ("inactive".equalsIgnoreCase(user.getStatus())) {
+            log.warn("[AUTH-RSA-SSO] rejected reason=user_inactive, empId={}, userId={}", empId, user.getId());
             throw new org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN, "SSO 用户已停用");
         }
         String token = authTokenService.issue(user.getId());
+        log.info("[AUTH-RSA-SSO] success empId={}, userId={}, tokenRef={}", empId, user.getId(), ref(token));
         return buildAuthResponse(token, user);
     }
 
@@ -152,5 +165,9 @@ public class AuthController {
 
     private String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private String ref(String value) {
+        return value == null ? "null" : Integer.toHexString(value.hashCode());
     }
 }

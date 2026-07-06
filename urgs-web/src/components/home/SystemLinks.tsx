@@ -91,11 +91,21 @@ const SystemLinks: React.FC<SystemLinksProps> = ({
   };
 
   const handleSystemClick = async (system: any) => {
+    console.info('[系统入口] 开始单点跳转', {
+      systemId: system?.id,
+      systemName: system?.name,
+      callbackConfigured: Boolean(system?.callbackUrl),
+    });
     if (!system?.id) {
+      console.warn('[系统入口] 单点跳转终止：缺少系统 ID', { systemName: system?.name });
       alert('系统配置缺少 ID，无法跳转');
       return;
     }
     if (!system.callbackUrl) {
+      console.warn('[系统入口] 单点跳转终止：缺少回调地址', {
+        systemId: system.id,
+        systemName: system.name,
+      });
       alert(`${system.name || '该系统'} 未配置回调地址，无法单点跳转`);
       return;
     }
@@ -104,11 +114,20 @@ const SystemLinks: React.FC<SystemLinksProps> = ({
     try {
       const result = await jumpSystem(system.id);
       if (!result?.targetUrl) {
+        console.error('[系统入口] 单点跳转失败：接口未返回目标地址', {
+          systemId: system.id,
+          systemName: system.name,
+        });
         jumpWindow?.close();
         alert('跳转接口未返回目标地址');
         return;
       }
 
+      console.info('[系统入口] 授权完成，准备跳转目标系统', {
+        systemId: system.id,
+        systemName: system.name,
+        targetOrigin: new URL(result.targetUrl, window.location.origin).origin,
+      });
       if (jumpWindow) {
         jumpWindow.location.href = result.targetUrl;
       } else {
@@ -117,7 +136,11 @@ const SystemLinks: React.FC<SystemLinksProps> = ({
     } catch (err: any) {
       jumpWindow?.close();
       alert(err?.message || '系统跳转失败');
-      console.error('Failed to jump system', err);
+      console.error('[系统入口] 单点跳转请求失败', {
+        systemId: system.id,
+        systemName: system.name,
+        error: err,
+      });
     }
   };
 

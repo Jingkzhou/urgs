@@ -11,8 +11,10 @@ import java.util.List;
 import java.util.Random;
 import java.util.stream.Collectors;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/system")
 public class SystemController {
@@ -72,15 +74,23 @@ public class SystemController {
 
     @PostMapping("/{id}/jump")
     public ResponseEntity<java.util.Map<String, String>> jump(@PathVariable("id") Long id, HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("userId");
+        log.info("[SSO-JUMP] request systemId={}, userId={}, remoteAddr={}", id, userId, request.getRemoteAddr());
+
         SysSystem cfg = sysSystemService.getById(id);
         if (cfg == null) {
+            log.warn("[SSO-JUMP] rejected reason=system_not_found, systemId={}, userId={}", id, userId);
             return ResponseEntity.notFound().build();
         }
 
-        // Get current user ID (from interceptor)
-        Long userId = (Long) request.getAttribute("userId");
         if (userId == null) {
+            log.warn("[SSO-JUMP] rejected reason=unauthenticated, systemId={}, systemName={}", id, cfg.getName());
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        if (cfg.getCallbackUrl() == null || cfg.getCallbackUrl().isBlank()) {
+            log.warn("[SSO-JUMP] rejected reason=callback_missing, systemId={}, systemName={}, userId={}",
+                    id, cfg.getName(), userId);
+            return ResponseEntity.badRequest().build();
         }
 
         // Generate real OAuth code
@@ -94,7 +104,13 @@ public class SystemController {
             targetUrl += "?code=" + code;
         }
 
+        log.info("[SSO-JUMP] success systemId={}, systemName={}, userId={}, codeRef={}, target={}",
+                id, cfg.getName(), userId, ref(code), cfg.getCallbackUrl());
         return ResponseEntity.ok(java.util.Collections.singletonMap("targetUrl", targetUrl));
+    }
+
+    private String ref(String value) {
+        return value == null ? "null" : Integer.toHexString(value.hashCode());
     }
 
     private SysSystem toEntity(SystemRequest req, Long id) {

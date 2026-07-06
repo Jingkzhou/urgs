@@ -7,7 +7,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.HandlerInterceptor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Component
 public class AuthenticationInterceptor implements HandlerInterceptor {
 
@@ -29,16 +31,22 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
 
         String token = extractToken(request);
         if (!StringUtils.hasText(token)) {
+            log.warn("[AUTH-GATE] rejected reason=token_missing, method={}, uri={}, remoteAddr={}",
+                    request.getMethod(), request.getRequestURI(), request.getRemoteAddr());
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             return false;
         }
 
         Long userId = authTokenService.validate(token);
         if (userId == null) {
+            log.warn("[AUTH-GATE] rejected reason=token_invalid, method={}, uri={}, tokenRef={}, remoteAddr={}",
+                    request.getMethod(), request.getRequestURI(), ref(token), request.getRemoteAddr());
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             return false;
         }
 
+        log.debug("[AUTH-GATE] accepted method={}, uri={}, userId={}, tokenRef={}",
+                request.getMethod(), request.getRequestURI(), userId, ref(token));
         request.setAttribute("userId", userId);
         return true;
     }
@@ -49,5 +57,9 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
             return bearerToken.substring(7);
         }
         return request.getParameter("token");
+    }
+
+    private String ref(String value) {
+        return value == null ? "null" : Integer.toHexString(value.hashCode());
     }
 }

@@ -2,10 +2,12 @@ package com.example.urgs_api.auth.service;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.Instant;
 import java.util.UUID;
 
+@Slf4j
 @Service
 public class AuthTokenService {
 
@@ -24,6 +26,7 @@ public class AuthTokenService {
                 VALUES (?, ?, ?)
                 ON DUPLICATE KEY UPDATE user_id = VALUES(user_id), expires_at = VALUES(expires_at)
                 """, token, userId, java.sql.Timestamp.from(expiresAt));
+        log.info("[AUTH-SESSION] issued userId={}, tokenRef={}, expiresAt={}", userId, ref(token), expiresAt);
         return token;
     }
 
@@ -41,16 +44,24 @@ public class AuthTokenService {
         }, token);
 
         if (session == null) {
+            log.warn("[AUTH-SESSION] validation_failed reason=not_found, tokenRef={}", ref(token));
             return null;
         }
         if (now.isAfter(session.expiresAt())) {
             jdbcTemplate.update("DELETE FROM sys_auth_session WHERE token = ?", token);
+            log.warn("[AUTH-SESSION] validation_failed reason=expired, userId={}, tokenRef={}, expiredAt={}",
+                    session.userId(), ref(token), session.expiresAt());
             return null;
         }
 
         jdbcTemplate.update("UPDATE sys_auth_session SET expires_at = ? WHERE token = ?",
                 java.sql.Timestamp.from(now.plusSeconds(TTL_SECONDS)), token);
+        log.debug("[AUTH-SESSION] validated userId={}, tokenRef={}", session.userId(), ref(token));
         return session.userId();
+    }
+
+    private String ref(String value) {
+        return value == null ? "null" : Integer.toHexString(value.hashCode());
     }
 
     private record AuthSession(Long userId, Instant expiresAt) {
