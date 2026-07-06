@@ -7,6 +7,10 @@ import com.example.urgs_api.marketplace.dto.WorkStatisticsDTO;
 import com.example.urgs_api.marketplace.model.Work;
 import com.example.urgs_api.marketplace.service.WorkService;
 import com.example.urgs_api.marketplace.service.WorkStatisticsService;
+import com.example.urgs_api.role.model.Role;
+import com.example.urgs_api.role.service.RoleService;
+import com.example.urgs_api.user.model.User;
+import com.example.urgs_api.user.service.UserService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.validation.Valid;
@@ -34,6 +38,12 @@ public class WorkController {
 
     @Autowired
     private WorkStatisticsService workStatisticsService;
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private RoleService roleService;
 
     @PostMapping
     public Work createWork(
@@ -84,8 +94,10 @@ public class WorkController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime deadlineEnd) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
         Page<Work> page = new Page<>(current, size);
-        LambdaQueryWrapper<Work> query = new LambdaQueryWrapper<Work>()
-                .eq(Work::getPublisherId, userId);
+        LambdaQueryWrapper<Work> query = new LambdaQueryWrapper<>();
+        if (!isRegTechAdmin(userId)) {
+            query.eq(Work::getPublisherId, userId);
+        }
         if (StringUtils.hasText(keyword)) {
             String trimmedKeyword = keyword.trim();
             query.and(wrapper -> wrapper
@@ -111,6 +123,25 @@ public class WorkController {
                 + "create_time DESC");
         Page<Work> resultPage = workService.page(page, query);
         return PageResult.of(resultPage);
+    }
+
+    private boolean isRegTechAdmin(String userId) {
+        try {
+            User user = userService.getById(Long.valueOf(userId));
+            if (user == null) {
+                return false;
+            }
+            if ("监管科技管理员".equals(user.getRoleName())) {
+                return true;
+            }
+            if (user.getRoleId() == null) {
+                return false;
+            }
+            Role role = roleService.getById(user.getRoleId());
+            return role != null && "监管科技管理员".equals(role.getName());
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
     }
 
     @GetMapping("/statistics")

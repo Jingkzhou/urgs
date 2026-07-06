@@ -85,6 +85,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
     const [pageSize, setPageSize] = useState(20);
     const [total, setTotal] = useState(0);
     const [assigneeLabels, setAssigneeLabels] = useState<Record<string, string>>({});
+    const [publisherLabels, setPublisherLabels] = useState<Record<string, string>>({});
     const [keyword, setKeyword] = useState('');
     const [queryKeyword, setQueryKeyword] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
@@ -123,6 +124,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                 setWorkTasks(taskMap);
                 setTaskSummaries(Object.fromEntries(entries.map(([workId, tasks]) => [workId, buildTaskSummary(tasks)])));
                 await resolveAssigneeLabels(entries.flatMap(([, tasks]) => tasks));
+                await resolvePublisherLabels(res.records);
             }
         } catch (error) {
             console.error('Failed to fetch works', error);
@@ -160,6 +162,22 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
             }
         }));
         setAssigneeLabels(Object.fromEntries(entries));
+    };
+
+    const resolvePublisherLabels = async (records: Work[]) => {
+        const publisherIds = Array.from(new Set(
+            records.map(work => work.publisherId).filter(Boolean)
+        ));
+        const entries = await Promise.all(publisherIds.map(async (publisherId) => {
+            try {
+                const users = await searchUsers(publisherId);
+                const matchedUser = users.find(user => user.id.toString() === publisherId) || users[0];
+                return [publisherId, matchedUser ? formatUserLabel(matchedUser) : publisherId] as const;
+            } catch (error) {
+                return [publisherId, publisherId] as const;
+            }
+        }));
+        setPublisherLabels(Object.fromEntries(entries));
     };
 
     useEffect(() => {
@@ -370,6 +388,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
         works.forEach(work => {
             const baseInfo = {
                 工作名称: work.title,
+                发布人: publisherLabels[work.publisherId] || work.publisherId,
                 需求编号: work.requirementNumber || '',
                 申请部门: work.applicationDepartment || '',
                 申请人: work.applicantName || '',
@@ -661,8 +680,8 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                 </div>
             ) : (
                 <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <div className="min-w-[1170px]">
-                        <div className="grid grid-cols-[72px_minmax(220px,1.5fr)_minmax(130px,.85fr)_minmax(150px,1fr)_minmax(140px,1fr)_104px_112px_160px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-bold text-slate-500">
+                    <div className="min-w-[1280px]">
+                        <div className="grid grid-cols-[72px_minmax(220px,1.5fr)_110px_minmax(130px,.85fr)_minmax(150px,1fr)_minmax(140px,1fr)_104px_112px_160px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-bold text-slate-500">
                             <div className="flex items-center gap-2">
                                 <input
                                     type="checkbox"
@@ -674,6 +693,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                 <span>{selectedWorkIds.length || ''}</span>
                             </div>
                             <span>工作 / 需求编号</span>
+                            <span>发布人</span>
                             <span>申请信息</span>
                             <span>执行人</span>
                             <span>系统 / 项目</span>
@@ -683,7 +703,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                         </div>
                         {works.map(work => (
                                 <div key={work.id} className="group/work border-b border-slate-100 last:border-b-0">
-                                    <div className="relative grid grid-cols-[72px_minmax(220px,1.5fr)_minmax(130px,.85fr)_minmax(150px,1fr)_minmax(140px,1fr)_104px_112px_160px] items-center gap-3 px-4 py-3.5 text-sm transition-all duration-200 hover:bg-white hover:shadow-[inset_3px_0_0_#60a5fa,0_8px_18px_rgba(15,23,42,0.06)]">
+                                    <div className="relative grid grid-cols-[72px_minmax(220px,1.5fr)_110px_minmax(130px,.85fr)_minmax(150px,1fr)_minmax(140px,1fr)_104px_112px_160px] items-center gap-3 px-4 py-3.5 text-sm transition-all duration-200 hover:bg-white hover:shadow-[inset_3px_0_0_#60a5fa,0_8px_18px_rgba(15,23,42,0.06)]">
                                         <span className="pointer-events-none absolute inset-x-4 bottom-0 h-px bg-gradient-to-r from-transparent via-slate-100 to-transparent opacity-0 transition-opacity group-hover/work:opacity-100" />
                                         <div className="flex items-center gap-2">
                                             <input
@@ -726,6 +746,9 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                                 </div>
                                             </div>
                                         </Tooltip>
+                                        <div className="truncate font-medium text-slate-700">
+                                            {publisherLabels[work.publisherId] || work.publisherId}
+                                        </div>
                                         <div className="min-w-0">
                                             <div className="truncate font-medium text-slate-700">{renderValue(work.applicationDepartment)}</div>
                                             <div className="mt-1 truncate text-xs text-slate-400">{renderValue(work.applicantName)}</div>
