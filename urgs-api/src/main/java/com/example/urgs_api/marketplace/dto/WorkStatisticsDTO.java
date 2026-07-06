@@ -20,8 +20,8 @@ public class WorkStatisticsDTO {
     private Integer completionRate;
     private List<GroupCount> workStatusDistribution = new ArrayList<>();
     private List<GroupCount> taskStatusDistribution = new ArrayList<>();
-    private List<GroupCount> progressDistribution = new ArrayList<>();
-    private List<TrendItem> completionTrend = new ArrayList<>();
+    private List<SystemTaskStats> systemTaskStats = new ArrayList<>();
+    private List<TrendItem> workTrend = new ArrayList<>();
     private List<AssigneeWorkload> assigneeWorkloads = new ArrayList<>();
     private List<AttentionItem> attentionItems = new ArrayList<>();
 
@@ -34,7 +34,8 @@ public class WorkStatisticsDTO {
     @Data
     public static class TrendItem {
         private LocalDate date;
-        private Integer completedCount;
+        private Integer createdWorkCount;
+        private Integer completedWorkCount;
     }
 
     @Data
@@ -44,6 +45,16 @@ public class WorkStatisticsDTO {
         private Integer completedCount;
         private Integer activeCount;
         private Integer overdueCount;
+    }
+
+    @Data
+    public static class SystemTaskStats {
+        private String systemName;
+        private Integer requirementCount;
+        private Integer totalTaskCount;
+        private Integer completedTaskCount;
+        private Integer overdueTaskCount;
+        private Integer completionRate;
     }
 
     @Data

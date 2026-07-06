@@ -711,8 +711,13 @@ const UserManagement: React.FC = () => {
 
     // Filtering Logic
     const filteredUsers = useMemo(() => {
+        const normalizedSearchTerm = searchTerm.replace(/\s+/g, '').toLowerCase();
         return users.filter(user => {
-            const matchesSearch = user.name.includes(searchTerm) || user.empId.includes(searchTerm);
+            const matchesSearch = !normalizedSearchTerm
+                || user.name.toLowerCase().includes(normalizedSearchTerm)
+                || user.empId.toLowerCase().includes(normalizedSearchTerm)
+                || user.namePinyin?.includes(normalizedSearchTerm)
+                || user.namePinyinInitials?.includes(normalizedSearchTerm);
             const matchesOrg = filterOrg === 'all' || user.orgName === filterOrg;
             const matchesRole = filterRole === 'all' || user.roleName === filterRole;
             const matchesStatus = filterStatus === 'all' || user.status === filterStatus;

@@ -320,7 +320,8 @@ export interface WorkStatisticsGroupCount {
 
 export interface WorkStatisticsTrendItem {
     date: string;
-    completedCount: number;
+    createdWorkCount: number;
+    completedWorkCount: number;
 }
 
 export interface WorkStatisticsAssigneeWorkload {
@@ -329,6 +330,15 @@ export interface WorkStatisticsAssigneeWorkload {
     completedCount: number;
     activeCount: number;
     overdueCount: number;
+}
+
+export interface WorkStatisticsSystemTask {
+    systemName: string;
+    requirementCount: number;
+    totalTaskCount: number;
+    completedTaskCount: number;
+    overdueTaskCount: number;
+    completionRate: number;
 }
 
 export interface WorkStatisticsAttentionItem {
@@ -356,8 +366,8 @@ export interface WorkStatistics {
     completionRate: number;
     workStatusDistribution: WorkStatisticsGroupCount[];
     taskStatusDistribution: WorkStatisticsGroupCount[];
-    progressDistribution: WorkStatisticsGroupCount[];
-    completionTrend: WorkStatisticsTrendItem[];
+    systemTaskStats: WorkStatisticsSystemTask[];
+    workTrend: WorkStatisticsTrendItem[];
     assigneeWorkloads: WorkStatisticsAssigneeWorkload[];
     attentionItems: WorkStatisticsAttentionItem[];
 }

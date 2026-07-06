@@ -8,6 +8,8 @@ import com.example.urgs_api.marketplace.model.WorkTask;
 import com.example.urgs_api.marketplace.service.WorkService;
 import com.example.urgs_api.marketplace.service.WorkStatisticsService;
 import com.example.urgs_api.marketplace.service.WorkTaskService;
+import com.example.urgs_api.system.model.SysSystem;
+import com.example.urgs_api.system.service.SysSystemService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -15,6 +17,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,6 +39,9 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
 
     @Autowired
     private WorkTaskService workTaskService;
+
+    @Autowired
+    private SysSystemService sysSystemService;
 
     @Override
     public WorkStatisticsDTO getStatistics(String publisherId, LocalDate startDate, LocalDate endDate) {
@@ -100,8 +106,8 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
 
         Map<String, List<WorkTask>> tasksByWorkId = tasks.stream()
                 .collect(Collectors.groupingBy(WorkTask::getWorkId));
-        statistics.setProgressDistribution(buildProgressDistribution(works, tasksByWorkId));
-        statistics.setCompletionTrend(buildCompletionTrend(tasks, startDate, endDate));
+        statistics.setSystemTaskStats(buildSystemTaskStats(works, tasksByWorkId, now));
+        statistics.setWorkTrend(buildWorkTrend(works, startDate, endDate));
         statistics.setAssigneeWorkloads(buildAssigneeWorkloads(tasks, now));
         statistics.setAttentionItems(buildAttentionItems(tasks, workById, now));
         return statistics;
@@ -127,72 +133,128 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
                 .collect(Collectors.toList());
     }
 
-    private List<WorkStatisticsDTO.GroupCount> buildProgressDistribution(
+    private List<WorkStatisticsDTO.SystemTaskStats> buildSystemTaskStats(
             List<Work> works,
-            Map<String, List<WorkTask>> tasksByWorkId) {
-        Map<String, Integer> counts = new LinkedHashMap<>();
-        counts.put("未开始", 0);
-        counts.put("推进中（1-49%）", 0);
-        counts.put("接近完成（50-99%）", 0);
-        counts.put("已完成", 0);
-        counts.put("已取消", 0);
-
+            Map<String, List<WorkTask>> tasksByWorkId,
+            LocalDateTime now) {
+        Set<Long> systemIds = tasksByWorkId.values().stream()
+                .flatMap(List::stream)
+                .filter(task -> task.getInvolvedSystemIds() != null)
+                .flatMap(task -> task.getInvolvedSystemIds().stream())
+                .filter(id -> id != null)
+                .collect(Collectors.toSet());
+        Map<Long, String> systemNames = systemIds.isEmpty()
+                ? Map.of()
+                : sysSystemService.listByIds(systemIds).stream()
+                        .collect(Collectors.toMap(
+                                SysSystem::getId,
+                                system -> isBlank(system.getName()) ? "系统 #" + system.getId() : system.getName(),
+                                (left, right) -> left));
+        Map<String, SystemTaskAccumulator> statsBySystem = new LinkedHashMap<>();
         works.forEach(work -> {
-            if (WorkStatus.CANCELLED.name().equals(normalizeStatus(work.getStatus()))) {
-                counts.put("已取消", counts.get("已取消") + 1);
-                return;
-            }
             List<WorkTask> workTasks = tasksByWorkId.getOrDefault(work.getId(), List.of());
-            long effectiveCount = workTasks.stream()
+            Set<String> involvedSystems = workTasks.stream()
+                    .flatMap(task -> resolveTaskSystems(task, work, systemNames).stream())
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            if (involvedSystems.isEmpty()) {
+                involvedSystems.add(resolveOwningSystem(work));
+            }
+
+            String requirementKey = isBlank(work.getRequirementNumber())
+                    ? "WORK:" + work.getId()
+                    : "REQ:" + work.getRequirementNumber().trim();
+            involvedSystems.forEach(systemName -> statsBySystem
+                    .computeIfAbsent(systemName, key -> new SystemTaskAccumulator())
+                    .requirementKeys.add(requirementKey));
+
+            workTasks.stream()
                     .filter(task -> !TaskStatus.CANCELLED.name().equals(normalizeStatus(task.getStatus())))
-                    .count();
-            long completedCount = workTasks.stream()
-                    .filter(this::isCompletedTask)
-                    .count();
-            int percent = effectiveCount == 0
-                    ? 0
-                    : (int) Math.round(completedCount * 100.0 / effectiveCount);
-            String group = percent == 0
-                    ? "未开始"
-                    : percent < 50
-                            ? "推进中（1-49%）"
-                            : percent < 100 ? "接近完成（50-99%）" : "已完成";
-            counts.put(group, counts.get(group) + 1);
+                    .forEach(task -> resolveTaskSystems(task, work, systemNames).forEach(systemName -> {
+                        SystemTaskAccumulator accumulator = statsBySystem
+                                .computeIfAbsent(systemName, key -> new SystemTaskAccumulator());
+                        accumulator.totalTaskCount++;
+                        if (isCompletedTask(task)) {
+                            accumulator.completedTaskCount++;
+                        }
+                        if (isOverdueTask(task, now)) {
+                            accumulator.overdueTaskCount++;
+                        }
+                    }));
         });
 
-        return counts.entrySet().stream()
+        return statsBySystem.entrySet().stream()
                 .map(entry -> {
-                    WorkStatisticsDTO.GroupCount item = new WorkStatisticsDTO.GroupCount();
-                    item.setName(entry.getKey());
-                    item.setValue(entry.getValue());
+                    SystemTaskAccumulator accumulator = entry.getValue();
+                    WorkStatisticsDTO.SystemTaskStats item = new WorkStatisticsDTO.SystemTaskStats();
+                    item.setSystemName(entry.getKey());
+                    item.setRequirementCount(accumulator.requirementKeys.size());
+                    item.setTotalTaskCount(accumulator.totalTaskCount);
+                    item.setCompletedTaskCount(accumulator.completedTaskCount);
+                    item.setOverdueTaskCount(accumulator.overdueTaskCount);
+                    item.setCompletionRate(accumulator.totalTaskCount == 0
+                            ? 0
+                            : (int) Math.round(accumulator.completedTaskCount * 100.0 / accumulator.totalTaskCount));
                     return item;
                 })
+                .sorted(Comparator
+                        .comparing(WorkStatisticsDTO.SystemTaskStats::getTotalTaskCount)
+                        .reversed()
+                        .thenComparing(WorkStatisticsDTO.SystemTaskStats::getSystemName))
                 .collect(Collectors.toList());
     }
 
-    private List<WorkStatisticsDTO.TrendItem> buildCompletionTrend(
-            List<WorkTask> tasks,
+    private Set<String> resolveTaskSystems(
+            WorkTask task,
+            Work work,
+            Map<Long, String> systemNames) {
+        if (task.getInvolvedSystemIds() == null || task.getInvolvedSystemIds().isEmpty()) {
+            return Set.of(resolveOwningSystem(work));
+        }
+        Set<String> resolvedSystems = task.getInvolvedSystemIds().stream()
+                .filter(id -> id != null)
+                .map(id -> systemNames.getOrDefault(id, "系统 #" + id))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        return resolvedSystems.isEmpty() ? Set.of(resolveOwningSystem(work)) : resolvedSystems;
+    }
+
+    private String resolveOwningSystem(Work work) {
+        return isBlank(work.getOwningSystem()) ? "未指定系统" : work.getOwningSystem().trim();
+    }
+
+    private List<WorkStatisticsDTO.TrendItem> buildWorkTrend(
+            List<Work> works,
             LocalDate startDate,
             LocalDate endDate) {
-        Map<LocalDate, Integer> counts = new LinkedHashMap<>();
+        Map<LocalDate, Integer> completedCounts = new LinkedHashMap<>();
+        Map<LocalDate, Integer> createdCounts = new LinkedHashMap<>();
         for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
-            counts.put(date, 0);
+            completedCounts.put(date, 0);
+            createdCounts.put(date, 0);
         }
-        tasks.stream()
-                .filter(this::isCompletedTask)
-                .map(task -> task.getReviewedAt() != null ? task.getReviewedAt() : task.getUpdateTime())
-                .filter(completedAt -> completedAt != null
-                        && !completedAt.toLocalDate().isBefore(startDate)
-                        && !completedAt.toLocalDate().isAfter(endDate))
-                .forEach(completedAt -> counts.computeIfPresent(
-                        completedAt.toLocalDate(),
+        works.stream()
+                .filter(work -> WorkStatus.COMPLETED.name().equals(normalizeStatus(work.getStatus())))
+                .map(Work::getDeadline)
+                .filter(deadline -> deadline != null
+                        && !deadline.toLocalDate().isBefore(startDate)
+                        && !deadline.toLocalDate().isAfter(endDate))
+                .forEach(deadline -> completedCounts.computeIfPresent(
+                        deadline.toLocalDate(),
+                        (date, count) -> count + 1));
+        works.stream()
+                .map(Work::getCreateTime)
+                .filter(createdAt -> createdAt != null
+                        && !createdAt.toLocalDate().isBefore(startDate)
+                        && !createdAt.toLocalDate().isAfter(endDate))
+                .forEach(createdAt -> createdCounts.computeIfPresent(
+                        createdAt.toLocalDate(),
                         (date, count) -> count + 1));
 
-        return counts.entrySet().stream()
+        return completedCounts.entrySet().stream()
                 .map(entry -> {
                     WorkStatisticsDTO.TrendItem item = new WorkStatisticsDTO.TrendItem();
                     item.setDate(entry.getKey());
-                    item.setCompletedCount(entry.getValue());
+                    item.setCreatedWorkCount(createdCounts.getOrDefault(entry.getKey(), 0));
+                    item.setCompletedWorkCount(entry.getValue());
                     return item;
                 })
                 .collect(Collectors.toList());
@@ -289,5 +351,12 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
 
     private boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
+    }
+
+    private static class SystemTaskAccumulator {
+        private final Set<String> requirementKeys = new LinkedHashSet<>();
+        private int totalTaskCount;
+        private int completedTaskCount;
+        private int overdueTaskCount;
     }
 }

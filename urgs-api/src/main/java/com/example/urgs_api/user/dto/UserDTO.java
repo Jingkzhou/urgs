@@ -1,6 +1,7 @@
 package com.example.urgs_api.user.dto;
 
 import com.example.urgs_api.user.model.User;
+import com.example.urgs_api.user.support.UserSearchMatcher;
 
 public class UserDTO {
     private String id;
@@ -15,6 +16,8 @@ public class UserDTO {
     private String status;
     private String avatarUrl;
     private String email;
+    private String namePinyin;
+    private String namePinyinInitials;
 
     public UserDTO() {
     }
@@ -52,6 +55,8 @@ public class UserDTO {
         dto.setStatus(user.getStatus());
         dto.setAvatarUrl(user.getAvatarUrl());
         dto.setEmail(user.getEmail());
+        dto.setNamePinyin(UserSearchMatcher.toFullPinyin(user.getName()));
+        dto.setNamePinyinInitials(UserSearchMatcher.toPinyinInitials(user.getName()));
         return dto;
     }
 
@@ -170,5 +175,21 @@ public class UserDTO {
 
     public void setRoleId(Long roleId) {
         this.roleId = roleId;
+    }
+
+    public String getNamePinyin() {
+        return namePinyin;
+    }
+
+    public void setNamePinyin(String namePinyin) {
+        this.namePinyin = namePinyin;
+    }
+
+    public String getNamePinyinInitials() {
+        return namePinyinInitials;
+    }
+
+    public void setNamePinyinInitials(String namePinyinInitials) {
+        this.namePinyinInitials = namePinyinInitials;
     }
 }

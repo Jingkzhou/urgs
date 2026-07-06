@@ -5,6 +5,7 @@ import com.example.urgs_api.user.dto.UserBatchImportResultDTO;
 import com.example.urgs_api.user.mapper.UserMapper;
 import com.example.urgs_api.user.model.User;
 import com.example.urgs_api.user.service.UserService;
+import com.example.urgs_api.user.support.UserSearchMatcher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -84,7 +85,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     @Override
     public java.util.List<User> searchUsers(String keyword) {
-        return baseMapper.searchUsers(keyword);
+        return UserSearchMatcher.filter(baseMapper.searchUsers(null), keyword);
     }
 
     @Override

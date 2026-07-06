@@ -20,6 +20,7 @@ import com.example.urgs_api.online.mapper.OnlineDocumentPermissionMapper;
 import com.example.urgs_api.user.dto.UserDTO;
 import com.example.urgs_api.user.mapper.UserMapper;
 import com.example.urgs_api.user.model.User;
+import com.example.urgs_api.user.support.UserSearchMatcher;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -380,7 +381,7 @@ public class OnlineDocumentService {
     }
 
     public List<UserDTO> searchPermissionUsers(String keyword) {
-        return userMapper.searchUsers(keyword).stream()
+        return UserSearchMatcher.filter(userMapper.searchUsers(null), keyword).stream()
                 .limit(50)
                 .map(UserDTO::fromEntity)
                 .toList();

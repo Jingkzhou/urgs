@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Area,
-    AreaChart,
     Bar,
     BarChart,
     CartesianGrid,
     Cell,
+    ComposedChart,
     Legend,
+    Line,
     Pie,
     PieChart,
     ResponsiveContainer,
@@ -18,6 +19,7 @@ import ReactMarkdown from 'react-markdown';
 import {
     BarChart3,
     Bot,
+    Building2,
     CalendarRange,
     CheckCircle2,
     CircleAlert,
@@ -33,6 +35,7 @@ import {
     getWorkStatistics,
     WorkStatistics as WorkStatisticsData,
     WorkStatisticsAssigneeWorkload,
+    WorkStatisticsSystemTask,
 } from '../../api/marketplace';
 import { streamChatResponse } from '../../api/chat';
 import { searchUsers } from '../../api/user';
@@ -47,8 +50,6 @@ const WORK_STATUS_COLORS: Record<string, string> = {
     COMPLETED: '#16a34a',
     CANCELLED: '#cbd5e1',
 };
-
-const PROGRESS_COLORS = ['#cbd5e1', '#60a5fa', '#818cf8', '#22c55e', '#94a3b8'];
 
 const formatDate = (value?: string) => value ? dayjs(value).format('YYYY-MM-DD') : '-';
 
@@ -120,7 +121,7 @@ const WorkStatistics: React.FC = () => {
         return assigneeLabels[assigneeId] || assigneeId;
     };
 
-    const trendData = useMemo(() => (statistics?.completionTrend || []).map(item => ({
+    const trendData = useMemo(() => (statistics?.workTrend || []).map(item => ({
         ...item,
         displayDate: dayjs(item.date).format('MM-DD'),
     })), [statistics]);
@@ -135,6 +136,10 @@ const WorkStatistics: React.FC = () => {
         name: renderAssignee(item.assigneeId),
         pendingCount: Math.max(item.activeCount - item.overdueCount, 0),
     })), [statistics, assigneeLabels]);
+    const systemTaskData = useMemo(
+        () => (statistics?.systemTaskStats || []).slice(0, 8),
+        [statistics]
+    );
 
     const buildAiPrompt = (data: WorkStatisticsData) => {
         const workStatuses = data.workStatusDistribution
@@ -321,10 +326,10 @@ ${attentionItems}
             </div>
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                <ChartCard icon={<TrendingUp size={16} className="text-blue-600" />} title="任务完成趋势" subtitle="按实际完成日期统计">
-                    {statistics.completedTasks > 0 ? (
+                <ChartCard icon={<TrendingUp size={16} className="text-blue-600" />} title="工作趋势" subtitle="新增按创建日期，完成按截止日期">
+                    {trendData.some(item => item.createdWorkCount > 0 || item.completedWorkCount > 0) ? (
                         <ResponsiveContainer width="100%" height={250} minWidth={0}>
-                            <AreaChart data={trendData} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
+                            <ComposedChart data={trendData} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="completionTrendFill" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="5%" stopColor="#2563eb" stopOpacity={0.28} />
@@ -334,18 +339,28 @@ ${attentionItems}
                                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                                 <XAxis dataKey="displayDate" tick={{ fontSize: 11, fill: '#64748b' }} minTickGap={28} />
                                 <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                                <Tooltip labelFormatter={label => `${label}`} formatter={value => [`${value} 个`, '完成任务']} />
+                                <Tooltip labelFormatter={label => `${label}`} formatter={value => [`${value} 个`]} />
+                                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
                                 <Area
                                     type="monotone"
-                                    dataKey="completedCount"
+                                    dataKey="completedWorkCount"
                                     stroke="#2563eb"
                                     strokeWidth={2}
                                     fill="url(#completionTrendFill)"
-                                    name="完成任务"
+                                    name="完成工作"
                                 />
-                            </AreaChart>
+                                <Line
+                                    type="monotone"
+                                    dataKey="createdWorkCount"
+                                    stroke="#f59e0b"
+                                    strokeWidth={2}
+                                    dot={false}
+                                    activeDot={{ r: 4 }}
+                                    name="新增工作"
+                                />
+                            </ComposedChart>
                         </ResponsiveContainer>
-                    ) : <EmptyChart text="该时间段内暂无已完成任务" />}
+                    ) : <EmptyChart text="该时间段内暂无工作趋势数据" />}
                 </ChartCard>
 
                 <ChartCard icon={<CheckCircle2 size={16} className="text-emerald-600" />} title="工作状态分布" subtitle="区间内工作的当前状态">
@@ -371,22 +386,37 @@ ${attentionItems}
                     ) : <EmptyChart text="该时间段内暂无工作" />}
                 </ChartCard>
 
-                <ChartCard icon={<BarChart3 size={16} className="text-indigo-600" />} title="工作进度区间" subtitle="按任务完成比例划分">
-                    {statistics.progressDistribution.some(item => item.value > 0) ? (
+                <ChartCard
+                    icon={<Building2 size={16} className="text-indigo-600" />}
+                    title="涉及系统任务统计"
+                    subtitle={statistics.systemTaskStats.length > 8
+                        ? `按有效任务量展示前 8 / ${statistics.systemTaskStats.length} 个系统`
+                        : "需求、完成与逾期数量"}
+                >
+                    {systemTaskData.length > 0 ? (
                         <ResponsiveContainer width="100%" height={250} minWidth={0}>
-                            <BarChart data={statistics.progressDistribution} margin={{ top: 8, right: 12, left: -18, bottom: 18 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                                <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} interval={0} />
-                                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                                <Tooltip formatter={value => [`${value} 个`, '工作数']} />
-                                <Bar dataKey="value" radius={[5, 5, 0, 0]} name="工作数">
-                                    {statistics.progressDistribution.map((item, index) => (
-                                        <Cell key={item.name} fill={PROGRESS_COLORS[index % PROGRESS_COLORS.length]} />
-                                    ))}
-                                </Bar>
+                            <BarChart
+                                data={systemTaskData}
+                                layout="vertical"
+                                margin={{ top: 8, right: 18, left: 8, bottom: 0 }}
+                            >
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
+                                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                                <YAxis
+                                    type="category"
+                                    dataKey="systemName"
+                                    width={88}
+                                    tick={{ fontSize: 11, fill: '#475569' }}
+                                    tickFormatter={value => value.length > 7 ? `${value.slice(0, 7)}…` : value}
+                                />
+                                <Tooltip content={<SystemTaskTooltip />} />
+                                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                                <Bar dataKey="requirementCount" name="需求数" fill="#818cf8" />
+                                <Bar dataKey="completedTaskCount" name="已完成" fill="#22c55e" />
+                                <Bar dataKey="overdueTaskCount" name="已逾期" fill="#f43f5e" radius={[0, 5, 5, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
-                    ) : <EmptyChart text="暂无可计算的工作进度" />}
+                    ) : <EmptyChart text="暂无涉及系统的任务数据" />}
                 </ChartCard>
 
                 <ChartCard icon={<Users size={16} className="text-cyan-600" />} title="人员任务负载" subtitle="最多展示任务量前 8 人">
@@ -583,6 +613,27 @@ const WorkloadTooltip: React.FC<{
                 <div>已完成：{data.completedCount}</div>
                 <div>待推进：{Math.max(data.activeCount - data.overdueCount, 0)}</div>
                 <div className={data.overdueCount > 0 ? 'font-bold text-rose-600' : ''}>逾期：{data.overdueCount}</div>
+            </div>
+        </div>
+    );
+};
+
+const SystemTaskTooltip: React.FC<{
+    active?: boolean;
+    payload?: Array<{ payload: WorkStatisticsSystemTask }>;
+}> = ({ active, payload }) => {
+    if (!active || !payload?.length) return null;
+    const data = payload[0].payload;
+    return (
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg">
+            <div className="mb-1.5 font-bold text-slate-800">{data.systemName}</div>
+            <div className="space-y-1 text-slate-600">
+                <div>需求数量：{data.requirementCount}</div>
+                <div>有效任务：{data.totalTaskCount}</div>
+                <div>完成数量：{data.completedTaskCount}（{data.completionRate}%）</div>
+                <div className={data.overdueTaskCount > 0 ? 'font-bold text-rose-600' : ''}>
+                    逾期数量：{data.overdueTaskCount}
+                </div>
             </div>
         </div>
     );

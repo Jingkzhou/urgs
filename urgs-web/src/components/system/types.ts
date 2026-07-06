@@ -23,6 +23,8 @@ export interface Role {
 export interface User {
     id: string;
     name: string;
+    namePinyin?: string;
+    namePinyinInitials?: string;
     empId: string;
     orgName: string;
     roleName: string;

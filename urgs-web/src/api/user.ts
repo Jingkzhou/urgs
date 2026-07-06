@@ -26,6 +26,8 @@ export const changePassword = async (data: ChangePasswordRequest) => {
 export interface UserDTO {
     id: string | number;
     name: string;
+    namePinyin?: string;
+    namePinyinInitials?: string;
     orgName: string;
     empId: string;
     roleName: string;

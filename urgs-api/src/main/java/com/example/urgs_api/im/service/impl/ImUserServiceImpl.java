@@ -6,6 +6,7 @@ import com.example.urgs_api.im.entity.ImUser;
 import com.example.urgs_api.im.mapper.ImFriendshipMapper;
 import com.example.urgs_api.im.mapper.ImUserMapper;
 import com.example.urgs_api.im.service.ImUserService;
+import com.example.urgs_api.user.support.UserSearchMatcher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -127,12 +128,8 @@ public class ImUserServiceImpl implements ImUserService {
 
     @Override
     public List<ImUser> searchUsers(String keyword) {
-        // Search in sys_user
-        QueryWrapper<com.example.urgs_api.user.model.User> qw = new QueryWrapper<>();
-        if (keyword != null && !keyword.trim().isEmpty()) {
-            qw.like("name", keyword).or().like("emp_id", keyword);
-        }
-        List<com.example.urgs_api.user.model.User> sysUsers = sysUserMapper.selectList(qw);
+        List<com.example.urgs_api.user.model.User> sysUsers =
+                UserSearchMatcher.filter(sysUserMapper.searchUsers(null), keyword);
 
         // Convert to ImUser (Transient, not checking DB existence)
         return sysUsers.stream().map(u -> {

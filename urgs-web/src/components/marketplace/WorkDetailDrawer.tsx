@@ -449,6 +449,11 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
             .map(task => renderAssignee(task.assigneeId))
             .filter(Boolean)
     ));
+    const getTaskInvolvedSystemNames = (task: WorkTask) => (task.involvedSystemIds || [])
+        .map(systemId => systemOptions.find(option => option.value === Number(systemId))?.label || String(systemId));
+    const workInvolvedSystemNames = Array.from(new Set(
+        tasks.flatMap(getTaskInvolvedSystemNames)
+    ));
     const snapshotAssetRecords = tasks.flatMap(task => task.assetMaintenanceSnapshot
         ? getTaskAssetRecords(task)
         : []);
@@ -478,7 +483,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
     const createdAssetCount = workSummaryRecords.filter(record => record.modType === 'CREATE').length;
     const updatedAssetCount = workSummaryRecords.filter(record => record.modType === 'UPDATE').length;
     const deletedAssetCount = workSummaryRecords.filter(record => record.modType === 'DELETE').length;
-    const involvedSystems = Array.from(new Set(
+    const assetInvolvedSystems = Array.from(new Set(
         workSummaryRecords
             .map(record => record.systemCode)
             .filter((value): value is string => Boolean(value))
@@ -572,6 +577,19 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                         </div>
                     </div>
 
+                    <section className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                        <div className="mb-2 text-sm font-bold text-slate-800">涉及系统</div>
+                        {workInvolvedSystemNames.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                                {workInvolvedSystemNames.map(systemName => (
+                                    <Tag key={systemName} color="blue" className="!m-0">{systemName}</Tag>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-xs text-slate-400">各任务暂未填写涉及系统</div>
+                        )}
+                    </section>
+
                     <section>
                         <Title level={5}>工作描述</Title>
                         <Paragraph className="text-slate-600 whitespace-pre-wrap bg-slate-50/50 p-4 rounded-xl border border-slate-100">
@@ -612,7 +630,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                             <div className="mt-2 grid gap-2 text-xs text-slate-500 md:grid-cols-2">
                                 <div className="truncate">
                                     <span className="font-bold text-slate-600">涉及系统：</span>
-                                    {involvedSystems.length > 0 ? involvedSystems.join('、') : '暂无'}
+                                    {assetInvolvedSystems.length > 0 ? assetInvolvedSystems.join('、') : '暂无'}
                                 </div>
                                 <div className="truncate">
                                     <span className="font-bold text-slate-600">涉及人员：</span>
@@ -795,6 +813,9 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                         <Clock size={12} /> {new Date(mainTask.deadline).toLocaleDateString()}
                                                     </span>
                                                 )}
+                                                {getTaskInvolvedSystemNames(mainTask).length > 0 && (
+                                                    <span>涉及系统: {getTaskInvolvedSystemNames(mainTask).join('、')}</span>
+                                                )}
                                                 <button
                                                     type="button"
                                                     onClick={() => openTaskDetail(mainTask)}
@@ -874,6 +895,9 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                                 )}
                                                                 {task.requiredSkills && (
                                                                     <span className="truncate max-w-[200px]">技能: {task.requiredSkills}</span>
+                                                                )}
+                                                                {getTaskInvolvedSystemNames(task).length > 0 && (
+                                                                    <span>涉及系统: {getTaskInvolvedSystemNames(task).join('、')}</span>
                                                                 )}
                                                                 <button
                                                                     type="button"
