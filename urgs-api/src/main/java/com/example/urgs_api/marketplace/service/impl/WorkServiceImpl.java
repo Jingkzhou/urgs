@@ -124,10 +124,6 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         if (work == null || !userId.equals(work.getPublisherId())) {
             throw new IllegalArgumentException("工作不存在或无权操作");
         }
-        if (WorkStatus.PAUSED.name().equals(work.getStatus())) {
-            throw new IllegalStateException("工作已暂停，不允许修改");
-        }
-
         work.setTitle(dto.getTitle());
         work.setDescription(dto.getDescription());
         work.setPriority(dto.getPriority() != null ? dto.getPriority() : "P2");

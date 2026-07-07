@@ -179,7 +179,7 @@ public class WorkController {
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @PathVariable String id) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        workService.cancelWork(id, userId);
+        workService.cancelWork(id, resolveAuthorizedPublisherId(id, userId));
         return ResponseEntity.ok().build();
     }
 

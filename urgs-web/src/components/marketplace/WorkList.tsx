@@ -766,8 +766,6 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                         </div>
                                         <div className="flex justify-end">
                                             <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white/95 px-2 py-1 shadow-sm">
-                                                {work.status !== 'PAUSED' && (
-                                                <>
                                                 <button
                                                     onClick={() => {
                                                         setEditingWorkId(work.id);
@@ -787,7 +785,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                                     <Play size={13} />发布
                                                 </button>
                                                 )}
-                                                {(work.status === 'DRAFT' || work.status === 'PUBLISHED') && (
+                                                {['DRAFT', 'PUBLISHED', 'PAUSED'].includes(work.status) && (
                                                 <button
                                                     onClick={() => handleCancel(work.id)}
                                                     className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-red-500 transition-colors hover:bg-red-50 hover:text-red-700"
@@ -804,8 +802,6 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                                 >
                                                     <PauseCircle size={13} />暂停
                                                 </button>
-                                                )}
-                                                </>
                                                 )}
                                                 {work.status === 'PAUSED' && (
                                                 <button
