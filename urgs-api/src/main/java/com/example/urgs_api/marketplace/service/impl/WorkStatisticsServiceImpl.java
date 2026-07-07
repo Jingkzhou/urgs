@@ -279,6 +279,9 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
                     workload.setActiveCount((int) entry.getValue().stream()
                             .filter(task -> !CLOSED_TASK_STATUSES.contains(normalizeStatus(task.getStatus())))
                             .count());
+                    workload.setPausedCount((int) entry.getValue().stream()
+                            .filter(task -> TaskStatus.PAUSED.name().equals(normalizeStatus(task.getStatus())))
+                            .count());
                     workload.setOverdueCount((int) entry.getValue().stream()
                             .filter(task -> isOverdueTask(task, now))
                             .count());

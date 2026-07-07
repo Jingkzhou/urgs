@@ -44,6 +44,7 @@ public class WorkStatisticsDTO {
         private Integer totalCount;
         private Integer completedCount;
         private Integer activeCount;
+        private Integer pausedCount;
         private Integer overdueCount;
     }
 

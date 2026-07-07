@@ -54,7 +54,7 @@ const WORK_STATUS_COLORS: Record<string, string> = {
 const formatDate = (value?: string) => value ? dayjs(value).format('YYYY-MM-DD') : '-';
 
 const WorkStatistics: React.FC = () => {
-    const [startDate, setStartDate] = useState(() => dayjs().subtract(29, 'day').format('YYYY-MM-DD'));
+    const [startDate, setStartDate] = useState(() => dayjs().startOf('year').format('YYYY-MM-DD'));
     const [endDate, setEndDate] = useState(() => dayjs().format('YYYY-MM-DD'));
     const [statistics, setStatistics] = useState<WorkStatisticsData | null>(null);
     const [assigneeLabels, setAssigneeLabels] = useState<Record<string, string>>({});
@@ -134,10 +134,10 @@ const WorkStatistics: React.FC = () => {
     const workloadData = useMemo(() => (statistics?.assigneeWorkloads || []).map(item => ({
         ...item,
         name: renderAssignee(item.assigneeId),
-        pendingCount: Math.max(item.activeCount - item.overdueCount, 0),
+        pendingCount: Math.max(item.activeCount - item.pausedCount - item.overdueCount, 0),
     })), [statistics, assigneeLabels]);
     const systemTaskData = useMemo(
-        () => (statistics?.systemTaskStats || []).slice(0, 8),
+        () => statistics?.systemTaskStats || [],
         [statistics]
     );
 
@@ -150,7 +150,7 @@ const WorkStatistics: React.FC = () => {
             .join('、') || '暂无';
         const workloads = data.assigneeWorkloads
             .slice(0, 5)
-            .map(item => `${renderAssignee(item.assigneeId)}：总任务 ${item.totalCount}，已完成 ${item.completedCount}，待推进 ${item.activeCount}，逾期 ${item.overdueCount}`)
+            .map(item => `${renderAssignee(item.assigneeId)}：总任务 ${item.totalCount}，已完成 ${item.completedCount}，待推进 ${Math.max(item.activeCount - item.pausedCount - item.overdueCount, 0)}，暂停 ${item.pausedCount}，逾期 ${item.overdueCount}`)
             .join('\n') || '暂无';
         const attentionItems = data.attentionItems
             .slice(0, 8)
@@ -389,33 +389,12 @@ ${attentionItems}
                 <ChartCard
                     icon={<Building2 size={16} className="text-indigo-600" />}
                     title="涉及系统任务统计"
-                    subtitle={statistics.systemTaskStats.length > 8
-                        ? `按有效任务量展示前 8 / ${statistics.systemTaskStats.length} 个系统`
+                    subtitle={systemTaskData.length > 0
+                        ? `全部展示 ${systemTaskData.length} 个有工作系统，按有效任务量降序`
                         : "需求、完成与逾期数量"}
                 >
                     {systemTaskData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={250} minWidth={0}>
-                            <BarChart
-                                data={systemTaskData}
-                                layout="vertical"
-                                margin={{ top: 8, right: 18, left: 8, bottom: 0 }}
-                            >
-                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
-                                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                                <YAxis
-                                    type="category"
-                                    dataKey="systemName"
-                                    width={88}
-                                    tick={{ fontSize: 11, fill: '#475569' }}
-                                    tickFormatter={value => value.length > 7 ? `${value.slice(0, 7)}…` : value}
-                                />
-                                <Tooltip content={<SystemTaskTooltip />} />
-                                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                                <Bar dataKey="requirementCount" name="需求数" fill="#818cf8" />
-                                <Bar dataKey="completedTaskCount" name="已完成" fill="#22c55e" />
-                                <Bar dataKey="overdueTaskCount" name="已逾期" fill="#f43f5e" radius={[0, 5, 5, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
+                        <SystemTaskList data={systemTaskData} />
                     ) : <EmptyChart text="暂无涉及系统的任务数据" />}
                 </ChartCard>
 
@@ -436,6 +415,7 @@ ${attentionItems}
                                 <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
                                 <Bar dataKey="completedCount" name="已完成" stackId="workload" fill="#22c55e" />
                                 <Bar dataKey="pendingCount" name="待推进" stackId="workload" fill="#60a5fa" />
+                                <Bar dataKey="pausedCount" name="已暂停" stackId="workload" fill="#f59e0b" />
                                 <Bar dataKey="overdueCount" name="逾期" stackId="workload" fill="#f43f5e" radius={[0, 5, 5, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
@@ -599,9 +579,56 @@ const EmptyChart: React.FC<{ text: string }> = ({ text }) => (
     </div>
 );
 
+const SystemTaskList: React.FC<{ data: WorkStatisticsSystemTask[] }> = ({ data }) => (
+    <div className="max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
+        <div className="space-y-2">
+            {data.map((item, index) => {
+                const completionRate = Math.min(Math.max(item.completionRate || 0, 0), 100);
+                return (
+                    <div
+                        key={`${item.systemName}-${index}`}
+                        className="rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2.5 transition-colors hover:border-indigo-100 hover:bg-indigo-50/40"
+                    >
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="flex min-w-0 items-start gap-2.5">
+                                <span className="mt-0.5 flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-md bg-indigo-50 px-1 text-[11px] font-bold text-indigo-600">
+                                    {index + 1}
+                                </span>
+                                <div className="min-w-0">
+                                    <div className="truncate text-sm font-bold text-slate-800" title={item.systemName}>
+                                        {item.systemName}
+                                    </div>
+                                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                                        <span>需求 {item.requirementCount}</span>
+                                        <span>有效任务 {item.totalTaskCount}</span>
+                                        <span>已完成 {item.completedTaskCount}</span>
+                                        <span className={item.overdueTaskCount > 0 ? 'font-bold text-rose-600' : ''}>
+                                            逾期 {item.overdueTaskCount}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="shrink-0 text-right">
+                                <div className="text-sm font-bold text-slate-800">{item.completionRate}%</div>
+                                <div className="text-[11px] text-slate-400">完成率</div>
+                            </div>
+                        </div>
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                            <div
+                                className="h-full rounded-full bg-emerald-500 transition-all"
+                                style={{ width: `${completionRate}%` }}
+                            />
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    </div>
+);
+
 const WorkloadTooltip: React.FC<{
     active?: boolean;
-    payload?: Array<{ payload: WorkStatisticsAssigneeWorkload & { name: string } }>;
+    payload?: Array<{ payload: WorkStatisticsAssigneeWorkload & { name: string; pendingCount: number } }>;
 }> = ({ active, payload }) => {
     if (!active || !payload?.length) return null;
     const data = payload[0].payload;
@@ -611,29 +638,9 @@ const WorkloadTooltip: React.FC<{
             <div className="space-y-1 text-slate-600">
                 <div>总任务：{data.totalCount}</div>
                 <div>已完成：{data.completedCount}</div>
-                <div>待推进：{Math.max(data.activeCount - data.overdueCount, 0)}</div>
+                <div>待推进：{data.pendingCount}</div>
+                <div className={data.pausedCount > 0 ? 'font-bold text-amber-600' : ''}>已暂停：{data.pausedCount}</div>
                 <div className={data.overdueCount > 0 ? 'font-bold text-rose-600' : ''}>逾期：{data.overdueCount}</div>
-            </div>
-        </div>
-    );
-};
-
-const SystemTaskTooltip: React.FC<{
-    active?: boolean;
-    payload?: Array<{ payload: WorkStatisticsSystemTask }>;
-}> = ({ active, payload }) => {
-    if (!active || !payload?.length) return null;
-    const data = payload[0].payload;
-    return (
-        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg">
-            <div className="mb-1.5 font-bold text-slate-800">{data.systemName}</div>
-            <div className="space-y-1 text-slate-600">
-                <div>需求数量：{data.requirementCount}</div>
-                <div>有效任务：{data.totalTaskCount}</div>
-                <div>完成数量：{data.completedTaskCount}（{data.completionRate}%）</div>
-                <div className={data.overdueTaskCount > 0 ? 'font-bold text-rose-600' : ''}>
-                    逾期数量：{data.overdueTaskCount}
-                </div>
             </div>
         </div>
     );

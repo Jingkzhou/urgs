@@ -329,6 +329,7 @@ export interface WorkStatisticsAssigneeWorkload {
     totalCount: number;
     completedCount: number;
     activeCount: number;
+    pausedCount: number;
     overdueCount: number;
 }
 
