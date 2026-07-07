@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { Tooltip, Pagination } from 'antd';
-import { listWorks, publishWork, cancelWork, pauseWork, batchDeleteWorks, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
+import { listWorks, publishWork, cancelWork, pauseWork, resumeWork, batchDeleteWorks, Work, WorkTask, getWorkTasks } from '../../api/marketplace';
 import { BarChart3, CalendarDays, Download, Edit3, LayoutList, ListTodo, PauseCircle, Plus, Play, Search, Trash2, Upload, XCircle } from 'lucide-react';
 import CreateWorkDrawer from './CreateWorkDrawer';
 import ImportWorkModal from './ImportWorkModal';
@@ -259,6 +259,16 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
             await fetchWorks(currentPage, pageSize);
         } catch (error) {
             alert('暂停工作失败');
+        }
+    };
+
+    const handleResumeWork = async (work: Work) => {
+        if (!window.confirm(`确定要继续工作「${work.title}」吗？继续后主任务和子任务将恢复可操作。`)) return;
+        try {
+            await resumeWork(work.id);
+            await fetchWorks(currentPage, pageSize);
+        } catch (error) {
+            alert('继续工作失败');
         }
     };
 
@@ -755,8 +765,9 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                             </div>
                                         </div>
                                         <div className="flex justify-end">
-                                            {work.status !== 'PAUSED' && (
-                                            <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white/95 px-2 py-1 opacity-100 shadow-sm backdrop-blur transition-all duration-200 lg:translate-x-2 lg:opacity-0 lg:group-hover/work:translate-x-0 lg:group-hover/work:opacity-100 lg:group-focus-within/work:translate-x-0 lg:group-focus-within/work:opacity-100">
+                                            <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white/95 px-2 py-1 shadow-sm">
+                                                {work.status !== 'PAUSED' && (
+                                                <>
                                                 <button
                                                     onClick={() => {
                                                         setEditingWorkId(work.id);
@@ -785,7 +796,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                                     <XCircle size={13} />取消
                                                 </button>
                                                 )}
-                                                {work.status === 'ACTIVE' && (
+                                                {['PUBLISHED', 'ACTIVE', 'ACCEPTANCE'].includes(work.status) && (
                                                 <button
                                                     onClick={() => handlePauseWork(work)}
                                                     className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-amber-600 transition-colors hover:bg-amber-50 hover:text-amber-800"
@@ -794,8 +805,18 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                                     <PauseCircle size={13} />暂停
                                                 </button>
                                                 )}
+                                                </>
+                                                )}
+                                                {work.status === 'PAUSED' && (
+                                                <button
+                                                    onClick={() => handleResumeWork(work)}
+                                                    className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-green-600 transition-colors hover:bg-green-50 hover:text-green-800"
+                                                    title="继续工作"
+                                                >
+                                                    <Play size={13} />继续
+                                                </button>
+                                                )}
                                             </div>
-                                            )}
                                         </div>
                                     </div>
                                 </div>

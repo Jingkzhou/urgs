@@ -189,7 +189,17 @@ public class WorkController {
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @PathVariable String id) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        workService.pauseWork(id, userId);
+        workService.pauseWork(id, resolveAuthorizedPublisherId(id, userId));
+        return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/{id}/resume")
+    public ResponseEntity<Void> resumeWork(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @PathVariable String id) {
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        workService.resumeWork(id, resolveAuthorizedPublisherId(id, userId));
         return ResponseEntity.ok().build();
     }
 
@@ -210,6 +220,11 @@ public class WorkController {
             return String.valueOf(attrUserId);
         }
         throw new IllegalArgumentException("Missing user identifier");
+    }
+
+    private String resolveAuthorizedPublisherId(String workId, String userId) {
+        Work work = workService.getById(workId);
+        return isRegTechAdmin(userId) && work != null ? work.getPublisherId() : userId;
     }
 
     public static class BatchDeleteRequest {

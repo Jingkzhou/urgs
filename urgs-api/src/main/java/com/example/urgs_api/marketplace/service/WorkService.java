@@ -20,6 +20,8 @@ public interface WorkService extends IService<Work> {
 
     boolean pauseWork(String workId, String userId);
 
+    boolean resumeWork(String workId, String userId);
+
     int batchDeleteWorks(List<String> workIds, String userId);
 
     void recomputeTotalPoints(String workId);

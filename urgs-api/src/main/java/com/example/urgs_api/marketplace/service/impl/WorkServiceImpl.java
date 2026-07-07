@@ -27,6 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -296,8 +297,11 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         if (work == null || !work.getPublisherId().equals(userId)) {
             throw new IllegalArgumentException("工作不存在或无权操作");
         }
-        if (!WorkStatus.ACTIVE.name().equals(work.getStatus())) {
-            throw new IllegalStateException("只有进行中的工作可以暂停");
+        if (!Set.of(
+                WorkStatus.PUBLISHED.name(),
+                WorkStatus.ACTIVE.name(),
+                WorkStatus.ACCEPTANCE.name()).contains(work.getStatus())) {
+            throw new IllegalStateException("当前状态无法暂停");
         }
 
         work.setStatus(WorkStatus.PAUSED.name());
@@ -312,6 +316,38 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
             }
         }
         return success;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean resumeWork(String workId, String userId) {
+        Work work = this.getById(workId);
+        if (work == null || !work.getPublisherId().equals(userId)) {
+            throw new IllegalArgumentException("工作不存在或无权操作");
+        }
+        if (!WorkStatus.PAUSED.name().equals(work.getStatus())) {
+            throw new IllegalStateException("只有已暂停的工作可以继续");
+        }
+
+        List<WorkTask> tasks = workTaskService.lambdaQuery()
+                .eq(WorkTask::getWorkId, workId)
+                .list();
+        boolean hasAssignedTask = false;
+        for (WorkTask task : tasks) {
+            if (!TaskStatus.PAUSED.name().equals(task.getStatus())) {
+                continue;
+            }
+            if (AssignMode.OPEN.name().equals(task.getAssignMode()) && !StringUtils.hasText(task.getAssigneeId())) {
+                task.setStatus(TaskStatus.OPEN.name());
+            } else {
+                task.setStatus(TaskStatus.READY.name());
+                hasAssignedTask = true;
+            }
+            workTaskService.updateById(task);
+        }
+
+        work.setStatus(hasAssignedTask ? WorkStatus.ACTIVE.name() : WorkStatus.PUBLISHED.name());
+        return this.updateById(work);
     }
 
     @Override
