@@ -17,7 +17,6 @@
   "owner": "报表负责人",
   "status": "启用状态：1 启用 / 0 停用",
   "fill_instruction": "填报说明（V27 新增，指导填报人员）",
-  "sort_order": "排序号",
   "create_time": "创建时间",
   "update_time": "最后更新时间"
  },
@@ -50,7 +49,6 @@
   "is_fill_business": "是否填报项",
   "is_desensitized": "是否脱敏（V46 新增）",
   "desensitize_type": "脱敏字段类型（V47 新增）",
-  "sort_order": "排序号",
   "create_time": "创建时间",
   "update_time": "更新时间"
  },
@@ -91,7 +89,8 @@
   "view_count": "查看次数",
   "scope": "空间类型（V39）",
   "source_doc_id": "来源文档 ID（从共享空间复制时记录原始 ID，V39）",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "knowledge_tag": {
   "id": "主键",
@@ -121,7 +120,8 @@
   "primary_system": "是否主系统（V92）",
   "primary_system_name": "主系统名称（V92）",
   "project_type": "项目类型（V92）",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "sys_work_task": {
   "id": "主键（雪花 ID）",
@@ -164,7 +164,8 @@
   "stage_updated_at": "阶段更新时间（V94）",
   "deadline": "任务截止日期",
   "sort_order": "排序号",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "sys_task_application": {
   "id": "主键",
@@ -177,7 +178,8 @@
   "review_comment": "审批意见（V58）",
   "reviewed_by": "审批人 ID（V58）",
   "reviewed_at": "审批时间（V58）",
-  "create_time / update_time": "申请时间 / 处理时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "sys_task_comment": {
   "id": "主键",
@@ -204,7 +206,8 @@
   "resolver_id": "处理人 ID",
   "resolution": "处理结论",
   "resolved_at": "处理时间",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "sys_marketplace_point_rule": {
   "id": "主键",
@@ -213,7 +216,8 @@
   "suggested_points": "建议积分",
   "description": "规则说明",
   "enabled": "是否启用",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "sys_kpi_snapshot": {
   "id": "主键",
@@ -232,7 +236,8 @@
   "status": "快照状态",
   "generated_by": "生成人 ID",
   "generated_at": "生成时间",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "sys_task_version_change_snapshot": {
   "id": "主键",
@@ -257,7 +262,8 @@
   "additions": "新增行数",
   "deletions": "删除行数",
   "snapshot_json": "审批通过时的 PR 提交和文件差异 JSON 快照",
-  "create_time / update_time": "创建/更新时间"
+  "created_at": "创建时间（记录数据写入时间）",
+  "updated_at": "更新时间（记录最后修改时间）"
  },
  "t_deploy_environment": {
   "id": "主键",
@@ -267,7 +273,8 @@
   "deploy_url": "部署地址（URL）",
   "deploy_type": "部署类型",
   "config": "环境配置（JSON，扩展参数）",
-  "created_at / updated_at": "创建/更新时间",
+  "created_at": "创建时间",
+  "updated_at": "更新时间",
   "sort_order": "排序号"
  },
  "t_version_package": {
@@ -302,16 +309,8 @@
   "created_by": "创建人用户 ID",
   "deployed_by": "部署人用户 ID",
   "deployed_at": "部署时间",
-  "created_at / updated_at": "创建/更新时间"
- },
- "t_deployment": {
-  "strategy_id": "发布策略 ID（V12 新增）",
-  "package_id": "关联版本包 ID（V36 新增）",
-  "deploy_mode": "部署模式（V36 新增）",
-  "backup_path": "生产备份路径（V36 新增）"
- },
- "t_git_repository": {
-  "create_by": "创建人用户 ID（V19 新增）"
+  "created_at": "创建时间",
+  "updated_at": "更新时间"
  },
  "t_infrastructure_asset": {
   "id": "主键",
@@ -334,7 +333,8 @@
   "db_service_name": "Oracle 服务名（V38，与 SID 二选一）",
   "status": "状态",
   "description": "备注信息",
-  "created_at / updated_at": "创建/更新时间"
+  "created_at": "创建时间",
+  "updated_at": "更新时间"
  },
  "t_infrastructure_user": {
   "id": "主键",
@@ -343,7 +343,8 @@
   "user_type": "用户类型（V38 新增）",
   "description": "说明",
   "asset_id": "关联资产 ID（外键）",
-  "created_at / updated_at": "创建/更新时间"
+  "created_at": "创建时间",
+  "updated_at": "更新时间"
  },
  "t_infrastructure_system_manual": {
   "id": "主键",
@@ -353,7 +354,8 @@
   "file_url": "文件访问地址",
   "file_size": "文件大小（字节）",
   "description": "备注说明",
-  "created_at / updated_at": "创建/更新时间"
+  "created_at": "创建时间",
+  "updated_at": "更新时间"
  },
  "t_app_system": {
   "id": "主键",
@@ -363,7 +365,8 @@
   "owner_id": "负责人 ID",
   "team": "开发团队",
   "status": "状态",
-  "created_at / updated_at": "创建/更新时间"
+  "created_at": "创建时间",
+  "updated_at": "更新时间"
  },
  "sys_function": {
   "id": "主键",
@@ -374,7 +377,8 @@
   "parent_id": "父 ID（菜单层级）",
   "sort_order": "排序号",
   "enabled": "是否启用",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "sys_role_function": {
   "id": "主键",
@@ -390,7 +394,8 @@
   "instruction": "技能调用指令",
   "status": "状态",
   "sort_order": "排序号",
-  "created_at / updated_at": "创建/更新时间"
+  "created_at": "创建时间",
+  "updated_at": "更新时间"
  },
  "t_lineage_analysis_record": {
   "id": "主键 ID",
@@ -412,8 +417,10 @@
   "metadata_generated_at": "元数据包生成时间（V71）",
   "status": "分析状态",
   "error": "错误信息",
-  "start_time / end_time": "开始/结束时间",
-  "create_time / update_time": "创建/更新时间"
+  "start_time": "开始时间",
+  "end_time": "结束时间",
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "t_lineage_review_task": {
   "id": "主键",
@@ -435,8 +442,10 @@
   "token_budget": "任务 token 预算",
   "consumed_tokens": "任务已消耗 token",
   "last_error": "最后错误信息",
-  "started_at / finished_at": "开始/结束时间",
-  "create_time / update_time": "创建/更新时间"
+  "started_at": "开始时间",
+  "finished_at": "结束时间",
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "t_lineage_review_issue": {
   "id": "主键",
@@ -466,7 +475,8 @@
   "confirmed_problem_type": "人工确认问题类型（V66）",
   "confirmed_problem_description": "人工确认问题描述（V66）",
   "review_time": "复核时间",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "t_lineage_review_cache": {
   "id": "主键",
@@ -478,7 +488,8 @@
   "result_json": "缓存结果",
   "hit_count": "命中次数",
   "last_hit_at": "最后命中时间",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "t_lineage_review_memory": {
   "id": "主键",
@@ -495,8 +506,10 @@
   "version_id": "血缘版本 ID",
   "system_key": "系统分片标识",
   "path_prefix": "目录分片前缀",
-  "created_by / updated_by": "创建人/更新人 ID",
-  "create_time / update_time": "创建/更新时间"
+  "created_by": "创建人",
+  "updated_by": "更新人",
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "t_quartz_task": {
   "id": "主键",
@@ -519,13 +532,18 @@
   "notification_failed": "失败时通知",
   "datasource_id": "数据源主键（V52 新增，取代 url/username/password/driver）",
   "datasource_pool_id": "数据源执行池 ID（V84 新增）",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）",
+  "username": "数据库连接用户名",
+  "password": "数据库连接密码（敏感凭证，加密存储）",
+  "driver": "数据库驱动类全限定名"
  },
  "t_quartz_task_status": {
   "plan_id": "计划（任务）ID",
   "data_date": "数据日期",
   "status": "执行状态（0成功/非0失败，具体见业务）",
-  "begin_time / end_time": "开始/结束时间",
+  "begin_time": "开始时间",
+  "end_time": "结束时间",
   "update_time": "更新时间",
   "msg": "消息/错误信息",
   "id": "主键",
@@ -552,7 +570,8 @@
   "process_duration": "处理耗时（ms）",
   "process_log": "处理日志",
   "ip_address": "执行主机 IP",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "t_metric_type": {
   "id": "主键",
@@ -565,7 +584,8 @@
   "supported_chart_types": "支持图形类型，逗号分隔（V62）",
   "sort_order": "排序号",
   "status": "状态",
-  "created_at / updated_at": "创建/更新时间"
+  "created_at": "创建时间",
+  "updated_at": "更新时间"
  },
  "t_metric_data": {
   "id": "主键",
@@ -581,7 +601,8 @@
   "system_code": "对应系统 AppID（client_id）",
   "task_name": "任务名称",
   "task_status": "任务状态",
-  "start_time / end_time": "开始/完成时间",
+  "start_time": "开始时间",
+  "end_time": "结束时间",
   "data_date": "数据日期（业务日期）"
  },
  "sys_monitor_target_config": {
@@ -590,7 +611,8 @@
   "target_id": "目标 ID（0=全局默认）",
   "enabled": "是否启用",
   "thresholds_json": "阈值配置 JSON（CPU/内存/磁盘/连接/延迟等）",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "sys_monitor_server_sample": {
   "id": "主键",
@@ -600,10 +622,15 @@
   "severity": "严重级别（WARNING/CRITICAL/OK）",
   "cpu_percent": "CPU 使用率（%）",
   "load_one": "1 分钟平均负载",
-  "memory_total_bytes / memory_used_bytes / memory_percent": "内存总量/已用/使用率",
-  "disk_total_bytes / disk_used_bytes / disk_percent": "磁盘总量/已用/使用率",
+  "memory_total_bytes": "内存总量",
+  "memory_used_bytes": "已用",
+  "memory_percent": "使用率",
+  "disk_total_bytes": "磁盘总量",
+  "disk_used_bytes": "已用",
+  "disk_percent": "使用率",
   "disk_details_json": "磁盘明细",
-  "network_rx_bps / network_tx_bps": "网络收/发速率（bps）",
+  "network_rx_bps": "网络收",
+  "network_tx_bps": "发速率（bps）",
   "uptime_seconds": "运行时长（秒）",
   "error_message": "错误信息"
  },
@@ -611,11 +638,15 @@
   "id": "主键",
   "datasource_id": "数据源 ID",
   "collected_at": "采集时间",
-  "collection_state / severity": "采集状态 / 严重级别",
+  "collection_state": "采集状态",
+  "severity": "严重级别",
   "version": "数据库版本",
   "latency_ms": "延迟（ms）",
-  "threads_connected / max_connections / threads_running": "连接线程数/最大连接/活跃线程",
-  "qps / tps": "每秒查询/事务数",
+  "threads_connected": "连接线程数",
+  "max_connections": "最大连接",
+  "threads_running": "活跃线程",
+  "qps": "每秒查询",
+  "tps": "事务数",
   "slow_queries": "慢查询数",
   "slow_sql_avg_latency_ms": "慢 SQL 平均延迟",
   "buffer_pool_hit_percent": "缓冲池命中率（%）",
@@ -633,7 +664,8 @@
   "executions": "执行次数",
   "avg_latency_ms": "平均延迟（ms）",
   "total_latency_ms": "总延迟（ms）",
-  "rows_examined / rows_sent": "扫描行数/返回行数"
+  "rows_examined": "扫描行数",
+  "rows_sent": "返回行数"
  },
  "sys_datasource_pool": {
   "id": "主键",
@@ -642,7 +674,8 @@
   "strategy": "分配规则",
   "status": "状态",
   "remark": "备注",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "sys_datasource_pool_member": {
   "id": "主键",
@@ -653,7 +686,8 @@
   "max_concurrency": "最大并发（空=不限制）",
   "sort_no": "排序号",
   "remark": "备注",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "online_document": {
   "id": "主键",
@@ -664,14 +698,16 @@
   "file_size": "文件大小（字节）",
   "favorite": "是否收藏（V82/V83 修正）",
   "space_type": "空间类型（V82）",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "online_document_permission_group": {
   "id": "主键",
   "owner_user_id": "组所有者用户 ID",
   "name": "组名称",
   "description": "组描述",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "online_document_permission_group_member": {
   "id": "主键",
@@ -685,7 +721,8 @@
   "avatar_url": "头像地址",
   "region": "地区",
   "signature": "个性签名",
-  "created_at / updated_at": "创建/更新时间"
+  "created_at": "创建时间",
+  "updated_at": "更新时间"
  },
  "im_friendship": {
   "id": "主键",
@@ -763,13 +800,15 @@
   "summary": "简要总结",
   "content": "完整 AI 分析内容",
   "status": "状态",
-  "created_at / updated_at": "创建/更新时间"
+  "created_at": "创建时间",
+  "updated_at": "更新时间"
  },
  "sys_auth_session": {
   "token": "登录令牌（主键）",
   "user_id": "用户 ID",
   "expires_at": "过期时间",
-  "create_time / update_time": "创建/更新时间"
+  "create_time": "创建时间（记录数据写入时间）",
+  "update_time": "更新时间（记录最后修改时间）"
  },
  "sys_user_git_identity": {
   "id": "主键",
@@ -779,6 +818,14 @@
   "git_email": "Git 提交邮箱",
   "git_user_id": "Git 平台用户 ID",
   "enabled": "是否启用",
-  "created_at / updated_at": "创建/更新时间"
+  "created_at": "创建时间",
+  "updated_at": "更新时间"
+ },
+ "online_document_permission": {
+  "id": "主键 ID",
+  "document_id": "关联文档 ID（online_document.id）",
+  "user_id": "被授权用户 ID",
+  "create_by": "创建人",
+  "create_time": "创建时间"
  }
 }
