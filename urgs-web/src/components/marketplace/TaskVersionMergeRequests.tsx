@@ -490,6 +490,17 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
                 setMatchedPullRequests(snapshotRecords);
                 onMatchCountChange?.(snapshotRecords.length);
                 onLoadingChange?.(false);
+                if (identityRequired) {
+                    getUserGitIdentity(assigneeId as string | number)
+                        .then(identity => {
+                            if (!cancelled) {
+                                setGitIdentity(identity);
+                            }
+                        })
+                        .catch(loadError => {
+                            console.error('Failed to load user git identity', loadError);
+                        });
+                }
                 return;
             }
             if (matchTokens.length === 0) {
@@ -645,7 +656,9 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
                     )}
                     {matchTokens.length > 4 && <Tag className="!m-0">+{matchTokens.length - 4}</Tag>}
                     {identityRequired && identityText && <Tag color="purple" className="!m-0 font-mono">{identityText}</Tag>}
-                    {identityRequired && !loading && !identityText && <Tag color="orange" className="!m-0">未配置 Git 身份</Tag>}
+                    {identityRequired && !loading && !identityText && !hasSnapshotRecords && (
+                        <Tag color="orange" className="!m-0">承接人未配置 Git 身份</Tag>
+                    )}
                 </div>
             </div>
 

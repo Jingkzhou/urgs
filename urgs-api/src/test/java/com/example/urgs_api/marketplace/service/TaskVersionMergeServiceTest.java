@@ -4,6 +4,7 @@ import com.example.urgs_api.marketplace.mapper.TaskVersionChangeSnapshotMapper;
 import com.example.urgs_api.marketplace.model.Work;
 import com.example.urgs_api.marketplace.model.WorkTask;
 import com.example.urgs_api.user.mapper.UserGitIdentityMapper;
+import com.example.urgs_api.user.mapper.UserMapper;
 import com.example.urgs_api.user.model.UserGitIdentity;
 import com.example.urgs_api.version.entity.GitRepository;
 import com.example.urgs_api.version.service.GitPlatformService;
@@ -37,6 +38,9 @@ class TaskVersionMergeServiceTest {
     private UserGitIdentityMapper userGitIdentityMapper;
 
     @Mock
+    private UserMapper userMapper;
+
+    @Mock
     private TaskVersionChangeSnapshotMapper taskVersionChangeSnapshotMapper;
 
     private TaskVersionMergeService taskVersionMergeService;
@@ -47,6 +51,7 @@ class TaskVersionMergeServiceTest {
                 gitRepositoryService,
                 gitPlatformService,
                 userGitIdentityMapper,
+                userMapper,
                 taskVersionChangeSnapshotMapper,
                 new ObjectMapper());
     }

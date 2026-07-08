@@ -102,13 +102,14 @@ public class UserController {
 
     @GetMapping("/{id}/git-identity")
     public ResponseEntity<UserGitIdentityDTO> getGitIdentity(
-            @PathVariable("id") Long id,
+            @PathVariable("id") String id,
             @RequestParam(required = false, defaultValue = DEFAULT_GIT_PLATFORM) String platform) {
-        if (userService.getById(id) == null) {
+        User user = findUserByIdOrEmpId(id);
+        if (user == null) {
             return ResponseEntity.notFound().build();
         }
 
-        UserGitIdentity identity = findGitIdentity(id, platform);
+        UserGitIdentity identity = findGitIdentity(user.getId(), platform);
         if (identity == null || !Boolean.TRUE.equals(identity.getEnabled())) {
             return ResponseEntity.noContent().build();
         }
@@ -222,6 +223,35 @@ public class UserController {
                 .eq(UserGitIdentity::getUserId, userId)
                 .eq(UserGitIdentity::getPlatform, normalizeGitPlatform(platform))
                 .last("LIMIT 1"));
+    }
+
+    private User findUserByIdOrEmpId(String value) {
+        String normalized = trimToNull(value);
+        if (normalized == null) {
+            return null;
+        }
+        Long userId = parseLong(normalized);
+        if (userId != null) {
+            User user = userService.getById(userId);
+            if (user != null) {
+                return user;
+            }
+        }
+        return userService.lambdaQuery()
+                .eq(User::getEmpId, normalized)
+                .last("LIMIT 1")
+                .one();
+    }
+
+    private Long parseLong(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        try {
+            return Long.valueOf(value.trim());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     private void saveGitIdentity(Long userId, UserRequest req) {

@@ -7,6 +7,8 @@ import com.example.urgs_api.marketplace.model.TaskVersionChangeSnapshot;
 import com.example.urgs_api.marketplace.model.Work;
 import com.example.urgs_api.marketplace.model.WorkTask;
 import com.example.urgs_api.user.mapper.UserGitIdentityMapper;
+import com.example.urgs_api.user.mapper.UserMapper;
+import com.example.urgs_api.user.model.User;
 import com.example.urgs_api.user.model.UserGitIdentity;
 import com.example.urgs_api.version.dto.GitCommit;
 import com.example.urgs_api.version.dto.GitCommitDiff;
@@ -41,6 +43,7 @@ public class TaskVersionMergeService {
     private final GitRepositoryService gitRepositoryService;
     private final GitPlatformService gitPlatformService;
     private final UserGitIdentityMapper userGitIdentityMapper;
+    private final UserMapper userMapper;
     private final TaskVersionChangeSnapshotMapper taskVersionChangeSnapshotMapper;
     private final ObjectMapper objectMapper;
 
@@ -176,15 +179,33 @@ public class TaskVersionMergeService {
     }
 
     private UserGitIdentity findAssigneeGitIdentity(WorkTask task) {
-        Long assigneeId = parseLong(task == null ? null : task.getAssigneeId());
-        if (assigneeId == null) {
+        Long assigneeUserId = resolveAssigneeUserId(task == null ? null : task.getAssigneeId());
+        if (assigneeUserId == null) {
             return null;
         }
         return userGitIdentityMapper.selectOne(new LambdaQueryWrapper<UserGitIdentity>()
-                .eq(UserGitIdentity::getUserId, assigneeId)
+                .eq(UserGitIdentity::getUserId, assigneeUserId)
                 .eq(UserGitIdentity::getPlatform, DEFAULT_GIT_PLATFORM)
                 .eq(UserGitIdentity::getEnabled, true)
                 .last("LIMIT 1"));
+    }
+
+    private Long resolveAssigneeUserId(String assigneeId) {
+        String normalized = trimToNull(assigneeId);
+        if (normalized == null) {
+            return null;
+        }
+        Long numericId = parseLong(normalized);
+        if (numericId != null) {
+            User user = userMapper.selectById(numericId);
+            if (user != null) {
+                return user.getId();
+            }
+        }
+        User user = userMapper.selectOne(new LambdaQueryWrapper<User>()
+                .eq(User::getEmpId, normalized)
+                .last("LIMIT 1"));
+        return user == null ? numericId : user.getId();
     }
 
     private List<String> buildRequirementTokens(String requirementNumber) {

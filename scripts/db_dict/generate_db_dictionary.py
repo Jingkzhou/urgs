@@ -24,6 +24,16 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 MIGRATION_DIR = os.path.join(REPO_ROOT, "urgs-api", "src", "main", "resources", "db", "migration")
 JAVA_SRC = os.path.join(REPO_ROOT, "urgs-api", "src", "main", "java")
 OUT_HTML = os.path.join(REPO_ROOT, "docs", "db-dictionary.html")
+# 人工撰写的中文说明（表 -> 字段 -> 中文说明），由 docs/db-dictionary-cn.md 整理而来
+FIELD_NOTES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "field_notes.json")
+
+
+def load_field_notes():
+    try:
+        with open(FIELD_NOTES_PATH, encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
 
 DB_CFG = dict(
     host=os.environ.get("SPRING_DATASOURCE_HOST", "127.0.0.1"),
@@ -470,6 +480,7 @@ def cross_check(sql_schema, db_schema):
 def build_data():
     sql_schema, order, files = parse_migrations()
     enums = extract_enums()
+    field_notes = load_field_notes()
     db_schema, db_err = introspect_db()
     mismatches = cross_check(sql_schema, db_schema) if db_schema else []
 
@@ -482,11 +493,8 @@ def build_data():
                 'name': cname, 'type': c['type'], 'nullable': c['nullable'],
                 'default': c['default'], 'comment': c['comment'],
                 'is_pk': c['is_pk'], 'auto_inc': c['auto_inc'],
+                'cn_desc': field_notes.get(t, {}).get(cname, ''),
                 'code_values': c['code_values'],
-                'enum_hints': [{'name': e['name'], 'constants': e['constants']}
-                               for e in suggest_enums(t, cname, enums)
-                               if (not c['code_values'] and e['score'] >= 2)
-                               or (c['code_values'] and e['score'] >= 4)],
             })
         tables.append({'name': t, 'comment': sql_schema[t]['comment'], 'columns': col_list})
 
@@ -501,7 +509,8 @@ def build_data():
         'stats': {'tables': len(tables),
                   'columns': sum(len(t['columns']) for t in tables),
                   'enums': len(enums),
-                  'coded_fields': sum(1 for t in tables for c in t['columns'] if c['code_values'])},
+                  'coded_fields': sum(1 for t in tables for c in t['columns'] if c['code_values']),
+                  'cn_fields': sum(1 for t in tables for c in t['columns'] if c['cn_desc'])},
         'tables': tables,
         'enums': enums,
         'mismatches': mismatches,
@@ -554,6 +563,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .chip{background:var(--chip);color:var(--chip-txt);border-radius:6px;padding:1px 8px;font-size:12px;font-family:ui-monospace,monospace}
   .hint{margin-top:4px;font-size:12px;color:var(--sub)}
   .hint b{color:#7c3aed}
+  .cndesc{color:#374151;min-width:210px;line-height:1.45}
   .enum-sec{margin-top:30px}
   details.enum{background:#fff;border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
   details.enum>summary{padding:11px 15px;font-weight:600;cursor:pointer}
@@ -598,7 +608,7 @@ function hl(text){
 }
 function buildStats(){
   const s=DATA.stats;
-  $('#stats').innerHTML=['tables:表','columns:字段','coded_fields:含码值字段','enums:枚举类']
+  $('#stats').innerHTML=['tables:表','columns:字段','cn_fields:含中文说明','coded_fields:含码值字段','enums:枚举类']
     .map(([k,l])=>`<div class="s"><b>${s[k]}</b>${l}</div>`).join('');
   $('#srcnote').textContent='生成时间：'+DATA.generated+'　|　'+DATA.source_note;
 }
@@ -619,19 +629,13 @@ function colRow(c){
   let chips='';
   if(c.code_values&&c.code_values.length)
     chips+='<div class="chips">'+c.code_values.map(v=>`<span class="chip">${esc(v)}</span>`).join('')+'</div>';
-  let hint='';
-  if(c.enum_hints&&c.enum_hints.length){
-    hint='<div class="hint">候选枚举：'+c.enum_hints.map(e=>{
-      const cs=e.constants.map(x=>`${esc(x.name)}${x.desc?'('+esc(x.desc)+')':''}`).join('、');
-      return `<b>${esc(e.name)}</b> {${cs}}`;
-    }).join('；')+' <span class="muted">(命名推测，请人工确认)</span></div>';
-  }
   return `<tr>
     <td class="name">${hl(c.name)}${c.is_pk?'<span class="pk">PK</span>':''}${c.auto_inc?'<span class="nn">AI</span>':''}</td>
     <td>${esc(c.type)}</td>
     <td>${c.nullable?'可空':'NOT NULL'}</td>
     <td>${esc(c.default)||'<span class="muted">—</span>'}</td>
-    <td>${hl(c.comment)||'<span class="muted">—</span>'}${chips}${hint}</td>
+    <td class="cndesc">${hl(c.cn_desc)||'<span class="muted">—</span>'}</td>
+    <td>${hl(c.comment)||'<span class="muted">—</span>'}${chips}</td>
   </tr>`;
 }
 function buildTables(){
@@ -642,7 +646,7 @@ function buildTables(){
     return `<details class="tbl${mismatch?' mismatch':''}" data-name="${esc(t.name)}" data-cm="${esc(t.comment)}">
       <summary><span class="tname">${hl(t.name)}</span><span class="tcm">${hl(t.comment)}</span>
         <span class="cnt">${t.columns.length} 字段</span></summary>
-      <table><thead><tr><th>字段</th><th>类型</th><th>可空</th><th>默认</th><th>备注 / 码值 / 候选枚举</th></tr></thead>
+      <table><thead><tr><th>字段</th><th>类型</th><th>可空</th><th>默认</th><th>中文说明</th><th>备注 / 码值</th></tr></thead>
       <tbody>${rows}</tbody></table></details>`;
   }).join('');
 }
