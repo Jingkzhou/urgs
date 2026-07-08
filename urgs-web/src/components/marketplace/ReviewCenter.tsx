@@ -14,6 +14,7 @@ import TaskDetailDrawer from './TaskDetailDrawer';
 import { getTaskStageLabel, getTaskStatusLabel } from './marketplaceLabels';
 import { MarketplaceTodoFocus } from './marketplaceTodoFocus';
 import AssetObjectDetailLink from './AssetObjectDetailLink';
+import TaskVersionMergeRequests from './TaskVersionMergeRequests';
 
 interface ReviewCenterProps {
     todoFocus?: MarketplaceTodoFocus | null;
@@ -401,7 +402,7 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
                                         <div className="mb-2 flex items-center justify-between">
                                             <div>
                                                 <div className="text-sm font-bold text-slate-800">审核依据</div>
-                                                <div className="mt-0.5 text-xs text-slate-400">核对本次资产变更与任务提交说明</div>
+                                                <div className="mt-0.5 text-xs text-slate-400">核对本次版本变更、资产变更与任务提交说明</div>
                                             </div>
                                             {!assetReviewLoading && (
                                                 <span className={`rounded px-2 py-1 text-xs font-bold ${
@@ -412,6 +413,14 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
                                                     {assetReviewRecords.length > 0 ? `${assetReviewRecords.length} 条资产变更` : '无资产变更'}
                                                 </span>
                                             )}
+                                        </div>
+
+                                        <div className="mb-4">
+                                            <TaskVersionMergeRequests
+                                                requirementNumber={activeTask.requirementNumber}
+                                                assigneeId={activeTask.assigneeId}
+                                                detailFullscreen
+                                            />
                                         </div>
 
                                         {assetReviewLoading ? (

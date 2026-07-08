@@ -160,6 +160,33 @@ export interface TaskMarketDTO extends WorkTask {
     publisherName: string;
     publisherAvatar: string;
     applicationCount: number;
+    versionChangeSnapshots?: TaskVersionChangeSnapshot[];
+}
+
+export interface TaskVersionChangeSnapshot {
+    id: number;
+    taskId: string;
+    workId?: string;
+    requirementNumber?: string;
+    assigneeId?: string;
+    reviewerId?: string;
+    repoId?: number;
+    repoName?: string;
+    prNumber?: number;
+    prTitle?: string;
+    prUrl?: string;
+    sourceBranch?: string;
+    targetBranch?: string;
+    state?: string;
+    merged?: boolean;
+    mergedAt?: string;
+    matchSource?: string;
+    commitCount?: number;
+    fileCount?: number;
+    additions?: number;
+    deletions?: number;
+    snapshotJson?: string;
+    createdAt?: string;
 }
 
 export interface TaskApplication {

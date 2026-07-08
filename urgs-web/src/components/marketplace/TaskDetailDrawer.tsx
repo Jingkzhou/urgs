@@ -181,6 +181,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                     <TaskVersionMergeRequests
                         requirementNumber={task.requirementNumber}
                         assigneeId={task.assigneeId}
+                        snapshots={task.versionChangeSnapshots}
                     />
 
                     {(task.acceptanceCriteria || task.completionDescription || task.deliverables) && (

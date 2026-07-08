@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Empty, Modal, Spin, Tag } from 'antd';
 import { ExternalLink, GitPullRequest, GitCommitHorizontal, FileCode2 } from 'lucide-react';
+import type { TaskVersionChangeSnapshot } from '@/api/marketplace';
 import { getUserGitIdentity, UserGitIdentity } from '@/api/user';
 import {
     getGitRepositories,
@@ -31,11 +32,31 @@ type MatchedPullRequest = VersionPullRequest & {
     repoName: string;
     matchSource: MatchSource;
     matchedCommits?: GitCommit[];
+    snapshot?: TaskVersionChangeSnapshot;
+    snapshotPayload?: VersionChangeSnapshotPayload;
+};
+
+type VersionChangeSnapshotPayload = {
+    capturedAt?: string;
+    matchSource?: string;
+    repo?: {
+        id?: number;
+        name?: string;
+        fullName?: string;
+        platform?: string;
+    };
+    pullRequest?: Partial<VersionPullRequest>;
+    commits?: GitCommit[];
+    allCommits?: GitCommit[];
+    matchedCommits?: GitCommit[];
+    files?: GitCommitDiff[];
 };
 
 interface TaskVersionMergeRequestsProps {
     requirementNumber?: string;
     assigneeId?: string | number;
+    snapshots?: TaskVersionChangeSnapshot[];
+    detailFullscreen?: boolean;
     onMatchCountChange?: (count: number) => void;
     onLoadingChange?: (loading: boolean) => void;
 }
@@ -69,6 +90,13 @@ const matchSourceLabel: Record<MatchSource, string> = {
     commit: '提交作者',
     pullRequestAuthor: 'MR 作者',
     requirementOnly: '需求号',
+};
+
+const normalizeMatchSource = (value?: string): MatchSource => {
+    if (value === 'commit' || value === 'pullRequestAuthor' || value === 'requirementOnly') {
+        return value;
+    }
+    return 'requirementOnly';
 };
 
 const formatTime = (value?: string) => {
@@ -294,6 +322,58 @@ const loadCommitFiles = async (repoId: number, commits: GitCommit[]) => {
     );
 };
 
+const parseSnapshotPayload = (snapshot: TaskVersionChangeSnapshot): VersionChangeSnapshotPayload => {
+    if (!snapshot.snapshotJson) return {};
+    try {
+        return JSON.parse(snapshot.snapshotJson) || {};
+    } catch (error) {
+        console.error('Failed to parse version change snapshot', error);
+        return {};
+    }
+};
+
+const buildRecordsFromSnapshots = (snapshots: TaskVersionChangeSnapshot[] = []): MatchedPullRequest[] => (
+    snapshots.map(snapshot => {
+        const payload = parseSnapshotPayload(snapshot);
+        const pr = payload.pullRequest || {};
+        const repoId = snapshot.repoId || payload.repo?.id || 0;
+        const number = Number(snapshot.prNumber || pr.number || snapshot.id);
+        const repoName = snapshot.repoName || payload.repo?.name || payload.repo?.fullName || `仓库 ${repoId || '-'}`;
+        return {
+            id: String(pr.id || `${repoId}-${number}`),
+            number,
+            title: snapshot.prTitle || pr.title || '未命名合并请求',
+            state: snapshot.state || pr.state || (snapshot.merged ? 'merged' : 'unknown'),
+            body: pr.body || '',
+            htmlUrl: snapshot.prUrl || pr.htmlUrl || '',
+            headRef: snapshot.sourceBranch || pr.headRef || '',
+            headSha: pr.headSha || '',
+            baseRef: snapshot.targetBranch || pr.baseRef || TARGET_BRANCH,
+            baseSha: pr.baseSha || '',
+            authorName: pr.authorName || '',
+            authorAvatar: pr.authorAvatar,
+            createdAt: pr.createdAt || snapshot.createdAt || '',
+            updatedAt: pr.updatedAt || snapshot.createdAt || '',
+            closedAt: pr.closedAt,
+            mergedAt: snapshot.mergedAt || pr.mergedAt,
+            comments: pr.comments,
+            commits: snapshot.commitCount ?? pr.commits,
+            additions: snapshot.additions ?? pr.additions,
+            deletions: snapshot.deletions ?? pr.deletions,
+            changedFiles: snapshot.fileCount ?? pr.changedFiles,
+            labels: pr.labels,
+            reviewers: pr.reviewers,
+            assignees: pr.assignees,
+            repoId,
+            repoName,
+            matchSource: normalizeMatchSource(snapshot.matchSource || payload.matchSource),
+            matchedCommits: payload.matchedCommits || [],
+            snapshot,
+            snapshotPayload: payload,
+        };
+    })
+);
+
 const matchPullRequestsForRepo = async (
     repo: GitRepository & { id: number },
     matchTokens: string[],
@@ -338,6 +418,8 @@ const matchPullRequestsForRepo = async (
 const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
     requirementNumber,
     assigneeId,
+    snapshots,
+    detailFullscreen = false,
     onMatchCountChange,
     onLoadingChange,
 }) => {
@@ -352,6 +434,8 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
     const [detailFiles, setDetailFiles] = useState<GitCommitDiff[]>([]);
 
     const identityRequired = assigneeId !== undefined && assigneeId !== null && String(assigneeId).trim() !== '';
+    const snapshotRecords = useMemo(() => buildRecordsFromSnapshots(snapshots), [snapshots]);
+    const hasSnapshotRecords = snapshotRecords.length > 0;
 
     const matchTokens = useMemo(() => {
         const tokens = [
@@ -385,6 +469,13 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
             setMatchedPullRequests([]);
             setError('');
             setGitIdentity(null);
+            if (snapshotRecords.length > 0) {
+                setLoading(false);
+                setMatchedPullRequests(snapshotRecords);
+                onMatchCountChange?.(snapshotRecords.length);
+                onLoadingChange?.(false);
+                return;
+            }
             if (matchTokens.length === 0) {
                 onMatchCountChange?.(0);
                 return;
@@ -446,13 +537,24 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
         return () => {
             cancelled = true;
         };
-    }, [matchTokenKey, assigneeId, identityRequired]);
+    }, [matchTokenKey, assigneeId, identityRequired, snapshotRecords]);
 
     const openDetail = async (pullRequest: MatchedPullRequest) => {
         setActivePr(pullRequest);
         setDetailPr(null);
         setDetailCommits([]);
         setDetailFiles([]);
+        if (pullRequest.snapshot) {
+            const payload = pullRequest.snapshotPayload || {};
+            setDetailPr({
+                ...pullRequest,
+                ...(payload.pullRequest || {}),
+            });
+            setDetailCommits(payload.commits || pullRequest.matchedCommits || []);
+            setDetailFiles(payload.files || []);
+            setDetailLoading(false);
+            return;
+        }
         setDetailLoading(true);
         try {
             const [prDetail, commits, files] = await Promise.all([
@@ -509,13 +611,16 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
                 <div>
                     <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
                         <GitPullRequest size={16} className="text-purple-500" />
-                        版本合并请求
+                        {hasSnapshotRecords ? '版本变更快照' : '版本合并请求'}
                     </div>
                     <div className="mt-1 text-xs text-slate-400">
-                        仅查看合入 master 的合并请求，再按需求编号和承接人 Git 身份匹配
+                        {hasSnapshotRecords
+                            ? '展示资产同步审核通过时固化的提交和文件变更'
+                            : '仅查看合入 master 的合并请求，再按需求编号和承接人 Git 身份匹配'}
                     </div>
                 </div>
                 <div className="flex flex-wrap justify-end gap-1">
+                    {hasSnapshotRecords && <Tag color="cyan" className="!m-0">已固化</Tag>}
                     {matchTokens.length > 0 ? matchTokens.slice(0, 4).map(token => (
                         <Tag key={token} color="blue" className="!m-0 font-mono">{token}</Tag>
                     )) : (
@@ -572,8 +677,10 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
                                                 <div className="mt-1 text-slate-400">{formatTime(pullRequest.updatedAt || pullRequest.createdAt)}</div>
                                             </td>
                                             <td className="whitespace-nowrap px-3 py-3">
-                                                <Tag color={pullRequest.matchSource === 'commit' ? 'purple' : 'default'} className="!m-0">
-                                                    {matchSourceLabel[pullRequest.matchSource]}
+                                                <Tag color={pullRequest.snapshot ? 'cyan' : pullRequest.matchSource === 'commit' ? 'purple' : 'default'} className="!m-0">
+                                                    {pullRequest.snapshot
+                                                        ? `审批快照 · ${matchSourceLabel[pullRequest.matchSource]}`
+                                                        : matchSourceLabel[pullRequest.matchSource]}
                                                 </Tag>
                                             </td>
                                             <td className="whitespace-nowrap px-3 py-3">{renderStateTag(pullRequest.state)}</td>
@@ -595,7 +702,8 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
                         打开原始页面
                     </Button>
                 ) : null}
-                width={920}
+                width={detailFullscreen ? 'calc(100vw - 32px)' : 920}
+                style={detailFullscreen ? { top: 16, maxWidth: 'none' } : undefined}
                 destroyOnHidden
             >
                 {detailLoading ? (
@@ -603,7 +711,7 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
                         <Spin tip="正在加载合并请求详情..." />
                     </div>
                 ) : (
-                    <div className="max-h-[72vh] space-y-4 overflow-y-auto pr-1">
+                    <div className={`${detailFullscreen ? 'max-h-[calc(100vh-150px)]' : 'max-h-[72vh]'} space-y-4 overflow-y-auto pr-1`}>
                         <section className="rounded-lg border border-slate-200">
                             <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
                                 <div className="text-base font-bold text-slate-900">{detailPr?.title || activePr?.title}</div>
@@ -611,6 +719,9 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
                                     {renderStateTag(detailPr?.state || activePr?.state)}
                                     <Tag className="!m-0">仓库：{activePr?.repoName}</Tag>
                                     {activePr && <Tag className="!m-0">匹配：{matchSourceLabel[activePr.matchSource]}</Tag>}
+                                    {activePr?.snapshot && (
+                                        <Tag color="cyan" className="!m-0">固化：{formatTime(activePr.snapshot.createdAt)}</Tag>
+                                    )}
                                     <Tag className="!m-0">提交：{detailCommits.length}</Tag>
                                     <Tag className="!m-0">文件：{detailFiles.length}</Tag>
                                     <Tag color="green" className="!m-0 font-mono">+{detailFileStats.additions}</Tag>

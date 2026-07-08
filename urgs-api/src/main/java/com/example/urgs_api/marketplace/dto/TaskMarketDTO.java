@@ -32,4 +32,5 @@ public class TaskMarketDTO extends WorkTask {
     private List<TaskAuditLogDTO> auditLogs;
     private List<MaintenanceRecord> assetMaintenanceRecords;
     private Boolean assetMaintenanceSnapshotFinalized;
+    private List<TaskVersionChangeSnapshotDTO> versionChangeSnapshots;
 }

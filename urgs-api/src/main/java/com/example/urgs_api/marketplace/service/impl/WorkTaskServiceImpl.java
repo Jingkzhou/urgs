@@ -433,7 +433,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             if (isAssetReview(task)) {
                 List<MaintenanceRecord> maintenanceRecords = getAssetMaintenanceRecords(work, task, true);
                 TaskVersionMergeService.MergeSummary mergeSummary = taskVersionMergeService
-                        .mergeOpenMasterPullRequests(work, task);
+                        .mergeOpenMasterPullRequests(work, task, reviewerId);
                 LocalDateTime now = LocalDateTime.now();
                 task.setCurrentStage(STAGE_LAUNCH);
                 task.setStageUpdatedAt(now);
@@ -847,6 +847,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         dto.setAuditLogs(loadTaskAuditLogs(taskId));
         boolean snapshotFinalized = StringUtils.hasText(task.getAssetMaintenanceSnapshot());
         dto.setAssetMaintenanceSnapshotFinalized(snapshotFinalized);
+        dto.setVersionChangeSnapshots(taskVersionMergeService.listSnapshots(taskId));
         if (snapshotFinalized) {
             List<MaintenanceRecord> filteredSnapshotRecords = filterAssetMaintenanceSnapshot(task);
             dto.setAssetMaintenanceSnapshot(serializeAssetMaintenanceRecords(filteredSnapshotRecords));

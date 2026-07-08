@@ -863,6 +863,7 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
                                     <TaskVersionMergeRequests
                                         requirementNumber={assetReviewReqId}
                                         assigneeId={assetReviewTask.assigneeId}
+                                        detailFullscreen
                                         onMatchCountChange={setAssetReviewVersionRecordCount}
                                         onLoadingChange={setAssetReviewVersionLoading}
                                     />
