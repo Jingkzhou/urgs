@@ -348,7 +348,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public int batchDeleteWorks(List<String> workIds, String userId) {
+    public int batchDeleteWorks(List<String> workIds, String userId, boolean allowAnyPublisher) {
         if (workIds == null || workIds.isEmpty()) {
             throw new IllegalArgumentException("请选择要删除的工作");
         }
@@ -365,7 +365,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
                 .in(Work::getId, distinctWorkIds)
                 .list();
         if (works.size() != distinctWorkIds.size()
-                || works.stream().anyMatch(work -> !userId.equals(work.getPublisherId()))) {
+                || (!allowAnyPublisher && works.stream().anyMatch(work -> !userId.equals(work.getPublisherId())))) {
             throw new IllegalArgumentException("工作不存在或无权操作");
         }
 

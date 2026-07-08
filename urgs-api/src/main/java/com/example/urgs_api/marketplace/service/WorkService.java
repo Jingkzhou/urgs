@@ -22,7 +22,7 @@ public interface WorkService extends IService<Work> {
 
     boolean resumeWork(String workId, String userId);
 
-    int batchDeleteWorks(List<String> workIds, String userId);
+    int batchDeleteWorks(List<String> workIds, String userId, boolean allowAnyPublisher);
 
     void recomputeTotalPoints(String workId);
 }

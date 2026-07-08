@@ -61,7 +61,7 @@ public class WorkController {
             @PathVariable String id,
             @RequestBody WorkCreateDTO workCreateDTO) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        return workService.updateWork(id, workCreateDTO, userId);
+        return workService.updateWork(id, workCreateDTO, resolveAuthorizedPublisherId(id, userId));
     }
 
     @PostMapping("/import")
@@ -169,7 +169,7 @@ public class WorkController {
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @PathVariable String id) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        workService.publishWork(id, userId);
+        workService.publishWork(id, resolveAuthorizedPublisherId(id, userId));
         return ResponseEntity.ok().build();
     }
 
@@ -209,7 +209,7 @@ public class WorkController {
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @RequestBody BatchDeleteRequest request) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        return Map.of("deletedCount", workService.batchDeleteWorks(request.getIds(), userId));
+        return Map.of("deletedCount", workService.batchDeleteWorks(request.getIds(), userId, isRegTechAdmin(userId)));
     }
 
     private String getEffectiveUserId(String headerUserId, Long attrUserId) {

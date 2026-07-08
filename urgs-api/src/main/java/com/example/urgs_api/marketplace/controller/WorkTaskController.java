@@ -8,6 +8,7 @@ import com.example.urgs_api.marketplace.dto.TaskStageRiskDTO;
 import com.example.urgs_api.marketplace.dto.TaskSubmissionDTO;
 import com.example.urgs_api.marketplace.dto.WorkTaskCreateDTO;
 import com.example.urgs_api.marketplace.enums.TaskStatus;
+import com.example.urgs_api.marketplace.model.Work;
 import com.example.urgs_api.marketplace.model.WorkTask;
 import com.example.urgs_api.marketplace.service.WorkService;
 import com.example.urgs_api.marketplace.service.WorkTaskService;
@@ -227,7 +228,7 @@ public class WorkTaskController {
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @PathVariable String id) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        workTaskService.reopenTask(id, userId);
+        workTaskService.reopenTask(id, resolveAuthorizedPublisherIdByTask(id, userId));
         return ResponseEntity.ok().build();
     }
 
@@ -282,7 +283,7 @@ public class WorkTaskController {
             @PathVariable String id,
             @RequestBody TaskReviewDTO dto) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        workTaskService.reviewTask(id, dto, userId);
+        workTaskService.reviewTask(id, dto, resolveAuthorizedPublisherIdByTask(id, userId));
         return ResponseEntity.ok().build();
     }
 
@@ -293,7 +294,7 @@ public class WorkTaskController {
             @PathVariable String id,
             @RequestBody Map<String, String> body) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        workTaskService.assignTask(id, body.get("assigneeId"), userId);
+        workTaskService.assignTask(id, body.get("assigneeId"), resolveAuthorizedPublisherIdByTask(id, userId));
         return ResponseEntity.ok().build();
     }
 
@@ -309,6 +310,15 @@ public class WorkTaskController {
 
     private String resolveReviewPublisherId(String userId) {
         return isRegTechAdmin(userId) ? null : userId;
+    }
+
+    private String resolveAuthorizedPublisherIdByTask(String taskId, String userId) {
+        WorkTask task = workTaskService.getById(taskId);
+        if (!isRegTechAdmin(userId) || task == null) {
+            return userId;
+        }
+        Work work = workService.getById(task.getWorkId());
+        return work != null ? work.getPublisherId() : userId;
     }
 
     private boolean isRegTechAdmin(String userId) {
