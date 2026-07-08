@@ -211,20 +211,20 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
     @Override
     public Page<TaskMarketDTO> getReviewTasks(Page<WorkTask> page, String publisherId, boolean history) {
-        List<String> workIds = workService.lambdaQuery()
-                .eq(Work::getPublisherId, publisherId)
-                .list()
-                .stream()
-                .map(Work::getId)
-                .toList();
-
         Page<TaskMarketDTO> dtoPage = new Page<>(page.getCurrent(), page.getSize());
-        if (workIds.isEmpty()) {
-            return dtoPage;
+        LambdaQueryWrapper<WorkTask> query = new LambdaQueryWrapper<>();
+        if (StringUtils.hasText(publisherId)) {
+            List<String> workIds = workService.lambdaQuery()
+                    .eq(Work::getPublisherId, publisherId)
+                    .list()
+                    .stream()
+                    .map(Work::getId)
+                    .toList();
+            if (workIds.isEmpty()) {
+                return dtoPage;
+            }
+            query.in(WorkTask::getWorkId, workIds);
         }
-
-        LambdaQueryWrapper<WorkTask> query = new LambdaQueryWrapper<WorkTask>()
-                .in(WorkTask::getWorkId, workIds);
         if (history) {
             query.isNotNull(WorkTask::getReviewedAt)
                     .orderByDesc(WorkTask::getReviewedAt);
@@ -243,9 +243,11 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
     @Override
     public Page<TaskReviewHistoryDTO> getReviewHistory(Page<TaskReviewHistoryDTO> page, String publisherId) {
-        List<Work> works = workService.lambdaQuery()
-                .eq(Work::getPublisherId, publisherId)
-                .list();
+        List<Work> works = StringUtils.hasText(publisherId)
+                ? workService.lambdaQuery()
+                        .eq(Work::getPublisherId, publisherId)
+                        .list()
+                : workService.list();
         Page<TaskReviewHistoryDTO> resultPage = new Page<>(page.getCurrent(), page.getSize());
         if (works.isEmpty()) {
             return resultPage;

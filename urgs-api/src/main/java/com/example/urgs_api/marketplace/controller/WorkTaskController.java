@@ -11,6 +11,10 @@ import com.example.urgs_api.marketplace.enums.TaskStatus;
 import com.example.urgs_api.marketplace.model.WorkTask;
 import com.example.urgs_api.marketplace.service.WorkService;
 import com.example.urgs_api.marketplace.service.WorkTaskService;
+import com.example.urgs_api.role.model.Role;
+import com.example.urgs_api.role.service.RoleService;
+import com.example.urgs_api.user.model.User;
+import com.example.urgs_api.user.service.UserService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -33,6 +37,12 @@ public class WorkTaskController {
 
     @Autowired
     private WorkService workService;
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private RoleService roleService;
 
     @GetMapping("/work/{workId}")
     public List<WorkTask> getTasksByWorkId(@PathVariable String workId) {
@@ -164,7 +174,7 @@ public class WorkTaskController {
             @RequestParam(defaultValue = "10") int size) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
         Page<WorkTask> page = new Page<>(current, size);
-        Page<TaskMarketDTO> resultPage = workTaskService.getReviewTasks(page, userId, false);
+        Page<TaskMarketDTO> resultPage = workTaskService.getReviewTasks(page, resolveReviewPublisherId(userId), false);
         return PageResult.of(resultPage);
     }
 
@@ -176,7 +186,7 @@ public class WorkTaskController {
             @RequestParam(defaultValue = "20") int size) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
         Page<TaskReviewHistoryDTO> page = new Page<>(current, size);
-        Page<TaskReviewHistoryDTO> resultPage = workTaskService.getReviewHistory(page, userId);
+        Page<TaskReviewHistoryDTO> resultPage = workTaskService.getReviewHistory(page, resolveReviewPublisherId(userId));
         return PageResult.of(resultPage);
     }
 
@@ -295,6 +305,29 @@ public class WorkTaskController {
             return String.valueOf(attrUserId);
         }
         throw new IllegalArgumentException("Missing user identifier");
+    }
+
+    private String resolveReviewPublisherId(String userId) {
+        return isRegTechAdmin(userId) ? null : userId;
+    }
+
+    private boolean isRegTechAdmin(String userId) {
+        try {
+            User user = userService.getById(Long.valueOf(userId));
+            if (user == null) {
+                return false;
+            }
+            if ("监管科技管理员".equals(user.getRoleName())) {
+                return true;
+            }
+            if (user.getRoleId() == null) {
+                return false;
+            }
+            Role role = roleService.getById(user.getRoleId());
+            return role != null && "监管科技管理员".equals(role.getName());
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
     }
 
     private String findMainTaskId(String workId) {
