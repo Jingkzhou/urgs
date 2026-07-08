@@ -425,7 +425,7 @@ public class GitPlatformService {
                 default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
             };
         } catch (Exception e) {
-            log.error("获取 PR 列表失败: repoId={}", repoId, e);
+            log.warn("获取 PR 列表失败: repoId={}, reason={}", repoId, e.getMessage());
             throw new RuntimeException("获取 PR 列表失败: " + e.getMessage());
         }
     }

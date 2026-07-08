@@ -59,9 +59,11 @@ public class TaskVersionMergeService {
         }
 
         List<String> tokens = buildRequirementTokens(requirementNumber);
-        List<GitRepository> repos = gitRepositoryService.findAll().stream()
-                .filter(repo -> repo.getId() != null && !Boolean.FALSE.equals(repo.getEnabled()))
-                .toList();
+        List<GitRepository> repos = findMergeCandidateRepositories(task, reviewerId);
+        if (repos.isEmpty()) {
+            summary.addSkipped("未配置可自动合并的 Git 仓库");
+            return summary;
+        }
 
         for (GitRepository repo : repos) {
             mergeRepositoryPullRequests(repo, tokens, requirementNumber, work, task, reviewerId, identity, summary);
@@ -99,9 +101,9 @@ public class TaskVersionMergeService {
         try {
             pullRequests = gitPlatformService.getPullRequests(repo.getId(), "all", 1, 100);
         } catch (RuntimeException ex) {
-            log.warn("任务中心自动合并读取 MR 失败: repoId={}", repo.getId(), ex);
-            summary.addSkipped(repoLabel(repo) + " 读取 MR 失败");
-            return;
+            String reason = simplifyExceptionMessage(ex);
+            log.warn("任务中心自动合并读取 MR 失败: repoId={}, reason={}", repo.getId(), reason);
+            throw new IllegalStateException("自动合并读取 MR 失败: " + repoLabel(repo) + " - " + reason, ex);
         }
 
         for (GitPullRequest pullRequest : pullRequests) {
@@ -414,6 +416,28 @@ public class TaskVersionMergeService {
                 || StringUtils.hasText(identity.getGitUserId()));
     }
 
+    private List<GitRepository> findMergeCandidateRepositories(WorkTask task, String reviewerId) {
+        Long reviewerUserId = parseLong(reviewerId);
+        Set<Long> involvedSystemIds = resolveInvolvedSystemIds(task);
+        List<GitRepository> repos = reviewerUserId == null
+                ? gitRepositoryService.findAll()
+                : gitRepositoryService.findAll(reviewerUserId);
+        return repos.stream()
+                .filter(repo -> repo.getId() != null && !Boolean.FALSE.equals(repo.getEnabled()))
+                .filter(repo -> involvedSystemIds.isEmpty()
+                        || (repo.getSsoId() != null && involvedSystemIds.contains(repo.getSsoId())))
+                .toList();
+    }
+
+    private Set<Long> resolveInvolvedSystemIds(WorkTask task) {
+        if (task == null || task.getInvolvedSystemIds() == null) {
+            return Set.of();
+        }
+        return task.getInvolvedSystemIds().stream()
+                .filter(systemId -> systemId != null)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
     private String repoLabel(GitRepository repo) {
         if (repo == null) {
             return "未知仓库";
@@ -429,6 +453,17 @@ public class TaskVersionMergeService {
 
     private String nullToEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private String simplifyExceptionMessage(RuntimeException ex) {
+        if (ex == null || !StringUtils.hasText(ex.getMessage())) {
+            return "未知错误";
+        }
+        String message = ex.getMessage().trim();
+        if (message.startsWith("获取 PR 列表失败: ")) {
+            message = message.substring("获取 PR 列表失败: ".length()).trim();
+        }
+        return message;
     }
 
     private Long parseLong(String value) {
