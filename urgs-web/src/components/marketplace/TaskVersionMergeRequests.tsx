@@ -19,6 +19,13 @@ type MatchSource = 'commit' | 'pullRequestAuthor' | 'requirementOnly';
 
 const TARGET_BRANCH = 'master';
 
+type ParsedDiffLine = {
+    type: 'hunk' | 'add' | 'del' | 'normal' | 'note';
+    content: string;
+    oldLineNo?: number;
+    newLineNo?: number;
+};
+
 type MatchedPullRequest = VersionPullRequest & {
     repoId: number;
     repoName: string;
@@ -122,6 +129,157 @@ const dedupeFiles = (files: GitCommitDiff[]) => {
     });
 };
 
+const parseDiff = (diff?: string): ParsedDiffLine[] => {
+    if (!diff) return [];
+    const lines = diff.split('\n');
+    const parsed: ParsedDiffLine[] = [];
+    let oldLineNo = 0;
+    let newLineNo = 0;
+    let inHunk = false;
+
+    lines.forEach(line => {
+        if (line.startsWith('@@')) {
+            inHunk = true;
+            const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+            if (match) {
+                oldLineNo = Number(match[1]) - 1;
+                newLineNo = Number(match[2]) - 1;
+            }
+            parsed.push({ type: 'hunk', content: line });
+            return;
+        }
+
+        if (!inHunk) {
+            if (line.startsWith('diff --git') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) {
+                parsed.push({ type: 'note', content: line });
+            }
+            return;
+        }
+
+        if (line.startsWith('\\')) {
+            parsed.push({ type: 'note', content: line });
+            return;
+        }
+
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+            newLineNo += 1;
+            parsed.push({ type: 'add', content: line.slice(1), newLineNo });
+            return;
+        }
+
+        if (line.startsWith('-') && !line.startsWith('---')) {
+            oldLineNo += 1;
+            parsed.push({ type: 'del', content: line.slice(1), oldLineNo });
+            return;
+        }
+
+        oldLineNo += 1;
+        newLineNo += 1;
+        parsed.push({
+            type: 'normal',
+            content: line.startsWith(' ') ? line.slice(1) : line,
+            oldLineNo,
+            newLineNo,
+        });
+    });
+
+    return parsed;
+};
+
+const getFilePath = (file: GitCommitDiff) => file.newPath || file.oldPath || '未知文件';
+
+const getFileStatus = (file: GitCommitDiff) => {
+    const status = (file.status || '').toLowerCase();
+    if (file.newFile || status === 'added' || status === 'new') return '新增';
+    if (file.deletedFile || status === 'deleted' || status === 'removed') return '删除';
+    if (file.renamedFile || status === 'renamed') return '重命名';
+    return '修改';
+};
+
+const getStatusClassName = (status: string) => {
+    if (status === '新增') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    if (status === '删除') return 'border-rose-200 bg-rose-50 text-rose-700';
+    if (status === '重命名') return 'border-amber-200 bg-amber-50 text-amber-700';
+    return 'border-blue-200 bg-blue-50 text-blue-700';
+};
+
+const getDiffLineClassName = (type: ParsedDiffLine['type']) => {
+    if (type === 'add') return 'bg-emerald-50 hover:bg-emerald-100/70';
+    if (type === 'del') return 'bg-rose-50 hover:bg-rose-100/70';
+    if (type === 'hunk') return 'bg-blue-50 text-blue-700';
+    if (type === 'note') return 'bg-slate-50 text-slate-400';
+    return 'hover:bg-slate-50';
+};
+
+const getDiffMarker = (type: ParsedDiffLine['type']) => {
+    if (type === 'add') return '+';
+    if (type === 'del') return '-';
+    if (type === 'hunk') return '@@';
+    return '';
+};
+
+const getDiffStats = (file: GitCommitDiff, lines = parseDiff(file.diff)) => {
+    const parsedAdditions = lines.filter(line => line.type === 'add').length;
+    const parsedDeletions = lines.filter(line => line.type === 'del').length;
+    return {
+        additions: typeof file.additions === 'number' && file.additions > 0 ? file.additions : parsedAdditions,
+        deletions: typeof file.deletions === 'number' && file.deletions > 0 ? file.deletions : parsedDeletions,
+    };
+};
+
+const FileDiffPanel: React.FC<{ file: GitCommitDiff; index: number }> = ({ file, index }) => {
+    const lines = useMemo(() => parseDiff(file.diff), [file.diff]);
+    const { additions, deletions } = useMemo(() => getDiffStats(file, lines), [file, lines]);
+    const status = getFileStatus(file);
+
+    return (
+        <details open={index === 0} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <summary className="flex cursor-pointer items-center justify-between gap-3 border-b border-slate-100 bg-slate-50 px-3 py-2 text-sm hover:bg-slate-100">
+                <div className="flex min-w-0 items-center gap-2">
+                    <FileCode2 size={15} className="shrink-0 text-slate-500" />
+                    <span className="min-w-0 truncate font-mono font-bold text-slate-800">{getFilePath(file)}</span>
+                    <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[11px] font-bold ${getStatusClassName(status)}`}>
+                        {status}
+                    </span>
+                </div>
+                <div className="shrink-0 font-mono text-xs">
+                    <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-bold text-emerald-700">+{additions}</span>
+                    <span className="ml-1 rounded bg-rose-50 px-1.5 py-0.5 font-bold text-rose-700">-{deletions}</span>
+                </div>
+            </summary>
+
+            {lines.length === 0 ? (
+                <div className="px-4 py-6 text-center text-xs text-slate-400">暂无可展示的文本 diff</div>
+            ) : (
+                <div className="max-h-[520px] overflow-auto bg-white">
+                    <table className="min-w-full border-collapse text-[12px] leading-5">
+                        <tbody>
+                            {lines.map((line, lineIndex) => (
+                                <tr key={`${line.type}-${lineIndex}`} className={getDiffLineClassName(line.type)}>
+                                    <td className="w-12 select-none border-r border-slate-100 bg-slate-50/70 px-2 text-right font-mono text-slate-400">
+                                        {line.type !== 'add' && line.type !== 'hunk' && line.type !== 'note' ? line.oldLineNo : ''}
+                                    </td>
+                                    <td className="w-12 select-none border-r border-slate-100 bg-slate-50/70 px-2 text-right font-mono text-slate-400">
+                                        {line.type !== 'del' && line.type !== 'hunk' && line.type !== 'note' ? line.newLineNo : ''}
+                                    </td>
+                                    <td className={`w-8 select-none px-2 text-center font-mono font-bold ${
+                                        line.type === 'add' ? 'text-emerald-700' : line.type === 'del' ? 'text-rose-700' : 'text-slate-400'
+                                    }`}>
+                                        {getDiffMarker(line.type)}
+                                    </td>
+                                    <td className="min-w-[760px] whitespace-pre px-2 py-0.5 font-mono text-slate-800">
+                                        {line.content || ' '}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </details>
+    );
+};
+
 const loadCommitFiles = async (repoId: number, commits: GitCommit[]) => {
     const results = await Promise.allSettled(
         commits
@@ -209,6 +367,16 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
         if (!hasGitIdentity(gitIdentity)) return '';
         return gitIdentity?.gitUsername || gitIdentity?.gitEmail || gitIdentity?.gitUserId || '';
     }, [gitIdentity]);
+
+    const detailFileStats = useMemo(() => (
+        detailFiles.reduce((acc, file) => {
+            const stats = getDiffStats(file);
+            return {
+                additions: acc.additions + stats.additions,
+                deletions: acc.deletions + stats.deletions,
+            };
+        }, { additions: 0, deletions: 0 })
+    ), [detailFiles]);
 
     useEffect(() => {
         let cancelled = false;
@@ -445,6 +613,8 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
                                     {activePr && <Tag className="!m-0">匹配：{matchSourceLabel[activePr.matchSource]}</Tag>}
                                     <Tag className="!m-0">提交：{detailCommits.length}</Tag>
                                     <Tag className="!m-0">文件：{detailFiles.length}</Tag>
+                                    <Tag color="green" className="!m-0 font-mono">+{detailFileStats.additions}</Tag>
+                                    <Tag color="red" className="!m-0 font-mono">-{detailFileStats.deletions}</Tag>
                                 </div>
                             </div>
                             <div className="space-y-3 px-4 py-3 text-sm text-slate-600">
@@ -482,27 +652,24 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
                             )}
                         </section>
 
-                        <section className="rounded-lg border border-slate-200">
-                            <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2 text-sm font-bold text-slate-700">
-                                <FileCode2 size={15} />
-                                文件变更
+                        <section className="overflow-hidden rounded-lg border border-slate-200">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50 px-4 py-2">
+                                <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                                    <FileCode2 size={15} />
+                                    文件变更对比
+                                </div>
+                                <div className="flex items-center gap-2 text-xs">
+                                    <span className="font-mono font-bold text-slate-600">{detailFiles.length} 个文件</span>
+                                    <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-mono font-bold text-emerald-700">+{detailFileStats.additions}</span>
+                                    <span className="rounded bg-rose-50 px-1.5 py-0.5 font-mono font-bold text-rose-700">-{detailFileStats.deletions}</span>
+                                </div>
                             </div>
                             {detailFiles.length === 0 ? (
                                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无文件变更" className="py-4" />
                             ) : (
-                                <div className="divide-y divide-slate-100">
+                                <div className="space-y-3 bg-slate-50/60 p-3">
                                     {detailFiles.map((file, index) => (
-                                        <details key={`${file.newPath || file.oldPath}-${index}`} className="group px-4 py-3">
-                                            <summary className="flex cursor-pointer items-center justify-between gap-3 text-sm">
-                                                <span className="min-w-0 truncate font-mono text-slate-700">{file.newPath || file.oldPath}</span>
-                                                <span className="shrink-0 text-xs text-slate-400">
-                                                    +{file.additions || 0} / -{file.deletions || 0}
-                                                </span>
-                                            </summary>
-                                            <pre className="mt-3 max-h-80 overflow-auto rounded bg-slate-900 p-3 text-xs leading-5 text-slate-100">
-                                                {file.diff || '暂无 diff 内容'}
-                                            </pre>
-                                        </details>
+                                        <FileDiffPanel key={`${getFilePath(file)}-${index}`} file={file} index={index} />
                                     ))}
                                 </div>
                             )}
