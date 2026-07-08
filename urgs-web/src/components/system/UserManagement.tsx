@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { UserCircle, Edit, Trash2, Save, X, Filter, ChevronLeft, ChevronRight, Lock, Shield, Ban, CheckSquare, Square, Search, Upload, Download, Plus } from 'lucide-react';
+import { UserCircle, Edit, Trash2, Save, X, Filter, ChevronLeft, ChevronRight, Lock, Shield, Ban, CheckSquare, Square, Search, Upload, Download, Plus, GitBranch } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { User } from './types';
 import Auth from '../Auth';
@@ -255,6 +255,9 @@ const UserForm: React.FC<{
         ssoSystems: initialData?.system ? initialData.system.split(',').filter(Boolean) : [],
         phone: initialData?.phone || '',
         status: initialData?.status || 'active',
+        gitUsername: initialData?.gitUsername || '',
+        gitEmail: initialData?.gitEmail || '',
+        gitUserId: initialData?.gitUserId || '',
     });
 
     // Auto-sync roleId if roleOptions load after initialData or if initialData changes
@@ -391,6 +394,34 @@ const UserForm: React.FC<{
                                         placeholder="请选择需要关联的监管系统..."
                                     />
                                 </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2 text-sm font-bold text-slate-900 pb-2 border-b border-slate-100">
+                                <GitBranch className="w-4 h-4 text-purple-500" />
+                                Git 身份
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                <FormInput
+                                    label="GitLab 用户名"
+                                    placeholder="如 liudan"
+                                    value={formData.gitUsername}
+                                    onChange={e => setFormData({ ...formData, gitUsername: e.target.value })}
+                                    icon={<GitBranch className="w-4 h-4" />}
+                                />
+                                <FormInput
+                                    label="提交邮箱"
+                                    placeholder="如 liudan@example.com"
+                                    value={formData.gitEmail}
+                                    onChange={e => setFormData({ ...formData, gitEmail: e.target.value })}
+                                />
+                                <FormInput
+                                    label="Git 用户ID"
+                                    placeholder="平台用户ID，可选"
+                                    value={formData.gitUserId}
+                                    onChange={e => setFormData({ ...formData, gitUserId: e.target.value })}
+                                />
                             </div>
                         </div>
                     </form>
@@ -716,6 +747,8 @@ const UserManagement: React.FC = () => {
             const matchesSearch = !normalizedSearchTerm
                 || user.name.toLowerCase().includes(normalizedSearchTerm)
                 || user.empId.toLowerCase().includes(normalizedSearchTerm)
+                || (user.gitUsername || '').toLowerCase().includes(normalizedSearchTerm)
+                || (user.gitEmail || '').toLowerCase().includes(normalizedSearchTerm)
                 || user.namePinyin?.includes(normalizedSearchTerm)
                 || user.namePinyinInitials?.includes(normalizedSearchTerm);
             const matchesOrg = filterOrg === 'all' || user.orgName === filterOrg;
@@ -1016,6 +1049,7 @@ const UserManagement: React.FC = () => {
                                 <th className="px-3 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">关联角色</th>
                                 <th className="px-3 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">手机号</th>
                                 <th className="px-3 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">关联系统</th>
+                                <th className="px-3 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Git 身份</th>
                                 <th className="px-3 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">最后登录</th>
                                 <th className="px-3 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">状态</th>
                                 <th className="px-3 pr-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">操作</th>
@@ -1032,6 +1066,7 @@ const UserManagement: React.FC = () => {
                                         <td className="px-3 py-4"><div className="h-5 w-16 bg-slate-100 rounded" /></td>
                                         <td className="px-3 py-4"><div className="h-4 w-24 bg-slate-100 rounded" /></td>
                                         <td className="px-3 py-4"><div className="h-4 w-16 bg-slate-100 rounded" /></td>
+                                        <td className="px-3 py-4"><div className="h-4 w-20 bg-slate-100 rounded" /></td>
                                         <td className="px-3 py-4"><div className="h-4 w-28 bg-slate-100 rounded" /></td>
                                         <td className="px-3 py-4"><div className="h-5 w-10 bg-slate-100 rounded-full" /></td>
                                         <td className="px-3 pr-5 py-4"><div className="h-6 w-20 bg-slate-100 rounded ml-auto" /></td>
@@ -1039,7 +1074,7 @@ const UserManagement: React.FC = () => {
                                 ))
                             ) : paginatedUsers.length === 0 ? (
                                 <tr>
-                                    <td colSpan={10} className="py-24 text-center">
+                                    <td colSpan={11} className="py-24 text-center">
                                         <div className="flex flex-col items-center gap-3">
                                             <div className="bg-slate-50 p-4 rounded-full">
                                                 <Search className="w-8 h-8 text-slate-300" />
@@ -1107,6 +1142,17 @@ const UserManagement: React.FC = () => {
                                                     </div>
                                                 );
                                             })() : <span className="text-slate-400 text-xs">-</span>}
+                                        </td>
+                                        <td className="px-3 py-3.5">
+                                            {(user.gitUsername || user.gitEmail || user.gitUserId) ? (
+                                                <div className="space-y-0.5 text-xs">
+                                                    {user.gitUsername && <div className="font-mono text-purple-700">{user.gitUsername}</div>}
+                                                    {user.gitEmail && <div className="font-mono text-slate-500">{user.gitEmail}</div>}
+                                                    {!user.gitUsername && user.gitUserId && <div className="font-mono text-slate-500">ID: {user.gitUserId}</div>}
+                                                </div>
+                                            ) : (
+                                                <span className="text-slate-400 text-xs">-</span>
+                                            )}
                                         </td>
                                         <td className="px-3 py-3.5 text-slate-400 text-xs font-mono">{user.lastLogin || '-'}</td>
                                         <td className="px-3 py-3.5">

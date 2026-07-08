@@ -1,33 +1,43 @@
 package com.example.urgs_api.user.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.urgs_api.auth.annotation.RequirePermission;
 import com.example.urgs_api.user.dto.UserBatchImportResultDTO;
 import com.example.urgs_api.user.dto.UserDTO;
+import com.example.urgs_api.user.dto.UserGitIdentityDTO;
 import com.example.urgs_api.user.dto.UserRequest;
+import com.example.urgs_api.user.mapper.UserGitIdentityMapper;
 import com.example.urgs_api.user.model.User;
+import com.example.urgs_api.user.model.UserGitIdentity;
 import com.example.urgs_api.user.service.UserService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/users")
 public class UserController {
 
-    private final UserService userService;
+    private static final String DEFAULT_GIT_PLATFORM = "GITLAB";
 
-    public UserController(UserService userService) {
+    private final UserService userService;
+    private final UserGitIdentityMapper userGitIdentityMapper;
+
+    public UserController(UserService userService, UserGitIdentityMapper userGitIdentityMapper) {
         this.userService = userService;
+        this.userGitIdentityMapper = userGitIdentityMapper;
     }
 
     @GetMapping
     @RequirePermission("sys:user:query")
     public List<UserDTO> list(@RequestParam(required = false) String keyword) {
-        return userService.searchUsers(keyword).stream().map(UserDTO::fromEntity).collect(Collectors.toList());
+        return toDtosWithGitIdentity(userService.searchUsers(keyword));
     }
 
     @PostMapping
@@ -40,7 +50,8 @@ public class UserController {
             user.setPassword("123456");
         }
         userService.save(user);
-        return UserDTO.fromEntity(user);
+        saveGitIdentity(user.getId(), req);
+        return toDtoWithGitIdentity(user);
     }
 
     @PostMapping("/{id}/reset-password")
@@ -62,7 +73,8 @@ public class UserController {
         User user = toEntity(req, id);
         validateUniqueEmpId(user.getEmpId(), id);
         userService.updateById(user);
-        return ResponseEntity.ok(UserDTO.fromEntity(userService.getById(id)));
+        saveGitIdentity(id, req);
+        return ResponseEntity.ok(toDtoWithGitIdentity(userService.getById(id)));
     }
 
     @DeleteMapping("/{id}")
@@ -85,9 +97,22 @@ public class UserController {
     @GetMapping("/export")
     @RequirePermission("sys:user:query")
     public List<UserDTO> export() {
-        return userService.listAll().stream()
-                .map(UserDTO::fromEntity)
-                .collect(Collectors.toList());
+        return toDtosWithGitIdentity(userService.listAll());
+    }
+
+    @GetMapping("/{id}/git-identity")
+    public ResponseEntity<UserGitIdentityDTO> getGitIdentity(
+            @PathVariable("id") Long id,
+            @RequestParam(required = false, defaultValue = DEFAULT_GIT_PLATFORM) String platform) {
+        if (userService.getById(id) == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        UserGitIdentity identity = findGitIdentity(id, platform);
+        if (identity == null || !Boolean.TRUE.equals(identity.getEnabled())) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(UserGitIdentityDTO.fromEntity(identity));
     }
 
     @GetMapping("/permissions")
@@ -148,6 +173,95 @@ public class UserController {
         if (duplicateCount > 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "工号已存在，不允许保存");
         }
+    }
+
+    private List<UserDTO> toDtosWithGitIdentity(List<User> users) {
+        if (users == null || users.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> userIds = users.stream()
+                .map(User::getId)
+                .filter(id -> id != null)
+                .collect(Collectors.toList());
+        Map<Long, UserGitIdentity> identityMap = userIds.isEmpty() ? Map.of()
+                : userGitIdentityMapper.selectList(new LambdaQueryWrapper<UserGitIdentity>()
+                        .in(UserGitIdentity::getUserId, userIds)
+                        .eq(UserGitIdentity::getPlatform, DEFAULT_GIT_PLATFORM)
+                        .eq(UserGitIdentity::getEnabled, true))
+                        .stream()
+                        .collect(Collectors.toMap(UserGitIdentity::getUserId, identity -> identity, (left, right) -> left));
+
+        return users.stream()
+                .map(user -> attachGitIdentity(UserDTO.fromEntity(user), identityMap.get(user.getId())))
+                .collect(Collectors.toList());
+    }
+
+    private UserDTO toDtoWithGitIdentity(User user) {
+        if (user == null) {
+            return null;
+        }
+        return attachGitIdentity(UserDTO.fromEntity(user), findGitIdentity(user.getId(), DEFAULT_GIT_PLATFORM));
+    }
+
+    private UserDTO attachGitIdentity(UserDTO dto, UserGitIdentity identity) {
+        if (dto == null || identity == null || !Boolean.TRUE.equals(identity.getEnabled())) {
+            return dto;
+        }
+        dto.setGitUsername(identity.getGitUsername());
+        dto.setGitEmail(identity.getGitEmail());
+        dto.setGitUserId(identity.getGitUserId());
+        return dto;
+    }
+
+    private UserGitIdentity findGitIdentity(Long userId, String platform) {
+        if (userId == null) {
+            return null;
+        }
+        return userGitIdentityMapper.selectOne(new LambdaQueryWrapper<UserGitIdentity>()
+                .eq(UserGitIdentity::getUserId, userId)
+                .eq(UserGitIdentity::getPlatform, normalizeGitPlatform(platform))
+                .last("LIMIT 1"));
+    }
+
+    private void saveGitIdentity(Long userId, UserRequest req) {
+        if (userId == null || req == null) {
+            return;
+        }
+        String gitUsername = trimToNull(req.getGitUsername());
+        String gitEmail = trimToNull(req.getGitEmail());
+        String gitUserId = trimToNull(req.getGitUserId());
+        UserGitIdentity existing = findGitIdentity(userId, DEFAULT_GIT_PLATFORM);
+
+        if (!StringUtils.hasText(gitUsername) && !StringUtils.hasText(gitEmail) && !StringUtils.hasText(gitUserId)) {
+            if (existing != null) {
+                userGitIdentityMapper.deleteById(existing.getId());
+            }
+            return;
+        }
+
+        UserGitIdentity identity = existing == null ? new UserGitIdentity() : existing;
+        identity.setUserId(userId);
+        identity.setPlatform(DEFAULT_GIT_PLATFORM);
+        identity.setGitUsername(gitUsername);
+        identity.setGitEmail(gitEmail);
+        identity.setGitUserId(gitUserId);
+        identity.setEnabled(true);
+
+        if (identity.getId() == null) {
+            userGitIdentityMapper.insert(identity);
+        } else {
+            userGitIdentityMapper.updateById(identity);
+        }
+    }
+
+    private String normalizeGitPlatform(String platform) {
+        String normalized = trimToNull(platform);
+        return normalized == null ? DEFAULT_GIT_PLATFORM : normalized.toUpperCase();
+    }
+
+    private String trimToNull(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
     }
 
     private User toEntity(UserRequest req, Long id) {

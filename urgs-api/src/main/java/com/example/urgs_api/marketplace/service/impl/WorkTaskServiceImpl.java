@@ -17,6 +17,7 @@ import com.example.urgs_api.marketplace.model.TaskLog;
 import com.example.urgs_api.marketplace.model.Work;
 import com.example.urgs_api.marketplace.model.WorkTask;
 import com.example.urgs_api.marketplace.service.TaskApplicationService;
+import com.example.urgs_api.marketplace.service.TaskVersionMergeService;
 import com.example.urgs_api.marketplace.service.WorkService;
 import com.example.urgs_api.marketplace.service.WorkTaskService;
 import com.example.urgs_api.marketplace.mapper.TaskLogMapper;
@@ -78,6 +79,9 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
     @Autowired
     private MaintenanceRecordService maintenanceRecordService;
+
+    @Autowired
+    private TaskVersionMergeService taskVersionMergeService;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -428,6 +432,8 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (ReviewDecision.APPROVE.equals(decision)) {
             if (isAssetReview(task)) {
                 List<MaintenanceRecord> maintenanceRecords = getAssetMaintenanceRecords(work, task, true);
+                TaskVersionMergeService.MergeSummary mergeSummary = taskVersionMergeService
+                        .mergeOpenMasterPullRequests(work, task);
                 LocalDateTime now = LocalDateTime.now();
                 task.setCurrentStage(STAGE_LAUNCH);
                 task.setStageUpdatedAt(now);
@@ -440,7 +446,8 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 if (success) {
                     logTaskAction(taskId, reviewerId, "ASSET_REVIEW_APPROVE",
                             buildReviewLogDetail(
-                                    "资产同步审核通过，进入上线阶段，共固化 " + maintenanceRecords.size() + " 条资产变更",
+                                    "资产同步审核通过，进入上线阶段，共固化 " + maintenanceRecords.size() + " 条资产变更；"
+                                            + mergeSummary.toLogText(),
                                     dto.getReviewComment()));
                     updateWorkStatusIfNecessary(task.getWorkId());
                 }

@@ -18,6 +18,9 @@ public class UserDTO {
     private String email;
     private String namePinyin;
     private String namePinyinInitials;
+    private String gitUsername;
+    private String gitEmail;
+    private String gitUserId;
 
     public UserDTO() {
     }
@@ -191,5 +194,29 @@ public class UserDTO {
 
     public void setNamePinyinInitials(String namePinyinInitials) {
         this.namePinyinInitials = namePinyinInitials;
+    }
+
+    public String getGitUsername() {
+        return gitUsername;
+    }
+
+    public void setGitUsername(String gitUsername) {
+        this.gitUsername = gitUsername;
+    }
+
+    public String getGitEmail() {
+        return gitEmail;
+    }
+
+    public void setGitEmail(String gitEmail) {
+        this.gitEmail = gitEmail;
+    }
+
+    public String getGitUserId() {
+        return gitUserId;
+    }
+
+    public void setGitUserId(String gitUserId) {
+        this.gitUserId = gitUserId;
     }
 }

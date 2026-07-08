@@ -32,6 +32,19 @@ export interface UserDTO {
     empId: string;
     roleName: string;
     avatarUrl?: string;
+    gitUsername?: string;
+    gitEmail?: string;
+    gitUserId?: string;
+}
+
+export interface UserGitIdentity {
+    id?: number;
+    userId?: number;
+    platform?: string;
+    gitUsername?: string;
+    gitEmail?: string;
+    gitUserId?: string;
+    enabled?: boolean;
 }
 
 export const searchUsers = async (keyword: string = ''): Promise<UserDTO[]> => {
@@ -49,6 +62,28 @@ export const searchUsers = async (keyword: string = ''): Promise<UserDTO[]> => {
     const res = await fetch(url, { headers });
     if (!res.ok) {
         throw new Error("Failed to fetch users");
+    }
+    return res.json();
+};
+
+export const getUserGitIdentity = async (
+    userId: string | number,
+    platform: string = 'GITLAB'
+): Promise<UserGitIdentity | null> => {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+    };
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`/api/users/${userId}/git-identity?platform=${encodeURIComponent(platform)}`, { headers });
+    if (res.status === 204 || res.status === 404) {
+        return null;
+    }
+    if (!res.ok) {
+        throw new Error("Failed to fetch user git identity");
     }
     return res.json();
 };

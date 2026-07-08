@@ -24,6 +24,7 @@ import { getSystemList } from '../../api/ops';
 import UserSelect from './UserSelect';
 import TaskAuditTrail from './TaskAuditTrail';
 import AssetObjectDetailLink from './AssetObjectDetailLink';
+import TaskVersionMergeRequests from './TaskVersionMergeRequests';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -732,6 +733,10 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                             </div>
                         )}
                     </section>
+
+                    <TaskVersionMergeRequests
+                        requirementNumber={work.requirementNumber}
+                    />
 
                     {work.attachments && (
                         <section>

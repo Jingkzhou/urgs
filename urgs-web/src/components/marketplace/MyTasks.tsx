@@ -25,6 +25,7 @@ import TaskDetailDrawer from './TaskDetailDrawer';
 import { getTaskStageLabel, getTaskStatusLabel } from './marketplaceLabels';
 import { RegElement, RegTable } from '../metadata/reg-asset/types';
 import { MarketplaceTodoFocus } from './marketplaceTodoFocus';
+import TaskVersionMergeRequests from './TaskVersionMergeRequests';
 
 const formatDateInput = (date: Date) => {
     const year = date.getFullYear();
@@ -71,6 +72,8 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
     const [assetReviewLoading, setAssetReviewLoading] = useState(false);
     const [assetReviewSubmitting, setAssetReviewSubmitting] = useState(false);
     const [assetReviewError, setAssetReviewError] = useState('');
+    const [assetReviewVersionRecordCount, setAssetReviewVersionRecordCount] = useState(0);
+    const [assetReviewVersionLoading, setAssetReviewVersionLoading] = useState(false);
     const [assetDetailOpen, setAssetDetailOpen] = useState(false);
     const [assetDetailLoading, setAssetDetailLoading] = useState(false);
     const [assetDetailError, setAssetDetailError] = useState('');
@@ -150,6 +153,8 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
         setAssetReviewLoading(false);
         setAssetReviewSubmitting(false);
         setAssetReviewError('');
+        setAssetReviewVersionRecordCount(0);
+        setAssetReviewVersionLoading(false);
         setAssetDetailOpen(false);
         setAssetDetailLoading(false);
         setAssetDetailError('');
@@ -334,6 +339,8 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
         setAssetReviewWorkTitle('');
         setAssetReviewNote('');
         setAssetReviewError('');
+        setAssetReviewVersionRecordCount(0);
+        setAssetReviewVersionLoading(false);
         setAssetReviewLoading(true);
         try {
             const taskDetail = await getTaskDetail(task.id);
@@ -386,8 +393,20 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
     const confirmAssetReviewAdvance = async () => {
         if (!assetReviewTask) return;
         const trimmedNote = assetReviewNote.trim();
-        if (assetReviewRecords.length === 0 && !trimmedNote) {
-            setAssetReviewError('未找到资产维护记录时，请先填写提交说明');
+        if (assetReviewVersionLoading) {
+            setAssetReviewError('版本变更记录仍在匹配中，请稍后再提交');
+            return;
+        }
+        const missingAssetRecords = assetReviewRecords.length === 0;
+        const missingVersionRecords = assetReviewVersionRecordCount === 0;
+        if ((missingAssetRecords || missingVersionRecords) && !trimmedNote) {
+            if (missingAssetRecords && missingVersionRecords) {
+                setAssetReviewError('未找到资产维护记录和版本变更记录时，请先填写提交说明');
+            } else if (missingAssetRecords) {
+                setAssetReviewError('仅找到版本变更记录，缺少资产维护记录时请先填写提交说明');
+            } else {
+                setAssetReviewError('仅找到资产维护记录，缺少版本变更记录时请先填写提交说明');
+            }
             return;
         }
         setAssetReviewSubmitting(true);
@@ -794,7 +813,7 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
                             </button>
                         </div>
                         <div className="p-5 overflow-y-auto space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
                                 <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
                                     <div className="text-slate-400 mb-1">需求编号</div>
                                     <div className="font-bold text-slate-800">{assetReviewReqId || '-'}</div>
@@ -806,6 +825,12 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
                                 <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
                                     <div className="text-slate-400 mb-1">同步变更记录</div>
                                     <div className="font-bold text-cyan-700">{assetReviewRecords.length} 条</div>
+                                </div>
+                                <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                                    <div className="text-slate-400 mb-1">版本变更记录</div>
+                                    <div className="font-bold text-purple-700">
+                                        {assetReviewVersionLoading ? '匹配中...' : `${assetReviewVersionRecordCount} 条`}
+                                    </div>
                                 </div>
                             </div>
 
@@ -823,17 +848,24 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
 
                                     <div>
                                         <label className="block text-xs font-bold text-slate-600 mb-1">
-                                            提交说明{assetReviewRecords.length === 0 ? ' *' : ''}
+                                            提交说明{(assetReviewRecords.length === 0 || assetReviewVersionRecordCount === 0) ? ' *' : ''}
                                         </label>
                                         <textarea
                                             value={assetReviewNote}
                                             onChange={e => setAssetReviewNote(e.target.value)}
                                             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm min-h-[84px]"
-                                            placeholder={assetReviewRecords.length === 0
-                                                ? '未找到维护记录，请说明本次资产是否无需同步、已通过其他方式维护，或待补充的原因'
+                                            placeholder={assetReviewRecords.length === 0 || assetReviewVersionRecordCount === 0
+                                                ? '缺少资产维护记录或版本变更记录时，请说明本次资产/代码是否无需同步、已通过其他方式维护，或待补充的原因'
                                                 : '可补充本次资产同步范围、注意事项或特殊说明'}
                                         />
                                     </div>
+
+                                    <TaskVersionMergeRequests
+                                        requirementNumber={assetReviewReqId}
+                                        assigneeId={assetReviewTask.assigneeId}
+                                        onMatchCountChange={setAssetReviewVersionRecordCount}
+                                        onLoadingChange={setAssetReviewVersionLoading}
+                                    />
 
                                     {assetReviewRecords.length > 0 && (
                                         <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -911,7 +943,7 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
                             </button>
                             <button
                                 onClick={confirmAssetReviewAdvance}
-                                disabled={assetReviewLoading || assetReviewSubmitting || (assetReviewRecords.length === 0 && !assetReviewNote.trim())}
+                                disabled={assetReviewLoading || assetReviewSubmitting || assetReviewVersionLoading || ((assetReviewRecords.length === 0 || assetReviewVersionRecordCount === 0) && !assetReviewNote.trim())}
                                 className="px-4 py-2 text-sm font-bold text-white bg-cyan-600 hover:bg-cyan-700 rounded-lg disabled:opacity-50 disabled:hover:bg-cyan-600"
                             >
                                 {assetReviewSubmitting ? '提交中...' : '确认进入审核'}

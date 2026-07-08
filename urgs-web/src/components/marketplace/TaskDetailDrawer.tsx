@@ -4,6 +4,7 @@ import { getTaskDetail, TaskMarketDTO, claimTask } from '../../api/marketplace';
 import { Award, Clock, Users, Building2, User } from 'lucide-react';
 import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
 import TaskAuditTrail from './TaskAuditTrail';
+import TaskVersionMergeRequests from './TaskVersionMergeRequests';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -176,6 +177,11 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                             {task.description || '暂无描述信息'}
                         </Paragraph>
                     </section>
+
+                    <TaskVersionMergeRequests
+                        requirementNumber={task.requirementNumber}
+                        assigneeId={task.assigneeId}
+                    />
 
                     {(task.acceptanceCriteria || task.completionDescription || task.deliverables) && (
                         <section>
