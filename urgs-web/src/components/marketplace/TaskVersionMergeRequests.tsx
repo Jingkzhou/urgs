@@ -332,46 +332,62 @@ const parseSnapshotPayload = (snapshot: TaskVersionChangeSnapshot): VersionChang
     }
 };
 
+const matchedPullRequestKey = (pullRequest: MatchedPullRequest) => (
+    `${normalizeComparable(pullRequest.repoName)}|${pullRequest.number || ''}`
+);
+
+const dedupeMatchedPullRequests = (items: MatchedPullRequest[]) => {
+    const seen = new Set<string>();
+    return items.filter(item => {
+        const key = matchedPullRequestKey(item);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+};
+
 const buildRecordsFromSnapshots = (snapshots: TaskVersionChangeSnapshot[] = []): MatchedPullRequest[] => (
-    snapshots.map(snapshot => {
-        const payload = parseSnapshotPayload(snapshot);
-        const pr = payload.pullRequest || {};
-        const repoId = snapshot.repoId || payload.repo?.id || 0;
-        const number = Number(snapshot.prNumber || pr.number || snapshot.id);
-        const repoName = snapshot.repoName || payload.repo?.name || payload.repo?.fullName || `仓库 ${repoId || '-'}`;
-        return {
-            id: String(pr.id || `${repoId}-${number}`),
-            number,
-            title: snapshot.prTitle || pr.title || '未命名合并请求',
-            state: snapshot.state || pr.state || (snapshot.merged ? 'merged' : 'unknown'),
-            body: pr.body || '',
-            htmlUrl: snapshot.prUrl || pr.htmlUrl || '',
-            headRef: snapshot.sourceBranch || pr.headRef || '',
-            headSha: pr.headSha || '',
-            baseRef: snapshot.targetBranch || pr.baseRef || TARGET_BRANCH,
-            baseSha: pr.baseSha || '',
-            authorName: pr.authorName || '',
-            authorAvatar: pr.authorAvatar,
-            createdAt: pr.createdAt || snapshot.createdAt || '',
-            updatedAt: pr.updatedAt || snapshot.createdAt || '',
-            closedAt: pr.closedAt,
-            mergedAt: snapshot.mergedAt || pr.mergedAt,
-            comments: pr.comments,
-            commits: snapshot.commitCount ?? pr.commits,
-            additions: snapshot.additions ?? pr.additions,
-            deletions: snapshot.deletions ?? pr.deletions,
-            changedFiles: snapshot.fileCount ?? pr.changedFiles,
-            labels: pr.labels,
-            reviewers: pr.reviewers,
-            assignees: pr.assignees,
-            repoId,
-            repoName,
-            matchSource: normalizeMatchSource(snapshot.matchSource || payload.matchSource),
-            matchedCommits: payload.matchedCommits || [],
-            snapshot,
-            snapshotPayload: payload,
-        };
-    })
+    dedupeMatchedPullRequests(
+        snapshots.map(snapshot => {
+            const payload = parseSnapshotPayload(snapshot);
+            const pr = payload.pullRequest || {};
+            const repoId = snapshot.repoId || payload.repo?.id || 0;
+            const number = Number(snapshot.prNumber || pr.number || snapshot.id);
+            const repoName = snapshot.repoName || payload.repo?.name || payload.repo?.fullName || `仓库 ${repoId || '-'}`;
+            return {
+                id: String(pr.id || `${repoId}-${number}`),
+                number,
+                title: snapshot.prTitle || pr.title || '未命名合并请求',
+                state: snapshot.state || pr.state || (snapshot.merged ? 'merged' : 'unknown'),
+                body: pr.body || '',
+                htmlUrl: snapshot.prUrl || pr.htmlUrl || '',
+                headRef: snapshot.sourceBranch || pr.headRef || '',
+                headSha: pr.headSha || '',
+                baseRef: snapshot.targetBranch || pr.baseRef || TARGET_BRANCH,
+                baseSha: pr.baseSha || '',
+                authorName: pr.authorName || '',
+                authorAvatar: pr.authorAvatar,
+                createdAt: pr.createdAt || snapshot.createdAt || '',
+                updatedAt: pr.updatedAt || snapshot.createdAt || '',
+                closedAt: pr.closedAt,
+                mergedAt: snapshot.mergedAt || pr.mergedAt,
+                comments: pr.comments,
+                commits: snapshot.commitCount ?? pr.commits,
+                additions: snapshot.additions ?? pr.additions,
+                deletions: snapshot.deletions ?? pr.deletions,
+                changedFiles: snapshot.fileCount ?? pr.changedFiles,
+                labels: pr.labels,
+                reviewers: pr.reviewers,
+                assignees: pr.assignees,
+                repoId,
+                repoName,
+                matchSource: normalizeMatchSource(snapshot.matchSource || payload.matchSource),
+                matchedCommits: payload.matchedCommits || [],
+                snapshot,
+                snapshotPayload: payload,
+            };
+        })
+    )
 );
 
 const matchPullRequestsForRepo = async (
@@ -512,11 +528,12 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
                     .filter((result): result is PromiseFulfilledResult<MatchedPullRequest[]> => result.status === 'fulfilled')
                     .flatMap(result => result.value)
                     .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
-                setMatchedPullRequests(matches);
-                onMatchCountChange?.(matches.length);
+                const dedupedMatches = dedupeMatchedPullRequests(matches);
+                setMatchedPullRequests(dedupedMatches);
+                onMatchCountChange?.(dedupedMatches.length);
 
                 const failedCount = results.filter(result => result.status === 'rejected').length;
-                if (matches.length === 0 && failedCount > 0) {
+                if (dedupedMatches.length === 0 && failedCount > 0) {
                     setError('部分仓库合并请求加载失败，未匹配到版本记录');
                 }
             } catch (loadError) {

@@ -84,6 +84,14 @@ public class TaskVersionMergeService {
                         .orderByDesc(TaskVersionChangeSnapshot::getCreatedAt)
                         .orderByDesc(TaskVersionChangeSnapshot::getId))
                 .stream()
+                .filter(new java.util.function.Predicate<>() {
+                    private final Set<String> seen = new LinkedHashSet<>();
+
+                    @Override
+                    public boolean test(TaskVersionChangeSnapshot snapshot) {
+                        return seen.add(snapshotBusinessKey(snapshot));
+                    }
+                })
                 .map(this::toDto)
                 .toList();
     }
@@ -287,7 +295,7 @@ public class TaskVersionMergeService {
                 ? match.getCommits()
                 : match.getMatchedCommits();
         DiffStats stats = calculateStats(visibleFiles);
-        TaskVersionChangeSnapshot snapshot = findSnapshot(task.getId(), repo.getId(), pullRequest.getNumber());
+        TaskVersionChangeSnapshot snapshot = findSnapshot(task.getId(), repo, pullRequest.getNumber());
         if (snapshot == null) {
             snapshot = new TaskVersionChangeSnapshot();
         }
@@ -320,10 +328,24 @@ public class TaskVersionMergeService {
         }
     }
 
-    private TaskVersionChangeSnapshot findSnapshot(String taskId, Long repoId, Long prNumber) {
+    private TaskVersionChangeSnapshot findSnapshot(String taskId, GitRepository repo, Long prNumber) {
+        String repoName = repoLabel(repo);
+        if (StringUtils.hasText(repoName)) {
+            TaskVersionChangeSnapshot snapshot = taskVersionChangeSnapshotMapper.selectOne(
+                    new LambdaQueryWrapper<TaskVersionChangeSnapshot>()
+                            .eq(TaskVersionChangeSnapshot::getTaskId, taskId)
+                            .eq(TaskVersionChangeSnapshot::getRepoName, repoName)
+                            .eq(TaskVersionChangeSnapshot::getPrNumber, prNumber)
+                            .orderByDesc(TaskVersionChangeSnapshot::getCreatedAt)
+                            .orderByDesc(TaskVersionChangeSnapshot::getId)
+                            .last("LIMIT 1"));
+            if (snapshot != null) {
+                return snapshot;
+            }
+        }
         return taskVersionChangeSnapshotMapper.selectOne(new LambdaQueryWrapper<TaskVersionChangeSnapshot>()
                 .eq(TaskVersionChangeSnapshot::getTaskId, taskId)
-                .eq(TaskVersionChangeSnapshot::getRepoId, repoId)
+                .eq(TaskVersionChangeSnapshot::getRepoId, repo.getId())
                 .eq(TaskVersionChangeSnapshot::getPrNumber, prNumber)
                 .last("LIMIT 1"));
     }
@@ -426,6 +448,13 @@ public class TaskVersionMergeService {
                 .filter(repo -> repo.getId() != null && !Boolean.FALSE.equals(repo.getEnabled()))
                 .filter(repo -> involvedSystemIds.isEmpty()
                         || (repo.getSsoId() != null && involvedSystemIds.contains(repo.getSsoId())))
+                .collect(java.util.stream.Collectors.toMap(
+                        this::repoBusinessKey,
+                        java.util.function.Function.identity(),
+                        (first, ignored) -> first,
+                        LinkedHashMap::new))
+                .values()
+                .stream()
                 .toList();
     }
 
@@ -449,6 +478,47 @@ public class TaskVersionMergeService {
             return repo.getName();
         }
         return "仓库 " + repo.getId();
+    }
+
+    private String repoBusinessKey(GitRepository repo) {
+        if (repo == null) {
+            return "";
+        }
+        String fullName = normalize(repo.getFullName());
+        if (StringUtils.hasText(fullName)) {
+            return fullName;
+        }
+        String cloneUrl = normalizeRepoUrl(repo.getCloneUrl());
+        if (StringUtils.hasText(cloneUrl)) {
+            return cloneUrl;
+        }
+        String name = normalize(repo.getName());
+        if (StringUtils.hasText(name)) {
+            return name;
+        }
+        return String.valueOf(repo.getId());
+    }
+
+    private String snapshotBusinessKey(TaskVersionChangeSnapshot snapshot) {
+        if (snapshot == null) {
+            return "";
+        }
+        String repoKey = normalize(snapshot.getRepoName());
+        if (!StringUtils.hasText(repoKey)) {
+            repoKey = String.valueOf(snapshot.getRepoId());
+        }
+        return repoKey + "|" + snapshot.getPrNumber();
+    }
+
+    private String normalizeRepoUrl(String value) {
+        String normalized = normalize(value);
+        if (!StringUtils.hasText(normalized)) {
+            return "";
+        }
+        if (normalized.endsWith(".git")) {
+            normalized = normalized.substring(0, normalized.length() - 4);
+        }
+        return normalized;
     }
 
     private String nullToEmpty(String value) {
