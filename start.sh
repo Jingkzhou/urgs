@@ -19,6 +19,10 @@ export HF_ENDPOINT=https://hf-mirror.com
 # 启用离线模式，使用本地缓存的模型，避免每次连接 HuggingFace
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
+# 绕过 macOS 系统代理（常指向未启动的本地代理，如 127.0.0.1:9090），
+# 让 uv 能直连 PyPI 安装构建依赖（setuptools/wheel 等），避免离线环境下启动失败。
+export no_proxy="pypi.org,files.pythonhosted.org,${no_proxy:-}"
+export NO_PROXY="$no_proxy"
 echo "Using JAVA_HOME: $JAVA_HOME"
 echo "Using HF_ENDPOINT: $HF_ENDPOINT (Offline Mode: ON)"
 
