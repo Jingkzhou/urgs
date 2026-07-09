@@ -33,6 +33,8 @@ public class AiChatServiceImpl implements AiChatService {
     private static final ExecutorService executor = Executors.newCachedThreadPool();
     private static final String REGULATORY_DATA_QUERY_AGENT_CODE = "regulatory-data-query-agent";
     private static final String REGULATORY_DATA_QUERY_PERMISSION = "ai:regulatory-query:use";
+    private static final String AGENT_BINDING_MANUAL = "MANUAL";
+    private static final String AGENT_BINDING_AUTO = "AUTO";
 
     @Autowired
     private AiChatHistoryService aiChatHistoryService; // Inject history service
@@ -125,14 +127,22 @@ public class AiChatServiceImpl implements AiChatService {
         com.example.urgs_api.ai.entity.Agent sessionAgent = sessionInfo != null && sessionInfo.getAgentId() != null
                 ? agentRepository.selectById(sessionInfo.getAgentId())
                 : null;
+        boolean manualAgentSelected = isManualAgentBinding(sessionInfo);
+        Agent currentAgent = isAutoAgentBinding(sessionInfo) ? sessionAgent : null;
         if (sessionAgent != null && !canUseAgent(requesterUserId, sessionAgent)) {
-            sendAccessDenied(emitter);
-            return;
+            if (!manualAgentSelected) {
+                currentAgent = null;
+                sessionAgent = null;
+            } else {
+                sendAccessDenied(emitter);
+                return;
+            }
         }
+        Agent runAgent = manualAgentSelected ? sessionAgent : currentAgent;
         String runId = aiAgentRunService.createRun(sessionId, sessionInfo == null ? null : sessionInfo.getUserId(),
-                sessionAgent, userPrompt);
-        sendAgentEvent(runId, sessionId, sessionAgent, emitter, "routing_started", "thinking",
-                "任务识别", "正在识别任务类型和可用助手", Map.of("manual", sessionAgent != null), "RUNNING");
+                runAgent, userPrompt);
+        sendAgentEvent(runId, sessionId, runAgent, emitter, "routing_started", "thinking",
+                "任务识别", "正在识别任务类型和可用助手", Map.of("manual", manualAgentSelected), "RUNNING");
 
         List<Agent> catalog = listRoutingAgents(requesterUserId);
         final com.example.urgs_api.ai.entity.AiChatSession sessionRef = sessionInfo;
@@ -144,8 +154,9 @@ public class AiChatServiceImpl implements AiChatService {
 
         java.util.function.Consumer<DeepAgentsBuildModeHandler.RoutingInfo> routingCallback = info -> {
             Agent routed = findAgentByCode(catalog, info.agentCode());
-            if (routed != null && sessionRef != null && sessionRef.getAgentId() == null) {
+            if (routed != null && sessionRef != null && !manualAgentSelected) {
                 sessionRef.setAgentId(routed.getId());
+                sessionRef.setAgentBindingMode(AGENT_BINDING_AUTO);
                 aiChatHistoryService.updateSession(sessionRef);
             }
         };
@@ -154,14 +165,14 @@ public class AiChatServiceImpl implements AiChatService {
                 finalSystemPrompt, finalUserPrompt, finalSkillAppCode, finalSkillCode, finalContext, emitter, runId);
 
         // 手动预选的 DEEPAGENTS Agent：编排跳过路由，仍执行 Input Guard 与后续流程
-        if (sessionAgent != null && deepAgentsBuildModeHandler.supports(sessionAgent)) {
-            deepAgentsBuildModeHandler.streamWithPersistence(sessionId, sessionAgent, systemPrompt, userPrompt,
+        if (manualAgentSelected && sessionAgent != null && deepAgentsBuildModeHandler.supports(sessionAgent)) {
+            deepAgentsBuildModeHandler.streamWithPersistence(sessionId, sessionAgent, null, systemPrompt, userPrompt,
                     conversationContext, catalog, emitter, runId, routingCallback, legacyDispatch);
             return;
         }
 
         // 手动预选的非 DEEPAGENTS Agent：记录手动路由事件后走遗留执行路径
-        if (sessionAgent != null) {
+        if (manualAgentSelected && sessionAgent != null) {
             aiAgentRunService.updateRouting(runId, sessionAgent, "manual", 1.0);
             sendAgentEvent(runId, sessionId, sessionAgent, emitter, "routing_completed", "status",
                     "任务识别完成", "已检测到手动选择的 Agent，跳过 Router Agent",
@@ -174,8 +185,8 @@ public class AiChatServiceImpl implements AiChatService {
             return;
         }
 
-        // 未手动选择 Agent：编排内部完成路由（DEEPAGENTS 直接编排，非 DEEPAGENTS 经 handoff 回遗留路径）
-        deepAgentsBuildModeHandler.streamWithPersistence(sessionId, null, systemPrompt, userPrompt,
+        // 未手动选择 Agent：编排内部完成路由。currentAgent 只是软绑定，Router 可复用也可重选。
+        deepAgentsBuildModeHandler.streamWithPersistence(sessionId, null, currentAgent, systemPrompt, userPrompt,
                 conversationContext, catalog, emitter, runId, routingCallback, legacyDispatch);
     }
 
@@ -337,6 +348,20 @@ public class AiChatServiceImpl implements AiChatService {
         }
         return requesterUserId != null
                 && userService.getUserPermissions(requesterUserId).contains(REGULATORY_DATA_QUERY_PERMISSION);
+    }
+
+    private boolean isManualAgentBinding(com.example.urgs_api.ai.entity.AiChatSession session) {
+        if (session == null || session.getAgentId() == null) {
+            return false;
+        }
+        String mode = session.getAgentBindingMode();
+        return mode == null || mode.isBlank() || AGENT_BINDING_MANUAL.equalsIgnoreCase(mode);
+    }
+
+    private boolean isAutoAgentBinding(com.example.urgs_api.ai.entity.AiChatSession session) {
+        return session != null
+                && session.getAgentId() != null
+                && AGENT_BINDING_AUTO.equalsIgnoreCase(session.getAgentBindingMode());
     }
 
     private void sendAccessDenied(SseEmitter emitter) {

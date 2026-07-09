@@ -21,7 +21,11 @@ ROUTER_SYSTEM_PROMPT = """你是 URGS 的 Router Agent，负责把用户任务�
 3. 不允许创造新的 agent_code，不允许使用列表外的 Agent。
 4. 复杂度判断：任务需要多个步骤、跨多个领域、需要先调研再分析再汇总时，
    is_complex=true；单一领域、可直接回答的任务 is_complex=false。
-5. 只返回 JSON 对象，不要输出 Markdown，不要输出解释性正文。
+5. 如果请求提供 current_agent_code，它只是当前会话的软绑定：
+   - 用户任务明显延续上一轮、补充条件、要求改写/导出/继续处理时，优先复用当前 Agent。
+   - 用户任务切换到其他业务领域、工具能力或问题类型时，必须重新选择更匹配的 Agent。
+   - 不要因为存在 current_agent_code 就无条件复用。
+6. 只返回 JSON 对象，不要输出 Markdown，不要输出解释性正文。
 
 JSON 字段：
 {
@@ -30,7 +34,8 @@ JSON 字段：
   "reason": "选择原因",
   "task_type": "任务类型",
   "is_complex": false,
-  "collaboration_plan": ""
+  "collaboration_plan": "",
+  "reused_current_agent": false
 }
 """
 
@@ -69,21 +74,48 @@ def _parse_routing_result(text: str, allowed_codes: set[str]) -> RoutingResult:
 
 
 async def run_router(
-    model: Any, user_message: str, agents: list[RouterAgentDescriptor]
+    model: Any,
+    user_message: str,
+    agents: list[RouterAgentDescriptor],
+    current_agent_code: str | None = None,
+    conversation_context: str = "",
 ) -> RoutingResult:
     """执行路由分发与复杂度判断。"""
     if not agents:
         raise ValueError("agents 不能为空")
+    allowed_codes = {agent.agent_code for agent in agents}
+    effective_current_agent_code = (
+        current_agent_code if current_agent_code in allowed_codes else None
+    )
+    current_agent = next(
+        (agent for agent in agents if agent.agent_code == effective_current_agent_code),
+        None,
+    )
+    current_section = ""
+    if current_agent is not None:
+        current_section = (
+            "当前会话上一次自动路由使用的 Agent（软绑定，可复用也可切换）：\n"
+            f"{json.dumps(current_agent.model_dump(), ensure_ascii=False)}\n\n"
+        )
+    history_section = ""
+    if conversation_context.strip():
+        history_section = f"历史对话上下文：\n{conversation_context.strip()}\n\n"
     router = create_control_agent(
         model=model,
         system_prompt=ROUTER_SYSTEM_PROMPT,
     )
     user_prompt = (
         f"用户任务：\n{user_message}\n\n"
+        f"{history_section}"
+        f"{current_section}"
         f"可选 agents，每行一个 JSON：\n{_agent_catalog_text(agents)}\n\n"
         "请选择唯一主责 Agent 并判断复杂度。"
     )
     result: Any = await router.ainvoke({"messages": [{"role": "user", "content": user_prompt}]})
     text = assistant_text_from_output(result).strip()
-    allowed_codes = {agent.agent_code for agent in agents}
-    return _parse_routing_result(text, allowed_codes)
+    routing = _parse_routing_result(text, allowed_codes)
+    routing.reused_current_agent = (
+        effective_current_agent_code is not None
+        and routing.agent_code == effective_current_agent_code
+    )
+    return routing

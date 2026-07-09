@@ -78,29 +78,31 @@ public class DeepAgentsBuildModeHandler {
      * API 仅作为适配器：转发 SSE、持久化事件、处理 quality_risk 与非 DEEPAGENTS 的 handoff。
      *
      * @param preselectedAgent 手动预选 Agent；null 表示由编排内部 Router 路由
+     * @param currentAgent     当前会话上一次自动路由使用的 Agent；仅作为 Router 软绑定参考
      * @param catalog          全部启用 Agent 目录，供编排 Router/Planner 选择
      * @param routingCallback  路由完成回调（更新 run 路由信息与 session agent）
      * @param legacyDispatch   handoff 回调：编排路由到非 DEEPAGENTS Agent 时，交回遗留执行路径
      */
-    public void streamWithPersistence(String sessionId, Agent preselectedAgent, String systemPrompt,
-            String userPrompt, List<Map<String, String>> conversationContext, List<Agent> catalog,
+    public void streamWithPersistence(String sessionId, Agent preselectedAgent, Agent currentAgent,
+            String systemPrompt, String userPrompt, List<Map<String, String>> conversationContext, List<Agent> catalog,
             SseEmitter emitter, String runId, Consumer<RoutingInfo> routingCallback,
             Consumer<Agent> legacyDispatch) {
         executor.submit(() -> {
             StringBuilder responseBuilder = new StringBuilder();
             boolean[] streamStarted = { false };
-            final Agent[] activeAgent = { preselectedAgent };
+            final Agent[] activeAgent = { preselectedAgent != null ? preselectedAgent : currentAgent };
             try {
                 emitter.send(SseEmitter.event().name("status").data("deepagents_orchestrating"));
 
                 List<Map<String, String>> messages = buildMessages(sessionId, userPrompt, conversationContext);
                 int used = aiTokenBudgetService.estimateMessages(messages);
-                int limit = aiTokenBudgetService.resolveContextWindow(preselectedAgent);
+                int limit = aiTokenBudgetService.resolveContextWindow(activeAgent[0]);
                 emitter.send(SseEmitter.event().name("metrics")
                         .data(objectMapper.writeValueAsString(Map.of("used", used, "limit", limit))));
 
                 Map<String, Object> body = buildOrchestratorRequest(
-                        resolveSystemPrompt(preselectedAgent, systemPrompt), messages, preselectedAgent, catalog);
+                        resolveSystemPrompt(preselectedAgent, systemPrompt), messages, preselectedAgent, currentAgent,
+                        catalog);
 
                 final boolean[] handoff = { false };
                 final Agent[] handoffAgent = { null };
@@ -297,13 +299,16 @@ public class DeepAgentsBuildModeHandler {
     }
 
     private Map<String, Object> buildOrchestratorRequest(String systemPrompt, List<Map<String, String>> messages,
-            Agent preselectedAgent, List<Agent> catalog) {
+            Agent preselectedAgent, Agent currentAgent, List<Agent> catalog) {
         Map<String, Object> body = new java.util.LinkedHashMap<>();
         body.put("system_prompt", systemPrompt);
         body.put("messages", messages);
         if (preselectedAgent != null && preselectedAgent.getAgentCode() != null
                 && !preselectedAgent.getAgentCode().isBlank()) {
             body.put("selected_agent_code", preselectedAgent.getAgentCode());
+        } else if (currentAgent != null && currentAgent.getAgentCode() != null
+                && !currentAgent.getAgentCode().isBlank()) {
+            body.put("current_agent_code", currentAgent.getAgentCode());
         }
         body.put("agents", serializeCatalog(catalog));
         Map<String, Object> configs = new java.util.LinkedHashMap<>();

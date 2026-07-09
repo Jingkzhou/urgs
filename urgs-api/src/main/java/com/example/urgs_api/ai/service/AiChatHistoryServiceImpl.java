@@ -28,6 +28,7 @@ public class AiChatHistoryServiceImpl implements AiChatHistoryService {
         session.setUserId(userId);
         session.setTitle((title == null || title.isBlank()) ? "New Chat" : title);
         session.setAgentId(agentId);
+        session.setAgentBindingMode(agentId == null ? null : "MANUAL");
         session.setCreateTime(LocalDateTime.now());
         session.setUpdateTime(LocalDateTime.now());
         session.setIsDeleted(0);

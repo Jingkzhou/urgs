@@ -137,13 +137,20 @@ def _patch_guard(monkeypatch, passed: bool, reason: str = "") -> None:
 
 
 def _patch_router(monkeypatch, agent_code: str, is_complex: bool) -> None:
-    async def fake_router(model: Any, user_message: str, agents: Any) -> RoutingResult:
+    async def fake_router(
+        model: Any,
+        user_message: str,
+        agents: Any,
+        current_agent_code: str | None = None,
+        conversation_context: str = "",
+    ) -> RoutingResult:
         return RoutingResult(
             agent_code=agent_code,
             confidence=0.9,
             reason="test",
             task_type="test",
             is_complex=is_complex,
+            reused_current_agent=agent_code == current_agent_code,
         )
 
     monkeypatch.setattr(router_mod, "run_router", fake_router)
@@ -825,6 +832,52 @@ async def test_selected_agent_code_skips_router(monkeypatch) -> None:
     routing = next(data for name, data in events if name == "routing")
     assert routing["agent_code"] == "general-agent"
     assert routing["task_type"] == "manual"
+
+
+@pytest.mark.asyncio
+async def test_current_agent_code_is_soft_binding_and_still_routes(monkeypatch) -> None:
+    _patch_guard(monkeypatch, passed=True)
+    _patch_worker(monkeypatch, answer="direct")
+    _patch_review(monkeypatch, passed=True)
+    seen: dict[str, Any] = {}
+
+    async def fake_router(
+        model: Any,
+        user_message: str,
+        agents: Any,
+        current_agent_code: str | None = None,
+        conversation_context: str = "",
+    ) -> RoutingResult:
+        seen["current_agent_code"] = current_agent_code
+        seen["conversation_context"] = conversation_context
+        return RoutingResult(
+            agent_code="lineage-agent",
+            confidence=0.88,
+            reason="切换到更匹配的血缘助手",
+            task_type="lineage",
+            is_complex=False,
+        )
+
+    monkeypatch.setattr(router_mod, "run_router", fake_router)
+    monkeypatch.setattr("urgs_deepagents_service.orchestrator.orchestrator.run_router", fake_router)
+    request = OrchestratorRequest(
+        messages=[
+            {"role": "user", "content": "刚才的问题继续"},
+            {"role": "assistant", "content": "已使用通用助手回答"},
+            {"role": "user", "content": "分析这段 SQL 血缘"},
+        ],
+        agents=_agents(),
+        agent_configs=_configs(),
+        current_agent_code="general-agent",
+    )
+    events = await _make_stream(monkeypatch, request)
+
+    routing = next(data for name, data in events if name == "routing")
+    assert seen["current_agent_code"] == "general-agent"
+    assert "已使用通用助手回答" in seen["conversation_context"]
+    assert routing["agent_code"] == "lineage-agent"
+    assert routing["current_agent_code"] == "general-agent"
+    assert routing["reused_current_agent"] is False
 
 
 def test_build_agent_kwargs_writable_requires_write_tools(tmp_path) -> None:

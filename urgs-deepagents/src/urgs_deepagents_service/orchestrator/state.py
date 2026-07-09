@@ -50,6 +50,7 @@ class RoutingResult(BaseModel):
     task_type: str = ""
     is_complex: bool = Field(default=False, description="是否为复杂任务，需要 Planner 拆解")
     collaboration_plan: str = ""
+    reused_current_agent: bool = Field(default=False, description="是否复用当前会话 Agent")
 
 
 class PlanStep(BaseModel):

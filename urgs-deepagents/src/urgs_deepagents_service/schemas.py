@@ -38,6 +38,12 @@ class RouterAgentDescriptor(BaseModel):
 class RouterRouteRequest(BaseModel):
     message: str
     agents: list[RouterAgentDescriptor]
+    current_agent_code: str | None = Field(
+        default=None, description="当前会话上一次自动路由使用的 agent_code；仅作为软绑定参考"
+    )
+    conversation_context: str | None = Field(
+        default=None, description="可选历史对话摘要，辅助判断是否延续当前 Agent"
+    )
     model: str | None = Field(default=None, description="Optional provider:model override.")
     debug: bool = False
 
@@ -49,6 +55,7 @@ class RouterRouteResponse(BaseModel):
     task_type: str = ""
     requires_collaboration: bool = False
     collaboration_plan: str = ""
+    reused_current_agent: bool = False
 
 
 class AgentRuntimeConfig(BaseModel):
@@ -83,6 +90,9 @@ class OrchestratorRequest(BaseModel):
     )
     selected_agent_code: str | None = Field(
         default=None, description="手动预选 Agent；提供时跳过 Router，仍执行 Input Guard 与后续编排"
+    )
+    current_agent_code: str | None = Field(
+        default=None, description="当前会话上一次自动路由使用的 Agent；Router 可复用也可重选"
     )
     system_prompt: str | None = Field(default=None, description="平台级兜底系统提示词")
     model: str | None = Field(default=None, description="Optional provider:model override.")

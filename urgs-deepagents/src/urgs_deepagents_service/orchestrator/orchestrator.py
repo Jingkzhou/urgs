@@ -237,7 +237,13 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                 status="started",
                 message="正在识别任务并选择 Agent",
             )
-            routing = await run_router(model, user_message, request.agents)
+            routing = await run_router(
+                model,
+                user_message,
+                request.agents,
+                current_agent_code=request.current_agent_code,
+                conversation_context=conversation_context,
+            )
             routing_agent_code = routing.agent_code
             selected = _find_agent(request.agents, routing_agent_code)
             if selected is None:
@@ -264,6 +270,8 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                 "reason": routing.reason,
                 "task_type": routing.task_type,
                 "is_complex": routing.is_complex,
+                "current_agent_code": request.current_agent_code,
+                "reused_current_agent": routing.reused_current_agent,
                 "build_mode": selected.build_mode,
             },
             step_id="routing.completed",

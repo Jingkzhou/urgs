@@ -117,12 +117,31 @@ def _agent_catalog_text(request: RouterRouteRequest) -> str:
 
 
 def _router_user_prompt(request: RouterRouteRequest) -> str:
+    current_agent = next(
+        (
+            agent
+            for agent in request.agents
+            if agent.agent_code == request.current_agent_code
+        ),
+        None,
+    )
+    current_section = ""
+    if current_agent is not None:
+        current_section = (
+            "当前会话上一次自动路由使用的 Agent（软绑定，可复用也可切换）：\n"
+            f"{json.dumps(current_agent.model_dump(), ensure_ascii=False)}\n\n"
+        )
+    history_section = ""
+    if request.conversation_context and request.conversation_context.strip():
+        history_section = f"历史对话上下文：\n{request.conversation_context.strip()}\n\n"
     return (
         "用户任务：\n"
         f"{request.message}\n\n"
+        f"{history_section}"
+        f"{current_section}"
         "可选 agents，每行一个 JSON：\n"
         f"{_agent_catalog_text(request)}\n\n"
-        "请选择唯一主责 Agent。"
+        "请选择唯一主责 Agent；如果当前 Agent 仍然最合适，可以复用，否则请重新路由。"
     )
 
 
@@ -378,6 +397,10 @@ def create_app() -> FastAPI:
                     status_code=422,
                     detail=f"Router Agent 返回了未注册的 agent_code: {decision.agent_code}",
                 )
+            decision.reused_current_agent = (
+                request.current_agent_code in allowed_agent_codes
+                and decision.agent_code == request.current_agent_code
+            )
             return decision
         except HTTPException:
             raise
