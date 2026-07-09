@@ -71,12 +71,40 @@ const formatAgentEventTitle = (event: AgentStreamEvent) => {
             return event.type === 'tool_result' ? `已读取 ${path}` : `正在读取 ${path}`;
         }
     }
+    if (event.type === 'review') {
+        return event.status === 'failed' ? 'Reviewer 验收未通过' : 'Reviewer 验收通过';
+    }
+    if (event.type === 'rework') {
+        return '返工';
+    }
+    if (event.type === 'quality_risk') {
+        return '质量风险';
+    }
     return event.title;
 };
 
 const formatAgentEventDetail = (event: AgentStreamEvent) => {
     if (event.toolName === 'read_file' && getToolPath(event)) {
         return '';
+    }
+    if (event.type === 'rework') {
+        return event.content || '已将 Reviewer 反馈发送给 Worker，开始返工';
+    }
+    if (event.type === 'review' || event.type === 'quality_risk') {
+        const issues = Array.isArray(event.issues) && event.issues.length > 0
+            ? `问题：\n${event.issues.map(item => `- ${item}`).join('\n')}`
+            : '';
+        const requiredFixes = Array.isArray(event.required_fixes) && event.required_fixes.length > 0
+            ? `必须修复：\n${event.required_fixes.map(item => `- ${item}`).join('\n')}`
+            : '';
+        const details = [
+            event.reason ? `原因：${event.reason}` : '',
+            typeof event.score === 'number' ? `评分：${event.score}` : '',
+            issues,
+            requiredFixes,
+            event.content || ''
+        ].filter(Boolean);
+        return details.join('\n');
     }
     const argsText = event.args === undefined || event.args === null
         ? ''
@@ -98,7 +126,10 @@ const getAgentEventStatus = (
 ): ThinkingStep['status'] => {
     const titleText = `${event.title || ''}`.toLowerCase();
     const contentText = `${event.content || ''}`.trim().toLowerCase();
+    const explicitFailureStatus = (event.status === 'failed' || event.status === 'rejected')
+        && event.type !== 'rework';
     const explicitError = event.status === 'error'
+        || explicitFailureStatus
         || titleText.includes('error')
         || titleText.includes('失败')
         || titleText.includes('异常')

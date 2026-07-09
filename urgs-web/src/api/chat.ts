@@ -14,13 +14,17 @@ export interface Message {
 
 export interface AgentStreamEvent {
     id: string;
-    type: 'thinking' | 'tool_call' | 'tool_result' | 'status';
+    type: 'thinking' | 'tool_call' | 'tool_result' | 'status' | 'input_guard' | 'routing' | 'planning' | 'worker' | 'review' | 'rework' | 'quality_risk' | 'finalizing' | 'handoff';
     title: string;
     content?: string;
     toolName?: string;
     toolCallId?: string;
     status?: string;
     args?: any;
+    reason?: string;
+    issues?: string[];
+    required_fixes?: string[];
+    score?: number;
     timestamp: number;
 }
 
@@ -396,6 +400,10 @@ const processLine = (line: string, onChunk: (c: string) => void, onComplete: () 
                     toolCallId: parsed.toolCallId,
                     status: parsed.status,
                     args: parsed.args,
+                    reason: parsed.reason,
+                    issues: parsed.issues,
+                    required_fixes: parsed.required_fixes,
+                    score: parsed.score,
                     timestamp: Date.now()
                 });
             }
