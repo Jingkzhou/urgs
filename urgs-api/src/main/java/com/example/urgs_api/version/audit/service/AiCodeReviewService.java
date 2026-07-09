@@ -15,4 +15,9 @@ public interface AiCodeReviewService extends IService<AiCodeReview> {
      * Get review by commit SHA.
      */
     AiCodeReview getByCommit(String commitSha);
+
+    /**
+     * Ask a focused question against a completed review report.
+     */
+    String askReview(Long reviewId, String question, String issueTitle, String issueSeverity);
 }

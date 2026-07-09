@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Tabs, Input, Avatar, Tag, Dropdown, Progress, Badge, Tooltip } from 'antd';
-import { ArrowLeft, GitPullRequest, GitMerge, Check, X, Clock, MessageSquare, ChevronDown, MonitorCheck, ExternalLink, ShieldCheck, Bot, Loader2, AlertTriangle, Shield, Layers, Zap, FileCode, Terminal, User, CheckCircle, ArrowUpRight } from 'lucide-react';
+import { ArrowLeft, GitPullRequest, GitMerge, Check, X, Clock, MessageSquare, ChevronDown, MonitorCheck, ExternalLink, ShieldCheck, Bot, Loader2, AlertTriangle, Shield, Layers, Zap, FileCode, Terminal, User, CheckCircle, ArrowUpRight, MessageSquareText } from 'lucide-react';
 import { message, Modal } from 'antd';
 import PRStatusBadge, { PRStatus } from './components/PRStatusBadge';
 import PRTimeline, { TimelineEvent } from './components/PRTimeline';
@@ -15,33 +15,19 @@ import {
     GitPullRequest as APIGitPullRequest,
     GitCommit,
     GitCommitDiff,
-    getRepoCommits,
     triggerAICodeReview,
     AICodeReview,
     getAICodeReviewByCommit,
-    getAICodeReviewDetail
+    getAICodeReviewDetail,
+    askAICodeReview
 } from '@/api/version';
-
-// 扩展审查结果接口
-interface AuditIssue {
-    severity: 'critical' | 'major' | 'minor';
-    title: string;
-    line?: number;
-    description?: string;
-    recommendation?: string;
-    codeSnippet?: string;
-}
-
-interface ExtendedReview extends AICodeReview {
-    scoreBreakdown?: {
-        security: number;
-        reliability: number;
-        maintainability: number;
-        performance: number;
-    };
-    issues?: AuditIssue[];
-    language?: string;
-}
+import {
+    AuditIssue,
+    getSeverityClassName,
+    getSeverityLabel,
+    parseAICodeReview,
+    ParsedAICodeReview
+} from '../aiCodeReviewModel';
 
 interface PullRequestDetailProps {
     repoId: number;
@@ -61,41 +47,14 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
     // AI 智查状态
     const [auditStatus, setAuditStatus] = useState<'idle' | 'pending' | 'completed' | 'failed'>('idle');
     const [auditLoading, setAuditLoading] = useState(false);
-    const [auditReview, setAuditReview] = useState<ExtendedReview | null>(null);
+    const [auditReview, setAuditReview] = useState<ParsedAICodeReview | null>(null);
     const [selectedIssue, setSelectedIssue] = useState<AuditIssue | null>(null);
     const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
+    const [auditQuestion, setAuditQuestion] = useState('');
+    const [auditAnswer, setAuditAnswer] = useState('');
+    const [auditAskLoading, setAuditAskLoading] = useState(false);
 
-    // 扩展审查结果接口
-    // 扩展审查结果接口
-    const formatReviewData = (data: AICodeReview): ExtendedReview => {
-        let extendedData: Partial<ExtendedReview> = {};
-        try {
-            if (data.content && (data.content.trim().startsWith('{') || data.content.trim().startsWith('```'))) {
-                let jsonStr = data.content;
-                // Clean up markdown code blocks if present
-                if (jsonStr.includes('```json')) {
-                    jsonStr = jsonStr.replace(/```json\n?|```/g, '');
-                } else if (jsonStr.includes('```')) {
-                    jsonStr = jsonStr.replace(/```\n?|```/g, '');
-                }
-
-                const parsed = JSON.parse(jsonStr);
-                extendedData = {
-                    scoreBreakdown: parsed.scoreBreakdown,
-                    issues: parsed.issues,
-                    // If the JSON has a summary/content field, prioritize it, otherwise keep original
-                    content: parsed.content || parsed.summary || data.content
-                };
-            }
-        } catch (e) {
-            console.warn('Failed to parse AI review content JSON', e);
-        }
-
-        return {
-            ...data,
-            ...extendedData
-        };
-    };
+    const formatReviewData = (data: AICodeReview): ParsedAICodeReview => parseAICodeReview(data);
 
     // 检查是否已有审查结果
     const checkExistingReview = async () => {
@@ -172,19 +131,43 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
         setActiveTab('audit'); // 自动切换到智查报告 Tab
 
         try {
-            const result = await triggerAICodeReview({
+            await triggerAICodeReview({
                 repoId,
                 commitSha: pr.headSha,
                 branch: pr.headRef
             });
 
-            pollStatus(result?.id, pr.headSha);
+            pollStatus(undefined, pr.headSha);
             message.loading('已触发 AI 分析，正在排队中...');
         } catch (error) {
             console.error('AI 智查触发失败:', error);
             setAuditStatus('failed');
             message.error('AI 智查触发失败');
             setAuditLoading(false);
+        }
+    };
+
+    const handleAskAuditReview = async (nextQuestion?: string, issue?: AuditIssue) => {
+        if (!auditReview) return;
+        const question = (nextQuestion || auditQuestion).trim();
+        if (!question) return;
+        if (auditReview.status !== 'COMPLETED') {
+            message.warning('报告完成后才能追问');
+            return;
+        }
+        setAuditAskLoading(true);
+        try {
+            const response = await askAICodeReview(auditReview.id, {
+                question,
+                issueTitle: issue?.title,
+                issueSeverity: issue?.severity
+            });
+            setAuditAnswer(response.answer);
+            setAuditQuestion('');
+        } catch (error: any) {
+            message.error(error?.message || '报告追问失败');
+        } finally {
+            setAuditAskLoading(false);
         }
     };
 
@@ -510,7 +493,7 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                                                     {auditReview.score && auditReview.score >= 90 && (
                                                         <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-xs font-bold rounded border border-emerald-100">卓越质量</span>
                                                     )}
-                                                    {auditReview.issues && auditReview.issues.length === 0 && (
+                                                    {auditReview.issues.length === 0 && (
                                                         <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-xs font-bold rounded border border-blue-100">无明显问题</span>
                                                     )}
                                                 </div>
@@ -557,7 +540,7 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                                                     <span className="text-xs font-bold text-indigo-900 uppercase tracking-wide">AI 分析报告</span>
                                                 </div>
                                                 <div className="p-6 prose prose-sm prose-slate max-w-none prose-headings:font-bold prose-h3:text-indigo-600 prose-pre:bg-slate-900 prose-pre:text-slate-50 prose-a:text-indigo-500 hover:prose-a:text-indigo-600">
-                                                    <ReactMarkdown>{auditReview.content || ''}</ReactMarkdown>
+                                                    <ReactMarkdown>{auditReview.reportContent || auditReview.displaySummary}</ReactMarkdown>
                                                 </div>
                                             </div>
                                         </div>
@@ -571,11 +554,11 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                                                         发现的问题
                                                     </span>
                                                     <span className="px-2 py-0.5 bg-slate-200 rounded-full text-[10px] font-bold text-slate-600">
-                                                        {auditReview.issues?.length || 0}
+                                                        {auditReview.issues.length}
                                                     </span>
                                                 </div>
                                                 <div className="divide-y divide-slate-50">
-                                                    {auditReview.issues?.map((issue, idx) => (
+                                                    {auditReview.issues.map((issue, idx) => (
                                                         <div
                                                             key={idx}
                                                             className="p-4 hover:bg-slate-50 cursor-pointer group transition-colors"
@@ -585,11 +568,8 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                                                             }}
                                                         >
                                                             <div className="flex items-start gap-2.5 mb-1">
-                                                                <span className={`mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wide border 
-                                                                    ${issue.severity === 'critical' ? 'bg-rose-50 text-rose-600 border-rose-100' :
-                                                                        issue.severity === 'major' ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                                                                            'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                                                                    {issue.severity}
+                                                                <span className={`mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-extrabold tracking-wide border ${getSeverityClassName(issue.severity)}`}>
+                                                                    {getSeverityLabel(issue.severity)}
                                                                 </span>
                                                                 <span className="text-xs font-bold text-slate-700 leading-snug group-hover:text-indigo-600 transition-colors line-clamp-2">
                                                                     {issue.title}
@@ -602,7 +582,7 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                                                             )}
                                                         </div>
                                                     ))}
-                                                    {(!auditReview.issues || auditReview.issues.length === 0) && (
+                                                    {auditReview.issues.length === 0 && (
                                                         <div className="p-8 text-center">
                                                             <CheckCircle size={24} className="text-emerald-400 mx-auto mb-2 opacity-80" />
                                                             <p className="text-xs text-slate-400">未发现明显问题</p>
@@ -611,21 +591,47 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                                                 </div>
                                             </div>
 
-                                            <div className="bg-gradient-to-br from-indigo-600 via-indigo-500 to-purple-600 rounded-xl p-5 text-white shadow-lg shadow-indigo-200 relative overflow-hidden group">
-                                                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity duration-500">
-                                                    <Bot size={80} />
+                                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                                <div className="bg-slate-50/50 px-5 py-3 border-b border-slate-100 flex items-center gap-2">
+                                                    <MessageSquareText size={14} className="text-slate-500" />
+                                                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">报告追问</span>
                                                 </div>
-                                                <h3 className="font-bold mb-2 relative z-10 flex items-center gap-2 text-sm">
-                                                    <Zap size={14} className="text-yellow-300" />
-                                                    AI 智能优化
-                                                </h3>
-                                                <p className="text-[11px] text-indigo-100 mb-4 relative z-10 opacity-90 leading-relaxed">
-                                                    AI 可以自动为检测到的 {auditReview.issues?.length || 0} 个问题生成修复方案。
-                                                </p>
-                                                <button className="relative z-10 w-full bg-white/10 hover:bg-white/20 border border-white/30 text-white text-[11px] font-bold py-2 rounded-lg transition-all backdrop-blur-md flex items-center justify-center gap-2 shadow-inner">
-                                                    <span>应用自动修复</span>
-                                                    <ArrowUpRight size={12} />
-                                                </button>
+                                                <div className="p-4 space-y-3">
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {['哪些问题会阻断合并？', '给出修复优先级', '这次变更的主要风险是什么？'].map((item) => (
+                                                            <button
+                                                                key={item}
+                                                                onClick={() => handleAskAuditReview(item)}
+                                                                disabled={auditAskLoading || auditReview.status !== 'COMPLETED'}
+                                                                className="px-2.5 py-1 rounded-full border border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-600 hover:border-slate-300 disabled:opacity-50"
+                                                            >
+                                                                {item}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                    <Input.TextArea
+                                                        rows={3}
+                                                        value={auditQuestion}
+                                                        onChange={(event) => setAuditQuestion(event.target.value)}
+                                                        placeholder="针对当前报告追问..."
+                                                        disabled={auditReview.status !== 'COMPLETED'}
+                                                    />
+                                                    <Button
+                                                        type="primary"
+                                                        className="w-full bg-slate-900"
+                                                        icon={auditAskLoading ? <Loader2 size={14} className="animate-spin" /> : <ArrowUpRight size={14} />}
+                                                        loading={auditAskLoading}
+                                                        disabled={!auditQuestion.trim() || auditReview.status !== 'COMPLETED'}
+                                                        onClick={() => handleAskAuditReview()}
+                                                    >
+                                                        提交追问
+                                                    </Button>
+                                                    {auditAnswer && (
+                                                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 prose prose-xs max-w-none">
+                                                            <ReactMarkdown>{auditAnswer}</ReactMarkdown>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -644,11 +650,8 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                                         {selectedIssue && (
                                             <div className="pt-2">
                                                 <div className="flex items-start gap-3 mb-5">
-                                                    <div className={`mt-1 flex-none px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase tracking-wide border 
-                                                        ${selectedIssue.severity === 'critical' ? 'bg-rose-50 text-rose-600 border-rose-100' :
-                                                            selectedIssue.severity === 'major' ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                                                                'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                                                        {selectedIssue.severity}
+                                                    <div className={`mt-1 flex-none px-2.5 py-1 rounded-md text-[10px] font-extrabold tracking-wide border ${getSeverityClassName(selectedIssue.severity)}`}>
+                                                        {getSeverityLabel(selectedIssue.severity)}
                                                     </div>
                                                     <h3 className="text-lg font-bold text-slate-800 leading-snug">
                                                         {selectedIssue.title}
@@ -713,9 +716,17 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                                                     <Button onClick={() => setIsIssueModalOpen(false)} className="rounded-xl border-slate-200 text-slate-500 text-xs font-bold hover:text-slate-700 hover:border-slate-300">
                                                         关闭
                                                     </Button>
-                                                    <Button type="primary" className="bg-indigo-600 rounded-xl shadow-lg shadow-indigo-200 text-xs font-bold flex items-center gap-1.5">
-                                                        <Zap size={12} />
-                                                        自动修复
+                                                    <Button
+                                                        type="primary"
+                                                        className="bg-slate-900 rounded-xl shadow-lg shadow-slate-200 text-xs font-bold flex items-center gap-1.5"
+                                                        loading={auditAskLoading}
+                                                        onClick={() => {
+                                                            setIsIssueModalOpen(false);
+                                                            handleAskAuditReview(`围绕这个问题给出更具体的修复方案：${selectedIssue.title}`, selectedIssue);
+                                                        }}
+                                                    >
+                                                        <MessageSquareText size={12} />
+                                                        追问这个问题
                                                     </Button>
                                                 </div>
                                             </div>

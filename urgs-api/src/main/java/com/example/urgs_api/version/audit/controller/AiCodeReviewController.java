@@ -2,7 +2,11 @@ package com.example.urgs_api.version.audit.controller;
 
 import com.example.urgs_api.version.audit.entity.AiCodeReview;
 import com.example.urgs_api.version.audit.service.AiCodeReviewService;
+import com.example.urgs_api.version.dto.AiCodeReviewAskRequest;
+import com.example.urgs_api.version.dto.AiCodeReviewAskResponse;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -64,5 +68,30 @@ public class AiCodeReviewController {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(review);
+    }
+
+    /**
+     * Ask a focused question against a completed review report.
+     */
+    @PostMapping("/{id}/ask")
+    public ResponseEntity<AiCodeReviewAskResponse> askReview(
+            @PathVariable Long id,
+            @RequestBody AiCodeReviewAskRequest request) {
+        if (request == null || !StringUtils.hasText(request.getQuestion())) {
+            return ResponseEntity.badRequest().body(new AiCodeReviewAskResponse(id, "问题不能为空"));
+        }
+
+        try {
+            String answer = aiCodeReviewService.askReview(
+                    id,
+                    request.getQuestion(),
+                    request.getIssueTitle(),
+                    request.getIssueSeverity());
+            return ResponseEntity.ok(new AiCodeReviewAskResponse(id, answer));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(new AiCodeReviewAskResponse(id, e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(new AiCodeReviewAskResponse(id, e.getMessage()));
+        }
     }
 }

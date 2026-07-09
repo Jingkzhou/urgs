@@ -315,6 +315,59 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
         return getOne(new LambdaQueryWrapper<AiCodeReview>().eq(AiCodeReview::getCommitSha, commitSha));
     }
 
+    @Override
+    public String askReview(Long reviewId, String question, String issueTitle, String issueSeverity) {
+        if (question == null || question.isBlank()) {
+            throw new IllegalArgumentException("问题不能为空");
+        }
+
+        AiCodeReview review = getById(reviewId);
+        if (review == null) {
+            throw new IllegalArgumentException("智查报告不存在");
+        }
+        if (!"COMPLETED".equals(review.getStatus())) {
+            throw new IllegalStateException("智查报告尚未完成，暂不能追问");
+        }
+
+        String systemPrompt = """
+                你是一个资深代码审查报告分析助手。
+                你只能基于已完成的智查报告内容回答，不要编造报告中不存在的文件、行号或结论。
+                输出使用中文 Markdown，结构必须简洁：先给结论，再给依据，最后给下一步建议。
+                如果证据不足，请明确说明需要补充哪些上下文。
+                """;
+
+        String userPrompt = String.format(
+                """
+                        智查报告元数据：
+                        - reviewId: %s
+                        - repoId: %s
+                        - commitSha: %s
+                        - branch: %s
+                        - score: %s
+                        - summary: %s
+                        - issueTitle: %s
+                        - issueSeverity: %s
+
+                        智查报告内容（JSON 或 Markdown）：
+                        %s
+
+                        用户追问：
+                        %s
+                        """,
+                review.getId(),
+                review.getRepoId(),
+                safeText(review.getCommitSha(), 200),
+                safeText(review.getBranch(), 200),
+                review.getScore(),
+                safeText(review.getSummary(), 1000),
+                safeText(issueTitle, 300),
+                safeText(issueSeverity, 80),
+                safeText(review.getContent(), 12000),
+                safeText(question, 1200));
+
+        return aiChatService.chat(systemPrompt, userPrompt);
+    }
+
     private String getLanguage(String path) {
         if (path == null)
             return "text";
@@ -371,5 +424,16 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
         // perfectly without a real parser,
         // but let's hope Jackson's lenient mode handles most.
         return sanitized;
+    }
+
+    private String safeText(String text, int maxLength) {
+        if (text == null || text.isBlank()) {
+            return "-";
+        }
+        String normalized = text.trim();
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, maxLength) + "...";
     }
 }

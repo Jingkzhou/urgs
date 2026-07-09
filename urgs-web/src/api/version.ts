@@ -605,7 +605,7 @@ export interface AICodeReview {
 }
 
 export const triggerAICodeReview = (data: { repoId: number; commitSha: string; branch?: string; email?: string }) =>
-    post<AICodeReview>('/api/version/audit/trigger', null, { params: data });
+    post<void>('/api/version/audit/trigger', null, { params: data });
 
 export const getAICodeReviews = (params?: { repoId?: number; developerId?: number }) =>
     get<AICodeReview[]>('/api/version/audit/list', params || {});
@@ -615,6 +615,21 @@ export const getAICodeReviewDetail = (id: number) =>
 
 export const getAICodeReviewByCommit = (commitSha: string) =>
     get<AICodeReview>(`/api/version/audit/commit/${commitSha}`);
+
+export interface AICodeReviewAskRequest {
+    question: string;
+    issueTitle?: string;
+    issueSeverity?: string;
+}
+
+export interface AICodeReviewAskResponse {
+    reviewId: number;
+    answer: string;
+    generatedAt?: string;
+}
+
+export const askAICodeReview = (reviewId: number, data: AICodeReviewAskRequest) =>
+    post<AICodeReviewAskResponse>(`/api/version/audit/${reviewId}/ask`, data);
 
 
 // ===== Developer KPI API =====
